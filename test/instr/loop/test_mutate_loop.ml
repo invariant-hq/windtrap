@@ -18,6 +18,7 @@
 open Windtrap
 module M = Windtrap_runtime.Mutate
 module V = Windtrap_runtime.Verdicts
+module Child = Windtrap_test_support.Child
 
 let exe_dir = Filename.dirname Sys.executable_name
 let suite_exe = Filename.concat exe_dir "suite_main.exe"
@@ -32,100 +33,75 @@ let pp_verdict ppf = function
            (List.map (String.concat " > ") (witness :: others)))
   | V.Unreached -> Format.pp_print_string ppf "unreached"
 
-(* [lstat], not [Sys.is_directory]: the runner leaves a [latest] symlink
-   in every log directory, and following it would delete outside the
-   scratch tree. *)
-let rec remove_tree path =
-  match Unix.lstat path with
-  | exception Unix.Unix_error _ -> ()
-  | { Unix.st_kind = Unix.S_DIR; _ } -> (
-      Array.iter
-        (fun name -> remove_tree (Filename.concat path name))
-        (try Sys.readdir path with Sys_error _ -> [||]);
-      try Unix.rmdir path with Unix.Unix_error _ -> ())
-  | _ -> ( try Unix.unlink path with Unix.Unix_error _ -> ())
-
-let scratch_dir =
-  let dir = Filename.temp_file "windtrap_loop_scratch" "" in
-  Sys.remove dir;
-  Sys.mkdir dir 0o755;
-  at_exit (fun () -> remove_tree dir);
-  dir
-
+(* A file a fixture writes, read back; a file it never wrote reads as
+   nothing. *)
 let read_file path =
-  match open_in_bin path with
-  | exception Sys_error _ -> ""
-  | ic ->
-      Fun.protect
-        ~finally:(fun () -> close_in_noerr ic)
-        (fun () -> really_input_string ic (in_channel_length ic))
+  if Sys.file_exists path then
+    In_channel.with_open_bin path In_channel.input_all
+  else ""
 
-(* Nothing of the ambient environment survives except what a process
-   genuinely needs to start (PATH, HOME, TMPDIR and the locale). *)
-let environment bindings =
-  let inherited name =
-    match Sys.getenv_opt name with
-    | Some value -> [ name ^ "=" ^ value ]
-    | None -> []
-  in
-  Array.of_list
-    (List.concat_map inherited [ "PATH"; "HOME"; "TMPDIR"; "LANG"; "LC_ALL" ]
-    @ [ "WINDTRAP_COLOR=never"; "WINDTRAP_SLOW_THRESHOLD=0" ]
-    @ bindings)
+(* [occurs ~sub s] is [true] iff [sub] occurs in [s]: a predicate, for
+   counting lines, where the facade's [contains] asserts. *)
+let occurs ~sub s =
+  let n = String.length s and m = String.length sub in
+  let rec go i = i + m <= n && (String.sub s i m = sub || go (i + 1)) in
+  go 0
 
-let counter = ref 0
+let lines_with ~sub text =
+  List.filter (occurs ~sub) (String.split_on_char '\n' text)
 
-(* [fork] then [chdir] then [execve], rather than [create_process_env]:
-   one scenario needs the child to start in a directory of the test's
-   choosing, because the inline runtime records its correction directory
-   at module load and that is the only way to move it. *)
+(* A scenario's variables, over Child.environment's, and no test is ever
+   reported slow, so a transcript is the same on any machine. *)
+let bindings vars = ("WINDTRAP_SLOW_THRESHOLD", "0") :: vars
+
+(* A run the test watches while it goes: started here, and waited for
+   by [finish]. [stdout], when given, is the child's standard output in
+   place of the file, and stays the caller's to close: a pipe whose
+   reader can leave. *)
 type started = { pid : int; out_path : string; err_path : string }
 
-(* [stdout], when given, is the child's standard output in place of the
-   file, and stays the caller's to close: a pipe whose reader can leave. *)
-let start ?(exe = suite_exe) ?(args = []) ?cwd ?stdout bindings =
-  incr counter;
-  let prefix = Filename.concat scratch_dir (string_of_int !counter) in
-  let out_path = prefix ^ ".out" and err_path = prefix ^ ".err" in
+let start ?(exe = suite_exe) ?(args = []) ?stdout vars =
+  let dir = temp_dir () in
+  let out_path = Filename.concat dir "out"
+  and err_path = Filename.concat dir "err" in
   let open_target path =
-    Unix.openfile path [ Unix.O_WRONLY; Unix.O_CREAT; Unix.O_TRUNC ] 0o644
+    Unix.openfile path
+      [ Unix.O_WRONLY; Unix.O_CREAT; Unix.O_TRUNC; Unix.O_CLOEXEC ]
+      0o644
   in
   let out = open_target out_path and err = open_target err_path in
-  let argv = Array.of_list (exe :: args) in
-  let environment = environment bindings in
-  match Unix.fork () with
-  | 0 -> (
-      try
-        (match cwd with Some dir -> Unix.chdir dir | None -> ());
-        Unix.dup2 (Option.value stdout ~default:out) Unix.stdout;
-        Unix.dup2 err Unix.stderr;
-        Unix.execve exe argv environment
-      with _ -> Unix._exit 127)
-  | pid ->
-      Unix.close out;
-      Unix.close err;
-      { pid; out_path; err_path }
+  let pid =
+    Fun.protect
+      ~finally:(fun () ->
+        Unix.close out;
+        Unix.close err)
+      (fun () ->
+        Unix.create_process_env exe
+          (Array.of_list (exe :: args))
+          (Child.environment (bindings vars))
+          Unix.stdin
+          (Option.value stdout ~default:out)
+          err)
+  in
+  { pid; out_path; err_path }
 
 let finish { pid; out_path; err_path } =
   let status = snd (Unix.waitpid [] pid) in
   (status, read_file out_path, read_file err_path)
 
-let spawn ?exe ?args ?cwd bindings =
-  let status, out, err = finish (start ?exe ?args ?cwd bindings) in
-  let code =
-    match status with
-    | Unix.WEXITED code -> code
-    | Unix.WSIGNALED signal -> 128 + signal
-    | Unix.WSTOPPED _ -> 255
-  in
-  (code, out, err)
+(* A run from start to end: its exit code, stdout and stderr. The inline
+   runtime records its correction directory at module load, from its
+   working directory, so [cwd] is how a scenario moves it. *)
+let spawn ?(exe = suite_exe) ?(args = []) ?cwd vars =
+  let r = Child.run ?cwd ~env:(bindings vars) exe args in
+  (Child.exit_code r, r.Child.out, r.Child.err)
 
 (* Waits for a file the run under watch writes, and gives up on the run,
    not on the suite, when it never comes: a process this suite started
    must not outlive it. *)
 let await ~what started path =
   let rec poll attempts =
-    if Sys.file_exists path && read_file path <> "" then ()
+    if read_file path <> "" then ()
     else if attempts = 0 then begin
       (try Unix.kill started.pid Sys.sigkill with Unix.Unix_error _ -> ());
       ignore (finish started);
@@ -138,8 +114,6 @@ let await ~what started path =
   in
   poll 3000
 
-let says ~msg text sub = contains ~msg ~sub text
-
 (* The scope that keeps this suite's fixtures controlled. Under
    --instrument-with the children link a mutation-instrumented windtrap
    core, and every count here — five sites, the reach map, the verdict
@@ -151,20 +125,12 @@ let says ~msg text sub = contains ~msg ~sub text
    dune's protocol, gets the same scope through the mirror. *)
 let scope = "test/instr/loop/"
 let mutate = "--mutate=" ^ scope
-let mutate_mirror = "WINDTRAP_MUTATE=" ^ scope
+let mutate_mirror = ("WINDTRAP_MUTATE", scope)
 
 (* Under --instrument-with the core this suite links catalogues its own
    mutants; the scenarios that need a catalogue holding the fixture's
    alone, or none at all, skip there. *)
 let core_instrumented = M.catalogue () <> []
-
-let has_sub text sub =
-  let n = String.length text and m = String.length sub in
-  let rec go i = i + m <= n && (String.sub text i m = sub || go (i + 1)) in
-  m = 0 || go 0
-
-let denies ~msg text sub =
-  if has_sub text sub then failf "%s: unexpected %S in:\n%s" msg sub text
 
 (* The catalogue, read out of the binary rather than transcribed: a line
    moving in subject.ml must not silently re-point an armed identifier at
@@ -174,7 +140,7 @@ let denies ~msg text sub =
    position or by rewrite must be this directory's. *)
 let catalogue =
   lazy
-    (let code, out, err = spawn [ "MUTATE_FIXTURE=catalogue" ] in
+    (let code, out, err = spawn [ ("MUTATE_FIXTURE", "catalogue") ] in
      if code <> 0 then failf "catalogue mode exited %d: %s" code err;
      List.filter
        (String.starts_with ~prefix:scope)
@@ -268,8 +234,8 @@ let unasked_tests =
       (fun () ->
         let code, out, err = spawn [] in
         equal ~msg:"exit code" int 0 code;
-        says ~msg:"summary" out "calc: 6 passed";
-        denies ~msg:"and says nothing about mutants" out "mutants:";
+        contains ~msg:"summary" ~sub:"calc: 6 passed" out;
+        not_contains ~msg:"and says nothing about mutants" ~sub:"mutants:" out;
         equal ~msg:"stderr" text "" err);
   ]
 
@@ -289,28 +255,34 @@ let scope_tests =
         (* The build is instrumented and fine; the scope is what emptied
            the population, so the refusal must name it — blaming
            instrumentation would send the reader to rebuild. *)
-        says ~msg:"declines by naming the flag, value included" err
-          "windtrap: --mutate=::no-such-source:: leaves no mutant";
-        says ~msg:"and both causes an empty scoped catalogue has" err
-          "no instrumented file matches the prefix (is the library under test \
-           instrumented with ppx_windtrap.mutate?), or the matched files have \
-           no mutation sites";
-        denies ~msg:"never the missing-backend diagnosis" err
-          "links no instrumented module");
+        contains ~msg:"declines by naming the flag, value included"
+          ~sub:"windtrap: --mutate=::no-such-source:: leaves no mutant" err;
+        contains ~msg:"and both causes an empty scoped catalogue has"
+          ~sub:
+            "no instrumented file matches the prefix (is the library under \
+             test instrumented with ppx_windtrap.mutate?), or the matched \
+             files have no mutation sites"
+          err;
+        not_contains ~msg:"never the missing-backend diagnosis"
+          ~sub:"links no instrumented module" err);
     test "a scope that matches keeps the whole fixture catalogue" (fun () ->
         let code, out, _ = spawn ~args:[ mutate ] [] in
         equal ~msg:"exit code" int 0 code;
-        says ~msg:"the fixture's reach, undiminished" out
-          "mutants: 1 survived of 2 reached by this suite, 1 killed, 2 never \
-           reached\n");
+        contains ~msg:"the fixture's reach, undiminished"
+          ~sub:
+            "mutants: 1 survived of 2 reached by this suite, 1 killed, 2 never \
+             reached\n"
+          out);
     test "the mirror reads a non-boolean value as the prefixes" (fun () ->
         (* WINDTRAP_MUTATE=<prefix> is what reaches a suite no command
            line reaches: the same scope, through the flag's own parser. *)
         let code, out, _ = spawn [ mutate_mirror ] in
         equal ~msg:"exit code" int 0 code;
-        says ~msg:"the same population" out
-          "mutants: 1 survived of 2 reached by this suite, 1 killed, 2 never \
-           reached\n");
+        contains ~msg:"the same population"
+          ~sub:
+            "mutants: 1 survived of 2 reached by this suite, 1 killed, 2 never \
+             reached\n"
+          out);
   ]
 
 let loop_tests =
@@ -322,23 +294,26 @@ let loop_tests =
         let code, out, err = spawn ~args:[ mutate ] [] in
         equal ~msg:"exit code (a survivor never fails the build)" int 0 code;
         equal ~msg:"stderr" text "" err;
-        says ~msg:"the dry run printed its ordinary summary" out
-          "calc: 6 passed";
-        says ~msg:"survivor section, opened before the loop knew their count"
-          out
-          "\n\n\
-           ─────────────────────── survivors ────────────────────────\n\
-          \  SURVIVED  ";
-        says ~msg:"survivor head row" out "SURVIVED";
-        says ~msg:"the mutated expression" out "  a + b \u{2192} a - b\n";
-        says ~msg:"the sentence that is the product" out
-          "2 tests ran this line and none failed:";
-        says ~msg:"first witness" out "widen \u{203a} widen is nonzero";
-        says ~msg:"second witness" out "widen \u{203a} widen is not 99";
+        contains ~msg:"the dry run printed its ordinary summary"
+          ~sub:"calc: 6 passed" out;
+        contains
+          ~msg:"survivor section, opened before the loop knew their count"
+          ~sub:
+            "\n\n\
+             ─────────────────────── survivors ────────────────────────\n\
+            \  SURVIVED  "
+          out;
+        contains ~msg:"survivor head row" ~sub:"SURVIVED" out;
+        contains ~msg:"the mutated expression" ~sub:"  a + b \u{2192} a - b\n"
+          out;
+        contains ~msg:"the sentence that is the product"
+          ~sub:"2 tests ran this line and none failed:" out;
+        contains ~msg:"first witness" ~sub:"widen \u{203a} widen is nonzero" out;
+        contains ~msg:"second witness" ~sub:"widen \u{203a} widen is not 99" out;
         (* The block is the finding and the footer the remedy: no per-block
            command, no attribute to paste. *)
-        denies ~msg:"no arm line" out "    arm ";
-        denies ~msg:"no dismissal hint" out "[@mutate off";
+        not_contains ~msg:"no arm line" ~sub:"    arm " out;
+        not_contains ~msg:"no dismissal hint" ~sub:"[@mutate off" out;
         is_true ~msg:"the reproduce command, above the outcome, which is last"
           (String.ends_with
              ~suffix:
@@ -349,45 +324,48 @@ let loop_tests =
              out);
         (* The mutants no test of this suite evaluated are one row for
            their file: [orphan] and [crasher], by line. *)
-        says ~msg:"the never-reached section, after the survivors' closing rule"
-          out
-          "──────────────────────────────────────────────────────────\n\n\
-           ─────────────────── never reached (2) ────────────────────\n\
-          \  2  test/instr/loop/subject.ml   lines 21, 27\n\
-           ──────────────────────────────────────────────────────────\n\n\
-           reproduce: ";
-        denies ~msg:"no block per unreached mutant" out "UNREACHED";
+        contains
+          ~msg:"the never-reached section, after the survivors' closing rule"
+          ~sub:
+            "──────────────────────────────────────────────────────────\n\n\
+             ─────────────────── never reached (2) ────────────────────\n\
+            \  2  test/instr/loop/subject.ml   lines 21, 27\n\
+             ──────────────────────────────────────────────────────────\n\n\
+             reproduce: "
+          out;
+        not_contains ~msg:"no block per unreached mutant" ~sub:"UNREACHED" out;
         (* The killed mutant is not a survivor and not unreached. *)
         equal ~msg:"only one block" int 1
-          (List.length
-             (List.filter
-                (fun line -> has_sub line "  SURVIVED  ")
-                (String.split_on_char '\n' out))));
+          (List.length (lines_with ~sub:"  SURVIVED  " out)));
     test "a dismissed mutant is in no block and no count" (fun () ->
         let _, out, _ = spawn ~args:[ mutate ] [] in
         (* The [green] suite runs the [@mutate off] site and pins nothing
            about it, so without the dismissal it would be a second
            survivor and a third reached mutant. *)
-        says ~msg:"the reached count leaves it out" out
-          "mutants: 1 survived of 2 reached by this suite, 1 killed, 2 never \
-           reached\n";
-        says ~msg:"and so does the never-reached row" out "   lines 21, 27\n";
-        denies ~msg:"no block for the dismissed line" out
-          (List.nth (Lazy.force catalogue) 4));
+        contains ~msg:"the reached count leaves it out"
+          ~sub:
+            "mutants: 1 survived of 2 reached by this suite, 1 killed, 2 never \
+             reached\n"
+          out;
+        contains ~msg:"and so does the never-reached row"
+          ~sub:"   lines 21, 27\n" out;
+        not_contains ~msg:"no block for the dismissed line"
+          ~sub:(List.nth (Lazy.force catalogue) 4)
+          out);
     test "the survivor block quotes the mutated source line" (fun () ->
         let _, out, _ = spawn ~args:[ mutate ] [] in
-        says ~msg:"excerpt row" out
-          "\n      18 \u{2502} let widen a b = a + b\n");
+        contains ~msg:"excerpt row"
+          ~sub:"\n      18 \u{2502} let widen a b = a + b\n" out);
     test "the reproduce command spells the flag that arms the survivor"
       (fun () ->
-        let _, out, _ = spawn ~args:[ mutate ] [ "INSIDE_DUNE=1" ] in
-        says ~msg:"the backend flag, before the target" out
-          "reproduce: dune exec --instrument-with ppx_windtrap.mutate ";
-        says
+        let _, out, _ = spawn ~args:[ mutate ] [ ("INSIDE_DUNE", "1") ] in
+        contains ~msg:"the backend flag, before the target"
+          ~sub:"reproduce: dune exec --instrument-with ppx_windtrap.mutate " out;
+        contains
           ~msg:"and --arm after the separator, with the survivor's identifier"
-          out
-          (" -- --arm " ^ mutant_named "sub" ^ "\n");
-        denies ~msg:"no placeholder is left to fill" out "<id>";
+          ~sub:(" -- --arm " ^ mutant_named "sub" ^ "\n")
+          out;
+        not_contains ~msg:"no placeholder is left to fill" ~sub:"<id>" out;
         (* The footer is completed and pasted back rather than
            pattern-matched: the identifier the report prints has to be one
            the runtime's own selector grammar resolves, and the only proof
@@ -395,49 +373,47 @@ let loop_tests =
         let arm = reproduce_arm_of out in
         let code, armed, _ = spawn ~args:arm [] in
         equal ~msg:"the armed run's exit code (this mutant survives)" int 0 code;
-        says ~msg:"the pasted line armed the survivor" armed
-          "armed: a + b \u{2192} a - b");
+        contains ~msg:"the pasted line armed the survivor"
+          ~sub:"armed: a + b \u{2192} a - b" armed);
     test "a filtered run's command arms the mutant under that filter" (fun () ->
         (* A survivor of a narrowed run survived that selection only, and a
            test left out of it may kill the mutant: the command restates
            the filter, and pasted whole it runs the same selection. *)
         let _, out, _ =
-          spawn ~args:[ mutate; "-f"; "widen" ] [ "INSIDE_DUNE=1" ]
+          spawn ~args:[ mutate; "-f"; "widen" ] [ ("INSIDE_DUNE", "1") ]
         in
-        says ~msg:"the selection scopes the summary" out
-          "reached by the 2 selected tests";
-        says ~msg:"and rides the command" out
-          ("test/instr/loop/suite_main.exe -- --arm " ^ mutant_named "sub"
-         ^ " -f 'widen'\n");
+        contains ~msg:"the selection scopes the summary"
+          ~sub:"reached by the 2 selected tests" out;
+        contains ~msg:"and rides the command"
+          ~sub:
+            ("test/instr/loop/suite_main.exe -- --arm " ^ mutant_named "sub"
+           ^ " -f 'widen'\n")
+          out;
         let _, out, _ = spawn ~args:[ mutate; "-f"; "widen" ] [] in
         let code, armed, err =
           spawn ~exe:"/bin/sh" ~args:[ "-c"; reproduce_command out ] []
         in
         equal ~msg:"the shell found the executable" text "" err;
         equal ~msg:"the armed run's exit code (this mutant survives)" int 0 code;
-        says ~msg:"the pasted line armed the survivor" armed
-          "armed: a + b \u{2192} a - b";
-        says ~msg:"under the run's selection" armed "2 passed");
+        contains ~msg:"the pasted line armed the survivor"
+          ~sub:"armed: a + b \u{2192} a - b" armed;
+        contains ~msg:"under the run's selection" ~sub:"2 passed" armed);
     test "the command runs as pasted from a path a shell would split" (fun () ->
         (* The executable's path goes through the shell's quoting, and the
            line is handed to a shell whole, as a reader's paste is. *)
-        let dir = Filename.concat scratch_dir "a suite's dir" in
-        (try Sys.mkdir dir 0o755 with Sys_error _ -> ());
+        let root = temp_dir () in
+        let dir = Filename.concat root "a suite's dir" in
+        Sys.mkdir dir 0o755;
         let exe = Filename.concat dir "suite main.exe" in
-        (* A fresh file each time: this test runs again in forks of this
-           process, and an executable rewritten in place after it ran is
-           one macOS refuses to run. *)
-        (try Sys.remove exe with Sys_error _ -> ());
-        let oc = open_out_bin exe in
-        output_string oc (read_file suite_exe);
-        close_out oc;
+        Out_channel.with_open_bin exe (fun oc ->
+            output_string oc (read_file suite_exe));
         Unix.chmod exe 0o755;
         (* Narrowed, so that this copy leaves no verdict file behind. *)
         let _, out, _ = spawn ~exe ~args:[ mutate; "-f"; "widen" ] [] in
         let command = reproduce_command out in
         equal ~msg:"the path is one quoted word" string
           ("'"
-          ^ Filename.concat scratch_dir "a suite'\\''s dir/suite main.exe'"
+          ^ Filename.concat root "a suite'\\''s dir/suite main.exe'"
           ^ " --arm " ^ mutant_named "sub" ^ " -f 'widen'")
           command;
         let code, armed, err =
@@ -445,53 +421,58 @@ let loop_tests =
         in
         equal ~msg:"the shell found the executable" text "" err;
         equal ~msg:"the armed run's exit code (this mutant survives)" int 0 code;
-        says ~msg:"the pasted line armed the survivor" armed
-          "armed: a + b \u{2192} a - b";
+        contains ~msg:"the pasted line armed the survivor"
+          ~sub:"armed: a + b \u{2192} a - b" armed;
         let _, out, _ =
-          spawn ~exe ~args:[ mutate; "-f"; "widen" ] [ "INSIDE_DUNE=1" ]
+          spawn ~exe ~args:[ mutate; "-f"; "widen" ] [ ("INSIDE_DUNE", "1") ]
         in
-        says ~msg:"dune's target is quoted the same way" out
-          ("suite main.exe' -- --arm " ^ mutant_named "sub" ^ " -f 'widen'\n");
-        says ~msg:"as one word after the backend" out
-          "reproduce: dune exec --instrument-with ppx_windtrap.mutate '");
+        contains ~msg:"dune's target is quoted the same way"
+          ~sub:
+            ("suite main.exe' -- --arm " ^ mutant_named "sub" ^ " -f 'widen'\n")
+          out;
+        contains ~msg:"as one word after the backend"
+          ~sub:"reproduce: dune exec --instrument-with ppx_windtrap.mutate '"
+          out);
     test "every survivor gets a block" (fun () ->
-        let _, out, _ = spawn ~args:[ mutate ] [ "MUTATE_FIXTURE=capped" ] in
-        says ~msg:"the first block" out
-          "SURVIVED  test/instr/loop/subject.ml:18";
-        says ~msg:"then the second, one blank line under it" out
-          "\n\n  SURVIVED  test/instr/loop/subject.ml:21";
-        says ~msg:"and the summary counts both" out
-          "mutants: 2 survived of 3 reached by this suite, 1 killed, 1 never \
-           reached\n");
+        let _, out, _ =
+          spawn ~args:[ mutate ] [ ("MUTATE_FIXTURE", "capped") ]
+        in
+        contains ~msg:"the first block"
+          ~sub:"SURVIVED  test/instr/loop/subject.ml:18" out;
+        contains ~msg:"then the second, one blank line under it"
+          ~sub:"\n\n  SURVIVED  test/instr/loop/subject.ml:21" out;
+        contains ~msg:"and the summary counts both"
+          ~sub:
+            "mutants: 2 survived of 3 reached by this suite, 1 killed, 1 never \
+             reached\n"
+          out);
     test
       "survivors print in the catalogue's order, however many tests reach them"
       (fun () ->
         (* A block prints when its child ends, so the order is the one
            the children run in: [sub], which one test reaches, before
            [widen], which two do. *)
-        let _, out, _ = spawn ~args:[ mutate ] [ "MUTATE_FIXTURE=held" ] in
-        let at sub =
-          let rec go i =
-            if i + String.length sub > String.length out then
-              failf "%S is not in the report:\n%s" sub out
-            else if String.sub out i (String.length sub) = sub then i
-            else go (i + 1)
-          in
-          go 0
-        in
-        is_true ~msg:"the survivor one test reaches prints first"
-          (at ("SURVIVED  " ^ mutant_named "add")
-          < at ("SURVIVED  " ^ mutant_named "sub"));
-        says ~msg:"the first's sentence" out
-          "1 test ran this line and did not fail:";
-        says ~msg:"the second's" out "2 tests ran this line and none failed:";
-        says ~msg:"the command arms the first one printed" out
-          ("\nreproduce: " ^ suite_exe ^ " --arm " ^ mutant_named "add" ^ "\n"));
+        let _, out, _ = spawn ~args:[ mutate ] [ ("MUTATE_FIXTURE", "held") ] in
+        in_order ~msg:"the survivor one test reaches prints first"
+          ~subs:
+            [
+              "SURVIVED  " ^ mutant_named "add";
+              "SURVIVED  " ^ mutant_named "sub";
+            ]
+          out;
+        contains ~msg:"the first's sentence"
+          ~sub:"1 test ran this line and did not fail:" out;
+        contains ~msg:"the second's"
+          ~sub:"2 tests ran this line and none failed:" out;
+        contains ~msg:"the command arms the first one printed"
+          ~sub:
+            ("\nreproduce: " ^ suite_exe ^ " --arm " ^ mutant_named "add" ^ "\n")
+          out);
     test
       "a loop that kills everything it reaches, and reaches everything, is two \
        lines" (fun () ->
         let code, out, err =
-          spawn ~args:[ mutate ] [ "MUTATE_FIXTURE=pinned" ]
+          spawn ~args:[ mutate ] [ ("MUTATE_FIXTURE", "pinned") ]
         in
         equal ~msg:"exit code" int 0 code;
         equal ~msg:"stderr" text "" err;
@@ -502,7 +483,7 @@ let loop_tests =
             equal ~msg:"then the outcome" string
               "mutants: 4 reached by this suite, 4 killed" outcome
         | _ -> failf "not two lines:\n%s" out);
-        denies ~msg:"no rule without a survivor" out "\u{2500}");
+        not_contains ~msg:"no rule without a survivor" ~sub:"\u{2500}" out);
   ]
 
 (* The reach map's boundaries. Every claim here has a wrong answer the
@@ -515,7 +496,7 @@ let reach_tests =
        right side of a test boundary" (fun () ->
         (try Sys.remove verdict_path with Sys_error _ -> ());
         let code, out, err =
-          spawn ~args:[ mutate ] [ "MUTATE_FIXTURE=boundary" ]
+          spawn ~args:[ mutate ] [ ("MUTATE_FIXTURE", "boundary") ]
         in
         equal ~msg:"exit code" int 0 code;
         equal ~msg:"stderr" text "" err;
@@ -525,11 +506,13 @@ let reach_tests =
            permanent false survivor. The report counts only what was
            reached; the verdict file, which the merge reads, names the
            two as unreached. *)
-        says ~msg:"the two out-of-test sites are not reached" out
-          "mutants: 1 survived of 2 reached by this suite, 1 killed, 2 never \
-           reached\n";
-        says ~msg:"and are the never-reached row's two lines" out
-          "\n  2  test/instr/loop/subject.ml   lines 21, 27\n";
+        contains ~msg:"the two out-of-test sites are not reached"
+          ~sub:
+            "mutants: 1 survived of 2 reached by this suite, 1 killed, 2 never \
+             reached\n"
+          out;
+        contains ~msg:"and are the never-reached row's two lines"
+          ~sub:"\n  2  test/instr/loop/subject.ml   lines 21, 27\n" out;
         (match V.load verdict_path with
         | Error e -> failf "verdict file unreadable: %a" V.pp_error e
         | Ok (verdicts, _) ->
@@ -541,23 +524,27 @@ let reach_tests =
                    else None)
                  (V.records verdicts)));
         equal ~msg:"exactly one survivor" int 1
-          (List.length
-             (List.filter
-                (fun line -> has_sub line "  SURVIVED  ")
-                (String.split_on_char '\n' out)));
+          (List.length (lines_with ~sub:"  SURVIVED  " out));
         (* The witness list is the whole product of the run: the first and
            third tests reach the line, the second, fourth and fifth do
            not, and a retried first test contributes one window. *)
-        says ~msg:"the count" out "2 tests ran this line and none failed:";
-        says ~msg:"the first test" out
-          "widen \u{203a} first reaches widen, after a retry";
-        says ~msg:"the third test" out "widen \u{203a} third reaches widen";
-        denies ~msg:"not the second" out "widen \u{203a} second reaches sub";
-        denies ~msg:"not the fourth" out "widen \u{203a} fourth reaches sub";
-        denies ~msg:"not the fifth" out "widen \u{203a} fifth reaches sub";
-        says ~msg:"summary" out
-          "mutants: 1 survived of 2 reached by this suite, 1 killed, 2 never \
-           reached\n");
+        contains ~msg:"the count" ~sub:"2 tests ran this line and none failed:"
+          out;
+        contains ~msg:"the first test"
+          ~sub:"widen \u{203a} first reaches widen, after a retry" out;
+        contains ~msg:"the third test" ~sub:"widen \u{203a} third reaches widen"
+          out;
+        not_contains ~msg:"not the second"
+          ~sub:"widen \u{203a} second reaches sub" out;
+        not_contains ~msg:"not the fourth"
+          ~sub:"widen \u{203a} fourth reaches sub" out;
+        not_contains ~msg:"not the fifth"
+          ~sub:"widen \u{203a} fifth reaches sub" out;
+        contains ~msg:"summary"
+          ~sub:
+            "mutants: 1 survived of 2 reached by this suite, 1 killed, 2 never \
+             reached\n"
+          out);
     test "a tag selection still selects the child's tests" (fun () ->
         (* [--tag gated] is the one selection a pruned tree cannot
            express: tags are not in a path. A child that dropped the
@@ -565,20 +552,25 @@ let reach_tests =
            reports a deterministic suite as non-deterministic. *)
         let code, out, err =
           spawn ~args:[ mutate ]
-            [ "MUTATE_FIXTURE=tagged"; "WINDTRAP_TAG=gated" ]
+            [ ("MUTATE_FIXTURE", "tagged"); ("WINDTRAP_TAG", "gated") ]
         in
         equal ~msg:"exit code" int 0 code;
-        denies ~msg:"the probe agreed" err "not deterministic";
-        says ~msg:"the dry run's five tests" out "calc: 5 passed";
-        says ~msg:"and the loop scored them, against the five it selected" out
-          "mutants: 1 survived of 2 reached by the 5 selected tests, 1 killed, \
-           2 never reached\n";
-        says ~msg:"over the same witnesses as the untagged suite" out
-          "2 tests ran this line and none failed:";
+        not_contains ~msg:"the probe agreed" ~sub:"not deterministic" err;
+        contains ~msg:"the dry run's five tests" ~sub:"calc: 5 passed" out;
+        contains ~msg:"and the loop scored them, against the five it selected"
+          ~sub:
+            "mutants: 1 survived of 2 reached by the 5 selected tests, 1 \
+             killed, 2 never reached\n"
+          out;
+        contains ~msg:"over the same witnesses as the untagged suite"
+          ~sub:"2 tests ran this line and none failed:" out;
         (* A tag selection is a selection: the run is not the suite's
            default predicate, so its verdicts stay in the process. *)
-        says ~msg:"and a tag-selected run persists nothing, said on stderr" err
-          "windtrap: verdicts not saved: this run's selection narrows the suite");
+        contains ~msg:"and a tag-selected run persists nothing, said on stderr"
+          ~sub:
+            "windtrap: verdicts not saved: this run's selection narrows the \
+             suite"
+          err);
   ]
 
 (* Child hygiene: a mutation child leaves through [Unix._exit] and nothing
@@ -599,19 +591,18 @@ let no_trace_tests =
   [
     test "no at_exit handler runs in a mutation child, fatal exception included"
       (fun () ->
-        incr counter;
-        let log =
-          Filename.concat scratch_dir ("atexit" ^ string_of_int !counter)
-        in
+        let log = Filename.concat (temp_dir ()) "atexit" in
         let code, out, err =
           spawn ~args:[ mutate ]
-            [ "MUTATE_FIXTURE=fatal"; "MUTATE_ATEXIT_LOG=" ^ log ]
+            [ ("MUTATE_FIXTURE", "fatal"); ("MUTATE_ATEXIT_LOG", log) ]
         in
         equal ~msg:"the parent completed" int 0 code;
         equal ~msg:"stderr" text "" err;
-        says ~msg:"the fatal child scored as a crash kill, the report whole" out
-          "mutants: 1 survived of 3 reached by this suite, 2 killed, 1 never \
-           reached\n";
+        contains ~msg:"the fatal child scored as a crash kill, the report whole"
+          ~sub:
+            "mutants: 1 survived of 3 reached by this suite, 2 killed, 1 never \
+             reached\n"
+          out;
         let lines =
           List.filter
             (fun l -> l <> "")
@@ -659,14 +650,15 @@ let verdict_file_tests =
             equal ~msg:"the kill is the [add] mutant" string
               (mutant_named "add")
               (fst (List.hd killed));
-            says ~msg:"the survivor names its witnesses"
-              (snd (List.hd survived))
-              "widen > widen is nonzero");
+            contains ~msg:"the survivor names its witnesses"
+              ~sub:"widen > widen is nonzero"
+              (snd (List.hd survived)));
     test "a narrowed run reports in full but persists nothing" (fun () ->
         (try Sys.remove verdict_path with Sys_error _ -> ());
         let code, _, err = spawn ~args:[ mutate ] [] in
         equal ~msg:"the full run's exit code" int 0 code;
-        denies ~msg:"a full run saves without comment" err "verdicts not saved";
+        not_contains ~msg:"a full run saves without comment"
+          ~sub:"verdicts not saved" err;
         let saved = read_file verdict_path in
         is_true ~msg:"and wrote the file" (saved <> "");
         (* The selection reaches only [sub], whose mutant dies, so the
@@ -677,9 +669,13 @@ let verdict_file_tests =
            skips the write even where the scope alone would still save. *)
         let code, out, err = spawn ~args:[ mutate; "-f"; "calc" ] [] in
         equal ~msg:"the narrowed run still completes" int 0 code;
-        says ~msg:"and still reports, against its selection" out
-          "mutants: 1 reached by the 3 selected tests, 1 killed, 3 never reached\n";
-        denies ~msg:"a clean report has nothing to reproduce" out "reproduce:";
+        contains ~msg:"and still reports, against its selection"
+          ~sub:
+            "mutants: 1 reached by the 3 selected tests, 1 killed, 3 never \
+             reached\n"
+          out;
+        not_contains ~msg:"a clean report has nothing to reproduce"
+          ~sub:"reproduce:" out;
         (* Windtrap's own word, so on stderr: the report ends on its
            [mutants:] line. *)
         equal ~msg:"but says what it did not persist, and nothing else" text
@@ -687,7 +683,7 @@ let verdict_file_tests =
            suite, and a partial run's verdicts would stand in the project \
            merge as the whole.\n"
           err;
-        denies ~msg:"never in the report" out "verdicts not saved";
+        not_contains ~msg:"never in the report" ~sub:"verdicts not saved" out;
         equal ~msg:"the canonical file is byte-identical" text saved
           (read_file verdict_path));
     test "a prefix-scoped run still writes: its records are project-true"
@@ -695,8 +691,8 @@ let verdict_file_tests =
         (try Sys.remove verdict_path with Sys_error _ -> ());
         let code, _, err = spawn ~args:[ mutate ] [] in
         equal ~msg:"exit code" int 0 code;
-        denies ~msg:"the scope narrows the mutants, not the tests" err
-          "verdicts not saved";
+        not_contains ~msg:"the scope narrows the mutants, not the tests"
+          ~sub:"verdicts not saved" err;
         is_true ~msg:"so the file was written" (Sys.file_exists verdict_path));
   ]
 
@@ -706,13 +702,15 @@ let crash_tests =
       (fun () ->
         (try Sys.remove verdict_path with Sys_error _ -> ());
         let code, out, err =
-          spawn ~args:[ mutate ] [ "MUTATE_FIXTURE=crash" ]
+          spawn ~args:[ mutate ] [ ("MUTATE_FIXTURE", "crash") ]
         in
         equal ~msg:"the parent survives its child" int 0 code;
         equal ~msg:"stderr" text "" err;
-        says ~msg:"both kills counted, one survivor still reported" out
-          "mutants: 1 survived of 3 reached by this suite, 2 killed, 1 never \
-           reached\n";
+        contains ~msg:"both kills counted, one survivor still reported"
+          ~sub:
+            "mutants: 1 survived of 3 reached by this suite, 2 killed, 1 never \
+             reached\n"
+          out;
         match V.load verdict_path with
         | Error e -> failf "verdict file unreadable: %a" V.pp_error e
         | Ok (verdicts, _) ->
@@ -740,10 +738,12 @@ let crash_tests =
 let refusal_tests =
   [
     test "a red dry run refuses to score anything" (fun () ->
-        let code, _, err = spawn ~args:[ mutate ] [ "MUTATE_FIXTURE=red" ] in
+        let code, _, err =
+          spawn ~args:[ mutate ] [ ("MUTATE_FIXTURE", "red") ]
+        in
         equal ~msg:"exit code" int 1 code;
-        says ~msg:"the reason" err "the dry run is red";
-        denies ~msg:"no report" err "mutants: ");
+        contains ~msg:"the reason" ~sub:"the dry run is red" err;
+        not_contains ~msg:"no report" ~sub:"mutants: " err);
     test "a suite that does not agree with its own re-run is refused, by name"
       (fun () ->
         (* The probe's whole job. The fixture passes in the process that
@@ -751,21 +751,21 @@ let refusal_tests =
            disagreement is the one the loop would otherwise blame on the
            mutants. *)
         let code, out, err =
-          spawn ~args:[ mutate ] [ "MUTATE_FIXTURE=flaky" ]
+          spawn ~args:[ mutate ] [ ("MUTATE_FIXTURE", "flaky") ]
         in
         equal ~msg:"exit code" int 1 code;
-        says ~msg:"the finding" err "the suite is not deterministic";
-        says ~msg:"the dry run's numbers" err
-          "the dry run executed 4 test(s), skipping 0 and failing none";
-        says ~msg:"the probe's" err
-          "the probe executed 4, skipping 0 and failing 1";
-        says ~msg:"and the test that disagreed, by name" err
-          "flaky \u{203a} passes where it was measured";
-        denies ~msg:"no number was produced" out "mutants: ");
+        contains ~msg:"the finding" ~sub:"the suite is not deterministic" err;
+        contains ~msg:"the dry run's numbers"
+          ~sub:"the dry run executed 4 test(s), skipping 0 and failing none" err;
+        contains ~msg:"the probe's"
+          ~sub:"the probe executed 4, skipping 0 and failing 1" err;
+        contains ~msg:"and the test that disagreed, by name"
+          ~sub:"flaky \u{203a} passes where it was measured" err;
+        not_contains ~msg:"no number was produced" ~sub:"mutants: " out);
     test "a re-run that only skips differently is refused on the skip count"
       (fun () ->
         let code, out, err =
-          spawn ~args:[ mutate ] [ "MUTATE_FIXTURE=skippy" ]
+          spawn ~args:[ mutate ] [ ("MUTATE_FIXTURE", "skippy") ]
         in
         equal ~msg:"exit code" int 1 code;
         equal ~msg:"both runs' counts, then why no number follows" text
@@ -774,14 +774,14 @@ let refusal_tests =
            skipping 1 and failing 0. Mutation results over a non-deterministic \
            suite are not a weaker number, they are not a number\n"
           err;
-        denies ~msg:"no number was produced" out "mutants: ");
+        not_contains ~msg:"no number was produced" ~sub:"mutants: " out);
     test "a selection that matched nothing is refused, never scored" (fun () ->
         let code, out, err = spawn ~args:[ mutate; "-f"; "no-such-test" ] [] in
         (* Never 2: "nothing ran" is a statement about a test selection
            and a mutation run does not make one. *)
         equal ~msg:"exit code" int 1 code;
-        says ~msg:"the reason" err "nothing to mutate";
-        denies ~msg:"and no number was produced" out "mutants: ");
+        contains ~msg:"the reason" ~sub:"nothing to mutate" err;
+        not_contains ~msg:"and no number was produced" ~sub:"mutants: " out);
     test "a truthy WINDTRAP_MUTATE is the bare flag" (fun () ->
         (* [1] is what a CI recipe sets for a whole tree at once: every
            mutant this executable catalogues. Under --instrument-with
@@ -795,19 +795,21 @@ let refusal_tests =
               "the core is instrumented, so the bare flag would survey its \
                mutants too"
             ();
-        let code, out, _ = spawn [ "WINDTRAP_MUTATE=1" ] in
+        let code, out, _ = spawn [ ("WINDTRAP_MUTATE", "1") ] in
         equal ~msg:"exit code" int 0 code;
-        says ~msg:"the whole fixture catalogue, as the scope reaches it" out
-          "mutants: 1 survived of 2 reached by this suite, 1 killed, 2 never \
-           reached\n");
+        contains ~msg:"the whole fixture catalogue, as the scope reaches it"
+          ~sub:
+            "mutants: 1 survived of 2 reached by this suite, 1 killed, 2 never \
+             reached\n"
+          out);
     test "a falsy WINDTRAP_MUTATE is an ordinary run" (fun () ->
         (* The mirror reads the boolean vocabulary first: [off] asks for
            nothing, exactly as unset does, so a CI recipe can turn the
            loop off without unsetting anything. *)
-        let code, out, err = spawn [ "WINDTRAP_MUTATE=off" ] in
+        let code, out, err = spawn [ ("WINDTRAP_MUTATE", "off") ] in
         equal ~msg:"exit code" int 0 code;
-        says ~msg:"the ordinary transcript" out "calc: 6 passed";
-        denies ~msg:"no mutation line" out "mutants:";
+        contains ~msg:"the ordinary transcript" ~sub:"calc: 6 passed" out;
+        not_contains ~msg:"no mutation line" ~sub:"mutants:" out;
         equal ~msg:"stderr" string "" err);
     test "asking for the loop and an armed mutant at once is refused" (fun () ->
         (* A usage error, before any run: the loop arms each mutant
@@ -816,16 +818,18 @@ let refusal_tests =
           spawn ~args:[ mutate; "--arm"; mutant_named "add" ] []
         in
         equal ~msg:"exit code" int 2 code;
-        says ~msg:"both flags named" err
-          "options '--mutate' and '--arm' cannot be combined";
-        denies ~msg:"and nothing ran" out "calc: ");
+        contains ~msg:"both flags named"
+          ~sub:"options '--mutate' and '--arm' cannot be combined" err;
+        not_contains ~msg:"and nothing ran" ~sub:"calc: " out);
     test "the same refusal when one of them is the mirror" (fun () ->
         let code, _, err =
-          spawn ~args:[ "--arm"; mutant_named "add" ] [ "WINDTRAP_MUTATE=1" ]
+          spawn
+            ~args:[ "--arm"; mutant_named "add" ]
+            [ ("WINDTRAP_MUTATE", "1") ]
         in
         equal ~msg:"exit code" int 2 code;
-        says ~msg:"both flags named" err
-          "options '--mutate' and '--arm' cannot be combined");
+        contains ~msg:"both flags named"
+          ~sub:"options '--mutate' and '--arm' cannot be combined" err);
     test
       "an armed identifier stale within a file this build catalogues is refused"
       (fun () ->
@@ -835,10 +839,11 @@ let refusal_tests =
            silently ignored arming becomes a false survivor. *)
         let code, out, err = spawn ~args:[ "--arm"; stale_id () ] [] in
         equal ~msg:"exit code" int 1 code;
-        says ~msg:"the identifier" err (stale_id ());
-        says ~msg:"the diagnosis" err "no such mutation site";
-        says ~msg:"the file's real sites are named" err (mutant_named "add");
-        denies ~msg:"and the suite did not run" out "calc: ");
+        contains ~msg:"the identifier" ~sub:(stale_id ()) err;
+        contains ~msg:"the diagnosis" ~sub:"no such mutation site" err;
+        contains ~msg:"the file's real sites are named"
+          ~sub:(mutant_named "add") err;
+        not_contains ~msg:"and the suite did not run" ~sub:"calc: " out);
   ]
 
 let armed_tests =
@@ -852,15 +857,16 @@ let armed_tests =
         equal ~msg:"the announcement is the first line" string
           ("mutant " ^ mutant_named "add" ^ " armed: a - b \u{2192} a + b")
           first;
-        says ~msg:"the failure block's title says a mutant is armed" out
-          " (mutant armed)\n";
-        says ~msg:"and the block ends on its facts" out
-          "    expected  6\n    actual    14\n\n  FAIL  ";
-        denies ~msg:"no block offers a rerun" out "rerun:";
-        says ~msg:"the closing line" out "mutant killed.";
-        denies ~msg:"a kill is the whole verdict" out "mutant survived";
-        denies ~msg:"and the site was plainly evaluated" out
-          "mutant not evaluated");
+        contains ~msg:"the failure block's title says a mutant is armed"
+          ~sub:" (mutant armed)\n" out;
+        contains ~msg:"and the block ends on its facts"
+          ~sub:"    expected  6\n    actual    14\n\n  FAIL  " out;
+        not_contains ~msg:"no block offers a rerun" ~sub:"rerun:" out;
+        contains ~msg:"the closing line" ~sub:"mutant killed." out;
+        not_contains ~msg:"a kill is the whole verdict" ~sub:"mutant survived"
+          out;
+        not_contains ~msg:"and the site was plainly evaluated"
+          ~sub:"mutant not evaluated" out);
     test "an armed run whose selection matched nothing claims no kill"
       (fun () ->
         (* [mutant killed.] is a verdict, and a verdict is never an exit
@@ -872,12 +878,12 @@ let armed_tests =
           spawn ~args:[ "--arm"; mutant_named "add"; "-f"; "no-such-test" ] []
         in
         equal ~msg:"the runner's own 'nothing ran' code" int 2 code;
-        says ~msg:"the mutant was still announced" out " armed: ";
-        denies ~msg:"but nothing died" out "mutant killed.";
-        denies ~msg:"no survivor claim over a run that made none" out
-          "mutant survived";
-        denies ~msg:"and no not-evaluated claim either" out
-          "mutant not evaluated");
+        contains ~msg:"the mutant was still announced" ~sub:" armed: " out;
+        not_contains ~msg:"but nothing died" ~sub:"mutant killed." out;
+        not_contains ~msg:"no survivor claim over a run that made none"
+          ~sub:"mutant survived" out;
+        not_contains ~msg:"and no not-evaluated claim either"
+          ~sub:"mutant not evaluated" out);
     test "an armed mutant that survives says so, with the evaluation count"
       (fun () ->
         (* Both weak tests run the armed line once each, so the count is a
@@ -886,15 +892,17 @@ let armed_tests =
         let code, out, _ =
           spawn
             ~args:[ "--arm"; List.nth (Lazy.force catalogue) 1 ]
-            [ "MUTATE_FIXTURE=weak" ]
+            [ ("MUTATE_FIXTURE", "weak") ]
         in
         equal ~msg:"exit code" int 0 code;
-        says ~msg:"the announcement" out "armed: a + b \u{2192} a - b";
-        says ~msg:"the suite still passed" out "calc: 2 passed";
-        says ~msg:"the closing line disambiguates the green" out
-          "mutant survived: the armed site was evaluated 2 times and no test \
-           failed.\n";
-        denies ~msg:"nothing killed" out "mutant killed.");
+        contains ~msg:"the announcement" ~sub:"armed: a + b \u{2192} a - b" out;
+        contains ~msg:"the suite still passed" ~sub:"calc: 2 passed" out;
+        contains ~msg:"the closing line disambiguates the green"
+          ~sub:
+            "mutant survived: the armed site was evaluated 2 times and no test \
+             failed.\n"
+          out;
+        not_contains ~msg:"nothing killed" ~sub:"mutant killed." out);
     test "a site evaluated once is evaluated 1 time" (fun () ->
         let code, out, _ =
           spawn
@@ -905,12 +913,14 @@ let armed_tests =
                 "-f";
                 "widen is nonzero";
               ]
-            [ "MUTATE_FIXTURE=weak" ]
+            [ ("MUTATE_FIXTURE", "weak") ]
         in
         equal ~msg:"exit code" int 0 code;
-        says ~msg:"the one selected test ran the line once" out
-          "mutant survived: the armed site was evaluated 1 time and no test \
-           failed.\n");
+        contains ~msg:"the one selected test ran the line once"
+          ~sub:
+            "mutant survived: the armed site was evaluated 1 time and no test \
+             failed.\n"
+          out);
     test "an armed run whose selection never ran the site says so" (fun () ->
         (* The other green: the suite passed and proved nothing, because
            the selection deselected every test that reaches the line. The
@@ -923,11 +933,12 @@ let armed_tests =
             []
         in
         equal ~msg:"the selected tests passed" int 0 code;
-        says ~msg:"the mutant was announced" out "armed: a + b \u{2192} a - b";
-        says ~msg:"the closing line blames the selection" out
-          "mutant not evaluated: no selected test ran the site.";
-        denies ~msg:"no kill" out "mutant killed.";
-        denies ~msg:"and no survivor claim" out "mutant survived");
+        contains ~msg:"the mutant was announced"
+          ~sub:"armed: a + b \u{2192} a - b" out;
+        contains ~msg:"the closing line blames the selection"
+          ~sub:"mutant not evaluated: no selected test ran the site." out;
+        not_contains ~msg:"no kill" ~sub:"mutant killed." out;
+        not_contains ~msg:"and no survivor claim" ~sub:"mutant survived" out);
     test "a site evaluated only before arming counts as not evaluated"
       (fun () ->
         (* [boundary]'s module initialization evaluates [orphan] before
@@ -938,14 +949,15 @@ let armed_tests =
         let code, out, _ =
           spawn
             ~args:[ "--arm"; List.nth (Lazy.force catalogue) 2 ]
-            [ "MUTATE_FIXTURE=boundary" ]
+            [ ("MUTATE_FIXTURE", "boundary") ]
         in
         equal ~msg:"the suite passed" int 0 code;
-        says ~msg:"the mutant was announced" out "armed: a + b \u{2192} a - b";
-        says ~msg:"and the module-load window is not billed to the run" out
-          "mutant not evaluated: no selected test ran the site.";
-        denies ~msg:"no survivor claim over an unarmed window" out
-          "mutant survived");
+        contains ~msg:"the mutant was announced"
+          ~sub:"armed: a + b \u{2192} a - b" out;
+        contains ~msg:"and the module-load window is not billed to the run"
+          ~sub:"mutant not evaluated: no selected test ran the site." out;
+        not_contains ~msg:"no survivor claim over an unarmed window"
+          ~sub:"mutant survived" out);
   ]
 
 (* Guarantee 12's read-only clause, through the runner it exists for.
@@ -965,16 +977,14 @@ let inline_exe =
   Filename.concat (Filename.concat exe_dir "inline") "runner_main.exe"
 
 let staged_source_dir () =
-  let root = Filename.concat scratch_dir ("law16d" ^ string_of_int !counter) in
-  (try Sys.mkdir root 0o755 with Sys_error _ -> ());
+  let root = temp_dir () in
   let contents =
     read_file
       (Filename.concat exe_dir (Filename.concat "inline" "inline_armed.ml"))
   in
   if contents = "" then fail "the inline fixture source was not found";
-  let oc = open_out_bin (Filename.concat root "inline_armed.ml") in
-  output_string oc contents;
-  close_out oc;
+  Out_channel.with_open_bin (Filename.concat root "inline_armed.ml") (fun oc ->
+      output_string oc contents);
   root
 
 (* The two halves of the read-only clause fail independently — the recorders write no
@@ -987,7 +997,7 @@ let armed_inline () =
     spawn ~exe:inline_exe
       ~args:[ "inline-test-runner"; "inline_armed" ]
       ~cwd
-      [ "WINDTRAP_MUTATE_ARM=" ^ List.nth (Lazy.force catalogue) 1 ]
+      [ ("WINDTRAP_MUTATE_ARM", List.nth (Lazy.force catalogue) 1) ]
   in
   (cwd, code, out, err)
 
@@ -1004,8 +1014,9 @@ let read_only_tests =
           (Sys.file_exists (Filename.concat cwd "inline_armed.ml"));
         is_false ~msg:"and nothing was written"
           (Sys.file_exists (Filename.concat cwd "inline_armed.ml.corrected"));
-        denies ~msg:"no promotion notice" err "wrote";
-        denies ~msg:"and none was even attempted" err "could not write");
+        not_contains ~msg:"no promotion notice" ~sub:"wrote" err;
+        not_contains ~msg:"and none was even attempted" ~sub:"could not write"
+          err);
     test
       "an armed inline mismatch is a plain failure, not a promotion-covered \
        pass" (fun () ->
@@ -1014,13 +1025,14 @@ let read_only_tests =
            output an armed mutant produced on purpose: dune would record
            the partition as passed and offer a promotion. *)
         equal ~msg:"a mismatch is a plain failure" int 1 code;
-        says ~msg:"announced first" out "armed: a + b \u{2192} a - b";
-        says ~msg:"the mismatch is reported as a mismatch" out
-          "expect: mismatch";
-        says ~msg:"with the literal on one side" out "- 7";
-        says ~msg:"against the mutated output" out "+ -1";
-        denies ~msg:"and not as a merged-history CR" out "ran multiple times";
-        says ~msg:"the kill closes the loop" out "mutant killed.");
+        contains ~msg:"announced first" ~sub:"armed: a + b \u{2192} a - b" out;
+        contains ~msg:"the mismatch is reported as a mismatch"
+          ~sub:"expect: mismatch" out;
+        contains ~msg:"with the literal on one side" ~sub:"- 7" out;
+        contains ~msg:"against the mutated output" ~sub:"+ -1" out;
+        not_contains ~msg:"and not as a merged-history CR"
+          ~sub:"ran multiple times" out;
+        contains ~msg:"the kill closes the loop" ~sub:"mutant killed." out);
     test
       "a loop under the inline runner kills through its children and rewrites \
        nothing" (fun () ->
@@ -1036,13 +1048,14 @@ let read_only_tests =
         in
         equal ~msg:"the loop completed" int 0 code;
         equal ~msg:"stderr" text "" err;
-        says ~msg:"the dry run is the partition's ordinary transcript" out
-          "inline_armed: 1 passed";
-        says ~msg:"the child's mismatch killed the mutant" out
-          "mutants: 1 reached by this suite, 1 killed, 3 never reached\n";
+        contains ~msg:"the dry run is the partition's ordinary transcript"
+          ~sub:"inline_armed: 1 passed" out;
+        contains ~msg:"the child's mismatch killed the mutant"
+          ~sub:"mutants: 1 reached by this suite, 1 killed, 3 never reached\n"
+          out;
         is_false ~msg:"no child wrote a correction"
           (Sys.file_exists (Filename.concat cwd "inline_armed.ml.corrected"));
-        denies ~msg:"and none was attempted" err "correction for");
+        not_contains ~msg:"and none was attempted" ~sub:"correction for" err);
     test "the same partition is green and silent unarmed" (fun () ->
         let cwd = staged_source_dir () in
         let code, out, err =
@@ -1052,7 +1065,7 @@ let read_only_tests =
         in
         equal ~msg:"exit code" int 0 code;
         equal ~msg:"stderr" text "" err;
-        denies ~msg:"nothing armed" out " armed: ";
+        not_contains ~msg:"nothing armed" ~sub:" armed: " out;
         is_false ~msg:"no .corrected"
           (Sys.file_exists (Filename.concat cwd "inline_armed.ml.corrected")));
   ]
@@ -1082,8 +1095,8 @@ let runaway_tests =
         let elapsed = Unix.gettimeofday () -. started in
         equal ~msg:"exit code" int 0 code;
         equal ~msg:"stderr" text "" err;
-        says ~msg:"the mutant died" out
-          "mutants: 1 reached by this suite, 1 killed\n";
+        contains ~msg:"the mutant died"
+          ~sub:"mutants: 1 reached by this suite, 1 killed\n" out;
         is_true
           ~msg:
             (Printf.sprintf
@@ -1125,15 +1138,16 @@ let deadline_tests =
         (try Sys.remove verdict_path with Sys_error _ -> ());
         let started = Unix.gettimeofday () in
         let code, out, err =
-          spawn ~args:[ mutate ] [ "MUTATE_FIXTURE=block" ]
+          spawn ~args:[ mutate ] [ ("MUTATE_FIXTURE", "block") ]
         in
         let elapsed = Unix.gettimeofday () -. started in
         equal
           ~msg:"the run completes: a blocked child is a score, not a refusal"
           int 0 code;
         equal ~msg:"stderr" text "" err;
-        says ~msg:"the kill counted" out
-          "mutants: 1 reached by this suite, 1 killed, 3 never reached\n";
+        contains ~msg:"the kill counted"
+          ~sub:"mutants: 1 reached by this suite, 1 killed, 3 never reached\n"
+          out;
         is_true
           ~msg:
             (Printf.sprintf "the child's own deadline cut it short (%.1fs)"
@@ -1150,7 +1164,9 @@ let deadline_tests =
            assertion's. *)
         (try Sys.remove verdict_path with Sys_error _ -> ());
         let started = Unix.gettimeofday () in
-        let code, out, err = spawn ~args:[ mutate ] [ "MUTATE_FIXTURE=slow" ] in
+        let code, out, err =
+          spawn ~args:[ mutate ] [ ("MUTATE_FIXTURE", "slow") ]
+        in
         let elapsed = Unix.gettimeofday () -. started in
         equal ~msg:"exit code" int 0 code;
         equal ~msg:"stderr" text "" err;
@@ -1175,8 +1191,9 @@ let deadline_tests =
                 %.2fs deadline floor"
                (sleep +. overhead) (10. *. sleep))
           (2. *. (sleep +. overhead) <= 10. *. sleep);
-        says ~msg:"the mutant died" out
-          "mutants: 1 reached by this suite, 1 killed, 3 never reached\n";
+        contains ~msg:"the mutant died"
+          ~sub:"mutants: 1 reached by this suite, 1 killed, 3 never reached\n"
+          out;
         (* And the assertion killed it, not the clock: a deadline kill
            would have added the child's whole 10x-the-sleep floor to a
            run that already pays three sleeps. *)
@@ -1193,17 +1210,17 @@ let deadline_tests =
     test
       "an expired child's process group dies whole: no grandchild outlives the \
        run" (fun () ->
-        incr counter;
-        let pidfile =
-          Filename.concat scratch_dir ("grandchild" ^ string_of_int !counter)
-        in
+        let pidfile = Filename.concat (temp_dir ()) "grandchild" in
         let code, out, _ =
           spawn ~args:[ mutate ]
-            [ "MUTATE_FIXTURE=block"; "MUTATE_GRANDCHILD_PIDFILE=" ^ pidfile ]
+            [
+              ("MUTATE_FIXTURE", "block"); ("MUTATE_GRANDCHILD_PIDFILE", pidfile);
+            ]
         in
         equal ~msg:"the run completed" int 0 code;
-        says ~msg:"and scored the blocked mutant" out
-          "mutants: 1 reached by this suite, 1 killed, 3 never reached\n";
+        contains ~msg:"and scored the blocked mutant"
+          ~sub:"mutants: 1 reached by this suite, 1 killed, 3 never reached\n"
+          out;
         let pids =
           List.filter_map int_of_string_opt
             (String.split_on_char '\n' (read_file pidfile))
@@ -1235,20 +1252,20 @@ let deadline_tests =
            hang is the suite's own — and the refusal must say so rather
            than score anything. The fixture blocks only on its SECOND
            run, on the marker the dry run leaves. *)
-        incr counter;
-        let marker =
-          Filename.concat scratch_dir ("marker" ^ string_of_int !counter)
-        in
+        let marker = Filename.concat (temp_dir ()) "marker" in
         let started = Unix.gettimeofday () in
         let code, _, err =
           spawn ~args:[ mutate ]
-            [ "MUTATE_FIXTURE=probe_block"; "MUTATE_PROBE_MARKER=" ^ marker ]
+            [
+              ("MUTATE_FIXTURE", "probe_block"); ("MUTATE_PROBE_MARKER", marker);
+            ]
         in
         let elapsed = Unix.gettimeofday () -. started in
         equal ~msg:"a refusal, not a score" int 1 code;
-        says ~msg:"named as the probe's own deadline" err
-          "the determinism probe exceeded its deadline";
-        says ~msg:"and stated as a determinism claim" err "not a number";
+        contains ~msg:"named as the probe's own deadline"
+          ~sub:"the determinism probe exceeded its deadline" err;
+        contains ~msg:"and stated as a determinism claim" ~sub:"not a number"
+          err;
         is_true
           ~msg:
             (Printf.sprintf "the probe's deadline cut it short (%.1fs)" elapsed)
@@ -1273,46 +1290,43 @@ let streaming_tests =
     test
       "a survivor's block is printed when its child ends, not when the loop \
        does" (fun () ->
-        incr counter;
-        let file name =
-          Filename.concat scratch_dir (name ^ string_of_int !counter)
-        in
-        let began = file "began" and gate = file "gate" in
-        (* A mutation child of this suite is a fork of the image that
-           already ran this test: the names repeat, and a marker left by
-           an earlier run would open the gate's wait before the child
-           started. *)
-        List.iter
-          (fun path -> try Sys.remove path with Sys_error _ -> ())
-          [ began; gate ];
+        let dir = temp_dir () in
+        let began = Filename.concat dir "began"
+        and gate = Filename.concat dir "gate" in
         let run =
           start ~args:[ mutate ]
             [
-              "MUTATE_FIXTURE=held";
-              "MUTATE_STARTED=" ^ began;
-              "MUTATE_GATE=" ^ gate;
+              ("MUTATE_FIXTURE", "held");
+              ("MUTATE_STARTED", began);
+              ("MUTATE_GATE", gate);
             ]
         in
         await ~what:"the second child's start" run began;
         let seen = read_file run.out_path in
         close_out (open_out gate);
         let status, out, err = finish run in
-        says ~msg:"the first survivor's block was out while the second ran" seen
-          ("\n\n─────────────────────── survivors ────────────────────────\n"
-         ^ sub_block);
-        denies ~msg:"the second survivor's was not" seen (mutant_named "sub");
-        denies ~msg:"nor anything that closes the report" seen
-          "──────────────────────────────────────────────────────────";
-        denies ~msg:"its outcome least of all" seen "mutants:";
+        contains ~msg:"the first survivor's block was out while the second ran"
+          ~sub:
+            ("\n\n─────────────────────── survivors ────────────────────────\n"
+           ^ sub_block)
+          seen;
+        not_contains ~msg:"the second survivor's was not"
+          ~sub:(mutant_named "sub") seen;
+        not_contains ~msg:"nor anything that closes the report"
+          ~sub:"──────────────────────────────────────────────────────────" seen;
+        not_contains ~msg:"its outcome least of all" ~sub:"mutants:" seen;
         is_true ~msg:"the run then completed" (status = Unix.WEXITED 0);
         equal ~msg:"stderr" text "" err;
         is_true ~msg:"what was seen is how the report begins"
           (String.starts_with ~prefix:seen out);
-        says ~msg:"the second block followed, one blank line under the first"
-          out
-          ("\n\n  SURVIVED  " ^ mutant_named "sub");
-        says ~msg:"and the loop closed on its outcome" out
-          "mutants: 2 survived of 2 reached by this suite, 2 never reached\n");
+        contains
+          ~msg:"the second block followed, one blank line under the first"
+          ~sub:("\n\n  SURVIVED  " ^ mutant_named "sub")
+          out;
+        contains ~msg:"and the loop closed on its outcome"
+          ~sub:
+            "mutants: 2 survived of 2 reached by this suite, 2 never reached\n"
+          out);
   ]
 
 (* A reader that goes away, on a real pipe.
@@ -1330,19 +1344,17 @@ let scratch_root_of pid =
     (Printf.sprintf "windtrap-mutate-%d-0" pid)
 
 let held_at_the_gate fixture =
-  incr counter;
-  let file name = Filename.concat scratch_dir (name ^ string_of_int !counter) in
-  let began = file "began" and gate = file "gate" in
-  List.iter
-    (fun path -> try Sys.remove path with Sys_error _ -> ())
-    [ began; gate; verdict_path ];
+  let dir = temp_dir () in
+  let began = Filename.concat dir "began"
+  and gate = Filename.concat dir "gate" in
+  (try Sys.remove verdict_path with Sys_error _ -> ());
   let reader, writer = Unix.pipe ~cloexec:true () in
   let run =
     start ~args:[ mutate ] ~stdout:writer
       [
-        "MUTATE_FIXTURE=" ^ fixture;
-        "MUTATE_STARTED=" ^ began;
-        "MUTATE_GATE=" ^ gate;
+        ("MUTATE_FIXTURE", fixture);
+        ("MUTATE_STARTED", began);
+        ("MUTATE_GATE", gate);
       ]
   in
   await ~what:"the held child's start" run began;
@@ -1446,16 +1458,13 @@ let reader_tests =
    the child is hanging, and whom to look for afterwards. *)
 
 let interrupted_by signal =
-  incr counter;
-  let pidfile =
-    Filename.concat scratch_dir ("hanging" ^ string_of_int !counter)
-  in
-  List.iter
-    (fun path -> try Sys.remove path with Sys_error _ -> ())
-    [ verdict_path; pidfile ];
+  let pidfile = Filename.concat (temp_dir ()) "hanging" in
+  (try Sys.remove verdict_path with Sys_error _ -> ());
   let run =
     start ~args:[ mutate ]
-      [ "MUTATE_FIXTURE=interrupted"; "MUTATE_GRANDCHILD_PIDFILE=" ^ pidfile ]
+      [
+        ("MUTATE_FIXTURE", "interrupted"); ("MUTATE_GRANDCHILD_PIDFILE", pidfile);
+      ]
   in
   await ~what:"the hanging child" run pidfile;
   Unix.kill run.pid signal;
@@ -1497,8 +1506,8 @@ let interrupt_tests =
         equal ~msg:"standard error names the mutant whose child it stopped" text
           ("windtrap: interrupted while testing " ^ mutant_named "sub" ^ "\n")
           err;
-        says ~msg:"the survivor found before the signal is in the report" out
-          sub_block;
+        contains ~msg:"the survivor found before the signal is in the report"
+          ~sub:sub_block out;
         is_true
           ~msg:
             "the report closes as a complete one does, over the children that \
@@ -1514,8 +1523,9 @@ let interrupt_tests =
                  mutants: 1 survived of 3 reached by this suite, 1 never \
                  reached, 2 not tested\n")
              out);
-        denies ~msg:"the stopped child's mutant has no verdict" out
-          ("SURVIVED  " ^ mutant_named "sub");
+        not_contains ~msg:"the stopped child's mutant has no verdict"
+          ~sub:("SURVIVED  " ^ mutant_named "sub")
+          out;
         is_false ~msg:"a stopped run writes no verdict file"
           (Sys.file_exists verdict_path);
         is_false ~msg:"and leaves no scratch directory"
@@ -1529,8 +1539,8 @@ let interrupt_tests =
         is_true ~msg:"a death by that signal"
           (status = Unix.WSIGNALED Sys.sigpipe);
         equal ~msg:"nothing is said" text "" err;
-        says ~msg:"what was printed stays" out sub_block;
-        denies ~msg:"and no closing report is tried" out "mutants:";
+        contains ~msg:"what was printed stays" ~sub:sub_block out;
+        not_contains ~msg:"and no closing report is tried" ~sub:"mutants:" out;
         is_false ~msg:"no verdict file" (Sys.file_exists verdict_path);
         is_false ~msg:"no scratch directory"
           (Sys.file_exists (scratch_root_of pid));
@@ -1547,11 +1557,12 @@ let interrupt_tests =
               ("windtrap: interrupted while testing " ^ mutant_named "sub"
              ^ "\n")
               err;
-            says
+            contains
               ~msg:(name ^ ": the same outcome")
-              out
-              "mutants: 1 survived of 3 reached by this suite, 1 never \
-               reached, 2 not tested\n")
+              ~sub:
+                "mutants: 1 survived of 3 reached by this suite, 1 never \
+                 reached, 2 not tested\n"
+              out)
           [ ("SIGTERM", Sys.sigterm); ("SIGHUP", Sys.sighup) ]);
   ]
 
@@ -1576,26 +1587,23 @@ let cross_executable_tests =
       (fun () ->
         let id = mutant_named "add" in
         let code, out, err =
-          spawn ~exe:runaway_exe [ "WINDTRAP_MUTATE_ARM=" ^ id ]
+          spawn ~exe:runaway_exe [ ("WINDTRAP_MUTATE_ARM", id) ]
         in
         equal ~msg:"exit code (this binary is not the one it is about)" int 0
           code;
-        says ~msg:"the suite ran, ordinarily" out "spin: 1 passed";
-        denies ~msg:"and armed nothing" out " armed: ";
+        contains ~msg:"the suite ran, ordinarily" ~sub:"spin: 1 passed" out;
+        not_contains ~msg:"and armed nothing" ~sub:" armed: " out;
         (* The closing-line trio belongs to a run that armed a mutant; a
            binary that declined made no claim a closing line could
            report. *)
-        denies ~msg:"so no closing line judges the run" out
-          "mutant not evaluated";
-        denies ~msg:"nor claims a survivor" out "mutant survived";
-        says ~msg:"it says whose mutant it is not" err
-          "not this executable's mutant";
-        says ~msg:"naming the identifier it declined" err id;
+        not_contains ~msg:"so no closing line judges the run"
+          ~sub:"mutant not evaluated" out;
+        not_contains ~msg:"nor claims a survivor" ~sub:"mutant survived" out;
+        contains ~msg:"it says whose mutant it is not"
+          ~sub:"not this executable's mutant" err;
+        contains ~msg:"naming the identifier it declined" ~sub:id err;
         equal ~msg:"and says it exactly once" int 1
-          (List.length
-             (List.filter
-                (fun line -> has_sub line "not this executable's mutant")
-                (String.split_on_char '\n' err))));
+          (List.length (lines_with ~sub:"not this executable's mutant" err)));
     test "the same identifier still arms the executable that does hold it"
       (fun () ->
         (* The pair is the point: one command, one identifier, and the
@@ -1603,10 +1611,11 @@ let cross_executable_tests =
            siblings stand down. Asserted beside the decline so that a
            change making every executable decline cannot pass. *)
         let id = mutant_named "add" in
-        let code, out, _ = spawn [ "WINDTRAP_MUTATE_ARM=" ^ id ] in
+        let code, out, _ = spawn [ ("WINDTRAP_MUTATE_ARM", id) ] in
         equal ~msg:"the mutant made a test fail" int 1 code;
-        says ~msg:"it armed the named mutant" out
-          ("mutant " ^ id ^ " armed: a - b \u{2192} a + b"));
+        contains ~msg:"it armed the named mutant"
+          ~sub:("mutant " ^ id ^ " armed: a - b \u{2192} a + b")
+          out);
   ]
 
 (* The control: no instrumented module in the executable at all — in an
@@ -1624,8 +1633,8 @@ let uninstrumented_tests =
         let code, out, err = spawn ~exe:plain_exe [] in
         equal ~msg:"exit code" int 0 code;
         equal ~msg:"stderr" text "" err;
-        says ~msg:"the ordinary summary" out "plain: 1 passed";
-        denies ~msg:"and nothing else" out "mutants:");
+        contains ~msg:"the ordinary summary" ~sub:"plain: 1 passed" out;
+        not_contains ~msg:"and nothing else" ~sub:"mutants:" out);
     test "asking a build with no mutants to mutate declines by name" (fun () ->
         if core_instrumented then
           skip
@@ -1636,11 +1645,11 @@ let uninstrumented_tests =
            is refused as uninstrumented whatever the scope. *)
         let code, out, err = spawn ~exe:plain_exe ~args:[ "--mutate" ] [] in
         equal ~msg:"exit code" int 1 code;
-        says ~msg:"the suite still ran" out "plain: 1 passed";
-        says ~msg:"the diagnosis" err "links no instrumented module";
-        says ~msg:"the fix names the backend, not a build tool" err
-          "instrument the library under test with ppx_windtrap.mutate";
-        denies ~msg:"no scope was set, so none is blamed" err "scope");
+        contains ~msg:"the suite still ran" ~sub:"plain: 1 passed" out;
+        contains ~msg:"the diagnosis" ~sub:"links no instrumented module" err;
+        contains ~msg:"the fix names the backend, not a build tool"
+          ~sub:"instrument the library under test with ppx_windtrap.mutate" err;
+        not_contains ~msg:"no scope was set, so none is blamed" ~sub:"scope" err);
     test "an armed identifier declines by name and leaves the run alone"
       (fun () ->
         (* An uninstrumented executable is the commonest sibling of all:
@@ -1649,30 +1658,37 @@ let uninstrumented_tests =
            catalogue nothing. Exiting 1 here would fail the build for the
            one executable that armed the mutant correctly. *)
         let code, out, err =
-          spawn ~exe:plain_exe [ "WINDTRAP_MUTATE_ARM=lib/absent.ml:1:0:add" ]
+          spawn ~exe:plain_exe
+            [ ("WINDTRAP_MUTATE_ARM", "lib/absent.ml:1:0:add") ]
         in
         equal ~msg:"exit code" int 0 code;
-        says ~msg:"the suite ran exactly as it would unarmed" out
-          "plain: 1 passed";
-        denies ~msg:"nothing armed" out " armed: ";
-        says ~msg:"the identifier" err "lib/absent.ml:1:0:add";
-        says ~msg:"the diagnosis" err "not this executable's mutant";
-        says ~msg:"and the misconfiguration it could still be" err
-          "instrumented with ppx_windtrap.mutate");
+        contains ~msg:"the suite ran exactly as it would unarmed"
+          ~sub:"plain: 1 passed" out;
+        not_contains ~msg:"nothing armed" ~sub:" armed: " out;
+        contains ~msg:"the identifier" ~sub:"lib/absent.ml:1:0:add" err;
+        contains ~msg:"the diagnosis" ~sub:"not this executable's mutant" err;
+        contains ~msg:"and the misconfiguration it could still be"
+          ~sub:"instrumented with ppx_windtrap.mutate" err);
     test "a scope is loud even where there is nothing to mutate" (fun () ->
         (* Whether this binary catalogues nothing or only the core's
            mutants, a prefix matching no file refuses by name — the same
            sentence under a plain and an instrumented core, so the
            missing-backend diagnosis is never what a prefix gets. *)
-        let code, _, err = spawn ~exe:plain_exe [ "WINDTRAP_MUTATE=perhaps" ] in
+        let code, _, err =
+          spawn ~exe:plain_exe [ ("WINDTRAP_MUTATE", "perhaps") ]
+        in
         equal ~msg:"exit code" int 1 code;
-        says ~msg:"the refusal names the scope" err
-          "windtrap: --mutate=perhaps leaves no mutant in this executable's \
-           catalogue";
-        says ~msg:"and asks the instrumentation question" err
-          "is the library under test instrumented with ppx_windtrap.mutate?";
-        denies ~msg:"never the bare flag's diagnosis" err
-          "links no instrumented module");
+        contains ~msg:"the refusal names the scope"
+          ~sub:
+            "windtrap: --mutate=perhaps leaves no mutant in this executable's \
+             catalogue"
+          err;
+        contains ~msg:"and asks the instrumentation question"
+          ~sub:
+            "is the library under test instrumented with ppx_windtrap.mutate?"
+          err;
+        not_contains ~msg:"never the bare flag's diagnosis"
+          ~sub:"links no instrumented module" err);
   ]
 
 (* The fixtures' verdict files land in the real [_build/_mutants], where

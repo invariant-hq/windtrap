@@ -22,7 +22,7 @@
 (test
  (name test_mutate_loop)
  (modules test_mutate_loop)
- (libraries windtrap windtrap_runtime unix)
+ (libraries windtrap windtrap_runtime windtrap_test_support unix)
  (deps
   suite_main.exe
   plain_main.exe
