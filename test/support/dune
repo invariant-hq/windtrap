@@ -1,0 +1,5 @@
+; Test-only support shared by windtrap's own suites. Never installed.
+
+(library
+ (name windtrap_test_support)
+ (libraries unix))
