@@ -5023,6 +5023,359 @@ let test_corrections_quiet () =
     ~sub:"could not write"
     (corrections_transcript baselines)
 
+(* Report_sections, value by value *)
+
+let test_headline_whitespace () =
+  equal ~msg:"TAB, CR and LF become spaces, other control bytes stay" string
+    "a b c d\x01e"
+    (Sections.headline (Failure.message "a\tb\rc\nd\x01e"))
+
+(* A relative location is read under the project root first, then as
+   given: the two directories hold a file of the same name. *)
+let test_excerpt_root_first () =
+  let root = temp_dir () and cwd = temp_dir () in
+  let write dir text =
+    Out_channel.with_open_bin (Filename.concat dir "x.ml") (fun oc ->
+        output_string oc text)
+  in
+  write root "under the root\n";
+  write cwd "as given\n";
+  setenv "WINDTRAP_PROJECT_ROOT" (Some root);
+  chdir cwd;
+  let block () =
+    failure_block ~excerpt:true
+      (Failure.message ~loc:{ Loc.file = "x.ml"; line = 1; column = 0 } "m")
+  in
+  contains ~msg:"the root's file first" ~sub:"under the root" (block ());
+  Sys.remove (Filename.concat root "x.ml");
+  contains ~msg:"then the path as given" ~sub:"as given" (block ())
+
+let test_hints_default () =
+  let entry ?hints () =
+    let buf = Buffer.create 256 in
+    let ppf = Format.formatter_of_buffer buf in
+    Report.pp_failure ~ansi:false ?hints ppf Fixtures.prop_failure;
+    Format.pp_print_flush ppf ();
+    Buffer.contents buf
+  in
+  contains ~msg:"hints by default" ~sub:"replay:" (entry ());
+  not_contains ~msg:"none under ~hints:false" ~sub:"replay:"
+    (entry ~hints:false ())
+
+let test_diff_cap () =
+  let side c =
+    String.concat "\n" (List.init 500 (fun i -> Printf.sprintf "%c%d" c i))
+  in
+  let block =
+    failure_block (Failure.equality ~expected:(side 'e') ~actual:(side 'a') ())
+  in
+  (* Every line differs, so the hunks are a head, deletions and
+     insertions; the two file headers above them are not counted. *)
+  let hunk_line l =
+    l <> "    --- expected" && l <> "    +++ actual"
+    && (String.starts_with ~prefix:"    @@" l
+       || String.starts_with ~prefix:"    -" l
+       || String.starts_with ~prefix:"    +" l)
+  in
+  equal ~msg:"200 lines of hunks, hunk heads included" int 200
+    (List.length (List.filter hunk_line (String.split_on_char '\n' block)));
+  contains ~msg:"then the count of the rest" ~sub:"801 more" block
+
+let test_sanitize_name () =
+  equal ~msg:"LF, TAB and CR by name, other C0 bytes and DEL as \\xNN, ESC kept"
+    string "a\\nb\\tc\\rd\\x07e\\x7ff\027[0m"
+    (Sections.sanitize_name "a\nb\tc\rd\x07e\x7ff\027[0m")
+
+let test_shell_word () =
+  equal ~msg:"the bare-word alphabet as is" string "aZ9_-./:=+,@%"
+    (Sections.shell_word "aZ9_-./:=+,@%");
+  equal ~msg:"the empty word is quoted" string "''" (Sections.shell_word "");
+  equal ~msg:"a space quotes the word" string "'a b'"
+    (Sections.shell_word "a b");
+  equal ~msg:"a control byte takes the $'...' form" string "$'a\\nb'"
+    (Sections.shell_word "a\nb")
+
+let test_spans () =
+  is_true ~msg:"plain is unstyled"
+    (Sections.plain "x" = { Sections.style = None; text = "x" });
+  is_true ~msg:"styled carries its style"
+    (Sections.styled `Red "x" = { Sections.style = Some `Red; text = "x" })
+
+let test_section_print () =
+  equal ~msg:"a hint carries no style" string "cmd --flag\n"
+    (sections ~ansi:true [ Sections.Hint "cmd --flag" ]);
+  let rows =
+    Sections.Rows
+      {
+        margin = "  ";
+        columns =
+          [
+            { Sections.gap = ""; align = `Left; width = None };
+            { Sections.gap = " "; align = `Left; width = None };
+          ];
+        rows =
+          [
+            [ Sections.plain "a"; Sections.plain ""; Sections.plain "dropped" ];
+            [ Sections.plain "bb"; Sections.plain "c" ];
+          ];
+      }
+  in
+  equal ~msg:"trailing spaces stripped, a cell beyond the columns not printed"
+    string "  a\n  bb c\n" (sections [ rows ]);
+  let buf = Buffer.create 64 in
+  let ppf = Format.formatter_of_buffer buf in
+  Sections.print ~out:ppf ~ansi:false [ Sections.Line [ Sections.plain "x" ] ];
+  equal ~msg:"print flushes its formatter" string "x\n" (Buffer.contents buf)
+
+let test_rule_width () =
+  equal ~msg:"a rule is width columns" int 20
+    (Text.length_utf8 (Sections.rule ~width:20 None));
+  let label = String.make 30 'l' in
+  let long = Sections.rule ~width:20 (Some label) in
+  contains ~msg:"a long label is whole" ~sub:label long;
+  is_true ~msg:"and takes the rule past its width" (Text.length_utf8 long > 20)
+
+let test_survivor_block_exe_width () =
+  let s =
+    {
+      Sections.mutant = add_survivor.Sections.mutant;
+      witnesses =
+        [ witness ~exe:"a.exe" "with an executable" 0; witness "without one" 0 ];
+    }
+  in
+  let block = sections (Sections.survivor_block ~exe_width:(Some 12) s) in
+  let column sub =
+    match
+      List.find_opt (fun l -> has ~sub l) (String.split_on_char '\n' block)
+    with
+    | Some l -> Option.get (Text.first_occurrence ~pattern:sub l)
+    | None -> failf "no row holds %S" sub
+  in
+  equal ~msg:"an empty cell keeps the names in one column" int
+    (column "with an executable")
+    (column "without one");
+  is_true ~msg:"the executable column is at least 12 wide"
+    (column "with an executable" - column "a.exe" >= 12)
+
+(* Report, the unpinned edges *)
+
+let test_live_line_cut () =
+  let long = String.make 200 'n' in
+  let t =
+    with_renderer ~ansi:true ~live:true (fun r ->
+        Report.header r ~suite:"s" ~tests:1 ~seed:None ();
+        Report.begin_test r ~path:[ long ])
+  in
+  let drawn =
+    Text.strip_ansi t |> String.split_on_char '\r'
+    |> List.filter (fun l -> l <> "")
+  in
+  (match drawn with
+  | [ line ] ->
+      is_true ~msg:"the live line fits 80 columns" (Text.length_utf8 line <= 80)
+  | _ -> failf "one live line, got %S" t);
+  is_true ~msg:"the name is not whole" (not (has ~sub:long t))
+
+let test_terminal () =
+  let block color =
+    let r = Report.terminal { (config ~mode:`Verbose ()) with Run.color } in
+    Report.header r ~suite:"s" ~tests:1 ~seed:None ();
+    Report.begin_test r ~path:[ "bad" ];
+    Report.result r
+      (Fixtures.result [ "bad" ] (Failure.Fail [ Failure.message "b" ]));
+    output ()
+  in
+  contains ~msg:"--color=always styles standard output" ~sub:"\027[31mFAIL"
+    (block Os.Always);
+  let plain = block Os.Never in
+  contains ~msg:"--color=never does not" ~sub:"FAIL" plain;
+  not_contains ~msg:"no escape, no live line off a terminal" ~sub:"\027" plain
+
+let test_infinite_threshold () =
+  raises_match ~msg:"+infinity is not finite" Check.Exn.invalid_arg (fun () ->
+      Report.create
+        ~out:(Format.formatter_of_buffer (Buffer.create 8))
+        ~ansi:false
+        (config ~slow_threshold:Float.infinity ()))
+
+(* Under --stream the renderer drains the process's buffers before it
+   writes, so a streamed test's bytes come first. Standard error's byte is
+   buffered and would otherwise reach the descriptors after the report's. *)
+let test_stream_drains () =
+  let r =
+    Report.create ~out:Format.std_formatter ~ansi:false
+      { (config ~mode:`Verbose ()) with Run.stream = true }
+  in
+  let before write =
+    Printf.eprintf "E";
+    write ();
+    let out = output () in
+    match Text.first_occurrence ~pattern:"E" out with
+    | Some 0 -> ()
+    | _ -> failf "the test's byte does not come first: %S" out
+  in
+  before (fun () -> Report.note r "a notice");
+  before (fun () ->
+      Report.result r (Fixtures.result [ "t" ] Failure.Pass ~duration:0.1));
+  before (fun () ->
+      Report.finish r
+        ~results:[ Fixtures.result [ "t" ] Failure.Pass ]
+        ~duration:0.5 ())
+
+let test_note_under_stream () =
+  let t =
+    let buf = Buffer.create 64 in
+    let ppf = Format.formatter_of_buffer buf in
+    let r =
+      Report.create ~out:ppf ~ansi:true ~live:true
+        { (config ()) with Run.stream = true }
+    in
+    Report.note r "releasing db";
+    Format.pp_print_flush ppf ();
+    Buffer.contents buf
+  in
+  equal ~msg:"a compact streamed run shows no notice" string "" t
+
+let test_observe_interrupted () =
+  let t =
+    with_renderer (fun r ->
+        Report.observe r ~seed:Fixtures.root ~selection:None
+          (Run.Run_started
+             { suite = "s"; total = 2; selected = 2; properties = false });
+        Report.observe r ~seed:Fixtures.root ~selection:None
+          (Run.Interrupted
+             {
+               running = Some [ "g"; "t" ];
+               releasing = None;
+               results = [];
+               duration = 0.5;
+             }))
+  in
+  equal ~msg:"the summary, on the renderer" string "s: 2 not run in 500ms.\n" t;
+  equal ~msg:"the interruption, on standard error" string
+    "windtrap: interrupted in g \u{203a} t\n" (output ())
+
+let test_observe_raises_nothing () =
+  let fail = Fixtures.result [ "x" ] (Failure.Fail [ Failure.message "m" ]) in
+  ignore
+    (with_renderer ~ansi:true ~live:true (fun r ->
+         let observe = Report.observe r ~seed:Fixtures.root ~selection:None in
+         observe (Run.Test_finished fail);
+         observe (Run.Fixture_release { name = "" });
+         observe (Run.Test_started { path = [] });
+         observe
+           (Run.Run_started
+              { suite = ""; total = 0; selected = 5; properties = true });
+         observe (Run.Test_finished fail);
+         observe
+           (Run.Interrupted
+              {
+                running = None;
+                releasing = Some "\027";
+                results = [ fail; fail ];
+                duration = Float.nan;
+              })))
+
+let test_selection_escapes () =
+  equal ~msg:"a double quote and a backslash are escaped" (option string)
+    (Some {|filter "a\"b\\c"|})
+    (Report.selection_description
+       { (Run.default_config ()) with Run.filter = Some {|a"b\c|} })
+
+let test_excused_is_slow () =
+  let excused = { Fixtures.excused_result with Run.duration = 2.0 } in
+  contains ~msg:"an excused result over the threshold is listed"
+    ~sub:"known \u{203a} broken carry"
+    ( with_renderer (fun r ->
+          Report.finish r ~results:[ excused ] ~duration:2.0 ())
+    |> fun t ->
+      match Text.first_occurrence ~pattern:"slow tests" t with
+      | Some i -> String.sub t i (String.length t - i)
+      | None -> "" )
+
+let test_armed_lines_do_not_flush () =
+  List.iter
+    (fun (name, write) ->
+      let buf = Buffer.create 64 in
+      let ppf = Format.formatter_of_buffer buf in
+      let r = Report.create ~out:ppf ~ansi:false (config ~armed:"x" ()) in
+      write r;
+      equal
+        ~msg:(name ^ " leaves its line in the formatter")
+        string "" (Buffer.contents buf);
+      Format.pp_print_flush ppf ();
+      is_true ~msg:(name ^ " wrote its line") (Buffer.length buf > 0))
+    [
+      ( "mutation_armed",
+        fun r -> Report.mutation_armed r ~id:"x" ~before:"a" ~after:"b" );
+      ("mutation_killed", Report.mutation_killed);
+      ("mutation_survived", fun r -> Report.mutation_survived r ~hits:2);
+      ("mutation_not_evaluated", Report.mutation_not_evaluated);
+    ]
+
+let test_mutation_refused () =
+  let r =
+    Report.create ~out:Format.std_formatter ~ansi:true ~live:true (config ())
+  in
+  Report.mutation_testing r ~index:1 ~total:2 ~id:"lib/a.ml:1:0:add";
+  Report.mutation_refused r "no mutant";
+  let out = output () in
+  match
+    ( Text.first_occurrence ~pattern:"lib/a.ml:1:0:add" out,
+      Text.first_occurrence ~pattern:"windtrap: no mutant" out )
+  with
+  | Some drawn, Some said ->
+      let erased = String.sub out drawn (said - drawn) in
+      contains ~msg:"the live line is erased before the message"
+        ~sub:"\r\027[2K" erased;
+      let buf = Buffer.create 64 in
+      let ppf = Format.formatter_of_buffer buf in
+      let r = Report.create ~out:ppf ~ansi:true ~live:true (config ()) in
+      Report.mutation_testing r ~index:1 ~total:2 ~id:"x";
+      Report.mutation_refused r "no mutant";
+      is_true ~msg:"and the formatter is flushed, the erase in it"
+        (String.ends_with ~suffix:"\r\027[2K" (Buffer.contents buf))
+  | _ -> failf "the live line and the message: %S" out
+
+let test_mutation_interrupted_probe () =
+  ignore
+    (with_renderer (fun r ->
+         Report.mutation_interrupted r ~testing:None
+           { loop_report with Sections.survivors = []; unreached = [] }));
+  equal ~msg:"the probe, on standard error" string
+    "windtrap: interrupted during the determinism probe\n" (output ())
+
+let edge_tests =
+  [
+    test "report: the live line is cut to 80 columns" test_live_line_cut;
+    test "report: terminal styles by --color off a terminal" test_terminal;
+    test "report: an infinite slow threshold is refused" test_infinite_threshold;
+    test "report: under --stream the process's buffers go first"
+      test_stream_drains;
+    test "report: a compact streamed run shows no notice" test_note_under_stream;
+    test "report: observe maps Interrupted" test_observe_interrupted;
+    test "report: observe raises nothing of its own" test_observe_raises_nothing;
+    test "report: the selection's quotes and backslashes" test_selection_escapes;
+    test "report: an excused result can be slow" test_excused_is_slow;
+    test "report: the armed lines do not flush" test_armed_lines_do_not_flush;
+    test "report: mutation_refused erases the live line first"
+      test_mutation_refused;
+    test "report: the determinism probe interrupted"
+      test_mutation_interrupted_probe;
+    test "sections: headline whitespace" test_headline_whitespace;
+    test "sections: a relative excerpt is tried under the root first"
+      test_excerpt_root_first;
+    test "sections: hints are on by default" test_hints_default;
+    test "sections: the diff cap is 200 lines" test_diff_cap;
+    test "sections: sanitize_name" test_sanitize_name;
+    test "sections: shell_word" test_shell_word;
+    test "sections: plain and styled spans" test_spans;
+    test "sections: print's hints, rows and flush" test_section_print;
+    test "sections: a rule and its label" test_rule_width;
+    test "sections: survivor_block's executable column"
+      test_survivor_block_exe_width;
+  ]
+
 let tests =
   [
     test "golden compact transcript (default)" test_golden_compact;
@@ -5152,5 +5505,6 @@ let tests =
     test "observer: the header-seed policy and the stream"
       test_observe_seed_policy;
   ]
+  @ edge_tests
 
 let () = exit @@ Windtrap.run "report" tests
