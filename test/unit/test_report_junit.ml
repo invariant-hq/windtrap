@@ -398,6 +398,126 @@ let test_empty_run () =
   contains ~msg:"empty run counts are zero"
     ~sub:{|tests="0" failures="0" errors="0" skipped="0"|} doc
 
+let test_dotted_classname () =
+  let doc =
+    Report_junit.render ~suite:"s"
+      ~results:[ Fixtures.result [ "a.b"; "t.c" ] Failure.Pass ]
+      ~duration:0.1 ()
+  in
+  contains ~msg:"a dot inside a group name stays a dot"
+    ~sub:{|<testcase name="a.b › t.c" classname="s.a.b" time="0.000"/>|} doc
+
+(* The captured output of a failing test: the first failure that carries a
+   tail, a subtest's included, and a line before or after it only when there
+   is something to say. *)
+let test_first_tail () =
+  let first = Failure.tail "first tail\n" in
+  let second =
+    Failure.tail ~log_path:"second.output" ~omitted_bytes:9 "second tail\n"
+  in
+  let doc =
+    Report_junit.render ~suite:"s"
+      ~results:
+        [
+          Fixtures.result [ "t" ]
+            (Failure.Fail
+               [
+                 Failure.with_output_tail first
+                   {
+                     (Failure.message "in a subtest") with
+                     subtest = [ "t"; "u" ];
+                   };
+                 Failure.with_output_tail second (Failure.message "own");
+               ]);
+        ]
+      ~duration:0.1 ()
+  in
+  check_well_formed "tail document is well-formed" doc;
+  contains ~msg:"the first tail, whole, with neither line"
+    ~sub:"<system-out>first tail\n</system-out>" doc;
+  not_contains ~msg:"not the second" ~sub:"second tail" doc
+
+let test_armed_hints () =
+  let armed = "lib/a.ml:1:0:add" in
+  let doc =
+    Report_junit.render ~armed ~suite:"s"
+      ~results:
+        [
+          Fixtures.result
+            [ "geo"; "area non-negative" ]
+            (Failure.Fail [ Fixtures.prop_failure ]);
+          Fixtures.result [ "cli"; "cli help" ]
+            (Failure.Fail [ Fixtures.snap_missing ]);
+        ]
+      ~duration:0.1 ()
+  in
+  List.iter
+    (fun line -> contains ~msg:"the armed run's hint line" ~sub:line doc)
+    (Report_sections.hints ~armed ~filter:(Some "geo › area non-negative")
+       [ Fixtures.prop_failure ]);
+  contains ~msg:"the replay arms the mutant" ~sub:armed doc;
+  not_contains ~msg:"an armed run accepts nothing" ~sub:"accept:" doc
+
+(* Writing: the files [write] makes, as the file system shows them. *)
+
+let write ?(suite = "s") ?(results = [ Fixtures.timed_result ]) target =
+  Report_junit.write ~invocation:`Mirrors ~suite ~duration:0.1 ~results target
+
+let read_file path = In_channel.with_open_bin path In_channel.input_all
+
+let test_write_files () =
+  let root = temp_dir () in
+  let shared = Filename.concat root "all.xml" in
+  write ~suite:"first" shared;
+  write ~suite:"second" shared;
+  contains ~msg:"two suites, one .xml: the last one wins"
+    ~sub:{|<testsuite name="second"|} (read_file shared);
+  not_contains ~msg:"whole" ~sub:{|name="first"|} (read_file shared);
+  let dir = Filename.concat root "a/b/c" in
+  write dir;
+  is_true ~msg:"a directory target is made with its parents"
+    (Sys.file_exists (Filename.concat dir "s.xml"));
+  let big = Filename.concat root "big.xml" in
+  write ~results:Fixtures.results big;
+  write big;
+  equal ~msg:"an existing report is replaced whole" string
+    (Report_junit.render ~suite:"s" ~results:[ Fixtures.timed_result ]
+       ~duration:0.1 ())
+    (read_file big);
+  equal ~msg:"nothing of a document reaches the terminal" string "" (output ())
+
+let test_write_failure () =
+  let root = temp_dir () in
+  let target = Filename.concat root "missing/r.xml" in
+  write target;
+  is_false ~msg:"the parent of an .xml target is never made"
+    (Sys.file_exists (Filename.concat root "missing"));
+  contains ~msg:"one warning on standard error, and write returns" ~sub:"JUnit"
+    (output ())
+
+(* The paths a document prints: a file baseline's and a full log's. *)
+let test_project_root_paths () =
+  let root = temp_dir () in
+  setenv "WINDTRAP_PROJECT_ROOT" (Some root);
+  let failure =
+    Failure.with_output_tail
+      (Failure.tail
+         ~log_path:(Filename.concat root "_build/_tests/s/t.output")
+         "out\n")
+      (Failure.baseline
+         (Failure.File (Filename.concat root "test/help.expected"))
+         (Failure.Missing { proposed = "x\n" }))
+  in
+  let doc =
+    Report_junit.render ~suite:"s"
+      ~results:[ Fixtures.result [ "t" ] (Failure.Fail [ failure ]) ]
+      ~duration:0.1 ()
+  in
+  contains ~msg:"a file baseline prints under the root"
+    ~sub:"test/help.expected" doc;
+  contains ~msg:"a full log too" ~sub:"full log: _build/_tests/s/t.output" doc;
+  not_contains ~msg:"never absolute" ~sub:root doc
+
 (* The checker itself *)
 
 let test_checker_sanity () =
@@ -442,6 +562,12 @@ let tests =
     test "flaky pass note" test_flaky_note;
     test "the report's path" test_path;
     test "empty run" test_empty_run;
+    test "a dot in a group name is not escaped" test_dotted_classname;
+    test "system-out holds the first tail" test_first_tail;
+    test "an armed run's hints" test_armed_hints;
+    test "the files write makes" test_write_files;
+    test "a report that cannot be written warns" test_write_failure;
+    test "paths print against the project root" test_project_root_paths;
     test "the checker's own sanity" test_checker_sanity;
   ]
 
