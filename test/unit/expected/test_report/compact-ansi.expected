@@ -1,61 +1,61 @@
 mylib: 11 tests (seed s1:7be1d2c904aa31f5)
-[2m──────────────────────── failures ────────────────────────[0m
-  [31mFAIL[0m  [1musers › sessions after login[0m
-    [2mtest/test_users.ml:31[0m
-    [2mexpected[0m  [("alice", [1; 2; 3]); ("bob", [4])]
-    [2mactual[0m    [("alice", [1; 2; 3]); ("bob", [4[1;31m; 5]); ("carol", [[0m])]
-    [2mcaptured output (last 2 lines, 12034 earlier bytes omitted):[0m
+«d|──────────────────────── failures ────────────────────────»
+  «r|FAIL»  «b|users › sessions after login»
+    «d|test/test_users.ml:31»
+    «d|expected»  [("alice", [1; 2; 3]); ("bob", [4])]
+    «d|actual»    [("alice", [1; 2; 3]); ("bob", [4«R|; 5]); ("carol", [»])]
+    «d|captured output (last 2 lines, 12034 earlier bytes omitted):»
       [debug] session table resize 2 -> 4
       [debug] carol: ghost session from pool reuse
-    [2mfull log: _build/_tests/mylib/latest/users/sessions-after-login.output[0m
+    «d|full log: _build/_tests/mylib/latest/users/sessions-after-login.output»
 
-  [31mFAIL[0m  [1mparser › rejects empty[0m
-    [2mtest/test_parser.ml:12[0m
-    [2mexpected exception[0m  [32mParse_error("empty")[0m
-    [2mraised[0m              [31mNot_found[0m
-    [2mRaised at Parser.parse in file "lib/parser.ml", line 40[0m
+  «r|FAIL»  «b|parser › rejects empty»
+    «d|test/test_parser.ml:12»
+    «d|expected exception»  «g|Parse_error("empty")»
+    «d|raised»              «r|Not_found»
+    «d|Raised at Parser.parse in file "lib/parser.ml", line 40»
 
-  [31mFAIL[0m  [1mcli › cli help[0m
-    [2mtest/test_cli.ml:9[0m
+  «r|FAIL»  «b|cli › cli help»
+    «d|test/test_cli.ml:9»
     expect_file "test/help.expected": no baseline
     proposed (3 lines):
-      [31m+ Usage: mytool [OPTIONS] COMMAND[0m
-      [31m+ Commands:[0m
-      [31m+   run[0m
+      «r|+ Usage: mytool [OPTIONS] COMMAND»
+      «r|+ Commands:»
+      «r|+   run»
     accept: dune exec test/main.exe -- -u -f 'cli › cli help'
 
-  [31mFAIL[0m  [1mcli › version drift[0m
-    [2mtest/test_cli.ml:14[0m
+  «r|FAIL»  «b|cli › version drift»
+    «d|test/test_cli.ml:14»
     expect: mismatch
-    [2m@@ -1,3 +1,3 @@[0m
+    «d|@@ -1,3 +1,3 @@»
       line one
-    [32m- line two[0m
-    [31m+ line 2[0m
+    «g|- line two»
+    «r|+ line 2»
       line three
     accept: dune exec test/main.exe -- -u -f 'cli › version drift'
 
-  [31mFAIL[0m  [1mgeo › area non-negative[0m
-    [2mtest/test_geo.ml:17[0m
+  «r|FAIL»  «b|geo › area non-negative»
+    «d|test/test_geo.ml:17»
     counterexample (case 12, shrunk 4 steps): Rect (2, 0)
     which failed at:
-      [2mtest/test_geo.ml:18[0m
-      [2mexpected[0m  [32mtrue[0m
-      [2mactual[0m    [31mfalse[0m
+      «d|test/test_geo.ml:18»
+      «d|expected»  «g|true»
+      «d|actual»    «r|false»
     replay: dune exec test/main.exe -- --seed s1:7be1d2c904aa31f5 -f 'geo › area non-negative'
 
-  [31mFAIL[0m  [1mdb › insert[0m
-    [2mtest/test_db.ml:21[0m
+  «r|FAIL»  «b|db › insert»
+    «d|test/test_db.ml:21»
     body exploded
 
-    [33m[teardown][0m
+    «y|[teardown]»
     teardown exploded
-[2m──────────────────────────────────────────────────────────[0m
+«d|──────────────────────────────────────────────────────────»
 
-[33mslow tests (2, over 1s):[0m
-[33m  3.0s  slow › hash[0m
-[33m  2.5s  slow › big sort[0m
+«y|slow tests (2, over 1s):»
+«y|  3.0s  slow › hash»
+«y|  2.5s  slow › big sort»
 
-[33mflaky tests (1):[0m
-[33m  passed on attempt 3  flaky › eventually[0m
+«y|flaky tests (1):»
+«y|  passed on attempt 3  flaky › eventually»
 
-4 passed [33m(1 flaky)[0m, [33m1 skipped[0m, [31m6 failed[0m in 6.5s.
+4 passed «y|(1 flaky)», «y|1 skipped», «r|6 failed» in 6.5s.

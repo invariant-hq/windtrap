@@ -104,6 +104,57 @@ let failure_block ?(ansi = false) ?excerpt ?filter ?invocation ?armed f =
   Format.pp_print_flush ppf ();
   Buffer.contents buf
 
+(* Colour roles
+
+   A coloured text is written with its roles marked [«role|text»]: [r] red,
+   [g] green, [y] yellow, [d] faint, [b] bold, [R] bold red, [G] bold
+   green, [c] cyan, [w] white, and [»] the reset. [roles] is that text with
+   the escapes the marks stand for, and [marks] turns the escapes back into
+   marks, one for one, so a coloured transcript reads and diffs as text. *)
+
+let role_escapes =
+  [
+    ("\u{ab}r|", "\027[31m");
+    ("\u{ab}g|", "\027[32m");
+    ("\u{ab}y|", "\027[33m");
+    ("\u{ab}d|", "\027[2m");
+    ("\u{ab}b|", "\027[1m");
+    ("\u{ab}R|", "\027[1;31m");
+    ("\u{ab}G|", "\027[1;32m");
+    ("\u{ab}c|", "\027[36m");
+    ("\u{ab}w|", "\027[37m");
+    ("\u{bb}", "\027[0m");
+  ]
+
+(* [s] with each [from] of [table] replaced by its [into], left to right. *)
+let replace_all table s =
+  let buf = Buffer.create (String.length s) in
+  let rec go i =
+    if i < String.length s then
+      match
+        List.find_opt
+          (fun (from, _) ->
+            i + String.length from <= String.length s
+            && String.sub s i (String.length from) = from)
+          table
+      with
+      | Some (from, into) ->
+          Buffer.add_string buf into;
+          go (i + String.length from)
+      | None ->
+          Buffer.add_char buf s.[i];
+          go (i + 1)
+  in
+  go 0;
+  Buffer.contents buf
+
+let roles marked = replace_all role_escapes marked
+
+let marks coloured =
+  replace_all
+    (List.map (fun (mark, escape) -> (escape, mark)) role_escapes)
+    coloured
+
 (* The golden transcripts
 
    A fixture run with failures of every kind, two slow tests and a flaky
@@ -138,20 +189,29 @@ let test_golden_verbose () =
 (* The coloured transcript, which had no golden at all: [test_ansi] pins
    nine substrings, so every escape run BETWEEN them was unpinned — and a
    colour bug is exactly a wrong byte next to a right one. A baseline of
-   the whole thing costs one file and pins the escapes literally, which
-   is the only way to review them. *)
+   the whole thing costs one file and pins every escape, each spelled as
+   its role, so a colour change is a diff a reader can review. The golden
+   holds the marks, never a stripped text: the marks turn back into the
+   exact bytes, and an escape without a role fails here. *)
+let golden_coloured name actual =
+  let marked = marks actual in
+  equal ~msg:"the marks turn back into the exact bytes" string actual
+    (roles marked);
+  not_contains ~msg:"every escape has a role" ~sub:"\027" marked;
+  golden name marked
+
 let test_golden_ansi () =
   let actual =
     transcript ~ansi:true ~mode:`Verbose ~invocation:golden_invocation ()
   in
-  golden "verbose-ansi" actual;
+  golden_coloured "verbose-ansi" actual;
   contains ~msg:"the ansi golden really is coloured" ~sub:"\027[" actual
 
 (* The compact one too: the rules around the failures are its own, and
    dim. *)
 let test_golden_compact_ansi () =
   let actual = transcript ~ansi:true ~invocation:golden_invocation () in
-  golden "compact-ansi" actual;
+  golden_coloured "compact-ansi" actual;
   contains ~msg:"the opening rule is dim"
     ~sub:("\n\027[2m" ^ failures_rule ^ "\027[0m\n  \027[31mFAIL\027[0m")
     actual;
@@ -3601,41 +3661,8 @@ let test_excerpt_project_root () =
 (* Whole reports, colour and plain
 
    A report's expected text is written once, with its colour roles marked
-   [«role|text»]: [r] red, [g] green, [y] yellow, [d] faint, [b] bold.
-   [roles] is that text with the escapes the marks stand for, and stripping
-   them gives the plain bytes, so one literal pins both and a failure is a
-   readable diff. *)
-
-let roles marked =
-  let escapes =
-    [
-      ("\u{ab}r|", "\027[31m");
-      ("\u{ab}g|", "\027[32m");
-      ("\u{ab}y|", "\027[33m");
-      ("\u{ab}d|", "\027[2m");
-      ("\u{ab}b|", "\027[1m");
-      ("\u{bb}", "\027[0m");
-    ]
-  in
-  let buf = Buffer.create (String.length marked) in
-  let rec go i =
-    if i < String.length marked then
-      match
-        List.find_opt
-          (fun (mark, _) ->
-            i + String.length mark <= String.length marked
-            && String.sub marked i (String.length mark) = mark)
-          escapes
-      with
-      | Some (mark, escape) ->
-          Buffer.add_string buf escape;
-          go (i + String.length mark)
-      | None ->
-          Buffer.add_char buf marked.[i];
-          go (i + 1)
-  in
-  go 0;
-  Buffer.contents buf
+   (see [roles] above), and stripping the escapes gives the plain bytes, so
+   one literal pins both and a failure is a readable diff. *)
 
 (* Checks [render] against [marked] twice: the escapes under colour, and
    the same text without one under none. *)
