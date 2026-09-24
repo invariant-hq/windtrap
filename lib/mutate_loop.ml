@@ -571,7 +571,6 @@ let survivor ~locations (r : V.record) reaching : Report_sections.survivor =
         (* Spelled with the runtime's own function: the report carries the
            identifier into the title and the command as it is. *)
         Report_sections.id = M.id_to_string r.V.id;
-        file = r.V.id.M.file;
         line = r.V.id.M.line;
         before = r.V.before;
         after = r.V.after;

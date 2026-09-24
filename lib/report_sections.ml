@@ -288,8 +288,6 @@ let sgr = function
   | `Red -> "\027[31m"
   | `Green -> "\027[32m"
   | `Yellow -> "\027[33m"
-  | `Cyan -> "\027[36m"
-  | `White -> "\027[37m"
   | `Bold_red -> "\027[1;31m"
   | `Bold_green -> "\027[1;32m"
 
@@ -1515,7 +1513,6 @@ type witness = { test : string; loc : Loc.t option; exe : string option }
    report prints it and hands it to [--arm] without re-spelling it. *)
 type mutant = {
   id : string;
-  file : string;
   line : int;
   before : string;
   after : string;

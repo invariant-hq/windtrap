@@ -6,15 +6,7 @@
 type 'a t = Format.formatter -> 'a -> unit
 
 type style =
-  [ `Bold
-  | `Faint
-  | `Red
-  | `Green
-  | `Yellow
-  | `Cyan
-  | `White
-  | `Bold_red
-  | `Bold_green ]
+  [ `Bold | `Faint | `Red | `Green | `Yellow | `Bold_red | `Bold_green ]
 
 (* Output *)
 

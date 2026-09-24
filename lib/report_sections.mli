@@ -398,8 +398,6 @@ type mutant = {
       (** The identifier of the mutant, spelled by the producer with the
           runtime's own function. The report prints it and hands it to [--arm]
           through {!shell_word}, without spelling it again. *)
-  file : string;
-      (** The mutated source file. No function of this module reads it. *)
   line : int;  (** The one-based line of the mutated expression. *)
   before : string;  (** The source text of the original expression. *)
   after : string;  (** The source text of the expression that replaces it. *)

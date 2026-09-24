@@ -23,8 +23,6 @@ type style =
   | `Red  (** A red foreground. *)
   | `Green  (** A green foreground. *)
   | `Yellow  (** A yellow foreground. *)
-  | `Cyan  (** A cyan foreground. *)
-  | `White  (** A white foreground. *)
   | `Bold_red  (** Bold and red, as one style. *)
   | `Bold_green  (** Bold and green, as one style. *) ]
 (** The type for the styles of a report's text ({!Report_sections.span}). Bold

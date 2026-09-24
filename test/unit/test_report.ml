@@ -4321,9 +4321,8 @@ let witness ?exe ?file test line =
     exe;
   }
 
-let mutant ?(file = "lib/calc.ml") ?(source = calc_source) id line before after
-    =
-  { Sections.id; file; line; before; after; source = Some source }
+let mutant ?(source = calc_source) id line before after =
+  { Sections.id; line; before; after; source = Some source }
 
 let add_survivor =
   {
@@ -4534,7 +4533,7 @@ let test_mutation_interrupted () =
 let eq_survivor =
   {
     Sections.mutant =
-      mutant ~file:"lib/eval.ml"
+      mutant
         ~source:
           (source_of
              [ (60, "      if eval env b = Int 0 then raise Division_by_zero") ])
@@ -4550,7 +4549,7 @@ let eq_survivor =
 let not_survivor =
   {
     Sections.mutant =
-      mutant ~file:"lib/parser.ml"
+      mutant
         ~source:
           (source_of
              [ (102, "    if at_end p then Error (Unexpected_eof p.pos)") ])
@@ -5417,8 +5416,6 @@ let test_render () =
       ("red", `Red, "31");
       ("green", `Green, "32");
       ("yellow", `Yellow, "33");
-      ("cyan", `Cyan, "36");
-      ("white", `White, "37");
       ("bold red is one sequence", `Bold_red, "1;31");
       ("bold green is one sequence", `Bold_green, "1;32");
     ]
