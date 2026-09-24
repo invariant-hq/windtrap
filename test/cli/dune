@@ -12,6 +12,19 @@
  (applies_to :whole_subtree)
  (deps suite_main.exe))
 
+; signals.t signals suite_main.exe through a program that holds its pid.
+
+(executable
+ (name send_signal)
+ (modules send_signal)
+ (libraries unix))
+
+(cram
+ (applies_to signals)
+ (enabled_if
+  (<> %{os_type} Win32))
+ (deps send_signal.exe))
+
 (cram
  (applies_to nodune)
  (deps

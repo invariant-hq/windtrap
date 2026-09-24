@@ -15,8 +15,8 @@
    the tests every other scenario selects from; a flaky test, a noisy
    failing test, the streamed tests, a test that fails beside a stale
    baseline, a retried test over a stale baseline, a test that calls
-   [exit], a failing property, an expected failure and two fixtures
-   whose release fails likewise stand alone, so the transcripts every
+   [exit], a failing property, an expected failure, two fixtures whose
+   release fails and a test that waits for a signal likewise stand alone, so the transcripts every
    other session pins stay exactly what they are. *)
 
 open Windtrap
@@ -138,6 +138,22 @@ let release = [ test "touches the fixture" (fun () -> leaky ()) ]
 let nesting = fixture ~teardown:(fun () -> ignore (run "inner" [])) ignore
 let nested = [ test "touches the fixture" (fun () -> nesting ()) ]
 
+(* The third test says it is ready, by creating [ready] in the working
+   directory, and then waits for the signal that ends the run. *)
+let waiting =
+  [
+    test "passes" (fun () -> is_true true);
+    test "fails" (fun () -> equal ~msg:"deliberate" int 1 2);
+    group "deep"
+      [
+        test "waits" (fun () ->
+            print_string "captured, never shown\n";
+            close_out (open_out "ready");
+            Unix.sleepf 60.);
+      ];
+    test "never reached" (fun () -> is_true true);
+  ]
+
 (* [no-argv] runs the property suite as a host that passes [run] no
    command line at all. *)
 let () =
@@ -156,6 +172,7 @@ let () =
     | Some "collide" -> (Sys.argv, collide)
     | Some "release" -> (Sys.argv, release)
     | Some "nested" -> (Sys.argv, nested)
+    | Some "waiting" -> (Sys.argv, waiting)
     | Some ("" | "default") | None -> (Sys.argv, default)
     | Some other -> invalid_arg ("suite_main: unknown FACADE_FIXTURE " ^ other)
   in
