@@ -4,6 +4,16 @@
 
 (rule
  (with-stdout-to
+  fixture_and_or.actual
+  (run ./coverage_pp.exe --impl %{dep:fixture_and_or.ml})))
+
+(rule
+ (alias runtest)
+ (action
+  (diff fixture_and_or.expected fixture_and_or.actual)))
+
+(rule
+ (with-stdout-to
   fixture_apply.actual
   (run ./coverage_pp.exe --impl %{dep:fixture_apply.ml})))
 
@@ -21,16 +31,6 @@
  (alias runtest)
  (action
   (diff fixture_class.expected fixture_class.actual)))
-
-(rule
- (with-stdout-to
-  fixture_cond.actual
-  (run ./coverage_pp.exe --impl %{dep:fixture_cond.ml})))
-
-(rule
- (alias runtest)
- (action
-  (diff fixture_cond.expected fixture_cond.actual)))
 
 (rule
  (with-stdout-to
@@ -111,6 +111,36 @@
  (alias runtest)
  (action
   (diff fixture_off.expected fixture_off.actual)))
+
+(rule
+ (with-stdout-to
+  fixture_or_tail_branch.actual
+  (run ./coverage_pp.exe --impl %{dep:fixture_or_tail_branch.ml})))
+
+(rule
+ (alias runtest)
+ (action
+  (diff fixture_or_tail_branch.expected fixture_or_tail_branch.actual)))
+
+(rule
+ (with-stdout-to
+  fixture_or_tail_scope.actual
+  (run ./coverage_pp.exe --impl %{dep:fixture_or_tail_scope.ml})))
+
+(rule
+ (alias runtest)
+ (action
+  (diff fixture_or_tail_scope.expected fixture_or_tail_scope.actual)))
+
+(rule
+ (with-stdout-to
+  fixture_or_tail_wrap.actual
+  (run ./coverage_pp.exe --impl %{dep:fixture_or_tail_wrap.ml})))
+
+(rule
+ (alias runtest)
+ (action
+  (diff fixture_or_tail_wrap.expected fixture_or_tail_wrap.actual)))
 
 (rule
  (with-stdout-to

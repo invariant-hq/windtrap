@@ -1,0 +1,79 @@
+[@@@ocaml.text "/*"]
+module Windtrap_cov_________fixture_or_tail_scope___ml =
+  struct
+    let ___windtrap_visit___ =
+      let counts = Array.make 12 0 in
+      Windtrap_runtime.Coverage.register ~file:"./fixture_or_tail_scope.ml"
+        ~points:[|{
+                    Windtrap_runtime.Coverage.start_ofs = 516;
+                    Windtrap_runtime.Coverage.end_ofs = 521
+                  };{
+                      Windtrap_runtime.Coverage.start_ofs = 516;
+                      Windtrap_runtime.Coverage.end_ofs = 562
+                    };{
+                        Windtrap_runtime.Coverage.start_ofs = 586;
+                        Windtrap_runtime.Coverage.end_ofs = 591
+                      };{
+                          Windtrap_runtime.Coverage.start_ofs = 586;
+                          Windtrap_runtime.Coverage.end_ofs = 635
+                        };{
+                            Windtrap_runtime.Coverage.start_ofs = 664;
+                            Windtrap_runtime.Coverage.end_ofs = 669
+                          };{
+                              Windtrap_runtime.Coverage.start_ofs = 664;
+                              Windtrap_runtime.Coverage.end_ofs = 724
+                            };{
+                                Windtrap_runtime.Coverage.start_ofs = 756;
+                                Windtrap_runtime.Coverage.end_ofs = 761
+                              };{
+                                  Windtrap_runtime.Coverage.start_ofs = 756;
+                                  Windtrap_runtime.Coverage.end_ofs = 813
+                                };{
+                                    Windtrap_runtime.Coverage.start_ofs = 834;
+                                    Windtrap_runtime.Coverage.end_ofs = 837
+                                  };{
+                                      Windtrap_runtime.Coverage.start_ofs =
+                                        862;
+                                      Windtrap_runtime.Coverage.end_ofs = 867
+                                    };{
+                                        Windtrap_runtime.Coverage.start_ofs =
+                                          895;
+                                        Windtrap_runtime.Coverage.end_ofs =
+                                          905
+                                      };{
+                                          Windtrap_runtime.Coverage.start_ofs
+                                            = 862;
+                                          Windtrap_runtime.Coverage.end_ofs =
+                                            905
+                                        }|] ~counts;
+      (fun index -> Windtrap_runtime.Coverage.visit counts index)
+  end
+open Windtrap_cov_________fixture_or_tail_scope___ml
+[@@@ocaml.text "/*"]
+let rec or_let n =
+  ___windtrap_visit___ 1;
+  if n = 0
+  then (___windtrap_visit___ 0; true)
+  else (let next = n - 1 in or_let next)
+let rec or_open n =
+  ___windtrap_visit___ 3;
+  if n = 0
+  then (___windtrap_visit___ 2; true)
+  else (let open Stdlib in or_open (n - 1))
+let rec or_letmodule n =
+  ___windtrap_visit___ 5;
+  if n = 0
+  then (___windtrap_visit___ 4; true)
+  else (let module M = Stdlib in or_letmodule (n - 1))
+let rec or_letexception n =
+  ___windtrap_visit___ 7;
+  if n = 0
+  then (___windtrap_visit___ 6; true)
+  else (let exception E  in or_letexception (n - 1))
+let ( let* ) x f = ___windtrap_visit___ 8; f x
+let rec or_letop n =
+  ___windtrap_visit___ 11;
+  if n = 0
+  then (___windtrap_visit___ 9; true)
+  else (let* m = n - 1
+         in ___windtrap_visit___ 10; or_letop m)
