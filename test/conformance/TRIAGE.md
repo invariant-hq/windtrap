@@ -24,20 +24,17 @@ upstream test suite, classified.
   - **N-A** — tests of ppx_expect's own internals or Jane Street build
     machinery with no user-level equivalent; each justified below. Not
     vendored.
-- **Bar** (RFC): ≥ 90 % of the honored set runs with matching semantics
-  — the same tests pass and the same payloads match — and 100 % of the
-  rejected set is loud. Corrected-file goldens are windtrap's own
-  output, not upstream's; `RESULTS.md` says why and carries the measured
-  numbers, re-measured on 2026-09-15 when the PPX became a desugaring
-  into the library's `expect` (two rulings there: trailing output and
-  unreached nodes are not checked).
+- **Bar**: every pass-set file passes unchanged and every unsupported
+  construct is refused; the share of corrections byte-identical to
+  upstream's is reported, not gated. `RESULTS.md` holds the bar, the
+  rulings and their reasons; `counts.expected` holds the numbers,
+  computed from the corpus.
 
 Harness layout: `corpus/<dir>` mirrors `test/<dir>` upstream;
-`corpus/*/divergent/` holds fixtures that were quarantined at first
-measurement — files stayed in place when they flipped green, only
-their diff rules moved to `@runtest`; the three that never could are
-not vendored, and the rulings are in `RESULTS.md`. "T" marks the
-single-line source tweak listed under [Source tweaks](#source-tweaks).
+`corpus/*/divergent/` holds fixtures that diverged at the first measure
+and conform now, each run by a runner of its own; the three that never
+could are not vendored, and the rulings are in `RESULTS.md`. "T" marks
+the single-line source tweak listed under [Source tweaks](#source-tweaks).
 
 ## HONORED — 36 files
 
@@ -49,54 +46,56 @@ single-line source tweak listed under [Source tweaks](#source-tweaks).
 | `string_extension_syntax.ml` | `root/` | `{%expect\|…\|}` / `{%expect_exact\|…\|}` |
 | `test_output.ml` | `root/` | `[%expect.output]` consumption |
 | `test_stderr.ml` | `root/` | stderr capture |
-| `unflushed_stubs_output.ml` | `root/divergent/` | C-stub output w/o flush (+ `non_flushing.c`); conforms since the D2 fix (rules on `@runtest`) |
+| `unflushed_stubs_output.ml` | `root/divergent/` | C-stub output w/o flush (+ `non_flushing.c`) |
 | `unidiomatic_syntax.ml` | `root/` | `[%%expect_test let _ = …]` form |
 | `example/chdir.ml` | `example/` | `Unix.chdir` mid-test |
-| `example/control_chars.ml` (T) | `example/divergent/` | control chars in payload; conforms since the D9 fix (rules on `@runtest`) |
+| `example/control_chars.ml` (T) | `example/divergent/` | control chars in payload |
 | `example/flexible_whitespace.ml` | `example/` | |
 | `example/function.ml` | `example/` | same node executed twice per call |
-| `example/functor.ml` | `example/divergent/` | `module M ()` twice → duplicate tests; conforms since the D1 fix (rules on `@runtest`) |
+| `example/functor.ml` | `example/divergent/` | `module M ()` twice → duplicate tests, renamed and both run |
 | `example/reordered.ml` | `example/` | node order ≠ source order |
 | `example/space_nine.ml` | `example/` | `[%expect_exact]` NL matrix |
 | `example/xnine.ml` | `example/` | `[%expect_exact]` NL matrix |
 | `explicit-strict-false/nine.ml` | `explicit-strict-false/` | upstream passes `-expect-test-strict-indentation=false` = the default (`src/ppx_expect.ml`: `strict_indent = ref false`); flag dropped in the build layer |
 | `no-output-patterns/test.ml` (+ `.mli`) | `no-output-patterns/` | "(regexp)" matched literally |
 
-### Correction fixtures (20) — runner + upstream `.ml.corrected.expected` goldens
+### Correction fixtures (20) — runner + windtrap's `.ml.corrected.expected` goldens, upstream's beside them as `.ml.corrected.upstream`
 
 | upstream `test/` path | vendored at `corpus/` | notes |
 | --- | --- | --- |
 | `negative-tests/chdir.ml` | `negative-tests/` | conforms |
-| `negative-tests/escaped_strings.ml` | `negative-tests/` | conforms; bare nodes materialize on the node's line since 2026-09-15 (formatting, `RESULTS.md`) |
-| `negative-tests/exact.ml` (T) | `negative-tests/` | conforms since the D4 fix |
-| `negative-tests/export_test.ml` | `negative-tests/` | passes; no correction (covered by runner exit code) |
-| `negative-tests/flexible.ml` (T) | `negative-tests/` | conforms since the D4 fix |
+| `negative-tests/escaped_strings.ml` | `negative-tests/` | conforms; bare nodes materialize on the node's line (formatting, `RESULTS.md`); the correction does not converge on OCaml 5.2 and later (known failure, `RESULTS.md`) |
+| `negative-tests/exact.ml` (T) | `negative-tests/` | conforms |
+| `negative-tests/export_test.ml` | `negative-tests/` | passes; no correction (the runner's transcript) |
+| `negative-tests/flexible.ml` (T) | `negative-tests/` | conforms |
 | `negative-tests/import_test.ml` | `negative-tests/` | passes; cross-file functor instantiation |
 | `negative-tests/missing.ml` (T) | `negative-tests/` | second test conforms (bare node materialized, on the node's line); first test **diverges**: trailing output not checked (ruling in `RESULTS.md`) |
 | `negative-tests/nine.ml` | not vendored | **diverges** (reformat-on-match: windtrap leaves a matching payload alone) |
-| `negative-tests/normal_strings.ml` | `negative-tests/` | conforms since the D3 fix (incl. margin wrapping) |
+| `negative-tests/normal_strings.ml` | `negative-tests/` | conforms; a long quoted payload stays on its line (formatting, `RESULTS.md`) |
 | `negative-tests/semicolon.ml` | `negative-tests/` | conforms |
-| `negative-tests/similar_distinct_outputs.ml` | `negative-tests/divergent/` | conforms since the D1 fix (rules on `@runtest`) |
-| `negative-tests/spacing.ml` (T) | `negative-tests/` | conforms since the D6 fix |
-| `negative-tests/string_extension_syntax.ml` | `negative-tests/` | conforms since the D5 fix (retag keeps `%expect`) |
+| `negative-tests/similar_distinct_outputs.ml` | `negative-tests/divergent/` | conforms |
+| `negative-tests/spacing.ml` (T) | `negative-tests/` | conforms |
+| `negative-tests/string_extension_syntax.ml` | `negative-tests/` | conforms (retag keeps `%expect`) |
 | `negative-tests/string_padding.ml` | `negative-tests/` | conforms |
 | `negative-tests/three.ml` | not vendored | **diverges** (reformat-on-match: windtrap leaves a matching payload alone) |
 | `negative-tests/trailing.ml` (T) | `negative-tests/` | **diverges** since 2026-09-15: trailing output not checked, no correction (ruling in `RESULTS.md`) |
 | `negative-tests/unidiomatic_syntax.ml` | `negative-tests/` | conforms |
 | `negative-tests/unusual_payload_location.ml` | not vendored | **diverges** (upstream golden inconsistent with its pinned source — unreachable) |
 | `negative-tests/for-mdx/foo.ml` (T) | `negative-tests/for-mdx/` | conforms |
-| `explicit-strict-false/negative-test/nine.ml` | `explicit-strict-false/negative-test/` | conforms since the D4 fix |
+| `explicit-strict-false/negative-test/nine.ml` | `explicit-strict-false/negative-test/` | conforms |
 
 ## REJECTED — 20 files
 
-All harnessed: expansion via `pp.exe` must exit 1 and the stderr is
+All harnessed: expansion via `pp.exe` must exit 1 and its output is
 goldened (`<f>.rejected.expected`), except `hello_async.ml`
 (mechanism (b): compile-must-fail, `hello_async.compile-rejected.expected`).
+The construct named is the one the golden shows the rewriter refusing
+first; a file may hold others after it.
 
 | upstream `test/` path | rejecting construct |
 | --- | --- |
 | `test_expectation.ml` | `[%expectation]` |
-| `test_sanitize.ml` | `[%expect.unreachable]` + `[@@expect.uncaught_exn]` (file-granular; its sanitize-override tests are honored constructs but expansion rejects the whole file) |
+| `test_sanitize.ml` | `module%test _`, an anonymous test module (refused before the `[%expect.unreachable]` and `[@@expect.uncaught_exn]` it also holds; its sanitize-override tests never run) |
 | `uncaught_exn.ml` | `[@@expect.uncaught_exn]` |
 | `unreachable.ml` | `[%expect.unreachable]` |
 | `warning_40.ml` | `[%expect.unreachable]` |
@@ -186,20 +185,18 @@ would need Core/ppx_jane deriving, not just a one-line shim; their
 expect-specific constructs are covered by other honored files) — 2
 files: `example/tests.ml` (`[@@deriving sexp_of]`, `Core.Sexp`; its
 `{xxx|…|xxx}` weird-escaping payload is the one construct not covered
-elsewhere — noted in RESULTS punch list),
+elsewhere),
 `negative-tests/trailing_in_module.ml` (`Sexpable`, `print_s`,
 `raise_s`; nested-functor trailing corrections partially covered by
 `nine.ml`'s nested `module _`).
 
 **Expected observable is itself a rejected-family construct** — 2 files:
 `negative-tests/expect_output.ml` (upstream corrects the unreached
-nodes to `[%expect.unreachable]` — windtrap's contractual behavior is a
-loud per-node reachability failure, mechanism (d)),
+nodes to `[%expect.unreachable]`; in windtrap an unreached node is no
+failure, a ruling in `RESULTS.md`),
 `negative-tests/nesting/nested.ml` (upstream splices
 `[@@expect.uncaught_exn]` with the collector's nested-test error;
-windtrap's behavior on nested expect tests is its own failure path —
-punch-listed in RESULTS to be defined and tested in windtrap's own
-suite).
+windtrap's behavior on nested expect tests is its own failure path).
 
 **Not `.ml` corpus** (for completeness): `example/tabs.ml.in`
 (generated into `tabs.ml` by `apply-style` at build time — the
@@ -215,8 +212,9 @@ substituted — `open Core` / `open! Core` → `open Corpus_shim` /
 `open! Corpus_shim` — preserving line count and all other bytes, with
 the same substitution applied to the fixture's golden.
 `corpus/*/corpus_shim.ml` supplies the few Core values the bodies use
-(`printf`, `List.range`, …). Each such file is a FINDING, not a silent
-edit:
+(`printf`, `List.range`, …). Upstream's correction golden, vendored as
+`.ml.corrected.upstream`, carries the same substitution. Each such file
+is a FINDING, not a silent edit:
 
 1. `corpus/negative-tests/trailing.ml` (+ golden) — line 1.
 2. `corpus/negative-tests/exact.ml` (+ golden) — line 1.

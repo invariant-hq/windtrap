@@ -1,4 +1,4 @@
 # The corpus is upstream's bytes and its goldens are the bytes a run wrote,
-# four of them with CR bytes inside a line: no checkout converts a line
+# some of them with CR bytes inside a line: no checkout converts a line
 # ending under this directory.
 * -text

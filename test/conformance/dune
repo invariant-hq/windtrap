@@ -12,3 +12,24 @@
  (name pp)
  (modules pp)
  (libraries ppxlib ppx_windtrap))
+
+; The corpus's numbers, computed from its files: RESULTS.md quotes
+; counts.expected and restates none of them.
+
+(executable
+ (name count)
+ (modules count))
+
+(rule
+ (deps
+  (sandbox always)
+  (source_tree corpus))
+ (action
+  (with-stdout-to
+   counts
+   (run ./count.exe corpus))))
+
+(rule
+ (alias runtest)
+ (action
+  (diff counts.expected counts)))
