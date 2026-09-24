@@ -399,6 +399,38 @@ let loop_tests =
         let { out; _ } = Lazy.force green in
         contains ~msg:"excerpt row"
           ~sub:"\n      18 \u{2502} let widen a b = a + b\n" out);
+    test
+      "a survivor's source line is read under the project root, then as \
+       recorded" (fun () ->
+        let plant dir comment =
+          let path = Filename.concat dir "test/instr/loop/subject.ml" in
+          Sys.mkdir (Filename.concat dir "test") 0o755;
+          Sys.mkdir (Filename.concat dir "test/instr") 0o755;
+          Sys.mkdir (Filename.dirname path) 0o755;
+          Out_channel.with_open_bin path (fun oc ->
+              output_string oc (String.make 17 '\n');
+              output_string oc ("let widen a b = a + b " ^ comment ^ "\n"))
+        in
+        let root = temp_dir () and cwd = temp_dir () in
+        plant root "(* under the root *)";
+        plant cwd "(* as recorded *)";
+        let excerpt project_root =
+          let _, out, _ =
+            spawn ~cwd ~args:[ mutate; "-f"; "widen" ]
+              [
+                ("MUTATE_FIXTURE", "weak");
+                ("WINDTRAP_PROJECT_ROOT", project_root);
+              ]
+          in
+          out
+        in
+        contains ~msg:"the root's copy first"
+          ~sub:
+            "\n      18 \u{2502} let widen a b = a + b (* under the root *)\n"
+          (excerpt root);
+        contains ~msg:"the recorded path when the root has none"
+          ~sub:"\n      18 \u{2502} let widen a b = a + b (* as recorded *)\n"
+          (excerpt (temp_dir ())));
     test "the reproduce command spells the flag that arms the survivor"
       (fun () ->
         let _, out, _ = spawn ~args:[ mutate ] [ ("INSIDE_DUNE", "1") ] in
@@ -678,6 +710,12 @@ let no_trace_tests =
           (List.length lines));
   ]
 
+(* What a narrowed run says in place of the verdict file it does not
+   write. *)
+let not_saved =
+  "windtrap: verdicts not saved: this run's selection narrows the suite, and a \
+   partial run's verdicts would stand in the project merge as the whole.\n"
+
 let verdict_file_tests =
   [
     test "the loop writes a verdict file the runtime can read back" (fun () ->
@@ -759,6 +797,70 @@ let verdict_file_tests =
         not_contains ~msg:"the scope narrows the mutants, not the tests"
           ~sub:"verdicts not saved" err;
         is_true ~msg:"so the file was written" (saved <> ""));
+    test "every narrowing of the suite writes no verdict file" (fun () ->
+        List.iter
+          (fun flags ->
+            let code, _, err =
+              spawn ~args:(mutate :: flags) [ ("MUTATE_FIXTURE", "weak") ]
+            in
+            let name = String.concat " " flags in
+            equal ~msg:(name ^ ": exit code") int 0 code;
+            equal ~msg:(name ^ ": saves nothing and says so") text not_saved err)
+          [
+            [ "-e"; "nothing-matches" ];
+            [ "--exclude-tag"; "nothing" ];
+            [ "--shard"; "1/1" ];
+          ]);
+    test "a --failed run writes no verdict file" (fun () ->
+        let log = temp_dir () in
+        let code, _, _ =
+          spawn ~args:[ "-o"; log ]
+            [ ("MUTATE_FIXTURE", "flip"); ("MUTATE_FLIP", "1") ]
+        in
+        equal ~msg:"the run that records a failure" int 1 code;
+        let code, out, err =
+          spawn
+            ~args:[ mutate; "--failed"; "-o"; log ]
+            [ ("MUTATE_FIXTURE", "flip") ]
+        in
+        equal ~msg:"exit code" int 0 code;
+        contains ~msg:"the loop ran over the recorded failure"
+          ~sub:"reached by the 1 selected test" out;
+        equal ~msg:"and saved nothing" text not_saved err);
+    test "a run with an active focus writes no verdict file" (fun () ->
+        let code, out, err =
+          spawn ~args:[ mutate ] [ ("MUTATE_FIXTURE", "focused") ]
+        in
+        equal ~msg:"exit code" int 0 code;
+        contains ~msg:"the loop ran over the focused test"
+          ~sub:"reached by the 1 selected test" out;
+        equal ~msg:"and saved nothing" text not_saved err);
+    test "a verdict file that cannot be written is one sentence, and exit 0"
+      (fun () ->
+        (* A copy of the suite under a scratch build directory whose
+           _mutants is a file. *)
+        let root = temp_dir () in
+        let exe = Filename.concat root "_build/default/suite_main.exe" in
+        Sys.mkdir (Filename.concat root "_build") 0o755;
+        Sys.mkdir (Filename.dirname exe) 0o755;
+        Out_channel.with_open_bin exe (fun oc ->
+            output_string oc (read_file suite_exe));
+        Unix.chmod exe 0o755;
+        Out_channel.with_open_bin (Filename.concat root "_build/_mutants")
+          (fun oc -> output_string oc "a file\n");
+        let code, out, err =
+          spawn ~exe ~args:[ mutate ] [ ("MUTATE_FIXTURE", "weak") ]
+        in
+        equal ~msg:"exit code" int 0 code;
+        ends_with ~msg:"the report ended as a whole loop's does"
+          ~affix:
+            "\n\
+             mutants: 1 survived of 1 reached by this suite, 3 never reached\n"
+          out;
+        starts_with ~msg:"the sentence"
+          ~affix:"windtrap: could not write the verdict file: " err;
+        equal ~msg:"one line" int 1
+          (List.length (String.split_on_char '\n' (String.trim err))));
   ]
 
 let crash_tests =
@@ -798,6 +900,104 @@ let crash_tests =
                  (List.filter
                     (fun (_, v) -> String.starts_with ~prefix:"survived" v)
                     rendered)));
+  ]
+
+(* What the dry run and the children do with the run's own settings.
+
+   [baseline]'s one test pins [sub]'s answer against a file under
+   WINDTRAP_PROJECT_ROOT that holds a stale answer. Under [--mutate -u]
+   the dry run accepts the answer, as a [-u] run does, and the children
+   check that accepted file read-only: a child that could update it would
+   accept the mutant's answer and let the mutant survive. The run is also
+   given [--junit], which a loop's dry run does not honour. *)
+
+type baseline_run = {
+  b_code : int;
+  b_out : string;
+  b_err : string;
+  b_file : string;  (** The baseline, as the run left it. *)
+  b_others : string list;  (** What else the run left beside it. *)
+}
+
+let baseline_run ~args ~stale =
+  let root = temp_dir () in
+  let file = Filename.concat root "sub.expected" in
+  Out_channel.with_open_bin file (fun oc -> output_string oc stale);
+  let code, out, err =
+    spawn
+      ~args:(args @ [ "--junit"; Filename.concat root "junit.xml" ])
+      [ ("MUTATE_FIXTURE", "baseline"); ("WINDTRAP_PROJECT_ROOT", root) ]
+  in
+  {
+    b_code = code;
+    b_out = out;
+    b_err = err;
+    b_file = read_file file;
+    b_others =
+      List.filter
+        (fun name -> name <> "sub.expected")
+        (List.sort compare (Array.to_list (Sys.readdir root)));
+  }
+
+let baseline_loop = lazy (baseline_run ~args:[ mutate; "-u" ] ~stale:"5\n")
+
+let dry_run_tests =
+  [
+    test "the dry run of --mutate -u accepts what -u accepts" (fun () ->
+        let r = Lazy.force baseline_loop in
+        equal ~msg:"the loop ran whole, not refused as red" int 0 r.b_code;
+        equal ~msg:"stderr" text "" r.b_err;
+        contains ~msg:"the dry run accepted the stale baseline"
+          ~sub:"  accepted sub.expected\n" r.b_out;
+        equal ~msg:"and wrote the answer it saw" text "6\n" r.b_file);
+    test "children check the baselines read-only" (fun () ->
+        let r = Lazy.force baseline_loop in
+        contains ~msg:"the mutant's answer is a mismatch, so a kill"
+          ~sub:"mutants: 1 reached by this suite, 1 killed, 3 never reached\n"
+          r.b_out;
+        equal ~msg:"the baseline keeps the unmutated answer" text "6\n" r.b_file);
+    test "a --mutate run writes no JUnit file" (fun () ->
+        let r = Lazy.force baseline_loop in
+        equal ~msg:"nothing beside the baseline" (list string) [] r.b_others);
+    test "a failure in a fixture release kills the mutant" (fun () ->
+        (* The test pins nothing about [sub]; its fixture's release, at
+           the end of the child's run, sees the change and fails. *)
+        let code, out, err =
+          spawn ~args:[ mutate ] [ ("MUTATE_FIXTURE", "release") ]
+        in
+        equal ~msg:"exit code" int 0 code;
+        contains ~msg:"the release's failure is the kill"
+          ~sub:"mutants: 1 reached by this suite, 1 killed, 3 never reached\n"
+          out;
+        (* Every child's release prints on both descriptors, the probe's
+           included, and neither reaches the loop's. *)
+        not_contains ~msg:"no child's stdout" ~sub:"a child's release" out;
+        equal ~msg:"no child's stderr" text "" err);
+    test "the runaway budget is eight evaluations per measured one, plus 1000"
+      (fun () ->
+        (* [budget] evaluates [sub] [k] times unarmed, so the child's
+           budget is [(k * 8) + 1000]; armed it evaluates exactly the
+           budget, or one more. Two values of [k] pin the formula. *)
+        List.iter
+          (fun (k, over) ->
+            let target = (k * 8) + 1000 + over in
+            let _, out, _ =
+              spawn ~args:[ mutate ]
+                [
+                  ("MUTATE_FIXTURE", "budget");
+                  ("MUTATE_BUDGET", Printf.sprintf "%d %d" k target);
+                ]
+            in
+            contains
+              ~msg:(Printf.sprintf "%d evaluations measured, %d armed" k target)
+              ~sub:
+                (if over = 0 then
+                   "mutants: 1 survived of 1 reached by this suite, 3 never \
+                    reached\n"
+                 else
+                   "mutants: 1 reached by this suite, 1 killed, 3 never reached\n")
+              out)
+          [ (5, 0); (5, 1); (50, 0); (50, 1) ]);
   ]
 
 let refusal_tests =
@@ -847,6 +1047,51 @@ let refusal_tests =
         equal ~msg:"exit code" int 1 code;
         contains ~msg:"the reason" ~sub:"nothing to mutate" err;
         not_contains ~msg:"and no number was produced" ~sub:"mutants: " out);
+    test "a dry run refused at startup is exit 1, whatever its own code"
+      (fun () ->
+        (* [--failed] with no recorded failure is a startup refusal whose
+           own code is 2, since nothing ran. *)
+        let code, out, err =
+          spawn
+            ~args:[ mutate; "--failed"; "-o"; temp_dir () ]
+            [ ("MUTATE_FIXTURE", "weak") ]
+        in
+        equal ~msg:"exit code" int 1 code;
+        equal ~msg:"nothing on stdout" text "" out;
+        equal ~msg:"the runner's own reason, and no other" text
+          "windtrap: no recorded failures match the current suite\n" err);
+    test "the refusals are tried in their order" (fun () ->
+        (* A scope that leaves no mutant is tried after the dry run's exit
+           code, so a red suite and an empty selection are refused as
+           such under it. *)
+        let code, _, err =
+          spawn
+            ~args:[ "--mutate=::no-such-source::" ]
+            [ ("MUTATE_FIXTURE", "red") ]
+        in
+        equal ~msg:"red: exit code" int 1 code;
+        equal ~msg:"red: the dry run's refusal" text
+          "windtrap: the dry run is red. Mutation scores a passing suite; a \
+           score over a failing one is not a score\n"
+          err;
+        let code, _, err =
+          spawn ~args:[ "--mutate=::no-such-source::"; "-f"; "no-such-test" ] []
+        in
+        equal ~msg:"nothing ran: exit code" int 1 code;
+        equal ~msg:"nothing ran: that refusal" text
+          "windtrap: no test ran, so there is nothing to mutate\n" err);
+    test "a scratch directory that cannot be made is refused before the probe"
+      (fun () ->
+        let not_a_directory = temp_file () in
+        let code, out, err =
+          spawn ~args:[ mutate ]
+            [ ("MUTATE_FIXTURE", "weak"); ("TMPDIR", not_a_directory) ]
+        in
+        equal ~msg:"exit code" int 1 code;
+        equal ~msg:"the dry run's transcript, and no mutation report" text
+          "calc: 2 passed in <time>.\n" (masked out);
+        starts_with ~msg:"the reason"
+          ~affix:"windtrap: could not create the loop's scratch directory: " err);
     test "a truthy WINDTRAP_MUTATE is the bare flag" (fun () ->
         (* [1] is what a CI recipe sets for a whole tree at once: every
            mutant this executable catalogues. Under --instrument-with
@@ -891,6 +1136,11 @@ let refusal_tests =
           ~sub:(mutant_named "add") err;
         not_contains ~msg:"and the suite did not run" ~sub:"calc: " out);
   ]
+
+(* [baseline]'s file holds the unmutated answer, and [sub]'s mutant is
+   armed under [-u]. *)
+let armed_baseline =
+  lazy (baseline_run ~args:[ "--arm"; mutant_named "add"; "-u" ] ~stale:"6\n")
 
 let armed_tests =
   [
@@ -1004,6 +1254,17 @@ let armed_tests =
           ~sub:"mutant not evaluated: no selected test ran the site." out;
         not_contains ~msg:"no survivor claim over an unarmed window"
           ~sub:"mutant survived" out);
+    test "an armed run under -u records no correction" (fun () ->
+        let r = Lazy.force armed_baseline in
+        equal ~msg:"the mismatch is a failure, not an accepted baseline" int 1
+          r.b_code;
+        contains ~msg:"so the mutant is killed" ~sub:"mutant killed.\n" r.b_out;
+        not_contains ~msg:"and nothing is accepted" ~sub:"accepted" r.b_out;
+        equal ~msg:"the baseline keeps the unmutated answer" text "6\n" r.b_file);
+    test "an armed run writes its JUnit file" (fun () ->
+        let r = Lazy.force armed_baseline in
+        equal ~msg:"beside the baseline" (list string) [ "junit.xml" ]
+          r.b_others);
   ]
 
 (* Guarantee 12's read-only clause, through the runner it exists for.
@@ -1217,6 +1478,7 @@ let blocked =
   lazy
     ((try Sys.remove verdict_path with Sys_error _ -> ());
      let pidfile = Filename.concat (temp_dir ()) "grandchild" in
+     let started = Unix.gettimeofday () in
      let status, out, err =
        finish_within ~what:"the blocked child's deadline"
          (start ~args:[ mutate ]
@@ -1224,13 +1486,14 @@ let blocked =
               ("MUTATE_FIXTURE", "block"); ("MUTATE_GRANDCHILD_PIDFILE", pidfile);
             ])
      in
+     let elapsed = Unix.gettimeofday () -. started in
      let saved = read_file verdict_path in
-     (status, out, err, saved, read_file pidfile))
+     (status, out, err, saved, read_file pidfile, elapsed))
 
 let deadline_tests =
   [
     test "a mutant that blocks is killed by its child's deadline" (fun () ->
-        let status, out, err, saved, _ = Lazy.force blocked in
+        let status, out, err, saved, _, _ = Lazy.force blocked in
         equal
           ~msg:"the run completes: a blocked child is a score, not a refusal"
           int 0 (exit_code status);
@@ -1248,6 +1511,15 @@ let deadline_tests =
                      Some (Format.asprintf "%a" pp_verdict r.V.verdict)
                    else None)
                  (V.records verdicts)));
+    test "a child's deadline is at least one second" (fun () ->
+        (* The dry run and the probe of [block] take milliseconds, and its
+           child blocks until the deadline kills it: the run cannot end
+           before the one-second floor. *)
+        let status, _, _, _, _, elapsed = Lazy.force blocked in
+        equal ~msg:"the run completed" int 0 (exit_code status);
+        is_true
+          ~msg:(Printf.sprintf "the child was killed no sooner (%.2fs)" elapsed)
+          (elapsed >= 1.0));
     test "a slow but finite test is never killed by the clock" (fun () ->
         (* The regression the multiplier guards: the sleep runs armed and
            unarmed alike, so the dry run prices it into the deadline at
@@ -1272,7 +1544,7 @@ let deadline_tests =
     test
       "an expired child's process group dies whole: no grandchild outlives the \
        run" (fun () ->
-        let status, out, _, _, pidfile = Lazy.force blocked in
+        let status, out, _, _, pidfile, _ = Lazy.force blocked in
         equal ~msg:"the run completed" int 0 (exit_code status);
         contains ~msg:"and scored the blocked mutant"
           ~sub:"mutants: 1 reached by this suite, 1 killed, 3 never reached\n"
@@ -1389,14 +1661,14 @@ let streaming_tests =
 let left_nothing ~msg tmpdir =
   equal ~msg (list string) [] (Array.to_list (Sys.readdir tmpdir))
 
-let held_at_the_gate fixture =
+let held_at_the_gate ?exe ?(args = [ mutate ]) fixture =
   let dir = temp_dir () and tmpdir = temp_dir () in
   let began = Filename.concat dir "began"
   and gate = Filename.concat dir "gate" in
   (try Sys.remove verdict_path with Sys_error _ -> ());
   let reader, writer = Unix.pipe ~cloexec:true () in
   let run =
-    start ~args:[ mutate ] ~stdout:writer
+    start ?exe ~args ~stdout:writer
       [
         ("MUTATE_FIXTURE", fixture);
         ("MUTATE_STARTED", began);
@@ -1450,6 +1722,25 @@ let reader_tests =
         equal ~msg:"the complete run's verdicts were saved first" int 4
           (killed_verdicts ());
         left_nothing ~msg:"the scratch root is gone" tmpdir);
+    test
+      "started with SIGPIPE ignored, the failed write's Sys_error escapes, \
+       after the scratch root is removed" (fun () ->
+        let run, tmpdir, reader, writer, open_gate =
+          held_at_the_gate ~exe:"/bin/sh"
+            ~args:
+              [ "-c"; "trap '' PIPE; exec \"$0\" \"$@\""; suite_exe; mutate ]
+            "held"
+        in
+        Unix.close writer;
+        Unix.close reader;
+        open_gate ();
+        let status, _, err = finish run in
+        is_true ~msg:"the process ends on the uncaught exception"
+          (status = Unix.WEXITED 2);
+        contains ~msg:"which is the write's Sys_error" ~sub:"Sys_error" err;
+        left_nothing ~msg:"the scratch root is gone" tmpdir;
+        is_false ~msg:"and a loop that did not run whole saves no verdicts"
+          (Sys.file_exists verdict_path));
     test "a SIGINT late in the run ends it by SIGINT with the verdicts it had"
       (fun () ->
         (* The pipe is filled and never read, so the loop is most likely
@@ -1598,6 +1889,28 @@ let interrupt_tests =
         left_nothing ~msg:"no scratch directory" tmpdir;
         is_true ~msg:"no process of the stopped child outlives the run"
           (grandchild_died pidfile));
+    test "a signal during the determinism probe names the probe" (fun () ->
+        let marker = Filename.concat (temp_dir ()) "marker"
+        and tmpdir = temp_dir () in
+        let run =
+          start ~args:[ mutate ]
+            [
+              ("MUTATE_FIXTURE", "probe_block");
+              ("MUTATE_PROBE_MARKER", marker);
+              ("TMPDIR", tmpdir);
+            ]
+        in
+        await ~what:"the probe's start" run (marker ^ ".probe");
+        Unix.kill run.pid Sys.sigint;
+        let status, out, err = finish run in
+        is_true ~msg:"a death by the signal" (status = Unix.WSIGNALED Sys.sigint);
+        equal ~msg:"standard error names the probe" text
+          "windtrap: interrupted during the determinism probe\n" err;
+        contains ~msg:"and the report closes, the reached mutant not tested"
+          ~sub:
+            "mutants: 1 reached by this suite, 3 never reached, 1 not tested\n"
+          out;
+        left_nothing ~msg:"no scratch directory" tmpdir);
     test "SIGTERM and SIGHUP stop it alike" (fun () ->
         List.iter
           (fun (name, signal) ->
@@ -1765,6 +2078,7 @@ let () =
          group "scope" scope_tests;
          group "loop" loop_tests;
          group "reach map" reach_tests;
+         group "dry run and children" dry_run_tests;
          group "no trace outside the pipe" no_trace_tests;
          group "verdict file" verdict_file_tests;
          group "crash" crash_tests;

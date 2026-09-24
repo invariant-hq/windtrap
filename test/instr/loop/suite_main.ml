@@ -246,6 +246,9 @@ let slow =
         is_true (Subject.sub 10 4 < 100));
   ]
 
+(* The probe says it started, beside the dry run's marker, before it
+   blocks: a harness that signals the loop then knows the probe is the
+   child that runs. *)
 let probe_block =
   [
     test "blocks on its second run" (fun () ->
@@ -253,10 +256,84 @@ let probe_block =
         match Sys.getenv_opt "MUTATE_PROBE_MARKER" with
         | None | Some "" -> ()
         | Some path ->
-            if Sys.file_exists path then
+            if Sys.file_exists path then begin
+              Out_channel.with_open_bin (path ^ ".probe") (fun oc ->
+                  output_string oc "the probe\n");
               let never_written, _held_open = Unix.pipe () in
               ignore (Unix.read never_written (Bytes.create 1) 0 1)
+            end
             else close_out (open_out path));
+  ]
+
+(* What the dry run and the children do with what the suite is given.
+
+   - [baseline] checks [sub]'s answer against a file under
+     WINDTRAP_PROJECT_ROOT, and pins it: a child that checked read-only
+     sees the mutant's answer as a mismatch.
+   - [release] reaches [sub] and pins nothing about it; only the release
+     of its fixture, at the end of the run, checks the answer. Outside
+     the process that measured the reach map the release also prints on
+     both standard descriptors, which is what a child's /dev/null hides.
+   - [budget] evaluates [sub] [k] times unarmed and [target] times armed
+     (MUTATE_BUDGET="k target"), and pins nothing: the runaway budget
+     alone decides the mutant.
+   - [flip] fails where MUTATE_FLIP is set, so a first run can leave a
+     failure for [--failed] to select.
+   - [focused] holds a focused test. *)
+
+let baseline =
+  [
+    test "sub's answer, against its file" (fun () ->
+        expect_file (string_of_int (Subject.sub 10 4)) "sub.expected");
+  ]
+
+let released =
+  fixture
+    ~teardown:(fun () ->
+      if Unix.getpid () <> dry_run_pid then begin
+        print_string "a child's release on stdout\n";
+        prerr_string "a child's release on stderr\n";
+        flush stdout;
+        flush stderr
+      end;
+      if Subject.sub 10 4 <> 6 then failwith "the release saw sub change")
+    Fun.id
+
+let release =
+  [
+    test "holds a fixture and pins nothing about sub" (fun () ->
+        released ();
+        is_true (Subject.sub 10 4 < 100));
+  ]
+
+let budget =
+  [
+    test "evaluates sub as often as it is told" (fun () ->
+        let k, target =
+          match
+            String.split_on_char ' '
+              (Option.value ~default:"" (Sys.getenv_opt "MUTATE_BUDGET"))
+          with
+          | [ k; target ] -> (int_of_string k, int_of_string target)
+          | _ -> failwith "MUTATE_BUDGET is \"k target\""
+        in
+        let armed = Subject.sub 10 4 <> 6 in
+        for _ = 2 to if armed then target else k do
+          ignore (Subject.sub 1 1)
+        done);
+  ]
+
+let flip =
+  [
+    test "fails where it is told to" (fun () ->
+        is_true (Subject.sub 10 4 < 100);
+        is_true (Sys.getenv_opt "MUTATE_FLIP" = None));
+  ]
+
+let focused =
+  [
+    focus (test "widen is nonzero" (fun () -> is_true (Subject.widen 3 4 <> 0)));
+    test "widen is not 99" (fun () -> is_true (Subject.widen 1 2 <> 99));
   ]
 
 let retried = ref 0
@@ -292,6 +369,11 @@ let () =
       exit @@ run "calc" [ group "calc" strong; group "pinned" pinned ]
   | "slow" -> exit @@ run "calc" [ group "slow" slow ]
   | "probe_block" -> exit @@ run "calc" [ group "probe" probe_block ]
+  | "baseline" -> exit @@ run "calc" [ group "baseline" baseline ]
+  | "release" -> exit @@ run "calc" [ group "release" release ]
+  | "budget" -> exit @@ run "calc" [ group "budget" budget ]
+  | "flip" -> exit @@ run "calc" [ group "flip" flip ]
+  | "focused" -> exit @@ run "calc" [ group "focused" focused ]
   | "crash" ->
       exit
       @@ run "calc"
