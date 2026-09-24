@@ -1675,6 +1675,18 @@ let uninstrumented_tests =
           "links no instrumented module");
   ]
 
+(* The fixtures' verdict files land in the real [_build/_mutants], where
+   [windtrap mutants] would merge them into the tree's own answer. No
+   rule runs these executables but this suite, so the suite removes their
+   files when it ends. A forked child ends past [at_exit], so only the
+   process that started the scenarios removes them, after all of them. *)
+let () =
+  at_exit (fun () ->
+      List.iter
+        (fun exe ->
+          try Sys.remove (V.output_file ~exe) with Sys_error _ -> ())
+        [ suite_exe; inline_exe; runaway_exe; plain_exe ])
+
 let () =
   exit
   @@ run "mutate loop"
