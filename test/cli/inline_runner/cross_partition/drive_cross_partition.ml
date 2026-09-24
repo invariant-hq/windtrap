@@ -17,7 +17,11 @@
       veto over the whole library's corrections, siblings included.
    2. [stale.ml]: exit 0 and stale.ml.corrected, left in place as a
       declared target. Last, so the .corrected that survives is
-      unambiguously this run's. *)
+      unambiguously this run's.
+
+   Both runs name one JUnit file, [report.xml], through the mirror, and
+   [junit-suites] records the suites it holds after the second: the
+   stale partition's alone, since each partition replaces the file. *)
 
 let masks = [ Drive_harness.Full_log; Drive_harness.Backtrace ]
 
@@ -37,8 +41,24 @@ let clear_corrected () =
 let run ~runner ~partition ~name =
   Drive_harness.record ~name ~exe:runner
     ~args:[ "inline-test-runner"; "cross_partition"; "-partition"; partition ]
-    ~env:[ ("WINDTRAP_SLOW_THRESHOLD", "0") ]
+    ~env:[ ("WINDTRAP_SLOW_THRESHOLD", "0"); ("WINDTRAP_JUNIT", "report.xml") ]
     ~masks ()
+
+(* The [name] of every [<testsuite>] element of [report.xml], one per
+   line. *)
+let junit_suites () =
+  let xml = In_channel.with_open_bin "report.xml" In_channel.input_all in
+  let marker = "<testsuite name=\"" in
+  let m = String.length marker in
+  let rec collect acc at =
+    if at + m > String.length xml then List.rev acc
+    else if String.sub xml at m <> marker then collect acc (at + 1)
+    else
+      let start = at + m in
+      let stop = String.index_from xml start '"' in
+      collect (String.sub xml start (stop - start) :: acc) stop
+  in
+  String.concat "" (List.map (fun n -> n ^ "\n") (collect [] 0))
 
 let () =
   match Sys.argv with
@@ -56,7 +76,9 @@ let () =
       clear_corrected ();
       (* 2. The stale partition: exit 0 and the .corrected dune would have
          diffed, left in place as a declared target. *)
-      run ~runner ~partition:"stale.ml" ~name:"stale"
+      run ~runner ~partition:"stale.ml" ~name:"stale";
+      Drive_harness.write_file "junit-suites" (junit_suites ());
+      Sys.remove "report.xml"
   | _ ->
       prerr_endline "usage: drive_cross_partition.exe RUNNER";
       exit 2

@@ -46,6 +46,16 @@ on. The run underneath fails, and its exit code comes through unchanged:
   $ sed -E 's/(report to [^:]+): .*/\1: REASON/' err
   windtrap: warning: could not write JUnit report to blocked/out/fixture.xml: REASON
 
+Every run that names the same .xml writes the same file, and the last
+one wins: the second run's report replaces the first's whole, rather
+than adding its tests to it.
+
+  $ run ./suite_main.exe -f math --junit shared.xml > out 2> err
+  $ run ./suite_main.exe -f boom --junit shared.xml > out 2> err
+  [1]
+  $ grep -o '<testcase name="[^"]*"' shared.xml
+  <testcase name="boom"
+
 When a run also has a file it could not write, it says so first, and
 writes its JUnit file after: the two warnings come in that order. Here
 the correction's path is taken by a directory, and the report's parent

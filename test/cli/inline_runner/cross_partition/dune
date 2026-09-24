@@ -1,7 +1,8 @@
 ; The two facts dune turns into a library-wide promotion verdict: a
 ; crashing partition exits 1 and writes nothing, a stale one exits 0 and
 ; writes its correction; one rule, so the runs never race on .corrected
-; files. See doc/dev/testing.md, "The five families".
+; files. The same two runs share one JUnit .xml, which the last replaces.
+; See doc/dev/testing.md, "The five families".
 
 (executable
  (name cross_partition_runner)
@@ -22,7 +23,8 @@
   crash-corrected
   stale-log
   stale-exit
-  stale.ml.corrected)
+  stale.ml.corrected
+  junit-suites)
  (deps crash.ml stale.ml)
  (action
   (run ./drive_cross_partition.exe %{dep:cross_partition_runner.exe})))
@@ -56,3 +58,8 @@
  (alias runtest)
  (action
   (diff stale.ml.corrected.expected stale.ml.corrected)))
+
+(rule
+ (alias runtest)
+ (action
+  (diff junit-suites.expected junit-suites)))
