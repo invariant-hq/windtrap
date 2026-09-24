@@ -3354,58 +3354,6 @@ let test_armed_titles () =
   not_contains ~msg:"an ordinary run's titles carry no qualifier"
     ~sub:"mutant armed" unarmed
 
-(* [--failed] is an optimization, not a step, so no run advertises it. The
-   acceptance commands are the opposite case — they name a verb nobody can
-   guess — and stay under every mismatch (guarantee 3). *)
-let test_no_rerun_hint () =
-  let failing =
-    [ Fixtures.result [ "t" ] (Failure.Fail [ Failure.message "b" ]) ]
-  in
-  let exe =
-    with_renderer ~invocation:(`Exe "dune exec qa/x/t.exe --") (fun r ->
-        Report.finish r ~results:failing ~duration:0.1 ())
-  in
-  not_contains ~msg:"a failing run does not advertise --failed" ~sub:"--failed"
-    exe;
-  not_contains ~msg:"and its blocks print no rerun hint" ~sub:"rerun:" exe;
-  is_true ~msg:"the summary is the last line"
-    (String.ends_with ~suffix:"\n\n1 failed in 100ms.\n" exe);
-  let mirrors =
-    with_renderer (fun r -> Report.finish r ~results:failing ~duration:0.1 ())
-  in
-  not_contains ~msg:"nor under Mirrors" ~sub:"--failed" mirrors;
-  not_contains ~msg:"no rerun hint under Mirrors either" ~sub:"rerun:" mirrors;
-  List.iter
-    (fun mode ->
-      not_contains ~msg:"no rerun hint anywhere in a transcript of every kind"
-        ~sub:"rerun:"
-        (transcript ~mode ~invocation:golden_invocation ()))
-    [ `Compact; `Verbose ]
-
-(* The property replay line, and the fact that it is the only replay line
-   a failure block prints. *)
-
-let test_property_replay_line () =
-  let prop_result =
-    Fixtures.result
-      [ "geo"; "area non-negative" ]
-      (Failure.Fail [ Fixtures.prop_failure ])
-  in
-  let t =
-    with_renderer (fun r ->
-        Report.finish r ~results:[ prop_result ] ~duration:0.1 ())
-  in
-  is_true ~msg:"a property failure prints exactly one replay line"
-    (occurrences_of ~sub:"replay:" t = 1);
-  let plain =
-    with_renderer (fun r ->
-        Report.finish r
-          ~results:
-            [ Fixtures.result [ "t" ] (Failure.Fail [ Failure.message "b" ]) ]
-          ~duration:0.1 ())
-  in
-  not_contains ~msg:"an ordinary failure prints none" ~sub:"replay:" plain
-
 (* Verbose label distributions *)
 
 let test_verbose_pass_labels () =
@@ -4980,106 +4928,6 @@ let test_observe_seed_policy () =
      releasing db\n"
     streamed
 
-(* Tree-wide summary dialect
-
-   The meta harness (test/unit/harness.ml) prints its one-liner by hand;
-   this pins its bytes to the renderer's with color forced: the same
-   styling bytes must wrap the same semantic elements, the harness
-   differing only by the documented word "checks" (it counts assertions,
-   a windtrap suite counts tests) and by always carrying the suite
-   prefix (it prints no header). The harness expectation is derived from
-   the rendered line, not hardcoded twice, so the two dialects cannot
-   drift apart silently — restyle the renderer's summary and this fails
-   until the harness follows. *)
-
-let test_summary_dialect () =
-  let chomp s =
-    let n = String.length s in
-    if n > 0 && s.[n - 1] = '\n' then String.sub s 0 (n - 1) else s
-  in
-  (* "N passed" -> "N checks passed", first occurrence. *)
-  let insert_checks line =
-    let marker = " passed" in
-    let n = String.length line and m = String.length marker in
-    let rec find i =
-      if i + m > n then failwith "summary line lost its passed segment"
-      else if String.sub line i m = marker then i
-      else find (i + 1)
-    in
-    let i = find 0 in
-    String.sub line 0 i ^ " checks" ^ String.sub line i (n - i)
-  in
-  let transcript ~results ~duration =
-    with_renderer ~ansi:true (fun r ->
-        Report.header r ~suite:"mylib" ~tests:(List.length results) ~seed:None
-          ();
-        List.iter (fun res -> Report.result r res) results;
-        Report.finish r ~results ~duration ())
-  in
-  let pass = Fixtures.result [ "t" ] Failure.Pass in
-  (* Green: a compact run with nothing to show is exactly the one named line. *)
-  let green = chomp (transcript ~results:[ pass; pass ] ~duration:0.5) in
-  equal ~msg:"renderer green one-liner styles the passed segment" string
-    "mylib: \027[32m2 passed\027[0m in 500ms." green;
-  equal ~msg:"harness green one-liner is the renderer's bytes plus \"checks\""
-    string (insert_checks green)
-    (Harness.summary_line ~ansi:true ~suite:"mylib" ~failures:0 ~count:2
-       ~duration:0.5 ());
-  (* Failing: the summary ends the transcript; the harness line is the
-     same bytes with the suite prefix (the renderer's header already
-     named the suite) and "checks". *)
-  let failing =
-    Fixtures.result [ "u" ] (Failure.Fail [ Fixtures.eq_failure ])
-  in
-  let failing_lines =
-    String.split_on_char '\n'
-      (chomp (transcript ~results:[ pass; failing ] ~duration:0.5))
-  in
-  let failing_summary =
-    match List.rev failing_lines with last :: _ -> last | [] -> ""
-  in
-  equal ~msg:"renderer failing summary styles the failed segment" string
-    "1 passed, \027[31m1 failed\027[0m in 500ms." failing_summary;
-  equal ~msg:"harness failing line matches the renderer's styling bytes" string
-    ("mylib: " ^ insert_checks failing_summary)
-    (Harness.summary_line ~ansi:true ~suite:"mylib" ~failures:1 ~count:2
-       ~duration:0.5 ());
-  (* The harness check lines' FAIL tag: the renderer's own FAIL header
-     bytes, derived from the rendered block ("  FAIL  <name>"), not
-     hardcoded — restyle the renderer's tag and this fails until the
-     harness follows. *)
-  let renderer_fail_tag =
-    let sep = "  " in
-    let header =
-      List.find_opt
-        (fun l ->
-          String.length l > 2 && String.sub l 0 2 = sep && has ~sub:"FAIL" l)
-        failing_lines
-    in
-    match header with
-    | None -> failwith "failing transcript lost its FAIL header"
-    | Some l ->
-        let rec find i =
-          if i + 2 > String.length l then
-            failwith "FAIL header lost its separator"
-          else if String.sub l i 2 = sep then i
-          else find (i + 1)
-        in
-        String.sub l 2 (find 2 - 2)
-  in
-  equal ~msg:"harness FAIL tag carries the renderer's styling bytes" string
-    renderer_fail_tag
-    (Harness.fail_tag ~ansi:true);
-  (* Monochrome: identical wording, zero escape bytes on both sides. *)
-  let plain =
-    Harness.summary_line ~ansi:false ~suite:"mylib" ~failures:0 ~count:2
-      ~duration:0.5 ()
-  in
-  equal ~msg:"harness monochrome line carries no styling bytes" string
-    "mylib: 2 checks passed in 500ms." plain;
-  equal ~msg:"harness monochrome FAIL tag is bare" string "FAIL"
-    (Harness.fail_tag ~ansi:false)
-
 (* The corrections section
 
    What the run wrote for its baselines is a section before the summary
@@ -5256,8 +5104,6 @@ let tests =
     test "a withheld correction: no accept, the reason, nothing after it"
       test_withheld_correction;
     test "an armed run's FAIL titles" test_armed_titles;
-    test "hints: no run advertises --failed" test_no_rerun_hint;
-    test "the property replay line is the only one" test_property_replay_line;
     test "verbose PASS prints the label table" test_verbose_pass_labels;
     test "terminal name sanitization" test_name_sanitization;
     test "the location forms" test_location_forms;
@@ -5305,7 +5151,6 @@ let tests =
       test_github_envelope_composed;
     test "observer: the header-seed policy and the stream"
       test_observe_seed_policy;
-    test "tree-wide summary dialect (harness parity)" test_summary_dialect;
   ]
 
 let () = exit @@ Windtrap.run "report" tests

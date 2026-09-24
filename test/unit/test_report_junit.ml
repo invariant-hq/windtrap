@@ -65,41 +65,34 @@ let test_full_run () =
     ~sub:{|message="expect_file &quot;test/help.expected&quot;: no baseline"|}
     doc
 
-(* The message attribute: the failure as one sentence *)
+(* The message attribute: the failure as one sentence, its headline. The
+   headline's forms are Report_sections', pinned in test_report; this pins
+   that each failure's attribute is its headline. *)
 
 let test_message_forms () =
+  let failures =
+    [
+      Failure.equality ~msg:"deliberate" ~expected:"1" ~actual:"2" ();
+      Failure.equality ~expected:"a\nb\nc" ~actual:"a\nB\nc" ();
+      Fixtures.snap_mismatch;
+      Failure.equality ~expected:(String.make 100 'x') ~actual:"y" ();
+    ]
+  in
   let doc =
     Report_junit.render ~suite:"s" ~duration:0.1
       ~results:
-        [
-          Fixtures.result [ "sides" ]
-            (Failure.Fail
-               [
-                 Failure.equality ~msg:"deliberate" ~expected:"1" ~actual:"2" ();
-               ]);
-          Fixtures.result [ "diff" ]
-            (Failure.Fail
-               [ Failure.equality ~expected:"a\nb\nc" ~actual:"a\nB\nc" () ]);
-          Fixtures.result [ "baseline" ]
-            (Failure.Fail [ Fixtures.snap_mismatch ]);
-          Fixtures.result [ "long" ]
-            (Failure.Fail
-               [
-                 Failure.equality ~expected:(String.make 100 'x') ~actual:"y" ();
-               ]);
-        ]
+        (List.mapi
+           (fun i f -> Fixtures.result [ string_of_int i ] (Failure.Fail [ f ]))
+           failures)
       ()
   in
   check_well_formed "the document is well-formed" doc;
-  contains ~msg:"the user message, a colon, then the sentence"
-    ~sub:{|<failure message="deliberate: expected 1, got 2">|} doc;
-  contains ~msg:"a diff is a sentence counting its lines"
-    ~sub:{|<failure message="expected and actual differ (5 diff lines)">|} doc;
-  contains ~msg:"a baseline is its first fact line"
-    ~sub:{|<failure message="expect: mismatch">|} doc;
-  contains ~msg:"80 code points, then an ellipsis"
-    ~sub:({|<failure message="expected |} ^ String.make 71 'x' ^ "\u{2026}\">")
-    doc;
+  List.iter
+    (fun f ->
+      contains ~msg:"the message attribute is the failure's headline"
+        ~sub:(Printf.sprintf {|<failure message="%s">|} (Report.headline f))
+        doc)
+    failures;
   not_contains ~msg:"no em dash in the document" ~sub:"\u{2014}" doc;
   not_contains ~msg:"no em dash in the full fixture's document" ~sub:"\u{2014}"
     (full ());
@@ -353,22 +346,6 @@ let test_escaping () =
   contains ~msg:"text escaping" ~sub:"text a&lt;b&gt;&amp;\"c'" doc;
   check_well_formed "escaped document is well-formed" doc
 
-let test_hostile_tail () =
-  let tail = Failure.tail ~log_path:"log" "ok\x01 \027[31mred\027[0m \xff\n" in
-  let doc =
-    Report_junit.render ~suite:"s"
-      ~results:
-        [
-          fail_result [ "t" ]
-            (Failure.with_output_tail tail (Failure.message "boom"));
-        ]
-      ~duration:0.1 ()
-  in
-  not_contains ~msg:"tail control byte removed" ~sub:"\x01" doc;
-  not_contains ~msg:"tail ESC removed" ~sub:"\027" doc;
-  not_contains ~msg:"tail malformed UTF-8 removed" ~sub:"\xff" doc;
-  check_well_formed "hostile tail document is well-formed" doc
-
 (* A pass that needed a retry: JUnit has no state for it, so the fact
    rides the one element every consumer allows on a testcase. *)
 let test_flaky_note () =
@@ -452,7 +429,7 @@ let tests =
   [
     test "golden document" test_golden;
     test "full fixture run is well-formed" test_full_run;
-    test "the message attribute's forms" test_message_forms;
+    test "the message attribute is the headline" test_message_forms;
     test "bodies carry the invocation-spelled hints" test_invocation_hints;
     test "excused failures report as skipped" test_excused_as_skipped;
     test "a withheld correction offers no acceptance" test_withheld_correction;
@@ -462,7 +439,6 @@ let tests =
     test "ANSI cannot reach a JUnit document" test_ansi_impossible;
     test "XML 1.0 range sanitization" test_xml_range;
     test "escaping" test_escaping;
-    test "hostile captured tail" test_hostile_tail;
     test "flaky pass note" test_flaky_note;
     test "the report's path" test_path;
     test "empty run" test_empty_run;

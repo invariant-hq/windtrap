@@ -276,8 +276,12 @@ let hunk_tests =
           (apply_hunks (split_lines expected) hs = split_lines actual);
         is_true ~msg:"edit cap: ordering holds"
           (List.for_all (fun h -> changes_ordered_ok h.Diff.lines) hs));
+    (* Lines come from a three-letter alphabet on purpose: distinct random
+       strings almost never match, and a diff over inputs with no common
+       lines exercises none of the alignment; a tiny alphabet makes
+       collisions, runs and near-misses the common case. *)
     (let line = Gen.of_list [ "a"; "b"; "c" ] in
-     let lines = Gen.list ~size:(Gen.int_range 0 10) line in
+     let lines = Gen.list ~size:(Gen.int_range 0 12) line in
      let case =
        Gen.with_pp
          (fun ppf (e, a, context) ->
@@ -289,7 +293,7 @@ let hunk_tests =
           and+ context = int_range 0 3 in
           (e_lines, a_lines, context))
      in
-     prop "randomized hunk laws" ~count:300 case
+     prop "randomized hunk laws" ~count:500 case
        (fun (e_lines, a_lines, context) ->
          let expected = text_of_lines e_lines
          and actual = text_of_lines a_lines in
@@ -464,10 +468,26 @@ let refine_tests =
    are deterministic, so this pins the shape: per-cell allocation stays O(1)
    words and well under the closure regime. The bound is loose on purpose —
    it is here to catch a reintroduced per-cell allocation, not to freeze the
-   current figure. *)
+   current figure.
+
+   It is a performance guard, not a contract: no interface states the
+   figure. Instrumented (coverage or mutation), the module counts every
+   point it passes and the figure means nothing, so the guard skips. *)
+let diff_is_instrumented () =
+  let module Coverage = Windtrap_runtime.Coverage in
+  let module Mutate = Windtrap_runtime.Mutate in
+  List.mem "lib/diff.ml" (Coverage.files (Coverage.snapshot ()))
+  || List.exists
+       (fun (m : Mutate.mutant) ->
+         String.starts_with ~prefix:"lib/diff.ml:" (Mutate.id_to_string m.id))
+       (Mutate.catalogue ())
+
 let alloc_tests =
   [
-    test "refine allocates no closure per grid cell" (fun () ->
+    test "performance guard: refine allocates under 2 words per grid cell"
+      (fun () ->
+        if diff_is_instrumented () then
+          skip ~reason:"lib/diff.ml is instrumented" ();
         let sizes = [ (200, 20); (600, 3) ] in
         let cells =
           List.fold_left (fun acc (n, it) -> acc + (n * n * it)) 0 sizes
@@ -491,51 +511,5 @@ let alloc_tests =
           (per_cell < 2.));
   ]
 
-(* The patch law, as a property
-
-   Every hunk test above states the law over one hand-written pair, and
-   three of them apply the hunks back to check it. The law itself is
-   universally quantified — for ANY two texts, applying the hunks to the
-   expected lines reconstructs the actual lines exactly — and a diff
-   algorithm is precisely the kind of code whose bugs live in the input
-   shapes nobody thought to write down: a run of identical lines, a
-   deletion that meets the end of the file, two regions exactly
-   [2 * context] apart, an empty side.
-
-   Lines are drawn from a three-letter alphabet on purpose. Distinct
-   random strings almost never match, and a diff over inputs with no
-   common lines exercises none of the alignment; a tiny alphabet makes
-   collisions, runs and near-misses the common case. *)
-
-let line_gen = Gen.of_list [ "a"; "b"; "c" ]
-
-(* [with_pp] because [map] drops the printer, and a counterexample that
-   renders as "<no printer>" is a counterexample the reader cannot use.
-   Found by breaking this property on purpose and reading what it
-   printed. *)
-let text_gen =
-  Gen.with_pp
-    (fun ppf t -> Format.fprintf ppf "%S" t)
-    (Gen.map text_of_lines (Gen.list ~size:(Gen.int_range 0 12) line_gen))
-
-let law_tests =
-  [
-    prop "hunks applied to expected reconstruct actual" ~count:500
-      (Gen.pair text_gen text_gen) (fun (expected, actual) ->
-        let hs = Diff.hunks ~expected ~actual () in
-        match apply_hunks (split_lines expected) hs with
-        | patched ->
-            equal ~msg:"the patch reconstructs actual" (list string)
-              (split_lines actual) patched
-        | exception Bad_patch reason ->
-            failf "the hunks do not apply: %s" reason);
-    (* Identical texts must produce no hunk at all: a diff that reports a
-       change where there is none is the failure mode that makes every
-       other report untrustworthy. *)
-    prop "identical texts have no hunks" text_gen (fun t ->
-        equal ~msg:"no hunks" int 0
-          (List.length (Diff.hunks ~expected:t ~actual:t ())));
-  ]
-
-let tests = hunk_tests @ refine_tests @ alloc_tests @ law_tests
+let tests = hunk_tests @ refine_tests @ alloc_tests
 let () = exit @@ Windtrap.run "diff" tests

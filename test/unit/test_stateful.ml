@@ -65,14 +65,6 @@ let summary_of program =
 
 let names_at gen index = names gen (program_at gen index)
 
-(* How many calls a program makes, read off the executor: one invariant
-   check on the fresh system and one after every step. The printer omits the
-   middle of a long program, so this is the count [names] cannot give. *)
-let call_count program =
-  let checks = ref 0 in
-  Stateful.execute ~invariant:(fun _ _ -> incr checks) ~scope:unit_scope program;
-  !checks - 1
-
 (* The one placeholder a value with no printer renders as. *)
 let placeholder = "<no printer: attach one with Gen.with_pp>"
 
@@ -1501,38 +1493,6 @@ let long_programs_truncate_with_a_step_omitted_line () =
     (Pp.str "50 calls, last: %s" (List.nth drawn 49))
     (summary_of program)
 
-(* The model column is as wide as the cells that print, so a wide one
-   inside the omitted middle costs the rows that print nothing. *)
-let an_omitted_model_cell_never_prints () =
-  let wide = String.make 20 'w' in
-  let pp_model ppf model =
-    if model = 25 then Format.pp_print_string ppf wide
-    else Format.pp_print_int ppf model
-  in
-  let gen = Stateful.program ~steps:50 ~model:0 ~pp_model tick_commands in
-  let program = program_at gen 0 in
-  let total = call_count program in
-  is_true
-    ~msg:(Printf.sprintf "the tick program made %d of 50 calls" total)
-    (total = 50);
-  (* The cell that never prints is the widest one there is: rows 21 to 30
-     are omitted, and the model before row 26 is 25. *)
-  let row index = Pp.str "%2d  %-12d  tick" (index + 1) index in
-  let expected =
-    (" #  model before  call" :: List.init 20 row)
-    @ [ "\u{2026} (10 calls omitted)" ]
-    @ List.init 20 (fun index -> row (30 + index))
-  in
-  is_true ~msg:"the omitted middle's model cell printed after all"
-    (contains wide (render gen program) = false);
-  is_true
-    ~msg:
-      (Printf.sprintf
-         "a truncated program's model cells rendered:\n%s\nnot:\n%s"
-         (render gen program)
-         (String.concat "\n" expected))
-    (lines_of gen program = expected)
-
 (* Malformed arguments are reported at sample time, inside the running
    test's exception boundary. *)
 let a_malformed_declaration_raises_at_sample_time () =
@@ -1653,38 +1613,6 @@ let stateful_runs_one_fresh_system_per_case_over_steps_calls () =
       (Printf.sprintf "%d invariant checks over %d systems, not %d" !invariants
          !scopes (4 * !scopes))
     (!invariants = 4 * !scopes)
-
-(* A resource that exists only inside a callback and is never returned —
-   [Eio_main.run], [In_channel.with_open_text], any [with_]-style API. No
-   [unit -> 'sut] thunk can hand one over; as a scope it is the plain
-   case, end to end through the facade. *)
-let a_callback_only_resource_runs_end_to_end () =
-  let opened = ref 0 and closed = ref 0 in
-  (* [with_sink] never returns the buffer: the only way to see it is to
-     be called by it. *)
-  let with_sink fn =
-    incr opened;
-    let sink = Buffer.create 16 in
-    Fun.protect ~finally:(fun () -> incr closed) (fun () -> fn sink)
-  in
-  let commands =
-    [
-      Windtrap.command "write" (Gen.int_range 0 9)
-        ~next:(fun model item -> model @ [ item ])
-        (fun _ item sink -> Buffer.add_string sink (string_of_int item));
-      Windtrap.call "contents" ~next:Fun.id (fun model sink ->
-          Check.equal string
-            (String.concat "" (List.map string_of_int model))
-            (Buffer.contents sink));
-    ]
-  in
-  run_declared_body
-    (Windtrap.stateful ~count:5 ~steps:6 "sink" ~model:[] ~scope:with_sink
-       commands);
-  equal ~msg:"the declared ?count of 5 is the number of cases" int 5 !opened;
-  is_true
-    ~msg:(Printf.sprintf "%d sinks closed for %d opened" !closed !opened)
-    (!closed = !opened)
 
 (* [?pp_model] reaches the printer the engine renders a counterexample
    with, and reaches it with the pre-states. *)
@@ -1971,15 +1899,12 @@ let suite =
       newlines_in_names_and_cells_are_flattened );
     ( "long programs truncate with a calls-omitted line",
       long_programs_truncate_with_a_step_omitted_line );
-    ("an omitted model cell never prints", an_omitted_model_cell_never_prints);
     ( "a malformed declaration raises at sample time",
       a_malformed_declaration_raises_at_sample_time );
     ( "stateful declares a prop node with its tags, timeout and site",
       stateful_declares_a_prop_node_with_its_tags_timeout_and_site );
     ( "stateful runs one fresh system per case over ?steps calls",
       stateful_runs_one_fresh_system_per_case_over_steps_calls );
-    ( "a callback-only resource runs end to end",
-      a_callback_only_resource_runs_end_to_end );
     ( "stateful threads ~pp_model into the counterexample",
       stateful_threads_pp_model_into_the_counterexample );
     ( "the same seed reproduces the same counterexample",

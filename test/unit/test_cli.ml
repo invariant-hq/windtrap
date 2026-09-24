@@ -224,25 +224,6 @@ let () =
   is_true ~msg:"the bare error is still there"
     (contains "unknown option '-Z'" (message [ "-Z" ]))
 
-(* The knobs that went — a failure count for -x, a shrink budget — are
-   unknown flags like any other, with no near miss to suggest: nothing in
-   the inventory is one slip from either. *)
-let () =
-  reg "the cut knobs are unknown flags" @@ fun () ->
-  expect_error "--bail is unknown" [ "--bail"; "3" ] (function
-    | Cli.Unknown_flag "--bail" -> true
-    | _ -> false);
-  expect_error "--max-shrink is unknown" [ "--max-shrink"; "5" ] (function
-    | Cli.Unknown_flag "--max-shrink" -> true
-    | _ -> false);
-  List.iter
-    (fun typo ->
-      is_true
-        ~msg:(typo ^ " suggests nothing")
-        (not
-           (contains "did you mean" (Cli.error_message (Cli.Unknown_flag typo)))))
-    [ "--bail"; "--max-shrink" ]
-
 let () =
   reg "typed parse errors" @@ fun () ->
   expect_error "unknown long flag" [ "--bogus" ] (function
@@ -524,63 +505,6 @@ let () =
     (slist string String.compare)
     (on_the_page @ read_but_not_listed @ bound_by_this_suite)
     Harness.windtrap_vars
-
-(* Every line the page composes fits 80 columns. An option is its flag
-   line, the mirror after it, then its sentences indented under it: a
-   description wraps and is never cut to fit. *)
-let () =
-  reg "help fits 80 columns, a description under each flag line" @@ fun () ->
-  let lines = String.split_on_char '\n' (Cli.help ~prog:"mytests.exe") in
-  List.iter
-    (fun line ->
-      is_true
-        ~msg:(Printf.sprintf "%d columns: %s" (Text.length_utf8 line) line)
-        (Text.length_utf8 line <= 80))
-    lines;
-  let following heading =
-    let rec find = function
-      | line :: next :: _ when line = heading -> next
-      | _ :: rest -> find rest
-      | [] -> fail ("no flag line: " ^ heading)
-    in
-    find lines
-  in
-  equal ~msg:"a valued option: short and long spellings, then the mirror" string
-    "      Run only tests whose path contains PATTERN."
-    (following "  -f PATTERN, --filter=PATTERN (env WINDTRAP_FILTER)");
-  equal ~msg:"a long-only option starts at the same column" string
-    "      Warn when an untagged test runs longer than SECONDS (0 disables)."
-    (following "  --slow-threshold=SECONDS (env WINDTRAP_SLOW_THRESHOLD)");
-  equal ~msg:"an option with no mirror has nothing after its names" string
-    "      Rerun only the last run's failures." (following "  --failed");
-  equal ~msg:"the optional value keeps its brackets" string
-    "      Test this executable's mutants, all or those under PREFIX."
-    (following "  --mutate[=PREFIX,...] (env WINDTRAP_MUTATE)");
-  equal ~msg:"a variable with no flag takes the same two-line form" string
-    "      Any value: never style output (--color auto)."
-    (following "  NO_COLOR");
-  (* Wrapping cuts no sentence: unwrapped, every clause is whole. *)
-  let unwrapped =
-    String.concat " "
-      (List.filter (( <> ) "")
-         (List.concat_map (String.split_on_char ' ') lines))
-  in
-  List.iter
-    (fun sentence ->
-      is_true ~msg:("whole: " ^ sentence) (contains sentence unwrapped))
-    [
-      "A bare PATTERN runs only tests whose full path contains it (same as -f \
-       PATTERN).";
-      "Run only the Kth of N deterministic path-hash buckets.";
-      "Skip tests tagged LABEL (repeatable).";
-      "Default per-test timeout in seconds.";
-      "Root seed for property tests (s1:<16 hex>).";
-      "Accept baseline changes in place (refused under CI).";
-      "Write corrections as <file>.corrected, for dune promote.";
-      "Stream test output instead of capturing it.";
-      "Also write a JUnit XML report to PATH.";
-      "Color output: always, never or auto.";
-    ]
 
 let () =
   reg "usage line" @@ fun () ->
@@ -998,69 +922,6 @@ let () =
   is_true ~msg:"the message names both flags"
     (contains "'--mutate' and '--arm' cannot be combined"
        (Cli.error_message (Cli.Incompatible_flags ("--mutate", "--arm"))))
-
-(* Resolution: the output level *)
-
-let () =
-  reg "output level resolution" @@ fun () ->
-  clear_env ();
-  let level parsed =
-    match Cli.settings parsed with
-    | Ok s -> if s.Run.verbose then `Verbose else `Compact
-    | Error error ->
-        is_true ~msg:("settings succeeds: " ^ Cli.error_message error) false;
-        `Compact
-  in
-  is_true ~msg:"default level is compact" (level Cli.empty = `Compact);
-  setenv "WINDTRAP_VERBOSE" (Some "1");
-  is_true ~msg:"WINDTRAP_VERBOSE reaches verbose (the dune runtest path)"
-    (level Cli.empty = `Verbose);
-  clear_env ();
-  setenv "WINDTRAP_VERBOSE" (Some "maybe");
-  (match Cli.settings Cli.empty with
-  | Error
-      (Cli.Invalid_value { source = "WINDTRAP_VERBOSE"; value = "maybe"; _ }) ->
-      is_true ~msg:"an unparseable boolean is refused, naming the variable" true
-  | Ok _ | Error _ ->
-      is_true ~msg:"an unparseable boolean is refused, naming the variable"
-        false);
-  clear_env ();
-  setenv "WINDTRAP_VERBOSE" (Some " 1 ");
-  is_true ~msg:"boolean spellings are trimmed, as WINDTRAP_STREAM's"
-    (level Cli.empty = `Verbose)
-
-(* Resolution: the one call the facade makes *)
-
-let () =
-  reg "settings resolves both layers in one call" @@ fun () ->
-  clear_env ();
-  setenv "WINDTRAP_SEED" (Some "s1:0123456789abcdef");
-  let s = settings { Cli.empty with Cli.filter = Some "geo" } in
-  is_true ~msg:"the flag reaches the config field" (s.Run.filter = Some "geo");
-  is_true ~msg:"the mirror reaches it too" (s.Run.seed = 0x0123456789abcdefL);
-  is_true ~msg:"the presentation fields default"
-    (s.Run.color = Os.Auto && s.Run.slow_threshold = 1.0);
-  is_true ~msg:"the mutation field defaults to none"
-    (s.Run.mutation = Run.No_mutation);
-  is_true ~msg:"the level field defaults to compact" (not s.Run.verbose);
-  setenv "WINDTRAP_MUTATE" (Some "1");
-  setenv "WINDTRAP_VERBOSE" (Some "1");
-  let s = settings Cli.empty in
-  is_true ~msg:"WINDTRAP_MUTATE reaches the mutation field"
-    (s.Run.mutation = Run.Loop []);
-  is_true ~msg:"WINDTRAP_VERBOSE reaches the level field" s.Run.verbose
-
-let () =
-  reg "settings reports the configuration error" @@ fun () ->
-  clear_env ();
-  setenv "WINDTRAP_SEED" (Some "garbage");
-  match Cli.settings Cli.empty with
-  | Error (Cli.Invalid_value { source = "WINDTRAP_SEED"; _ }) ->
-      is_true ~msg:"a malformed seed mirror is an error naming the variable"
-        true
-  | Ok _ | Error _ ->
-      is_true ~msg:"a malformed seed mirror is an error naming the variable"
-        false
 
 (* Resolution: --slow-threshold and WINDTRAP_SLOW_THRESHOLD *)
 

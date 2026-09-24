@@ -47,9 +47,7 @@ let resolve_ansi () =
   Os.resolve_color mode ~tty:(Os.is_tty_stdout ())
     ~inside_dune:(Os.inside_dune ()) ~term_dumb:(Os.term_dumb ())
 
-(* The check lines' FAIL tag, ansi-explicit (like [summary_line]) so
-   test_report's dialect test can pin its bytes against the renderer's
-   own FAIL header. *)
+(* The check lines' FAIL tag, in the renderer's own style. *)
 let fail_tag ~ansi = Windtrap.Private.Pp.styled_string ~ansi `Red "FAIL"
 
 let check name cond =
@@ -194,7 +192,7 @@ let with_temp_root ?(prefix = "windtrap-meta-") f =
    ("run: 115 checks" is not 115 tests). Styling and the duration bytes
    are the renderer's own: green wraps the passed segment of a green
    run, red wraps the failed segment, exactly as Report.finish styles
-   them. Pinned against the renderer by test_report's dialect test. *)
+   them. *)
 
 let summary_line ?(skipped = 0) ~ansi ~suite ~failures ~count ~duration () =
   let st style s = Windtrap.Private.Pp.styled_string ~ansi style s in

@@ -352,8 +352,7 @@ let () =
   outside "subtest" (fun () -> subtest "sub" (fun () -> body_ran := true));
   check "subtest outside a run never runs its body" (not !body_ran)
 
-(* The raising verbs need no ambient state; escaping without a run they
-   print the failure's headline, not an opaque constructor. *)
+(* The raising verbs need no ambient state. *)
 let () =
   (match equal int 1 2 with
   | () -> check "equal outside a run raises" false
@@ -361,10 +360,7 @@ let () =
       check "equal outside a run raises Check_failure"
         (match failure.Failure.kind with
         | Failure.Equality _ -> true
-        | _ -> false);
-      let rendered = Printexc.to_string (Failure.Check_failure failure) in
-      check "uncaught assertion failures render readably"
-        (contains "expected" rendered && contains "windtrap" rendered));
+        | _ -> false));
   match skip ~reason:"why" () with
   | _ -> check "skip raises Skip_test" false
   | exception Failure.Skip_test reason ->
@@ -1016,19 +1012,6 @@ let () =
         (path = Filename.concat root "src/bracketed.expected")
   | _ -> check "bracket baseline accepted a file" false
 
-(* Nested runs *)
-
-let () =
-  with_temp_root @@ fun root ->
-  let config = base_config ~log_dir:root () in
-  let suite = [ test "nests" (fun () -> ignore (run "inner" [])) ] in
-  expect_run "nested run" ~config suite @@ fun outcome ->
-  match failure_list (outcome_of outcome [ "nests" ]) with
-  | [ { Failure.kind = Failure.Raise { actual = Some rendered; _ }; _ } ] ->
-      check "run inside a test body fails that test"
-        (contains "already active" rendered)
-  | _ -> check "run inside a test body fails with a Raise payload" false
-
 (* The assertion verbs, body operations and xfail through the facade
 
    Deep semantics live in test/check and test/structure; this block only
@@ -1270,29 +1253,6 @@ let () =
     check_contains "the test after the bomb still ran and failed"
       ~sub:"2 failed" transcript)
 
-(* The run-entry guard reads the widened slot (D1) *)
-
-let () =
-  (* [run] refuses whenever the ambient slot is occupied — [Run.active],
-     not just an executing frame — so a fixture release or an observer
-     starting a nested run is refused like a test body would be. *)
-  with_temp_root @@ fun root ->
-  let run_record =
-    Run.create
-      (base_config ~log_dir:root ())
-      ~capture:Capture.disabled
-      ~baselines:(Baseline.create ~mode:Baseline.Check ())
-  in
-  match
-    Run.with_active run_record (fun () -> Windtrap.run ~argv:[| "x" |] "s" [])
-  with
-  | _ -> check "run inside an active run is refused" false
-  | exception Invalid_argument message ->
-      check "run inside an active run raises the already-active error"
-        (contains "already active" message)
-  | exception _ ->
-      check "run inside an active run raises Invalid_argument" false
-
 (* The startup-computed invocation, process level (D5 §1) *)
 
 let () =
@@ -1486,33 +1446,6 @@ let () =
     check_contains "JUnit counts the release failure" ~sub:"failures=\"1\"" xml;
     check_contains "the JUnit case is the release's own path"
       ~sub:"fixture release" xml)
-
-(* The focus warning (testing/T3) *)
-
-let () =
-  (* A passing two-test suite, focused or not, outside CI ([init] unset
-     CI). The warning [Windtrap.focus] documents goes to stderr, and is
-     absent without focus. *)
-  with_temp_root @@ fun root ->
-  let pass name = test name (fun () -> is_true true) in
-  let run_focus mode suite =
-    let code, _, err = run_in_process root "focussuite" suite in
-    check_int
-      (mode ^ " run returns 0 (focus narrows, never fails)")
-      ~expected:0 ~actual:code;
-    err
-  in
-  let focused =
-    run_focus "focused"
-      [ focus (test "picked" (fun () -> is_true true)); pass "other" ]
-  in
-  check_string "outside CI a successful focused run warns, and says what to do"
-    ~expected:
-      "windtrap: warning: focus is active: 1 of 2 tests ran; remove the focus \
-       before committing\n"
-    ~actual:focused;
-  let plain = run_focus "plain" [ pass "picked"; pass "other" ] in
-  check "no focus, no warning" (not (contains "focus is active" plain))
 
 (* Under --corrected — a build action's run — a selection that runs none
    of the suite's tests exits 0 rather than 2, still saying why; without

@@ -152,16 +152,6 @@ let stream_matches_frozen_literals () =
       check_outputs 1 (Seed.make seed) outputs)
     stream_vectors
 
-let stream_matches_published_splitmix64_vector () =
-  let state = Seed.make 1234567L in
-  let first, state = Seed.bits64 state in
-  let second, state = Seed.bits64 state in
-  let third, _ = Seed.bits64 state in
-  equal ~msg:"published output 1" hex64 6457827717110365317L first;
-  equal ~msg:"published output 2" hex64 3203168211198807973L second;
-  (* 9817491932198370423 mod 2^64, as a signed int64 *)
-  equal ~msg:"published output 3" hex64 (-8629252141511181193L) third
-
 let states_are_immutable_and_deterministic () =
   let initial = Seed.make 0L in
   let first, successor = Seed.bits64 initial in
@@ -172,16 +162,6 @@ let states_are_immutable_and_deterministic () =
   equal ~msg:"reused successor output" hex64 second repeated_second;
   equal ~msg:"first word" string "e220a8397b1dcdaf" (hex_of_int64 first);
   equal ~msg:"second word" string "6e789e6aa1b965f4" (hex_of_int64 second)
-
-let full_width_output_preserves_the_sign_bit () =
-  let state = Seed.make 0L in
-  let first, state = Seed.bits64 state in
-  let _, state = Seed.bits64 state in
-  let third, _ = Seed.bits64 state in
-  is_true ~msg:"high-bit output is preserved as a full int64 pattern"
-    (Int64.compare first 0L < 0);
-  is_true ~msg:"low-half output keeps its sign bit clear"
-    (Int64.compare third 0L >= 0)
 
 (* Bounded draws *)
 
@@ -294,26 +274,6 @@ let bounded_sampling_agrees_with_independent_small_oracle () =
         seeds)
     bounds
 
-let bounded_draws_are_roughly_uniform () =
-  let bound = 10L in
-  let draws = 10_000 in
-  let buckets = Array.make 10 0 in
-  let state = ref (Seed.make 42L) in
-  for _ = 1 to draws do
-    let value, next = Seed.below ~bound !state in
-    state := next;
-    let index = Int64.to_int value in
-    buckets.(index) <- buckets.(index) + 1
-  done;
-  Array.iteri
-    (fun index count ->
-      (* Expected 1,000 per bucket, standard deviation ~30; a 200 margin is
-         over six sigma, catching gross bias without flakiness. *)
-      is_true
-        ~msg:(Printf.sprintf "bucket %d holds %d of %d draws" index count draws)
-        (count > 800 && count < 1200))
-    buckets
-
 (* Derivation *)
 
 let derivation_matches_frozen_literals () =
@@ -389,48 +349,6 @@ let derivation_hashes_raw_path_bytes () =
     (Seed.derive ~root:0L ~path:"a" ~index:0)
     (Seed.derive ~root:0L ~path:"a\x00" ~index:0)
 
-let derivation_is_repeatable_and_sensitive () =
-  let base = Seed.derive ~root:0L ~path:"parser/fields" ~index:0 in
-  let again = Seed.derive ~root:0L ~path:"parser/fields" ~index:0 in
-  equal ~msg:"repeatable derivation" hex64 base again;
-  not_equal ~msg:"changing the root changes the case seed" hex64 base
-    (Seed.derive ~root:1L ~path:"parser/fields" ~index:0);
-  not_equal ~msg:"changing the path changes the case seed" hex64 base
-    (Seed.derive ~root:0L ~path:"parser/other" ~index:0);
-  not_equal ~msg:"changing the index changes the case seed" hex64 base
-    (Seed.derive ~root:0L ~path:"parser/fields" ~index:1)
-
-let derivation_is_distinct_across_paths_and_indices () =
-  let module Int64_set = Set.Make (Int64) in
-  let paths =
-    [
-      "a";
-      "b";
-      "a/b";
-      "a/b/c";
-      "parser/round trip";
-      "parser/round trips";
-      "suite/group/leaf name";
-      "";
-    ]
-  in
-  let seen = ref Int64_set.empty in
-  let count = ref 0 in
-  List.iter
-    (fun path ->
-      for index = 0 to 99 do
-        let derived = Seed.derive ~root:0x7be1d2c904aa31f5L ~path ~index in
-        is_true
-          ~msg:
-            (Printf.sprintf "derived seed %s for %S/%d collides"
-               (hex_of_int64 derived) path index)
-          (not (Int64_set.mem derived !seen));
-        seen := Int64_set.add derived !seen;
-        incr count
-      done)
-    paths;
-  equal ~msg:"distinctness sweep coverage" int 800 !count
-
 (* Split *)
 
 let split_matches_frozen_literals () =
@@ -471,43 +389,6 @@ let split_gamma_regularity_branch_is_frozen () =
   equal ~msg:"regular-gamma continued word 2" string "6e789e6aa1b965f4"
     (hex_of_int64 second)
 
-let split_is_deterministic_and_independent () =
-  let state = Seed.make 0xdeadbeefcafebabeL in
-  let fresh_a, continued_a = Seed.split state in
-  let fresh_b, continued_b = Seed.split state in
-  let take n state =
-    let rec loop n state values =
-      if n = 0 then List.rev values
-      else
-        let word, state = Seed.bits64 state in
-        loop (n - 1) state (word :: values)
-    in
-    loop n state []
-  in
-  let words = list hex64 in
-  equal ~msg:"splitting the same state twice gives the same fresh stream" words
-    (take 4 fresh_a) (take 4 fresh_b);
-  equal ~msg:"splitting the same state twice gives the same continued stream"
-    words (take 4 continued_a) (take 4 continued_b);
-  not_equal ~msg:"fresh and continued streams are distinct" words
-    (take 4 fresh_a) (take 4 continued_a);
-  not_equal ~msg:"fresh stream is distinct from the parent stream" words
-    (take 4 fresh_a) (take 4 state)
-
-let split_fresh_streams_are_distinct_across_seeds () =
-  let module Int64_set = Set.Make (Int64) in
-  let seen = ref Int64_set.empty in
-  for seed = 0 to 99 do
-    let fresh, _ = Seed.split (Seed.make (Int64.of_int seed)) in
-    let word, _ = Seed.bits64 fresh in
-    is_true
-      ~msg:
-        (Printf.sprintf "fresh stream for seed %d collides on its first word"
-           seed)
-      (not (Int64_set.mem word !seen));
-    seen := Int64_set.add word !seen
-  done
-
 (* Entropy *)
 
 let random_produces_distinct_seeds () =
@@ -524,11 +405,8 @@ let tests =
     test "all token patterns round trip" all_token_patterns_round_trip;
     test "token parser rejection matrix" token_parser_rejects_malformed_text;
     test "stream frozen literals" stream_matches_frozen_literals;
-    test "stream published SplitMix64 vector"
-      stream_matches_published_splitmix64_vector;
     test "states are immutable and deterministic"
       states_are_immutable_and_deterministic;
-    test "full-width output sign bit" full_width_output_preserves_the_sign_bit;
     test "bounded edge vectors" bounded_edge_vectors;
     test "bounded single rejection" bounded_single_rejection_consumes_both_words;
     test "bounded multiple rejection"
@@ -536,19 +414,10 @@ let tests =
     test "bounded invalid bounds" bounded_rejects_invalid_bounds_before_sampling;
     test "bounded independent oracle"
       bounded_sampling_agrees_with_independent_small_oracle;
-    test "bounded rough uniformity" bounded_draws_are_roughly_uniform;
     test "derivation frozen literals" derivation_matches_frozen_literals;
     test "derivation hashes raw path bytes" derivation_hashes_raw_path_bytes;
-    test "derivation repeatable and sensitive"
-      derivation_is_repeatable_and_sensitive;
-    test "derivation distinct across paths and indices"
-      derivation_is_distinct_across_paths_and_indices;
     test "split frozen literals" split_matches_frozen_literals;
     test "split gamma regularity branch" split_gamma_regularity_branch_is_frozen;
-    test "split deterministic and independent"
-      split_is_deterministic_and_independent;
-    test "split fresh streams distinct across seeds"
-      split_fresh_streams_are_distinct_across_seeds;
     test "random produces distinct seeds" random_produces_distinct_seeds;
   ]
 

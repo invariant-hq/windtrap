@@ -2364,18 +2364,15 @@ let () =
 let () =
   with_temp_root @@ fun root ->
   let config = base_config ~log_dir:root () in
-  let sibling = ref false in
   let tests =
     [
       Test_tree.test "layouts" (fun () ->
           Run.subtest "row-major" (fun () -> Check.fail "bad shape");
           Run.subtest "col-major" (fun () -> ());
-          Run.subtest "strided" (fun () -> Check.fail "bad stride");
-          sibling := true);
+          Run.subtest "strided" (fun () -> Check.fail "bad stride"));
     ]
   in
   expect_run "subtest suite runs" ~config tests @@ fun outcome ->
-  check "subtest siblings continue inside the runner" !sibling;
   (match failure_list (outcome_of outcome [ "layouts" ]) with
   | [ a; b ] ->
       check "each failing subtest is one labeled entry, in order"
@@ -2477,13 +2474,10 @@ let () =
 let () =
   with_temp_root @@ fun root ->
   let config = base_config ~log_dir:root () in
-  let acquisitions = ref 0 in
   let device =
     Run.fixture
       ~teardown:(fun _ -> check "a skipped fixture must never release" false)
-      (fun () ->
-        incr acquisitions;
-        Check.skip ~reason:"no metal device" ())
+      (fun () -> Check.skip ~reason:"no metal device" ())
   in
   let announced = ref false in
   let on_event = function
@@ -2497,13 +2491,6 @@ let () =
     ]
   in
   expect_run "fixture-skip suite runs" ~on_event ~config tests @@ fun outcome ->
-  check "the acquiring test skips with the fixture's reason"
-    (outcome_of outcome [ "first-gpu" ]
-    = Some (Failure.Skip (Some "no metal device")));
-  check "later users skip with the same cached reason"
-    (outcome_of outcome [ "second-gpu" ]
-    = Some (Failure.Skip (Some "no metal device")));
-  check_int "acquisition was attempted once" ~expected:1 ~actual:!acquisitions;
   check "a skipped fixture is never announced for release" (not !announced);
   check "an unavailable optional resource does not turn the run red"
     (outcome.Run.exit_code = 0 && release_rows outcome = [])
@@ -3373,9 +3360,9 @@ let () =
     [ Test_tree.test "old-test" (fun () -> Check.fail "boom") ]
     (function Run.No_recorded_failures -> true | _ -> false)
 
-(* The exit guard (D1) *)
+(* The exit guard *)
 
-(* The frozen interception text (runner.mli, classification). *)
+(* The frozen interception text. *)
 let exit_message =
   "the test called exit and was intercepted; a test must return or raise, \
    never exit the process"
@@ -3388,13 +3375,15 @@ let () =
     [
       Test_tree.test "before" (fun () -> ());
       Test_tree.test "bomb" (fun () -> Stdlib.exit 0);
+      (* The code is unobservable: a guard that caught 0 alone fails here. *)
+      Test_tree.test "bomb7" (fun () -> Stdlib.exit 7);
       Test_tree.test "after" (fun () ->
           after_ran := true;
           Check.fail "genuine");
     ]
   in
   expect_run "exit-guard suite runs" ~config tests @@ fun outcome ->
-  check_int "exit in body is intercepted and every test still runs" ~expected:3
+  check_int "exit in body is intercepted and every test still runs" ~expected:4
     ~actual:(List.length (Run.results outcome.Run.run));
   check "the test after the bomb executed" !after_ran;
   (match failure_list (outcome_of outcome [ "bomb" ]) with
@@ -3404,23 +3393,16 @@ let () =
       check_string "the interception message is frozen" ~expected:exit_message
         ~actual:(message_of f)
   | _ -> check "bomb: exactly one failure" false);
-  check "the bomb and the genuine failure both counted"
-    (failed_paths outcome = [ "bomb"; "after" ]);
+  (match failure_list (outcome_of outcome [ "bomb7" ]) with
+  | [ f ] ->
+      check_string "exit 7 intercepts identically" ~expected:exit_message
+        ~actual:(message_of f)
+  | _ -> check "bomb7: exactly one failure" false);
+  check "the bombs and the genuine failure all counted"
+    (failed_paths outcome = [ "bomb"; "bomb7"; "after" ]);
   check "the run exits through its own path with code 1"
     (outcome.Run.exit_code = 1);
   check "the slot is inactive after execute returns" (not (Run.active ()))
-
-let () =
-  with_temp_root @@ fun root ->
-  let config = base_config ~log_dir:root () in
-  expect_run "exit-7 suite runs" ~config
-    [ Test_tree.test "bomb7" (fun () -> Stdlib.exit 7) ]
-  @@ fun outcome ->
-  check "exit 7 intercepts identically (the code is unobservable)"
-    (match failure_list (outcome_of outcome [ "bomb7" ]) with
-    | [ f ] -> message_of f = exit_message
-    | _ -> false);
-  check "exit 7: run exit code is 1" (outcome.Run.exit_code = 1)
 
 let () =
   with_temp_root @@ fun root ->

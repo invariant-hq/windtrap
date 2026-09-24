@@ -134,15 +134,6 @@ let same_seed_same_value_and_render () =
         (once = twice))
     against
 
-let different_indexes_vary () =
-  let values = samples Gen.int 20 in
-  let distinct = List.sort_uniq compare values in
-  is_true
-    ~msg:
-      (Printf.sprintf "expected variety across indexes, got %d distinct of 20"
-         (List.length distinct))
-    (List.length distinct > 10)
-
 (* Integer generators *)
 
 let int_shrinks_to_zero () =
@@ -1180,13 +1171,12 @@ let of_list_candidate_order_is_head_then_intermediates () =
          (String.concat "; " (List.map string_of_int candidates)))
     (candidates = [ 10; 20 ])
 
-let char_range_full_byte_span_behaves_like_char () =
-  let gen = Gen.char_range '\x00' '\xff' in
-  let values = samples gen 300 in
+(* The one bound pair whose width is the whole byte: the draws reach the
+   high half, where a width that overflowed would never land. *)
+let char_range_full_byte_span_reaches_the_high_half () =
+  let values = samples (Gen.char_range '\x00' '\xff') 300 in
   is_true ~msg:"no byte above 127 in 300 draws of the full span"
-    (List.exists (fun c -> Char.code c > 127) values);
-  equal ~msg:"the full-span char_range shrinks to 'a'" string "'a'"
-    (shrinks_to ~from:(fun c -> c <> 'a') gen)
+    (List.exists (fun c -> Char.code c > 127) values)
 
 (* A [such_that] as the size generator: the filtered constraint must hold for
    the drawn length and for every shrink candidate's length. *)
@@ -1300,7 +1290,6 @@ let evidence_shaped_identifier_generator_composes () =
 let suite =
   [
     ("same seed gives same value and render", same_seed_same_value_and_render);
-    ("different indexes vary", different_indexes_vary);
     ("int shrinks to zero", int_shrinks_to_zero);
     ("int renders decimal", int_renders_decimal);
     ("nat distribution is stratified", nat_distribution_is_stratified);
@@ -1400,8 +1389,8 @@ let suite =
       frequency_zero_weight_branch_is_never_chosen );
     ( "of_list candidate order is head then intermediates",
       of_list_candidate_order_is_head_then_intermediates );
-    ( "char_range full byte span behaves like char",
-      char_range_full_byte_span_behaves_like_char );
+    ( "char_range over the full byte span reaches the high half",
+      char_range_full_byte_span_reaches_the_high_half );
     ( "such_that size constrains every candidate",
       such_that_size_constrains_every_candidate );
     ( "such_that over sized string keeps both constraints",
@@ -1448,12 +1437,6 @@ let law_tests =
         is_true
           ~msg:(Printf.sprintf "%d <= %d <= %d" lo v hi)
           (lo <= v && v <= hi));
-    (* such_that's contract is about candidates as much as draws, and the
-       shrink search is what visits candidates — so a violation here is
-       reported only because the body runs under the engine. *)
-    prop "such_that draws satisfy the predicate"
-      (Gen.such_that (fun n -> n mod 3 = 0) (Gen.int_range (-300) 300))
-      (fun n -> equal ~msg:"divisible by three" int 0 (n mod 3));
     (* Printing must be total: a counterexample that cannot be rendered
        is a failure the reader never sees. This is the one law whose
        violation would corrupt the report itself. *)

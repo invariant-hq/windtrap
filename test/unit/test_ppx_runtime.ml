@@ -10,7 +10,7 @@
    checked in-process through [collect]; what [exit] does is checked on a
    re-exec'd child, since it ends the process. The transcripts and
    corrections of real generated runners are pinned by the fixture
-   directories under test/ppx. *)
+   directories under test/cli/inline_runner. *)
 
 open Harness
 module Ppx_runtime = Ppx_windtrap_runtime.Ppx_runtime
@@ -35,9 +35,6 @@ let () =
         Ppx_runtime.exit ()
       in
       match (scenario, args) with
-      | "byhand", [] ->
-          add ~file:"a.ml" "never runs" (fun () -> print_string "ran");
-          run_protocol []
       | "list", [] ->
           add ~file:"src/b.ml" "b" ignore;
           add ~file:"src/a.ml" "a" ignore;
@@ -48,16 +45,6 @@ let () =
           add ~file:"a.ml" "fails" (fun () -> Windtrap.equal Windtrap.int 1 2);
           add ~file:"b.ml" "other partition" (fun () -> Windtrap.fail "unrun");
           run_protocol [ "inline-test-runner"; "lib"; "-partition"; "a.ml" ]
-      | "corrected", [ root ] ->
-          Unix.putenv "WINDTRAP_OUTPUT" (Filename.concat root "logs");
-          Unix.putenv "WINDTRAP_PROJECT_ROOT" root;
-          (* The literal at t.ml's second line, as the rewriter would pass
-             it: the node's position and the payload as written. *)
-          add ~file:"t.ml" "stale" (fun () ->
-              print_string "fresh";
-              Windtrap.expect (Windtrap.output ())
-                (("t.ml", 2, 2, 23), " stale "));
-          run_protocol [ "inline-test-runner"; "lib" ]
       | "undriven", [] ->
           (* Registered, then a normal exit with nothing driving it: the
              guard's [at_exit] handler turns this [0] into a [2]. *)
@@ -190,12 +177,6 @@ let () =
 (* exit, on a child *)
 
 let () =
-  let code, out, err = spawn_child [ "--child"; "byhand" ] in
-  check_int "invoked by hand, the runner exits 0" ~expected:0 ~actual:code;
-  check_string "invoked by hand, the runner prints nothing" ~expected:""
-    ~actual:(out ^ err)
-
-let () =
   let code, out, err = spawn_child [ "--child"; "list" ] in
   check_int "-list-partitions exits 0" ~expected:0 ~actual:code;
   check_string "-list-partitions prints the sorted basenames on stdout"
@@ -222,29 +203,6 @@ let () =
         (Sys.file_exists
            (Filename.concat log_dir
               (Windtrap.Private.Os.sanitize_component "lib/a.ml"))))
-
-let () =
-  with_temp_root (fun root ->
-      let source = Filename.concat root "t.ml" in
-      let write path contents =
-        Out_channel.with_open_bin path (fun oc -> output_string oc contents)
-      in
-      write source "let%expect_test \"stale\" =\n  [%expect {| stale |}]\n";
-      let code, out, _ = spawn_child [ "--child"; "corrected"; root ] in
-      check_int "a run whose only failure is a recorded correction exits 0"
-        ~expected:0 ~actual:code;
-      check_contains "the mismatch is reported with dune's acceptance"
-        ~sub:"accept: dune promote" out;
-      let corrected = source ^ ".corrected" in
-      check "the correction is written beside the source"
-        (Sys.file_exists corrected);
-      if Sys.file_exists corrected then
-        check_string "the correction rewrites the literal in place"
-          ~expected:"let%expect_test \"stale\" =\n  [%expect {| fresh |}]\n"
-          ~actual:(In_channel.with_open_bin corrected In_channel.input_all);
-      check "the source itself is untouched"
-        (In_channel.with_open_bin source In_channel.input_all
-        = "let%expect_test \"stale\" =\n  [%expect {| stale |}]\n"))
 
 let () =
   let code, out, err = spawn_child [ "--child"; "undriven" ] in

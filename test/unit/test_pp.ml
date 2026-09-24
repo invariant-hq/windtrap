@@ -55,6 +55,11 @@ let tests =
           (s Pp.float_exact Float.nan);
         equal ~msg:"float_exact renders inf" string "inf"
           (s Pp.float_exact Float.infinity);
+        equal ~msg:"float_exact renders -inf" string "-inf"
+          (s Pp.float_exact Float.neg_infinity);
+        equal ~msg:"float_exact prints one third at 16 digits" string
+          "0.3333333333333333"
+          (s Pp.float_exact (1. /. 3.));
         equal ~msg:"bool" string "true" (s Pp.bool true));
     test "str and pf agree with to_string" (fun () ->
         equal ~msg:"str formats like sprintf" string "a=1 b=two"

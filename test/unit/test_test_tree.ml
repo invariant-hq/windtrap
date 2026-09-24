@@ -113,12 +113,16 @@ let () =
 
 let () =
   reg "every constructor takes the optional arguments" @@ fun () ->
-  let carries name tree =
+  let carries ?site name tree =
     List.iter
       (fun (c : T.case) ->
         is_true ~msg:(name ^ ": timeout") (c.T.timeout = Some 1.5);
         is_true ~msg:(name ^ ": retries") (c.T.retries = 2);
-        is_true ~msg:(name ^ ": tag") (Tag.mem "x" c.T.tags))
+        is_true ~msg:(name ^ ": tag") (Tag.mem "x" c.T.tags);
+        Option.iter
+          (fun file ->
+            equal ~msg:(name ^ ": ?__POS__") string file (loc_file c))
+          site)
       (T.flatten [ tree ])
   in
   carries "test" (T.test ~tags:[ "x" ] ~timeout:1.5 ~retries:2 "t" nop);
@@ -128,13 +132,14 @@ let () =
   carries "cases"
     (T.cases ~tags:[ "x" ] ~timeout:1.5 ~retries:2 ~name:string_of_int "c"
        [ 0; 1 ] ignore);
-  carries "bracket"
-    (T.bracket ~tags:[ "x" ] ~timeout:1.5 ~retries:2 ~setup:nop ~teardown:ignore
-       "b" ignore);
-  carries "scoped"
+  carries ~site:"f.ml" "bracket"
+    (T.bracket ~__POS__:("f.ml", 1, 0, 0) ~tags:[ "x" ] ~timeout:1.5 ~retries:2
+       ~setup:nop ~teardown:ignore "b" ignore);
+  carries ~site:"f.ml" "scoped"
     (T.scoped
        (fun fn -> fn ())
-       ~tags:[ "x" ] ~timeout:1.5 ~retries:2 "s" ignore)
+       ~__POS__:("f.ml", 1, 0, 0) ~tags:[ "x" ] ~timeout:1.5 ~retries:2 "s"
+       ignore)
 
 (* Validation *)
 
@@ -295,12 +300,6 @@ let () =
     (match c.T.loc with
     | Some loc -> loc.Loc.file = "src/elsewhere.ml" && loc.Loc.line = 12
     | None -> false)
-
-let () =
-  reg "backtrace fallback records the declaring file" @@ fun () ->
-  let c = only "backtrace" (T.test "t" nop) in
-  is_true ~msg:"backtrace fallback records this file"
-    (Filename.basename (loc_file c) = "test_test_tree.ml")
 
 let () =
   reg "nested tests keep their own declaration site" @@ fun () ->
@@ -521,18 +520,6 @@ let () =
     | exception Teardown_boom -> true
     | exception _ -> false)
 
-let () =
-  reg "bracket records its metadata" @@ fun () ->
-  let c =
-    only "bracket"
-      (T.bracket ~__POS__:("f.ml", 1, 0, 0) ~tags:[ "db" ] ~timeout:1.5
-         ~retries:2 ~setup:nop ~teardown:ignore "b" ignore)
-  in
-  is_true ~msg:"bracket records tags" (Tag.mem "db" c.T.tags);
-  is_true ~msg:"bracket records timeout" (c.T.timeout = Some 1.5);
-  equal ~msg:"bracket records retries" int 2 c.T.retries;
-  is_true ~msg:"bracket records the declaration site" (loc_file c = "f.ml")
-
 (* scoped *)
 
 let () =
@@ -552,20 +539,6 @@ let () =
   scope_of "scoped" tree ();
   is_true ~msg:"the scope brackets the body around the resource it supplies"
     (List.rev !log = [ "acquire"; "body 42"; "release" ])
-
-let () =
-  reg "scoped records its metadata" @@ fun () ->
-  let c =
-    only "scoped"
-      (T.scoped
-         (fun fn -> fn ())
-         ~__POS__:("f.ml", 1, 0, 0) ~tags:[ "eio" ] ~timeout:1.5 ~retries:2 "s"
-         ignore)
-  in
-  is_true ~msg:"scoped records tags" (Tag.mem "eio" c.T.tags);
-  is_true ~msg:"scoped records timeout" (c.T.timeout = Some 1.5);
-  equal ~msg:"scoped records retries" int 2 c.T.retries;
-  is_true ~msg:"scoped records the declaration site" (loc_file c = "f.ml")
 
 let () =
   (* [scope] precedes the optional arguments so that applying it does not

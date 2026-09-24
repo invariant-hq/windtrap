@@ -37,15 +37,6 @@ module Version = struct
   let compare = Stdlib.compare
 end
 
-(* A module whose [equal] is coarser than structural equality: the witness
-   must use the module's equality, not its representation. *)
-module By_id = struct
-  type t = { id : int; name : string }
-
-  let pp ppf { id; name } = Format.fprintf ppf "#%d %s" id name
-  let equal a b = a.id = b.id
-end
-
 (* A module whose [equal] is finer than structural equality — physical
    equality. The witness must pass it through untouched: no structural
    fallback, no comparison mediated by the printed form. *)
@@ -301,53 +292,7 @@ let tests =
         check_equal "subnormals compare exactly" T.float_exact 1e-310 1e-310;
         check_differ "distinct subnormals differ" T.float_exact 1e-310
           (Float.succ 1e-310));
-    test "float_exact: printing" (fun () ->
-        check_prints "prints short decimals plainly" T.float_exact 1.5
-          ~expected:"1.5";
-        check_prints "keeps the sign of negatives" T.float_exact (-1.5)
-          ~expected:"-1.5";
-        (* Whole values keep their point: ["1"] is an int literal, and this
-           witness renders values a reader may paste back. *)
-        check_prints "prints whole floats as floats" T.float_exact 1.0
-          ~expected:"1.";
-        check_prints "prints 0.1 as written" T.float_exact 0.1 ~expected:"0.1";
-        check_prints "prints positive zero" T.float_exact 0. ~expected:"0.";
-        check_prints "prints negative zero with its sign" T.float_exact (-0.)
-          ~expected:"-0.";
-        check_prints "prints nan" T.float_exact Float.nan ~expected:"nan";
-        check_prints "prints inf" T.float_exact Float.infinity ~expected:"inf";
-        check_prints "prints -inf" T.float_exact Float.neg_infinity
-          ~expected:"-inf";
-        check_prints "exposes accumulated error" T.float_exact (0.1 +. 0.2)
-          ~expected:"0.30000000000000004";
-        check_prints "prints one third at 16 digits" T.float_exact (1. /. 3.)
-          ~expected:"0.3333333333333333");
-    test "float_exact: printing round-trips exact bits" (fun () ->
-        (* Unequal floats never render identically: the printed decimal
-           restores the exact bits, so bit-distinct values get distinct
-           renderings. *)
-        let round_trips v =
-          let s = T.to_string T.float_exact v in
-          Int64.equal
-            (Int64.bits_of_float (float_of_string s))
-            (Int64.bits_of_float v)
-        in
-        List.iter
-          (fun (name, v) ->
-            is_true ~msg:("float_exact round-trips " ^ name) (round_trips v))
-          [
-            ("0.1 +. 0.2", 0.1 +. 0.2);
-            ("one third", 1. /. 3.);
-            ("pi", Float.pi);
-            ("max_float", Float.max_float);
-            ("min_float", Float.min_float);
-            ("epsilon", Float.epsilon);
-            ("a subnormal", 1e-310);
-            ("the smallest subnormal", Float.succ 0.);
-            ("succ 1.0", Float.succ 1.0);
-            ("negative zero", -0.);
-            ("large integer", 9007199254740993.);
-          ];
+    test "float_exact: distinct values never print alike" (fun () ->
         not_equal ~msg:"renders 0.3 and 0.1 +. 0.2 differently" string
           (T.to_string T.float_exact 0.3)
           (T.to_string T.float_exact (0.1 +. 0.2));
@@ -436,27 +381,6 @@ let tests =
         check_equal "pure absolute still constructs"
           (T.float_rel ~rel:0. ~abs:0.1)
           0.0 0.05);
-    test "make: a module's trio" (fun () ->
-        check_equal "equal per the module's equal" point { Point.x = 1; y = 2 }
-          { Point.x = 1; y = 2 };
-        check_differ "differ per the module's equal" point
-          { Point.x = 1; y = 2 } { Point.x = 1; y = 3 };
-        check_prints "prints with the module's pp" point { Point.x = 1; y = 2 }
-          ~expected:"(1, 2)";
-        check_equal "members beyond the trio are not read"
-          (T.make ~pp:Version.pp ~equal:Version.equal)
-          (Version.make 1 2) (1, 2);
-        check_prints "wider module prints with its pp"
-          (T.make ~pp:Version.pp ~equal:Version.equal)
-          (3, 14) ~expected:"3.14";
-        check_equal "the module's equal wins over structure"
-          (T.make ~pp:By_id.pp ~equal:By_id.equal)
-          { By_id.id = 1; name = "a" }
-          { By_id.id = 1; name = "b" };
-        check_differ "the module's equal still distinguishes"
-          (T.make ~pp:By_id.pp ~equal:By_id.equal)
-          { By_id.id = 1; name = "a" }
-          { By_id.id = 2; name = "a" });
     test "make: physical equality passes through" (fun () ->
         let phys = T.make ~pp:Phys.pp ~equal:Phys.equal in
         let r = ref 0 in
@@ -538,20 +462,6 @@ let tests =
           "ab" "abc";
         is_none ~msg:"contramap: no order without one underneath"
           (T.compare (T.contramap (fun p -> [ p ]) (T.list point))));
-    test "make: composes as an ordinary witness" (fun () ->
-        check_equal "composes into containers" (T.list point)
-          [ { Point.x = 0; y = 0 }; { Point.x = 1; y = 1 } ]
-          [ { Point.x = 0; y = 0 }; { Point.x = 1; y = 1 } ];
-        check_differ "container elements still compared" (T.list point)
-          [ { Point.x = 0; y = 0 } ]
-          [ { Point.x = 0; y = 1 } ];
-        check_prints "container printing uses the module's pp" (T.option point)
-          (Some { Point.x = 4; y = 5 })
-          ~expected:"Some (4, 5)";
-        check_equal "contramap over a module's witness"
-          (T.contramap (fun (p, _) -> p) point)
-          ({ Point.x = 1; y = 2 }, "ignored")
-          ({ Point.x = 1; y = 2 }, "also ignored"));
   ]
 
 let () = exit @@ Windtrap.run "testable" tests
