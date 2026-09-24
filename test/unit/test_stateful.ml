@@ -1496,32 +1496,20 @@ let long_programs_truncate_with_a_step_omitted_line () =
 (* Malformed arguments are reported at sample time, inside the running
    test's exception boundary. *)
 let a_malformed_declaration_raises_at_sample_time () =
-  (match
-     Gen_engine.sample (Stateful.program ~steps:4 ~model:0 []) (state 0)
-   with
-  | exception Invalid_argument message ->
-      is_true
-        ~msg:(Printf.sprintf "the empty-command error said %S" message)
-        (contains "stateful" message)
-  | _ -> failf "an empty command list sampled successfully");
+  let raises_naming_stateful what gen =
+    match Gen_engine.sample gen (state 0) with
+    | exception Invalid_argument message ->
+        starts_with ~msg:what ~affix:"Windtrap.stateful: " message
+    | _ -> failf "%s sampled successfully" what
+  in
+  raises_naming_stateful "an empty command list"
+    (Stateful.program ~steps:4 ~model:0 []);
   (* At [?steps:0] no element is drawn, so the branch-level report never
      fires — a test declaring no commands must not pass vacuously. *)
-  (match
-     Gen_engine.sample (Stateful.program ~steps:0 ~model:0 []) (state 0)
-   with
-  | exception Invalid_argument message ->
-      is_true
-        ~msg:
-          (Printf.sprintf "the empty-command error at ?steps:0 said %S" message)
-        (contains "stateful" message)
-  | _ -> failf "an empty command list at ?steps:0 sampled successfully");
-  match
-    Gen_engine.sample
-      (Stateful.program ~steps:(-1) ~model:0 counter_draws)
-      (state 0)
-  with
-  | exception Invalid_argument _ -> ()
-  | _ -> failf "a negative ?steps sampled successfully"
+  raises_naming_stateful "an empty command list at ?steps:0"
+    (Stateful.program ~steps:0 ~model:0 []);
+  raises_naming_stateful "a negative ?steps"
+    (Stateful.program ~steps:(-1) ~model:0 counter_draws)
 
 (* Integration *)
 
@@ -1841,8 +1829,267 @@ let a_buggy_system_renders_a_diagnosable_failure () =
 
 (* The suite *)
 
+(* Contract details: each test below reads one sentence of stateful.mli. *)
+
+let line_of ((_, line, _, _) : Loc.pos) = line
+
+(* A one-call program over [commands] whose single command fails with no
+   location of its own. *)
+let failing_loc commands =
+  let program = program_at (Stateful.program ~steps:1 ~model:0 commands) 0 in
+  (expect_check_failure "the failing call" (fun () ->
+       Stateful.execute ~scope:unit_scope program))
+    .Failure.loc
+
+(* The bodies raise on their own lines, away from the declarations, so a
+   capture at the failure would give another line. *)
+let boom _ () _ = raise Exit
+let boom_call _ () = raise Exit
+
+let command_and_call_capture_their_declaration_site () =
+  let p, c = (__POS__, Stateful.command "boom" Gen.unit ~next:Fun.const boom) in
+  (match failing_loc [ c ] with
+  | Some loc ->
+      equal ~msg:"command: the line of its call" int (line_of p) loc.Loc.line
+  | None -> fail "command captured no location");
+  let p, c = (__POS__, Stateful.call "boom" ~next:Fun.id boom_call) in
+  match failing_loc [ c ] with
+  | Some loc ->
+      equal ~msg:"call: the line of its caller" int (line_of p) loc.Loc.line
+  | None -> fail "call captured no location"
+
+let a_mapped_argument_prints_as_the_placeholder () =
+  let gen =
+    Stateful.program ~steps:1 ~model:0
+      [
+        Stateful.command "set" (Gen.map succ Gen.nat) ~next:Fun.const
+          (fun _ _ () -> ());
+      ]
+  in
+  equal (list string)
+    [ " #  call"; " 1  set " ^ placeholder ]
+    (lines_of gen (program_at gen 0))
+
+let a_model_cell_is_cut_at_60_code_points () =
+  let pp_model ppf _ =
+    Format.pp_print_string ppf
+      (String.concat "" (List.init 100 (fun _ -> "\u{00e9}")))
+  in
+  let gen = Stateful.program ~steps:1 ~model:0 ~pp_model tick_commands in
+  let cell = String.concat "" (List.init 57 (fun _ -> "\u{00e9}")) ^ "..." in
+  equal (list string)
+    [
+      " #  model before" ^ String.make 48 ' ' ^ "  call";
+      " 1  " ^ cell ^ "  tick";
+    ]
+    (lines_of gen (program_at gen 0))
+
+(* The number in a specification bug's message counts the kept calls: the
+   drawn calls that repair dropped before it do not count. *)
+let a_specification_bug_numbers_the_kept_calls () =
+  let drawn = ref [] in
+  let log name = drawn := name :: !drawn in
+  let commands =
+    [
+      Stateful.call "first"
+        ~pre:(fun model ->
+          log "first";
+          model = 0)
+        ~next:succ
+        (fun _ () -> ());
+      Stateful.call "never"
+        ~pre:(fun _ ->
+          log "never";
+          false)
+        ~next:Fun.id
+        (fun _ () -> ());
+      Stateful.call "boom"
+        ~pre:(fun model ->
+          log "boom";
+          if model >= 1 then failwith "nth" else false)
+        ~next:Fun.id
+        (fun _ () -> ());
+    ]
+  in
+  let gen = Stateful.program ~steps:12 ~model:0 commands in
+  let rec find index =
+    if index >= 200 then fail "no program raised after a dropped call"
+    else begin
+      drawn := [];
+      match Gen_engine.sample gen (state index) with
+      | _ -> find (index + 1)
+      | exception exn ->
+          (* The raising boom is the last pre evaluated; it was drawn after
+             at least one call that repair dropped. *)
+          if List.length !drawn > 2 then Printexc.to_string exn
+          else find (index + 1)
+    end
+  in
+  equal string {|call 2: boom, ~pre raised Failure("nth")|} (find 0)
+
+let fatal_exceptions =
+  [
+    ("Sys.Break", Sys.Break);
+    ("Out_of_memory", Out_of_memory);
+    ("Stack_overflow", Stack_overflow);
+  ]
+
+let every_fatal_exception_escapes_as_itself () =
+  List.iter
+    (fun (label, exn) ->
+      List.iter
+        (fun phase ->
+          let gen =
+            Stateful.program ~steps:4 ~model:0 (control_spec exn phase)
+          in
+          match Gen_engine.sample gen (state 0) with
+          | exception raised when raised == exn -> ()
+          | exception raised ->
+              failf "%s from repair came back as %s" label
+                (Printexc.to_string raised)
+          | _ -> failf "%s from repair was swallowed" label)
+        [ `Pre; `Next ];
+      (match Stateful.execute ~scope:unit_scope (one_call_program exn) with
+      | exception raised when raised == exn -> ()
+      | exception raised ->
+          failf "%s from a body came back as %s" label
+            (Printexc.to_string raised)
+      | () -> failf "%s from a body was swallowed" label);
+      let failing =
+        one_call_program (Failure.Check_failure (Failure.message "the body"))
+      in
+      match
+        Stateful.execute
+          ~scope:(fun run ->
+            match run () with () -> raise exn | exception _ -> raise exn)
+          failing
+      with
+      | exception raised when raised == exn -> ()
+      | exception raised ->
+          failf "%s from a failing path's scope came back as %s" label
+            (Printexc.to_string raised)
+      | () -> failf "the failing program did not fail")
+    fatal_exceptions
+
+let the_summary_names_the_last_call_not_the_failing_one () =
+  let commands =
+    [
+      Stateful.call "fail"
+        ~pre:(fun model -> model = 0)
+        ~next:succ
+        (fun _ () -> Check.fail "the first call");
+      Stateful.call "ok"
+        ~pre:(fun model -> model > 0)
+        ~next:succ
+        (fun _ () -> ());
+    ]
+  in
+  let gen = Stateful.program ~steps:6 ~model:0 commands in
+  let program =
+    let rec find index =
+      if index >= 50 then fail "no program of fail, then ok"
+      else
+        let program = program_at gen index in
+        match names gen program with
+        | "fail" :: _ :: _ -> program
+        | _ -> find (index + 1)
+    in
+    find 0
+  in
+  let total = List.length (names gen program) in
+  equal ~msg:"the summary" (option string)
+    (Some (Printf.sprintf "%d calls, last: ok" total))
+    (Stateful.summary program);
+  equal ~msg:"the label" string
+    (Printf.sprintf "call 1 of %d: fail" total)
+    (failure_msg
+       (expect_check_failure "the first call" (fun () ->
+            Stateful.execute ~scope:unit_scope program)))
+
+let a_fresh_system_invariant_failure_has_no_command_location () =
+  let site = ("declared.ml", 7, 0, 3) in
+  let program =
+    program_at
+      (Stateful.program ~steps:1 ~model:0
+         [ Stateful.call ~__POS__:site "tick" ~next:succ (fun _ () -> ()) ])
+      0
+  in
+  let loc_under invariant =
+    (expect_check_failure "the invariant" (fun () ->
+         Stateful.execute ~invariant ~scope:unit_scope program))
+      .Failure.loc
+  in
+  is_true ~msg:"on the fresh system: none"
+    (loc_under (fun _ () -> raise Exit) = None);
+  is_true ~msg:"after a call: that call's"
+    (loc_under (fun model () -> if model = 1 then raise Exit)
+    = Some (Loc.of_pos site))
+
+(* [Run] raises the engine's outcome in a constructor its interface does not
+   export; its argument is read here, where nothing else can see it. *)
+let declared_outcome tree : Property.outcome =
+  match (flattened tree).Test_tree.body with
+  | Test_tree.Scoped _ -> fail "the declared node scopes a resource"
+  | Test_tree.Body body -> (
+      match body () with
+      | () -> fail "the property body returned without an engine outcome"
+      | exception outcome
+        when Printexc.exn_slot_name outcome = "Windtrap__Run.Prop_outcome" ->
+          Obj.obj (Obj.field (Obj.repr outcome) 1))
+
+let stateful_takes_summary_as_its_summary () =
+  let commands =
+    [
+      Windtrap.call "tick" ~next:succ (fun model () ->
+          Check.is_true (model < 2));
+    ]
+  in
+  match
+    declared_outcome
+      (Windtrap.stateful ~count:3 ~steps:3 "summary" ~model:0 ~scope:unit_scope
+         commands)
+  with
+  | Property.Fail { failure = { kind = Failure.Property { summary; _ }; _ }; _ }
+    ->
+      equal (option string) (Some "3 calls, last: tick") summary
+  | _ -> fail "expected a Property failure"
+
+let an_invalid_timeout_raises_at_declaration () =
+  List.iter
+    (fun timeout ->
+      raises_match ~msg:(string_of_float timeout) Exn.invalid_arg (fun () ->
+          Windtrap.stateful ~timeout "t" ~model:0 ~scope:unit_scope tick_facade))
+    [ 0.; -1.; Float.nan; Float.infinity ]
+
+let count_zero_draws_nothing () =
+  match
+    declared_outcome
+      (Windtrap.stateful ~count:0 "none" ~model:0 ~scope:unit_scope [])
+  with
+  | Property.Pass stats -> equal ~msg:"no case" int 0 stats.Property.cases
+  | _ -> fail "expected Pass"
+
 let suite =
   [
+    ( "command and call capture their declaration site",
+      command_and_call_capture_their_declaration_site );
+    ( "a mapped argument prints as the placeholder",
+      a_mapped_argument_prints_as_the_placeholder );
+    ( "a model cell is cut at 60 code points",
+      a_model_cell_is_cut_at_60_code_points );
+    ( "a specification bug numbers the kept calls",
+      a_specification_bug_numbers_the_kept_calls );
+    ( "every fatal exception escapes as itself",
+      every_fatal_exception_escapes_as_itself );
+    ( "the summary names the last call, not the failing one",
+      the_summary_names_the_last_call_not_the_failing_one );
+    ( "a fresh-system invariant failure has no command location",
+      a_fresh_system_invariant_failure_has_no_command_location );
+    ( "stateful takes summary as its summary",
+      stateful_takes_summary_as_its_summary );
+    ( "an invalid timeout raises at declaration",
+      an_invalid_timeout_raises_at_declaration );
+    ("~count:0 draws nothing", count_zero_draws_nothing);
     ( "repair keeps exactly the fold's calls",
       repair_keeps_exactly_the_fold_s_calls );
     ("a state-dependent ~pre filters", a_state_dependent_precondition_filters);
