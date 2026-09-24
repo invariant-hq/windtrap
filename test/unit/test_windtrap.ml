@@ -2015,6 +2015,39 @@ let () =
       [ "--junit"; Filename.concat root "junit.xml" ];
     ]
 
+(* A stateful test through the runner: its summary is the program's, and a
+   count of 0 draws no case and opens no system. The engine's outcome is
+   internal to [Run]; the result is what a run records of it. *)
+
+let () =
+  with_temp_root @@ fun root ->
+  let config = base_config ~log_dir:root () in
+  let scopes = ref 0 in
+  let counting run =
+    incr scopes;
+    run ()
+  in
+  let tick = [ call "tick" ~next:succ (fun model () -> is_true (model < 2)) ] in
+  let suite =
+    [
+      stateful ~count:3 ~steps:3 "summary" ~model:0
+        ~scope:(fun run -> run ())
+        tick;
+      stateful ~count:0 "none" ~model:0 ~scope:counting tick;
+    ]
+  in
+  expect_run "stateful through the runner" ~config suite @@ fun outcome ->
+  (match failure_list (outcome_of outcome [ "summary" ]) with
+  | [ { Failure.kind = Failure.Property { summary; _ }; _ } ] ->
+      check "a stateful failure's summary is the program's summary"
+        (summary = Some "3 calls, last: tick")
+  | _ -> check "a stateful failure carries a Property payload" false);
+  check "~count:0 draws no case"
+    (match result_of outcome [ "none" ] with
+    | Some { Run.prop_stats = Some stats; _ } -> stats.Property.cases = 0
+    | _ -> false);
+  check_int "and opens no system" ~expected:0 ~actual:!scopes
+
 (* Summary *)
 
 let () = finish ()

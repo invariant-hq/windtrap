@@ -2025,49 +2025,12 @@ let a_fresh_system_invariant_failure_has_no_command_location () =
     (loc_under (fun model () -> if model = 1 then raise Exit)
     = Some (Loc.of_pos site))
 
-(* [Run] raises the engine's outcome in a constructor its interface does not
-   export; its argument is read here, where nothing else can see it. *)
-let declared_outcome tree : Property.outcome =
-  match (flattened tree).Test_tree.body with
-  | Test_tree.Scoped _ -> fail "the declared node scopes a resource"
-  | Test_tree.Body body -> (
-      match body () with
-      | () -> fail "the property body returned without an engine outcome"
-      | exception outcome
-        when Printexc.exn_slot_name outcome = "Windtrap__Run.Prop_outcome" ->
-          Obj.obj (Obj.field (Obj.repr outcome) 1))
-
-let stateful_takes_summary_as_its_summary () =
-  let commands =
-    [
-      Windtrap.call "tick" ~next:succ (fun model () ->
-          Check.is_true (model < 2));
-    ]
-  in
-  match
-    declared_outcome
-      (Windtrap.stateful ~count:3 ~steps:3 "summary" ~model:0 ~scope:unit_scope
-         commands)
-  with
-  | Property.Fail { failure = { kind = Failure.Property { summary; _ }; _ }; _ }
-    ->
-      equal (option string) (Some "3 calls, last: tick") summary
-  | _ -> fail "expected a Property failure"
-
 let an_invalid_timeout_raises_at_declaration () =
   List.iter
     (fun timeout ->
       raises_match ~msg:(string_of_float timeout) Exn.invalid_arg (fun () ->
           Windtrap.stateful ~timeout "t" ~model:0 ~scope:unit_scope tick_facade))
     [ 0.; -1.; Float.nan; Float.infinity ]
-
-let count_zero_draws_nothing () =
-  match
-    declared_outcome
-      (Windtrap.stateful ~count:0 "none" ~model:0 ~scope:unit_scope [])
-  with
-  | Property.Pass stats -> equal ~msg:"no case" int 0 stats.Property.cases
-  | _ -> fail "expected Pass"
 
 let suite =
   [
@@ -2085,11 +2048,8 @@ let suite =
       the_summary_names_the_last_call_not_the_failing_one );
     ( "a fresh-system invariant failure has no command location",
       a_fresh_system_invariant_failure_has_no_command_location );
-    ( "stateful takes summary as its summary",
-      stateful_takes_summary_as_its_summary );
     ( "an invalid timeout raises at declaration",
       an_invalid_timeout_raises_at_declaration );
-    ("~count:0 draws nothing", count_zero_draws_nothing);
     ( "repair keeps exactly the fold's calls",
       repair_keeps_exactly_the_fold_s_calls );
     ("a state-dependent ~pre filters", a_state_dependent_precondition_filters);
