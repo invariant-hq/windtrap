@@ -73,7 +73,7 @@
 (library
  (name harness)
  (modules harness)
- (libraries windtrap unix))
+ (libraries windtrap windtrap_test_support unix))
 
 (tests
  (names test_run test_ppx_runtime test_windtrap)

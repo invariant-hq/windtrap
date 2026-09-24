@@ -167,22 +167,12 @@ let init name =
   clear_env ();
   Printexc.record_backtrace true
 
-(* Temp roots *)
-
-let rec remove_tree path =
-  match (Unix.lstat path).Unix.st_kind with
-  | Unix.S_DIR ->
-      Array.iter
-        (fun name -> remove_tree (Filename.concat path name))
-        (Sys.readdir path);
-      Unix.rmdir path
-  | _ -> Unix.unlink path
-
+(* Temp roots: a scratch directory for one scenario, removed when the
+   scenario ends however it ends. *)
 let with_temp_root ?(prefix = "windtrap-meta-") f =
-  let path = Filename.temp_file prefix ".dir" in
-  Unix.unlink path;
-  Unix.mkdir path 0o700;
-  Fun.protect ~finally:(fun () -> remove_tree path) (fun () -> f path)
+  let module Scratch = Windtrap_test_support.Scratch in
+  let path = Scratch.dir prefix in
+  Fun.protect ~finally:(fun () -> Scratch.remove_tree path) (fun () -> f path)
 
 (* Summary
 

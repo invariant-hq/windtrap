@@ -682,7 +682,7 @@ let () =
   close_out (open_out sentinel);
   Run.reclaim frame;
   check "a second reclaim does nothing" (Sys.file_exists sentinel);
-  if Sys.file_exists scratch then remove_tree scratch
+  Windtrap_test_support.Scratch.remove_tree scratch
 
 let () =
   (* Exception safety: paths created before a raising body are still
