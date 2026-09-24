@@ -44,6 +44,16 @@
 
 (rule
  (with-stdout-to
+  fixture_entries.actual
+  (run ./coverage_pp.exe --impl %{dep:fixture_entries.ml})))
+
+(rule
+ (alias runtest)
+ (action
+  (diff fixture_entries.expected fixture_entries.actual)))
+
+(rule
+ (with-stdout-to
   fixture_exclude.actual
   (run ./coverage_pp.exe --impl %{dep:fixture_exclude.ml})))
 
@@ -144,6 +154,16 @@
 
 (rule
  (with-stdout-to
+  fixture_out_edges.actual
+  (run ./coverage_pp.exe --impl %{dep:fixture_out_edges.ml})))
+
+(rule
+ (alias runtest)
+ (action
+  (diff fixture_out_edges.expected fixture_out_edges.actual)))
+
+(rule
+ (with-stdout-to
   fixture_pipeline.actual
   (run ./coverage_pp.exe --impl %{dep:fixture_pipeline.ml})))
 
@@ -154,6 +174,16 @@
 
 (rule
  (with-stdout-to
+  fixture_primitives.actual
+  (run ./coverage_pp.exe --impl %{dep:fixture_primitives.ml})))
+
+(rule
+ (alias runtest)
+ (action
+  (diff fixture_primitives.expected fixture_primitives.actual)))
+
+(rule
+ (with-stdout-to
   fixture_scope.actual
   (run ./coverage_pp.exe --impl %{dep:fixture_scope.ml})))
 
@@ -161,6 +191,16 @@
  (alias runtest)
  (action
   (diff fixture_scope.expected fixture_scope.actual)))
+
+(rule
+ (with-stdout-to
+  fixture_tmc.actual
+  (run ./coverage_pp.exe --impl %{dep:fixture_tmc.ml})))
+
+(rule
+ (alias runtest)
+ (action
+  (diff fixture_tmc.expected fixture_tmc.actual)))
 
 (rule
  (target reject_bad_payload.actual)

@@ -1,0 +1,65 @@
+[@@@ocaml.text "/*"]
+module Windtrap_cov_________fixture_primitives___ml =
+  struct
+    let ___windtrap_visit___ =
+      let counts = Array.make 4 0 in
+      Windtrap_runtime.Coverage.register ~file:"./fixture_primitives.ml"
+        ~points:[|{
+                    Windtrap_runtime.Coverage.start_ofs = 320;
+                    Windtrap_runtime.Coverage.end_ofs = 321
+                  };{
+                      Windtrap_runtime.Coverage.start_ofs = 339;
+                      Windtrap_runtime.Coverage.end_ofs = 340
+                    };{
+                        Windtrap_runtime.Coverage.start_ofs = 1110;
+                        Windtrap_runtime.Coverage.end_ofs = 1113
+                      };{
+                          Windtrap_runtime.Coverage.start_ofs = 307;
+                          Windtrap_runtime.Coverage.end_ofs = 1121
+                        }|] ~counts;
+      (fun index -> Windtrap_runtime.Coverage.visit counts index)
+    let ___windtrap_post_visit___ point_index result =
+      ___windtrap_visit___ point_index; result
+  end
+open Windtrap_cov_________fixture_primitives___ml
+[@@@ocaml.text "/*"]
+let primitives a b x y r l s e f =
+  ___windtrap_visit___ 3;
+  (let _ = a && (___windtrap_visit___ 0; b) in
+   let _ = a & (___windtrap_visit___ 1; b) in
+   let _ = not a in
+   let _ = x = y in
+   let _ = x <> y in
+   let _ = x < y in
+   let _ = x <= y in
+   let _ = x > y in
+   let _ = x >= y in
+   let _ = x == y in
+   let _ = x != y in
+   let _ = ref x in
+   let _ = !r in
+   let _ = r := x in
+   let _ = l @ l in
+   let _ = s ^ s in
+   let _ = x + y in
+   let _ = x - y in
+   let _ = x * y in
+   let _ = x / y in
+   let _ = 1. +. 2. in
+   let _ = 1. -. 2. in
+   let _ = 1. *. 2. in
+   let _ = 1. /. 2. in
+   let _ = x mod y in
+   let _ = x land y in
+   let _ = x lor y in
+   let _ = x lxor y in
+   let _ = x lsl y in
+   let _ = x lsr y in
+   let _ = x asr y in
+   let _ = raise e in
+   let _ = raise_notrace e in
+   let _ = failwith s in
+   let _ = ignore x in
+   let _ = Sys.opaque_identity x in
+   let _ = Obj.magic x in
+   let _ = x ## y in let _ = ___windtrap_post_visit___ 2 (f x) in ())

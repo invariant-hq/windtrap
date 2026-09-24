@@ -27,33 +27,33 @@ A fixture names each rule it pins by its id and interface line, as in
 | --- | --- | --- | --- |
 | C1 | A function has one point per curried chain, at its innermost body. | cov:33-34 | `coverage/fixture_fun`; `test_coverage_semantics.ml` "an arm that is itself a function" |
 | C2 | A type constraint on the leaf body is kept around the visit. | cov:34-35 | `coverage/fixture_fun` |
-| C3 | A coercion on the leaf body is kept around the visit. | cov:34-35 | unpinned |
+| C3 | A coercion on the leaf body is kept around the visit. | cov:34-35 | `coverage/fixture_entries` |
 | C4 | The default of an optional argument of a function is an entry point, its inner calls traversed. | cov:36-37 | `coverage/fixture_fun` |
 | C5 | The default of an optional argument of a class is an entry point. | cov:36-37 | `coverage/fixture_class` |
 | C6 | Each arm of a `match`, `try` and `function` is an entry point, its extent from the pattern's start to the body's end. | cov:38, cov:100-102 | `coverage/fixture_match`, `coverage/fixture_fun` |
 | C7 | An arm's extent is the body alone when the pattern is ghost or starts after the body. | cov:102-103 | unpinned |
 | C8 | The guard of an arm is an entry point. | cov:38-39 | `coverage/fixture_match` |
 | C9 | An arm whose body is `assert false` has no point. | cov:55 | `coverage/fixture_match` |
-| C10 | A refutation arm has no point. | cov:55-56 | unpinned |
-| C11 | An arm whose body carries `[@coverage off]` has no point. | cov:56 | unpinned |
+| C10 | A refutation arm has no point. | cov:55-56 | `coverage/fixture_entries` |
+| C11 | An arm whose body carries `[@coverage off]` has no point. | cov:56 | `coverage/fixture_entries` |
 | C12 | Each branch of an `if` is an entry point; an `if` without `else` has its `then` point only. | cov:40 | `coverage/fixture_if_loops` |
 | C13 | The bodies of `while` and `for` are entry points. | cov:41 | `coverage/fixture_if_loops` |
 | C14 | A non-trivial `lazy` body is an entry point; a trivial one (function, identifier, constant, constant constructor, constrained) is left alone. | cov:42-44 | `coverage/fixture_lazy`; `test_coverage_semantics.ml` "lazy stays lazy" |
-| C15 | A `lazy` of a trivial value under a coercion is left alone. | cov:44 | unpinned |
+| C15 | A `lazy` of a trivial value under a coercion is left alone. | cov:44 | `coverage/fixture_entries` |
 | C16 | A method body (`Pexp_poly`) is marked unless it is a function. | cov:46 | `coverage/fixture_class` |
 | C17 | Each body of a binding operator form, nested and with `and*`, is an entry point. | cov:45 | `coverage/fixture_letop` |
 | C18 | The body of a concrete method and of an initializer is an entry point. | cov:46 | `coverage/fixture_class` |
 | C19 | A virtual method is left alone. | cov:46 | `coverage/fixture_class` |
 | C20 | The right operand of `&&` is an entry point. | cov:47 | `coverage/fixture_and_or`; `test_coverage_semantics.ml` "\|\| and && short-circuit" |
-| C21 | `&` is handled as `&&`. | cov:50-51 | unpinned |
+| C21 | `&` is handled as `&&`. | cov:50-51 | `coverage/fixture_entries` |
 | C22 | `a \|\| b` becomes `if a then (v; true) else if b then (w; true) else false`. | cov:48-50 | `coverage/fixture_and_or`; `test_coverage_semantics.ml` "\|\| and && short-circuit" |
-| C23 | `or` is handled as `\|\|`. | cov:50-51 | unpinned |
+| C23 | `or` is handled as `\|\|`. | cov:50-51 | `coverage/fixture_entries` |
 | C24 | A nested `\|\|` right operand is recursed into, not demoted. | cov:48-50 | `coverage/fixture_and_or` |
 | C25 | The right operand of `\|\|` in tail position stays the `else` branch when it is an application of a non-trivial function. | cov:59-62 | `coverage/fixture_and_or`; `test_coverage_semantics.ml` "deep tail recursion" |
-| C26 | ... when it is a method call or a `new`. | cov:61-62 | unpinned |
+| C26 | ... when it is a method call or a `new`. | cov:61-62 | `coverage/fixture_entries` (a method call); `new`: CUT (L9 e), a `new` is an object and never a `bool`, so no well-typed `\|\|` has one for its right operand |
 | C27 | ... when it is a `let`, `let module`, `let exception`, `let open`, `match`, `try`, `if`, sequence, binding operator form, type constraint or coercion. | cov:62-65 | `coverage/fixture_or_tail_branch`, `coverage/fixture_or_tail_scope`, `coverage/fixture_or_tail_wrap`; `test_coverage_semantics.ml` "\|\| right arms that are not applications" |
-| C28 | A right operand of `\|\|` in tail position that applies a trivial primitive is demoted and marked. | cov:60-62 | unpinned |
-| C29 | What follows an `if` without `else` in a sequence is an entry point. | cov:52-53 | unpinned |
+| C28 | A right operand of `\|\|` in tail position that applies a trivial primitive is demoted and marked. | cov:60-62 | `coverage/fixture_entries` |
+| C29 | What follows an `if` without `else` in a sequence is an entry point. | cov:52-53 | `coverage/fixture_entries` |
 | C30 | A function whose body is `assert false` keeps its point. | cov:56-57 | `coverage/fixture_scope` |
 
 ### Out-edges
@@ -64,21 +64,21 @@ A fixture names each rule it pins by its id and interface line, as in
 | C32 | An application in tail position is not wrapped. | cov:74 | `coverage/fixture_apply`; `test_coverage_semantics.ml` "deep tail recursion" |
 | C33 | A pipeline in tail position is not wrapped. | cov:74 | `coverage/fixture_pipeline`; `test_coverage_semantics.ml` "deep tail recursion" |
 | C34 | A method call in tail position is not wrapped. | cov:74 | `coverage/fixture_class` |
-| C35 | A `new` in tail position is not wrapped. | cov:74 | unpinned |
+| C35 | A `new` in tail position is not wrapped. | cov:74 | `coverage/fixture_out_edges` |
 | C36 | A method call not in tail position is wrapped. | cov:72 | `coverage/fixture_class`; `test_coverage_semantics.ml` "pipelines and method calls" |
-| C37 | A `new` that is not applied is wrapped. | cov:72 | unpinned |
-| C38 | `assert e` is wrapped in any position. | cov:72, cov:76-77 | unpinned |
+| C37 | A `new` that is not applied is wrapped. | cov:72 | `coverage/fixture_out_edges` |
+| C38 | `assert e` is wrapped in any position. | cov:72, cov:76-77 | `coverage/fixture_out_edges` |
 | C39 | `assert false` is never wrapped. | cov:77 | `coverage/fixture_match`, `coverage/fixture_scope` |
-| C40 | An application of a trivial primitive, matched by spelling, is not wrapped. | cov:80-85 | partial: `coverage/fixture_if_loops` (`:=`, `!`, `+`, `<`, `ref`), `coverage/fixture_match` (`>`), `coverage/fixture_and_or` and `coverage/fixture_or_tail_*` (`=`, `-`, `ignore`), `coverage/fixture_scope` (`not`); unpinned: the other 26 |
-| C41 | `Stdlib.( + ) a b` is wrapped (the match is by spelling). | cov:81 | unpinned |
+| C40 | An application of a trivial primitive, matched by spelling, is not wrapped. | cov:80-85 | `coverage/fixture_primitives` (all 38) |
+| C41 | `Stdlib.( + ) a b` is wrapped (the match is by spelling). | cov:81 | `coverage/fixture_out_edges` |
 | C42 | An application whose every argument is labelled or optional is not wrapped. | cov:86-88 | `coverage/fixture_scope` |
-| C43 | An application or method call in the body of a `[@tail_mod_cons]` binding, top level or `let ... in`, is not wrapped; a `new` and an `assert` there are. | cov:89-92 | partial: `test_coverage_semantics.ml` "tail_mod_cons survives instrumentation" (top level); unpinned: a golden, the `let ... in` case, `new` and `assert` |
-| C44 | The scrutinee of a `match` has no out-edge. | cov:93-94 | unpinned |
-| C45 | The condition of an `if` has no out-edge. | cov:94 | unpinned |
-| C46 | The applied left operand of `@@` has no out-edge. | cov:95 | unpinned |
-| C47 | The right operand of `\|>` or `\|.` has no out-edge. | cov:95 | unpinned |
-| C48 | A method call in callee position has no out-edge. | cov:95-96 | unpinned |
-| C49 | `\|.` is handled as `\|>`. | cov:74, cov:95 | unpinned |
+| C43 | An application or method call in the body of a `[@tail_mod_cons]` binding, top level or `let ... in`, is not wrapped; a `new` and an `assert` there are. | cov:89-92 | `coverage/fixture_tmc`; `test_coverage_semantics.ml` "tail_mod_cons survives instrumentation" |
+| C44 | The scrutinee of a `match` has no out-edge. | cov:93-94 | `coverage/fixture_out_edges` |
+| C45 | The condition of an `if` has no out-edge. | cov:94 | `coverage/fixture_out_edges` |
+| C46 | The applied left operand of `@@` has no out-edge. | cov:95 | `coverage/fixture_out_edges` |
+| C47 | The right operand of `\|>` or `\|.` has no out-edge. | cov:95 | `coverage/fixture_out_edges` |
+| C48 | A method call in callee position has no out-edge. | cov:95-96 | `coverage/fixture_out_edges` |
+| C49 | `\|.` is handled as `\|>`. | cov:74, cov:95 | `coverage/fixture_out_edges` |
 
 ### Extents, identity and numbering
 

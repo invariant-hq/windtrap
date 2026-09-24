@@ -1,0 +1,112 @@
+[@@@ocaml.text "/*"]
+module Windtrap_cov_________fixture_tmc___ml =
+  struct
+    let ___windtrap_visit___ =
+      let counts = Array.make 16 0 in
+      Windtrap_runtime.Coverage.register ~file:"./fixture_tmc.ml"
+        ~points:[|{
+                    Windtrap_runtime.Coverage.start_ofs = 395;
+                    Windtrap_runtime.Coverage.end_ofs = 403
+                  };{
+                      Windtrap_runtime.Coverage.start_ofs = 408;
+                      Windtrap_runtime.Coverage.end_ofs = 438
+                    };{
+                        Windtrap_runtime.Coverage.start_ofs = 492;
+                        Windtrap_runtime.Coverage.end_ofs = 500
+                      };{
+                          Windtrap_runtime.Coverage.start_ofs = 505;
+                          Windtrap_runtime.Coverage.end_ofs = 540
+                        };{
+                            Windtrap_runtime.Coverage.start_ofs = 602;
+                            Windtrap_runtime.Coverage.end_ofs = 610
+                          };{
+                              Windtrap_runtime.Coverage.start_ofs = 617;
+                              Windtrap_runtime.Coverage.end_ofs = 647
+                            };{
+                                Windtrap_runtime.Coverage.start_ofs = 558;
+                                Windtrap_runtime.Coverage.end_ofs = 659
+                              };{
+                                  Windtrap_runtime.Coverage.start_ofs = 700;
+                                  Windtrap_runtime.Coverage.end_ofs = 701
+                                };{
+                                    Windtrap_runtime.Coverage.start_ofs = 833;
+                                    Windtrap_runtime.Coverage.end_ofs = 841
+                                  };{
+                                      Windtrap_runtime.Coverage.start_ofs =
+                                        795;
+                                      Windtrap_runtime.Coverage.end_ofs = 809
+                                    };{
+                                        Windtrap_runtime.Coverage.start_ofs =
+                                          789;
+                                        Windtrap_runtime.Coverage.end_ofs =
+                                          861
+                                      };{
+                                          Windtrap_runtime.Coverage.start_ofs
+                                            = 779;
+                                          Windtrap_runtime.Coverage.end_ofs =
+                                            781
+                                        };{
+                                            Windtrap_runtime.Coverage.start_ofs
+                                              = 765;
+                                            Windtrap_runtime.Coverage.end_ofs
+                                              = 861
+                                          };{
+                                              Windtrap_runtime.Coverage.start_ofs
+                                                = 914;
+                                              Windtrap_runtime.Coverage.end_ofs
+                                                = 917
+                                            };{
+                                                Windtrap_runtime.Coverage.start_ofs
+                                                  = 921;
+                                                Windtrap_runtime.Coverage.end_ofs
+                                                  = 933
+                                              };{
+                                                  Windtrap_runtime.Coverage.start_ofs
+                                                    = 890;
+                                                  Windtrap_runtime.Coverage.end_ofs
+                                                    = 898
+                                                }|] ~counts;
+      (fun index -> Windtrap_runtime.Coverage.visit counts index)
+    let ___windtrap_post_visit___ point_index result =
+      ___windtrap_visit___ point_index; result
+  end
+open Windtrap_cov_________fixture_tmc___ml
+[@@@ocaml.text "/*"]
+let rec map f =
+  function
+  | [] -> (___windtrap_visit___ 0; [])
+  | x::rest -> (___windtrap_visit___ 1; (f x) :: (map f rest))[@@tail_mod_cons
+                                                                ]
+let rec double =
+  function
+  | [] -> (___windtrap_visit___ 2; [])
+  | x::rest -> (___windtrap_visit___ 3; (x * 2) :: (double rest))[@@ocaml.tail_mod_cons
+                                                                   ]
+let local l =
+  ___windtrap_visit___ 6;
+  (let rec go =
+     function
+     | [] -> (___windtrap_visit___ 4; [])
+     | x::rest -> (___windtrap_visit___ 5; (succ x) :: (go rest))[@@tail_mod_cons
+                                                                   ] in
+   go l)
+class cell = object method get = ___windtrap_visit___ 7; 0 end
+let rec cells (o : < get: int   > ) n =
+  ___windtrap_visit___ 12;
+  if n = 0
+  then (___windtrap_visit___ 11; [])
+  else
+    (___windtrap_visit___ 10;
+     ___windtrap_post_visit___ 9 (assert (n > 0));
+     ignore o#get;
+     (___windtrap_post_visit___ 8 (new cell))
+     ::
+     (cells o (n - 1)))[@@tail_mod_cons ]
+let rec plain f =
+  function
+  | [] -> (___windtrap_visit___ 15; [])
+  | x::rest ->
+      (___windtrap_visit___ 13;
+       (___windtrap_post_visit___ 13 (f x))
+       ::
+       (___windtrap_post_visit___ 14 (plain f rest)))
