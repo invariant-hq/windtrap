@@ -191,7 +191,7 @@ let verdict_tests =
           (verdict_of t m));
     test "a record carries the rendering the report draws" (fun () ->
         (* The catalogue lives in the instrumented binary; [windtrap
-           mutate] links none of them. A record that named only its
+           mutants] links none of them. A record that named only its
            mutant would leave the project-level report unable to draw
            [a - b  ->  a + b], which is the block's whole point. *)
         let m = id ~file:"lib/calc.ml" ~line:9 ~col:12 ~rewrite:"add" in
@@ -209,19 +209,31 @@ let verdict_tests =
     test "records disagreeing on a rendering merge deterministically" (fun () ->
         (* Only two builds of one source can produce this, and the data
            says nothing about which one the reader has open. So the rule
-           is a total order rather than a guess: it is what keeps [merge]
-           commutative and associative. *)
+           is a total order rather than a guess: the smaller (before,
+           after) pair is kept, whichever record it came with and in
+           whichever order the records arrive. It is what keeps [merge]
+           commutative and associative. The smaller pair rides with the
+           losing verdict here, so keeping the winner's rendering fails. *)
         let m = id ~file:"lib/calc.ml" ~line:9 ~col:12 ~rewrite:"add" in
-        let older = record ~before:"a - b" ~after:"a + b" m V.Unreached
-        and newer = record ~before:"a - b" ~after:"a + b" m V.Killed in
-        let expected = record ~before:"a - b" ~after:"a + b" m V.Killed in
-        equal ~msg:"older then newer" (option record_t) (Some expected)
-          (find (V.add (V.add V.empty older) newer) m);
-        equal ~msg:"newer then older" (option record_t) (Some expected)
-          (find (V.add (V.add V.empty newer) older) m);
-        equal ~msg:"through merge, either way" text
-          (V.to_string (V.merge (V.add V.empty older) (V.add V.empty newer)))
-          (V.to_string (V.merge (V.add V.empty newer) (V.add V.empty older))));
+        let both ~msg ~expected a b =
+          equal ~msg:(msg ^ ", in order") (option record_t) (Some expected)
+            (find (V.add (V.add V.empty a) b) m);
+          equal ~msg:(msg ^ ", reversed") (option record_t) (Some expected)
+            (find (V.add (V.add V.empty b) a) m);
+          equal
+            ~msg:(msg ^ ", through merge either way")
+            text
+            (V.to_string (V.merge (V.add V.empty a) (V.add V.empty b)))
+            (V.to_string (V.merge (V.add V.empty b) (V.add V.empty a)))
+        in
+        both ~msg:"the smaller before wins"
+          ~expected:(record ~before:"a - b" ~after:"x + y" m V.Killed)
+          (record ~before:"a - b" ~after:"x + y" m V.Unreached)
+          (record ~before:"x - y" ~after:"a + b" m V.Killed);
+        both ~msg:"an equal before leaves it to the smaller after"
+          ~expected:(record ~before:"a - b" ~after:"a + b" m V.Killed)
+          (record ~before:"a - b" ~after:"a + b" m V.Unreached)
+          (record ~before:"a - b" ~after:"b + a" m V.Killed));
     test "merging collections is commutative, associative and idempotent"
       (fun () ->
         (* The per-verdict laws above are not enough: [merge] folds one
@@ -332,7 +344,12 @@ let digest = String.make 32 'a'
 
 let format_tests =
   [
-    test "to_string is the documented v3 encoding" (fun () ->
+    (* The magic line and the records in identifier order are the
+       format's stated contract (verdicts.mli, "Verdict files"; the header
+       is instr.mli's grammar). The layout of a record is stated nowhere,
+       and these bytes pin it as this release writes it. *)
+    test "to_string is the v3 encoding: magic, count, records by identifier"
+      (fun () ->
         equal ~msg:"exact bytes" text sample_bytes
           (V.to_string (sample_collection ())));
     test "an identity is recorded after the magic line" (fun () ->

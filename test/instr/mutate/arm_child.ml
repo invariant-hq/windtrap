@@ -69,9 +69,9 @@ let positives ns =
 (* Module initialization: a guard evaluated before [main], hence before
    anything can be armed and before any observation window is opened. The
    fork happens after module init, so a mutant here can never be killed by
-   a child; the loop must be able to tell such a site from one no test
-   reached, and the only thing that lets it is the first drain reporting
-   it. This is why epochs start at 1 - a fresh epoch array is all zeroes,
+   a child; the loop must not bill such a site to the first test, which
+   would make it a survivor no test can kill, and the only thing that lets
+   it is the first drain reporting it. This is why epochs start at 1 - a fresh epoch array is all zeroes,
    so no site starts out looking already seen - and it can only be
    observed in a process no test has bumped the epoch of. *)
 let () = ignore (less 1 2 : bool)

@@ -15,12 +15,11 @@
    process, so hosting the assertions under the windtrap runner nests
    nothing.
 
-   The one thing not reproducible here: the E2 freshness behavior of the
-   blessed @self-cover rule itself ((alias_rec runtest) + (universe)) is dune
+   The one thing not reproducible here: the freshness of the blessed
+   @self-cover rule itself ((alias_rec runtest) + (universe)) is dune
    semantics — reproducing it needs a nested `dune build` inside this
-   dune-run test, which would contend for the workspace lock. It was
-   verified in the aggregation lab (rfc-v3/coverage-aggregation.md, E2);
-   what this file covers instead is everything the rule's action does:
+   dune-run test, which would contend for the workspace lock. What this
+   file covers instead is everything the rule's action does:
    discovery from a rule-like cwd, the staleness pass over the dumps the
    alias cannot see, the merge, and the --min gate. *)
 
@@ -501,7 +500,7 @@ let json_shape =
   equal ~msg:"--json keeps stderr empty" text "" err;
   is_true ~msg:"--json is well-formed" (json_well_formed out);
   (* The design-frozen shape: summary + files with path/visited/total/
-     percentage/uncovered_lines (design 1c). *)
+     percentage/uncovered_lines. *)
   contains ~msg:"json: the summary object"
     ~sub:"\"summary\": { \"visited\": 3, \"total\": 5, \"percentage\": 60.00 }"
     out;
@@ -896,7 +895,7 @@ let discovery_robustness =
   contains ~msg:"a cwd inside _build resolves the workspace root"
     ~sub:"coverage: 60.0% (3/5 points)" out;
   contains ~msg:"sources resolve from that root too" ~sub:"lib/foo.ml   3\n" out;
-  (* E2's trap: v1 garbage planted at _build/.sandbox/_build/_coverage
+  (* The sandbox trap: v1 garbage planted at _build/.sandbox/_build/_coverage
      must not capture discovery from a sandboxed action's cwd — the
      topmost _build wins. *)
   write_file
@@ -911,7 +910,7 @@ let discovery_robustness =
     ~sub:"coverage: 60.0% (3/5 points)" out;
   not_contains ~msg:"the planted v1 file is never read" ~sub:"junk.coverage" err
 
-(* Explicit PATH arguments are a contract (qa-jul29 F-3) *)
+(* Explicit PATH arguments are a contract *)
 
 let explicit_path_contract =
   test "explicit PATH arguments are loud when invalid" @@ fun () ->
@@ -958,7 +957,7 @@ let explicit_path_contract =
 
 (* The staleness pass: orphaned and outdated dumps *)
 
-(* The holes the @cover alias cannot see (aggregation design, E5): a
+(* The holes the @cover alias cannot see: a
    dump whose executable was deleted (orphan — silently inflates the
    merge) and a dump whose executable is not the one now on disk — a
    re-run without --instrument-with (wrote nothing fresh), or a test

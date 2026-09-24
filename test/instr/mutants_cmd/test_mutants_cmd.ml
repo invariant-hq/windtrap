@@ -902,9 +902,10 @@ let executable_labels =
 let survivor_order =
   test "survivors are ordered by witness count, then identifier" @@ fun () ->
   (* The survivor the most tests watched is the one a reader can act on
-     soonest, so it prints first however its identifier sorts — the same
-     order the per-executable report uses. [sub] (line 2) has three
-     witnesses across two files; [add] (line 1) has one. *)
+     soonest, so it prints first however its identifier sorts. (A
+     per-executable report prints its blocks as its children end, in the
+     catalogue's order.) [sub] (line 2) has three witnesses across two
+     files; [add] (line 1) has one. *)
   let root = scratch "order" in
   plant_sources root;
   write_file

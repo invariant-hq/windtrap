@@ -276,10 +276,12 @@ let registry_tests =
         ignore (g 0);
         equal ~msg:"one hit in the second window, not four" (list int) [ 1 ]
           (hits ()));
-    test "evaluations between drains are attributed to no window" (fun () ->
+    test "an evaluation between windows is reported by the next drain"
+      (fun () ->
         (* The loop drains at Test_started too: whatever accumulated since
            the previous drain ran outside any test (module init, fixture
-           release) and is reported as not armable, never as unreached. *)
+           release), and the loop counts a site reached only there as
+           unreached. *)
         let g =
           M.register ~file:"t/outside.ml"
             ~sites:[| site ~line:1 ~col:0 ~rewrite:"not" () |]
@@ -667,7 +669,7 @@ let run_child ?arm args =
 
 let child_tests =
   [
-    test "an uninstrumented-looking run arms nothing" (fun () ->
+    test "a run handed no identifier arms nothing" (fun () ->
         let status, out, err = run_child [ "run" ] in
         equal ~msg:"exit code" int 0 status;
         equal ~msg:"stderr" text "" err;
@@ -700,6 +702,9 @@ let child_tests =
            sum 3 4 = 7\n\
            positives = 1\n"
           out);
+    (* The refusals below are arm_child's own policy (exit 1 on any arming
+       error); the core runs on for an Uncatalogued identifier. What they
+       pin is the runtime's error, as a real process prints it. *)
     test "an unmatched identifier refuses the run and names the candidates"
       (fun () ->
         let status, out, err =
@@ -715,12 +720,14 @@ let child_tests =
         in
         equal ~msg:"exit code" int 1 status;
         contains ~msg:"refusal" ~sub:"unknown rewrite" err);
-    test "an unknown file refuses the run and blames the instrumentation"
-      (fun () ->
+    test
+      "an identifier of a file the child catalogues no site in is \
+       Uncatalogued, blaming the instrumentation" (fun () ->
         let status, _, err = run_child ~arm:"lib/other.ml:1:0:lt" [ "run" ] in
         equal ~msg:"exit code" int 1 status;
         contains ~msg:"hint" ~sub:"instrumented with ppx_windtrap.mutate" err);
-    test "the runaway budget kills a mutant the clock would not see" (fun () ->
+    test "the runaway budget raises in the program at the hit past it"
+      (fun () ->
         let status, out, _ =
           run_child ~arm:"lib/child.ml:11:6:not" [ "budget"; "3"; "10" ]
         in
@@ -740,9 +747,9 @@ let child_tests =
       (fun () ->
         (* Only a fresh process can show this: in the parent's own image
            every earlier test has already bumped the epoch counter. A site
-           the toplevel evaluated is drained before any window opens - the
-           loop reports it as not armable rather than unreached - and the
-           window that follows counts its own hit, not the cumulative
+           the toplevel evaluated is drained before any window opens - so
+           the loop bills it to no test, and counts it as unreached - and
+           the window that follows counts its own hit, not the cumulative
            two. *)
         let status, out, err = run_child [ "reach" ] in
         equal ~msg:"exit code" int 0 status;

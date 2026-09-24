@@ -360,7 +360,7 @@ let collection_tests =
           ~sub:(Printf.sprintf "0 5 %d\n" max_int)
           (C.to_string (ok "sat merge" (C.merge one two)));
         let both = ok "sat both" (C.merge two two) in
-        contains ~msg:"saturated merge stays non-negative" ~sub:"0 5 10\n"
+        contains ~msg:"an unsaturated merge still adds" ~sub:"0 5 10\n"
           (C.to_string both));
     test "conflicting point tables fail loudly, never silently" (fun () ->
         let one =
@@ -687,8 +687,8 @@ let line_tests =
           (list int) [ 2 ]
           (C.lines_of_extents ~source:"a\nb" [ pt 2 3 ]));
     test "a huge file stays exact" (fun () ->
-        (* One file-spanning extent marks every line and collapses to a
-           single range. *)
+        (* One file-spanning extent over 20 000 lines marks each of them,
+           once and in order. *)
         let n = 20_000 in
         let buf = Buffer.create (n * 8) in
         for i = 1 to n do
@@ -698,8 +698,8 @@ let line_tests =
         let lines =
           C.lines_of_extents ~source [ pt 0 (String.length source) ]
         in
-        equal ~msg:"a file-spanning extent marks every line of a huge file" int
-          n (List.length lines));
+        equal ~msg:"a file-spanning extent marks every line of a huge file"
+          (list int) (List.init n succ) lines);
   ]
 
 (* Summaries *)
