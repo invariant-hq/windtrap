@@ -29,12 +29,11 @@
     returns unchanged corrupts generation before any program runs, so a hash
     table is modelled as a [Map].
 
-    {b Exceptions.} In a body and in an invariant, [Failure.Check_failure],
-    [Failure.Skip_test] and {!Property.Discard} keep the meaning they have in
-    any law (see {!execute}). [pre] and [next] run at generation time, over
-    models that no program may ever run in, and there none of the three means
-    what it says. Raised by [pre] or [next], they are wrapped as any other
-    exception is (see {!val-program}).
+    {b Exceptions.} In a body and in an invariant, [Failure.Check_failure], a
+    skip and a discard keep the meaning they have in any law (see {!execute}).
+    [pre] and [next] run at generation time, over models that no program may
+    ever run in, and there none of the three means what it says. Raised by [pre]
+    or [next], they are wrapped as any other exception is (see {!val-program}).
 
     {b Output.} This module prints nothing. The text of a program and its
     summary ride the {!Failure.Property} payload, and the label of the failing
@@ -148,8 +147,8 @@ val program :
     A [pre] or a [next] that raises escapes repair wrapped in an exception that
     this interface does not export. It prints as
     [call 3: close, ~pre raised Failure("nth")], the number counting the kept
-    calls from one, and it keeps the original backtrace. [Failure.Timeout],
-    [Failure.Exit_attempt] and the [Failure.is_fatal] exceptions escape as
+    calls from one, and it keeps the original backtrace. A [Failure.Control] of
+    [`Timeout] or [`Exit] and the [Failure.is_fatal] exceptions escape as
     themselves. The exception escapes [Gen.Engine.sample] when the drawn program
     is repaired, and the forcing of a candidate when a candidate is (see
     {!Property.run} for what becomes of each). *)
@@ -183,9 +182,8 @@ val execute :
     {b Failures.} An exception of a body or of the invariant is raised as a
     [Failure.Check_failure], which keeps it in the acceptance class of an
     assertion failure. Its payload is the one that {!Property.run} builds for an
-    exception. [Failure.Check_failure], [Failure.Skip_test], [Failure.Timeout],
-    [Failure.Exit_attempt], {!Property.Discard} and the [Failure.is_fatal]
-    exceptions pass as they are.
+    exception. [Failure.Check_failure], [Failure.Control] and the
+    [Failure.is_fatal] exceptions pass as they are.
 
     The [msg] of a [Failure.Check_failure] gets a label that names the call:
     [call 3 of 5: pop], [invariant after call 3 of 5: pop] or
@@ -203,8 +201,8 @@ val execute :
     - The exception of a failing program is raised through [scope], and
       [execute] raises it again when [scope] swallows it.
     - What [scope] raises over a failing program is dropped, unless it is a
-      [Failure.Timeout] or a [Failure.is_fatal] exception, which replaces the
-      failure of the program.
+      [Failure.Control (`Timeout _)] or a [Failure.is_fatal] exception, which
+      replaces the failure of the program.
     - What [scope] raises before it calls back, or after a passing program,
       propagates as it is. *)
 

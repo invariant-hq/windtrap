@@ -71,7 +71,7 @@ report and the aggregate cannot drift apart.
 | --- | --- |
 | `Windtrap` | the contract and the flat re-exports; the ambient-reading wrappers |
 | `Test_tree` (with `Test_tree.Tag`) | the tree, tags, focus, xfail, flatten, paths |
-| `Testable`, `Check`, `Failure`, `Diff` | witnesses; the verbs, pure, with no run-state dependency; failure data (typed kinds, phase, location, output tail, the `Check_failure`/`Skip_test`/`Timeout` exceptions); diff data (Myers hunks and character-refinement spans, no styling) |
+| `Testable`, `Check`, `Failure`, `Diff` | witnesses; the verbs, pure, with no run-state dependency; failure data (typed kinds, phase, location, output tail, the `Check_failure` and `Control` exceptions); diff data (Myers hunks and character-refinement spans, no styling) |
 | `Gen` (with `Gen.Engine.Shrink_tree`), `Property`, `Stateful` | generators; the case loop (examples first, per-case seeds, the discard budget, the shrink search, label tables); commands and programs, compiled into properties |
 | `Baseline`, `Source_patch`, `Capture` | the correction registry keyed by site or path, read-only checking, corrections gated per test and written once as `.corrected` files or in place; literal rewriting inside a source file; fd-level capture into per-test log files |
 | `Cli`, `Run`, `Report`, `Report_sections`, `Report_junit` | one declarative item table — flags and flagless settings — resolved once into the one `Run.config`, each mirror declared beside its flag and read through the flag's parser; the run record and the ambient slot, the sequential executor (startup checks, selection, the per-test boundary, SIGALRM timeouts, retries, fixture release, the last-failed store, the exit guard, the exit codes), which prints nothing and emits typed events; the transcript, the GitHub envelope and `Report.run` — execute, reported; the failure projection every transport shares and the section vocabulary the coverage and mutation reports project into; the JUnit document and its file |
@@ -150,9 +150,9 @@ target.
 
 **Failure and the renderers.** Payload strings are bounded once at
 construction (64 KiB), because renderings are the one thing that cannot
-outlive the failure site. `Exit_attempt` works because `exit` runs the
-`at_exit` handlers and an exception from one propagates to `exit`'s
-caller. `backtrace_to_string` is the single conversion, so terminal,
+outlive the failure site. The `exit` interception works because `exit`
+runs the `at_exit` handlers and an exception from one propagates to
+`exit`'s caller. `backtrace_to_string` is the single conversion, so terminal,
 JUnit and GitHub show the same frames, and only a trailing run of
 windtrap frames is dropped (a user callback keeps itself and the frames
 below it). `Report` reads its presentation settings once, at `create`.

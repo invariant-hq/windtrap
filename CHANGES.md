@@ -308,6 +308,13 @@ Coverage and packaging:
   over an aside: `(the value has no printer, so this is the input that map
   and bind computed it from; attach a printer with Gen.with_pp to see the
   value)`.
+- **A discard during generation discards the case**: an `assume` or a
+  `reject` in a function given to `Gen.map`, `Gen.bind` or another
+  combinator counts as a discard, as an exhausted `such_that` does, and a
+  shrink candidate whose generation discards is skipped. windtrap's control
+  exceptions print in words wherever they are printed, as in a
+  counterexample printer cut by the timeout, `<printer raised windtrap
+  timeout after 1.5s>`, never as a `Windtrap__Failure` name.
 - **`cover label cond` is presence-only** — the property fails unless at
   least one passing case marked the label; `~at_least` and its
   `Invalid_argument`s are gone. `collect` and `classify` print the

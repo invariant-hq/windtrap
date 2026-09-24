@@ -9,10 +9,8 @@
 
 (* Discarding *)
 
-exception Discard
-
-let assume condition = if not condition then raise Discard
-let reject () = raise Discard
+let assume condition = if not condition then raise (Failure.Control `Discard)
+let reject () = raise (Failure.Control `Discard)
 
 (* Labelling context
 
@@ -108,9 +106,9 @@ let run_case ctx body value =
   reset_case ctx;
   match body ctx value with
   | () -> Passed
-  | exception Discard -> Discarded
+  | exception Failure.Control `Discard -> Discarded
   | exception Failure.Check_failure failure -> Failed (Assertion failure)
-  | exception ((Failure.Skip_test _ | Failure.Timeout _) as control) ->
+  | exception (Failure.Control (`Skip _ | `Timeout _) as control) ->
       Control (control, Printexc.get_raw_backtrace ())
   | exception exn -> Failed (Exception (exn, Failure.recorded_backtrace ()))
 
@@ -121,7 +119,7 @@ let run_case ctx body value =
    assertion failure, exception failures any non-assertion exception (v1
    semantics) — and stop when no candidate is accepted, the step cap is
    reached, or forcing a candidate raises (a memoized cell caches its
-   exception, so its siblings are unreachable). A [Failure.Timeout] raised
+   exception, so its siblings are unreachable). A timeout raised
    anywhere in the search also stops it, at the last accepted node: the
    whole-test budget can end the search but never erase a counterexample
    already found. Candidate runs use a scratch context: their labels
@@ -144,7 +142,7 @@ let shrink ~budget ~body tree first_class =
   let accept candidate_tree =
     let value = Gen.Engine.value (Gen.Engine.Shrink_tree.root candidate_tree) in
     match run_case scratch body value with
-    | Control ((Failure.Timeout _ as timeout), backtrace) ->
+    | Control ((Failure.Control (`Timeout _) as timeout), backtrace) ->
         (* The per-test alarm fired inside a candidate: a fact about the
            whole test, not this candidate — end the search (caught below). *)
         Printexc.raise_with_backtrace timeout backtrace
@@ -161,7 +159,7 @@ let shrink ~budget ~body tree first_class =
     match seq () with
     (* The explicit re-raise is load-bearing: the catch-all otherwise eats a
        handler-raised [Timeout] delivered during [Seq] forcing. *)
-    | exception (Failure.Timeout _ as timeout) -> raise timeout
+    | exception (Failure.Control (`Timeout _) as timeout) -> raise timeout
     | exception _ -> `Stopped
     | Seq.Nil -> `Converged
     | Seq.Cons (candidate, rest) -> (
@@ -199,7 +197,7 @@ let shrink ~budget ~body tree first_class =
            end
      in
      descend 0 tree
-   with Failure.Timeout limit -> timed_out := Some limit);
+   with Failure.Control (`Timeout limit) -> timed_out := Some limit);
   let tree, steps, cls = !best in
   (tree, steps, cls, !timed_out, !exhausted)
 
@@ -316,10 +314,10 @@ let run ?loc ?count ?max_discard ?(examples = []) ?summary ~root ~path gen body
         else
           let state = Seed.make (Seed.derive ~root ~path ~index:attempts) in
           match Gen.Engine.sample gen state with
-          | exception Gen.Engine.Rejected ->
+          | exception Failure.Control `Discard ->
               incr discards;
               generate ~passed ~attempts:(attempts + 1)
-          | exception ((Failure.Skip_test _ | Failure.Timeout _) as control) ->
+          | exception (Failure.Control (`Skip _ | `Timeout _) as control) ->
               (* Control exceptions delivered inside the generator (an alarm
                  at a poll point, a generator-callback skip) keep their
                  meaning: the runner classifies them, they are never a

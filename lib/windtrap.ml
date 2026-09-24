@@ -114,10 +114,6 @@ let () =
   Printexc.register_printer (function
     | Failure.Check_failure failure ->
         Some ("windtrap assertion failure: " ^ Report.headline failure)
-    | Failure.Skip_test reason ->
-        Some
-          ("windtrap skip"
-          ^ match reason with Some reason -> ": " ^ reason | None -> "")
     | _ -> None)
 
 (* Testable instances *)

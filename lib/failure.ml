@@ -78,19 +78,25 @@ and t = {
   output_tail : tail option;
 }
 
-exception Check_failure of t
-exception Skip_test of string option
-exception Timeout of float
-exception Exit_attempt
+type control = [ `Skip of string option | `Timeout of float | `Exit | `Discard ]
 
-(* The printer is load-bearing for byte-consistency: release-failure
-   messages, the property engine's raised-exception rendering, and every
-   other stringification site agree without per-site special cases. *)
+exception Check_failure of t
+exception Control of control
+
+(* One printer for the four, so that every site that stringifies a control,
+   a counterexample printer that timed out or a release that exited, prints
+   the same words and never a [Windtrap__Failure] name. *)
 let () =
   Printexc.register_printer (function
-    | Exit_attempt ->
+    | Control (`Skip None) -> Some "windtrap skip"
+    | Control (`Skip (Some reason)) -> Some ("windtrap skip: " ^ reason)
+    | Control (`Timeout limit) ->
+        Some (Printf.sprintf "windtrap timeout after %gs" limit)
+    | Control `Exit ->
         Some
           "Exit_attempt (code under test called exit; intercepted by windtrap)"
+    | Control `Discard ->
+        Some "windtrap discard (assume or reject outside a property)"
     | _ -> None)
 
 (* Boundary rules *)

@@ -33,9 +33,19 @@ module Shrink_tree = struct
   let root tree = tree.root
   let children tree = tree.children
 
+  (* A candidate whose [f] discards is skipped, as [rebind] skips one whose
+     re-generation does: a memoized cell caches the exception, so letting it
+     escape would also hide every later sibling. A discard of the root
+     propagates, and that is a discard at generation time. *)
   let rec map f tree =
     make ~root:(f tree.root)
-      ~children:(Seq.map (fun child -> map f child) tree.children)
+      ~children:
+        (Seq.filter_map
+           (fun child ->
+             match map f child with
+             | mapped -> Some mapped
+             | exception Failure.Control `Discard -> None)
+           tree.children)
 
   let rec pair left right =
     let left_children = Seq.map (fun child -> pair child right) left.children in
@@ -139,8 +149,6 @@ type 'a t = {
   pp : (Format.formatter -> 'a -> unit) option;
   run : Seed.state -> 'a node Shrink_tree.t * Seed.state;
 }
-
-exception Rejected
 
 (* Printers *)
 
@@ -345,12 +353,12 @@ let rec tree_towards node shrink x =
     ~children:(Seq.map (tree_towards node shrink) (shrink x))
 
 (* [rebind] re-generates candidates for [bind], [one_of] and sized
-   [list]: [f] runs a generator, so forcing a shrink candidate can raise
-   [Rejected] — a [such_that] in the re-run exhausting its budget for that
-   candidate. Memoized child cells cache exceptions, so letting [Rejected]
-   escape a cell would also hide every later sibling candidate; skipping the
-   candidate keeps the search alive. Rejection of the root propagates: that
-   is a generation-time discard. *)
+   [list]: [f] runs a generator, so forcing a shrink candidate can discard —
+   a [such_that] in the re-run exhausting its budget for that candidate, an
+   [assume] in a function of the generator. Memoized child cells cache
+   exceptions, so letting the discard escape a cell would also hide every
+   later sibling candidate; skipping the candidate keeps the search alive. A
+   discard of the root propagates: that is a generation-time discard. *)
 let rec rebind tree f =
   let bound = f (Shrink_tree.root tree) in
   Shrink_tree.make ~root:(Shrink_tree.root bound)
@@ -360,7 +368,7 @@ let rec rebind tree f =
             (fun candidate ->
               match rebind candidate f with
               | rebound -> Some rebound
-              | exception Rejected -> None)
+              | exception Failure.Control `Discard -> None)
             (Shrink_tree.children tree))
          (Shrink_tree.children bound))
 
@@ -970,7 +978,7 @@ let such_that keep gen =
     run =
       (fun state ->
         let rec attempt tries state =
-          if tries = 0 then raise Rejected
+          if tries = 0 then raise (Failure.Control `Discard)
           else
             let fresh, state = Seed.split state in
             let tree, _ = gen.run fresh in
@@ -1000,12 +1008,9 @@ let ( let* ) = bind
 
    The property engine, Stateful, and this library's own tests reach these;
    nothing else does, which is why they are behind [Engine] rather than in
-   the vocabulary above. [Rejected] stays at the top of the file because
-   [such_that] raises it and [rebind] catches it. *)
+   the vocabulary above. *)
 module Engine = struct
   module Shrink_tree = Shrink_tree
-
-  exception Rejected = Rejected
 
   type 'a sample = 'a node
 

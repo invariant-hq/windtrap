@@ -70,13 +70,11 @@ type ('model, 'sut) program = {
    What a *body* raises and this module never converts nor swallows: the
    five control exceptions, each a statement about the run rather than about
    this program, and the three no failure boundary may absorb. Converting
-   [Skip_test] would make a skip a reported counterexample, converting
-   [Property.Discard] would break [assume] inside a body, and converting
-   [Timeout] would defeat the shrink search's deadline. *)
+   a skip would make it a reported counterexample, converting a discard
+   would break [assume] inside a body, and converting a timeout would defeat
+   the shrink search's deadline. *)
 let propagates = function
-  | Failure.Check_failure _ | Failure.Skip_test _ | Failure.Timeout _
-  | Failure.Exit_attempt | Property.Discard ->
-      true
+  | Failure.Check_failure _ | Failure.Control _ -> true
   | exn -> Failure.is_fatal exn
 
 (* A [~pre] or [~next] that raises is a specification bug, not a
@@ -101,7 +99,7 @@ let () =
     | _ -> None)
 
 let about_the_run = function
-  | Failure.Timeout _ | Failure.Exit_attempt -> true
+  | Failure.Control (`Timeout _ | `Exit) -> true
   | exn -> Failure.is_fatal exn
 
 let specification ~name ~step ~phase f =
@@ -444,7 +442,9 @@ let run_program ?invariant program sut =
    a deadline the alarm has already spent — and the three no boundary may
    absorb. *)
 let ends_the_run exn =
-  match exn with Failure.Timeout _ -> true | exn -> Failure.is_fatal exn
+  match exn with
+  | Failure.Control (`Timeout _) -> true
+  | exn -> Failure.is_fatal exn
 
 (* The two ways a scope can fail its side of the contract, and they are
    different in kind. A scope that never runs the program fails the case:
@@ -515,7 +515,7 @@ let execute ?loc ?invariant ~scope program =
       Printexc.raise_with_backtrace exn backtrace
   | None, Some (exn, backtrace), Some (failure, failure_backtrace) ->
       (* A release that raised over a failing program. The cleanup error
-         must not replace the counterexample, and a [Failure.Timeout]
+         must not replace the counterexample, and a timeout
          hidden behind one would be accepted by the engine as a shrink
          step and reported as a converged, minimal counterexample. So the
          program's failure is the failure, except for the exceptions that

@@ -762,8 +762,31 @@ let such_that_filters_generation_and_shrinking () =
 let such_that_exhaustion_is_a_discard () =
   let gen = Gen.such_that (fun _ -> false) Gen.nat in
   match Gen_engine.sample gen (state 0) with
-  | exception Gen_engine.Rejected -> ()
+  | exception Windtrap.Private.Failure.Control `Discard -> ()
   | _ -> failf "unsatisfiable such_that sampled successfully"
+
+(* An [assume] in a mapping function discards: a candidate it rejects is
+   skipped, never a cell that raises, and the even ones stay reachable. *)
+let a_discarding_map_candidate_is_skipped () =
+  let even =
+    Gen.map
+      (fun n ->
+        Windtrap.Private.Property.assume (n mod 2 = 0);
+        n)
+      Gen.nat
+  in
+  let rec draw index =
+    match Gen_engine.sample even (state index) with
+    | tree when root_value tree >= 10 -> tree
+    | _ | (exception Windtrap.Private.Failure.Control `Discard) ->
+        draw (index + 1)
+  in
+  let tree = draw 0 in
+  let seen = ref 0 in
+  explore ~limit:500 tree (fun n ->
+      incr seen;
+      is_true ~msg:(Printf.sprintf "candidate %d is odd" n) (n mod 2 = 0));
+  is_true ~msg:"the even candidates are reached" (!seen > 1)
 
 (* Composition *)
 
@@ -1180,7 +1203,7 @@ let such_that_size_constrains_every_candidate () =
      [such_that] exhaustion. *)
   let starved = Gen.(list ~size:(such_that (fun _ -> false) nat) nat) in
   match Gen_engine.sample starved (state 0) with
-  | exception Gen_engine.Rejected -> ()
+  | exception Windtrap.Private.Failure.Control `Discard -> ()
   | _ -> failf "a starved size generator sampled successfully"
 
 (* [such_that] around a sized string: both constraints — fixed length and the
@@ -1595,7 +1618,7 @@ let such_that_draws_at_most_100_times () =
      Gen_engine.sample (Gen.such_that (fun _ -> false) counted) (state 0)
    with
   | _ -> fail "an unsatisfiable such_that sampled"
-  | exception Gen_engine.Rejected -> ());
+  | exception Windtrap.Private.Failure.Control `Discard -> ());
   equal ~msg:"draws, the first included" int 100 !draws
 
 let map_runs_f_once_per_node_and_lets_its_exceptions_escape () =
@@ -1672,7 +1695,7 @@ let a_raising_printer_renders_the_exception () =
         (rendered exn))
     [
       Stdlib.Failure "boom";
-      Windtrap.Private.Failure.Timeout 1.5;
+      Windtrap.Private.Failure.Control (`Timeout 1.5);
       Sys.Break;
       Out_of_memory;
       Stack_overflow;
@@ -1817,6 +1840,8 @@ let suite =
     ( "such_that filters generation and shrinking",
       such_that_filters_generation_and_shrinking );
     ("such_that exhaustion is a discard", such_that_exhaustion_is_a_discard);
+    ( "a discarding map candidate is skipped",
+      a_discarding_map_candidate_is_skipped );
     ("map renders the pre-image", map_renders_the_pre_image);
     ( "nested maps render the outermost pre-image",
       nested_maps_render_the_outermost_pre_image );

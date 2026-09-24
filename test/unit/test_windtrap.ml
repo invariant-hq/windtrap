@@ -284,9 +284,9 @@ let () =
         | _ -> false));
   match skip ~reason:"why" () with
   | _ -> check "skip raises Skip_test" false
-  | exception Failure.Skip_test reason ->
+  | exception Failure.Control (`Skip reason) ->
       check "uncaught skip renders readably"
-        (contains "why" (Printexc.to_string (Failure.Skip_test reason)))
+        (contains "why" (Printexc.to_string (Failure.Control (`Skip reason))))
 
 (* Declaration surface *)
 
@@ -1839,7 +1839,7 @@ let () =
   in
   (match Engine.sample never (Seed.make 0x5eedL) with
   | _ -> check "such_that gives up" false
-  | exception Engine.Rejected -> ());
+  | exception Failure.Control `Discard -> ());
   check_int "such_that tries at most 100 draws" ~expected:100 ~actual:!tries
 
 let () =

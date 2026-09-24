@@ -608,11 +608,11 @@ let skip_candidate_is_rejected_during_shrink () =
   let fails value = value >= 2 in
   let root = find_root gen ~path ~fails ~first_ok:(fun value -> value >= 3) in
   let body _ x =
-    if x = 1 then raise (Failure.Skip_test (Some "trap"))
+    if x = 1 then raise (Failure.Control (`Skip (Some "trap")))
     else if x >= 2 then Check.fail "wanted"
   in
   match Property.run ~root ~path gen body with
-  | exception Failure.Skip_test _ ->
+  | exception Failure.Control (`Skip _) ->
       failf "a skipping shrink candidate must not skip the test"
   | outcome ->
       let failure, _ = expect_fail outcome in
@@ -693,7 +693,8 @@ let timeout_during_first_candidate_keeps_unshrunk () =
   let calls = ref 0 in
   let body _ _ =
     incr calls;
-    if !calls = 1 then Check.fail "original" else raise (Failure.Timeout 0.25)
+    if !calls = 1 then Check.fail "original"
+    else raise (Failure.Control (`Timeout 0.25))
   in
   let outcome = Property.run ~root ~path Gen.int body in
   let failure, _ = expect_fail outcome in
@@ -719,7 +720,7 @@ let timeout_after_accepted_steps_keeps_best_so_far () =
   let calls = ref 0 in
   let body _ x =
     incr calls;
-    if !calls >= 5 then raise (Failure.Timeout 0.1)
+    if !calls >= 5 then raise (Failure.Control (`Timeout 0.1))
     else if abs x >= 10 then Check.fail "big"
   in
   let outcome = Property.run ~root ~path:"timeout mid shrink" Gen.int body in
@@ -741,9 +742,9 @@ let timeout_after_accepted_steps_keeps_best_so_far () =
   | _ -> failf "the inner failure must describe the last accepted node"
 
 let timeout_during_generation_escapes_unchanged () =
-  let gen = Gen.map (fun _ -> raise (Failure.Timeout 0.5)) Gen.int in
+  let gen = Gen.map (fun _ -> raise (Failure.Control (`Timeout 0.5))) Gen.int in
   match Property.run ~root ~path:"gen timeout" gen (fun _ _ -> ()) with
-  | exception Failure.Timeout limit ->
+  | exception Failure.Control (`Timeout limit) ->
       is_true
         ~msg:(Printf.sprintf "Timeout must keep its limit, got %g" limit)
         (limit = 0.5)
@@ -753,10 +754,10 @@ let timeout_during_generation_escapes_unchanged () =
 
 let skip_during_generation_escapes_unchanged () =
   let gen =
-    Gen.map (fun _ -> raise (Failure.Skip_test (Some "no data"))) Gen.int
+    Gen.map (fun _ -> raise (Failure.Control (`Skip (Some "no data")))) Gen.int
   in
   match Property.run ~root ~path:"gen skip" gen (fun _ _ -> ()) with
-  | exception Failure.Skip_test (Some "no data") -> ()
+  | exception Failure.Control (`Skip (Some "no data")) -> ()
   | _ -> failf "a Skip_test raised at sample time must escape the engine"
   | exception other ->
       failf "expected Skip_test, got %s" (Printexc.to_string other)
@@ -801,17 +802,17 @@ let generator_crash_is_a_failure () =
 let control_exceptions_propagate () =
   (match
      Property.run ~root ~path:"skip" Gen.int (fun _ _ ->
-         raise (Failure.Skip_test (Some "not here")))
+         raise (Failure.Control (`Skip (Some "not here"))))
    with
-  | exception Failure.Skip_test (Some "not here") -> ()
+  | exception Failure.Control (`Skip (Some "not here")) -> ()
   | _ -> failf "Skip_test must escape the engine unchanged"
   | exception other ->
       failf "expected Skip_test, got %s" (Printexc.to_string other));
   match
     Property.run ~root ~path:"timeout" Gen.int (fun _ _ ->
-        raise (Failure.Timeout 0.5))
+        raise (Failure.Control (`Timeout 0.5)))
   with
-  | exception Failure.Timeout limit ->
+  | exception Failure.Control (`Timeout limit) ->
       is_true
         ~msg:(Printf.sprintf "Timeout must keep its limit, got %g" limit)
         (limit = 0.5)
@@ -859,10 +860,10 @@ let negative_configuration_is_invalid () =
 let assume_and_reject_raise_discard () =
   (match Property.assume true with () -> ());
   (match Property.assume false with
-  | exception Property.Discard -> ()
+  | exception Failure.Control `Discard -> ()
   | _ -> failf "assume false must raise Discard");
   match Property.reject () with
-  | exception Property.Discard -> ()
+  | exception Failure.Control `Discard -> ()
   | _ -> failf "reject must raise Discard"
 
 (* Suite *)
@@ -1013,7 +1014,7 @@ let the_summary_is_of_the_reported_counterexample () =
     (summary_of failure = None)
 
 let exit_and_fatal_exceptions =
-  [ Failure.Exit_attempt; Sys.Break; Out_of_memory; Stack_overflow ]
+  [ Failure.Control `Exit; Sys.Break; Out_of_memory; Stack_overflow ]
 
 let a_law_s_exit_and_fatal_exceptions_fail_the_case () =
   List.iter
@@ -1042,9 +1043,29 @@ let a_generator_s_control_exceptions_fail_the_case_unshrunk () =
       equal
         ~msg:(name ^ ": the inner exception")
         (option string) (Some name) (inner_exception failure))
-    (Property.Discard
-    :: Failure.Check_failure (Failure.message "from the generator")
+    (Failure.Check_failure (Failure.message "from the generator")
     :: exit_and_fatal_exceptions)
+
+let a_generator_that_discards_discards_the_case () =
+  let always = Gen_engine.make (fun _ -> raise (Failure.Control `Discard)) in
+  (match Property.run ~root ~path:"discarding gen" always (fun _ _ -> ()) with
+  | Property.Gave_up { Property.discards; _ } ->
+      is_true ~msg:"every draw discarded" (discards > 0)
+  | _ -> failf "a generator that always discards must give up");
+  let odd_discarded =
+    Gen.map
+      (fun n ->
+        Property.assume (n mod 2 = 0);
+        n)
+      Gen.int
+  in
+  match
+    Property.run ~root ~path:"assume in map" odd_discarded (fun _ _ -> ())
+  with
+  | Property.Pass { Property.discards; cases; _ } ->
+      equal ~msg:"every case passed" int 100 cases;
+      is_true ~msg:"the odd draws were discarded" (discards > 0)
+  | _ -> failf "an assume in Gen.map must discard the case, not fail it"
 
 let a_context_used_after_its_run () =
   let kept = ref None in
@@ -1144,7 +1165,9 @@ let examples_draw_no_seed () =
 
 let a_timeout_while_formatting_does_not_leave_run () =
   let gen =
-    Gen.with_pp (fun _ _ -> raise (Failure.Timeout 0.25)) (Gen.int_range 0 10)
+    Gen.with_pp
+      (fun _ _ -> raise (Failure.Control (`Timeout 0.25)))
+      (Gen.int_range 0 10)
   in
   let failure, _ =
     expect_fail
@@ -1154,7 +1177,7 @@ let a_timeout_while_formatting_does_not_leave_run () =
   let rendered, _, _, timed_out, _, _, _ = property_payload failure in
   equal ~msg:"the guard's text" string
     (Printf.sprintf "<printer raised %s>"
-       (Printexc.to_string (Failure.Timeout 0.25)))
+       (Printexc.to_string (Failure.Control (`Timeout 0.25))))
     rendered;
   is_none ~msg:"not a timed-out search" timed_out
 
@@ -1184,6 +1207,8 @@ let suite =
       a_law_s_exit_and_fatal_exceptions_fail_the_case );
     ( "a generator's control exceptions fail the case unshrunk",
       a_generator_s_control_exceptions_fail_the_case_unshrunk );
+    ( "a generator that discards discards the case",
+      a_generator_that_discards_discards_the_case );
     ("a context used after its run", a_context_used_after_its_run);
     ( "a cover reached in a dropped case stays registered",
       a_cover_reached_in_a_dropped_case_stays_registered );

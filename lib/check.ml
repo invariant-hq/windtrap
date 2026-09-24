@@ -287,7 +287,7 @@ let raises ?__POS__ ?msg expected_exn fn =
   match fn () with
   | _ -> fail_raise ?__POS__ ?msg ~expected:(Printexc.to_string expected_exn) ()
   | exception
-      ((Failure.Check_failure _ | Failure.Skip_test _ | Failure.Timeout _) as e)
+      ((Failure.Check_failure _ | Failure.Control (`Skip _ | `Timeout _)) as e)
     ->
       raise e
   | exception raised ->
@@ -304,7 +304,7 @@ let raises_match ?__POS__ ?msg pred fn =
   match fn () with
   | _ -> fail_raise ?__POS__ ?msg ~predicate:true ()
   | exception
-      ((Failure.Check_failure _ | Failure.Skip_test _ | Failure.Timeout _) as e)
+      ((Failure.Check_failure _ | Failure.Control (`Skip _ | `Timeout _)) as e)
     ->
       raise e
   | exception raised ->
@@ -343,4 +343,4 @@ let fail ?__POS__ msg =
     (Failure.Check_failure (Failure.message ?loc:(Loc.resolve ?__POS__ ()) msg))
 
 let failf ?__POS__ fmt = Format.kasprintf (fun msg -> fail ?__POS__ msg) fmt
-let skip ?reason () = raise (Failure.Skip_test reason)
+let skip ?reason () = raise (Failure.Control (`Skip reason))

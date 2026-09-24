@@ -512,7 +512,7 @@ let () =
              Run.subtest "skips" (fun () -> Check.skip ~reason:"later" ())
            with
           | () -> ()
-          | exception Failure.Skip_test (Some "later") ->
+          | exception Failure.Control (`Skip (Some "later")) ->
               control := "skip" :: !control);
           (match Run.subtest "fatal" (fun () -> raise Stack_overflow) with
           | () -> ()
@@ -3986,7 +3986,7 @@ let () =
       [ Test_tree.test "t" ignore ]
   with
   | _ -> check "exit in an observer leaves execute" false
-  | exception Failure.Exit_attempt ->
+  | exception Failure.Control `Exit ->
       check "exit in an observer is that observer's exception" !called
 
 (* list_selection *)

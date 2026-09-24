@@ -10,7 +10,7 @@
     {!Failure}, which bounds every text that it is given. The failure is located
     by {!Loc.resolve}, and the verb raises it in a {!Failure.Check_failure}.
     This interface states the payload that each verb builds, for whoever reads
-    or renders a failure. {!skip} raises {!Failure.Skip_test} and builds no
+    or renders a failure. {!skip} raises a {!Failure.Control} and builds no
     failure.
 
     A verb's [?msg] is the failure's [msg], and its [?__POS__] is the failure's
@@ -208,15 +208,14 @@ val in_order : ?__POS__:pos -> ?msg:string -> subs:string list -> string -> unit
 
 (** {1:exceptions Exceptions}
 
-    Both verbs raise again, untouched, a {!Failure.Check_failure}, a
-    {!Failure.Skip_test} and a {!Failure.Timeout} that the function raises,
-    before any comparison and before [pred] is applied. Without that, an
-    assertion that fails inside the function would be reported as the wrong
-    exception.
+    Both verbs raise again, untouched, a {!Failure.Check_failure} and a
+    {!Failure.Control} of [`Skip] or [`Timeout] that the function raises, before
+    any comparison and before [pred] is applied. Without that, an assertion that
+    fails inside the function would be reported as the wrong exception.
 
     Nothing else passes through, against
-    {{!Failure.section-exceptions}the rule of a failure boundary}.
-    {!Failure.Exit_attempt}, {!Property.Discard} and the {!Failure.is_fatal}
+    {{!Failure.section-control}the rule of a failure boundary}. A
+    {!Failure.Control} of [`Exit] or [`Discard] and the {!Failure.is_fatal}
     exceptions are compared, or given to [pred], as any exception is. When
     {!raises_match} is given a predicate that accepts one, it returns [()] and
     the exception is lost. An intercepted [exit] then leaves no trace, and an
@@ -282,5 +281,5 @@ val failf : ?__POS__:pos -> ('a, Format.formatter, unit, 'b) format4 -> 'a
     returns. *)
 
 val skip : ?reason:string -> unit -> 'a
-(** [skip ?reason ()] raises {!Failure.Skip_test} with [reason]. It never
-    returns. *)
+(** [skip ?reason ()] raises [Failure.Control (`Skip reason)]. It never returns.
+*)

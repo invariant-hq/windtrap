@@ -21,15 +21,15 @@
     to one of two classes: a [Failure.Check_failure], or any other exception.
     The shrink search keeps to the class of the first failure (see {!run}). It
     runs the law again on candidates, so a law must be deterministic.
-    - {!Discard} discards the case.
-    - [Failure.Skip_test] skips the whole test, and {!run} raises it again
-      unchanged. A shrink candidate that raises it is a rejected candidate, so a
-      skip never replaces a failure already found.
-    - [Failure.Timeout] times the whole test out while no generated case has
-      failed: during the examples, a generation, or the first run of a case.
-      Once a generated case has failed, it ends the shrink search instead (see
-      {!run}).
-    - Every other exception fails the case, [Failure.Exit_attempt] and the
+    - A [Failure.Control `Discard] discards the case.
+    - A [Failure.Control (`Skip _)] skips the whole test, and {!run} raises it
+      again unchanged. A shrink candidate that raises it is a rejected
+      candidate, so a skip never replaces a failure already found.
+    - A [Failure.Control (`Timeout _)] times the whole test out while no
+      generated case has failed: during the examples, a generation, or the first
+      run of a case. Once a generated case has failed, it ends the shrink search
+      instead (see {!run}).
+    - Every other exception fails the case, [Failure.Control `Exit] and the
       [Failure.is_fatal] exceptions ([Sys.Break], [Out_of_memory],
       [Stack_overflow]) included.
 
@@ -40,22 +40,17 @@
     Nothing in this module is global. Labels go through the {!context} that
     {!run} gives to the law. *)
 
-(** {1:discarding Discarding} *)
+(** {1:discarding Discarding}
 
-exception Discard
-(** Raised by a law to discard the current case. {!run} counts the discard and
-    moves to the next case. {!assume} and {!reject} raise it. A discard at
-    generation time raises [Gen.Engine.Rejected], and the two count against the
-    same budget.
-
-    It is a discard only when the law raises it. Outside a property it is an
-    ordinary exception. *)
+    A case is discarded by a [Failure.Control `Discard], raised by the law or at
+    generation time. {!run} counts the discard and moves to the next case. *)
 
 val assume : bool -> unit
-(** [assume cond] is [()] if [cond] holds, and raises {!Discard} otherwise. *)
+(** [assume cond] is [()] if [cond] holds, and raises [Failure.Control `Discard]
+    otherwise. *)
 
 val reject : unit -> 'a
-(** [reject ()] raises {!Discard}. *)
+(** [reject ()] raises [Failure.Control `Discard]. *)
 
 (** {1:labelling Labelling}
 
@@ -107,8 +102,8 @@ type stats = {
       (** The cases that ran the law to completion and passed, the examples
           included. *)
   discards : int;
-      (** The discarded cases, the examples included. They count {!Discard} from
-          the law and [Gen.Engine.Rejected] at generation time. *)
+      (** The discarded cases, the examples included, whether the law or the
+          generation discarded them. *)
   collected : (string * int) list;
       (** The distribution of the labels over the passing cases, sorted by
           label. A {!cover} label counts here too. *)
@@ -202,12 +197,12 @@ val run :
     first discard. It gives up even when [count] is already met, as under
     [~count:0] with examples that discard past the budget.
 
-    A [gen] that raises [Gen.Engine.Rejected] discards the case, and one that
-    raises [Failure.Skip_test] or [Failure.Timeout] raises it through [run]. Any
-    other exception of [gen] fails the case unshrunk, with
+    A [gen] that raises a [Failure.Control `Discard] discards the case, and one
+    that raises a [Failure.Control] of [`Skip] or [`Timeout] raises it through
+    [run]. Any other exception of [gen] fails the case unshrunk, with
     [<generator raised before producing a value>] as its counterexample, and
-    {!Discard}, [Failure.Check_failure], [Failure.Exit_attempt] and the
-    [Failure.is_fatal] exceptions are among them.
+    [Failure.Check_failure], [Failure.Control `Exit] and the [Failure.is_fatal]
+    exceptions are among them.
 
     {b Shrinking.} A generated case that fails is shrunk by a search that
     descends the tree of its sample. At each node the search runs [law] on the
@@ -222,15 +217,15 @@ val run :
     [pre] of {!Stateful} can. That exception is dropped, whatever it is, so no
     report names it.
 
-    A [Failure.Timeout] raised anywhere in the search ends it as well. The
-    failure then describes the last accepted node, its [timed_out] holds the
-    limit, and the test does not time out. [case_index] is always that of the
-    first failure, so a replay descends the same path, and a timeout changes
-    only where on that path the descent stops.
+    A [Failure.Control (`Timeout _)] raised anywhere in the search ends it as
+    well. The failure then describes the last accepted node, its [timed_out]
+    holds the limit, and the test does not time out. [case_index] is always that
+    of the first failure, so a replay descends the same path, and a timeout
+    changes only where on that path the descent stops.
 
     Raises [Invalid_argument] if [count] or [max_discard] is negative, inside
-    the running test, where [run] executes. Raises [Failure.Skip_test] and
-    [Failure.Timeout] when [law] or [gen] raises them outside the search, and no
-    outcome then exists. A [Failure.Timeout] delivered while the counterexample
-    is formatted does not leave [run], since the guard of [Gen.Engine.render]
+    the running test, where [run] executes. Raises a [Failure.Control] of
+    [`Skip] or [`Timeout] when [law] or [gen] raises it outside the search, and
+    no outcome then exists. A timeout delivered while the counterexample is
+    formatted does not leave [run], since the guard of [Gen.Engine.render]
     catches it. *)

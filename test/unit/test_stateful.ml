@@ -600,8 +600,8 @@ let a_specification_bug_met_while_shrinking_stops_the_search () =
 let control_exceptions_escape_pre_and_next_unconverted () =
   let cases =
     [
-      ("Timeout", Failure.Timeout 0.5);
-      ("Exit_attempt", Failure.Exit_attempt);
+      ("Timeout", Failure.Control (`Timeout 0.5));
+      ("Exit_attempt", Failure.Control `Exit);
       ("Sys.Break", Sys.Break);
     ]
   in
@@ -674,8 +674,8 @@ let assertions_skips_and_discards_from_pre_are_specification_bugs () =
       ( "Check_failure",
         Failure.Check_failure (Failure.equality ~expected:"1" ~actual:"2" ()),
         "windtrap assertion failure" );
-      ("Skip_test", Failure.Skip_test (Some "why"), "windtrap skip: why");
-      ("Discard", Property.Discard, "Discard");
+      ("Skip_test", Failure.Control (`Skip (Some "why")), "windtrap skip: why");
+      ("Discard", Failure.Control `Discard, "windtrap discard");
     ]
   in
   List.iter
@@ -725,10 +725,10 @@ let control_exceptions_escape_a_body_unconverted () =
             (raised = exn)
       | () -> failf "%s from a body was swallowed" label)
     [
-      ("Skip_test", Failure.Skip_test (Some "why"));
-      ("Timeout", Failure.Timeout 0.5);
-      ("Exit_attempt", Failure.Exit_attempt);
-      ("Discard", Property.Discard);
+      ("Skip_test", Failure.Control (`Skip (Some "why")));
+      ("Timeout", Failure.Control (`Timeout 0.5));
+      ("Exit_attempt", Failure.Control `Exit);
+      ("Discard", Failure.Control `Discard);
       ("Sys.Break", Sys.Break);
     ];
   (* A Check_failure is already the class the narrowing aims at: it keeps
@@ -796,8 +796,8 @@ let a_scope_releases_on_every_path () =
       ("pass", counter_program 0);
       ( "body failure",
         one_call_program (Failure.Check_failure (Failure.message "nope")) );
-      ("skip", one_call_program (Failure.Skip_test (Some "why")));
-      ("timeout", one_call_program (Failure.Timeout 0.5));
+      ("skip", one_call_program (Failure.Control (`Skip (Some "why"))));
+      ("timeout", one_call_program (Failure.Control (`Timeout 0.5)));
       ("uncaught", one_call_program Not_found);
     ]
   in
@@ -873,7 +873,7 @@ let a_release_failure_never_replaces_the_program_s () =
           failf "the release's %s came back as %s" label
             (Printexc.to_string raised)
       | () -> failf "the failing program did not fail")
-    [ ("Timeout", Failure.Timeout 0.5); ("Sys.Break", Sys.Break) ]
+    [ ("Timeout", Failure.Control (`Timeout 0.5)); ("Sys.Break", Sys.Break) ]
 
 (* A scope that returns without running the program fails the case rather
    than passing it: a program that never ran is not a passing program. *)
@@ -1028,10 +1028,10 @@ let a_scope_that_raises_before_the_callback_propagates_unconverted () =
     [
       ("Not_found", Not_found);
       ("Check_failure", Failure.Check_failure (Failure.message "nope"));
-      ("Skip_test", Failure.Skip_test (Some "why"));
-      ("Timeout", Failure.Timeout 0.5);
-      ("Exit_attempt", Failure.Exit_attempt);
-      ("Discard", Property.Discard);
+      ("Skip_test", Failure.Control (`Skip (Some "why")));
+      ("Timeout", Failure.Control (`Timeout 0.5));
+      ("Exit_attempt", Failure.Control `Exit);
+      ("Discard", Failure.Control `Discard);
       ("Sys.Break", Sys.Break);
     ];
   (* And through the engine, where the classification is what it means: a
@@ -1040,10 +1040,10 @@ let a_scope_that_raises_before_the_callback_propagates_unconverted () =
     Property.run ~count:(`Declared 4) ~root ~path:"unavailable" (queue_gen ())
       (fun _ program ->
         Stateful.execute
-          ~scope:(fun _ -> raise (Failure.Skip_test (Some "no server")))
+          ~scope:(fun _ -> raise (Failure.Control (`Skip (Some "no server"))))
           program)
   with
-  | exception Failure.Skip_test (Some "no server") -> ()
+  | exception Failure.Control (`Skip (Some "no server")) -> ()
   | exception exn ->
       failf "a skipping scope reached the runner as %s" (Printexc.to_string exn)
   | _ -> failf "a skipping scope did not skip the test"
@@ -1255,10 +1255,10 @@ let an_invariant_is_narrowed_and_propagates_like_a_body () =
             (raised = exn)
       | () -> failf "%s from a post-step invariant was swallowed" label)
     [
-      ("Skip_test", Failure.Skip_test (Some "why"));
-      ("Timeout", Failure.Timeout 0.5);
-      ("Exit_attempt", Failure.Exit_attempt);
-      ("Discard", Property.Discard);
+      ("Skip_test", Failure.Control (`Skip (Some "why")));
+      ("Timeout", Failure.Control (`Timeout 0.5));
+      ("Exit_attempt", Failure.Control `Exit);
+      ("Discard", Failure.Control `Discard);
       ("Sys.Break", Sys.Break);
     ]
 

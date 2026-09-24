@@ -221,10 +221,11 @@ val subtest : string -> (unit -> unit) -> unit
 (** [subtest name fn] runs [fn ()] as a named part of the running test. A
     {!Failure.Check_failure} of [fn] is added to the frame and [subtest]
     returns. Any other exception is added as a {!Failure.Raise} failure with its
-    backtrace, located at the declaration of the test. {!Failure.Skip_test},
-    {!Failure.Timeout} and a fatal exception ({!Failure.is_fatal}) pass through.
-    {!Property.Discard} is added as any other exception is, so an [assume]
-    inside a subtest inside a law fails the test and discards nothing.
+    backtrace, located at the declaration of the test. A {!Failure.Control} of
+    [`Skip] or [`Timeout] and a fatal exception ({!Failure.is_fatal}) pass
+    through. A [Failure.Control `Discard] is added as any other exception is, so
+    an [assume] inside a subtest inside a law fails the test and discards
+    nothing.
 
     An added failure carries its label as data, in its [subtest] field and never
     in its [msg]. The label is the name of the test, then the names of the open
@@ -312,7 +313,7 @@ val fixture : ?teardown:('a -> unit) -> (unit -> 'a) -> unit -> 'a
 
     The first call is [create ()], inside the failure boundary of the calling
     test, and its outcome is a value, an exception with its backtrace, or a
-    {!Failure.Skip_test} with its reason. Only a value acquired with a
+    [Failure.Control (`Skip _)] with its reason. Only a value acquired with a
     [teardown] is registered for the {{!section-release}release} at the end of
     the run.
 
@@ -615,14 +616,14 @@ val list_selection :
     teardown failure are two entries. What a phase raises becomes such a
     failure, with that phase set:
     - a {!Failure.Check_failure} keeps its payload;
-    - a {!Failure.Timeout} is a failure of the phase it interrupted, and a
-      {!Failure.Exit_attempt} one of the phase that called [exit];
+    - a [Failure.Control (`Timeout _)] is a failure of the phase it interrupted,
+      and a [Failure.Control `Exit] one of the phase that called [exit];
     - any other exception is a {!Failure.Raise} failure with its backtrace.
 
-    A {!Failure.Skip_test} skips the test, and the first reason wins. A failure
-    added without a location takes the declaration site of the test, which is
-    the case of one raised from tail position, and a nested failure, as the
-    [inner] of a property failure, is left as it is. The failures that the
+    A [Failure.Control (`Skip _)] skips the test, and the first reason wins. A
+    failure added without a location takes the declaration site of the test,
+    which is the case of one raised from tail position, and a nested failure, as
+    the [inner] of a property failure, is left as it is. The failures that the
     runner makes itself are located at the declaration of the test: a timeout,
     an uncaught exception, an [xfail] test that passed, an intercepted [exit], a
     misused scope, and a property that gave up or missed a label.
@@ -711,7 +712,7 @@ val list_selection :
     ([Printexc.record_backtrace]) and leave it on. They register an [at_exit]
     function, the exit guard.
 
-    While a run is {!active}, a call to [exit] raises {!Failure.Exit_attempt}
+    While a run is {!active}, a call to [exit] raises [Failure.Control `Exit]
     from the guard and the process does not end. The exception is classified
     where it lands. In a test it is a failure of the phase that called [exit],
     the acquisition of a fixture included, or inside a {!subtest} a failure of

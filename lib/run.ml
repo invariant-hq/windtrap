@@ -305,7 +305,7 @@ let subtest name fn =
          computed before popping so it includes this subtest's name. *)
       add_failure frame (relabel frame failure);
       pop ()
-  | exception ((Failure.Skip_test _ | Failure.Timeout _) as control) ->
+  | exception (Failure.Control (`Skip _ | `Timeout _) as control) ->
       (* The runner owns skip and timeout: they abort the whole test. *)
       let backtrace = Printexc.get_raw_backtrace () in
       pop ();
@@ -550,7 +550,7 @@ let fixture : type a. ?teardown:(a -> unit) -> (unit -> a) -> unit -> a =
         assert false (* the id is private to this accessor *)
     | Some { fx_state = Skipped reason; _ } ->
         (* Every later use skips with the cached reason. *)
-        raise (Failure.Skip_test reason)
+        raise (Failure.Control (`Skip reason))
     | Some { fx_state = Failed (exn, backtrace); _ } ->
         Printexc.raise_with_backtrace exn backtrace
     | None -> (
@@ -568,7 +568,7 @@ let fixture : type a. ?teardown:(a -> unit) -> (unit -> a) -> unit -> a =
               };
             run.acquired <- id :: run.acquired;
             value
-        | exception Failure.Skip_test reason ->
+        | exception Failure.Control (`Skip reason) ->
             (* A skip during acquisition is cached as a skip,
                not an error — nothing is registered for release. *)
             let backtrace = Printexc.get_raw_backtrace () in
@@ -579,7 +579,9 @@ let fixture : type a. ?teardown:(a -> unit) -> (unit -> a) -> unit -> a =
                 fx_state = Skipped reason;
                 fx_release = None;
               };
-            Printexc.raise_with_backtrace (Failure.Skip_test reason) backtrace
+            Printexc.raise_with_backtrace
+              (Failure.Control (`Skip reason))
+              backtrace
         | exception exn ->
             let backtrace = Printexc.get_raw_backtrace () in
             Hashtbl.replace run.fixtures id
@@ -669,7 +671,7 @@ let owns_run () =
 let rec exit_guard () =
   if owns_run () && active () then begin
     at_exit exit_guard;
-    raise Failure.Exit_attempt
+    raise (Failure.Control `Exit)
   end
 
 let install_exit_guard () =
@@ -748,7 +750,7 @@ let with_isolated_random ~path fn =
    keeps it bounding them.
 
    The timer is one-shot, so once it has fired the scope is unguarded — and
-   [Failure.Timeout] is not fatal, so the body's phase guard absorbs it and
+   a timeout is not fatal, so the body's phase guard absorbs it and
    [phases] goes on to run teardown. Without re-arming, a teardown that
    blocks after a body timeout runs forever: the run hangs with no output,
    which is precisely what the per-test limit exists to prevent. [renew]
@@ -772,7 +774,7 @@ let with_timeout limit fn =
       let previous_handler =
         Sys.signal Sys.sigalrm
           (Sys.Signal_handle
-             (fun _ -> if !armed then raise (Failure.Timeout limit)))
+             (fun _ -> if !armed then raise (Failure.Control (`Timeout limit))))
       in
       let set_timer seconds =
         ignore
@@ -786,7 +788,7 @@ let with_timeout limit fn =
           Sys.set_signal Sys.sigalrm previous_handler
         with
         | () -> ()
-        | exception Failure.Timeout _ -> disarm ()
+        | exception Failure.Control (`Timeout _) -> disarm ()
       in
       let renew () =
         if !armed then begin
@@ -860,10 +862,11 @@ let run_attempt run frame (case : Test_tree.case) ~limit ~groups ~test_name =
     match exn with
     | Prop_outcome outcome -> record_prop_outcome ph outcome
     | Failure.Check_failure failure -> record_failure ph failure
-    | Failure.Skip_test reason -> if !skipped = None then skipped := Some reason
-    | Failure.Timeout limit ->
+    | Failure.Control (`Skip reason) ->
+        if !skipped = None then skipped := Some reason
+    | Failure.Control (`Timeout limit) ->
         record_failure ph (timeout_failure ?loc:case.Test_tree.loc limit)
-    | Failure.Exit_attempt ->
+    | Failure.Control `Exit ->
         record_failure ph
           (Failure.message ?loc:case.Test_tree.loc
              "the test called exit and was intercepted; a test must return or \
@@ -971,7 +974,7 @@ let run_attempt run frame (case : Test_tree.case) ~limit ~groups ~test_name =
         with_timeout limit (fun renew ->
             match phases renew with
             | () -> ()
-            | exception Failure.Timeout limit ->
+            | exception Failure.Control (`Timeout limit) ->
                 (* The alarm fired between two phase guards. *)
                 record_failure !phase
                   (timeout_failure ?loc:case.Test_tree.loc limit)))

@@ -4,7 +4,7 @@
   ---------------------------------------------------------------------------*)
 
 (** Failure as data: the failure record, the outcome of a test and the control
-    exceptions.
+    exception.
 
     Failures are data and renderers are projections (guarantee 4 of
     [doc/dev/architecture.md]). A failure site builds one {!t} with a
@@ -258,49 +258,53 @@ and t = {
     writes the [msg] and the [loc] of the failure of a call. The bound of the
     {{!section-constructors}constructors} is then the client's to keep. *)
 
-(** {1:exceptions Control exceptions}
+(** {1:control Control}
 
-    The runner acts on these four at the boundary of an attempt (see
-    {{!Run.section-attempts}attempts}). The property engine defines a fifth,
-    {!Property.Discard}, which has a meaning inside a law only.
+    The runner acts on [`Skip], [`Timeout] and [`Exit] at the boundary of an
+    attempt (see {{!Run.section-attempts}attempts}), and the property engine on
+    [`Discard], which has a meaning inside a law only.
 
     A {e failure boundary} is a catch site that turns a raised exception into a
     recorded failure: the boundary of an attempt, a subtest, a verb that calls a
     function of the user, an engine that runs a law. Every boundary is a catch
     site, which {!is_fatal} binds. A boundary below that of the attempt must
-    also raise again {!Skip_test} and {!Timeout}, which are the runner's to act
-    on, and inside a law {!Property.Discard}, which is the engine's. It records
-    a {!Check_failure} when that is its purpose, and raises it again otherwise.
-    {!Exit_attempt} has no rule below the boundary of the attempt, where it is
-    an exception as any other.
+    also raise again a {!Control} of [`Skip] or [`Timeout], which are the
+    runner's to act on, and inside a law one of [`Discard], which is the
+    engine's. It records a {!Check_failure} when that is its purpose, and raises
+    it again otherwise. [`Exit] has no rule below the boundary of the attempt,
+    where it is an exception as any other.
 
     The shrink search of {!Property.run} is the one exception to the rule. Once
-    a case has failed, a {!Timeout} ends the search and a candidate that skips
+    a case has failed, a [`Timeout] ends the search and a candidate that skips
     is rejected, so neither replaces the failure found (see [timed_out]). *)
+
+type control =
+  [ `Skip of string option  (** Skip the running test, with the reason. *)
+  | `Timeout of float
+    (** The test's limit, in seconds, expired. The runner raises it from a
+        signal handler, so it can surface at any allocation or poll point of the
+        code that runs then, the library's own included. *)
+  | `Exit
+    (** Code under test called [Stdlib.exit] while a run is active, in the
+        process that owns the run. The exit guard of {!Run} raises it, which
+        cancels the exit, and it travels from the call to [exit] as any other
+        exception does (see {{!Run.section-exits}exits}). It carries no code,
+        because the guard cannot see it. *)
+  | `Discard  (** Discard the running case of a property. *) ]
+(** The type for a statement about the running test or case. *)
 
 exception Check_failure of t
 (** Raised to fail the running test with a finished failure. The assertion verbs
     raise it, and so do {!Baseline.check}, {!Capture.val-output} when nothing is
     captured, and {!Stateful} for the failure of a call. *)
 
-exception Skip_test of string option
-(** Raised to skip the running test. The payload is the reason. *)
-
-exception Timeout of float
-(** Raised when a test exceeds its limit, which is the payload, in seconds. The
-    runner raises it from a signal handler, so it can surface at any allocation
-    or poll point of the code that runs then, the library's own included. *)
-
-exception Exit_attempt
-(** Raised by the exit guard of {!Run} when code under test calls [Stdlib.exit]
-    while a run is active, in the process that owns the run. The raise cancels
-    the exit, and the exception travels from the call to [exit] as any other
-    does (see {{!Run.section-exits}exits}).
-
-    It carries no payload, because the guard cannot see the exit code. This
-    module registers a [Printexc] printer for it, so every site that prints it
-    gives [Exit_attempt (code under test called exit; intercepted by windtrap)].
-*)
+exception Control of control
+(** Raised through the user's code to the site that owns the control. This
+    module registers its [Printexc] printer, so every site that prints it gives
+    [windtrap skip: REASON] (or [windtrap skip] with no reason),
+    [windtrap timeout after 1.5s],
+    [Exit_attempt (code under test called exit; intercepted by windtrap)] and
+    [windtrap discard (assume or reject outside a property)]. *)
 
 (** {1:boundaries Boundary rules}
 

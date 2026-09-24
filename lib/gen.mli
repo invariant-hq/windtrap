@@ -162,8 +162,8 @@ val list : ?size:int t -> 'a t -> 'a list t
     removed. A state is split off at sampling and the elements of every
     candidate length are drawn again from it, so a shorter candidate is a prefix
     of the drawn list. The length candidates come first, then the reductions of
-    one element, from the left. A candidate whose re-generation raises
-    {!Engine.Rejected} is skipped.
+    one element, from the left. A candidate whose re-generation discards is
+    skipped.
 
     Raises [Invalid_argument] if [size] generates a negative length: at sampling
     for the drawn length, and at the forcing of a candidate for a candidate
@@ -220,8 +220,8 @@ val one_of : 'a t list -> 'a t
     probability. It draws an index, which shrinks toward [0]. A state is split
     off at sampling, and the drawn branch and every earlier branch that the
     integer scheme proposes generate from it. The earlier branches come first,
-    then the candidates of the drawn value. A branch whose re-generation raises
-    {!Engine.Rejected} is skipped.
+    then the candidates of the drawn value. A branch whose re-generation
+    discards is skipped.
 
     A sampled value renders as the branch that drew it renders. The generator's
     printer is the first branch's when every branch has one, and absent
@@ -240,9 +240,10 @@ val frequency : (int * 'a t) list -> 'a t
 
 val such_that : ('a -> bool) -> 'a t -> 'a t
 (** [such_that p gen] generates a [gen] value that satisfies [p], in at most 100
-    draws, the first included. Sampling raises {!Engine.Rejected} when no draw
-    satisfies [p]. A candidate that fails [p] is dropped with its whole subtree.
-    [such_that] keeps [gen]'s printer. [p] must be pure. *)
+    draws, the first included. Sampling discards, raising
+    [Failure.Control `Discard], when no draw satisfies [p]. A candidate that
+    fails [p] is dropped with its whole subtree. [such_that] keeps [gen]'s
+    printer. [p] must be pure. *)
 
 (** {1:composition Composition} *)
 
@@ -254,14 +255,15 @@ val map : ('a -> 'b) -> 'a t -> 'b t
     [f] must be pure. It runs on the root at sampling, and on a candidate when
     its cell is forced, at most once per node. What [f] raises at sampling
     escapes {!Engine.val-sample}. What it raises on a candidate escapes the
-    forcing of that cell, which caches it (see {!Engine.Shrink_tree}). *)
+    forcing of that cell, which caches it (see {!Engine.Shrink_tree}), except a
+    [Failure.Control `Discard], which skips the candidate. *)
 
 val bind : 'a t -> ('a -> 'b t) -> 'b t
 (** [bind gen f] generates [v] with [gen], then a value with [f v]. A state is
     split off at sampling, and [f v] runs on it for the drawn [v] and again for
     every candidate of [v]. The candidates of [v] come first, then those of the
-    inner value. A candidate whose re-generation raises {!Engine.Rejected} is
-    skipped, and any other exception escapes the forcing. [f] must be pure.
+    inner value. A candidate whose re-generation discards is skipped, and any
+    other exception escapes the forcing. [f] must be pure.
 
     It has no printer. A node renders as the inner value does when that
     rendering is a [Value] or nothing. When it is a [Pre_image], the node
@@ -334,10 +336,12 @@ module Engine : sig
 
     val map : ('a -> 'b) -> 'a t -> 'b t
     (** [map f tree] is [tree] with [f] applied to every value, shape and order
-        kept. [f] runs on the root at once, and on a descendant when its cell is
-        forced, at most once. What [f] raises on the root escapes [map]. What it
-        raises on a descendant escapes the forcing of that cell, which caches
-        it. Mapping does not make an effectful [f] pure. *)
+        kept, except that a descendant on which [f] raises a
+        [Failure.Control `Discard] is skipped with its subtree. [f] runs on the
+        root at once, and on a descendant when its cell is forced, at most once.
+        What [f] raises on the root escapes [map]. What it raises on a
+        descendant, a discard excepted, escapes the forcing of that cell, which
+        caches it. Mapping does not make an effectful [f] pure. *)
 
     val pair : 'a t -> 'b t -> ('a * 'b) t
     (** [pair left right] is rooted at [(root left, root right)]. Its candidates
@@ -369,12 +373,6 @@ module Engine : sig
 
   (** {1:sampling Sampling} *)
 
-  exception Rejected
-  (** Raised by {!val-sample} when a {!Gen.such_that} filter finds no value in
-      its draws. It is a discard at generation time, and {!Property.run} counts
-      it with {!Property.Discard}. A candidate whose re-generation is rejected
-      is skipped, and the search goes on with its siblings. *)
-
   type 'a sample
   (** The type for a drawn value with its rendering. Every node of a sampled
       tree is one, candidates included. *)
@@ -384,18 +382,21 @@ module Engine : sig
       the root is drawn, and the candidates are generated and memoized when the
       tree is traversed. The successor state is dropped, and {!run} returns it.
 
-      Raises {!Rejected} on a discard at generation time, [Invalid_argument] on
-      a malformed generator argument, and whatever a function of [gen] raises.
+      Raises [Failure.Control `Discard] on a discard at generation time, as when
+      a {!Gen.such_that} filter finds no value in its draws, [Invalid_argument]
+      on a malformed generator argument, and whatever a function of [gen]
+      raises.
 
-      Forcing a candidate never raises {!Rejected}. It raises whatever else the
-      generation of that candidate raises:
+      Forcing a candidate never raises [Failure.Control `Discard]: a candidate
+      whose generation discards is skipped, and the search goes on with its
+      siblings. It raises whatever else the generation of that candidate raises:
       - What a function given to {!Gen.map}, {!Gen.bind} or {!Gen.such_that}
         raises.
       - The [Invalid_argument] of a re-generation: a negative candidate length
         under a sized {!Gen.list}, or a malformed generator that {!Gen.bind}'s
         function builds for a candidate.
       - Whatever the [draw] of a {!make} raises.
-      - A [Failure.Timeout] delivered in the meantime. *)
+      - A [Failure.Control (`Timeout _)] delivered in the meantime. *)
 
   val value : 'a sample -> 'a
   (** [value sample] is the drawn value. *)
@@ -424,7 +425,7 @@ module Engine : sig
       It never raises. A printer that raises, whatever the exception, turns the
       whole text into [<printer raised EXN>], [EXN] being the exception as
       [Printexc.to_string] prints it. The guard is around the whole document and
-      catches [Failure.Timeout] and the [Failure.is_fatal] exceptions too. *)
+      catches a [Failure.Control] and the [Failure.is_fatal] exceptions too. *)
 
   val render_value : 'a t -> 'a -> string
   (** [render_value gen v] is [v] through [gen]'s printer, or {!render}'s

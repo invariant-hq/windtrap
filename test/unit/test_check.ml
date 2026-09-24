@@ -938,12 +938,14 @@ let tests =
              Check.raises Not_found (fun () -> Check.skip ~reason:"r" ())
            with
           | () -> false
-          | exception F.Skip_test (Some "r") -> true
+          | exception F.Control (`Skip (Some "r")) -> true
           | exception _ -> false);
         is_true ~msg:"raises: inner Timeout propagates"
-          (match Check.raises Not_found (fun () -> raise (F.Timeout 2.5)) with
+          (match
+             Check.raises Not_found (fun () -> raise (F.Control (`Timeout 2.5)))
+           with
           | () -> false
-          | exception F.Timeout 2.5 -> true
+          | exception F.Control (`Timeout 2.5) -> true
           | exception _ -> false);
         (* Same guard, same order, in raises_match: the accept-all predicate
            never sees the control exceptions. *)
@@ -954,16 +956,16 @@ let tests =
                (fun () -> Check.skip ~reason:"r" ())
            with
           | () -> false
-          | exception F.Skip_test (Some "r") -> true
+          | exception F.Control (`Skip (Some "r")) -> true
           | exception _ -> false);
         is_true ~msg:"raises_match: inner Timeout propagates"
           (match
              Check.raises_match
                (fun _ -> true)
-               (fun () -> raise (F.Timeout 0.1))
+               (fun () -> raise (F.Control (`Timeout 0.1)))
            with
           | () -> false
-          | exception F.Timeout 0.1 -> true
+          | exception F.Control (`Timeout 0.1) -> true
           | exception _ -> false);
         (* The guard fires before the predicate: even an accept-all
            predicate cannot swallow an inner assertion failure. *)
@@ -1098,8 +1100,8 @@ let tests =
                   (Some (Printexc.to_string e))
                   actual))
           [
-            ("Exit_attempt", F.Exit_attempt);
-            ("Discard", Windtrap.Private.Property.Discard);
+            ("Exit_attempt", F.Control `Exit);
+            ("Discard", Windtrap.Private.Failure.Control `Discard);
             ("Sys.Break", Sys.Break);
             ("Out_of_memory", Out_of_memory);
             ("Stack_overflow", Stack_overflow);
@@ -1245,12 +1247,12 @@ let tests =
         is_true ~msg:"skip: raises Skip_test with the reason"
           (match Check.skip ~reason:"needs docker" () with
           | _ -> false
-          | exception F.Skip_test (Some "needs docker") -> true
+          | exception F.Control (`Skip (Some "needs docker")) -> true
           | exception _ -> false);
         is_true ~msg:"skip: reason defaults to None"
           (match Check.skip () with
           | _ -> false
-          | exception F.Skip_test None -> true
+          | exception F.Control (`Skip None) -> true
           | exception _ -> false));
     (* Every verb of [Check] that fails with a location, each made to fail
        once. [skip] is the one verb without a site: a skip is not a failure. *)

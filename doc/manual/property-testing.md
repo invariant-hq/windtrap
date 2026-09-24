@@ -189,7 +189,10 @@ prop "division round-trips"
 Discarding is for rare, cheap preconditions. When the precondition is
 structural — nonempty lists, sorted input — constrain the generator
 instead (`Gen.such_that`, or a generator correct by construction).
-`reject ()` discards unconditionally.
+`reject ()` discards unconditionally. Both also work inside a
+function given to a generator, such as `Gen.map` or `Gen.bind`: a
+discard there discards the case, and a shrink candidate whose
+generation discards is skipped.
 
 The budget is twice the effective `~count`, and `~max_discard` raises
 it where a precondition is genuinely rare:
