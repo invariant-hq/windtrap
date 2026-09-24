@@ -50,22 +50,40 @@ let find_sample ?(max_index = 10_000) gen accept =
   in
   loop 0
 
-(* Greedy integrated shrinking, the engine's strategy: repeatedly move to
-   the first candidate that still satisfies [failing]. Returns the local
-   minimum and the number of steps. *)
-let minimize ?(max_steps = 1_000) failing tree =
-  let rec loop steps tree =
-    if steps > max_steps then failf "greedy shrink exceeded %d steps" max_steps
-    else
-      match
-        Seq.find
-          (fun child -> failing (root_value child))
-          (Shrink_tree.children tree)
-      with
-      | None -> (root_value tree, steps)
-      | Some child -> loop (steps + 1) child
+(* The shrink search a user's property gets, judged through its report.
+   [shrink ?from ?failing gen] runs [Property.run] under this suite's root
+   and path, so its case [i] samples [state i]: the tree [find_sample] and
+   [state] hand the tests. The law fails on the first case whose value
+   satisfies [from] and [failing] (both default to always), and from then
+   on on every candidate that satisfies [failing], so the engine's own
+   search descends from that tree. The result is the counterexample as the
+   payload renders it, a pre-image marked as [render] marks one, and the
+   accepted steps; a search that stopped before converging fails the
+   test. *)
+let shrink ?(from = fun _ -> true) ?(failing = fun _ -> true) gen =
+  let started = ref false in
+  let law _ value =
+    if (!started || from value) && failing value then begin
+      started := true;
+      fail "the predicate holds"
+    end
   in
-  loop 0 tree
+  match
+    Windtrap.Private.Property.run ~count:(`Declared 10_000) ~root
+      ~path:"test_gen" gen law
+  with
+  | Fail { failure = { kind = Property payload; _ }; _ } ->
+      if payload.shrink_exhausted then
+        failf "the search stopped at %s before it converged" payload.rendered;
+      let text =
+        match payload.rendering with
+        | Value -> payload.rendered
+        | Pre_image -> "from " ^ payload.rendered
+      in
+      (text, payload.shrink_steps)
+  | _ -> failf "no case in 10000 satisfied the predicate"
+
+let shrinks_to ?from ?failing gen = fst (shrink ?from ?failing gen)
 
 (* Depth-first visit of up to [limit] tree values. *)
 let explore ~limit tree visit =
@@ -128,11 +146,8 @@ let different_indexes_vary () =
 (* Integer generators *)
 
 let int_shrinks_to_zero () =
-  let tree = find_sample Gen.int (fun v -> v <> 0) in
-  let minimum, _ = minimize (fun _ -> true) tree in
-  is_true
-    ~msg:(Printf.sprintf "int minimized to %d, not 0" minimum)
-    (minimum = 0)
+  equal ~msg:"int shrinks to 0" string "0"
+    (shrinks_to ~from:(fun v -> v <> 0) Gen.int)
 
 let int_renders_decimal () =
   let tree = Gen_engine.sample Gen.int (state 0) in
@@ -157,9 +172,8 @@ let nat_distribution_is_stratified () =
     (above_thousand >= 1)
 
 let nat_shrinks_to_zero () =
-  let tree = find_sample Gen.nat (fun v -> v > 0) in
-  let minimum, _ = minimize (fun _ -> true) tree in
-  is_true ~msg:(Printf.sprintf "nat minimized to %d" minimum) (minimum = 0)
+  equal ~msg:"nat shrinks to 0" string "0"
+    (shrinks_to ~from:(fun v -> v > 0) Gen.nat)
 
 let small_int_is_small_and_signed () =
   let values = samples Gen.small_int 500 in
@@ -173,9 +187,8 @@ let small_int_is_small_and_signed () =
     (List.exists (fun v -> v < 0) values);
   is_true ~msg:"no positive small_int in 500"
     (List.exists (fun v -> v > 0) values);
-  let tree = find_sample Gen.small_int (fun v -> v < 0) in
-  let minimum, _ = minimize (fun _ -> true) tree in
-  is_true ~msg:(Printf.sprintf "small_int minimized to %d" minimum) (minimum = 0)
+  equal ~msg:"a negative small_int shrinks to 0" string "0"
+    (shrinks_to ~from:(fun v -> v < 0) Gen.small_int)
 
 let int_range_stays_in_bounds_while_shrinking () =
   let gen = Gen.int_range 10 100 in
@@ -186,11 +199,8 @@ let int_range_stays_in_bounds_while_shrinking () =
           ~msg:(Printf.sprintf "int_range candidate %d out of bounds" v)
           (v >= 10 && v <= 100))
   done;
-  let tree = find_sample gen (fun v -> v > 10) in
-  let minimum, _ = minimize (fun _ -> true) tree in
-  is_true
-    ~msg:(Printf.sprintf "int_range 10 100 minimized to %d, not 10" minimum)
-    (minimum = 10)
+  equal ~msg:"int_range 10 100 shrinks to 10" string "10"
+    (shrinks_to ~from:(fun v -> v > 10) gen)
 
 let int_range_degenerate_is_a_leaf () =
   let tree = Gen_engine.sample (Gen.int_range 5 5) (state 0) in
@@ -201,11 +211,8 @@ let int_range_degenerate_is_a_leaf () =
 
 let int_range_full_range_works () =
   let gen = Gen.int_range min_int max_int in
-  let tree = find_sample gen (fun v -> v <> 0) in
-  let minimum, _ = minimize (fun _ -> true) tree in
-  is_true
-    ~msg:(Printf.sprintf "full int_range minimized to %d" minimum)
-    (minimum = 0)
+  equal ~msg:"the full int_range shrinks to 0" string "0"
+    (shrinks_to ~from:(fun v -> v <> 0) gen)
 
 let int_range_invalid_raises_at_sample_time () =
   let gen = Gen.int_range 10 (-10) in
@@ -216,32 +223,22 @@ let int_range_invalid_raises_at_sample_time () =
 
 let greedy_shrink_finds_boundary () =
   let gen = Gen.int_range 0 1000 in
-  let tree = find_sample gen (fun v -> v > 50) in
-  let minimum, _ = minimize (fun v -> v > 50) tree in
-  is_true
-    ~msg:(Printf.sprintf "boundary shrink reached %d, not 51" minimum)
-    (minimum = 51)
+  equal ~msg:"the search stops on the boundary" string "51"
+    (shrinks_to ~failing:(fun v -> v > 50) gen)
 
 let int32_shrinks_to_zero () =
-  let tree = find_sample Gen.int32 (fun v -> not (Int32.equal v 0l)) in
-  let minimum, _ = minimize (fun _ -> true) tree in
-  is_true
-    ~msg:(Printf.sprintf "int32 minimized to %ld" minimum)
-    (Int32.equal minimum 0l)
+  equal ~msg:"int32 shrinks to 0" string "0l"
+    (shrinks_to ~from:(fun v -> not (Int32.equal v 0l)) Gen.int32)
 
 let int64_shrinks_to_zero () =
-  let tree = find_sample Gen.int64 (fun v -> not (Int64.equal v 0L)) in
-  let minimum, _ = minimize (fun _ -> true) tree in
-  is_true
-    ~msg:(Printf.sprintf "int64 minimized to %Ld" minimum)
-    (Int64.equal minimum 0L)
+  equal ~msg:"int64 shrinks to 0" string "0L"
+    (shrinks_to ~from:(fun v -> not (Int64.equal v 0L)) Gen.int64)
 
 let nativeint_shrinks_to_zero_and_prints_as_a_literal () =
-  let tree = find_sample Gen.nativeint (fun v -> not (Nativeint.equal v 0n)) in
-  let minimum, _ = minimize (fun _ -> true) tree in
-  is_true
-    ~msg:(Printf.sprintf "nativeint minimized to %nd" minimum)
-    (Nativeint.equal minimum 0n);
+  let nonzero v = not (Nativeint.equal v 0n) in
+  let tree = find_sample Gen.nativeint nonzero in
+  equal ~msg:"nativeint shrinks to 0" string "0n"
+    (shrinks_to ~from:nonzero Gen.nativeint);
   let rendered = render tree in
   is_true
     ~msg:(Printf.sprintf "nativeint rendered %S" rendered)
@@ -267,11 +264,8 @@ let float_is_finite () =
     (fun v ->
       is_true ~msg:(Printf.sprintf "float produced %h" v) (Float.is_finite v))
     (samples Gen.float 500);
-  let tree = find_sample Gen.float (fun v -> v <> 0.0) in
-  let minimum, steps = minimize (fun _ -> true) tree in
-  is_true
-    ~msg:(Printf.sprintf "float minimized to %h in %d steps" minimum steps)
-    (minimum = 0.0)
+  equal ~msg:"float shrinks to 0" string "0."
+    (shrinks_to ~from:(fun v -> v <> 0.0) Gen.float)
 
 let float_range_stays_in_bounds () =
   let gen = Gen.float_range 2.0 5.0 in
@@ -282,17 +276,10 @@ let float_range_stays_in_bounds () =
           ~msg:(Printf.sprintf "float_range candidate %h out of bounds" v)
           (v >= 2.0 && v <= 5.0))
   done;
-  let tree = Gen_engine.sample gen (state 0) in
-  let minimum, _ = minimize (fun _ -> true) tree in
-  is_true
-    ~msg:(Printf.sprintf "float_range 2 5 minimized to %h" minimum)
-    (minimum = 2.0);
+  equal ~msg:"float_range 2 5 shrinks to 2" string "2." (shrinks_to gen);
   let negative = Gen.float_range (-5.0) (-2.0) in
-  let tree = Gen_engine.sample negative (state 1) in
-  let minimum, _ = minimize (fun _ -> true) tree in
-  is_true
-    ~msg:(Printf.sprintf "float_range -5 -2 minimized to %h" minimum)
-    (minimum = -2.0)
+  equal ~msg:"float_range -5 -2 shrinks to -2" string "-2."
+    (shrinks_to negative)
 
 let float_range_invalid_raises_at_sample_time () =
   let cases =
@@ -348,9 +335,8 @@ let char_is_uniform_and_shrinks_to_a () =
     (List.exists (fun c -> Char.code c > 127) values);
   is_true ~msg:"no control byte in 300 chars (NUL weight must be 1/256, not 0)"
     (List.exists (fun c -> Char.code c < 32) values);
-  let tree = find_sample Gen.char (fun c -> c <> 'a') in
-  let minimum, _ = minimize (fun _ -> true) tree in
-  is_true ~msg:(Printf.sprintf "char minimized to %C" minimum) (minimum = 'a')
+  equal ~msg:"char shrinks to 'a'" string "'a'"
+    (shrinks_to ~from:(fun c -> c <> 'a') Gen.char)
 
 let char_range_stays_in_bounds_and_shrinks_toward_a () =
   let gen = Gen.char_range 'b' 'y' in
@@ -362,10 +348,8 @@ let char_range_stays_in_bounds_and_shrinks_toward_a () =
           (c >= 'b' && c <= 'y'))
   done;
   let tree = find_sample gen (fun c -> c > 'b') in
-  let minimum, _ = minimize (fun _ -> true) tree in
-  is_true
-    ~msg:(Printf.sprintf "char_range 'b' 'y' minimized to %C, not 'b'" minimum)
-    (minimum = 'b');
+  equal ~msg:"char_range 'b' 'y' shrinks to 'b'" string "'b'"
+    (shrinks_to ~from:(fun c -> c > 'b') gen);
   let rendered = render tree in
   is_true
     ~msg:(Printf.sprintf "char_range rendered %S" rendered)
@@ -373,17 +357,11 @@ let char_range_stays_in_bounds_and_shrinks_toward_a () =
 
 let char_range_outside_a_shrinks_to_nearest_bound () =
   let upper = Gen.char_range 'A' 'Z' in
-  let tree = find_sample upper (fun c -> c < 'Z') in
-  let minimum, _ = minimize (fun _ -> true) tree in
-  is_true
-    ~msg:(Printf.sprintf "char_range 'A' 'Z' minimized to %C, not 'Z'" minimum)
-    (minimum = 'Z');
+  equal ~msg:"char_range 'A' 'Z' shrinks to 'Z'" string "'Z'"
+    (shrinks_to ~from:(fun c -> c < 'Z') upper);
   let digits = Gen.char_range '0' '9' in
-  let tree = find_sample digits (fun c -> c < '9') in
-  let minimum, _ = minimize (fun _ -> true) tree in
-  is_true
-    ~msg:(Printf.sprintf "char_range '0' '9' minimized to %C, not '9'" minimum)
-    (minimum = '9');
+  equal ~msg:"char_range '0' '9' shrinks to '9'" string "'9'"
+    (shrinks_to ~from:(fun c -> c < '9') digits);
   List.iter
     (fun index ->
       explore ~limit:100
@@ -408,8 +386,8 @@ let string_shrinks_to_empty_and_renders_quoted () =
   let tree = find_sample Gen.string (fun s -> String.length s >= 2) in
   is_true ~msg:"non-empty string's first candidate is not \"\""
     (root_value (first_child tree) = "");
-  let minimum, _ = minimize (fun _ -> true) tree in
-  is_true ~msg:(Printf.sprintf "string minimized to %S" minimum) (minimum = "");
+  equal ~msg:"string shrinks to the empty string" string {|""|}
+    (shrinks_to ~from:(fun s -> String.length s >= 2) Gen.string);
   let rendered = render tree in
   is_true
     ~msg:(Printf.sprintf "string rendered %S" rendered)
@@ -440,11 +418,8 @@ let string_of_size_keeps_length_in_bounds () =
           ~msg:(Printf.sprintf "sized string candidate has length %d" n)
           (n >= 2 && n <= 5))
   done;
-  let tree = Gen_engine.sample gen (state 0) in
-  let minimum, _ = minimize (fun _ -> true) tree in
-  is_true
-    ~msg:(Printf.sprintf "sized string minimized to %S, not \"aa\"" minimum)
-    (minimum = "aa")
+  equal ~msg:"a sized string shrinks to its shortest, lowest" string {|"aa"|}
+    (shrinks_to gen)
 
 let string_of_negative_size_raises_at_sample_time () =
   let gen = Gen.(string_of ~size:(constant (-1)) char) in
@@ -453,11 +428,10 @@ let string_of_negative_size_raises_at_sample_time () =
   | _ -> failf "negative string size sampled successfully"
 
 let bytes_shrink_to_empty () =
-  let tree = find_sample Gen.bytes (fun b -> Bytes.length b >= 1) in
-  let minimum, _ = minimize (fun _ -> true) tree in
-  is_true
-    ~msg:(Printf.sprintf "bytes minimized to %d bytes" (Bytes.length minimum))
-    (Bytes.length minimum = 0);
+  let nonempty b = Bytes.length b >= 1 in
+  let tree = find_sample Gen.bytes nonempty in
+  equal ~msg:"bytes shrink to empty" string {|Bytes.of_string ""|}
+    (shrinks_to ~from:nonempty Gen.bytes);
   let rendered = render tree in
   is_true
     ~msg:(Printf.sprintf "bytes rendered %S" rendered)
@@ -493,12 +467,8 @@ let list_shrinks_structurally () =
   let tree = find_sample gen (fun l -> List.length l >= 2) in
   is_true ~msg:"non-empty list's first candidate is not []"
     (root_value (first_child tree) = []);
-  let minimum, _ = minimize (fun _ -> true) tree in
-  is_true
-    ~msg:
-      (Printf.sprintf "list minimized to a %d-element list"
-         (List.length minimum))
-    (minimum = []);
+  equal ~msg:"list shrinks to []" string "[]"
+    (shrinks_to ~from:(fun l -> List.length l >= 2) gen);
   let rendered = render tree in
   is_true
     ~msg:(Printf.sprintf "list rendered %S" rendered)
@@ -514,12 +484,8 @@ let list_with_size_keeps_length_in_bounds () =
           ~msg:(Printf.sprintf "sized list candidate has length %d" n)
           (n >= 2 && n <= 5))
   done;
-  let tree = Gen_engine.sample gen (state 0) in
-  let minimum, _ = minimize (fun _ -> true) tree in
-  is_true
-    ~msg:
-      (Printf.sprintf "sized list minimized to length %d" (List.length minimum))
-    (minimum = [ 0; 0 ])
+  equal ~msg:"a sized list shrinks to its shortest, zeroes" string "[0; 0]"
+    (shrinks_to gen)
 
 let list_negative_size_raises_at_sample_time () =
   let gen = Gen.(list ~size:(constant (-1)) nat) in
@@ -529,12 +495,10 @@ let list_negative_size_raises_at_sample_time () =
 
 let array_shrinks_to_empty () =
   let gen = Gen.(array nat) in
-  let tree = find_sample gen (fun a -> Array.length a >= 1) in
-  let minimum, _ = minimize (fun _ -> true) tree in
-  is_true
-    ~msg:
-      (Printf.sprintf "array minimized to %d elements" (Array.length minimum))
-    (Array.length minimum = 0);
+  let nonempty a = Array.length a >= 1 in
+  let tree = find_sample gen nonempty in
+  equal ~msg:"array shrinks to empty" string "[||]"
+    (shrinks_to ~from:nonempty gen);
   let rendered = render tree in
   is_true
     ~msg:(Printf.sprintf "array rendered %S" rendered)
@@ -603,24 +567,24 @@ let pair_shrinks_left_first_to_zeroes () =
   let _, right = root_value tree in
   is_true ~msg:"pair's first candidate did not shrink the left component to 0"
     (root_value (first_child tree) = (0, right));
-  let minimum, _ = minimize (fun _ -> true) tree in
-  is_true
-    ~msg:
-      (Printf.sprintf "pair minimized to (%d, %d)" (fst minimum) (snd minimum))
-    (minimum = (0, 0));
+  equal ~msg:"pair shrinks to zeroes" string "(0, 0)"
+    (shrinks_to ~from:(fun v -> v = root_value tree) gen);
   let tree = Gen_engine.sample gen (state 0) in
   let a, b = root_value tree in
   is_true
     ~msg:(Printf.sprintf "pair rendered %S" (render tree))
     (render tree = Printf.sprintf "(%d, %d)" a b)
 
-let triple_and_quad_minimize_to_zeroes () =
-  let triple_tree = Gen_engine.sample Gen.(triple nat nat nat) (state 2) in
-  let minimum, _ = minimize (fun _ -> true) triple_tree in
-  is_true ~msg:"triple minimized elsewhere" (minimum = (0, 0, 0));
-  let quad_tree = Gen_engine.sample Gen.(quad nat nat nat nat) (state 3) in
-  let minimum, _ = minimize (fun _ -> true) quad_tree in
-  is_true ~msg:"quad minimized elsewhere" (minimum = (0, 0, 0, 0))
+let triple_and_quad_shrink_to_zeroes () =
+  let nonzero = ( <> ) 0 in
+  equal ~msg:"triple shrinks to zeroes" string "(0, 0, 0)"
+    (shrinks_to
+       ~from:(fun (a, b, c) -> List.exists nonzero [ a; b; c ])
+       Gen.(triple nat nat nat));
+  equal ~msg:"quad shrinks to zeroes" string "(0, 0, 0, 0)"
+    (shrinks_to
+       ~from:(fun (a, b, c, d) -> List.exists nonzero [ a; b; c; d ])
+       Gen.(quad nat nat nat nat))
 
 (* Choice and structure *)
 
@@ -651,10 +615,9 @@ let of_list_picks_uniformly_and_shrinks_toward_head () =
   let tree = find_sample gen (fun v -> v = 30) in
   is_true ~msg:"the last value's first candidate is not the head"
     (root_value (first_child tree) = 10);
-  let minimum, _ = minimize (fun _ -> true) tree in
-  is_true
-    ~msg:(Printf.sprintf "of_list minimized to %d, not the head" minimum)
-    (minimum = 10);
+  (* [of_list] prints nothing; a printer changes no candidate. *)
+  equal ~msg:"of_list shrinks to the head" string "10"
+    (shrinks_to ~from:(fun v -> v = 30) (Gen.with_pp Format.pp_print_int gen));
   let rendered = render tree in
   is_true
     ~msg:(Printf.sprintf "of_list rendered %S" rendered)
@@ -815,9 +778,8 @@ let such_that_filters_generation_and_shrinking () =
           ~msg:(Printf.sprintf "such_that candidate %d is odd" v)
           (v mod 2 = 0))
   done;
-  let tree = find_sample even (fun v -> v <> 0) in
-  let minimum, _ = minimize (fun _ -> true) tree in
-  is_true ~msg:(Printf.sprintf "even int minimized to %d" minimum) (minimum = 0);
+  equal ~msg:"an even int shrinks to 0" string "0"
+    (shrinks_to ~from:(fun v -> v <> 0) even);
   is_true ~msg:"such_that dropped the underlying printer"
     (Gen_engine.render_value even 4 = "4")
 
@@ -847,11 +809,11 @@ let map_renders_the_pre_image () =
       (Printf.sprintf "shrunk mapped int rendered %S for %d" (render child)
          (root_value child))
     (rendering child = Pre_image (string_of_int (root_value child - 1)));
-  (* Greedy shrinking reports the pre-image of the value it stops at. *)
-  let minimum, _ = minimize (fun v -> v > 10) tree in
-  is_true
-    ~msg:(Printf.sprintf "mapped int minimized to %d, not 11" minimum)
-    (minimum = 11);
+  (* The search reports the pre-image of the value it stops at: 11 is the
+     least value above 10, computed from 10. *)
+  equal ~msg:"a mapped int stops on the boundary, as its pre-image" string
+    "from 10"
+    (shrinks_to ~from:(fun v -> v <> 1) ~failing:(fun v -> v > 10) gen);
   let rec descend tree =
     match Seq.find (fun c -> root_value c > 10) (Shrink_tree.children tree) with
     | None -> tree
@@ -949,12 +911,8 @@ let bind_keeps_inner_constraints_while_shrinking () =
           ~msg:(Printf.sprintf "bound list candidate has length %d" n)
           (n >= 1 && n <= 3))
   done;
-  let tree = Gen_engine.sample gen (state 0) in
-  let minimum, _ = minimize (fun _ -> true) tree in
-  is_true
-    ~msg:
-      (Printf.sprintf "bound list minimized to length %d" (List.length minimum))
-    (minimum = [ 0 ])
+  equal ~msg:"a bound list shrinks to its shortest, zeroes" string "[0]"
+    (shrinks_to gen)
 
 (* A [bind] renders the inner value when the inner generator prints; the
    pre-image [outer -> inner] when the inner is itself a pre-image; and
@@ -1034,11 +992,9 @@ let letops_compose () =
       let+ a = nat and+ b = nat in
       a + b)
   in
-  let tree = find_sample gen (fun v -> v > 0) in
-  let minimum, _ = minimize (fun _ -> true) tree in
-  is_true
-    ~msg:(Printf.sprintf "let+/and+ sum minimized to %d" minimum)
-    (minimum = 0)
+  equal ~msg:"a let+/and+ sum shrinks to the pre-image of 0" string
+    "from (0, 0)"
+    (shrinks_to ~from:(fun v -> v > 0) gen)
 
 let with_pp_attaches_a_printer () =
   let custom ppf n = Format.fprintf ppf "N=%d" n in
@@ -1167,18 +1123,6 @@ let render_value_reports_printer_presence () =
 
 (* Adversarial additions *)
 
-(* [find_sample] for generators whose sampling can legitimately discard. *)
-let find_sample_skipping_discards ?(max_index = 10_000) gen accept =
-  let rec loop index =
-    if index >= max_index then
-      failf "no matching sample within %d cases" max_index
-    else
-      match Gen_engine.sample gen (state index) with
-      | tree -> if accept (root_value tree) then tree else loop (index + 1)
-      | exception Gen_engine.Rejected -> loop (index + 1)
-  in
-  loop 0
-
 (* A shrink candidate whose re-generation exhausts a [such_that] budget must
    be skipped, not raise: memoized child cells cache exceptions, so a raising
    cell would also hide every later sibling candidate. *)
@@ -1188,25 +1132,18 @@ let rejected_bind_candidates_are_skipped () =
       bind (int_range 1 10) (fun n ->
           if n = 1 then such_that (fun _ -> false) nat else constant n))
   in
-  let tree = find_sample_skipping_discards gen (fun v -> v >= 3) in
-  let minimum, _ = minimize (fun _ -> true) tree in
-  is_true
+  equal
     ~msg:
-      (Printf.sprintf
-         "bind with a rejecting candidate minimized to %d, not 2 (candidate 1 \
-          must be skipped, siblings kept)"
-         minimum)
-    (minimum = 2)
+      "a bind with a rejecting candidate shrinks to 2: candidate 1 is skipped, \
+       its siblings kept"
+    string "2"
+    (shrinks_to ~from:(fun v -> v >= 3) (Gen.with_pp Format.pp_print_int gen))
 
 let rejected_one_of_candidates_are_skipped () =
   let gen = Gen.(one_of [ such_that (fun _ -> false) nat; constant 7 ]) in
-  let tree = find_sample_skipping_discards gen (fun v -> v = 7) in
-  let minimum, steps = minimize (fun _ -> true) tree in
-  is_true
-    ~msg:
-      (Printf.sprintf "one_of with a rejecting branch shrank to %d in %d steps"
-         minimum steps)
-    (minimum = 7 && steps = 0)
+  equal ~msg:"one_of with a rejecting branch stays on 7, in no step"
+    (pair string int) ("7", 0)
+    (shrink ~from:(fun v -> v = 7) (Gen.with_pp Format.pp_print_int gen))
 
 let int_range_negative_bounds_shrink_to_high () =
   let gen = Gen.int_range (-100) (-10) in
@@ -1218,11 +1155,8 @@ let int_range_negative_bounds_shrink_to_high () =
             (Printf.sprintf "int_range -100 -10 candidate %d out of bounds" v)
           (v >= -100 && v <= -10))
   done;
-  let tree = find_sample gen (fun v -> v < -10) in
-  let minimum, _ = minimize (fun _ -> true) tree in
-  is_true
-    ~msg:(Printf.sprintf "int_range -100 -10 minimized to %d, not -10" minimum)
-    (minimum = -10)
+  equal ~msg:"int_range -100 -10 shrinks to -10" string "-10"
+    (shrinks_to ~from:(fun v -> v < -10) gen)
 
 let frequency_zero_weight_branch_is_never_chosen () =
   let gen = Gen.(frequency [ (0, constant `A); (1, constant `B) ]) in
@@ -1251,12 +1185,8 @@ let char_range_full_byte_span_behaves_like_char () =
   let values = samples gen 300 in
   is_true ~msg:"no byte above 127 in 300 draws of the full span"
     (List.exists (fun c -> Char.code c > 127) values);
-  let tree = find_sample gen (fun c -> c <> 'a') in
-  let minimum, _ = minimize (fun _ -> true) tree in
-  is_true
-    ~msg:
-      (Printf.sprintf "full-span char_range minimized to %C, not 'a'" minimum)
-    (minimum = 'a')
+  equal ~msg:"the full-span char_range shrinks to 'a'" string "'a'"
+    (shrinks_to ~from:(fun c -> c <> 'a') gen)
 
 (* A [such_that] as the size generator: the filtered constraint must hold for
    the drawn length and for every shrink candidate's length. *)
@@ -1269,12 +1199,8 @@ let such_that_size_constrains_every_candidate () =
           (Printf.sprintf "even-size list candidate has odd length %d"
              (List.length l))
         (List.length l mod 2 = 0));
-  let minimum, _ = minimize (fun _ -> true) tree in
-  is_true
-    ~msg:
-      (Printf.sprintf "even-size list minimized to length %d"
-         (List.length minimum))
-    (minimum = []);
+  equal ~msg:"an even-size list shrinks to []" string "[]"
+    (shrinks_to ~from:(fun v -> v = root_value tree) gen);
   (* An exhausted size generator is a generation-time discard, like any other
      [such_that] exhaustion. *)
   let starved = Gen.(list ~size:(such_that (fun _ -> false) nat) nat) in
@@ -1305,17 +1231,17 @@ let such_that_over_sized_string_keeps_both_constraints () =
               ~msg:(Printf.sprintf "candidate char %C" c)
               (c >= 'a' && c <= 'z'))
           s);
-    let minimum, _ = minimize (fun _ -> true) tree in
+    let minimum = shrinks_to ~from:(fun v -> v = root_value tree) gen in
     let sorted =
       String.to_seq minimum |> List.of_seq |> List.sort compare |> List.to_seq
       |> String.of_seq
     in
-    is_true
+    (* The quotes sort first. *)
+    equal
       ~msg:
-        (Printf.sprintf
-           "the greedy minimum must sit on the predicate boundary, got %S"
+        (Printf.sprintf "the minimum %s must sit on the predicate boundary"
            minimum)
-      (sorted = "aab")
+      string {|""aab|} sorted
   done
 
 (* An explicit [with_pp] must win over the derived choice printer, and a
@@ -1335,10 +1261,10 @@ let with_pp_overrides_derived_choice_printer () =
     ~msg:(Printf.sprintf "map over the override rendered %S" (render tree))
     (rendering tree = Pre_image (Printf.sprintf "N=%d" (root_value tree)))
 
-(* The B5 evidence shape (lpath test_lpath.ml:88-95): identifier characters
-   from a frequency over char_range and of_list, assembled with a sized
-   string. The composition must generate in-alphabet, keep the string
-   printer, and minimize to a single boundary character. *)
+(* An identifier shape met in the field: characters from a frequency over
+   char_range and of_list, assembled with a sized string. The composition
+   must generate in-alphabet, keep the string printer, and shrink to a
+   single boundary character. *)
 let evidence_shaped_identifier_generator_composes () =
   let ident_char =
     Gen.(frequency [ (8, char_range 'a' 'z'); (1, of_list [ '-'; '_' ]) ])
@@ -1364,12 +1290,12 @@ let evidence_shaped_identifier_generator_composes () =
   is_true
     ~msg:(Printf.sprintf "identifier lost its printer: %S" rendered)
     (starts_with "\"" rendered);
-  let minimum, _ = minimize (fun _ -> true) tree in
+  let minimum = shrinks_to ~from:(fun v -> v = root_value tree) ident in
   is_true
     ~msg:
-      (Printf.sprintf "identifier minimized to %S, not a single boundary char"
+      (Printf.sprintf "identifier shrank to %s, not a single boundary char"
          minimum)
-    (minimum = "a" || minimum = "-")
+    (minimum = {|"a"|} || minimum = {|"-"|})
 
 let suite =
   [
@@ -1423,7 +1349,7 @@ let suite =
     ("result generates both constructors", result_generates_both_constructors);
     ("either generates both constructors", either_generates_both_constructors);
     ("pair shrinks left first to zeroes", pair_shrinks_left_first_to_zeroes);
-    ("triple and quad minimize to zeroes", triple_and_quad_minimize_to_zeroes);
+    ("triple and quad shrink to zeroes", triple_and_quad_shrink_to_zeroes);
     ( "bytes_of respects size and character generator",
       bytes_of_respects_size_and_character_generator );
     ( "constant is a leaf and asks for a printer",
@@ -1488,20 +1414,17 @@ let suite =
 
 (* The generator laws, as properties
 
-   Everything above walks a generator by hand: [samples] and
-   [find_sample] draw from fixed seeds and [minimize] re-implements the
-   shrink search. That is deliberate for the tests that must pin an exact
-   candidate order or a specific distribution — but it pins behaviour at
-   those seeds and says nothing about the rest of the space, and it never
-   goes through [Property], so a bug in how Gen and the case loop fit
-   together is invisible to it.
+   Everything above walks a generator from fixed seeds: [samples] and
+   [find_sample] draw at chosen indexes, and [shrink] runs the real search
+   from one chosen tree. That is deliberate for the tests that must pin an
+   exact candidate order or a specific distribution — but it pins
+   behaviour at those seeds and says nothing about the rest of the space.
 
    The laws below are universally quantified statements, which is what
-   [prop] is. They are also the only tests in this file that exercise the
-   engine end to end: draw, run the body, and — when one breaks —
-   shrink through the real search and print a replayable seed. That is
-   the property engine testing itself with the property engine, which is
-   the point.
+   [prop] is. They exercise the engine end to end under the run's own
+   seed: draw, run the body, and — when one breaks — shrink through the
+   real search and print a replayable seed. That is the property engine
+   testing itself with the property engine, which is the point.
 
    Each generator is built so the law is checkable from the drawn value
    alone: bounds are drawn first and the value drawn inside them with
@@ -2168,32 +2091,16 @@ module Shrink_tree_suite = struct
     let start = Shrink_tree.list (List.map int_tree [ 9; 7; 5; 9 ]) in
     is_true ~msg:"starting counterexample must fail"
       (fails (Shrink_tree.root start));
-    let steps = ref 0 in
-    let budget = 1_000 in
-    let rec minimize tree =
-      if !steps > budget then failf "greedy shrink exceeded %d steps" budget;
-      let rec first_failing candidates =
-        match candidates () with
-        | Seq.Nil -> None
-        | Seq.Cons (candidate, tail) ->
-            if fails (Shrink_tree.root candidate) then Some candidate
-            else first_failing tail
-      in
-      match first_failing (Shrink_tree.children tree) with
-      | None -> Shrink_tree.root tree
-      | Some candidate ->
-          incr steps;
-          minimize candidate
+    (* The engine's own search over this tree: a generator that draws it. *)
+    let gen =
+      Gen_engine.make
+        ~pp:(fun ppf values ->
+          Format.pp_print_string ppf (show_int_list values))
+        (fun state -> (start, state))
     in
-    let minimum = minimize start in
-    is_true
-      ~msg:
-        (Printf.sprintf "greedy shrink reached %s instead of [5]"
-           (show_int_list minimum))
-      (minimum = [ 5 ]);
-    is_true
-      ~msg:(Printf.sprintf "greedy shrink took %d steps" !steps)
-      (!steps <= 20)
+    let minimum, steps = shrink ~failing:fails gen in
+    equal ~msg:"the search stops at the local minimum" string "[5]" minimum;
+    at_most ~msg:"the search terminates promptly" int ~than:20 steps
 
   let suite =
     [
