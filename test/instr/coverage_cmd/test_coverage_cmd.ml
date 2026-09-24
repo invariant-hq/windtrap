@@ -1240,6 +1240,174 @@ let junit_rails =
   not_contains ~msg:"an uninstrumented run renders no coverage line"
     ~sub:"coverage:" out
 
+(* The files, the machine formats and the flags, at their edges *)
+
+(* A project of three files that each stand at an edge of the report:
+   [lib/Z.ml] has no point, [lib/a.ml]'s source is missing, and
+   [lib/s.ml]'s planted source is shorter than its points, so stale.
+   [lib/Z.ml] sorts before [lib/a.ml] under String.compare. *)
+let edges () =
+  let root = scratch "edges" in
+  write_file (Filename.concat root "lib/s.ml") "let x\n";
+  write_file (Filename.concat root "lib/Z.ml") "";
+  write_file
+    (Filename.concat root "_build/_coverage/edges.coverage")
+    (C.to_string
+       (collection "edges"
+          [
+            ("lib/s.ml", bar_points, [| 1; 0 |]);
+            ("lib/a.ml", ghost_points, [| 0 |]);
+            ("lib/Z.ml", [||], [||]);
+          ]));
+  root
+
+let edge_tests =
+  [
+    test "every dump is loaded before any is excluded" (fun () ->
+        (* A corrupt dump that records a gone executable ends the command
+           on its corruption: it is never excluded as an orphan first. *)
+        let root = stale_root "load-first" in
+        write_file
+          (Filename.concat root "_build/_coverage/gone.coverage")
+          ("windtrap-coverage-v3\nexe "
+          ^ Digest.to_hex (Digest.string "gone")
+          ^ " 21 default/test/gone.exe\n2\n");
+        let code, out, err = coverage_cmd ~cwd:root [] in
+        equal ~msg:"exit code" int 1 code;
+        equal ~msg:"no report" text "" out;
+        contains ~msg:"the corrupt dump is named" ~sub:"gone.coverage: corrupt"
+          err;
+        not_contains ~msg:"and never excluded" ~sub:"excluding it" err);
+    test "the --expect walk skips _build and _opam" (fun () ->
+        let root = proj () in
+        write_file (Filename.concat root "lib/_build/built.ml") "let x = 1\n";
+        write_file (Filename.concat root "lib/_opam/switch.ml") "let y = 2\n";
+        let code, _, err = coverage_cmd ~cwd:root [ "--expect"; "lib" ] in
+        equal ~msg:"every source the walk reaches is covered" int 0 code;
+        equal ~msg:"and the two directories are never walked" text "" err);
+    test "sources without data are named in path order" (fun () ->
+        let root = proj () in
+        write_file (Filename.concat root "lib/zeta.ml") "let z = 1\n";
+        write_file (Filename.concat root "lib/alpha.ml") "let a = 1\n";
+        let code, _, err =
+          coverage_cmd ~cwd:root
+            [ "--expect"; "lib/zeta.ml"; "--expect"; "lib/alpha.ml" ]
+        in
+        equal ~msg:"exit code" int 1 code;
+        equal ~msg:"alpha before zeta, whatever the order of the flags" text
+          "windtrap: lib/alpha.ml: expected source has no coverage data (not \
+           instrumented, or linked into no test executable that ran)\n\
+           windtrap: lib/zeta.ml: expected source has no coverage data (not \
+           instrumented, or linked into no test executable that ran)\n"
+          err);
+    test "-u changes nothing under a machine format" (fun () ->
+        let root = proj () in
+        List.iter
+          (fun format ->
+            let _, plain, _ = coverage_cmd ~cwd:root [ format ] in
+            let code, shown, err = coverage_cmd ~cwd:root [ format; "-u" ] in
+            equal ~msg:(format ^ " -u exits 0") int 0 code;
+            equal ~msg:(format ^ " -u keeps stderr empty") text "" err;
+            equal ~msg:(format ^ " -u is the same document") text plain shown)
+          [ "--json"; "--lcov" ]);
+    test "--json at the edges: String.compare order, 100.00, no lines"
+      (fun () ->
+        let code, out, err = coverage_cmd ~cwd:(edges ()) [ "--json" ] in
+        equal ~msg:"exit code" int 0 code;
+        equal ~msg:"stderr" text "" err;
+        equal
+          ~msg:
+            "Z before a; 100.00 for no point; no line for a missing or a stale \
+             source"
+          text
+          "{ \"summary\": { \"visited\": 1, \"total\": 3, \"percentage\": \
+           33.33 },\n\
+          \  \"files\": [\n\
+          \    { \"path\": \"lib/Z.ml\", \"visited\": 0, \"total\": 0,\n\
+          \      \"percentage\": 100.00,\n\
+          \      \"uncovered_lines\": [] },\n\
+          \    { \"path\": \"lib/a.ml\", \"visited\": 0, \"total\": 1,\n\
+          \      \"percentage\": 0.00,\n\
+          \      \"uncovered_lines\": [] },\n\
+          \    { \"path\": \"lib/s.ml\", \"visited\": 1, \"total\": 2,\n\
+          \      \"percentage\": 50.00,\n\
+          \      \"uncovered_lines\": [] } ] }\n"
+          out;
+        let root = scratch "no-point" in
+        write_file
+          (Filename.concat root "_build/_coverage/none.coverage")
+          (C.to_string (collection "none" [ ("lib/Z.ml", [||], [||]) ]));
+        let _, out, _ = coverage_cmd ~cwd:root [ "--json" ] in
+        contains ~msg:"a merge of no point is 100.00"
+          ~sub:
+            "{ \"summary\": { \"visited\": 0, \"total\": 0, \"percentage\": \
+             100.00 },"
+          out);
+    test "--lcov leaves out a stale source and says why" (fun () ->
+        let code, out, err = coverage_cmd ~cwd:(edges ()) [ "--lcov" ] in
+        equal ~msg:"exit code" int 0 code;
+        equal ~msg:"only the file with a current source has a record" text
+          "TN:\nSF:lib/Z.ml\nLF:0\nLH:0\nend_of_record\n" out;
+        equal ~msg:"the other two are named, each with its reason" text
+          "windtrap: lib/a.ml: source not found; omitted from the lcov output\n\
+           windtrap: lib/s.ml: the source changed since the run; omitted from \
+           the lcov output\n"
+          err);
+    test "a stale source through the command: its row, and no excerpt"
+      (fun () ->
+        let root = edges () in
+        let code, out, err = coverage_cmd ~cwd:root [] in
+        equal ~msg:"exit code" int 0 code;
+        equal ~msg:"stderr" text "" err;
+        equal ~msg:"the stale row says so, the missing source says so" text
+          "   cover    points   file       uncovered lines (-u shows the source)\n\
+          \  100.0%    0/0      lib/Z.ml\n\
+          \    0.0%    0/1      lib/a.ml   (source not found)\n\
+          \   50.0%    1/2      lib/s.ml   stale: the source changed; re-run \
+           the instrumented tests\n\
+           coverage: 33.3% (1/3 points)\n"
+          out;
+        (* Under -u a heading and an excerpt go only to a file with
+           uncovered lines and a source, which none of the three is. *)
+        let _, out, _ = coverage_cmd ~cwd:root [ "-u" ] in
+        not_contains ~msg:"no heading for any of them" ~sub:"lib/a.ml:" out;
+        not_contains ~msg:"nor for the stale one" ~sub:"lib/s.ml:" out;
+        not_contains ~msg:"nor for the one with no point" ~sub:"lib/Z.ml:" out);
+    test "colour is WINDTRAP_COLOR's alone, refused as a runner refuses it"
+      (fun () ->
+        let root = proj () in
+        let code, _, err = coverage_cmd ~cwd:root [ "--color"; "never" ] in
+        equal ~msg:"there is no --color flag" int 2 code;
+        contains ~msg:"it is an unknown option" ~sub:"unknown option '--color'"
+          err;
+        List.iter
+          (fun args ->
+            let code, out, err =
+              capture ~cwd:root
+                ~env:[ ("WINDTRAP_COLOR", "sometimes") ]
+                windtrap_exe ("coverage" :: args)
+            in
+            let name = String.concat " " ("coverage" :: args) in
+            equal ~msg:(name ^ ": a refused value is a usage error") int 2 code;
+            equal ~msg:(name ^ ": nothing on stdout") text "" out;
+            equal
+              ~msg:(name ^ ": the runner's sentence")
+              text
+              "windtrap: invalid value 'sometimes' for WINDTRAP_COLOR: \
+               expected always, never or auto\n"
+              err)
+          [ []; [ "--json" ]; [ "--lcov" ] ]);
+    test "-h and -help print the help page" (fun () ->
+        let _, help, _ = coverage_cmd [ "--help" ] in
+        List.iter
+          (fun flag ->
+            let code, out, err = coverage_cmd [ flag ] in
+            equal ~msg:(flag ^ " exits 0") int 0 code;
+            equal ~msg:(flag ^ " is --help") text help out;
+            equal ~msg:(flag ^ " says nothing else") text "" err)
+          [ "-h"; "-help" ]);
+  ]
+
 (* The suite *)
 
 let () =
@@ -1261,4 +1429,5 @@ let () =
          staleness_pass;
          raise_attribution;
          junit_rails;
+         group "edges" edge_tests;
        ]
