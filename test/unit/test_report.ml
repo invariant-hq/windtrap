@@ -5006,10 +5006,9 @@ let test_observe_seed_policy () =
 
 (* The corrections section
 
-   What the run wrote for its baselines is a section before the summary
-   and a term of it, so the summary stays the last line. A file the run
-   could not write is the runner's voice: a standard-error line, never a
-   transcript one. *)
+   What the run wrote for its baselines, and what it could not write, is
+   a section before the summary and terms of it, so the summary stays the
+   last line. *)
 
 let corrections_transcript ?invocation baselines =
   with_renderer ?invocation (fun r ->
@@ -5076,27 +5075,32 @@ let test_corrections_quiet () =
   equal ~msg:"nothing written: the green run stays one line" string
     "s: 1 passed in 2.0ms.\n"
     (corrections_transcript (Baseline.create ~mode:Baseline.Check ()));
-  (* A refusal is named with its reason: the correction reached nothing. *)
+  (* A file the run could not write is a row of the section, with its
+     reason, and a term of the summary: the correction reached nothing. *)
   let root = temp_dir () in
   let baselines = Baseline.create ~root ~cwd:root ~mode:Baseline.Update () in
+  Baseline.check baselines (Baseline.File "a.expected") "a\n";
   Baseline.check baselines (Baseline.File "help.expected") "hello\n";
   ignore (Baseline.settle baselines ~keep:true);
   (* A directory where the file goes: its rename fails. *)
   Os.mkdir_p (Filename.concat root "help.expected");
   Baseline.write baselines;
-  (match Report.refusals baselines with
-  | [ line ] ->
-      let head =
-        Printf.sprintf "could not write %s: "
-          (Os.display_path (Filename.concat root "help.expected"))
-      in
-      is_true
-        ~msg:"a refusal is a sentence naming the file, then why, for Os.say"
-        (String.starts_with ~prefix:head line)
-  | lines -> failf "expected one refusal line, got %d" (List.length lines));
-  not_contains ~msg:"a refusal never prints in the transcript"
-    ~sub:"could not write"
-    (corrections_transcript baselines)
+  let display name = Os.display_path (Filename.concat root name) in
+  match String.split_on_char '\n' (corrections_transcript baselines) with
+  | [ "s: 1 test"; "corrections (2):"; accepted; refused; ""; summary; "" ] ->
+      equal ~msg:"the file written keeps its row" string
+        ("  accepted " ^ display "a.expected")
+        accepted;
+      let head = "  could not write " ^ display "help.expected" ^ ": " in
+      starts_with ~msg:"the file refused is a row that says why" ~affix:head
+        refused;
+      not_contains ~msg:"and whose reason does not repeat the path"
+        ~sub:"help.expected"
+        (String.sub refused (String.length head)
+           (String.length refused - String.length head));
+      equal ~msg:"the summary counts it after the corrections" string
+        "1 passed, 1 correction accepted, 1 not written in 2.0ms." summary
+  | _ -> failf "unexpected transcript:\n%s" (corrections_transcript baselines)
 
 (* Report_sections, value by value *)
 

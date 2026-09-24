@@ -57,15 +57,18 @@ than adding its tests to it.
   $ grep -o '<testcase name="[^"]*"' shared.xml
   <testcase name="boom"
 
-When a run also has a file it could not write, it says so first, and
-writes its JUnit file after: the two warnings come in that order. Here
-the correction's path is taken by a directory, and the report's parent
-is the regular file from above. The exit code is the correction's: a
-correction the run could not write fails it, the report does not.
+When a run also has a file it could not write, the transcript says so
+in its corrections section, and the one warning on standard error is
+the JUnit report's. Here the correction's path is taken by a directory,
+and the report's parent is the regular file from above. The exit code
+is the correction's: a correction the run could not write fails it, the
+report does not.
 
   $ mkdir -p test/cli/greeting.expected.corrected
   $ run ./suite_main.exe -f greeting --corrected --junit blocked/r.xml > out 2> err
   [1]
+  $ grep -A1 '^corrections' out | sed -E 's/(could not write [^:]+): .*/\1: REASON/'
+  corrections (1):
+    could not write test/cli/greeting.expected.corrected: REASON
   $ sed -E 's/(could not write [^:]+): .*/\1: REASON/' err
-  windtrap: could not write test/cli/greeting.expected.corrected: REASON
   windtrap: warning: could not write JUnit report: REASON

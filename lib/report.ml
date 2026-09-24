@@ -567,8 +567,9 @@ type summary = {
   failed : int;
   subtests : int;
   not_run : int; (* selected tests the run stopped before *)
-  corrections : int; (* files *)
+  corrections : int; (* files written *)
   accepted : bool; (* whether the corrections replaced their files *)
+  not_written : int; (* files refused *)
 }
 
 let plural n = if n = 1 then "" else "s"
@@ -606,7 +607,7 @@ let summary_line t (c : summary) ~duration =
       List.concat
         [
           term c.passed
-            ((if c.failed = 0 then st t `Green else Fun.id)
+            ((if c.failed = 0 && c.not_written = 0 then st t `Green else Fun.id)
                (spf "%d passed" c.passed)
             ^
             if c.flaky > 0 then " " ^ st t `Yellow (spf "(%d flaky)" c.flaky)
@@ -626,6 +627,7 @@ let summary_line t (c : summary) ~duration =
           term c.corrections
             (spf "%d correction%s %s" c.corrections (plural c.corrections)
                (if c.accepted then "accepted" else "written"));
+          term c.not_written (st t `Red (spf "%d not written" c.not_written));
         ]
     in
     let seed =
@@ -672,16 +674,16 @@ let flaky_section t flaky_results =
            (sanitize_name (Test_tree.path_to_string r.path))))
     flaky_results
 
-(* The files the run wrote for its baselines, sorted by the path that
-   prints; a source file's row counts its expectations. *)
+(* The files the run wrote or could not write for its baselines, sorted
+   by the path that prints. *)
 let corrections baselines =
   List.sort
     (fun (a, _) (b, _) -> String.compare a b)
-    (List.filter_map
-       (function
-         | Baseline.Written { path; literals } ->
-             Some (Os.display_path path, literals)
-         | Baseline.Refused _ -> None)
+    (List.map
+       (fun write ->
+         match write with
+         | Baseline.Written { path; _ } | Baseline.Refused { path; _ } ->
+             (Os.display_path path, write))
        (Baseline.writes baselines))
 
 let accepts baselines =
@@ -689,25 +691,23 @@ let accepts baselines =
   | Baseline.Update -> true
   | Baseline.Corrected | Baseline.Check -> false
 
+(* A source file's row counts its expectations; a file the run could not
+   write fails it, and its row says why. *)
 let corrections_section t ~accepted rows =
   put t (spf "corrections (%d):" (List.length rows));
   List.iter
-    (fun (path, literals) ->
-      put t
-        (spf "  %s %s%s"
-           (if accepted then "accepted" else "wrote")
-           path
-           (if literals = 0 then ""
-            else spf " (%d expectation%s)" literals (plural literals))))
+    (fun (path, write) ->
+      match write with
+      | Baseline.Written { literals; _ } ->
+          put t
+            (spf "  %s %s%s"
+               (if accepted then "accepted" else "wrote")
+               path
+               (if literals = 0 then ""
+                else spf " (%d expectation%s)" literals (plural literals)))
+      | Baseline.Refused { reason; _ } ->
+          put t (st t `Red (spf "  could not write %s: %s" path reason)))
     rows
-
-let refusals baselines =
-  List.filter_map
-    (function
-      | Baseline.Refused { path; reason } ->
-          Some (spf "could not write %s: %s" (Os.display_path path) reason)
-      | Baseline.Written _ -> None)
-    (Baseline.writes baselines)
 
 let rec drop n = function _ :: rest when n > 0 -> drop (n - 1) rest | l -> l
 
@@ -719,7 +719,13 @@ let finish t ~results ~release_failures ~duration ?baselines
   let failed_results = List.filter counted_failure results in
   let slow_results = List.filter (over_threshold t) results in
   let flaky_results = List.filter flaky results in
-  let written = match baselines with Some b -> corrections b | None -> [] in
+  let rows = match baselines with Some b -> corrections b | None -> [] in
+  let written, refused =
+    List.partition
+      (function
+        | _, Baseline.Written _ -> true | _, Baseline.Refused _ -> false)
+      rows
+  in
   let summary =
     {
       passed =
@@ -753,6 +759,7 @@ let finish t ~results ~release_failures ~duration ?baselines
         | None -> 0);
       corrections = List.length written;
       accepted = (match baselines with Some b -> accepts b | None -> false);
+      not_written = List.length refused;
     }
   in
   List.iter (commit_block t) (drop t.blocks failed_results);
@@ -760,7 +767,7 @@ let finish t ~results ~release_failures ~duration ?baselines
   let closed = t.blocks > 0 && not t.verbose in
   if closed then put t (st t `Faint (Sections.rule ~width:rule_width None));
   (* A green run with nothing to show is its summary line alone. *)
-  if slow_results <> [] || flaky_results <> [] || written <> [] then
+  if slow_results <> [] || flaky_results <> [] || rows <> [] then
     commit_header t;
   (* One blank line after the closing rule and after a section, owed until
      the next line of the transcript: what [before_summary] writes sits
@@ -774,8 +781,8 @@ let finish t ~results ~release_failures ~duration ?baselines
   in
   if slow_results <> [] then section (fun () -> slow_section t slow_results);
   if flaky_results <> [] then section (fun () -> flaky_section t flaky_results);
-  if written <> [] then
-    section (fun () -> corrections_section t ~accepted:summary.accepted written);
+  if rows <> [] then
+    section (fun () -> corrections_section t ~accepted:summary.accepted rows);
   Pp.flush t.out ();
   before_summary ();
   if !owed then put t "";
@@ -1006,7 +1013,6 @@ let run ?(on_event = fun (_ : Run.event) -> ()) ~suite (config : Run.config)
         ~baselines
         ~before_summary:(close_envelope ~release_failures results)
         ();
-      List.iter Os.say (refusals baselines);
       (* Last, so a report is written from the rows the terminal has
          already shown. *)
       Option.iter

@@ -610,8 +610,9 @@ Coverage and packaging:
   line under its location.
 - What `-u` or `--corrected` wrote is the `corrections (N):` section above
   the summary (`wrote <path> (N expectations)`, `accepted <path>`), sorted
-  by path. A file the run could not write is a standard-error line:
-  `windtrap: could not write <path>: <reason>`.
+  by path. A file the run could not write is a row of that section,
+  `could not write <path>: <reason>`, and a summary term, `N not
+  written`.
 - A `--corrected` run that wrote a correction and exits 1 says, after its
   summary and on standard error, that `dune promote` has nothing to
   promote yet: `windtrap: warning: dune registers a correction for

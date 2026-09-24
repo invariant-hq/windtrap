@@ -221,22 +221,24 @@ val finish :
     {b Flaky tests.} One row per passing result with [r.attempts > 1], in the
     order of [results], with the attempt that passed.
 
-    {b Corrections.} One row per {!Baseline.Written} entry of
-    [Baseline.writes baselines], in the order of the paths as {!Os.display_path}
-    prints them. A row says whether the file was written beside its baseline or
-    accepted in place, which {!val:Baseline.mode} decides. The row of a source
-    file counts its expectations. Without [baselines] there is no section and
-    the summary has no corrections term.
+    {b Corrections.} One row per entry of [Baseline.writes baselines], in the
+    order of the paths as {!Os.display_path} prints them. The row of a
+    {!Baseline.Written} file says whether it was written beside its baseline or
+    accepted in place, which {!val:Baseline.mode} decides, and the row of a
+    source file counts its expectations. The row of a {!Baseline.Refused} file
+    is [could not write <path>: <reason>]. Without [baselines] there is no
+    section and the summary has no corrections term.
 
     {b Summary.} Its terms come in this order: passed, with the flaky among
     them, skipped, expected failures, failed, with the subtest failures among
-    them, not run, and the corrections written or accepted. A term of zero is
-    omitted, and [duration] closes the line. A flaky test counts as passed, an
-    excused result as an expected failure only, and a failed fixture release as
-    failed although it is no test. The tests not run are the [tests] of
-    {!header} less the length of [results], never below [0]. Subtest failures
-    are the entries of counted failures for which {!is_subtest_failure} holds,
-    and corrections count files.
+    them, not run, the corrections written or accepted, and the files not
+    written. A term of zero is omitted, and [duration] closes the line. A flaky
+    test counts as passed, an excused result as an expected failure only, and a
+    failed fixture release as failed although it is no test. The tests not run
+    are the [tests] of {!header} less the length of [results], never below [0].
+    Subtest failures are the entries of counted failures for which
+    {!is_subtest_failure} holds, and corrections and files not written count
+    files.
 
     A run with no result at all says instead that no tests ran, with the reason
     of {!empty_selection_reason} when there is one. When a selection emptied a
@@ -260,11 +262,6 @@ val interrupted :
     It then calls {!finish} over [results], with [before_summary], without
     [baselines] and with no failed release, since a signal stops the release
     before it returns any failure. *)
-
-val refusals : Baseline.t -> string list
-(** [refusals baselines] is one sentence per {!Baseline.Refused} entry of
-    {!Baseline.writes}, in its order: the path through {!Os.display_path} and
-    the reason. It prints nothing. *)
 
 (** {1:github The GitHub Actions envelope}
 
@@ -427,8 +424,8 @@ val run :
       {!val:Run.results}, [outcome.release_failures] and {!val:Run.baselines}.
       The [before_summary] closes the envelope and then writes the
       {!val:annotations}.
-    + It says the {!refusals} on standard error, then writes the JUnit file with
-      {!Report_junit.write} when [config.junit] is set.
+    + It writes the JUnit file with {!Report_junit.write} when [config.junit] is
+      set.
     + It flushes both standard formatters and returns [Ok] of the executor's
       outcome.
 
