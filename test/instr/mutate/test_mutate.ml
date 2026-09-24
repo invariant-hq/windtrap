@@ -336,6 +336,21 @@ let registry_tests =
           (List.map
              (fun (r : M.reached) -> M.id_to_string r.M.mutant.M.id)
              (drain ())));
+    test "a mark left undrained across epochs counts every evaluation"
+      (fun () ->
+        let g =
+          M.register ~file:"t/across.ml"
+            ~sites:[| site ~line:1 ~col:0 ~rewrite:"eq" () |]
+        in
+        fresh ();
+        ignore (g 0);
+        ignore (g 0);
+        ignore (g 0);
+        M.next_epoch ();
+        ignore (g 0);
+        equal ~msg:"three evaluations, a new epoch, one more: four" (list int)
+          [ 4 ]
+          (List.map (fun (r : M.reached) -> r.M.hits) (drain ())));
     test "an evaluation again in the epoch after a drain is never drained"
       (fun () ->
         (* The lower bound: the site marked itself at its first evaluation

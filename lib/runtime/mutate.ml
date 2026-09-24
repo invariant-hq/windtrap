@@ -75,7 +75,11 @@ type entry = {
   sites : site array;
   reach : int array;
   epoch : int array;
-  base : int array; (* reach count when the current epoch's first hit landed *)
+  base : int array;
+      (* the reach count before the evaluation that marked the site, or
+         [-1] while it is unmarked: a mark outlives its epoch until a drain
+         takes it, so the count runs from the first evaluation after a
+         drain *)
   armed_index : int ref;
 }
 
@@ -163,7 +167,7 @@ let register ~file ~sites =
           sites;
           reach = Array.make n 0;
           epoch = Array.make n 0;
-          base = Array.make n 0;
+          base = Array.make n (-1);
           armed_index = ref (-1);
         }
       in
@@ -180,8 +184,10 @@ let register ~file ~sites =
         reach.(i) <- hits;
         if epoch.(i) <> !current_epoch then begin
           epoch.(i) <- !current_epoch;
-          base.(i) <- hits - 1;
-          dirty := (entry, i) :: !dirty
+          if base.(i) < 0 then begin
+            base.(i) <- hits - 1;
+            dirty := (entry, i) :: !dirty
+          end
         end;
         if i <> !armed_index then false
         else if hits > !runaway_budget then
@@ -388,10 +394,9 @@ let drain () =
   let items =
     List.rev_map
       (fun (entry, i) ->
-        {
-          mutant = site_mutant entry i;
-          hits = entry.reach.(i) - entry.base.(i);
-        })
+        let hits = entry.reach.(i) - entry.base.(i) in
+        entry.base.(i) <- -1;
+        { mutant = site_mutant entry i; hits })
       marked
   in
   let rec dedup acc = function
@@ -408,7 +413,7 @@ let reset_reach () =
   List.iter
     (fun entry ->
       Array.fill entry.reach 0 (Array.length entry.reach) 0;
-      Array.fill entry.base 0 (Array.length entry.base) 0)
+      Array.fill entry.base 0 (Array.length entry.base) (-1))
     !registry;
   dirty := [];
   incr current_epoch

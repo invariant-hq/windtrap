@@ -254,7 +254,7 @@ val next_epoch : unit -> unit
 (** [next_epoch ()] opens a new epoch. A site that is evaluated afterwards marks
     itself for the next {!drain}, whether or not it was evaluated before. The
     marks of the previous epoch that were not drained stay for the next
-    {!drain}. *)
+    {!drain}, and their evaluations go on counting. *)
 
 val drain : unit -> reached list
 (** [drain ()] is the mutants marked since the previous [drain], ordered by
