@@ -124,7 +124,7 @@ let fatal =
      (module initialization ran before the fork), so folding that window
      into the first test would report a permanent false survivor.
    - [widen] is evaluated by the first and third tests and by no other, so
-     the survivor block's witness list is a claim with four wrong answers
+     the survivor block's reaching tests are a claim with four wrong answers
      available.
    - the first test needs a retry, and both attempts run the line: a
      retried test contributes one window, not two, and does not desync the

@@ -247,11 +247,11 @@ let render_data ~resolve_source files =
       List.iter
         (fun (r : V.record) ->
           match r.V.verdict with
-          | V.Survived { witness; others } ->
+          | V.Survived { first; others } ->
               List.iter
                 (fun path ->
                   Hashtbl.add tagged r.V.id (exe, Test_tree.path_to_string path))
-                (witness :: others)
+                (first :: others)
           | V.Killed | V.Unreached -> ())
         (V.records t))
     files;

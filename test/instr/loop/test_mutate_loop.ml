@@ -27,10 +27,9 @@ let suite_exe = Filename.concat exe_dir "suite_main.exe"
    printer, so a scenario that reads verdicts back spells them here. *)
 let pp_verdict ppf = function
   | V.Killed -> Format.pp_print_string ppf "killed"
-  | V.Survived { witness; others } ->
+  | V.Survived { first; others } ->
       Format.fprintf ppf "survived by %s"
-        (String.concat ", "
-           (List.map (String.concat " > ") (witness :: others)))
+        (String.concat ", " (List.map (String.concat " > ") (first :: others)))
   | V.Unreached -> Format.pp_print_string ppf "unreached"
 
 (* A file a fixture writes, read back; a file it never wrote reads as
@@ -630,7 +629,7 @@ let reach_tests =
                  (V.records verdicts)));
         equal ~msg:"exactly one survivor" int 1
           (List.length (lines_with ~sub:"  SURVIVED  " out));
-        (* The witness list is the whole product of the run: the first and
+        (* The reaching tests are the whole product of the run: the first and
            third tests reach the line, the second, fourth and fifth do
            not, and a retried first test contributes one window. *)
         contains ~msg:"the count" ~sub:"2 tests ran this line and none failed:"
@@ -667,7 +666,7 @@ let reach_tests =
             "mutants: 1 survived of 2 reached by the 5 selected tests, 1 \
              killed, 2 never reached\n"
           out;
-        contains ~msg:"over the same witnesses as the untagged suite"
+        contains ~msg:"over the same reaching tests as the untagged suite"
           ~sub:"2 tests ran this line and none failed:" out;
         (* A tag selection is a selection: the run is not the suite's
            default predicate, so its verdicts stay in the process. *)
@@ -760,7 +759,7 @@ let verdict_file_tests =
             equal ~msg:"the kill is the [add] mutant" string
               (mutant_named "add")
               (fst (List.hd killed));
-            contains ~msg:"the survivor names its witnesses"
+            contains ~msg:"the survivor names its reaching tests"
               ~sub:"widen > widen is nonzero"
               (snd (List.hd survived)));
     test "a narrowed run reports in full but persists nothing" (fun () ->

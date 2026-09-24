@@ -25,27 +25,27 @@ let is_rewrite r = List.exists (String.equal r) M.rewrites
 
 (* Verdicts *)
 
-type witness = string list
+type reaching_test = string list
 
 type verdict =
   | Killed
-  | Survived of { witness : witness; others : witness list }
+  | Survived of { first : reaching_test; others : reaching_test list }
   | Unreached
 
-let compare_witness = List.compare String.compare
-let sorted_witnesses ws = List.sort_uniq compare_witness ws
+let compare_test = List.compare String.compare
+let sorted_tests ts = List.sort_uniq compare_test ts
 
 (* A survivor names at least one test: a mutant no test reached is
    [Unreached] and is never forked, so the empty case is a caller error
    rather than a verdict. Every path into [Survived] goes through here, so
-   the witnesses are sorted and duplicate-free by construction and the
+   the reaching tests are sorted and duplicate-free by construction and the
    report's count is the number of tests that ran the line. *)
-let survived ws =
-  match sorted_witnesses ws with
+let survived ts =
+  match sorted_tests ts with
   | [] ->
       invalid_arg
         "Windtrap_runtime.Verdicts.survived: a survivor names at least one test"
-  | witness :: others -> Survived { witness; others }
+  | first :: others -> Survived { first; others }
 
 let merge_verdict a b =
   match (a, b) with
@@ -53,9 +53,9 @@ let merge_verdict a b =
   | Killed, (Survived _ | Unreached) -> a
   | (Survived _ | Unreached), Killed -> b
   | Survived x, Survived y ->
-      survived (x.witness :: y.witness :: (x.others @ y.others))
+      survived (x.first :: y.first :: (x.others @ y.others))
   | Survived s, Unreached | Unreached, Survived s ->
-      survived (s.witness :: s.others)
+      survived (s.first :: s.others)
   | Unreached, Unreached -> Unreached
 
 (* Collections *)
@@ -104,7 +104,7 @@ let record_of id (r, verdict) =
 let add t r =
   let verdict =
     match r.verdict with
-    | Survived s -> survived (s.witness :: s.others)
+    | Survived s -> survived (s.first :: s.others)
     | Killed | Unreached -> r.verdict
   in
   let rendering = { r_before = r.before; r_after = r.after } in
@@ -125,7 +125,7 @@ let merge a b = Id_map.fold (fun id v acc -> add acc (record_of id v)) b a
 
 type identity = Instr.identity = { exe : string; digest : string }
 
-let add_witness buffer w =
+let add_test buffer w =
   Printf.bprintf buffer "%d" (List.length w);
   List.iter
     (fun part -> Printf.bprintf buffer " %d %s" (String.length part) part)
@@ -135,12 +135,12 @@ let add_verdict buffer = function
   | Unreached -> Buffer.add_string buffer "unreached"
   | Killed -> Buffer.add_string buffer "killed"
   | Survived s ->
-      let ws = s.witness :: s.others in
+      let ws = s.first :: s.others in
       Printf.bprintf buffer "survived %d" (List.length ws);
       List.iter
         (fun w ->
           Buffer.add_char buffer ' ';
-          add_witness buffer w)
+          add_test buffer w)
         ws
 
 (* The records after the header. Every number is in decimal, and every
@@ -174,7 +174,7 @@ let of_string ?(path = "<string>") s =
   match Instr.start format ~path s with
   | Error e -> Error e
   | Ok c -> (
-      let read_witness () =
+      let read_test () =
         let n = Instr.read_count c "test path length" in
         let acc = ref [] in
         for _ = 1 to n do
@@ -187,13 +187,13 @@ let of_string ?(path = "<string>") s =
         | "unreached" -> Unreached
         | "killed" -> Killed
         | "survived" ->
-            let n = Instr.read_count c "witness count" in
+            let n = Instr.read_count c "reaching test count" in
             if n = 0 then
               Instr.parse_fail
                 "a survivor names no test (survived is not unreached)";
             let acc = ref [] in
             for _ = 1 to n do
-              acc := read_witness () :: !acc
+              acc := read_test () :: !acc
             done;
             survived !acc
         | word -> Instr.parse_fail "unknown verdict %S" word

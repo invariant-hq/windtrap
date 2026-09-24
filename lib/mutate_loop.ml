@@ -429,7 +429,7 @@ let child_prologue () = silence_output ()
 
 (* The verdict line
 
-   A survivor's witnesses are the parent's — they are the tests the dry
+   A survivor's reaching tests are the parent's — they are the tests the dry
    run measured as reaching the mutant, which is exactly what the report
    claims — so a child never spells a test name. A kill names the failing
    test by its index in the list the parent handed it. The line is
@@ -551,7 +551,7 @@ let read_source =
         Hashtbl.add cache file contents;
         contents
 
-let witness_locations tests =
+let test_locations tests =
   let table = Hashtbl.create 256 in
   List.iter
     (fun (case : Test_tree.case) ->
@@ -564,7 +564,7 @@ let witness_locations tests =
 (* A survivor as its block draws it. The reaching tests are the verdict's,
    which are the dry run's: the loop links the test tree, so each names
    its declaration site, and it is one executable, so none names one. *)
-let survivor ~locations (r : V.record) witnesses : Report_sections.survivor =
+let survivor ~locations (r : V.record) reaching : Report_sections.survivor =
   {
     Report_sections.mutant =
       {
@@ -586,7 +586,7 @@ let survivor ~locations (r : V.record) witnesses : Report_sections.survivor =
             loc = Option.join (Hashtbl.find_opt locations test);
             exe = None;
           })
-        witnesses;
+        reaching;
   }
 
 (* The determinism probe
@@ -807,8 +807,8 @@ let run_children renderer ~locations ~scratch ~dry_run_wall ~suite ~config
             let record = V.record_of_mutant mutant verdict in
             let survivors =
               match verdict with
-              | V.Survived { witness; others } ->
-                  let found = survivor ~locations record (witness :: others) in
+              | V.Survived { first; others } ->
+                  let found = survivor ~locations record (first :: others) in
                   Report.mutation_survivor renderer found;
                   found :: survivors
               | V.Killed | V.Unreached -> survivors
@@ -950,7 +950,7 @@ let loop renderer ~scope ~suite (config : Run.config) tests =
                 match
                   probed ~dry_run_wall ~suite ~config ~reach ~paths:executed
                     tests (fun ~scratch ->
-                      run_children renderer ~locations:(witness_locations tests)
+                      run_children renderer ~locations:(test_locations tests)
                         ~scratch ~dry_run_wall ~suite ~config ~reach ~reached
                         tests)
                 with

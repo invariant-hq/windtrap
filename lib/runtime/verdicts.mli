@@ -21,9 +21,10 @@
     failure to supervise the child that arms a mutant is none of the three, and
     a caller must record no verdict for it. *)
 
-type witness = string list
-(** The type for the path of a reaching test: the names of its groups, the
-    outermost first, and then its own, as [["arithmetic"; "adds"]]. *)
+type reaching_test = string list
+(** The type for a test that evaluated a mutant, by its path: the names of its
+    groups, the outermost first, and then its own, as [["arithmetic"; "adds"]].
+*)
 
 (** The type for verdicts. A survivor always names a reaching test, because a
     mutant that no test reached is {!Unreached}. *)
@@ -32,18 +33,18 @@ type verdict =
       (** A reaching test failed, or the child that armed the mutant crashed or
           hung. Each is a change of behaviour that the suite detected, and a
           report counts them as one number. *)
-  | Survived of { witness : witness; others : witness list }
-      (** Every reaching test passed. [witness] and [others] are the reaching
-          tests, sorted and without duplicates, and [witness] is the first. The
+  | Survived of { first : reaching_test; others : reaching_test list }
+      (** Every reaching test passed. [first] and [others] are the reaching
+          tests, sorted and without duplicates, and [first] is the first. The
           remedy is to strengthen one of them. {!survived} builds the value, and
           one that is built by hand is sorted when it passes through {!add}. *)
   | Unreached
       (** No test evaluated the site, so the loop forks no child for the mutant.
           It never counts as a survivor, and the remedy is to write a test. *)
 
-val survived : witness list -> verdict
-(** [survived ws] is the {!Survived} verdict whose reaching tests are [ws],
-    sorted and without duplicates. Raises [Invalid_argument] if [ws] is empty.
+val survived : reaching_test list -> verdict
+(** [survived ts] is the {!Survived} verdict whose reaching tests are [ts],
+    sorted and without duplicates. Raises [Invalid_argument] if [ts] is empty.
 *)
 
 (** {1:collections Collections} *)

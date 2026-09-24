@@ -26,16 +26,16 @@ module Child = Windtrap_test_support.Child
    diagnostics and assertions, which is a test's business rather than a
    published surface. *)
 let pp_id ppf (i : M.id) = Format.pp_print_string ppf (M.id_to_string i)
-let pp_witness ppf w = Format.pp_print_string ppf (String.concat " > " w)
+let pp_test ppf t = Format.pp_print_string ppf (String.concat " > " t)
 
 let pp_verdict ppf = function
   | V.Killed -> Format.pp_print_string ppf "killed"
-  | V.Survived { witness; others } ->
+  | V.Survived { first; others } ->
       Format.fprintf ppf "survived by %a"
         (Format.pp_print_list
            ~pp_sep:(fun ppf () -> Format.pp_print_string ppf ", ")
-           pp_witness)
-        (witness :: others)
+           pp_test)
+        (first :: others)
   | V.Unreached -> Format.pp_print_string ppf "unreached"
 
 let find t id =
@@ -137,23 +137,23 @@ let verdict_tests =
               ])
           [ V.Killed ]);
     test "a survivor names at least one test" (fun () ->
-        (* [Survived] with no witness would print as "no test ran this line
+        (* [Survived] with no reaching test would print as "no test ran this line
            and none failed when it changed", which is [Unreached]'s
            finding wearing the survivor's remedy. *)
         raises_match ~msg:"the constructor refuses it" Exn.invalid_arg
           (fun () -> V.survived []);
-        (* The variant itself cannot hold one: [Survived] takes a witness
-           and the rest, so the empty case has no spelling. A verdict file
+        (* The variant itself cannot hold one: [Survived] takes a first
+           reaching test and the rest, so the empty case has no spelling. A verdict file
            claiming otherwise is corrupt (see the parse group). *)
-        equal ~msg:"one witness is one test" verdict_t (V.survived [ [ "a" ] ])
-          (V.Survived { witness = [ "a" ]; others = [] }));
+        equal ~msg:"one reaching test" verdict_t (V.survived [ [ "a" ] ])
+          (V.Survived { first = [ "a" ]; others = [] }));
     test "survived only when every executable that reached it survived"
       (fun () ->
         equal ~msg:"survived and unreached" verdict_t (V.survived [ [ "a" ] ])
           (merged (V.survived [ [ "a" ] ]) V.Unreached);
         equal ~msg:"unreached and unreached" verdict_t V.Unreached
           (merged V.Unreached V.Unreached);
-        equal ~msg:"witnesses union and deduplicate" verdict_t
+        equal ~msg:"reaching tests union and deduplicate" verdict_t
           (V.survived [ [ "a" ]; [ "b" ]; [ "c" ] ])
           (merged
              (V.survived [ [ "b" ]; [ "a" ] ])
@@ -207,7 +207,7 @@ let verdict_tests =
         equal ~msg:"without the killer it is a survivor" (option verdict_t)
           (Some (V.survived [ [ "cli"; "runs" ] ]))
           (verdict_of (V.merge b c) m));
-    test "add combines rather than replaces, and normalizes witnesses"
+    test "add combines rather than replaces, and normalizes reaching tests"
       (fun () ->
         let m = id ~file:"lib/core.ml" ~line:1 ~col:0 ~rewrite:"or" in
         let t =
@@ -442,7 +442,7 @@ let format_tests =
         let parsed, recorded = ok_error "no identity" (round_trip t) in
         is_none ~msg:"none recorded" recorded;
         equal ~msg:"the collection" text (bytes t) (bytes parsed));
-    test "witnesses holding spaces and newlines survive the round trip"
+    test "reaching tests holding spaces and newlines survive the round trip"
       (fun () ->
         let t =
           V.add V.empty
@@ -523,7 +523,7 @@ let rejection_tests =
         (* The magic alone is not an empty collection: a truncated file
            must not read as "this executable killed nothing". *)
         ("magic only", "windtrap-mutants-v3", "expected record count");
-        ( "negative witness count",
+        ( "negative test path length",
           "windtrap-mutants-v3\n1\n8 lib/a.ml 1 2 3 add 1 b 1 a survived 1 -1\n",
           "negative test path length" );
         ( "line 0",
@@ -563,20 +563,20 @@ let rejection_tests =
         ( "missing verdict",
           "windtrap-mutants-v3\n1\n8 lib/a.ml 1 2 3 add 1 b 1 a\n",
           "expected verdict" );
-        ( "truncated witness",
+        ( "truncated reaching test",
           "windtrap-mutants-v3\n\
            1\n\
            8 lib/a.ml 1 2 3 add 1 b 1 a survived 2 1 1 g\n",
           "expected" );
-        ( "witness count exceeds data",
+        ( "reaching test count exceeds data",
           "windtrap-mutants-v3\n\
            1\n\
            8 lib/a.ml 1 2 3 add 1 b 1 a survived 99999999\n",
           "exceeds data" );
-        (* A survivor with no witness is not a survivor: it is what an
+        (* A survivor with no reaching test is not a survivor: it is what an
            unreached mutant looks like when a writer confuses the two, and
            it would render as "0 tests ran this line and none failed". *)
-        ( "survivor with no witness",
+        ( "survivor with no reaching test",
           "windtrap-mutants-v3\n1\n8 lib/a.ml 1 2 3 add 1 b 1 a survived 0\n",
           "names no test" );
         ( "duplicate record",
