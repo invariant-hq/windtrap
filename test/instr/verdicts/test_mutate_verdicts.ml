@@ -546,24 +546,6 @@ let rejection_tests =
 
 let filename_tests =
   [
-    test "build_root is the parent of the topmost _build" (fun () ->
-        equal ~msg:"nested _build" (option string) (Some "/home/p")
-          (V.build_root ~path:"/home/p/_build/default/test/t.exe");
-        equal ~msg:"the topmost one wins" (option string) (Some "/home/p")
-          (V.build_root ~path:"/home/p/_build/default/_build/t.exe");
-        equal ~msg:"no _build component" (option string) None
-          (V.build_root ~path:"/usr/local/bin/t");
-        equal ~msg:"a private build directory, by the core's own rule"
-          (option string) (Some "/home/p")
-          (V.build_root ~path:"/home/p/_build_ci/default/test/t.exe"));
-    test "exe_identity is sandbox-invariant" (fun () ->
-        equal ~msg:"under _build" string "default/test/t.exe"
-          (V.exe_identity ~exe:"/home/p/_build/default/test/t.exe");
-        equal ~msg:"under a sandbox" string "default/test/t.exe"
-          (V.exe_identity
-             ~exe:"/home/p/_build/.sandbox/deadbeef/default/test/t.exe");
-        equal ~msg:"outside _build" string "/usr/local/bin/t"
-          (V.exe_identity ~exe:"/usr/local/bin/t"));
     test "output_file is deterministic and sandbox-invariant" (fun () ->
         let direct = V.output_file ~exe:"/home/p/_build/default/test/t.exe" in
         let sandboxed =

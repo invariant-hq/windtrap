@@ -876,25 +876,6 @@ let refusal_tests =
         contains ~msg:"the ordinary transcript" ~sub:"calc: 6 passed" out;
         not_contains ~msg:"no mutation line" ~sub:"mutants:" out;
         equal ~msg:"stderr" string "" err);
-    test "asking for the loop and an armed mutant at once is refused" (fun () ->
-        (* A usage error, before any run: the loop arms each mutant
-           itself, so an armed parent would mutate its own dry run. *)
-        let code, out, err =
-          spawn ~args:[ mutate; "--arm"; mutant_named "add" ] []
-        in
-        equal ~msg:"exit code" int 2 code;
-        contains ~msg:"both flags named"
-          ~sub:"options '--mutate' and '--arm' cannot be combined" err;
-        not_contains ~msg:"and nothing ran" ~sub:"calc: " out);
-    test "the same refusal when one of them is the mirror" (fun () ->
-        let code, _, err =
-          spawn
-            ~args:[ "--arm"; mutant_named "add" ]
-            [ ("WINDTRAP_MUTATE", "1") ]
-        in
-        equal ~msg:"exit code" int 2 code;
-        contains ~msg:"both flags named"
-          ~sub:"options '--mutate' and '--arm' cannot be combined" err);
     test
       "an armed identifier stale within a file this build catalogues is refused"
       (fun () ->

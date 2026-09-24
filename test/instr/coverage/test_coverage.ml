@@ -599,6 +599,9 @@ let filename_tests =
           (I.build_root ~path:"/w/p/_build/.sandbox/_build/_coverage");
         equal ~msg:"build_root outside _build is None" (option string) None
           (I.build_root ~path:"/w/p/src/lib");
+        equal ~msg:"build_root takes a private build directory as one"
+          (option string) (Some "/w/p")
+          (I.build_root ~path:"/w/p/_build_ci/default/test/t.exe");
         equal
           ~msg:"a relative path resolves against the current directory first"
           (option string)
