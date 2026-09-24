@@ -47,11 +47,11 @@ conformance: 41 tests
     + a
     + \x0db
     captured output (5 lines):
-      ababa
+      a\x0dba\x0dba\x0d
+      ba\x0d
       ba
-      ba
-      ba
-      b
+      \x0dba
+      \x0db
     full log: <log>
     accept: dune promote test/conformance/corpus/negative-tests/escaped_strings.ml
 
@@ -162,14 +162,14 @@ conformance: 41 tests
     + a\x0d
     + b\x0d
     captured output (8 lines):
-      a
-      b
-      a
-      b
-      a
-      b
-      a
-      b
+      a\x0d
+      b\x0d
+      a\x0d
+      b\x0d
+      a\x0d
+      b\x0d
+      a\x0d
+      b\x0d
     full log: <log>
     accept: dune promote test/conformance/corpus/negative-tests/escaped_strings.ml
 
@@ -190,8 +190,8 @@ conformance: 41 tests
     + a\x0d
     + b
     captured output (3 lines):
-      a
-      ba
+      a\x0d
+      ba\x0d
       b
     full log: <log>
     accept: dune promote test/conformance/corpus/negative-tests/escaped_strings.ml
@@ -206,8 +206,8 @@ conformance: 41 tests
     + a\x0d
       b
     captured output (3 lines):
-      a
-      ba
+      a\x0d
+      ba\x0d
       b
     full log: <log>
     accept: dune promote test/conformance/corpus/negative-tests/escaped_strings.ml

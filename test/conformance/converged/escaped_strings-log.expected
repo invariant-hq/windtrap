@@ -9,14 +9,14 @@ conformance: 6 tests
     + a\x0d
     + b\x0d
     captured output (8 lines):
-      a
-      b
-      a
-      b
-      a
-      b
-      a
-      b
+      a\x0d
+      b\x0d
+      a\x0d
+      b\x0d
+      a\x0d
+      b\x0d
+      a\x0d
+      b\x0d
     full log: <log>
     accept: dune promote test/conformance/converged/escaped_strings.ml
 
@@ -28,8 +28,8 @@ conformance: 6 tests
     + a\x0d
       b
     captured output (3 lines):
-      a
-      ba
+      a\x0d
+      ba\x0d
       b
     full log: <log>
     accept: dune promote test/conformance/converged/escaped_strings.ml
@@ -42,8 +42,8 @@ conformance: 6 tests
     + a\x0d
       b
     captured output (3 lines):
-      a
-      ba
+      a\x0d
+      ba\x0d
       b
     full log: <log>
     accept: dune promote test/conformance/converged/escaped_strings.ml

@@ -255,31 +255,6 @@ let source_line file n =
 
 let release_title = "fixture release"
 
-(* Terminal surfaces print user-controlled names (test paths, suite names,
-   fixture names) verbatim; a raw newline or control byte in one corrupts
-   the layout — it splits the FAIL header, and the live tail's line-wise
-   erasure leaves residue. Escape C0 controls and DEL,
-   OCaml-style. ESC is left to the [ansi] policy: the sink strips escape
-   sequences under [ansi:false] and passes them through under [ansi:true]
-   (the documented payload contract). *)
-let sanitize_name s =
-  let escapes c = (c < ' ' && c <> '\027') || c = '\127' in
-  if not (String.exists escapes s) then s
-  else begin
-    let buf = Buffer.create (String.length s + 8) in
-    String.iter
-      (fun c ->
-        match c with
-        | '\n' -> Buffer.add_string buf "\\n"
-        | '\t' -> Buffer.add_string buf "\\t"
-        | '\r' -> Buffer.add_string buf "\\r"
-        | c when escapes c ->
-            Buffer.add_string buf (spf "\\x%02x" (Char.code c))
-        | c -> Buffer.add_char buf c)
-      s;
-    Buffer.contents buf
-  end
-
 (* Spans and the sink
 
    A line reaches its sink as spans, and the sink applies the style. A

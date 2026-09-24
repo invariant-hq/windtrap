@@ -209,10 +209,6 @@ val release_title : string
 (** [release_title] is ["fixture release"], the name under which every sink
     reports a failed fixture release. *)
 
-val sanitize_name : string -> string
-(** [sanitize_name s] is [s] with each C0 control byte and DEL escaped, ESC
-    excepted: LF, TAB and CR by their OCaml names, the others as [\xNN]. *)
-
 val shell_word : string -> string
 (** [shell_word s] is [s] as one word of a shell command line. It is [s] itself
     when [s] is not empty and made of letters, digits and the characters of

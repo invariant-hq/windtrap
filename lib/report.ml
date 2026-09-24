@@ -37,7 +37,8 @@ let headline = Sections.headline
 let is_subtest_failure = Sections.is_subtest_failure
 let labeled_msg = Sections.labeled_msg
 let pp_failure = Sections.pp_failure
-let sanitize_name = Sections.sanitize_name
+let plain = Sections.plain
+let styled = Sections.styled
 
 (* A measured duration, the one format of every slot. Rounded to the
    precision it prints at before its unit is chosen, so 9.96ms is [10ms]
@@ -149,12 +150,9 @@ let terminal (config : Run.config) =
     ~live:(tty && not (Os.in_github_actions ()))
     config
 
-(* As the blocks' sink: with [ansi:false] escape codes arriving in test
-   names or captured output are stripped, keeping the transcript clean. *)
-let put t line =
-  Pp.pf t.out "%s@\n" (if t.ansi then line else Text.strip_ansi line)
-
-let st t style s = Pp.styled_string ~ansi:t.ansi style s
+(* The transcript's sink, as the blocks': a line is spans, escaped and
+   styled by [Sections.render]. *)
+let put t spans = Pp.pf t.out "%s@\n" (Sections.render ~ansi:t.ansi spans)
 
 (* A streamed test writes past [t.out]: through C stdio, or straight to
    descriptor 1. What it wrote is forced out before the report writes on. *)
@@ -181,11 +179,14 @@ let commit_header t =
   | Some suite when not t.header_printed ->
       t.header_printed <- true;
       put t
-        (spf "%s: %d test%s%s" (sanitize_name suite) t.total_tests
-           (if t.total_tests = 1 then "" else "s")
-           (match t.seed with
-           | None -> ""
-           | Some s -> spf " (seed %s)" (Seed.to_string s)))
+        [
+          plain
+            (spf "%s: %d test%s%s" suite t.total_tests
+               (if t.total_tests = 1 then "" else "s")
+               (match t.seed with
+               | None -> ""
+               | Some s -> spf " (seed %s)" (Seed.to_string s)));
+        ]
   | Some _ | None -> ()
 
 let header t ~suite ~tests ?declared ?selection ~seed () =
@@ -199,12 +200,14 @@ let header t ~suite ~tests ?declared ?selection ~seed () =
     Pp.flush t.out ()
   end
 
-(* Draws the live tail over the previous one. *)
+(* Draws the live tail over the previous one. The text is cut as it
+   prints, escaped, so the cut never splits an escape. *)
 let draw_live t text =
   if t.live then begin
     clear_live t;
-    let text = Text.truncate_utf8 (columns - 4) text in
-    Pp.pf t.out "\r\027[2K%s" (st t `Faint ("  " ^ text));
+    let text = Text.truncate_utf8 (columns - 4) (Text.escape_controls text) in
+    Pp.pf t.out "\r\027[2K%s"
+      (Sections.render ~ansi:t.ansi [ styled `Faint ("  " ^ text) ]);
     Pp.flush t.out ();
     t.live_pending <- true
   end
@@ -213,7 +216,7 @@ let draw_live t text =
    announced, so the counter never reads [5/4]. *)
 let begin_test t ~path =
   if t.live then begin
-    let name = sanitize_name (Test_tree.path_to_string path) in
+    let name = Test_tree.path_to_string path in
     let counter = spf "[%d/%d]" (t.seen + 1) (max t.total_tests (t.seen + 1)) in
     draw_live t
       (if t.verbose then spf "Running %s %s\u{2026}" counter name
@@ -230,25 +233,24 @@ let has_missing_baseline failures =
 
 (* "  TAG  <name> (<qualifiers>)" padded so [timing] starts at a fixed
    column. [title] is set on the row that is a block's title. *)
-let test_line ?(title = false) t ~tag ~style ~name ~qualifiers ~timing =
-  let qualifier =
-    match qualifiers with
-    | [] -> ""
-    | parts -> spf "(%s)" (String.concat ", " parts)
-  in
+let test_line ?(title = false) ~tag ~style ~name ~qualifiers ~timing () =
   let line =
-    "  " ^ st t style tag ^ "  "
-    ^ (if title then st t `Bold name else name)
-    ^ if qualifier = "" then "" else " " ^ st t `Faint qualifier
+    [
+      plain "  ";
+      styled style tag;
+      plain "  ";
+      (if title then styled `Bold name else plain name);
+    ]
+    @
+    match qualifiers with
+    | [] -> []
+    | parts ->
+        [ plain " "; styled `Faint (spf "(%s)" (String.concat ", " parts)) ]
   in
   if timing = "" then line
   else
-    let width =
-      4 + String.length tag + Text.length_utf8 name
-      + if qualifier = "" then 0 else 1 + Text.length_utf8 qualifier
-    in
-    let pad = max 2 (duration_column - width) in
-    line ^ String.make pad ' ' ^ st t `Faint timing
+    let pad = max 2 (duration_column - Sections.width line) in
+    line @ [ plain (String.make pad ' '); styled `Faint timing ]
 
 (* The label-distribution table (one producer, two placements): the failure
    blocks always show it; a passing property's prints under verbose — the
@@ -256,10 +258,12 @@ let test_line ?(title = false) t ~tag ~style ~name ~qualifiers ~timing =
 let pp_prop_stats t (s : Property.stats) =
   if s.collected <> [] then begin
     put t
-      (indent
-      ^ st t `Faint
+      [
+        plain indent;
+        styled `Faint
           (spf "labels (%d passing case%s):" s.cases
-             (if s.cases = 1 then "" else "s")));
+             (if s.cases = 1 then "" else "s"));
+      ];
     List.iter
       (fun (label, count) ->
         let line =
@@ -269,7 +273,7 @@ let pp_prop_stats t (s : Property.stats) =
               label
           else spf "  %d  %s" count label
         in
-        put t (indent ^ st t `Faint line))
+        put t [ plain indent; styled `Faint line ])
       s.collected
   end;
   (* The failure headline already names every label that was never covered,
@@ -279,13 +283,15 @@ let pp_prop_stats t (s : Property.stats) =
     List.length s.coverage > 1
     && List.exists (fun c -> not c.Property.satisfied) s.coverage
   then begin
-    put t (indent ^ "covered labels:");
+    put t [ plain (indent ^ "covered labels:") ];
     List.iter
       (fun (c : Property.cover_status) ->
         put t
-          (indent
-          ^ spf "  %s  %d%s" c.label c.hits
-              (if c.satisfied then "" else "  never covered")))
+          [
+            plain
+              (spf "%s  %s  %d%s" indent c.label c.hits
+                 (if c.satisfied then "" else "  never covered"));
+          ])
       s.coverage
   end
 
@@ -334,11 +340,12 @@ let pp_tail t (tail : Failure.tail) =
       else
         spf "captured output (%d line%s):" total (if total = 1 then "" else "s")
     in
-    put t (indent ^ st t `Faint head);
-    List.iter (fun l -> put t (indent ^ "  " ^ l)) shown;
+    put t [ plain indent; styled `Faint head ];
+    List.iter (fun l -> put t [ plain (indent ^ "  " ^ l) ]) shown;
     match tail.log_path with
     | Some p ->
-        put t (indent ^ st t `Faint ("full log: " ^ Os.display_artifact p))
+        put t
+          [ plain indent; styled `Faint ("full log: " ^ Os.display_artifact p) ]
     | None -> ()
   end
 
@@ -349,14 +356,14 @@ let pp_tail t (tail : Failure.tail) =
 let pp_body t (r : Run.result) failures =
   List.iteri
     (fun i f ->
-      if i > 0 then put t "";
+      if i > 0 then put t [];
       pp_failure ~ansi:t.ansi ~excerpt:true ~hints:false t.out f)
     failures;
   (match r.prop_stats with Some s -> pp_prop_stats t s | None -> ());
   Option.iter (pp_tail t)
     (List.find_map (fun (f : Failure.t) -> f.output_tail) failures);
   List.iter
-    (fun hint -> put t (indent ^ hint))
+    (fun hint -> put t [ plain (indent ^ hint) ])
     (Sections.hints ?armed:t.armed ~invocation:t.invocation
        ~filter:(Some (Test_tree.path_to_string r.path))
        failures)
@@ -372,23 +379,24 @@ let pp_block t (r : Run.result) =
         if r.attempts > 1 then [ spf "%d attempts" r.attempts ] else []
       in
       put t
-        (test_line ~title:true t ~tag:"FAIL" ~style:`Red
-           ~name:(sanitize_name (Test_tree.path_to_string r.path))
+        (test_line ~title:true ~tag:"FAIL" ~style:`Red
+           ~name:(Test_tree.path_to_string r.path)
            ~qualifiers:(attempts @ armed_qualifier t)
-           ~timing:"");
+           ~timing:"" ());
       pp_body t r failures
 
 (* A verbose row. A counted failure's row is its block's title: the
    block's lines follow it, and a blank line closes it. *)
 let verbose_result t (r : Run.result) =
-  let name = sanitize_name (Test_tree.path_to_string r.path) in
+  let name = Test_tree.path_to_string r.path in
   let timing =
     pp_duration r.duration
     ^ if r.attempts > 1 then spf " (%d attempts)" r.attempts else ""
   in
   match r.outcome with
   | Failure.Pass -> (
-      put t (test_line t ~tag:"PASS" ~style:`Green ~name ~qualifiers:[] ~timing);
+      put t
+        (test_line ~tag:"PASS" ~style:`Green ~name ~qualifiers:[] ~timing ());
       (* A passing property with collected labels prints its distribution —
          the same [pp_prop_stats] projection as the failure blocks, so the
          bytes cannot drift. XFAIL and SKIP lines print no table. *)
@@ -400,36 +408,35 @@ let verbose_result t (r : Run.result) =
       let expected =
         match r.xfail with
         | Some { Test_tree.reason = Some reason } ->
-            "expected failure: " ^ sanitize_name reason
+            "expected failure: " ^ reason
         | Some { Test_tree.reason = None } | None -> "expected failure"
       in
       put t
-        (test_line t ~tag:"XFAIL" ~style:`Faint ~name ~qualifiers:[ expected ]
-           ~timing)
+        (test_line ~tag:"XFAIL" ~style:`Faint ~name ~qualifiers:[ expected ]
+           ~timing ())
   | Failure.Fail failures ->
       let qualifiers =
         (if has_missing_baseline failures then [ "no baseline" ] else [])
         @ armed_qualifier t
       in
       put t
-        (test_line ~title:true t ~tag:"FAIL" ~style:`Red ~name ~qualifiers
-           ~timing);
+        (test_line ~title:true ~tag:"FAIL" ~style:`Red ~name ~qualifiers ~timing
+           ());
       pp_body t r failures;
-      put t ""
+      put t []
   | Failure.Skip reason ->
       put t
-        (test_line t ~tag:"SKIP" ~style:`Yellow ~name
-           ~qualifiers:(Option.to_list (Option.map sanitize_name reason))
-           ~timing:"")
+        (test_line ~tag:"SKIP" ~style:`Yellow ~name
+           ~qualifiers:(Option.to_list reason) ~timing:"" ())
 
 (* A failed fixture release: no test owns it, so its title has no attempts
    and no duration, and its block no hint. *)
 let release_block t f =
   put t
-    (test_line ~title:true t ~tag:"FAIL" ~style:`Red
-       ~name:Sections.release_title ~qualifiers:(armed_qualifier t) ~timing:"");
+    (test_line ~title:true ~tag:"FAIL" ~style:`Red ~name:Sections.release_title
+       ~qualifiers:(armed_qualifier t) ~timing:"" ());
   pp_failure ~ansi:t.ansi ~excerpt:true ~hints:false t.out f;
-  if t.verbose then put t ""
+  if t.verbose then put t []
 
 (* A block is committed when its test finishes, so a run that dies has
    printed what it knew. Compact precedes the first by the header and the
@@ -441,8 +448,8 @@ let commit t block =
   if not t.verbose then
     put t
       (if t.blocks = 0 then
-         st t `Faint (Sections.rule ~width:rule_width (Some "failures"))
-       else "");
+         [ styled `Faint (Sections.rule ~width:rule_width (Some "failures")) ]
+       else []);
   block ();
   if t.verbose then t.spaced <- true;
   t.blocks <- t.blocks + 1;
@@ -469,15 +476,19 @@ let result t (r : Run.result) =
    hanging fixture release still names itself on a terminal. *)
 let note t line =
   sync t;
-  let line = sanitize_name line in
   clear_live t;
   if t.verbose then begin
-    put t line;
+    put t [ plain line ];
     t.spaced <- false;
     Pp.flush t.out ()
   end
   else if t.live then begin
-    Pp.pf t.out "%s" (st t `Faint (Text.truncate_utf8 (columns - 1) line));
+    Pp.pf t.out "%s"
+      (Sections.render ~ansi:t.ansi
+         [
+           styled `Faint
+             (Text.truncate_utf8 (columns - 1) (Text.escape_controls line));
+         ]);
     Pp.flush t.out ();
     t.live_pending <- true
   end
@@ -581,7 +592,7 @@ let summary_line t (c : summary) ~duration =
   let named = not t.header_printed in
   let prefix =
     match t.suite with
-    | Some suite when named -> sanitize_name suite ^ ": "
+    | Some suite when named -> suite ^ ": "
     | Some _ | None -> ""
   in
   if c.passed + c.failed + c.skipped + c.excused + c.not_run = 0 then begin
@@ -591,43 +602,53 @@ let summary_line t (c : summary) ~duration =
       | None -> None
     in
     match reason with
-    | None -> put t (prefix ^ "no tests ran.")
+    | None -> put t [ plain (prefix ^ "no tests ran.") ]
     | Some reason -> (
-        put t (spf "%sno tests ran: %s." prefix reason);
+        put t [ plain (spf "%sno tests ran: %s." prefix reason) ];
         (* A build action has no launcher to restate: it names the flag. A
            suite that declares nothing has nothing to list. *)
         if t.declared <> Some 0 then
           match t.invocation with
-          | `Exe launcher -> put t (spf "list: %s -l" launcher)
-          | `Mirrors -> put t (st t `Faint "(list the suite's tests with -l)"))
+          | `Exe launcher -> put t [ plain (spf "list: %s -l" launcher) ]
+          | `Mirrors ->
+              put t [ styled `Faint "(list the suite's tests with -l)" ])
   end
   else begin
-    let term n text = if n > 0 then [ text ] else [] in
+    let term n spans = if n > 0 then [ spans ] else [] in
     let terms =
       List.concat
         [
           term c.passed
-            ((if c.failed = 0 && c.not_written = 0 then st t `Green else Fun.id)
+            ((if c.failed = 0 && c.not_written = 0 then styled `Green else plain)
                (spf "%d passed" c.passed)
-            ^
-            if c.flaky > 0 then " " ^ st t `Yellow (spf "(%d flaky)" c.flaky)
-            else "");
-          term c.skipped (st t `Yellow (spf "%d skipped" c.skipped));
+            ::
+            (if c.flaky > 0 then
+               [ plain " "; styled `Yellow (spf "(%d flaky)" c.flaky) ]
+             else []));
+          term c.skipped [ styled `Yellow (spf "%d skipped" c.skipped) ];
           term c.excused
-            (st t `Faint
-               (spf "%d expected failure%s" c.excused (plural c.excused)));
+            [
+              styled `Faint
+                (spf "%d expected failure%s" c.excused (plural c.excused));
+            ];
           term c.failed
-            (st t `Red
-               (spf "%d failed%s" c.failed
-                  (if c.subtests > 0 then
-                     spf " (%d subtest failure%s)" c.subtests
-                       (plural c.subtests)
-                   else "")));
-          term c.not_run (spf "%d not run" c.not_run);
+            [
+              styled `Red
+                (spf "%d failed%s" c.failed
+                   (if c.subtests > 0 then
+                      spf " (%d subtest failure%s)" c.subtests
+                        (plural c.subtests)
+                    else ""));
+            ];
+          term c.not_run [ plain (spf "%d not run" c.not_run) ];
           term c.corrections
-            (spf "%d correction%s %s" c.corrections (plural c.corrections)
-               (if c.accepted then "accepted" else "written"));
-          term c.not_written (st t `Red (spf "%d not written" c.not_written));
+            [
+              plain
+                (spf "%d correction%s %s" c.corrections (plural c.corrections)
+                   (if c.accepted then "accepted" else "written"));
+            ];
+          term c.not_written
+            [ styled `Red (spf "%d not written" c.not_written) ];
         ]
     in
     let seed =
@@ -636,8 +657,12 @@ let summary_line t (c : summary) ~duration =
       | Some _ | None -> ""
     in
     put t
-      (spf "%s%s in %s%s." prefix (String.concat ", " terms)
-         (pp_duration duration) seed)
+      (plain prefix
+       :: List.concat
+            (List.mapi
+               (fun i term -> if i > 0 then plain ", " :: term else term)
+               terms)
+      @ [ plain (spf " in %s%s." (pp_duration duration) seed) ])
   end
 
 (* End-of-run sections *)
@@ -649,7 +674,7 @@ let slow_section t slow_results =
   let rows =
     List.map
       (fun (r : Run.result) ->
-        (pp_duration r.duration, sanitize_name (Test_tree.path_to_string r.path)))
+        (pp_duration r.duration, Test_tree.path_to_string r.path))
       (List.sort
          (fun (a : Run.result) (b : Run.result) ->
            Float.compare b.duration a.duration)
@@ -657,7 +682,7 @@ let slow_section t slow_results =
   in
   (* [pp_duration] is ASCII, so byte length is display width. *)
   let width = List.fold_left (fun w (d, _) -> max w (String.length d)) 0 rows in
-  let caution s = put t (st t `Yellow s) in
+  let caution s = put t [ styled `Yellow s ] in
   caution
     (spf "slow tests (%d, over %ss):" (List.length rows)
        (pp_configured t.slow_threshold));
@@ -665,13 +690,13 @@ let slow_section t slow_results =
 
 (* Run order, one row per test that failed and then passed. *)
 let flaky_section t flaky_results =
-  let caution s = put t (st t `Yellow s) in
+  let caution s = put t [ styled `Yellow s ] in
   caution (spf "flaky tests (%d):" (List.length flaky_results));
   List.iter
     (fun (r : Run.result) ->
       caution
         (spf "  passed on attempt %d  %s" r.attempts
-           (sanitize_name (Test_tree.path_to_string r.path))))
+           (Test_tree.path_to_string r.path)))
     flaky_results
 
 (* The files the run wrote or could not write for its baselines, sorted
@@ -694,19 +719,22 @@ let accepts baselines =
 (* A source file's row counts its expectations; a file the run could not
    write fails it, and its row says why. *)
 let corrections_section t ~accepted rows =
-  put t (spf "corrections (%d):" (List.length rows));
+  put t [ plain (spf "corrections (%d):" (List.length rows)) ];
   List.iter
     (fun (path, write) ->
       match write with
       | Baseline.Written { literals; _ } ->
           put t
-            (spf "  %s %s%s"
-               (if accepted then "accepted" else "wrote")
-               path
-               (if literals = 0 then ""
-                else spf " (%d expectation%s)" literals (plural literals)))
+            [
+              plain
+                (spf "  %s %s%s"
+                   (if accepted then "accepted" else "wrote")
+                   path
+                   (if literals = 0 then ""
+                    else spf " (%d expectation%s)" literals (plural literals)));
+            ]
       | Baseline.Refused { reason; _ } ->
-          put t (st t `Red (spf "  could not write %s: %s" path reason)))
+          put t [ styled `Red (spf "  could not write %s: %s" path reason) ])
     rows
 
 let rec drop n = function _ :: rest when n > 0 -> drop (n - 1) rest | l -> l
@@ -765,7 +793,7 @@ let finish t ~results ~release_failures ~duration ?baselines
   List.iter (commit_block t) (drop t.blocks failed_results);
   List.iter (fun f -> commit t (fun () -> release_block t f)) release_failures;
   let closed = t.blocks > 0 && not t.verbose in
-  if closed then put t (st t `Faint (Sections.rule ~width:rule_width None));
+  if closed then put t [ styled `Faint (Sections.rule ~width:rule_width None) ];
   (* A green run with nothing to show is its summary line alone. *)
   if slow_results <> [] || flaky_results <> [] || rows <> [] then
     commit_header t;
@@ -775,7 +803,7 @@ let finish t ~results ~release_failures ~duration ?baselines
      unless a failed row's block has just closed on its own. *)
   let owed = ref closed in
   let section print =
-    if !owed || (t.verbose && not t.spaced) then put t "";
+    if !owed || (t.verbose && not t.spaced) then put t [];
     print ();
     owed := true
   in
@@ -785,7 +813,7 @@ let finish t ~results ~release_failures ~duration ?baselines
     section (fun () -> corrections_section t ~accepted:summary.accepted rows);
   Pp.flush t.out ();
   before_summary ();
-  if !owed then put t "";
+  if !owed then put t [];
   summary_line t summary ~duration;
   Pp.flush t.out ()
 
@@ -795,12 +823,13 @@ let interrupted t ?before_summary ?releasing ~running ~results ~duration () =
   sync t;
   clear_live t;
   Pp.flush t.out ();
+  (* A name is one line of the diagnostic, whatever it holds. *)
   Os.say
     (match (running, releasing) with
     | Some path, _ ->
-        "interrupted in " ^ sanitize_name (Test_tree.path_to_string path)
+        "interrupted in " ^ Text.escape_controls (Test_tree.path_to_string path)
     | None, Some fixture ->
-        "interrupted while releasing " ^ sanitize_name fixture
+        "interrupted while releasing " ^ Text.escape_controls fixture
     | None, None -> "interrupted between tests");
   finish t ~results ~release_failures:[] ~duration ?before_summary ()
 
@@ -817,31 +846,30 @@ let observe t ~seed ~selection = function
 
 (* The GitHub Actions envelope *)
 
-(* Workflow-command data encoding: '%' first, then CR and LF. *)
-let escape_data s =
+(* Workflow-command encoding, over text whose control bytes the report's
+   rule has escaped: '%' first, then LF, the one control byte left. *)
+let encode ~property s =
   let buf = Buffer.create (String.length s) in
   String.iter
     (fun c ->
       match c with
       | '%' -> Buffer.add_string buf "%25"
-      | '\r' -> Buffer.add_string buf "%0D"
       | '\n' -> Buffer.add_string buf "%0A"
+      | ':' when property -> Buffer.add_string buf "%3A"
+      | ',' when property -> Buffer.add_string buf "%2C"
       | c -> Buffer.add_char buf c)
-    (Text.strip_ansi s);
+    s;
   Buffer.contents buf
 
-(* Property values additionally encode the command delimiters. *)
-let escape_property s =
-  let buf = Buffer.create (String.length s) in
-  String.iter
-    (fun c ->
-      match c with
-      | ':' -> Buffer.add_string buf "%3A"
-      | ',' -> Buffer.add_string buf "%2C"
-      | c -> Buffer.add_char buf c)
-    (escape_data s);
-  Buffer.contents buf
+(* Message data keeps its lines. *)
+let escape_data s =
+  encode ~property:false
+    (String.concat "\n"
+       (List.map Text.escape_controls (String.split_on_char '\n' s)))
 
+(* A property value is one line, and additionally encodes the command
+   delimiters. *)
+let escape_property s = encode ~property:true (Text.escape_controls s)
 let group_start name = spf "::group::%s\n" (escape_data name)
 let group_end = "::endgroup::\n"
 
@@ -859,9 +887,7 @@ let annotation ?(invocation = `Mirrors) ?armed ~path (f : Failure.t) =
         spf "file=%s,line=%d," (escape_property file) line
     | None -> ""
   in
-  let title =
-    escape_property (spf "Test failure: %s" (sanitize_name path_string))
-  in
+  let title = escape_property ("Test failure: " ^ path_string) in
   let message =
     drop_trailing_newlines
       (Pp.str "%a"
@@ -903,30 +929,38 @@ let annotations ?invocation ?armed ~release_failures results =
 
 let mutation_armed t ~id ~before ~after =
   clear_live t;
-  put t (spf "mutant %s armed: %s \u{2192} %s" (st t `Bold id) before after)
+  put t
+    [
+      plain "mutant ";
+      styled `Bold id;
+      plain (spf " armed: %s \u{2192} %s" before after);
+    ]
 
 let mutation_killed t =
   clear_live t;
-  put t (st t `Green "mutant killed.")
+  put t [ styled `Green "mutant killed." ]
 
 let mutation_survived t ~hits =
   clear_live t;
   put t
-    (st t `Red
-       (spf
-          "mutant survived: the armed site was evaluated %d time%s and no test \
-           failed."
-          hits
-          (if hits = 1 then "" else "s")))
+    [
+      styled `Red
+        (spf
+           "mutant survived: the armed site was evaluated %d time%s and no \
+            test failed."
+           hits
+           (if hits = 1 then "" else "s"));
+    ]
 
 let mutation_not_evaluated t =
   clear_live t;
-  put t (st t `Yellow "mutant not evaluated: no selected test ran the site.")
+  put t
+    [ styled `Yellow "mutant not evaluated: no selected test ran the site." ]
 
 (* The loop's report *)
 
 let mutation_testing t ~index ~total ~id =
-  draw_live t (spf "[%d/%d] %s\u{2026}" index total (sanitize_name id))
+  draw_live t (spf "[%d/%d] %s\u{2026}" index total id)
 
 (* A survivor's block is committed when its child ends, so a loop that
    dies has printed what it found. The rule that opens the blocks prints

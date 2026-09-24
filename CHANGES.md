@@ -243,13 +243,17 @@ Coverage and packaging:
   and last 400 around `… (N bytes elided)` and draws no mark, a backtrace
   prints ten frames then `… (+N more frames)`, a diff 200 lines then `…
   (+N more diff lines)`.
-- **Control bytes are shown, not executed**: every line of a failure
-  entry (compared values, messages, subtest names, `fail` text and
-  backtraces) renders C0 bytes and DEL as `\x1b`, `\x0d`, keeping tabs
-  and splitting a text at its newlines, with colour on or off, so a
-  failing assertion on styled output can be read and grepped. Floats
-  render with the shortest decimal that round-trips, so `0.1 +. 0.2`
-  reports `0.30000000000000004`.
+- **Control bytes are shown, not executed**: every line the runner
+  prints (compared values, messages, `fail` text, backtraces, test and
+  suite names, captured output, paths) renders C0 bytes and DEL as
+  `\x1b`, `\x0d`, keeping tabs and splitting a text at its newlines,
+  with colour on or off, so a failing assertion on styled output can be
+  read and grepped, a test's escape sequence never restyles the terminal,
+  and a progress bar's CR no longer overwrites captured lines
+  (`downloading 10%\x0ddownloading 50%`). A test name holding a newline
+  prints `first\x0ahalf`, in `-l` too, and in an annotation's title.
+  Floats render with the shortest decimal that round-trips, so `0.1 +.
+  0.2` reports `0.30000000000000004`.
 - **Backtraces stop at your code**: the trailing run of windtrap's own
   frames is dropped in the one place a raw backtrace becomes report text,
   so the terminal, JUnit and GitHub agree. An uncaught exception's report
@@ -631,7 +635,7 @@ Coverage and packaging:
   an unmet `cover` label's row is `<label>  0  never covered`.
 - A `?msg` prints each of its lines inside its block, a skip reason and
   an `xfail` reason stay in their row, and the control bytes of all three
-  are escaped as a test name's are.
+  are escaped as every text's are.
 - **What windtrap says about itself is on standard error behind
   `windtrap:`**, in the runner, the runtimes and the `windtrap` binary
   alike (the `windtrap coverage:` and `windtrap mutants:` prefixes are

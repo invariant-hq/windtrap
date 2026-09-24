@@ -353,7 +353,8 @@ let run_listing ~suite ~config tests =
            ~selection:(Report.selection_description config));
       0
   | Ok paths ->
-      List.iter print_endline paths;
+      (* One path per line, whatever a name holds. *)
+      List.iter (fun path -> print_endline (Text.escape_controls path)) paths;
       0
 
 let run ?(argv = Sys.argv) suite tests =

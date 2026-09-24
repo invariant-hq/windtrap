@@ -9,8 +9,8 @@
    pair, captured tail with a drop count) at both levels — compact (nothing
    per test, the header iff a block follows) and verbose (a line per test)
    — when a compact run prints more than its summary, the slow and flaky blocks, ANSI styling and diff
-   highlighting, ANSI hygiene under ansi:false (payload-borne escapes
-   stripped), the live displays, the failure projections (headline,
+   highlighting, ANSI hygiene (payload-borne escapes shown, never
+   obeyed), the live displays, the failure projections (headline,
    pp_failure), degenerate equalities, diff and proposed-content display
    bounds, duration forms, replay-line quoting and root-token consistency,
    captured-tail bounding, the source excerpt, the GitHub envelope, the
@@ -532,7 +532,7 @@ let test_interrupted () =
     "s: 1 passed, 3 not run in 500ms.\n"
     (transcript (Some [ "g"; "sleeps\n" ]));
   equal ~msg:"stderr names the stopped test, its control byte escaped" string
-    "windtrap: interrupted in g \u{203a} sleeps\\n\n" (output ());
+    "windtrap: interrupted in g \u{203a} sleeps\\x0a\n" (output ());
   equal ~msg:"a verbose run keeps its rows above the summary" string
     "s: 4 tests\n\
     \  PASS  g \u{203a} ok                                     0.2ms\n\
@@ -1622,22 +1622,17 @@ let test_degenerate_equalities () =
     ~sub:"\nline b" b
 
 let test_ansi_hygiene () =
-  (* User pp output may carry raw escapes; under [ansi:false] the transcript
-     must contain none (report.mli), under [ansi:true] they pass through.
-
-     The two ways it contains none are not the same. A comparison surface
-     escapes them, keeping every byte the value had — the block below is
-     [test_control_bytes_refined]'s guarantee seen from the hygiene side, so
-     it pins the escaped bytes rather than the stripped remains. The
-     surfaces that print verbatim — a message, a test name, a captured
-     tail — are stripped at the sink, as they always were. *)
+  (* User pp output may carry raw escapes. The sink escapes every span, so
+     under both [ansi] settings the transcript shows them and never obeys
+     them, keeping every byte the value had: a comparison, a message, a
+     test name and a captured tail alike. *)
   let esc = "\027[31mred\027[0m" in
   let f =
     Failure.equality ~expected:(esc ^ " one") ~actual:"\027]0;title\007 two" ()
   in
   let plain = failure_block f in
-  not_contains ~msg:"ansi:false: payload escapes stripped from blocks"
-    ~sub:"\027" plain;
+  not_contains ~msg:"ansi:false: no payload escape reaches a block" ~sub:"\027"
+    plain;
   contains ~msg:"ansi:false: the payload's own bytes survive, escaped"
     ~sub:{|\x1b[31mred\x1b[0m one|} plain;
   contains ~msg:"ansi:false: an OSC payload survives the same way"
@@ -1653,8 +1648,10 @@ let test_ansi_hygiene () =
              [ "suite"; esc ^ " name" ]
              (Failure.Fail [ Failure.message "boom" ])))
   in
-  not_contains ~msg:"ansi:false: test-line names stripped" ~sub:"\027"
-    hostile_line;
+  not_contains ~msg:"ansi:false: no escape of a name reaches its row"
+    ~sub:"\027" hostile_line;
+  contains ~msg:"ansi:false: the name's bytes survive, escaped"
+    ~sub:{|\x1b[31mred\x1b[0m name|} hostile_line;
   let hostile_tail =
     let tail = Failure.tail ~log_path:"log" (esc ^ " captured\n") in
     let result =
@@ -1665,10 +1662,10 @@ let test_ansi_hygiene () =
         Report.finish r ~release_failures:[] ~results:[ result ] ~duration:0.01
           ())
   in
-  not_contains ~msg:"ansi:false: captured tail stripped" ~sub:"\027"
-    hostile_tail;
-  contains ~msg:"ansi:false: stripped tail text survives" ~sub:" captured"
-    hostile_tail
+  not_contains ~msg:"ansi:false: no escape of a captured tail reaches it"
+    ~sub:"\027" hostile_tail;
+  contains ~msg:"ansi:false: the tail's bytes survive, escaped"
+    ~sub:{|\x1b[31mred\x1b[0m captured|} hostile_tail
 
 (* Control bytes on comparison surfaces
 
@@ -3469,7 +3466,7 @@ let test_verbose_pass_labels () =
   not_contains ~msg:"verbose: XFAIL lines print no table" ~sub:"labels ("
     excused
 
-(* Name sanitization on terminal surfaces *)
+(* Names on terminal surfaces: escaped by the sink, as every text *)
 
 let test_name_sanitization () =
   let hostile = [ "first\nhalf" ] in
@@ -3479,10 +3476,10 @@ let test_name_sanitization () =
   let verbose =
     with_renderer ~mode:`Verbose (fun r -> Report.result r failing)
   in
-  contains ~msg:"verbose line escapes the newline" ~sub:{|FAIL  first\nhalf|}
+  contains ~msg:"verbose line escapes the newline" ~sub:{|FAIL  first\x0ahalf|}
     verbose;
   equal ~msg:"the row and the message stay one line each" string
-    "  FAIL  first\\nhalf                                0.2ms\n    b\n\n"
+    "  FAIL  first\\x0ahalf                              0.2ms\n    b\n\n"
     verbose;
   contains ~msg:"and so does a hint that spells the path"
     ~sub:
@@ -3497,14 +3494,14 @@ let test_name_sanitization () =
         Report.finish r ~release_failures:[] ~results:[ failing ] ~duration:0.1
           ())
   in
-  contains ~msg:"FAIL header escapes the newline" ~sub:{|  FAIL  first\nhalf|}
+  contains ~msg:"FAIL header escapes the newline" ~sub:{|  FAIL  first\x0ahalf|}
     block;
   let live =
     with_renderer ~ansi:true ~live:true (fun r ->
         Report.header r ~suite:"vnames" ~tests:2 ~seed:None ();
         Report.begin_test r ~path:hostile)
   in
-  contains ~msg:"live tail escapes the newline" ~sub:{|first\nhalf|} live;
+  contains ~msg:"live tail escapes the newline" ~sub:{|first\x0ahalf|} live;
   not_contains ~msg:"live tail carries no raw newline" ~sub:"first\nhalf" live;
   (* Suite names: header, and the one-liner's prefix. *)
   let named =
@@ -3515,8 +3512,7 @@ let test_name_sanitization () =
           ~results:[ Fixtures.result [ "t" ] Failure.Pass ]
           ~duration:0.1 ())
   in
-  contains ~msg:"summary prefix escapes the tab" ~sub:{|my\tsuite: 1 passed|}
-    named;
+  contains ~msg:"summary prefix keeps the tab" ~sub:"my\tsuite: 1 passed" named;
   let header =
     with_renderer ~mode:`Verbose (fun r ->
         Report.header r ~suite:"a\x07b" ~tests:1 ~seed:None ())
@@ -3530,17 +3526,17 @@ let test_name_sanitization () =
         Report.result r slow;
         Report.finish r ~release_failures:[] ~results:[ slow ] ~duration:1.5 ())
   in
-  contains ~msg:"slow row escapes the newline" ~sub:{|  1.5s  sl\now|} warned;
-  (* ESC is left to the ansi policy (stripped under ansi:false) — pinned in
-     [test_ansi_hygiene]. *)
+  contains ~msg:"slow row escapes the newline" ~sub:{|  1.5s  sl\x0aow|} warned;
+  (* ESC is escaped as every control byte is, under both [ansi] settings:
+     pinned in [test_ansi_hygiene]. *)
   let note =
     with_renderer ~mode:`Verbose (fun r -> Report.note r "releasing d\nb")
   in
-  equal ~msg:"notes escape their fixture name" string "releasing d\\nb\n" note;
+  equal ~msg:"notes escape their fixture name" string "releasing d\\x0ab\n" note;
   (* The author's own words sit among the report's: a [?msg] prints its
      lines at the block's indentation, a skip reason and an
      expected-failure reason stay in their row, and the control bytes of
-     all three are escaped as a name's are. *)
+     all three are escaped as every text is. *)
   let annotated =
     Fixtures.result [ "t" ]
       (Failure.Fail
@@ -3568,9 +3564,9 @@ let test_name_sanitization () =
              (Failure.Fail [ Fixtures.eq_failure ])))
   in
   contains ~msg:"a skip reason stays in its row"
-    ~sub:{|  SKIP  skipped (no\ndb)|} rows;
+    ~sub:{|  SKIP  skipped (no\x0adb)|} rows;
   contains ~msg:"and so does an expected failure's"
-    ~sub:{|  XFAIL  excused (expected failure: issue\t42)|} rows
+    ~sub:"  XFAIL  excused (expected failure: issue\t42)" rows
 
 (* Source excerpts resolve against the project root *)
 
@@ -4734,7 +4730,7 @@ let test_github_property_encoding () =
   (* The title is the block's title: a control byte in a test name is
      spelled out, never sent raw. *)
   contains ~msg:"title spells control bytes as the block's title does"
-    ~sub:"title=Test failure%3A a\\x01b\\nc::"
+    ~sub:"title=Test failure%3A a\\x01b\\x0ac::"
     (Report.annotation ~path:[ "a\001b\nc" ] f)
 
 let test_github_no_location () =
@@ -5164,10 +5160,16 @@ let test_diff_cap () =
     (List.length (List.filter hunk_line (String.split_on_char '\n' block)));
   contains ~msg:"then the count of the rest" ~sub:"801 more" block
 
-let test_sanitize_name () =
-  equal ~msg:"LF, TAB and CR by name, other C0 bytes and DEL as \\xNN, ESC kept"
-    string "a\\nb\\tc\\rd\\x07e\\x7ff\027[0m"
-    (Sections.sanitize_name "a\nb\tc\rd\x07e\x7ff\027[0m")
+let test_render () =
+  let line = [ Sections.plain "a\nb\tc"; Sections.styled `Red "\027[0m" ] in
+  equal ~msg:"every span escaped, TAB kept, no style without ansi" string
+    "a\\x0ab\tc\\x1b[0m"
+    (Sections.render ~ansi:false line);
+  equal ~msg:"under ansi the style wraps the escaped text" string
+    "a\\x0ab\tc\027[31m\\x1b[0m\027[0m"
+    (Sections.render ~ansi:true line);
+  equal ~msg:"the width counts each escape's four columns" int 15
+    (Sections.width line)
 
 let test_shell_word () =
   equal ~msg:"the bare-word alphabet as is" string "aZ9_-./:=+,@%"
@@ -5451,7 +5453,7 @@ let edge_tests =
       test_excerpt_root_first;
     test "sections: hints are on by default" test_hints_default;
     test "sections: the diff cap is 200 lines" test_diff_cap;
-    test "sections: sanitize_name" test_sanitize_name;
+    test "sections: render escapes every span" test_render;
     test "sections: shell_word" test_shell_word;
     test "sections: plain and styled spans" test_spans;
     test "sections: print's hints, rows and flush" test_section_print;

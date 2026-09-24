@@ -26,9 +26,9 @@ type t
 
 val create : out:Format.formatter -> ansi:bool -> ?live:bool -> Run.config -> t
 (** [create ~out ~ansi config] is a renderer that writes to [out].
-    - [ansi] is whether styling is emitted. Under [ansi:false] every line is
-      stripped of the escape sequences that a test name or captured output may
-      hold. Under [ansi:true] they pass through.
+    - [ansi] is whether styling is emitted. Every line goes through
+      {!Report_sections.render}, which escapes the control bytes of each text
+      under both settings.
     - [live] is whether {!begin_test}, {!note} and {!mutation_testing} draw the
       live line, which the next write erases. Defaults to [false], and a caller
       passes whether [out] is a terminal. The live line is off whatever [live]
@@ -39,11 +39,6 @@ val create : out:Format.formatter -> ansi:bool -> ?live:bool -> Run.config -> t
     [config.invocation], from which every [accept:] and [replay:] command is
     spelled, and the identifier of a [config.mutation] that is {!Run.Armed}. It
     reads no other field.
-
-    The names of tests, suites and fixtures, and the reasons of a skip and of an
-    expected failure, print through {!Report_sections.sanitize_name}. The labels
-    of a property, the path of a correction and the three strings of
-    {!mutation_armed} do not go through it.
 
     Raises [Invalid_argument] if [config.slow_threshold] is negative or not
     finite. *)
@@ -144,10 +139,9 @@ val result : t -> Run.result -> unit
 *)
 
 val note : t -> string -> unit
-(** [note t line] shows the run-scoped notice [line], through
-    {!Report_sections.sanitize_name}. Under [config.verbose] it is a committed
-    line. Otherwise it is drawn as the live line when that is on, and is not
-    shown when it is off. *)
+(** [note t line] shows the run-scoped notice [line]. Under [config.verbose] it
+    is a committed line. Otherwise it is drawn as the live line when that is on,
+    and is not shown when it is off. *)
 
 val observe :
   t -> seed:Seed.seed -> selection:string option -> Run.event -> unit
@@ -268,10 +262,11 @@ val interrupted :
     Workflow commands that fold the transcript and annotate its failures. {!run}
     writes them on standard output, at column zero, when [config.github] is set,
     so they show under GitHub Actions only. Every function here is pure and
-    returns whole command lines, each ending in a newline. A message is stripped
-    of escape sequences and percent-encodes [%], CR and LF. A property ([file],
-    [line], [title]) also encodes [:] and [,], so no payload can end a command
-    or add a property to it. *)
+    returns whole command lines, each ending in a newline. A message goes line
+    by line through {!Text.escape_controls}, then percent-encodes [%] and LF. A
+    property ([file], [line], [title]) goes whole through the escape, then
+    encodes [%], [:] and [,], so no payload can end a command or add a property
+    to it. *)
 
 val group_start : string -> string
 (** [group_start name] is the command that opens a folded log section named
@@ -289,8 +284,7 @@ val annotation :
   string
 (** [annotation ~path f] is the [::error] command for [f], a failure of the test
     at [path]. Its [file] and [line] are those of the location of [f], when it
-    has one, and its title is [Test failure: <path>], [path] through
-    {!Report_sections.sanitize_name}. The message is the
+    has one, and its title is [Test failure: <path>]. The message is the
     {!Report_sections.pp_failure} entry of [f] without styling and without the
     source line, hint lines included, with [path] as their filter. [invocation]
     and [armed] are those of {!Report_sections.hints}, and [invocation] defaults
@@ -353,9 +347,8 @@ val mutation_not_evaluated : t -> unit
 
 val mutation_testing : t -> index:int -> total:int -> id:string -> unit
 (** [mutation_testing t ~index ~total ~id] draws the live line for the mutant
-    that the loop is trying: [index], counted from [1], [total], and [id]
-    through {!Report_sections.sanitize_name}. The line shows only while the live
-    line is on (see {!create}). *)
+    that the loop is trying: [index], counted from [1], [total], and [id]. The
+    line shows only while the live line is on (see {!create}). *)
 
 val mutation_survivor : t -> Report_sections.survivor -> unit
 (** [mutation_survivor t s] commits the {!Report_sections.survivor_block} of

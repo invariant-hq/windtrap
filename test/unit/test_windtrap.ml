@@ -1315,6 +1315,13 @@ let () =
   check_string "the transcript is the selection, in declaration order"
     ~expected:"outer \u{203a} picked\nother\n" ~actual:out;
   check_string "a list run prints nothing on stderr" ~expected:"" ~actual:err;
+  (* A path is one line of the listing whatever its name holds. *)
+  let _, out, _ =
+    run_in_process ~argv:[ "-l" ] root "listcontrol"
+      [ test "first\nhalf" (fun () -> is_true true) ]
+  in
+  check_string "a listed path escapes its control bytes"
+    ~expected:"first\\x0ahalf\n" ~actual:out;
   (* And over an empty selection: a listing that answered a mistyped
      filter with silence is the dead end the empty run's own [list:] hint
      leads to. The sentence is windtrap's own, so it goes to stderr, and
