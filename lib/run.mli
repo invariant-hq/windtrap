@@ -350,8 +350,9 @@ type result = {
   prop_stats : Property.stats option;
       (** The statistics of the property engine, its labels and its
           {!Property.cover} demands, for a property whose engine returned an
-          outcome. [None] for any other test, and for a property that a skip or
-          a timeout ended. *)
+          outcome, which a timeout in a case does. [None] for any other test,
+          and for a property that a skip ended, or a timeout outside its cases.
+      *)
 }
 (** The type for result rows, one per executed test. A row carries every fact
     that a renderer needs, so no consumer derives a decision of the runner from

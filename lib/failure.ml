@@ -76,7 +76,16 @@ type kind =
       rendering : rendering;
       inner : t option;
     }
+  | Timeout of { limit : float; case : timed_case option }
   | Message of text
+
+and timed_case = {
+  case_index : int;
+  examples : bool;
+  passed : int;
+  root : Seed.seed;
+  count : int option;
+}
 
 and shrink_end =
   | Converged
@@ -431,6 +440,7 @@ let property ?loc ?inner ?count ?summary ~rendered ~case_index ~shrink_steps
          inner;
        })
 
+let timeout ?loc ?case limit = make ?loc (Timeout { limit; case })
 let message ?loc s = make ?loc (Message (text s))
 
 (* Updating *)
@@ -442,7 +452,8 @@ let with_withheld withheld t =
   match t.kind with
   | Baseline { withheld = Some (Refused _ | Conflict); _ } -> t
   | Baseline b -> { t with kind = Baseline { b with withheld = Some withheld } }
-  | Equality _ | Containment _ | Raise _ | Property _ | Message _ -> t
+  | Equality _ | Containment _ | Raise _ | Property _ | Timeout _ | Message _ ->
+      t
 
 let tail ?log_path ?(omitted_bytes = 0) text =
   if omitted_bytes < 0 then

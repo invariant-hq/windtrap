@@ -776,16 +776,44 @@ let timeout_after_accepted_steps_keeps_best_so_far () =
   | Some { Failure.kind = Failure.Message { Failure.kept = "big"; _ }; _ } -> ()
   | _ -> failf "the inner failure must describe the last accepted node"
 
-let timeout_during_generation_escapes_unchanged () =
-  let gen = Gen.map (fun _ -> raise (Failure.Control (`Timeout 0.5))) Gen.int in
-  match Property.run ~root ~path:"gen timeout" gen (fun _ _ -> ()) with
-  | exception Failure.Control (`Timeout limit) ->
+(* The limit expired in a case before any failed: the engine alone knows
+   which case, and how many passed, so the outcome is a failure naming
+   them, located at the declaration, with the seed a replay needs. *)
+let expect_timed_out ~what outcome =
+  match outcome with
+  | Property.Fail
+      {
+        failure =
+          { Failure.kind = Failure.Timeout { limit; case = Some case }; _ };
+        stats;
+      } ->
       is_true
-        ~msg:(Printf.sprintf "Timeout must keep its limit, got %g" limit)
-        (limit = 0.5)
-  | _ -> failf "a Timeout raised at sample time must escape the engine"
-  | exception other ->
-      failf "expected Timeout, got %s" (Printexc.to_string other)
+        ~msg:(Printf.sprintf "%s: the limit is kept, got %g" what limit)
+        (limit = 0.5);
+      (case, stats)
+  | _ -> failf "%s: a timeout in a case is a Fail naming the case" what
+
+let timeout_during_generation_names_the_case () =
+  let draws = ref 0 in
+  let gen =
+    Gen.map
+      (fun n ->
+        incr draws;
+        if !draws = 3 then raise (Failure.Control (`Timeout 0.5)) else n)
+      Gen.int
+  in
+  let case, stats =
+    expect_timed_out ~what:"at sample time"
+      (Property.run ~count:(`Config 50) ~root ~path:"gen timeout" gen
+         (fun _ _ -> ()))
+  in
+  equal ~msg:"the case the limit cut" int 2 case.Failure.case_index;
+  equal ~msg:"the cases that passed before it" int 2 case.Failure.passed;
+  equal ~msg:"and the stats agree" int 2 stats.Property.cases;
+  is_true ~msg:"a generated case, with the run's seed and its count"
+    ((not case.Failure.examples)
+    && case.Failure.root = root
+    && case.Failure.count = Some 50)
 
 let skip_during_generation_escapes_unchanged () =
   let gen =
@@ -848,17 +876,22 @@ let control_exceptions_propagate () =
   | _ -> failf "Skip_test must escape the engine unchanged"
   | exception other ->
       failf "expected Skip_test, got %s" (Printexc.to_string other));
-  match
-    Property.run ~root ~path:"timeout" Gen.int (fun _ _ ->
-        raise (Failure.Control (`Timeout 0.5)))
-  with
-  | exception Failure.Control (`Timeout limit) ->
-      is_true
-        ~msg:(Printf.sprintf "Timeout must keep its limit, got %g" limit)
-        (limit = 0.5)
-  | _ -> failf "Timeout must escape the engine unchanged"
-  | exception other ->
-      failf "expected Timeout, got %s" (Printexc.to_string other)
+  let case, _ =
+    expect_timed_out ~what:"in the law"
+      (Property.run ~root ~path:"timeout" Gen.int (fun _ _ ->
+           raise (Failure.Control (`Timeout 0.5))))
+  in
+  equal ~msg:"the first case, none passed" (pair int int) (0, 0)
+    (case.Failure.case_index, case.Failure.passed);
+  let case, _ =
+    expect_timed_out ~what:"in an example"
+      (Property.run ~examples:[ 1; 2 ] ~root ~path:"timeout" Gen.int (fun _ x ->
+           if x = 2 then raise (Failure.Control (`Timeout 0.5))))
+  in
+  is_true ~msg:"the second example, after one passed"
+    (case.Failure.examples
+    && case.Failure.case_index = 1
+    && case.Failure.passed = 1)
 
 (* Configuration *)
 
@@ -1353,8 +1386,8 @@ let suite =
       timeout_during_first_candidate_keeps_unshrunk );
     ( "timeout after accepted steps keeps the best-so-far",
       timeout_after_accepted_steps_keeps_best_so_far );
-    ( "timeout during generation escapes unchanged",
-      timeout_during_generation_escapes_unchanged );
+    ( "a timeout during generation names the case",
+      timeout_during_generation_names_the_case );
     ( "skip during generation escapes unchanged",
       skip_during_generation_escapes_unchanged );
     ( "printerless counterexample renders the placeholder",
@@ -1363,7 +1396,7 @@ let suite =
       mapped_counterexample_renders_its_shrunk_pre_image );
     ("msg and loc are preserved", msg_and_loc_are_preserved);
     ("generator crash is a failure", generator_crash_is_a_failure);
-    ("control exceptions propagate", control_exceptions_propagate);
+    ("a skip propagates, a timeout names the case", control_exceptions_propagate);
     ( "huge count does not overflow the budget",
       huge_count_does_not_overflow_the_budget );
     ("count zero passes vacuously", count_zero_passes_vacuously);

@@ -821,9 +821,6 @@ let with_timeout limit fn =
           disarm ();
           Printexc.raise_with_backtrace exn backtrace)
 
-let timeout_failure ?loc limit =
-  Failure.message ?loc (Pp.str "timed out after %gs" limit)
-
 (* Expected failures *)
 
 (* Whether a raw attempt outcome counts as failed for retries, -x, the
@@ -879,7 +876,7 @@ let run_attempt run frame (case : Test_tree.case) ~limit ~groups ~test_name =
              ())
     | `Skip reason -> if !skipped = None then skipped := Some reason
     | `Timeout limit ->
-        record_failure ph (timeout_failure ?loc:case.Test_tree.loc limit)
+        record_failure ph (Failure.timeout ?loc:case.Test_tree.loc limit)
     | `Exit ->
         record_failure ph
           (Failure.message ?loc:case.Test_tree.loc
@@ -990,7 +987,7 @@ let run_attempt run frame (case : Test_tree.case) ~limit ~groups ~test_name =
             | Error (`Timeout limit) ->
                 (* The alarm fired between two phase guards. *)
                 record_failure !phase
-                  (timeout_failure ?loc:case.Test_tree.loc limit)
+                  (Failure.timeout ?loc:case.Test_tree.loc limit)
             | Error c -> Failure.reraise c))
   in
   (* Reclamation runs after the attempt, outside the timeout window and the
@@ -1043,7 +1040,8 @@ let run_attempt run frame (case : Test_tree.case) ~limit ~groups ~test_name =
       ->
         true
     | Failure.Baseline _ | Failure.Equality _ | Failure.Containment _
-    | Failure.Raise _ | Failure.Property _ | Failure.Message _ ->
+    | Failure.Raise _ | Failure.Property _ | Failure.Timeout _
+    | Failure.Message _ ->
         false
   in
   let corrected =

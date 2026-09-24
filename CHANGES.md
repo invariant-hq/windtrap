@@ -322,7 +322,10 @@ Coverage and packaging:
   so far over `timed out after 5s while shrinking; counterexample may not
   be minimal`. A one-line message carries the same fact in its case
   (`property failed (case 4, shrunk 10000 steps, shrink limit reached):
-  …`, `…, shrinking stopped): …`, `…, shrinking timed out): …`).
+  …`, `…, shrinking stopped): …`, `…, shrinking timed out): …`). A
+  timeout before any case failed names the case it cut and the cases that
+  passed, `timed out after 0.5s in case 7 (7 passed)`, prints the labels
+  collected so far, and ends on the `replay:` that reaches that case.
 - The assertion that failed on the counterexample prints under `which
   failed at:`, over its location and source line, or under `which failed
   with:` when its line is unknown. A pre-image prints `computed from <p>`

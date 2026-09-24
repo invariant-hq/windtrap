@@ -158,6 +158,10 @@ val pp_failure :
     The entry of the inner failure comes last. It is an entry as above, nested,
     with no blank line after its source line and no hint lines.
 
+    {b Timeout.} One line, [timed out after <limit>s], which a case of a
+    property ends with [in case <K> (<N> passed)], or [in example <K>]. It is
+    the {!headline} too, and a generated case has a [replay:] line.
+
     {b Message.} The text prints line by line, and an empty text as a
     placeholder that says so.
 

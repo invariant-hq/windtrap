@@ -255,10 +255,26 @@ let run ?loc ?count ?max_discard ?(examples = []) ?summary ~root ~path gen body
     in
     Fail { failure; stats = stats () }
   in
+  (* The test's limit, expired in a case before any case failed. The
+     runner knows the test and the limit, the engine alone which case ran
+     and how many passed before it, which a replay needs: the failure is
+     built here. *)
+  let timed_out ~case_index ~examples limit =
+    let case =
+      {
+        Failure.case_index;
+        examples;
+        passed = !cases;
+        root;
+        count = config_count;
+      }
+    in
+    Fail { failure = Failure.timeout ?loc ~case limit; stats = stats () }
+  in
   (* One case, and the bookkeeping every case source shares: a pass commits
-     its labels and counts, a discard spends the budget, any other control
-     is the runner's. Only a failure differs between the two loops, so only
-     a failure comes back. *)
+     its labels and counts, a discard spends the budget, a timeout ends the
+     run in the case, any other control is the runner's. Only a failure and
+     a timeout differ between the two loops, so only they come back. *)
   let run_one value =
     match run_case ctx body value with
     | Ok () ->
@@ -269,6 +285,7 @@ let run ?loc ?count ?max_discard ?(examples = []) ?summary ~root ~path gen body
         incr discards;
         `Discarded
     | Error (#Failure.fault as fault) -> `Failed fault
+    | Error (`Timeout limit) -> `Timed_out limit
     | Error (#Failure.control as control) -> Failure.reraise control
   in
   (* Examples run first, unshrunk, unseeded, numbered separately. *)
@@ -277,6 +294,8 @@ let run ?loc ?count ?max_discard ?(examples = []) ?summary ~root ~path gen body
     | value :: rest -> (
         match run_one value with
         | `Passed | `Discarded -> run_examples (index + 1) rest
+        | `Timed_out limit ->
+            Some (timed_out ~case_index:index ~examples:true limit)
         | `Failed cls ->
             let rendered = Gen.Engine.render_value gen value in
             Some
@@ -305,6 +324,8 @@ let run ?loc ?count ?max_discard ?(examples = []) ?summary ~root ~path gen body
           | Error (#Failure.fault as fault) ->
               fail ~rendered:"<generator raised before producing a value>"
                 ~case_index:attempts ~shrink_steps:0 ~examples:false fault
+          | Error (`Timeout limit) ->
+              timed_out ~case_index:attempts ~examples:false limit
           | Error (#Failure.control as control) ->
               (* Delivered inside the generator (an alarm at a poll point, a
                  skip in a generator's function): the runner's, never a
@@ -316,6 +337,8 @@ let run ?loc ?count ?max_discard ?(examples = []) ?summary ~root ~path gen body
               with
               | `Passed -> generate ~passed:(passed + 1) ~attempts:(attempts + 1)
               | `Discarded -> generate ~passed ~attempts:(attempts + 1)
+              | `Timed_out limit ->
+                  timed_out ~case_index:attempts ~examples:false limit
               | `Failed cls ->
                   let final_tree, steps, final_cls, shrink_end =
                     shrink ~budget:shrink_budget ~body tree cls

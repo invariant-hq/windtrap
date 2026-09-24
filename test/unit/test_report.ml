@@ -3872,7 +3872,30 @@ let test_location_forms () =
     recorded;
   equal ~msg:"runner: <file:line>, then the fact" string
     "    test/test_users.ml:88\n    timed out after 0.2s\n"
-    (failure_block (located (Failure.message "timed out after 0.2s")));
+    (failure_block (located (Failure.timeout 0.2)));
+  (* A property's timeout before any failure names the case it cut and the
+     passes before it, and replays: the seed reaches that case again. *)
+  let in_case ?count ~examples case_index passed =
+    located
+      (Failure.timeout
+         ~case:
+           { Failure.case_index; examples; passed; root = Fixtures.root; count }
+         0.5)
+  in
+  equal ~msg:"a property's timeout: the case, the passes, the replay" string
+    "    test/test_users.ml:88\n\
+    \    timed out after 0.5s in case 7 (7 passed)\n\
+    \    replay: ./t.exe --seed s1:7be1d2c904aa31f5 --prop-count 500 -f 'p'\n"
+    (failure_block ~invocation:(`Exe "./t.exe") ~filter:"p"
+       (in_case ~count:500 ~examples:false 7 7));
+  equal ~msg:"the headline is the fact" string
+    "timed out after 0.5s in case 7 (7 passed)"
+    (Report.headline (in_case ~examples:false 7 7));
+  equal ~msg:"an example has no replay" string
+    "    test/test_users.ml:88\n\
+    \    timed out after 0.5s in example 2 (1 passed)\n"
+    (failure_block ~invocation:(`Exe "./t.exe") ~filter:"p"
+       (in_case ~examples:true 1 1));
   is_true ~msg:"no location: the entry opens on its facts"
     (String.starts_with ~prefix:"    expected  1\n"
        (failure_block (Failure.equality ~expected:"1" ~actual:"2" ())));

@@ -135,7 +135,9 @@ type 'a testable = 'a Testable.t
     share the window, and a teardown gets what is left of it. When they spent it
     all, the teardown gets a fresh window, so a body that times out still gets a
     bounded teardown. A timeout fails the phase it interrupted with
-    [timed out after <limit>s], located at the test's declaration.
+    [timed out after <limit>s], located at the test's declaration. In a property
+    before any case failed, the line ends with the case it cut and the cases
+    that passed, as in [in case 7 (7 passed)].
 
     The limit is a [SIGALRM] interval timer, so it has no effect on Windows and
     cannot interrupt a blocked C call. The runner owns [SIGALRM] while a test
@@ -817,9 +819,9 @@ val pass : 'a testable
 
     A counterexample found in a generated case ends its block with a [replay:]
     line, the command that runs the test again under the same seed. The command
-    is spelled for the way the run was started. No other failure prints one: a
-    failing example, a property that gave up, an unmet {!cover}, a timeout
-    before any case failed.
+    is spelled for the way the run was started. A timeout in a generated case,
+    before any case failed, prints one too. No other failure prints one: a
+    failing example, a property that gave up, an unmet {!cover}.
 
     Shrinking takes at most [10_000] steps. It also stops when a function of the
     generator raises on a candidate, and the block then names that exception, as

@@ -226,9 +226,26 @@ type kind =
               printed, its backtrace and no location. A failure that
               {!Property.run} builds always has one. *)
     }  (** A property failed. *)
+  | Timeout of { limit : float; case : timed_case option }
+      (** The test's limit, in seconds, expired. [case] is the case of a
+          property that was running then, when no case had failed before it, and
+          [None] for any other timeout. *)
   | Message of text
       (** A direct failure: the text of a [fail], or a failure that the library
-          words itself, as it does a timeout and an intercepted [exit]. *)
+          words itself, as it does an intercepted [exit]. *)
+
+and timed_case = {
+  case_index : int;
+      (** The index of the case, as the [case_index] of a
+          {!constructor-Property} failure. *)
+  examples : bool;  (** [true] iff the case is one of the explicit examples. *)
+  passed : int;  (** The cases that had passed, the examples included. *)
+  root : Seed.seed;  (** The root seed of the run. *)
+  count : int option;
+      (** The case count when the configuration of the run gave it, as the
+          [count] of a {!constructor-Property} failure. *)
+}
+(** The type for the case of a property that a timeout interrupted. *)
 
 (** The type for how a shrink search ended. Every case but {!Converged} says
     that the counterexample may not be minimal. *)
@@ -459,6 +476,10 @@ val property :
     [summary] default to [None], [shrink_end] to {!Converged} and [rendering] to
     {!Value}. Nothing is validated, so the invariants that {!type-kind} states
     are the producer's to keep. *)
+
+val timeout : ?loc:Loc.t -> ?case:timed_case -> float -> t
+(** [timeout ?case limit] is a {!constructor-Timeout} failure for [limit]
+    seconds, in [case] when given. *)
 
 val message : ?loc:Loc.t -> string -> t
 (** [message text] is a {!Message} failure that carries [text]. *)

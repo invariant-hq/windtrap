@@ -125,9 +125,12 @@ let failure_list = function
 
 let phases_of fs = List.map (fun f -> f.Failure.phase) fs
 
+(* The words of a failure the library words itself: a message, or a
+   timeout as its block reads. *)
 let message_of (f : Failure.t) =
   match f.Failure.kind with
   | Failure.Message m -> m.Failure.kept
+  | Failure.Timeout _ -> Report_sections.headline f
   | _ -> "<not a message>"
 
 (* Whether [loc] is the site of [pos], a [__POS__] of this file. *)
@@ -1228,11 +1231,26 @@ let () =
     in
     let tests = [ Run.prop "slow-pass" Gen.int (fun _ -> Unix.sleepf 0.05) ] in
     expect_run "pre-failure timeout suite runs" ~config tests @@ fun outcome ->
+    (* The engine alone knows which case the limit cut, and how many passed
+       before it: the timeout carries both, and the seed a replay needs. *)
     match failure_list (outcome_of outcome [ "slow-pass" ]) with
-    | [ f ] ->
-        check "prop timeout before any failure is a plain timeout"
-          (contains "timed out" (message_of f))
-    | _ -> check "pre-failure timeout: one failure" false
+    | [
+     {
+       Failure.kind =
+         Failure.Timeout
+           {
+             limit;
+             case = Some { case_index; examples = false; passed; root; count };
+           };
+       _;
+     };
+    ] ->
+        check "prop timeout before any failure names the limit" (limit = 0.2);
+        check "and the case it cut, after the cases that passed"
+          (case_index > 0 && passed = case_index);
+        check "with the run's seed and no configured count"
+          (root = config.Run.seed && count = None)
+    | _ -> check "pre-failure timeout: one timeout in a case" false
 
 (* The per-test budget is declarable at the site — [prop ~timeout] and
    [cases ~timeout]/[~retries] — not only through the global [--timeout]:
@@ -3852,7 +3870,9 @@ let () =
     | None -> None
   in
   check "a property ended by a skip has no stats" (stats [ "skips" ] = None);
-  check "nor one ended by a timeout" (stats [ "times out" ] = None);
+  check "one ended by a timeout has the stats of the cases before it"
+    (Option.map (fun (s : Property.stats) -> s.cases) (stats [ "times out" ])
+    = Some 0);
   check "the law's skip skips the test"
     (outcome_of outcome [ "skips" ] = Some (Failure.Skip None))
 

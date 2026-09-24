@@ -39,6 +39,17 @@ let case_desc ~examples ~case_index ~shrink_steps =
          spf ", shrunk %d step%s" shrink_steps
            (if shrink_steps = 1 then "" else "s"))
 
+(* A timeout, and for one inside a property the case it cut and the
+   passes before it, which a replay needs to reach that case again. *)
+let timeout_fact ~limit (case : Failure.timed_case option) =
+  spf "timed out after %gs%s" limit
+    (match case with
+    | None -> ""
+    | Some { case_index; examples; passed; _ } ->
+        spf " in %s (%d passed)"
+          (case_desc ~examples ~case_index ~shrink_steps:0)
+          passed)
+
 (* POSIX single-quoting: closes the quote around every embedded [']. A
    control byte would break the line the word sits on: such a word takes
    the [$'…'] form, which bash, zsh and ksh read. *)
@@ -150,7 +161,7 @@ let accept_line invocation ~filter (f : Failure.t) =
   | Failure.Baseline { withheld = Some _; _ }
   | Failure.Baseline { state = Failure.Unresolvable _; _ }
   | Failure.Equality _ | Failure.Containment _ | Failure.Raise _
-  | Failure.Property _ | Failure.Message _ ->
+  | Failure.Property _ | Failure.Timeout _ | Failure.Message _ ->
       None
 
 (* Why a failure offers no [accept:]: the run kept none of the attempt's
@@ -178,14 +189,17 @@ let withheld_fact (f : Failure.t) =
             "the test also skipped; skip before the expectation or not at all, \
              and rerun")
   | Failure.Baseline _ | Failure.Equality _ | Failure.Containment _
-  | Failure.Raise _ | Failure.Property _ | Failure.Message _ ->
+  | Failure.Raise _ | Failure.Property _ | Failure.Timeout _ | Failure.Message _
+    ->
       None
 
 let replay_of ~armed invocation ~filter (f : Failure.t) =
   match f.kind with
-  | Failure.Property { examples = false; root; count; _ } ->
+  | Failure.Property { examples = false; root; count; _ }
+  | Failure.Timeout { case = Some { examples = false; root; count; _ }; _ } ->
       Some (replay_line ?count ~armed invocation ~seed:root ~filter)
   | Failure.Property { examples = true; _ }
+  | Failure.Timeout { case = Some { examples = true; _ } | None; _ }
   | Failure.Equality _ | Failure.Containment _ | Failure.Raise _
   | Failure.Baseline _ | Failure.Message _ ->
       None
@@ -483,6 +497,7 @@ let headline (f : Failure.t) =
           | Failure.Pre_image -> " computed from "
           | Failure.Value -> " ")
           (shown_text (Option.value summary ~default:rendered))
+    | Failure.Timeout { limit; case } -> timeout_fact ~limit case
     | Failure.Message m -> (
         match shown_text m with "" -> "(empty failure message)" | m -> m)
   in
@@ -1153,6 +1168,7 @@ let rec pp_gen ~ansi ~excerpt ~inner ~hints:hinted ~filter ~invocation ~armed
           pp_gen ~ansi ~excerpt ~inner:true ~hints:false ~filter ~invocation
             ~armed ~ind:(ind ^ "  ") ppf i
       | None -> ())
+  | Failure.Timeout { limit; case } -> put_text (timeout_fact ~limit case)
   | Failure.Message m -> (
       match shown_text m with
       | "" -> put_text "(empty failure message)"

@@ -25,9 +25,11 @@
     (see {!run}). It runs the law again on candidates, so a law must be
     deterministic.
     - A [`Discard] discards the case.
-    - Any other control is raised again through {!run} while no generated case
-      has failed: during the examples, a generation, or the first run of a case.
-      Once a generated case has failed, a [`Timeout] ends the shrink search and
+    - A [`Timeout] while no case has failed, during an example, a generation or
+      the first run of a case, ends the run in a [Fail] whose failure is a
+      [Failure.Timeout] that names the case. Any other control is raised again
+      through {!run} then.
+    - Once a generated case has failed, a [`Timeout] ends the shrink search and
       any other control rejects the candidate, so nothing replaces the failure
       found (see {!run}).
 
@@ -131,6 +133,12 @@ type stats = {
       was recorded. For a generator that raised it holds the generator's
       exception.
 
+    The [failure] of a [Fail] that a timeout ended before any case failed is
+    instead a [Failure.Timeout] located at [loc]. Its case is that of the
+    example, the generation or the run that the limit cut, with [passed] the
+    [cases] of the stats, and [root] and [count] as a {!Failure.Property}
+    failure has them.
+
     The [stats] of a [Fail] are those of the moment the case failed, and an
     unmarked {!cover} label never turns a [Fail] into another outcome. *)
 type outcome =
@@ -222,7 +230,7 @@ val run :
 
     Raises [Invalid_argument] if [count] or [max_discard] is negative, inside
     the running test, where [run] executes. Raises a [Failure.Control] other
-    than [`Discard] when [law] or [gen] raises it outside the search, and no
-    outcome then exists. A control delivered while the counterexample is
-    formatted does not leave [run], since the guard of [Gen.Engine.render] turns
-    it into text. *)
+    than [`Discard] and [`Timeout] when [law] or [gen] raises it outside the
+    search, and no outcome then exists. A control delivered while the
+    counterexample is formatted does not leave [run], since the guard of
+    [Gen.Engine.render] turns it into text. *)
