@@ -111,14 +111,3 @@ val all_excluded : ext:string -> freshness list -> string
     file. It counts the files, names them by [ext], and says whether they are
     stale, orphaned, or both, with the number of orphaned ones. [excluded] must
     not be empty and must hold no [Fresh], and neither is checked. *)
-
-(**/**)
-
-(* [describe] has no caller outside this module, because the two commands go
-   through [warnings]. [describe ~path f] is the warning line of the excluded
-   file at [path]: the path, the recorded executable, why the file is excluded
-   and that it is. It raises [Assert_failure] on [Fresh]. *)
-
-val describe : path:string -> freshness -> string
-
-(**/**)
