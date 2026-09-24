@@ -282,14 +282,28 @@ type span = { style : Pp.style option; text : string }
 let plain text = { style = None; text }
 let styled style text = { style = Some style; text }
 
+let sgr = function
+  | `Bold -> "\027[1m"
+  | `Faint -> "\027[2m"
+  | `Red -> "\027[31m"
+  | `Green -> "\027[32m"
+  | `Yellow -> "\027[33m"
+  | `Cyan -> "\027[36m"
+  | `White -> "\027[37m"
+  | `Bold_red -> "\027[1;31m"
+  | `Bold_green -> "\027[1;32m"
+
+(* An empty text is left bare: wrapping it would emit an open code and its
+   reset with nothing between them, invisible but real bytes on lines
+   assembled from optional fragments. *)
 let render ~ansi spans =
   String.concat ""
     (List.map
        (fun { style; text } ->
          let text = Text.escape_controls text in
          match style with
-         | Some style -> Pp.styled_string ~ansi style text
-         | None -> text)
+         | Some style when ansi && text <> "" -> sgr style ^ text ^ "\027[0m"
+         | Some _ | None -> text)
        spans)
 
 (* The columns of [text] as it prints: its code points once escaped. The

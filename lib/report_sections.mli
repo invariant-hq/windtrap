@@ -238,8 +238,11 @@ val styled : Pp.style -> string -> span
 (** [styled style text] is [text] under [style]. *)
 
 val render : ansi:bool -> span list -> string
-(** [render ~ansi l] is [l] as one line: each text escaped, then styled iff
-    [ansi]. Every line that this module formats goes through it. *)
+(** [render ~ansi l] is [l] as one line: each text escaped, then, iff [ansi] and
+    the text is not empty, between the SGR sequence of its style and the reset
+    [ESC \[0m]. Every line that this module formats goes through it, and apart
+    from the erase of {!Report}'s live line it is the only writer of an escape
+    sequence. *)
 
 val width : span list -> int
 (** [width l] is the columns of [l] as it prints, in code points, escapes

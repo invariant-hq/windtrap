@@ -99,30 +99,3 @@ let result ~ok ~error ppf = function
 
 let pair pp_a pp_b ppf (a, b) = Format.fprintf ppf "(@[%a,@ %a@])" pp_a a pp_b b
 let brackets pp ppf v = Format.fprintf ppf "[@[%a@]]" pp v
-
-(* Styling *)
-
-let code_of_style = function
-  | `Bold -> "\027[1m"
-  | `Faint -> "\027[2m"
-  | `Red -> "\027[31m"
-  | `Green -> "\027[32m"
-  | `Yellow -> "\027[33m"
-  | `Cyan -> "\027[36m"
-  | `White -> "\027[37m"
-  | `Bold_red -> "\027[1;31m"
-  | `Bold_green -> "\027[1;32m"
-
-let reset = "\027[0m"
-
-(* An empty payload is returned bare: wrapping it would emit an open code
-   and its reset with nothing between them — invisible, but real bytes on
-   lines that are assembled from optional fragments (the attempt suffix on
-   a FAIL header is empty on all but a retried test).
-
-   There is no styled ['a t] combinator, because an escape sequence is
-   bytes that [Format] counts as columns. The renderer styles fragments of
-   a line that it has already laid out and measured. *)
-let styled_string ~ansi style s =
-  if (not ansi) || String.length s = 0 then s
-  else code_of_style style ^ s ^ reset

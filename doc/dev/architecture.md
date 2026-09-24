@@ -157,10 +157,9 @@ JUnit and GitHub show the same frames, and only a trailing run of
 windtrap frames is dropped (a user callback keeps itself and the frames
 below it). `Report` reads its presentation settings once, at `create`.
 The section vocabulary is priced like `Failure.kind`: a new constructor
-is a design amendment. `Pp` has no styled printer combinator, only
-`styled_string` over a finished string, because a report line is a list
-of spans that `Report_sections.render` escapes and styles once, and
-that `Report_sections.width` measures; `Pp.float_exact` is the only float
+is a design amendment. `Pp` writes no escape sequence: a report line is
+a list of spans that `Report_sections.render` escapes and styles once,
+and that `Report_sections.width` measures; `Pp.float_exact` is the only float
 printer, so anything printed can be pasted back as the same double, and
 a lossy `%g` spelling is asked for at the call site.
 

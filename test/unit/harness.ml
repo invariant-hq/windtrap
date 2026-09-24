@@ -48,7 +48,8 @@ let resolve_ansi () =
     ~inside_dune:(Os.inside_dune ()) ~term_dumb:(Os.term_dumb ())
 
 (* The check lines' FAIL tag, in the renderer's own style. *)
-let fail_tag ~ansi = Windtrap.Private.Pp.styled_string ~ansi `Red "FAIL"
+let fail_tag ~ansi =
+  Windtrap.Private.Report_sections.(render ~ansi [ styled `Red "FAIL" ])
 
 let check name cond =
   incr count;
@@ -185,7 +186,9 @@ let with_temp_root ?(prefix = "windtrap-meta-") f =
    them. *)
 
 let summary_line ?(skipped = 0) ~ansi ~suite ~failures ~count ~duration () =
-  let st style s = Windtrap.Private.Pp.styled_string ~ansi style s in
+  let st style s =
+    Windtrap.Private.Report_sections.(render ~ansi [ styled style s ])
+  in
   if count = 0 then Printf.sprintf "%s: no checks ran." suite
   else
     let counts =

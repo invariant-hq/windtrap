@@ -184,7 +184,6 @@ let with_redirected_output root fn =
     Unix.close saved_out;
     Unix.close saved_err
   in
-  Windtrap.Private.Pp.styled_string ~ansi:false `Red "" |> ignore;
   let result = Fun.protect ~finally:restore fn in
   let contents path = In_channel.with_open_bin path In_channel.input_all in
   (result, contents out, contents err)

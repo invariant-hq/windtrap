@@ -3,19 +3,14 @@
    SPDX-License-Identifier: ISC
   ---------------------------------------------------------------------------*)
 
-(** Printers over [Format], and explicit ANSI styling.
+(** Printers over [Format], and the styles of the report.
 
-    A printer is a {!type-t}. {!str}, {!pf} and {!to_string} format with one,
-    and {!styled_string} is the one function that writes an escape sequence.
+    A printer is a {!type-t}. {!str}, {!pf} and {!to_string} format with one.
 
     The module holds what the library prints with and is no general printing
     toolbox, so an addition must come with its caller. No value writes to a
-    standard channel, because the sink is always an argument.
-
-    A producer of a failure's payload must not call {!styled_string}. Only a
-    renderer does, with the [ansi] decision of its sink ({!Report.create}). No
-    global state controls styling and no printer here writes an escape sequence,
-    so a payload holds one only if a caller's own printer wrote it. *)
+    standard channel, because the sink is always an argument, and no value
+    writes an escape sequence. *)
 
 (** {1:types Types} *)
 
@@ -32,8 +27,9 @@ type style =
   | `White  (** A white foreground. *)
   | `Bold_red  (** Bold and red, as one style. *)
   | `Bold_green  (** Bold and green, as one style. *) ]
-(** The type for the styles of {!styled_string}. Bold with a colour is a style
-    of its own because styles do not nest (see {!section-styling}). *)
+(** The type for the styles of a report's text ({!Report_sections.span}). Bold
+    with a colour is a style of its own because styles do not nest: the reset
+    that closes one style closes every style. *)
 
 (** {1:output Formatting} *)
 
@@ -113,19 +109,3 @@ val brackets : 'a t -> 'a t
 
 val semi : unit t
 (** [semi] formats [;] and a break hint. *)
-
-(** {1:styling Styling}
-
-    Styles do not nest, because the reset that closes one style closes every
-    style. A caller must therefore style sibling fragments, and never a fragment
-    that holds a styled one.
-
-    A styled string holds its escape sequences as plain bytes, which [Format]
-    counts as columns. A caller that lays out columns must measure the text
-    before it is styled. *)
-
-val styled_string : ansi:bool -> style -> string -> string
-(** [styled_string ~ansi style s] is [s] between the escape sequence of [style]
-    and the reset when [ansi] is [true], and [s] itself when [ansi] is [false].
-    One rendering therefore serves a sink that takes styling and a sink that
-    takes none. An empty [s] is returned as it is under both. *)

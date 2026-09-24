@@ -92,37 +92,6 @@ let tests =
           (s (Pp.pair Pp.int Pp.string) (1, "x"));
         equal ~msg:"brackets" string "[1; 2]"
           (s (Pp.brackets (Pp.list Pp.int)) [ 1; 2 ]));
-    test "styled_string is the identity without ansi and wraps with it"
-      (fun () ->
-        equal ~msg:"styled_string ~ansi:false is the identity" string "plain"
-          (Pp.styled_string ~ansi:false `Green "plain");
-        equal ~msg:"styled_string ~ansi:true wraps" string "\027[32mok\027[0m"
-          (Pp.styled_string ~ansi:true `Green "ok");
-        (* Styling nothing is nothing: report lines are assembled from
-           optional fragments, and an empty one must not leave an open code
-           and its reset behind. *)
-        equal ~msg:"styled_string ~ansi:true leaves the empty string bare"
-          string ""
-          (Pp.styled_string ~ansi:true `Faint ""));
-    (* A style is picked by name at the call site, so a swapped code is a
-       silently wrong colour rather than a failure. *)
-    test "each style has its own SGR code" (fun () ->
-        List.iter
-          (fun (name, style, code) ->
-            equal ~msg:name string
-              ("\027[" ^ code ^ "mx\027[0m")
-              (Pp.styled_string ~ansi:true style "x"))
-          [
-            ("bold", `Bold, "1");
-            ("faint", `Faint, "2");
-            ("red", `Red, "31");
-            ("green", `Green, "32");
-            ("yellow", `Yellow, "33");
-            ("cyan", `Cyan, "36");
-            ("white", `White, "37");
-            ("bold red is one sequence", `Bold_red, "1;31");
-            ("bold green is one sequence", `Bold_green, "1;32");
-          ]);
     test "abstract is the placeholder <abstract>" (fun () ->
         equal string "<abstract>" Pp.abstract);
     test "option puts no parentheses around its value" (fun () ->
@@ -165,7 +134,6 @@ let tests =
         Pp.flush ppf ();
         ignore (Pp.str "%d" 1 : string);
         ignore (Pp.to_string Pp.int 1 : string);
-        ignore (Pp.styled_string ~ansi:true `Red "r" : string);
         Format.pp_print_flush Format.std_formatter ();
         Format.pp_print_flush Format.err_formatter ();
         flush stdout;

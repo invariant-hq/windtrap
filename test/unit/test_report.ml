@@ -5191,7 +5191,30 @@ let test_render () =
     "a\\x0ab\tc\027[31m\\x1b[0m\027[0m"
     (Sections.render ~ansi:true line);
   equal ~msg:"the width counts each escape's four columns" int 15
-    (Sections.width line)
+    (Sections.width line);
+  (* Styling nothing is nothing: lines are assembled from optional
+     fragments, and an empty one must not leave an open code and its reset
+     behind. *)
+  equal ~msg:"an empty styled span is left bare" string ""
+    (Sections.render ~ansi:true [ Sections.styled `Faint "" ]);
+  (* A style is picked by name at the call site, so a swapped code is a
+     silently wrong colour rather than a failure. *)
+  List.iter
+    (fun (name, style, code) ->
+      equal ~msg:name string
+        ("\027[" ^ code ^ "mx\027[0m")
+        (Sections.render ~ansi:true [ Sections.styled style "x" ]))
+    [
+      ("bold", `Bold, "1");
+      ("faint", `Faint, "2");
+      ("red", `Red, "31");
+      ("green", `Green, "32");
+      ("yellow", `Yellow, "33");
+      ("cyan", `Cyan, "36");
+      ("white", `White, "37");
+      ("bold red is one sequence", `Bold_red, "1;31");
+      ("bold green is one sequence", `Bold_green, "1;32");
+    ]
 
 let test_shell_word () =
   equal ~msg:"the bare-word alphabet as is" string "aZ9_-./:=+,@%"
