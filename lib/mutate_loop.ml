@@ -1071,9 +1071,7 @@ let execute_and_report ~suite (config : Run.config) tests =
   match config.Run.mutation with
   | Run.No_mutation -> Ran (Report.run ~suite config tests)
   | Run.Armed spec -> arm_mode (renderer ()) ~spec ~suite config tests
-  | Run.Loop scope -> (
+  | Run.Loop scope ->
       if Sys.win32 then
         refuse "mutation testing needs Unix.fork, which Windows does not have"
-      else
-        try loop (renderer ()) ~scope ~suite config tests
-        with Supervision message -> refuse "%s" message)
+      else loop (renderer ()) ~scope ~suite config tests
