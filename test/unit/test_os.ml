@@ -44,6 +44,8 @@ module Clock_suite = struct
             (s >= seconds before);
           is_true ~msg:"count_s is no more than the count after it"
             (s <= seconds after));
+      test "count_s is never negative" (fun () ->
+          at_least float_exact ~than:0. (Os.count_s (Os.counter ())));
     ]
 end
 
@@ -92,6 +94,13 @@ module Env_suite = struct
               Os.setenv "WINDTRAP=BAD" (Some "x"));
           raises_match ~msg:"the empty name" refused (fun () ->
               Os.setenv "" None));
+      test "set refuses a bad name before any change" (fun () ->
+          let var = "WINDTRAP_TEST_ENV_EQ" in
+          setenv var None;
+          raises_match Exn.invalid_arg (fun () ->
+              Os.setenv (var ^ "=x") (Some "v"));
+          equal ~msg:"no variable was bound" (option string) None
+            (Sys.getenv_opt var));
       test "empty value reads as unset" (fun () ->
           setenv "WINDTRAP_FILTER" (Some "");
           equal (option string) None (string_of "WINDTRAP_FILTER");
@@ -124,6 +133,17 @@ module Env_suite = struct
             (Os.bool_of_string "");
           contains ~msg:"the expected clause names the spellings" ~sub:"1/0"
             Os.bool_expected);
+      test "bool_expected names every spelling but y and n" (fun () ->
+          let words =
+            String.split_on_char ' '
+              (String.map
+                 (fun c -> if c = '/' || c = ',' || c = ':' then ' ' else c)
+                 Os.bool_expected)
+          in
+          List.iter
+            (fun w -> mem ~msg:w string w words)
+            [ "1"; "0"; "true"; "false"; "yes"; "no"; "on"; "off" ];
+          List.iter (fun w -> is_false ~msg:w (List.mem w words)) [ "y"; "n" ]);
       test "comma lists split, trim, and drop empties" (fun () ->
           equal ~msg:"tags split and trimmed" (list string) [ "a"; "b"; "c" ]
             (Os.split_comma "a, b ,,c ");
@@ -225,7 +245,15 @@ module Env_suite = struct
           setenv "TERM" (Some "xterm-256color");
           is_false ~msg:"a capable TERM is not dumb" (Os.term_dumb ());
           setenv "TERM" (Some "");
-          is_false ~msg:"unset TERM is not dumb" (Os.term_dumb ()));
+          is_false ~msg:"unset TERM is not dumb" (Os.term_dumb ());
+          (* Compared as it is: no case folding, no trimming. *)
+          setenv "TERM" (Some "DUMB");
+          is_false ~msg:"another case is not dumb" (Os.term_dumb ());
+          setenv "TERM" (Some "dumb ");
+          is_false ~msg:"a padded value is not dumb" (Os.term_dumb ()));
+      test "color_mode_of_string does not trim" (fun () ->
+          is_none ~msg:"a leading space" (Os.color_mode_of_string " always");
+          is_none ~msg:"a trailing newline" (Os.color_mode_of_string "never\n"));
     ]
 end
 
@@ -585,15 +613,55 @@ module Path_suite = struct
           equal ~msg:"error carries the unproven candidate"
             (result string string) (Error "/elsewhere/foo.ml")
             (ok "/elsewhere/foo.ml"));
+      test "reconstruct strips a sandboxed action's build prefix" (fun () ->
+          equal (result string string) (Ok "/proj/test/foo.ml")
+            (Os.reconstruct ~root:"/proj"
+               "_build/.sandbox/3f/default/test/foo.ml"));
+      test "reconstruct's error candidate is resolved, not normalized"
+        (fun () ->
+          let ok input = Os.reconstruct ~root:"/proj" input in
+          equal ~msg:"an escape" (result string string)
+            (Error "/proj/test/../../escape.ml")
+            (ok "test/../../escape.ml");
+          equal ~msg:"an escape out of a build tree" (result string string)
+            (Error "/proj/../../etc/passwd")
+            (ok "_build/default/../../etc/passwd");
+          equal ~msg:"an absolute path elsewhere" (result string string)
+            (Error "/elsewhere/./a//foo.ml")
+            (ok "/elsewhere/./a//foo.ml"));
+      test "reconstruct is lexical" (fun () ->
+          equal ~msg:"a root that does not exist" (result string string)
+            (Ok "/no/such/root/a.ml")
+            (Os.reconstruct ~root:"/no/such/root" "a.ml");
+          if Sys.win32 then skip ~reason:"POSIX only" ();
+          (* The link points out of the root; resolving it would refuse the
+             path or move it. *)
+          let root = temp_dir () in
+          Unix.symlink "/elsewhere" (Filename.concat root "link");
+          equal ~msg:"a symbolic link is not resolved" (result string string)
+            (Ok (root ^ "/link/x.ml"))
+            (Os.reconstruct ~root "link/x.ml"));
+      test "build_root cuts after the build directory and its context"
+        (fun () ->
+          let root = option string in
+          equal ~msg:"a build context" root (Some "/w/_build/default")
+            (Os.build_root "/w/_build/default/test");
+          equal ~msg:"a sandboxed action's context" root
+            (Some "/w/_build/.sandbox/3f/default")
+            (Os.build_root "/w/_build/.sandbox/3f/default/test");
+          equal ~msg:"backslashes" root (Some "/w/_build/default")
+            (Os.build_root "\\w\\_build\\default\\test");
+          equal ~msg:"a build directory with no context" root None
+            (Os.build_root "/w/_build");
+          equal ~msg:"no build directory" root None (Os.build_root "/w/src"));
       test "sanitize_component" (fun () ->
           equal ~msg:"safe name unchanged" string "abc-1_2.x"
             (Os.sanitize_component "abc-1_2.x");
           (* A name the mapping altered carries a digest of the original:
              without it the mapping is many-to-one and two tests share one
-             capture log, which Capture opens O_TRUNC. The shape is the
-             contract, not the digest bytes — pinning the hex would break on
-             any digest change without catching a defect, and the injectivity
-             it stands for is asserted directly just below. *)
+             capture log, which Capture opens O_TRUNC. The injectivity it
+             stands for is asserted directly just below, and the digest's
+             bytes by the MD5 test. *)
           let altered = Os.sanitize_component "a b/c" in
           equal ~msg:"unsafe chars become underscores" string "a_b_c"
             (String.sub altered 0 (min 5 (String.length altered)));
@@ -626,6 +694,16 @@ module Path_suite = struct
             (Os.sanitize_component long);
           not_equal ~msg:"distinct long names stay distinct" string sanitized
             (Os.sanitize_component (String.make 100 'b')));
+      (* Digests computed apart from windtrap, with Python's hashlib. *)
+      test "sanitize_component's digest is MD5" (fun () ->
+          equal ~msg:"the first 8 digits on a changed name" string
+            "a_b_c-22ce5bc5"
+            (Os.sanitize_component "a b/c");
+          equal ~msg:"the whole digest on a long name" string
+            (String.make 40 'a' ^ "_36a92cc94a9e0fa21f625f8bfb007adf")
+            (Os.sanitize_component (String.make 100 'a'));
+          equal ~msg:"the empty name" string "unnamed-d41d8cd9"
+            (Os.sanitize_component ""));
       test "mkdir_p creates nested directories and is idempotent" (fun () ->
           let deep = Filename.concat (temp_dir ()) "a/b/c" in
           Os.mkdir_p deep;
@@ -638,6 +716,44 @@ module Path_suite = struct
           is_true ~msg:"file_exists on a directory" (Os.file_exists dir);
           is_false ~msg:"file_exists on a missing path"
             (Os.file_exists (Filename.concat dir "missing")));
+      test "file_exists is false on any error" (fun () ->
+          let file = temp_file () in
+          is_false ~msg:"a path under a regular file (ENOTDIR)"
+            (Os.file_exists (Filename.concat file "x"));
+          if Sys.win32 then skip ~reason:"POSIX only" ();
+          if Unix.geteuid () = 0 then
+            skip ~reason:"root ignores directory permissions" ();
+          let locked = Filename.concat (temp_dir ()) "locked" in
+          Unix.mkdir locked 0o700;
+          let inside = Filename.concat locked "x" in
+          close_out (open_out inside);
+          Unix.chmod locked 0o000;
+          Fun.protect
+            ~finally:(fun () -> Unix.chmod locked 0o700)
+            (fun () ->
+              is_false ~msg:"a file under an unreadable directory (EACCES)"
+                (Os.file_exists inside)));
+      test "mkdir_p leaves an existing file alone" (fun () ->
+          let file = temp_file () in
+          Out_channel.with_open_bin file (fun oc -> output_string oc "kept");
+          Os.mkdir_p file;
+          equal ~msg:"the file keeps its bytes" string "kept"
+            (In_channel.with_open_bin file In_channel.input_all);
+          raises_match ~msg:"a directory under it cannot be made"
+            (function
+              | Unix.Unix_error (Unix.ENOTDIR, _, _) -> true | _ -> false)
+            (fun () -> Os.mkdir_p (Filename.concat file "sub")));
+      test "mkdir_p creates with 0o770 under the umask" (fun () ->
+          if Sys.win32 then skip ~reason:"POSIX only" ();
+          let deep = Filename.concat (temp_dir ()) "a/b" in
+          let previous = Unix.umask 0o020 in
+          Fun.protect
+            ~finally:(fun () -> ignore (Unix.umask previous))
+            (fun () -> Os.mkdir_p deep);
+          List.iter
+            (fun dir ->
+              equal ~msg:dir int 0o750 ((Unix.stat dir).Unix.st_perm land 0o777))
+            [ deep; Filename.dirname deep ]);
       test "project_root: explicit override wins" (fun () ->
           setenv "WINDTRAP_PROJECT_ROOT" (Some "/tmp/override");
           equal ~msg:"override wins" string "/tmp/override" (Os.project_root ());
@@ -716,6 +832,60 @@ module Path_suite = struct
               equal ~msg:"the logs go to the temporary directory" string
                 (Filename.concat (Filename.get_temp_dir_name ()) "windtrap")
                 (Os.default_log_dir ()));
+      test "a relative INSIDE_DUNE is made absolute against the cwd" (fun () ->
+          (* A working directory outside every build tree, so the only
+             build directory in sight is the one the variable names. *)
+          let cwd = temp_dir () in
+          chdir cwd;
+          let cwd = Sys.getcwd () in
+          setenv "WINDTRAP_PROJECT_ROOT" None;
+          setenv "INSIDE_DUNE" (Some "w/_build/default");
+          equal ~msg:"build_dir" (option string)
+            (Some (cwd ^ "/w/_build"))
+            (Os.build_dir ());
+          equal ~msg:"project_root" string (cwd ^ "/w") (Os.project_root ()));
+      test "a working directory that is gone" (fun () ->
+          let gone = Filename.concat (temp_dir ()) "gone" in
+          Unix.mkdir gone 0o700;
+          chdir gone;
+          Unix.rmdir gone;
+          setenv "WINDTRAP_PROJECT_ROOT" None;
+          setenv "INSIDE_DUNE" (Some "w/_build/default");
+          raises_match ~msg:"project_root raises" Exn.sys_error (fun () ->
+              Os.project_root ());
+          raises_match ~msg:"default_log_dir raises" Exn.sys_error (fun () ->
+              Os.default_log_dir ());
+          equal ~msg:"display_path removes no prefix and does the rest" string
+            "/r/a.ml"
+            (Os.display_path "/r/_build/default/./a.ml");
+          equal ~msg:"display_artifact returns the path as given" string
+            "/r/_build/./a.ml"
+            (Os.display_artifact "/r/_build/./a.ml"));
+      test "an un-normalized WINDTRAP_PROJECT_ROOT removes no prefix" (fun () ->
+          List.iter
+            (fun root ->
+              setenv "WINDTRAP_PROJECT_ROOT" (Some root);
+              equal ~msg:(root ^ ": display_path") string "/r/a/b.ml"
+                (Os.display_path "/r/a/b.ml");
+              equal
+                ~msg:(root ^ ": display_artifact")
+                string "/r/_build/x.log"
+                (Os.display_artifact "/r/_build/x.log"))
+            [ "/r/"; "/r/." ]);
+      test "display_path outside the root strips the build segment first"
+        (fun () ->
+          setenv "WINDTRAP_PROJECT_ROOT" (Some "/r");
+          equal string "a.ml" (Os.display_path "/_build/default/r/a.ml"));
+      test "display_artifact removes the root prefix and nothing else"
+        (fun () ->
+          setenv "WINDTRAP_PROJECT_ROOT" (Some "/r");
+          equal ~msg:"a capture log keeps its build segment" string
+            "_build/_tests/s/t.output"
+            (Os.display_artifact "/r/_build/_tests/s/t.output");
+          equal ~msg:"no normalization" string "./a//b"
+            (Os.display_artifact "/r/./a//b");
+          equal ~msg:"outside the root, as given" string "/elsewhere/./x"
+            (Os.display_artifact "/elsewhere/./x"));
       test "display spells report paths project-root relative" (fun () ->
           (* The one producer of [wrote]/hint path spellings for both the
              library and inline runners. *)
@@ -773,6 +943,20 @@ module Say_suite = struct
             "duplicate test paths:\n  a\nEvery full test path must be unique."
       );
       ("control", fun () -> Os.say "invalid value 'a\tb\027[31mc\127'");
+      ("bytes", fun () -> Os.say "a\rb \xc3\xa9 \xff");
+      (* The children below leave through [_exit], so no flush at exit
+         writes what [say] did not. *)
+      ( "closed",
+        fun () ->
+          print_string "pending";
+          Unix.close Unix.stdout;
+          Os.say "still said";
+          Unix._exit 0 );
+      ( "err_formatter",
+        fun () ->
+          Format.eprintf "pending ";
+          Os.say "line";
+          Unix._exit 0 );
     ]
 
   (* Re-exec dispatch for the children above; the suite's toplevel calls it
@@ -818,6 +1002,13 @@ module Say_suite = struct
         (fun () ->
           equal string "windtrap: invalid value 'a\\tb\\x1b[31mc\\x7f'\n"
             (said "control"));
+      test "a carriage return is escaped, bytes from 0x80 pass" (fun () ->
+          equal string "windtrap: a\\rb \xc3\xa9 \xff\n" (said "bytes"));
+      test "a closed standard output does not cost the line" (fun () ->
+          equal string "windtrap: still said\n" (said "closed"));
+      test "Format.err_formatter is flushed before the line, stderr after"
+        (fun () ->
+          equal string "pending windtrap: line\n" (said "err_formatter"));
     ]
 end
 
