@@ -265,7 +265,7 @@ let print_json ~source_roots collection =
     "{ \"summary\": { \"visited\": %d, \"total\": %d, \"percentage\": %.2f },\n\
     \  \"files\": ["
     summary.visited summary.total
-    (Windtrap_runtime.Coverage.percentage summary);
+    (Sections.percent ~visited:summary.visited ~total:summary.total);
   List.iteri
     (fun i (r : Windtrap_runtime.Coverage.file_report) ->
       Printf.printf
@@ -275,7 +275,7 @@ let print_json ~source_roots collection =
         \      \"uncovered_lines\": %s }"
         (if i = 0 then "" else ",")
         (json_escape r.file) r.summary.visited r.summary.total
-        (Windtrap_runtime.Coverage.percentage r.summary)
+        (Sections.percent ~visited:r.summary.visited ~total:r.summary.total)
         (json_ints r.uncovered_lines))
     reports;
   Printf.printf " ] }\n%!"
@@ -451,15 +451,10 @@ let report_table ~color ~source_roots ~show_uncovered ~min collection =
        ~min
        (coverage_data ~source_roots collection))
 
-(* The gate compares raw percentages, as the outcome line it is stated on
-   does. The report ends on that line; a machine format owns standard
-   output, so under one the line is windtrap's own, and only a gate asks
-   for it.
-
-   The exit code is computed here with [Coverage.percentage]. The word [ok]
-   or [FAILED] is computed by [Sections.coverage_line] with its own copy of
-   the formula: the two must stay the same function of [visited] and
-   [total], and nothing but this comment says so. *)
+(* The gate compares raw percentages with [Sections.percent], the one
+   function the outcome line it is stated on compares. The report ends on
+   that line; a machine format owns standard output, so under one the
+   line is windtrap's own, and only a gate asks for it. *)
 let check_min ~machine (summary : Windtrap_runtime.Coverage.summary) = function
   | None -> 0
   | Some min ->
@@ -470,7 +465,9 @@ let check_min ~machine (summary : Windtrap_runtime.Coverage.summary) = function
                 (fun (span : Sections.span) -> span.text)
                 (Sections.coverage_line ~min:(Some min) ~visited:summary.visited
                    ~total:summary.total)));
-      if Windtrap_runtime.Coverage.percentage summary >= min then 0 else 1
+      if Sections.percent ~visited:summary.visited ~total:summary.total >= min
+      then 0
+      else 1
 
 let run args =
   match parse_args args with

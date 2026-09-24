@@ -4035,6 +4035,14 @@ let test_coverage_colour () =
   equal ~msg:"no file to tabulate: the outcome alone, 100% and plain" string
     "coverage: 100.0% (0/0 points)\n"
     (outcome ~visited:0 ~total:0 ());
+  (* The minimum prints as it was given: a rounding would show a gate the
+     line then contradicts. *)
+  equal ~msg:"the minimum prints as given, never rounded" string
+    "coverage: 100.0% (1/1 points), minimum 99.99999%: \027[32mok\027[0m\n"
+    (outcome ~min:99.99999 ~visited:1 ~total:1 ());
+  equal ~msg:"and a whole minimum without a point" string
+    "coverage: 80.0% (80/100 points), minimum 80%: \027[32mok\027[0m\n"
+    (outcome ~min:80.0 ~visited:80 ~total:100 ());
   let rows =
     coverage ~min:50.
       {

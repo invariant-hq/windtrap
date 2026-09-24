@@ -49,15 +49,6 @@ let pp_duration secs =
   else if Float.round ms < 1000. then spf "%.0fms" ms
   else spf "%.1fs" secs
 
-(* A configured number of seconds, as its user wrote it: the shortest
-   decimal that reads back the same, never an exponent. *)
-let pp_configured secs =
-  let rec shortest digits =
-    let s = spf "%.*f" digits secs in
-    if digits >= 17 || float_of_string s = secs then s else shortest (digits + 1)
-  in
-  shortest 0
-
 (* Renderer state *)
 
 type t = {
@@ -685,7 +676,7 @@ let slow_section t slow_results =
   let caution s = put t [ styled `Yellow s ] in
   caution
     (spf "slow tests (%d, over %ss):" (List.length rows)
-       (pp_configured t.slow_threshold));
+       (Pp.to_string Pp.decimal t.slow_threshold));
   List.iter (fun (d, path) -> caution (spf "  %*s  %s" width d path)) rows
 
 (* Run order, one row per test that failed and then passed. *)

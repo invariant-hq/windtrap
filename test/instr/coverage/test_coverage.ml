@@ -314,15 +314,13 @@ let collection_tests =
         equal ~msg:"empty is a right identity for merge" hits_t ab_hits
           (hits (ok "right id" (C.merge t C.empty))));
     test "a zero-point file is data" (fun () ->
-        (* A zero-point file: data (not emptiness), a 0/0 summary, 100%. *)
+        (* A zero-point file: data (not emptiness), and a 0/0 summary. *)
         let t = collection [ ("lib/e.ml", []) ] in
         equal ~msg:"a zero-point file is data, not emptiness" (list string)
           [ "lib/e.ml" ] (C.files t);
         equal ~msg:"a zero-point collection sums to 0/0" summary
           { C.visited = 0; total = 0 }
-          (C.summary t);
-        equal ~msg:"a 0/0 summary reads as fully covered" float_exact 100.
-          (C.percentage (C.summary t)));
+          (C.summary t));
   ]
 
 (* Rejection of foreign and corrupt data *)

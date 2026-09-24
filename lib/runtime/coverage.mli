@@ -12,7 +12,7 @@
     counts of the process to a [.coverage] dump. The [windtrap coverage] command
     loads the dumps of several executables, merges them and renders
     {!file_reports}. This module computes the data of a report, which is counts
-    of points, uncovered lines and percentages, and it renders nothing.
+    of points and uncovered lines, and it renders nothing.
 
     Coverage never changes what a program or a test means, with the one
     exception that {{!section-ondisk}Dumps} states. A dump that cannot be
@@ -192,10 +192,6 @@ type summary = { visited : int; total : int }
 
 val summary : t -> summary
 (** [summary t] is the counts over all the files of [t]. *)
-
-val percentage : summary -> float
-(** [percentage s] is [100. *. visited /. total], and [100.] when [s.total] is
-    [0]. *)
 
 type file_report = {
   file : string;

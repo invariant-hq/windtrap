@@ -324,12 +324,17 @@ type coverage = {
 }
 (** The type for a whole coverage report. *)
 
+val percent : visited:int -> total:int -> float
+(** [percent ~visited ~total] is the percentage of [visited] in [total],
+    unrounded, and [100.] when [total] is [0]. Every percentage of this module
+    is computed by it, and a gate on {!coverage_line} must compare it. *)
+
 val coverage_line : min:float option -> visited:int -> total:int -> span list
-(** [coverage_line ~min ~visited ~total] is the outcome line of the report: the
-    percentage of [visited] in [total], 100 for zero points, and the two counts.
-    Under a gate [min] the line goes on with the gate and says whether it is
-    met, that is whether the unrounded percentage is at least [min]. A
-    percentage, here and in every line of {!coverage_report}, is styled as
+(** [coverage_line ~min ~visited ~total] is the outcome line of the report:
+    {!percent} with one decimal, and the two counts. Under a gate [min] the line
+    goes on with [min], printed by {!Pp.decimal}, and says whether the gate is
+    met, that is whether {!percent} is at least [min]. A percentage, here and in
+    every line of {!coverage_report}, prints with one decimal and is styled as
     failing below [min], or below 80 when [min] is [None]. *)
 
 val coverage_report :

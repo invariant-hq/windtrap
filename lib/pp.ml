@@ -40,6 +40,15 @@ let int64 ppf n = Format.fprintf ppf "%Ld" n
    a bit-exact witness). A caller that wants a compact, lossy rendering asks
    for it at the call site, as [Testable]'s [%g] instances do. Sign of zero
    survives; non-finite values render as [nan], [inf], [-inf]. *)
+(* No exponent, so a configured [0.00001] prints as typed; the loop ends by
+   17 digits, which read any double back. *)
+let decimal ppf f =
+  let rec shortest digits =
+    let s = Printf.sprintf "%.*f" digits f in
+    if digits >= 17 || float_of_string s = f then s else shortest (digits + 1)
+  in
+  Format.pp_print_string ppf (shortest 0)
+
 let float_exact ppf f =
   if Float.is_nan f || not (Float.is_finite f) then
     Format.pp_print_string ppf (Printf.sprintf "%g" f)

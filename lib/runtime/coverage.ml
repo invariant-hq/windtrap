@@ -337,9 +337,6 @@ let summary t =
       { visited = acc.visited + s.visited; total = acc.total + s.total })
     t { visited = 0; total = 0 }
 
-let percentage { visited; total } =
-  if total = 0 then 100. else 100. *. float_of_int visited /. float_of_int total
-
 (* Extent -> Line Mapping *)
 
 (* Byte offsets at which each line starts, excluding the phantom line a

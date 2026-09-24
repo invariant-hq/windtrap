@@ -70,6 +70,11 @@ val int32 : int32 t
 val int64 : int64 t
 (** [int64] formats an [int64] in decimal, without the [L] of a literal. *)
 
+val decimal : float t
+(** [decimal] formats a finite float as the shortest decimal without an exponent
+    that reads back to it, so a number prints as a user configured it: [80.] as
+    [80], [0.5] as [0.5] and [99.99999] as [99.99999]. *)
+
 val float_exact : float t
 (** [float_exact] formats a float as the shortest decimal that reads back to the
     same bits. A whole value keeps its point, and a rendering with an exponent

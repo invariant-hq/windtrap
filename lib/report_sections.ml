@@ -1320,24 +1320,25 @@ type coverage_file = {
 
 type coverage = { visited : int; total : int; files : coverage_file list }
 
-let coverage_percentage ~visited ~total =
+let percent ~visited ~total =
   if total = 0 then 100. else 100. *. float_of_int visited /. float_of_int total
 
-(* Red says which numbers need work: those below the gate the project
-   chose, or below 80 when it chose none. *)
-let percentage_span ~min ~visited ~total text =
-  if coverage_percentage ~visited ~total < Option.value min ~default:80. then
-    styled `Red text
-  else plain text
+(* The one spelling of a percentage, right-aligned in [width] columns
+   inside its colour. Red says which numbers need work: those below the
+   gate the project chose, or below 80 when it chose none. *)
+let percentage_span ?(width = 0) ~min ~visited ~total () =
+  let pct = percent ~visited ~total in
+  let text = spf "%*s" width (spf "%.1f%%" pct) in
+  if pct < Option.value min ~default:80. then styled `Red text else plain text
 
 (* The gate compares the raw percentage, and the line states the
    measurement as a fraction of integers beside its rounding, so no
-   printed comparison is one its own digits can contradict. *)
+   printed comparison is one its own digits can contradict. The minimum
+   prints as it was given, never rounded. *)
 let coverage_line ~min ~visited ~total =
-  let pct = coverage_percentage ~visited ~total in
   [
     plain "coverage: ";
-    percentage_span ~min ~visited ~total (spf "%.1f%%" pct);
+    percentage_span ~min ~visited ~total ();
     plain (spf " (%d/%d points)" visited total);
   ]
   @
@@ -1345,8 +1346,9 @@ let coverage_line ~min ~visited ~total =
   | None -> []
   | Some min ->
       [
-        plain (spf ", minimum %g%%: " min);
-        (if pct >= min then styled `Green "ok" else styled `Red "FAILED");
+        plain (spf ", minimum %s%%: " (Pp.to_string Pp.decimal min));
+        (if percent ~visited ~total >= min then styled `Green "ok"
+         else styled `Red "FAILED");
       ]
 
 let coverage_report ~mode ~min (c : coverage) =
@@ -1390,9 +1392,7 @@ let coverage_report ~mode ~min (c : coverage) =
     Line
       [
         plain "  ";
-        percentage_span ~min ~visited:f.visited ~total:f.total
-          (spf "%5.1f%%"
-             (coverage_percentage ~visited:f.visited ~total:f.total));
+        percentage_span ~width:6 ~min ~visited:f.visited ~total:f.total ();
         plain
           (after_cover
              ~points:
@@ -1408,9 +1408,7 @@ let coverage_report ~mode ~min (c : coverage) =
             [
               styled `Bold f.file;
               plain ": ";
-              percentage_span ~min ~visited:f.visited ~total:f.total
-                (spf "%.1f%%"
-                   (coverage_percentage ~visited:f.visited ~total:f.total));
+              percentage_span ~min ~visited:f.visited ~total:f.total ();
               plain (spf " (%d/%d)" f.visited f.total);
             ];
           Line [];

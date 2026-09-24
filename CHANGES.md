@@ -751,7 +751,8 @@ Coverage and packaging:
   — and a semantics-preservation suite holds that line.
 - The report ends on its outcome: `coverage: 71.4% (312/437 points)` is
   the last line, and under `--min` the gate is on it, `, minimum 80%:
-  FAILED` or `, minimum 70%: ok`. Under `--json` and `--lcov`, whose
+  FAILED` or `, minimum 70%: ok`, the minimum as you gave it (`--min
+  99.99999` prints `minimum 99.99999%`, never a rounded `100%`). Under `--json` and `--lcov`, whose
   standard output is the document, a gated run says the same sentence on
   standard error behind `windtrap:`.
 - The table opens with a dim header row: `cover`, `points`, `file` and
