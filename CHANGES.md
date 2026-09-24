@@ -635,7 +635,9 @@ Coverage and packaging:
   bytes of expected)`, never with the marker as a changed line.
 - What `-u` or `--corrected` wrote is the `corrections (N):` section above
   the summary (`wrote <path> (N expectations)`, `accepted <path>`), sorted
-  by path. A file the run could not write is a row of that section,
+  by path. An accepted source file's row says that its literals are
+  compiled in: `accepted test/test_x.ml (2 expectations; rebuild before the
+  tests see them)`. A file the run could not write is a row of that section,
   `could not write <path>: <reason>`, and a summary term, `N not
   written`.
 - A `--corrected` run that wrote a correction and exits 1 says, after its

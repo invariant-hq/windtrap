@@ -743,7 +743,9 @@ let accepts baselines =
   | Baseline.Corrected | Baseline.Check -> false
 
 (* A source file's row counts its expectations; a file the run could not
-   write fails it, and its row says why. *)
+   write fails it, and its row says why. An accepted literal is compiled
+   into the executable, so the run after [-u] still sees the old one until
+   a build: the row says so, where the reader looks after accepting. *)
 let corrections_section t ~accepted rows =
   put t [ plain (spf "corrections (%d):" (List.length rows)) ];
   List.iter
@@ -757,7 +759,12 @@ let corrections_section t ~accepted rows =
                    (if accepted then "accepted" else "wrote")
                    path
                    (if literals = 0 then ""
-                    else spf " (%d expectation%s)" literals (plural literals)));
+                    else
+                      spf " (%d expectation%s%s)" literals (plural literals)
+                        (if accepted then
+                           spf "; rebuild before the tests see %s"
+                             (if literals = 1 then "it" else "them")
+                         else "")));
             ]
       | Baseline.Refused { reason; _ } ->
           put t [ styled `Red (spf "  could not write %s: %s" path reason) ])

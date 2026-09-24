@@ -222,9 +222,11 @@ val finish :
     order of the paths as {!Os.display_path} prints them. The row of a
     {!Baseline.Written} file says whether it was written beside its baseline or
     accepted in place, which {!val:Baseline.mode} decides, and the row of a
-    source file counts its expectations. The row of a {!Baseline.Refused} file
-    is [could not write <path>: <reason>]. Without [baselines] there is no
-    section and the summary has no corrections term.
+    source file counts its expectations. An accepted source file's row adds
+    [rebuild before the tests see it], or [them], since its literals are
+    compiled into the executable. The row of a {!Baseline.Refused} file is
+    [could not write <path>: <reason>]. Without [baselines] there is no section
+    and the summary has no corrections term.
 
     {b Summary.} Its terms come in this order: passed, with the flaky among
     them, skipped, expected failures, failed, with the subtest failures among

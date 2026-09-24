@@ -1383,8 +1383,8 @@ val stateful :
     atomically, for review with [git diff]. Under [-u] a mismatch is accepted
     and its test passes, and one run accepts every stale expectation. A literal
     is compiled into the executable, so after [-u] has rewritten one the
-    executable must be built again before the next run. An accepted file needs
-    nothing.
+    executable must be built again before the next run, as the row of its source
+    file in the [corrections] section says. An accepted file needs nothing.
 
     [-u] is refused under [CI] (see the {{!section-command_line}environment}),
     and [-u] with [--corrected] is a usage error.

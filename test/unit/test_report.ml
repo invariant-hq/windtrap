@@ -5332,7 +5332,25 @@ let test_corrections_section () =
     (corrections_transcript baselines);
   equal ~msg:"the section does not depend on the invocation" string
     (corrections_transcript ~invocation:`Mirrors baselines)
-    (corrections_transcript ~invocation:(`Exe "./t.exe") baselines)
+    (corrections_transcript ~invocation:(`Exe "./t.exe") baselines);
+  (* A literal accepted in place is compiled into the executable: its row
+     says that the tests see it only after a build. *)
+  let root = temp_dir () in
+  let source = write_source root in
+  let baselines = Baseline.create ~root ~cwd:root ~mode:Baseline.Update () in
+  Baseline.check baselines
+    (Baseline.Literal { pos = ("t.ml", 1, 21, 0); value = " a "; exact = false })
+    "b";
+  ignore (Baseline.settle baselines ~keep:true);
+  Baseline.write baselines;
+  equal ~msg:"update: an accepted literal asks for a rebuild" string
+    (Printf.sprintf
+       "s: 1 test\n\
+        corrections (1):\n\
+       \  accepted %s (1 expectation; rebuild before the tests see it)\n\n\
+        1 passed, 1 correction accepted in 2.0ms.\n"
+       (Os.display_path source))
+    (corrections_transcript baselines)
 
 let test_corrections_quiet () =
   equal ~msg:"nothing written: the green run stays one line" string
