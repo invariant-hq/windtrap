@@ -218,6 +218,9 @@ let utf8_head_skip s =
   let cut = go 0 in
   if cut < len && not (is_continuation s.[cut]) then cut else 0
 
+(* No drain: the attempt's own drained its buffers into the log before the
+   descriptors came back, and one now would flush the real ones, whose
+   failure is no fact about the test. *)
 let output_tail t =
   match t with
   | Disabled -> None
@@ -225,7 +228,6 @@ let output_tail t =
       match e.current with
       | None -> None
       | Some path ->
-          drain ();
           let read ic =
             let len = in_channel_length ic in
             (* Failure.tail owns the report bound; reading exactly that many

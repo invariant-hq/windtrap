@@ -217,6 +217,38 @@ let test_drain_failure_restores () =
    byte buffered for it, so [drain] and the first drain of [with_capture]
    both fail. (A closed descriptor 2 would be reused by the log file the
    attempt opens.) The real descriptor 2 is put back afterwards. *)
+(* The tail of a failing test is read after its attempt, when the real
+   descriptors are back: a flush of theirs that fails then is no fact about
+   the test, and must not cost the run its report. *)
+let test_tail_drains_nothing () =
+  if Sys.win32 then skip ~reason:"POSIX only" ();
+  let root = temp_dir () in
+  let cap = Capture.create ~log_dir:root ~suite:"s" () in
+  Capture.with_capture cap ~groups:[] ~test_name:"t" (fun () ->
+      print_string "abc");
+  let saved = Unix.dup Unix.stderr in
+  let tail =
+    Fun.protect
+      ~finally:(fun () ->
+        Unix.dup2 saved Unix.stderr;
+        Unix.close saved;
+        try flush stderr with Sys_error _ -> ())
+      (fun () ->
+        Printf.eprintf " ";
+        let read_only = Unix.openfile "/dev/null" [ Unix.O_RDONLY ] 0 in
+        Unix.dup2 read_only Unix.stderr;
+        Unix.close read_only;
+        match Capture.output_tail cap with
+        | tail -> Ok tail
+        | exception Sys_error message -> Error message)
+  in
+  match tail with
+  | Ok (Some tail) ->
+      equal ~msg:"the tail is the attempt's output" string "abc"
+        tail.Failure.text
+  | Ok None -> fail "the attempt's log was not read"
+  | Error message -> failf "output_tail raised Sys_error %S" message
+
 let test_first_drain_failure () =
   if Sys.win32 then skip ~reason:"POSIX only" ();
   let root = temp_dir () in
@@ -739,6 +771,7 @@ let tests =
       test_setup_failure_isolation;
     test "a failed cleanup drain still restores" test_drain_failure_restores;
     test "a failed first drain runs nothing" test_first_drain_failure;
+    test "the tail drains nothing" test_tail_drains_nothing;
     test "the body's exception wins over a failed last drain"
       test_body_exception_wins_over_last_drain;
     test "one text in arrival order" test_one_text_in_arrival_order;

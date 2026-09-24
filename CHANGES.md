@@ -697,7 +697,9 @@ Coverage and packaging:
   byte before the first line shown, then `full log: <path>` at the
   heading's column. `-o DIR`
   moves the log root and is resolved once, at startup. `--stream` disables
-  capture.
+  capture. The tail is read from the log without flushing the terminal, so
+  a standard output or error that can no longer be written does not end
+  the run.
 - **The project root and the log root.** The root, which `expect_file`
   paths and `.corrected` files resolve under, is `WINDTRAP_PROJECT_ROOT`
   if set, normalized lexically (`.`, `..`, a trailing `/`); else the directory above the build directory the process
