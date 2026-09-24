@@ -35,7 +35,8 @@ let () =
              test "clamps negative counts to zero" (fun () ->
                  equal text "x  \ntotal 0" (Stats.render [ ("x", -2) ]));
              test "renders a small table" (fun () ->
-                 expect (Stats.render [ ("reds", 3); ("greens", 5); ("blues", 0) ])
+                 expect
+                   (Stats.render [ ("reds", 3); ("greens", 5); ("blues", 0) ])
                  @@ __POS_OF__
                       {|
                    reds    ###
