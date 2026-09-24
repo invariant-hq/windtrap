@@ -91,11 +91,12 @@ val exe_identity : exe:string -> string
 (** [exe_identity ~exe] is the normalized path of [exe] below its build
     directory, without the sandbox prefix, or its normalized absolute path when
     [exe] lies below no build directory. It is the [exe] of an {!type-identity},
-    and it is [""] for a path that ends at its build directory. A relative
-    result means an executable below a build directory and an absolute one an
-    executable below none, which is how a reader finds the executable again. The
-    build context is part of the result, as in [default/test/t.exe], and the
-    build directory is not. *)
+    and it is never [""]. Only the directories above [exe] can be its build
+    directory, so an executable whose own name starts with [_build] lies below
+    none. A relative result means an executable below a build directory and an
+    absolute one an executable below none, which is how a reader finds the
+    executable again. The build context is part of the result, as in
+    [default/test/t.exe], and the build directory is not. *)
 
 val data_dir : format -> build_dir:string -> string
 (** [data_dir f ~build_dir] is [<build_dir>/_<f.dir>]. Every executable below

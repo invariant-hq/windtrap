@@ -65,6 +65,17 @@ _build, in one directory per executable:
   _windtrap/coverage/windtrap-HASH/DIGEST-TOKEN.coverage
   $ test ! -e _build
 
+An executable whose own name starts with _build lies in no build
+directory: only the directories above it can be one. It runs, and dumps
+where any other executable would:
+
+  $ mkdir named && cp test_calc.exe named/_build_calc.exe && cd named
+  $ run ./_build_calc.exe
+  calc: 4 passed in TIME.
+  $ find . -type f -name '*.coverage' | sed -E 's|windtrap-[0-9a-f]+|windtrap-HASH|; s|/[0-9a-f]+-[0-9a-f]+\.coverage|/DIGEST-TOKEN.coverage|'
+  ./_windtrap/coverage/windtrap-HASH/DIGEST-TOKEN.coverage
+  $ cd "$proj"
+
 The installed binary finds it from the working directory and merges;
 the untested arm is the uncovered line. Only the library's row is
 pinned: when windtrap's own tree is built under the coverage backend,

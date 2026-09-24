@@ -242,14 +242,15 @@ let absolute path =
 
 (* INSIDE_DUNE first: dune exports the context it is building in, which
    is the one answer under a sandboxed action and under a private build
-   directory. A value that is no path (a harness's INSIDE_DUNE=1) is a
+   directory. The executable's directory, never its own name: a binary
+   called [_build_x.exe] is not a build directory. A value that is no path (a harness's INSIDE_DUNE=1) is a
    relative path like any other, so it names a build directory only when
    the working directory lies under one. *)
 let build_dir () =
   List.find_map
     (fun path -> build_dir_of_path (absolute path))
     ((match getenv "INSIDE_DUNE" with Some d -> [ d ] | None -> [])
-    @ [ Sys.executable_name ])
+    @ [ Filename.dirname Sys.executable_name ])
 
 let project_root () =
   match getenv "WINDTRAP_PROJECT_ROOT" with

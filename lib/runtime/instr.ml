@@ -92,8 +92,19 @@ let split_build path =
 let build_dir ~path = Option.map fst (split_build path)
 let build_root ~path = Option.map Filename.dirname (build_dir ~path)
 
+(* An executable lies in a build directory when one of the directories
+   above it is one; its own file name never is, so [below] always ends
+   with that name and no identity is empty. *)
+let split_exe exe =
+  let path = canonical exe in
+  let name = Filename.basename path in
+  Option.map
+    (fun (build_dir, below) ->
+      (build_dir, if below = "" then name else below ^ "/" ^ name))
+    (split_build (Filename.dirname path))
+
 let exe_identity ~exe =
-  match split_build exe with Some (_, below) -> below | None -> canonical exe
+  match split_exe exe with Some (_, below) -> below | None -> canonical exe
 
 (* Where a format's files live: beside the build directory's contexts,
    marked as not a context by the underscore, or - for a tree with no
@@ -106,7 +117,7 @@ let standalone_data_dir format ~root =
 
 let output_stem format ~exe =
   let dir, key =
-    match split_build exe with
+    match split_exe exe with
     | Some (build_dir, below) -> (data_dir format ~build_dir, below)
     | None -> (standalone_data_dir format ~root:(Sys.getcwd ()), canonical exe)
   in

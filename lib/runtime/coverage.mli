@@ -142,13 +142,6 @@ val files : t -> string list
     [windtrap: warning:], written at exit, after the report of a run and
     whatever its flags. It changes nothing else, and never the exit code.
 
-    Only the write is protected that way. The dump builds its string first, and
-    an executable that lies below no build directory and whose own file name
-    starts with [_build] has the identity [""] (see {!Instr.exe_identity}). The
-    dump then raises [Invalid_argument] at exit, and the process ends on that
-    exception, whatever exit code it was ending with. An executable that runs
-    from dune's build directory is never in that case.
-
     The first line of a dump is the magic line [windtrap-coverage-v3], which
     carries the version of the format. {!load} refuses another first line, and
     nothing is promised from one version to the next. The writer's

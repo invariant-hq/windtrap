@@ -575,12 +575,20 @@ let filename_tests =
         equal ~msg:"a name holding one names another path" string
           "default/a/b.exe"
           (I.exe_identity ~exe:"/w/_build/default/a\\b.exe"));
-    test "a path that ends at its build directory has the empty identity"
-      (fun () ->
-        equal ~msg:"the build directory itself" string ""
+    test "an executable's own name is never its build directory" (fun () ->
+        equal ~msg:"named _build, it lies below none" string "/w/p/_build"
           (I.exe_identity ~exe:"/w/p/_build");
-        equal ~msg:"with a trailing separator" string ""
-          (I.exe_identity ~exe:"/w/p/_build/"));
+        equal ~msg:"with a trailing separator" string "/w/p/_build"
+          (I.exe_identity ~exe:"/w/p/_build/");
+        equal ~msg:"and its files are the standalone ones" string
+          (Filename.concat (Sys.getcwd ())
+             ("_windtrap/coverage/windtrap-"
+             ^ Digest.to_hex (Digest.string "/w/p/_build_x.exe")
+             ^ ".coverage"))
+          (I.output_file C.format ~exe:"/w/p/_build_x.exe");
+        equal ~msg:"below a build directory, the name follows the context"
+          string "_build_x.exe"
+          (I.exe_identity ~exe:"/w/_build/.sandbox/3f/_build_x.exe"));
     test "a file is named by the MD5 of its executable's identity" (fun () ->
         let md5 s = Digest.to_hex (Digest.string s) in
         equal ~msg:"below a build directory" string
@@ -1242,25 +1250,20 @@ let dump_tests =
           string
           (child_dump [| 1; 0; 0 |])
           (read_file dump));
-    test
-      "an executable named _build* below no build directory dies at exit on \
-       its empty identity" (fun () ->
+    test "an executable named _build* below no build directory dumps" (fun () ->
         let dir = temp_dir () in
         let exe = Filename.concat dir "_build_child.exe" in
         I.write_file exe (read_file child_exe);
         Unix.chmod exe 0o755;
-        equal ~msg:"its identity is empty" string "" (I.exe_identity ~exe);
-        let dump = Filename.concat dir "never.coverage" in
+        let dump = Filename.concat dir "named.coverage" in
         let r =
           Child.run ~env:[ ("WINDTRAP_COVERAGE_FILE", dump) ] exe [ "first" ]
         in
-        equal ~msg:"the process ends on the exception" int 2 (Child.exit_code r);
-        contains ~msg:"which is the dump's Invalid_argument"
-          ~sub:
-            "Invalid_argument(\"Windtrap_runtime.Coverage: empty identity \
-             exe\")"
-          r.Child.err;
-        is_false ~msg:"and nothing is written" (Sys.file_exists dump));
+        equal ~msg:"the process exits 0" int 0 (Child.exit_code r);
+        equal ~msg:"and says nothing" text "" r.Child.err;
+        equal ~msg:"its dump records its absolute path as its identity" string
+          (child_dump ~exe [| 1; 0; 0 |])
+          (read_file dump));
   ]
 
 (* The suite *)

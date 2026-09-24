@@ -252,11 +252,6 @@ let remove_predecessors dir ~digest =
             try Sys.remove (Filename.concat dir name) with Sys_error _ -> ())
         entries
 
-(* XXX Only the two writes are guarded. [snapshot], [dump_identity] and
-   [to_string] run outside the [try]s, and [to_string] raises
-   [Invalid_argument] for an identity whose [exe] is [""], which
-   [Instr.exe_identity] gives for an executable whose own file name starts
-   with [_build]. *)
 let dump () =
   if not !dumped then begin
     dumped := true;
