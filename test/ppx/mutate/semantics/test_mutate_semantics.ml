@@ -96,17 +96,6 @@ module _ : module type of Mutsem_baseline.Mutsem_order =
 module _ : module type of Mutsem_baseline.Mutsem_boom =
   Mutsem_fixtures.Mutsem_boom
 
-let check name cond = is_true ~msg:name cond
-let check_int name ~expected ~actual = equal ~msg:name int expected actual
-let check_str name ~expected ~actual = equal ~msg:name string expected actual
-
-(* [same t name uninstrumented instrumented] is the shape every outcome
-   comparison below takes: the twin's answer is the expected one. *)
-let same t name expected actual = equal ~msg:name t expected actual
-let same_int = same int
-let same_str = same string
-let same_bool = same bool
-
 (* {1 The battery} *)
 
 (* Running a witness under an armed mutant may raise - a mutated
@@ -205,8 +194,8 @@ let tests =
     (* {1 Registration and inertness} *)
     test "registration happens at module load, before any call" (fun () ->
         let catalogue = fixture_catalogue () in
-        check "the fixtures registered at load" (catalogue <> []);
-        check "nothing is armed" (M.armed () = None);
+        is_true ~msg:"the fixtures registered at load" (catalogue <> []);
+        is_true ~msg:"nothing is armed" (M.armed () = None);
         (* The mutation dialect of coverage's "no point visited before any
            call": a site marks itself the first time it is evaluated, and
            no fixture's module initialization evaluates one - not even
@@ -238,7 +227,7 @@ let tests =
         equal ~msg:"the three share one directory" int 1
           (List.length
              (List.sort_uniq compare (List.map Filename.dirname paths)));
-        check "and it is not baseline/"
+        is_true ~msg:"and it is not baseline/"
           (List.for_all
              (fun p -> Filename.basename (Filename.dirname p) <> "baseline")
              paths));
@@ -253,10 +242,11 @@ let tests =
         let catalogue = fixture_catalogue () in
         List.iter
           (fun (m : M.mutant) ->
-            check "the before rendering is non-empty" (m.before <> "");
-            check "the after rendering is non-empty" (m.after <> "");
-            check "the two renderings differ" (m.before <> m.after);
-            check "nothing in these fixtures is dismissed" (m.dismissed = None))
+            is_true ~msg:"the before rendering is non-empty" (m.before <> "");
+            is_true ~msg:"the after rendering is non-empty" (m.after <> "");
+            is_true ~msg:"the two renderings differ" (m.before <> m.after);
+            is_true ~msg:"nothing in these fixtures is dismissed"
+              (m.dismissed = None))
           catalogue;
         let families = List.sort_uniq compare (List.map family catalogue) in
         equal ~msg:"all four operator families are represented" (list string)
@@ -274,28 +264,28 @@ let tests =
            read off the UNINSTRUMENTED twin. If a future compiler
            evaluates left to right, this test names the change and the
            next one names the damage. *)
-        check_str "a < b evaluates b, then a" ~expected:"t | r,l"
-          ~actual:(B.show (B.cmp_lt 1 2));
-        check_str "a + b evaluates b, then a" ~expected:"3 | r,l"
-          ~actual:(B.show (B.ari_add 1 2));
-        check_str "a +. b evaluates b, then a" ~expected:"3.75 | r,l"
-          ~actual:(B.show (B.ari_fadd 1.5 2.25));
-        check_str "the right operand's exception is the one that escapes"
-          ~expected:"r | r"
-          ~actual:(B.show (B.cmp_exception_order ()));
-        check_str "and again for arithmetic" ~expected:"r | r"
-          ~actual:(B.show (B.ari_exception_order ()));
+        equal ~msg:"a < b evaluates b, then a" string "t | r,l"
+          (B.show (B.cmp_lt 1 2));
+        equal ~msg:"a + b evaluates b, then a" string "3 | r,l"
+          (B.show (B.ari_add 1 2));
+        equal ~msg:"a +. b evaluates b, then a" string "3.75 | r,l"
+          (B.show (B.ari_fadd 1.5 2.25));
+        equal ~msg:"the right operand's exception is the one that escapes"
+          string "r | r"
+          (B.show (B.cmp_exception_order ()));
+        equal ~msg:"and again for arithmetic" string "r | r"
+          (B.show (B.ari_exception_order ()));
         (* [=] and [<>] take the encoding that binds the whole comparison
            rather than its operands, so their order is the compiler's
            either way; pinned here so a change is visible on both sides. *)
-        check_str "a = b evaluates b, then a" ~expected:"f | r,l"
-          ~actual:(B.show (B.cmp_eq 1 2)));
+        equal ~msg:"a = b evaluates b, then a" string "f | r,l"
+          (B.show (B.cmp_eq 1 2)));
     test "the instrumented program evaluates exactly as its twin does"
       (fun () ->
         let instrumented = instrumented_battery () in
         let baseline = Lazy.force baseline_battery in
-        check_int "the twins carry the same number of witnesses"
-          ~expected:(List.length baseline) ~actual:(List.length instrumented);
+        equal ~msg:"the twins carry the same number of witnesses" int
+          (List.length baseline) (List.length instrumented);
         List.iter2
           (fun i b ->
             (* Names first: a mismatch there means the two copies are not
@@ -303,7 +293,8 @@ let tests =
             equal ~msg:"witness order agrees" string (fst b) (fst i);
             equal ~msg:(Printf.sprintf "witness %S" (fst b)) witness b i)
           instrumented baseline);
-    test "the differential is not vacuous: every mutant of the fixture is live"
+    test
+      "the differential is not vacuous: every operator family has a live mutant"
       (fun () ->
         (* A build in which the rewriter emitted no guard at all would
            pass every comparison above. Arming each mutant of
@@ -314,7 +305,7 @@ let tests =
            terminating raises Runaway instead of hanging runtest. *)
         let baseline = Lazy.force baseline_battery in
         let mutants = mutants_of "mutsem_order.ml" in
-        check "the fixture has mutants" (mutants <> []);
+        is_true ~msg:"the fixture has mutants" (mutants <> []);
         let changed =
           List.filter
             (fun (m : M.mutant) ->
@@ -327,7 +318,7 @@ let tests =
               armed_out <> baseline)
             mutants
         in
-        check "arming changes what the program computes" (changed <> []);
+        is_true ~msg:"arming changes what the program computes" (changed <> []);
         (* Every operator family must have at least one mutant the
            battery can see, or that family's half of the comparison above
            proves nothing. *)
@@ -336,7 +327,7 @@ let tests =
           (list string)
           [ "ari"; "cmp"; "con"; "neg" ]
           families;
-        check "nothing is left armed" (M.armed () = None);
+        is_true ~msg:"nothing is left armed" (M.armed () = None);
         equal ~msg:"disarming restores the program exactly" (list witness)
           baseline (instrumented_battery ()));
     (* {1 Tail position, measured} *)
@@ -346,11 +337,11 @@ let tests =
            call from a kept one, none of the readings below mean
            anything. *)
         let shallow, deep = I.control_depths () in
-        check_int "the instrumented control grows one frame per level"
-          ~expected:99_000 ~actual:(deep - shallow);
+        equal ~msg:"the instrumented control grows one frame per level" int
+          99_000 (deep - shallow);
         let shallow, deep = B.control_depths () in
-        check_int "the twin's control grows one frame per level"
-          ~expected:99_000 ~actual:(deep - shallow);
+        equal ~msg:"the twin's control grows one frame per level" int 99_000
+          (deep - shallow);
         (* The reading itself. Absolute depths are not compared across the
            twins - inlining decisions differ between a guarded body and a
            bare one, and a frame either way would be noise. Constancy in
@@ -385,71 +376,77 @@ let tests =
     test "tail_mod_cons survives instrumentation" (fun () ->
         let n = 100_000 in
         let xs = List.init n (fun i -> i) in
-        same (list int) "the TMC map is correct" (U.tmc_map succ xs)
+        equal ~msg:"the TMC map is correct" (list int) (U.tmc_map succ xs)
           (F.tmc_map succ xs));
     (* {1 Outcomes: the shared fixture computes what its twin computes} *)
     test "the shared fixture computes the uninstrumented results" (fun () ->
-        same_str "countdown" (U.countdown 1_000) (F.countdown 1_000);
-        same_bool "even" (U.even 1_000) (F.even 1_000);
-        same_bool "odd" (U.odd 1_001) (F.odd 1_001);
-        same_int "cps_count"
+        equal ~msg:"countdown" string (U.countdown 1_000) (F.countdown 1_000);
+        equal ~msg:"even" bool (U.even 1_000) (F.even 1_000);
+        equal ~msg:"odd" bool (U.odd 1_001) (F.odd 1_001);
+        equal ~msg:"cps_count" int
           (U.cps_count 1_000 (fun x -> x))
           (F.cps_count 1_000 (fun x -> x));
-        same_int "pipe_down" (U.pipe_down 1_000) (F.pipe_down 1_000);
-        same_bool "any_odd odd" (U.any_odd 7) (F.any_odd 7);
-        same_bool "any_odd even" (U.any_odd 8) (F.any_odd 8);
-        same_bool "all_even even" (U.all_even 4) (F.all_even 4);
-        same_bool "all_even odd" (U.all_even 3) (F.all_even 3);
-        same_bool "or_let" (U.or_let 1_000) (F.or_let 1_000);
-        same_bool "or_match" (U.or_match 1_000) (F.or_match 1_000);
-        same_bool "or_if" (U.or_if 1_000) (F.or_if 1_000);
-        same_bool "or_try" (U.or_try 1_000) (F.or_try 1_000);
-        same (list int) "tmc_map"
+        equal ~msg:"pipe_down" int (U.pipe_down 1_000) (F.pipe_down 1_000);
+        equal ~msg:"any_odd odd" bool (U.any_odd 7) (F.any_odd 7);
+        equal ~msg:"any_odd even" bool (U.any_odd 8) (F.any_odd 8);
+        equal ~msg:"all_even even" bool (U.all_even 4) (F.all_even 4);
+        equal ~msg:"all_even odd" bool (U.all_even 3) (F.all_even 3);
+        equal ~msg:"or_let" bool (U.or_let 1_000) (F.or_let 1_000);
+        equal ~msg:"or_match" bool (U.or_match 1_000) (F.or_match 1_000);
+        equal ~msg:"or_if" bool (U.or_if 1_000) (F.or_if 1_000);
+        equal ~msg:"or_try" bool (U.or_try 1_000) (F.or_try 1_000);
+        equal ~msg:"tmc_map" (list int)
           (U.tmc_map succ (List.init 100 Fun.id))
           (F.tmc_map succ (List.init 100 Fun.id));
         let trace = pair int (list string) in
-        same trace "order_witness true" (U.order_witness true)
+        equal ~msg:"order_witness true" trace (U.order_witness true)
           (F.order_witness true);
-        same trace "order_witness false" (U.order_witness false)
+        equal ~msg:"order_witness false" trace (U.order_witness false)
           (F.order_witness false);
         let btrace = pair bool (list string) in
         List.iter
           (fun (x, y) ->
-            same btrace
-              (Printf.sprintf "or_trace %b %b" x y)
-              (U.or_trace x y) (F.or_trace x y);
-            same btrace
-              (Printf.sprintf "and_trace %b %b" x y)
-              (U.and_trace x y) (F.and_trace x y))
+            equal
+              ~msg:(Printf.sprintf "or_trace %b %b" x y)
+              btrace (U.or_trace x y) (F.or_trace x y);
+            equal
+              ~msg:(Printf.sprintf "and_trace %b %b" x y)
+              btrace (U.and_trace x y) (F.and_trace x y))
           [ (true, true); (true, false); (false, true); (false, false) ];
-        same
+        equal ~msg:"arg_order"
           (pair (pair int int) (list string))
-          "arg_order" (U.arg_order ()) (F.arg_order ());
-        same (list string) "seq_order" (U.seq_order ()) (F.seq_order ());
-        same_int "pipeline" (U.pipeline 3) (F.pipeline 3);
-        same_int "pipeline_bound" (U.pipeline_bound 3) (F.pipeline_bound 3);
-        same_int "sum_object"
+          (U.arg_order ()) (F.arg_order ());
+        equal ~msg:"seq_order" (list string) (U.seq_order ()) (F.seq_order ());
+        equal ~msg:"pipeline" int (U.pipeline 3) (F.pipeline 3);
+        equal ~msg:"pipeline_bound" int (U.pipeline_bound 3)
+          (F.pipeline_bound 3);
+        equal ~msg:"sum_object" int
           (U.sum_object [ 1; 2; 3 ])
           (F.sum_object [ 1; 2; 3 ]);
-        same_int "poke" (U.poke (new U.adder)) (F.poke (new F.adder));
-        same_int "sum_while" (U.sum_while 10) (F.sum_while 10);
-        same_int "sum_while, zero iterations" (U.sum_while 0) (F.sum_while 0);
-        same_int "sum_for" (U.sum_for 10) (F.sum_for 10);
-        same_int "letop_sum" (U.letop_sum 40 2) (F.letop_sum 40 2);
+        equal ~msg:"poke" int (U.poke (new U.adder)) (F.poke (new F.adder));
+        equal ~msg:"sum_while" int (U.sum_while 10) (F.sum_while 10);
+        equal ~msg:"sum_while, zero iterations" int (U.sum_while 0)
+          (F.sum_while 0);
+        equal ~msg:"sum_for" int (U.sum_for 10) (F.sum_for 10);
+        equal ~msg:"letop_sum" int (U.letop_sum 40 2) (F.letop_sum 40 2);
         List.iter
           (fun n ->
-            same_str (Printf.sprintf "bucket %d" n) (U.bucket n) (F.bucket n))
+            equal
+              ~msg:(Printf.sprintf "bucket %d" n)
+              string (U.bucket n) (F.bucket n))
           [ 5; 50; 500 ];
-        same_int "safe_div by zero" (U.safe_div 7 0) (F.safe_div 7 0);
-        same_int "safe_div" (U.safe_div 7 2) (F.safe_div 7 2);
-        same_int "dispatch Add" (U.dispatch `Add 2 3) (F.dispatch `Add 2 3);
-        same_int "dispatch Sub" (U.dispatch `Sub 7 3) (F.dispatch `Sub 7 3);
-        same_bool "a returning application returns" (U.tap_ok U.ret_unit)
+        equal ~msg:"safe_div by zero" int (U.safe_div 7 0) (F.safe_div 7 0);
+        equal ~msg:"safe_div" int (U.safe_div 7 2) (F.safe_div 7 2);
+        equal ~msg:"dispatch Add" int (U.dispatch `Add 2 3)
+          (F.dispatch `Add 2 3);
+        equal ~msg:"dispatch Sub" int (U.dispatch `Sub 7 3)
+          (F.dispatch `Sub 7 3);
+        equal ~msg:"a returning application returns" bool (U.tap_ok U.ret_unit)
           (F.tap_ok F.ret_unit);
         let raised g f =
           match g f with _ -> "returned" | exception Exit -> "Exit"
         in
-        same_str "a raising application still raises"
+        equal ~msg:"a raising application still raises" string
           (raised U.tap_raise U.raise_unit)
           (raised F.tap_raise F.raise_unit));
     (* {1 Laziness} *)
@@ -457,27 +454,26 @@ let tests =
         (* The one-shot half of the differential: [lazy_witness] mutates
            state that cannot be reset, so it is not in the replayable
            battery and is called exactly once per copy. *)
-        check_str "the instrumented copy is lazy exactly as its twin is"
-          ~expected:(B.lazy_witness ()) ~actual:(I.lazy_witness ());
+        equal ~msg:"the instrumented copy is lazy exactly as its twin is" string
+          (B.lazy_witness ()) (I.lazy_witness ());
         (* And from the registry's side, on the shared fixture: the two
            [ari] sites in the thunk's body are unreached until the force,
            reached exactly once by it, and never again. *)
         let thunk, forced, force_count = F.make_thunk () in
-        check "the lazy body has not run" (!forced = false);
+        is_true ~msg:"the lazy body has not run" (!forced = false);
         let v, first = reached (fun () -> Lazy.force thunk) in
-        check_int "forcing the thunk" ~expected:42 ~actual:v;
-        check "the lazy body ran on force" (!forced = true);
+        equal ~msg:"forcing the thunk" int 42 v;
+        is_true ~msg:"the lazy body ran on force" (!forced = true);
         equal ~msg:"forcing reached exactly the lazy body's two sites" reach
           [ ("sub", 1); ("sub", 1) ]
           first;
         let v, again = reached (fun () -> Lazy.force thunk) in
-        check_int "forcing again computes the same value" ~expected:42 ~actual:v;
-        check_int "forcing twice runs the body once" ~expected:1
-          ~actual:!force_count;
+        equal ~msg:"forcing again computes the same value" int 42 v;
+        equal ~msg:"forcing twice runs the body once" int 1 !force_count;
         equal ~msg:"forcing again reaches nothing" reach [] again;
-        check "trivial lazy compiles as in an uninstrumented build"
+        is_true ~msg:"trivial lazy compiles as in an uninstrumented build"
           (Lazy.is_val (F.trivial ()) = Lazy.is_val (lazy 42));
-        check "and as in its twin"
+        is_true ~msg:"and as in its twin"
           (Lazy.is_val (F.trivial ()) = Lazy.is_val (U.trivial ())));
     (* {1 Counts: the reach map measures evaluations, not calls} *)
     test "the reach map counts evaluations, and only what ran" (fun () ->
@@ -487,25 +483,24 @@ let tests =
            still compute the right answer and would still be caught
            here. *)
         let total, rs = reached (fun () -> F.sum_while 10) in
-        check_int "the loop still sums" ~expected:55 ~actual:total;
+        equal ~msg:"the loop still sums" int 55 total;
         equal ~msg:"eleven condition evaluations, ten additions" reach
           [ ("lt", 11); ("sub", 10) ]
           rs;
         let total, rs = reached (fun () -> F.sum_while 0) in
-        check_int "zero iterations" ~expected:0 ~actual:total;
+        equal ~msg:"zero iterations" int 0 total;
         equal ~msg:"one condition evaluation, no addition" reach
           [ ("lt", 1) ]
           rs;
         (* Short-circuiting from the registry's side: the right arm of
-           [&&] carries no site of its own here, but the connective and
-           the comparison in front of it do, and a skipped arm must not
-           add hits. *)
+           [&&] carries no site of its own here, but the connective does,
+           and a skipped arm must not add hits. *)
         let r, rs = reached (fun () -> F.and_trace false true) in
-        check "&& short-circuits" (r = (false, [ "left" ]));
+        is_true ~msg:"&& short-circuits" (r = (false, [ "left" ]));
         equal ~msg:"the connective was evaluated once" reach [ ("or", 1) ] rs);
     (* {1 Inertness, restated at the end} *)
     test "nothing was armed from the first line to the last" (fun () ->
-        check "no mutant is armed" (M.armed () = None);
+        is_true ~msg:"no mutant is armed" (M.armed () = None);
         (* [id_of_string] round-trips every catalogued identifier: the
            report the loop will print names sites that can be found
            again. *)
@@ -513,7 +508,8 @@ let tests =
           (fun (m : M.mutant) ->
             match M.id_of_string (M.id_to_string m.id) with
             | Ok id ->
-                check "the identifier round-trips" (M.compare_id id m.id = 0)
+                is_true ~msg:"the identifier round-trips"
+                  (M.compare_id id m.id = 0)
             | Error e -> failf "%a" M.pp_arm_error e)
           (M.catalogue ()));
   ]

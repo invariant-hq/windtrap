@@ -8,8 +8,8 @@
    itself. So this module is compiled TWICE from one source - into
    [Mutsem_fixtures] through [ppx_windtrap.mutate], and into
    [Mutsem_baseline] untouched - and [main] is run by the two one-line
-   executables mutsem_exit.ml and baseline/mutsem_exit.ml, whose output
-   dune diffs against ONE committed golden under
+   executables mutsem_exit.ml and baseline/mutsem_exit_plain.ml, whose
+   output dune diffs against ONE committed golden under
    [with-accepted-exit-codes 2].
 
    It lives in the two libraries rather than in the executables because
@@ -17,7 +17,7 @@
    instrumented-versus-plain comparison cannot certify from its own
    observable which side is which - that is the whole point of the law -
    so the certification has to come from the registry, and the registry
-   only sees modules the test suite links. test_semantics.ml asserts
+   only sees modules the test suite links. test_mutate_semantics.ml asserts
    that mutsem_boom.ml is one of the three files that registered
    mutants, and coerces this copy against its twin's signature. Were the
    rewriter dropped from the library stanza, or applied to the baseline

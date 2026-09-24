@@ -132,7 +132,7 @@ let cmp_in_args a b c d =
    witness pins is that the annotation costs no evaluation and changes
    no answer. (test/ppx/mutate/integration/expected_type.ml carries the
    shape where a later type claims the name instead; it cannot live
-   here, because test_semantics.ml coerces this module to its twin's
+   here, because test_mutate_semantics.ml coerces this module to its twin's
    signature, which strengthens every top-level datatype to the twin's
    own - so the type is local to the function, and each of its
    constructors is built, for warning 37.) *)
@@ -156,22 +156,20 @@ let ari_fadd a b = Printf.sprintf "%.2f" (note "l" a +. note "r" b)
 let ari_fsub a b = Printf.sprintf "%.2f" (note "l" a -. note "r" b)
 
 (* A chain of one family, unparenthesized: [a + b + c] is [(a + b) + c],
-   both nodes are a [sub] rewrite starting at the same byte, so the
-   identifier cannot name them apart and only the outer one carries a
-   site. The inner [+] therefore runs UNGUARDED, in the middle of the
-   outer guard's operand bindings - which is the shape most likely to
-   reorder something, and the reason it has its own witness. *)
+   and only the outermost application of a chain is a site. The inner
+   [+] therefore runs UNGUARDED, in the middle of the outer guard's
+   operand bindings - which is the shape most likely to reorder
+   something, and the reason it has its own witness. *)
 let ari_chain a b c =
   let total = note "a" a + note "b" b + note "c" c in
   string_of_int total
 
-(* The same chain in parentheses. This one carries TWO sites, not one:
-   OCaml's parser gives a parenthesized expression a location starting at
-   the [(], so the outer node no longer starts at the same byte as the
-   inner and the de-duplication that collapses [ari_chain] does not fire.
-   The mutant population therefore depends on parenthesization - worth
-   knowing, and irrelevant to guarantee 12, which is why both shapes are
-   here: two nested guards must reorder no more than one. *)
+(* The same chain inside an argument's brackets. OCaml's parser gives
+   the bracketed expression a location starting at the [(], so the outer
+   node no longer starts at the same byte as the inner; the chain rule
+   reads the tree, not the layout, and this carries one site too
+   (test/ppx/mutate/fixture_chain.ml pins it). The witness pins that the
+   bracket changes no evaluation order either. *)
 let ari_chain_parens a b c = string_of_int (note "a" a + note "b" b + note "c" c)
 
 (* Right-nested, where both nodes carry a site and the expansions nest. *)
@@ -271,7 +269,7 @@ let lazy_witness () =
    uninstrumented still generalizes instrumented. This binding is where
    that would break first: put a guard anywhere on its spine and it
    weakens to [bool * '_weak1 list]. Nothing here reads it at run time;
-   the check is the module coercion in test_semantics.ml, which compares
+   the check is the module coercion in test_mutate_semantics.ml, which compares
    this copy's inferred signature against the twin's and fails to
    compile the day the two disagree. *)
 let generalizes = (true, [])
