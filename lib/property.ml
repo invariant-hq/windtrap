@@ -88,29 +88,15 @@ let stats_of ~cases ~discards ctx =
 
 (* Running one case
 
-   [run_case] classifies one body invocation. Control exceptions are not
-   re-raised here: the case loops re-raise them (with their backtrace) while
-   the shrink search rejects a skipping candidate — so a candidate that
-   skips cannot turn a recorded failure into a skip — and ends on a timeout
-   (see [shrink]). *)
-
-type failure_class = Assertion of Failure.t | Exception of exn * string option
-
-type case_result =
-  | Passed
-  | Discarded
-  | Failed of failure_class
-  | Control of exn * Printexc.raw_backtrace
+   [run_case] runs the law once on a fresh set of marks. The callers decide
+   what a control means: the case loops raise it again, except a discard,
+   and the shrink search rejects the candidate, so that a candidate cannot
+   turn a recorded failure into a skip, or ends on a timeout (see
+   [shrink]). *)
 
 let run_case ctx body value =
   reset_case ctx;
-  match body ctx value with
-  | () -> Passed
-  | exception Failure.Control `Discard -> Discarded
-  | exception Failure.Check_failure failure -> Failed (Assertion failure)
-  | exception (Failure.Control (`Skip _ | `Timeout _) as control) ->
-      Control (control, Printexc.get_raw_backtrace ())
-  | exception exn -> Failed (Exception (exn, Failure.recorded_backtrace ()))
+  Failure.catch (fun () -> body ctx value)
 
 (* Shrinking
 
@@ -130,22 +116,22 @@ let run_case ctx body value =
    [shrink_budget] bounds the accepted steps on any other tree. Nothing but
    the per-test timeout bounds the candidates probed at one node. *)
 
-let same_kind original candidate =
+let same_kind (original : Failure.fault) candidate =
   match (original, candidate) with
-  | Assertion _, Failed (Assertion _ as accepted)
-  | Exception _, Failed (Exception _ as accepted) ->
+  | `Assertion _, Error (`Assertion _ as accepted)
+  | `Exception _, Error (`Exception _ as accepted) ->
       Some accepted
-  | _, (Passed | Discarded | Failed _ | Control _) -> None
+  | _, (Ok () | Error _) -> None
 
 let shrink ~budget ~body tree first_class =
   let scratch = make_context () in
   let accept candidate_tree =
     let value = Gen.Engine.value (Gen.Engine.Shrink_tree.root candidate_tree) in
     match run_case scratch body value with
-    | Control ((Failure.Control (`Timeout _) as timeout), backtrace) ->
+    | Error (`Timeout _ as timeout) ->
         (* The per-test alarm fired inside a candidate: a fact about the
            whole test, not this candidate — end the search (caught below). *)
-        Printexc.raise_with_backtrace timeout backtrace
+        Failure.reraise timeout
     | result -> same_kind first_class result
   in
   (* Three outcomes, and the third is why this is not an option. Forcing a
@@ -156,20 +142,18 @@ let shrink ~budget ~body tree first_class =
      counterexample, which is the one thing a shrink report cannot get
      wrong. *)
   let rec first_accepted seq =
-    match seq () with
-    (* The explicit re-raise is load-bearing: the catch-all otherwise eats a
-       handler-raised [Timeout] delivered during [Seq] forcing. *)
-    | exception (Failure.Control (`Timeout _) as timeout) -> raise timeout
-    | exception _ -> `Stopped
-    | Seq.Nil -> `Converged
-    | Seq.Cons (candidate, rest) -> (
+    match Failure.catch seq with
+    | Error (`Timeout _ as timeout) -> Failure.reraise timeout
+    | Error _ -> `Stopped
+    | Ok Seq.Nil -> `Converged
+    | Ok (Seq.Cons (candidate, rest)) -> (
         match accept candidate with
         | Some accepted -> `Accepted (candidate, accepted)
         | None -> first_accepted rest)
   in
   (* Best-so-far state lives in refs updated at each accepted step, so a
-     [Timeout] firing at any poll point leaves them at the last accepted
-     node. The descent wrapper below is the one handler of a timeout in this
+     timeout firing at any poll point leaves them at the last accepted node.
+     The descent wrapper below is the one handler of a timeout in this
      module. One delivered while the counterexample is formatted is caught
      by the guard of [Gen.Engine.render]; everywhere else it propagates to
      the runner. *)
@@ -180,24 +164,25 @@ let shrink ~budget ~body tree first_class =
      both read "shrunk 100 steps". Set by the two stops the search survives:
      the step budget, and a candidate whose forcing raised. *)
   let exhausted = ref false in
-  (try
-     (* Probe first, then read the budget: a search whose last accepted step
-        landed exactly on the budget with no further candidate had already
-        converged, and reporting it as truncated would tell the reader the
-        counterexample may not be minimal when it is. *)
-     let rec descend steps tree =
-       match first_accepted (Gen.Engine.Shrink_tree.children tree) with
-       | `Converged -> ()
-       | `Stopped -> exhausted := true
-       | `Accepted (candidate, accepted) ->
-           if steps >= budget then exhausted := true
-           else begin
-             best := (candidate, steps + 1, accepted);
-             descend (steps + 1) candidate
-           end
-     in
-     descend 0 tree
-   with Failure.Control (`Timeout limit) -> timed_out := Some limit);
+  (* Probe first, then read the budget: a search whose last accepted step
+     landed exactly on the budget with no further candidate had already
+     converged, and reporting it as truncated would tell the reader the
+     counterexample may not be minimal when it is. *)
+  let rec descend steps tree =
+    match first_accepted (Gen.Engine.Shrink_tree.children tree) with
+    | `Converged -> ()
+    | `Stopped -> exhausted := true
+    | `Accepted (candidate, accepted) ->
+        if steps >= budget then exhausted := true
+        else begin
+          best := (candidate, steps + 1, accepted);
+          descend (steps + 1) candidate
+        end
+  in
+  (match Failure.catch (fun () -> descend 0 tree) with
+  | Ok () -> ()
+  | Error (`Timeout limit) -> timed_out := Some limit
+  | Error c -> Failure.reraise c);
   let tree, steps, cls = !best in
   (tree, steps, cls, !timed_out, !exhausted)
 
@@ -226,10 +211,12 @@ let default_count = 100
    away. *)
 let shrink_budget = 10_000
 
-let inner_failure = function
-  | Assertion failure -> failure
-  | Exception (exn, backtrace) ->
-      Failure.raised ~actual:(Printexc.to_string exn) ?backtrace ()
+let inner_failure : Failure.fault -> Failure.t = function
+  | `Assertion failure -> failure
+  | `Exception (exn, backtrace) ->
+      Failure.raised ~actual:(Printexc.to_string exn)
+        ~backtrace:(Failure.backtrace_to_string backtrace)
+        ()
 
 let run ?loc ?count ?max_discard ?(examples = []) ?summary ~root ~path gen body
     =
@@ -270,21 +257,20 @@ let run ?loc ?count ?max_discard ?(examples = []) ?summary ~root ~path gen body
     Fail { failure; stats = stats () }
   in
   (* One case, and the bookkeeping every case source shares: a pass commits
-     its labels and counts, a discard spends the budget, a control exception
-     is the runner's and keeps the backtrace it was raised with. Only a
-     failure differs between the two loops, so only a failure comes back. *)
+     its labels and counts, a discard spends the budget, any other control
+     is the runner's. Only a failure differs between the two loops, so only
+     a failure comes back. *)
   let run_one value =
     match run_case ctx body value with
-    | Passed ->
+    | Ok () ->
         commit_case ctx;
         incr cases;
         `Passed
-    | Discarded ->
+    | Error `Discard ->
         incr discards;
         `Discarded
-    | Control (control, backtrace) ->
-        Printexc.raise_with_backtrace control backtrace
-    | Failed cls -> `Failed cls
+    | Error (#Failure.fault as fault) -> `Failed fault
+    | Error (#Failure.control as control) -> Failure.reraise control
   in
   (* Examples run first, unshrunk, unseeded, numbered separately. *)
   let rec run_examples index = function
@@ -313,23 +299,19 @@ let run ?loc ?count ?max_discard ?(examples = []) ?summary ~root ~path gen body
           else Coverage_failed final
         else
           let state = Seed.make (Seed.derive ~root ~path ~index:attempts) in
-          match Gen.Engine.sample gen state with
-          | exception Failure.Control `Discard ->
+          match Failure.catch (fun () -> Gen.Engine.sample gen state) with
+          | Error `Discard ->
               incr discards;
               generate ~passed ~attempts:(attempts + 1)
-          | exception (Failure.Control (`Skip _ | `Timeout _) as control) ->
-              (* Control exceptions delivered inside the generator (an alarm
-                 at a poll point, a generator-callback skip) keep their
-                 meaning: the runner classifies them, they are never a
-                 generator crash. *)
-              Printexc.raise_with_backtrace control
-                (Printexc.get_raw_backtrace ())
-          | exception exn ->
-              let backtrace = Failure.recorded_backtrace () in
+          | Error (#Failure.fault as fault) ->
               fail ~rendered:"<generator raised before producing a value>"
-                ~case_index:attempts ~shrink_steps:0 ~examples:false
-                (Exception (exn, backtrace))
-          | tree -> (
+                ~case_index:attempts ~shrink_steps:0 ~examples:false fault
+          | Error (#Failure.control as control) ->
+              (* Delivered inside the generator (an alarm at a poll point, a
+                 skip in a generator's function): the runner's, never a
+                 generator crash. *)
+              Failure.reraise control
+          | Ok tree -> (
               match
                 run_one (Gen.Engine.value (Gen.Engine.Shrink_tree.root tree))
               with

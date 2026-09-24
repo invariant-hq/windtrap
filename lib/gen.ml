@@ -42,9 +42,10 @@ module Shrink_tree = struct
       ~children:
         (Seq.filter_map
            (fun child ->
-             match map f child with
-             | mapped -> Some mapped
-             | exception Failure.Control `Discard -> None)
+             match Failure.catch (fun () -> map f child) with
+             | Ok mapped -> Some mapped
+             | Error `Discard -> None
+             | Error c -> Failure.reraise c)
            tree.children)
 
   let rec pair left right =
@@ -152,9 +153,12 @@ type 'a t = {
 
 (* Printers *)
 
+(* A printer runs after a case has failed, so whatever it raises, a control
+   included, becomes the text: nothing may replace the failure found. *)
 let render_with pp value =
-  try Format.asprintf "%a" pp value
-  with exn -> Printf.sprintf "<printer raised %s>" (Printexc.to_string exn)
+  match Failure.catch (fun () -> Format.asprintf "%a" pp value) with
+  | Ok text -> text
+  | Error c -> Printf.sprintf "<printer raised %s>" (Failure.caught_to_string c)
 
 let pp_int = Format.pp_print_int
 let pp_int32 ppf n = Format.fprintf ppf "%ldl" n
@@ -366,9 +370,10 @@ let rec rebind tree f =
       (Seq.append
          (Seq.filter_map
             (fun candidate ->
-              match rebind candidate f with
-              | rebound -> Some rebound
-              | exception Failure.Control `Discard -> None)
+              match Failure.catch (fun () -> rebind candidate f) with
+              | Ok rebound -> Some rebound
+              | Error `Discard -> None
+              | Error c -> Failure.reraise c)
             (Shrink_tree.children tree))
          (Shrink_tree.children bound))
 

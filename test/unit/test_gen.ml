@@ -1688,18 +1688,17 @@ let a_raising_printer_renders_the_exception () =
     render
       (Gen_engine.sample (Gen.with_pp (fun _ _ -> raise exn) Gen.nat) (state 0))
   in
+  equal string "<printer raised Failure(\"boom\")>"
+    (rendered (Stdlib.Failure "boom"));
+  equal string "<printer raised windtrap timeout after 1.5s>"
+    (rendered (Windtrap.Private.Failure.Control (`Timeout 1.5)));
   List.iter
     (fun exn ->
-      equal string
-        (Printf.sprintf "<printer raised %s>" (Printexc.to_string exn))
-        (rendered exn))
-    [
-      Stdlib.Failure "boom";
-      Windtrap.Private.Failure.Control (`Timeout 1.5);
-      Sys.Break;
-      Out_of_memory;
-      Stack_overflow;
-    ]
+      match rendered exn with
+      | exception raised ->
+          is_true ~msg:(Printexc.to_string exn ^ " escapes") (raised == exn)
+      | text -> failf "%s was rendered as %S" (Printexc.to_string exn) text)
+    [ Sys.Break; Out_of_memory; Stack_overflow ]
 
 let make_without_pp_has_nothing_to_print () =
   let gen =

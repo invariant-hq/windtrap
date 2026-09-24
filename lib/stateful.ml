@@ -65,23 +65,12 @@ type ('model, 'sut) program = {
   calls : ('model, 'sut) call list;
 }
 
-(* Exception classes
-
-   What a *body* raises and this module never converts nor swallows: the
-   five control exceptions, each a statement about the run rather than about
-   this program, and the three no failure boundary may absorb. Converting
-   a skip would make it a reported counterexample, converting a discard
-   would break [assume] inside a body, and converting a timeout would defeat
-   the shrink search's deadline. *)
-let propagates = function
-  | Failure.Check_failure _ | Failure.Control _ -> true
-  | exn -> Failure.is_fatal exn
-
 (* A [~pre] or [~next] that raises is a specification bug, not a
    counterexample. It escapes into the generator — the engine reports it
    once, unshrunk, with its backtrace — wrapped so the report names the
-   operation, the step and the function. Only the exceptions about the run
-   rather than the model escape as themselves. *)
+   operation, the step and the function. A control is about the run or the
+   case rather than the model, and escapes as itself: a discard there
+   discards the case. *)
 exception
   Specification_raised of {
     name : string;
@@ -98,17 +87,18 @@ let () =
              (Printexc.to_string exn))
     | _ -> None)
 
-let about_the_run = function
-  | Failure.Control (`Timeout _ | `Exit) -> true
-  | exn -> Failure.is_fatal exn
-
 let specification ~name ~step ~phase f =
-  match f () with
-  | result -> result
-  | exception exn when not (about_the_run exn) ->
+  match Failure.catch f with
+  | Ok result -> result
+  | Error (`Exception (exn, backtrace)) ->
       Printexc.raise_with_backtrace
         (Specification_raised { name; step; phase; exn })
-        (Printexc.get_raw_backtrace ())
+        backtrace
+  | Error (`Assertion failure) ->
+      raise
+        (Specification_raised
+           { name; step; phase; exn = Failure.Check_failure failure })
+  | Error (#Failure.control as c) -> Failure.reraise c
 
 (* Repair
 
@@ -163,9 +153,9 @@ let plural count = if count = 1 then "" else "s"
    cost one cell. *)
 let cell pp_model model =
   let text =
-    match Format.asprintf "%a" pp_model model with
-    | text -> text
-    | exception exn -> Pp.str "<pp_model raised %s>" (Printexc.to_string exn)
+    match Failure.catch (fun () -> Format.asprintf "%a" pp_model model) with
+    | Ok text -> text
+    | Error c -> Pp.str "<pp_model raised %s>" (Failure.caught_to_string c)
   in
   Text.truncate_utf8 model_cell_chars (one_line text)
 
@@ -393,20 +383,23 @@ let at_step ?(after = false) ?loc ~name ~step ~total fn =
 
    The engine's shrink acceptance distinguishes exactly two classes, so a
    descent that starts at an assertion failure rejects every candidate
-   failing by an exception, and vice versa. Re-raising a non-control,
-   non-fatal exception as a [Check_failure] carrying the payload
-   [Property.inner_failure] would have built keeps the report byte-identical
-   and changes only the class. *)
+   failing by an exception, and vice versa. Re-raising an exception as a
+   [Check_failure] carrying the payload [Property.inner_failure] would have
+   built keeps the report byte-identical and changes only the class. A
+   control is about the run or the case, never this program: converting a
+   skip would make it a reported counterexample, converting a discard would
+   break [assume] inside a body, and converting a timeout would defeat the
+   shrink search's deadline. *)
 let normalize fn =
-  match fn () with
-  | () -> ()
-  | exception exn when propagates exn ->
-      Printexc.raise_with_backtrace exn (Printexc.get_raw_backtrace ())
-  | exception exn ->
-      let backtrace = Failure.recorded_backtrace () in
+  match Failure.catch fn with
+  | Ok () -> ()
+  | Error (`Exception (exn, backtrace)) ->
       raise
         (Failure.Check_failure
-           (Failure.raised ~actual:(Printexc.to_string exn) ?backtrace ()))
+           (Failure.raised ~actual:(Printexc.to_string exn)
+              ~backtrace:(Failure.backtrace_to_string backtrace)
+              ()))
+  | Error c -> Failure.reraise c
 
 (* The executor *)
 
@@ -435,16 +428,6 @@ let run_program ?invariant program sut =
         go (step + 1) model rest
   in
   go 1 program.initial program.calls
-
-(* Exceptions that describe the run rather than this program, and are
-   therefore worth more than the failure in hand: the timeout that ends the
-   whole property — swallowing it would leave the shrink search running past
-   a deadline the alarm has already spent — and the three no boundary may
-   absorb. *)
-let ends_the_run exn =
-  match exn with
-  | Failure.Control (`Timeout _) -> true
-  | exn -> Failure.is_fatal exn
 
 (* The two ways a scope can fail its side of the contract, and they are
    different in kind. A scope that never runs the program fails the case:
@@ -479,51 +462,50 @@ let execute ?loc ?invariant ~scope program =
       misused := Some exn;
       raise exn
     end;
-    match run_program ?invariant program sut with
-    | () -> ()
-    | exception exn ->
+    match Failure.catch (fun () -> run_program ?invariant program sut) with
+    | Ok () -> ()
+    | Error c ->
         (* Recorded before it is re-raised through [scope]'s frames, so a
            scope that cancels or releases on the exception path sees it and
            one that swallows it cannot turn a failing case green. *)
-        let backtrace = Printexc.get_raw_backtrace () in
-        failed := Some (exn, backtrace);
-        Printexc.raise_with_backtrace exn backtrace
+        failed := Some c;
+        Failure.reraise c
   in
   let escaped =
-    match scope run with
-    | () -> None
-    | exception exn -> Some (exn, Printexc.get_raw_backtrace ())
+    match Failure.catch (fun () -> scope run) with
+    | Ok () -> None
+    | Error c -> Some c
   in
   match (!misused, escaped, !failed) with
   (* The harness being wrong outranks whatever else the case had to say,
      and it keeps the backtrace of the second call when the scope let it
      out — which is the one frame a reader needs. *)
-  | Some exn, Some (raised, backtrace), _ when raised == exn ->
-      Printexc.raise_with_backtrace raised backtrace
+  | Some exn, Some (`Exception (raised, _) as c), _ when raised == exn ->
+      Failure.reraise c
   | Some exn, _, _ -> raise exn
   | None, None, None ->
       if !entries = 0 then
         raise (Failure.Check_failure (Failure.message ?loc no_program))
-  | None, None, Some (exn, backtrace) ->
+  | None, None, Some c ->
       (* [scope] swallowed the program's failure; [execute] does not. *)
-      Printexc.raise_with_backtrace exn backtrace
-  | None, Some (exn, backtrace), None ->
+      Failure.reraise c
+  | None, Some c, None ->
       (* The scope's own, and unconverted either way: before the callback
          it is an acquisition that failed — or a skip declining a system
          the machine cannot build — and after it returned it is a release
          that failed with no failure in hand to outrank. *)
-      Printexc.raise_with_backtrace exn backtrace
-  | None, Some (exn, backtrace), Some (failure, failure_backtrace) ->
-      (* A release that raised over a failing program. The cleanup error
-         must not replace the counterexample, and a timeout
-         hidden behind one would be accepted by the engine as a shrink
-         step and reported as a converged, minimal counterexample. So the
-         program's failure is the failure, except for the exceptions that
-         end the whole run and outrank it — and except for itself, on its
-         way out through the scope. *)
-      if exn == failure || ends_the_run exn then
-        Printexc.raise_with_backtrace exn backtrace
-      else Printexc.raise_with_backtrace failure failure_backtrace
+      Failure.reraise c
+  | None, Some (#Failure.control as c), Some _ ->
+      (* A control from the scope over a failing program is about the run
+         or the case, and outranks the program's failure: a timeout hidden
+         behind the failure would be accepted by the engine as a shrink
+         step and reported as a converged, minimal counterexample. *)
+      Failure.reraise c
+  | None, Some #Failure.fault, Some c ->
+      (* A release that raised over a failing program, or the program's own
+         failure on its way out through the scope: the cleanup error must
+         not replace the counterexample. *)
+      Failure.reraise c
 
 (* The entry point *)
 

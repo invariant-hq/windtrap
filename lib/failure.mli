@@ -258,25 +258,7 @@ and t = {
     writes the [msg] and the [loc] of the failure of a call. The bound of the
     {{!section-constructors}constructors} is then the client's to keep. *)
 
-(** {1:control Control}
-
-    The runner acts on [`Skip], [`Timeout] and [`Exit] at the boundary of an
-    attempt (see {{!Run.section-attempts}attempts}), and the property engine on
-    [`Discard], which has a meaning inside a law only.
-
-    A {e failure boundary} is a catch site that turns a raised exception into a
-    recorded failure: the boundary of an attempt, a subtest, a verb that calls a
-    function of the user, an engine that runs a law. Every boundary is a catch
-    site, which {!is_fatal} binds. A boundary below that of the attempt must
-    also raise again a {!Control} of [`Skip] or [`Timeout], which are the
-    runner's to act on, and inside a law one of [`Discard], which is the
-    engine's. It records a {!Check_failure} when that is its purpose, and raises
-    it again otherwise. [`Exit] has no rule below the boundary of the attempt,
-    where it is an exception as any other.
-
-    The shrink search of {!Property.run} is the one exception to the rule. Once
-    a case has failed, a [`Timeout] ends the search and a candidate that skips
-    is rejected, so neither replaces the failure found (see [timed_out]). *)
+(** {1:control Control} *)
 
 type control =
   [ `Skip of string option  (** Skip the running test, with the reason. *)
@@ -291,7 +273,8 @@ type control =
         exception does (see {{!Run.section-exits}exits}). It carries no code,
         because the guard cannot see it. *)
   | `Discard  (** Discard the running case of a property. *) ]
-(** The type for a statement about the running test or case. *)
+(** The type for a statement about the running test or case. The runner acts on
+    the first three and the property engine on [`Discard]. *)
 
 exception Check_failure of t
 (** Raised to fail the running test with a finished failure. The assertion verbs
@@ -306,36 +289,60 @@ exception Control of control
     [Exit_attempt (code under test called exit; intercepted by windtrap)] and
     [windtrap discard (assume or reject outside a property)]. *)
 
-(** {1:boundaries Boundary rules}
+(** {1:catching Catching the user's code}
 
-    The two rules that every failure boundary shares: which exceptions it must
-    let through, and how the backtrace of one that it records becomes text. *)
+    Every site that calls the user's code calls it through {!catch}, and keeps
+    one rule: it records or converts a {!type-fault} and raises every control
+    again, to its owner. Two owners consume more:
+    - The runner's attempt consumes every control (see
+      {{!Run.section-attempts}attempts}).
+    - The property engine consumes [`Discard] everywhere below a law. Once a
+      case has failed, it also consumes every control of the shrink search, so
+      nothing replaces the failure found: a [`Timeout] ends the search, any
+      other control rejects the candidate, and a printer turns what it raises
+      into text.
 
-val is_fatal : exn -> bool
-(** [is_fatal exn] is [true] iff [exn] is [Sys.Break], [Out_of_memory] or
-    [Stack_overflow]. A catch site must raise these again and record no failure,
-    because an interrupt or an exhausted resource must stop the run and not fail
-    one test. *)
+    [Sys.Break], [Out_of_memory] and [Stack_overflow] never reach a site, since
+    an interrupt or an exhausted resource must stop the run and not fail one
+    test. A handler of the user's that catches every exception still swallows a
+    control. *)
+
+type fault = [ `Assertion of t | `Exception of exn * Printexc.raw_backtrace ]
+(** The type for what the user's code raised about itself: a {!Check_failure},
+    or any other exception with its backtrace. *)
+
+type caught = [ fault | control ]
+(** The type for what {!catch} returns of a raise. *)
+
+val catch : (unit -> 'a) -> ('a, caught) result
+(** [catch f] is [Ok (f ())], or [Error c] where [c] classifies what [f ()]
+    raised. It raises [Sys.Break], [Out_of_memory] and [Stack_overflow] again
+    with their backtrace and never returns them. A [Fun.Finally_raised] that
+    carries a {!Control} or one of those three is unwrapped first, so a finally
+    cut by the timeout is a [`Timeout]. *)
+
+val reraise : [< caught ] -> 'a
+(** [reraise c] raises again what {!catch} returned: the same exception, with
+    its backtrace for an [`Exception]. *)
+
+val caught_to_string : [< caught ] -> string
+(** [caught_to_string c] is [Printexc.to_string] of the exception that [c]
+    classifies. *)
+
+(** {1:backtraces Backtraces} *)
 
 val backtrace_to_string : Printexc.raw_backtrace -> string
 (** [backtrace_to_string raw] is [raw] as the text of a payload. A producer must
-    convert with it, or with {!recorded_backtrace}, and never with
-    [Printexc.raw_backtrace_to_string], so that every report shows the same
-    frames.
+    convert with it, and never with [Printexc.raw_backtrace_to_string], so that
+    every report shows the same frames.
 
     The result is the text of [Printexc.raw_backtrace_to_string] without the
     trailing run of windtrap's own frames ({!Loc.own_unit}). Only a trailing run
     is dropped, so a callback of the user that windtrap called keeps its frame
     and the frames below it, and a backtrace that never crossed code of the user
     is kept whole. The frames keep their positions, so the first line still
-    reads [Raised at]. An empty backtrace gives [""], which a payload can thus
-    hold. *)
-
-val recorded_backtrace : unit -> string option
-(** [recorded_backtrace ()] is {!backtrace_to_string} of the backtrace of the
-    exception raised last, or [None] when backtraces are not recorded or when
-    that text is empty. A handler must call it before anything else can raise,
-    because the runtime keeps one such backtrace. *)
+    reads [Raised at]. An empty backtrace gives [""], which {!raised} stores as
+    no backtrace. *)
 
 (** {1:constructors Constructors}
 
@@ -411,7 +418,8 @@ val raised :
 (** [raised ()] is a {!Raise} failure. Every text defaults to absent and
     [predicate] to [false]. A failure site must pass [message_diff] only when it
     holds (see {!type-message_diff}), and must make [backtrace] with
-    {!backtrace_to_string} or {!recorded_backtrace}. Neither is checked. *)
+    {!backtrace_to_string}. Neither is checked. A [backtrace] of [""] is stored
+    as none. *)
 
 val baseline : ?loc:Loc.t -> baseline -> baseline_state -> t
 (** [baseline b state] is a {!constructor-Baseline} failure of [b] in [state],

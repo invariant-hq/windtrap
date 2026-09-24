@@ -105,7 +105,7 @@ let restore e =
 let with_capture t ~groups ~test_name fn =
   match t with
   | Disabled -> fn ()
-  | Enabled e ->
+  | Enabled e -> (
       (* Reset first: if setup fails below, the previous attempt's file must
          not be readable as this attempt's output. *)
       e.current <- None;
@@ -129,17 +129,32 @@ let with_capture t ~groups ~test_name fn =
          Unix.close fd;
          raise exn);
       e.current <- Some path;
-      Fun.protect
-        ~finally:(fun () ->
-          (* Drain before restoring so buffered test output reaches the
-             capture file, not the restored descriptors — and restore even
-             when the drain fails (its error still propagates). *)
-          Fun.protect
-            ~finally:(fun () ->
-              restore e;
-              Unix.close fd)
-            drain)
-        fn
+      (* Drain before restoring so buffered test output reaches the capture
+         file, not the restored descriptors, and restore even when the drain
+         fails. The drain's error is the answer only when [fn] returned:
+         what [fn] raised is the attempt's outcome, and no cleanup error may
+         replace it. *)
+      let close () =
+        let drained =
+          match drain () with
+          | () -> Ok ()
+          | exception (Sys_error _ as exn) ->
+              Error (exn, Printexc.get_raw_backtrace ())
+        in
+        restore e;
+        Unix.close fd;
+        drained
+      in
+      match fn () with
+      | value -> (
+          match close () with
+          | Ok () -> value
+          | Error (exn, backtrace) ->
+              Printexc.raise_with_backtrace exn backtrace)
+      | exception exn ->
+          let backtrace = Printexc.get_raw_backtrace () in
+          ignore (close ());
+          Printexc.raise_with_backtrace exn backtrace)
 
 let abandon = function
   | Disabled -> ()

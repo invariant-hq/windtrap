@@ -179,21 +179,12 @@ let tests =
         let head = String.make 65_536 'a' in
         let a = F.message (head ^ "xyz") and b = F.message (head ^ "XYZ") in
         is_true ~msg:"the two payloads are equal" (a.F.kind = b.F.kind));
-    test "recorded_backtrace" (fun () ->
-        let saved = Printexc.backtrace_status () in
-        Fun.protect ~finally:(fun () -> Printexc.record_backtrace saved)
-        @@ fun () ->
-        Printexc.record_backtrace true;
-        (try raise Not_found with Not_found -> ());
-        is_true ~msg:"recording on: the last raise's backtrace"
-          (match F.recorded_backtrace () with
-          | Some bt -> String.starts_with ~prefix:"Raised at" bt
-          | None -> false);
-        Printexc.record_backtrace false;
-        is_none ~msg:"recording off: None" (F.recorded_backtrace ());
-        (* Turning recording on empties the backtrace the runtime keeps. *)
-        Printexc.record_backtrace true;
-        is_none ~msg:"an empty backtrace: None" (F.recorded_backtrace ()));
+    test "an empty backtrace is stored as none" (fun () ->
+        let f = F.raised ~backtrace:"" () in
+        is_true ~msg:"backtrace = None"
+          (match f.F.kind with
+          | F.Raise { backtrace = None; _ } -> true
+          | _ -> false));
     test "raise constructor" (fun () ->
         let f = F.raised () in
         is_true ~msg:"all payloads default to absent"
@@ -612,18 +603,77 @@ let tests =
           (has ~needle:"Test_failure.raise_not_found" trimmed);
         is_true ~msg:"the first frame still reads as the raise site"
           (String.starts_with ~prefix:"Raised at" trimmed);
-        (* [recorded_backtrace] reads [None] only from an empty raw
-           backtrace — never because trimming emptied a real one. *)
+        (* Empty only from an empty raw backtrace, never because trimming
+           emptied a real one. *)
         equal ~msg:"an empty raw backtrace renders empty" string ""
           (F.backtrace_to_string (Printexc.get_callstack 0)));
-    test "is_fatal: exactly the never-swallowed exceptions" (fun () ->
-        is_true ~msg:"Sys.Break is fatal" (F.is_fatal Sys.Break);
-        is_true ~msg:"Out_of_memory is fatal" (F.is_fatal Out_of_memory);
-        is_true ~msg:"Stack_overflow is fatal" (F.is_fatal Stack_overflow);
-        is_true ~msg:"Check_failure is not fatal"
-          (not (F.is_fatal (F.Check_failure (F.message "boom"))));
-        is_true ~msg:"an ordinary exception is not fatal"
-          (not (F.is_fatal Not_found)));
+    test "catch classifies what its function raised" (fun () ->
+        let failure = F.message "boom" in
+        is_true ~msg:"a return is Ok" (F.catch (fun () -> 3) = Ok 3);
+        is_true ~msg:"a Check_failure is an assertion"
+          (match F.catch (fun () -> raise (F.Check_failure failure)) with
+          | Error (`Assertion f) -> f == failure
+          | _ -> false);
+        is_true ~msg:"a Control is its control"
+          (match F.catch (fun () -> raise (F.Control (`Skip (Some "r")))) with
+          | Error (`Skip (Some "r")) -> true
+          | _ -> false);
+        is_true ~msg:"any other exception is an exception"
+          (match F.catch (fun () -> raise Not_found) with
+          | Error (`Exception (Not_found, _)) -> true
+          | _ -> false));
+    test "catch never returns an interrupt or an exhausted resource" (fun () ->
+        List.iter
+          (fun exn ->
+            let name = Printexc.to_string exn in
+            match F.catch (fun () -> raise exn) with
+            | exception raised ->
+                is_true ~msg:(name ^ " raised again") (raised == exn)
+            | Ok () | Error _ -> failf "%s was returned" name)
+          [ Sys.Break; Out_of_memory; Stack_overflow ]);
+    test "catch unwraps a finally cut by a control or a fatal exception"
+      (fun () ->
+        let cut exn () = Fun.protect ~finally:(fun () -> raise exn) ignore in
+        is_true ~msg:"a timeout in a finally is a timeout"
+          (match F.catch (cut (F.Control (`Timeout 1.5))) with
+          | Error (`Timeout 1.5) -> true
+          | _ -> false);
+        is_true ~msg:"an interrupt in a finally is raised as itself"
+          (match F.catch (cut Sys.Break) with
+          | exception Sys.Break -> true
+          | _ -> false);
+        is_true ~msg:"any other exception of a finally stays wrapped"
+          (match F.catch (cut Not_found) with
+          | Error (`Exception (Fun.Finally_raised Not_found, _)) -> true
+          | _ -> false));
+    test "reraise raises what catch returned" (fun () ->
+        let saved = Printexc.backtrace_status () in
+        Fun.protect ~finally:(fun () -> Printexc.record_backtrace saved)
+        @@ fun () ->
+        Printexc.record_backtrace true;
+        let raise_not_found () = raise Not_found in
+        match F.catch raise_not_found with
+        | Error (`Exception (_, backtrace) as c) -> (
+            match F.reraise c with
+            | exception Not_found ->
+                is_true ~msg:"the backtrace continues the original"
+                  (String.starts_with
+                     ~prefix:(Printexc.raw_backtrace_to_string backtrace)
+                     (Printexc.raw_backtrace_to_string
+                        (Printexc.get_raw_backtrace ())))
+            | _ -> fail "reraise returned")
+        | _ -> fail "Not_found was not an exception");
+    test "caught_to_string prints the exception" (fun () ->
+        equal string "windtrap timeout after 1.5s"
+          (F.caught_to_string (`Timeout 1.5));
+        equal string "windtrap discard (assume or reject outside a property)"
+          (F.caught_to_string `Discard);
+        equal string "windtrap skip: why"
+          (F.caught_to_string (`Skip (Some "why")));
+        equal string "windtrap skip" (F.caught_to_string (`Skip None));
+        equal string "Not_found"
+          (F.caught_to_string
+             (`Exception (Not_found, Printexc.get_callstack 0))));
   ]
 
 let () = exit @@ Windtrap.run "failure" tests

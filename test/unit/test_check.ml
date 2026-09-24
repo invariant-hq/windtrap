@@ -1069,39 +1069,30 @@ let tests =
         is_true ~msg:"raises_match, a rejected exception"
           (predicate "raises_match" (fun () ->
                Check.raises_match (fun _ -> false) (fun () -> raise Exit))));
-    (* Only Check_failure, Skip_test and Timeout pass through the two verbs;
-       the other exceptions the runner treats apart are compared like any
-       other. *)
-    test "raises and raises_match compare exit, discard and fatal exceptions"
+    (* Only an exception of the user's own is compared: every control, and
+       an interrupt or an exhausted resource, passes through both verbs. A
+       predicate that accepts everything cannot hide an intercepted [exit]. *)
+    test "raises and raises_match pass exit, discard and fatal exceptions"
       (fun () ->
         List.iter
           (fun (name, e) ->
-            passes (name ^ ": raises takes it") (fun () ->
+            let passes_through verb f =
+              match outcome f with
+              | Raised raised ->
+                  is_true ~msg:(name ^ ": " ^ verb ^ " passes it") (raised = e)
+              | Returned | Failed _ -> fail (name ^ ": " ^ verb ^ " consumed it")
+            in
+            passes_through "raises" (fun () ->
                 Check.raises e (fun () -> raise e));
-            passes (name ^ ": raises_match accepts it") (fun () ->
-                Check.raises_match (fun x -> x == e) (fun () -> raise e));
-            raise_payload
-              (name ^ ": raises_match rejects it")
-              (fun () ->
-                Check.raises_match (fun _ -> false) (fun () -> raise e))
-              (fun (_, actual, _) ->
-                equal
-                  ~msg:(name ^ ": the rejected exception is held")
-                  (option string)
-                  (Some (Printexc.to_string e))
-                  actual);
-            raise_payload
-              (name ^ ": raises of another fails")
-              (fun () -> Check.raises Not_found (fun () -> raise e))
-              (fun (_, actual, _) ->
-                equal
-                  ~msg:(name ^ ": the raised exception is held")
-                  (option string)
-                  (Some (Printexc.to_string e))
-                  actual))
+            passes_through "raises of another" (fun () ->
+                Check.raises Not_found (fun () -> raise e));
+            passes_through "raises_match accepting all" (fun () ->
+                Check.raises_match (fun _ -> true) (fun () -> raise e));
+            passes_through "raises_match rejecting all" (fun () ->
+                Check.raises_match (fun _ -> false) (fun () -> raise e)))
           [
             ("Exit_attempt", F.Control `Exit);
-            ("Discard", Windtrap.Private.Failure.Control `Discard);
+            ("Discard", F.Control `Discard);
             ("Sys.Break", Sys.Break);
             ("Out_of_memory", Out_of_memory);
             ("Stack_overflow", Stack_overflow);

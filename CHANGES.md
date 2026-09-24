@@ -472,6 +472,18 @@ Coverage and packaging:
   recorded as that test's failure, every later test still runs, and the
   run returns its own code; only the process that started the run
   intercepts, so a forked child that calls `exit` terminates.
+- **A skip, a timeout, an `exit` and a discard keep their meaning
+  wherever they are raised.** Inside `raises`, `raises_match` (whatever the
+  predicate), a `subtest`, a property's law or generator, a stateful
+  `~pre`, `~next` or scope, and a fixture's acquisition, none is recorded
+  as a failure of that place: an `exit` in a law is the test's intercepted
+  exit, not a shrunk counterexample; an `assume` in a subtest inside a law
+  discards the case; a timeout that cuts a `Fun.protect` finally is a
+  `[teardown]` timeout, not an uncaught `Fun.Finally_raised`; a fixture
+  whose acquisition timed out is acquired again by the next test instead
+  of timing it out too. `Sys.Break` and `Out_of_memory` stop the run from
+  everywhere, a counterexample printer included, and the body's exception
+  is reported over a capture log that failed to flush.
 
 ### Running tests
 

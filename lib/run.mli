@@ -221,11 +221,9 @@ val subtest : string -> (unit -> unit) -> unit
 (** [subtest name fn] runs [fn ()] as a named part of the running test. A
     {!Failure.Check_failure} of [fn] is added to the frame and [subtest]
     returns. Any other exception is added as a {!Failure.Raise} failure with its
-    backtrace, located at the declaration of the test. A {!Failure.Control} of
-    [`Skip] or [`Timeout] and a fatal exception ({!Failure.is_fatal}) pass
-    through. A [Failure.Control `Discard] is added as any other exception is, so
-    an [assume] inside a subtest inside a law fails the test and discards
-    nothing.
+    backtrace, located at the declaration of the test. Every {!Failure.Control}
+    passes through, so a skip, a timeout or an [exit] ends the whole test, and
+    an [assume] inside a subtest inside a law discards the case.
 
     An added failure carries its label as data, in its [subtest] field and never
     in its [msg]. The label is the name of the test, then the names of the open
@@ -553,9 +551,9 @@ val execute :
     - on an {!event.Fixture_release} during the release at the end of the run,
       the announced fixture and those not yet released stay unreleased.
 
-    A fatal exception ({!Failure.is_fatal}) from a test leaves [execute] after
-    the acquired fixtures were released, as far as they can be, with no store
-    updated and no correction written.
+    What {!Failure.catch} never returns, raised by a test, leaves [execute]
+    after the acquired fixtures were released, as far as they can be, with no
+    store updated and no correction written.
 
     Raises [Invalid_argument] with {!active_run_error} if a run is executing,
     which fails the calling test when a test body is the caller. Raises
@@ -616,20 +614,21 @@ val list_selection :
     teardown failure are two entries. What a phase raises becomes such a
     failure, with that phase set:
     - a {!Failure.Check_failure} keeps its payload;
-    - a [Failure.Control (`Timeout _)] is a failure of the phase it interrupted,
-      and a [Failure.Control `Exit] one of the phase that called [exit];
+    - a [`Timeout] is a failure of the phase it interrupted, and an [`Exit] one
+      of the phase that called [exit];
+    - a [`Discard] outside a property is a {!Failure.Raise} failure;
     - any other exception is a {!Failure.Raise} failure with its backtrace.
 
-    A [Failure.Control (`Skip _)] skips the test, and the first reason wins. A
-    failure added without a location takes the declaration site of the test,
-    which is the case of one raised from tail position, and a nested failure, as
-    the [inner] of a property failure, is left as it is. The failures that the
-    runner makes itself are located at the declaration of the test: a timeout,
-    an uncaught exception, an [xfail] test that passed, an intercepted [exit], a
-    misused scope, and a property that gave up or missed a label.
+    A [`Skip] skips the test, and the first reason wins. A failure added without
+    a location takes the declaration site of the test, which is the case of one
+    raised from tail position, and a nested failure, as the [inner] of a
+    property failure, is left as it is. The failures that the runner makes
+    itself are located at the declaration of the test: a timeout, an uncaught
+    exception, an [xfail] test that passed, an intercepted [exit], a misused
+    scope, and a property that gave up or missed a label.
 
-    A fatal exception ({!Failure.is_fatal}) is not caught (see {!execute}).
-    After every attempt, on every path where it regains control, the fatal one
+    What {!Failure.catch} never returns is not caught (see {!execute}). After
+    every attempt, on every path where it regains control, the fatal one
     included, the runner undoes what the attempt changed, outside the window of
     the limit and outside the capture. It returns to the directory that {!chdir}
     recorded, then restores the bindings that {!setenv} recorded, then removes
@@ -646,7 +645,8 @@ val list_selection :
     leaves [scope] is attributed by how far the callback got: {!Failure.Setup}
     before it was called, {!Failure.Teardown} after the body left it, and
     {!Failure.Body} in between. A scope built on [Fun.protect] whose [finally]
-    raises thus adds a [Fun.Finally_raised] teardown failure beside the body's.
+    raises thus adds a [Fun.Finally_raised] teardown failure beside the body's,
+    except for a [finally] cut by the timeout, which is a teardown timeout.
 
     A second call of the callback runs nothing and returns, and the attempt then
     fails with a body message that gives the number of calls. A scope that

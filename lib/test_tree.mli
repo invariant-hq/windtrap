@@ -216,12 +216,13 @@ val bracket :
           teardown r;
           raise e
     ]}
-    except that a {!Failure.is_fatal} exception skips [teardown], and that [e]
-    keeps its backtrace. So [teardown] runs iff [setup] returned, and then on
-    every outcome of [fn], a skip and a timeout included. When the body leaves
-    the callback the runner arms what is left of the limit, or the whole limit
-    when none is left, so the teardown of a body that timed out is bounded too.
-*)
+    except that [k r] runs through {!Failure.catch}, so what it never returns
+    skips [teardown], and that an [e] other than a {!Failure.Check_failure} or a
+    {!Failure.Control} keeps its backtrace. So [teardown] runs iff [setup]
+    returned, and then on every outcome of [fn], a skip and a timeout included.
+    When the body leaves the callback the runner arms what is left of the limit,
+    or the whole limit when none is left, so the teardown of a body that timed
+    out is bounded too. *)
 
 (** {1:annotating Annotations}
 

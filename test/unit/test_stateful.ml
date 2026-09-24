@@ -595,13 +595,15 @@ let a_specification_bug_met_while_shrinking_stops_the_search () =
       | _ -> failf "the inner failure is not the body's")
   | _ -> failf "expected a Property failure kind"
 
-(* The exceptions about the run rather than the model escape [~pre] and
-   [~next] as themselves. *)
+(* The exceptions about the run or the case rather than the model escape
+   [~pre] and [~next] as themselves: a discard there discards the case. *)
 let control_exceptions_escape_pre_and_next_unconverted () =
   let cases =
     [
+      ("Skip", Failure.Control (`Skip (Some "why")));
       ("Timeout", Failure.Control (`Timeout 0.5));
       ("Exit_attempt", Failure.Control `Exit);
+      ("Discard", Failure.Control `Discard);
       ("Sys.Break", Sys.Break);
     ]
   in
@@ -664,18 +666,15 @@ let a_failing_step_points_at_its_command () =
         (loc.Loc.file = "body.ml")
   | None -> failf "the body-located step reported no location"
 
-(* The three exceptions a body treats as control, which repair does not: at
-   generation time an assertion, a skip and a discard are all the model
-   being written wrong, so each is reported as a specification bug naming
-   the operation and the step, not as what the exception says. *)
-let assertions_skips_and_discards_from_pre_are_specification_bugs () =
+(* An assertion in [~pre] is the model being written wrong, so it is
+   reported as a specification bug naming the operation and the step, not as
+   what the assertion says. *)
+let assertions_from_pre_are_specification_bugs () =
   let cases =
     [
       ( "Check_failure",
         Failure.Check_failure (Failure.equality ~expected:"1" ~actual:"2" ()),
         "windtrap assertion failure" );
-      ("Skip_test", Failure.Control (`Skip (Some "why")), "windtrap skip: why");
-      ("Discard", Failure.Control `Discard, "windtrap discard");
     ]
   in
   List.iter
@@ -859,13 +858,14 @@ let a_release_failure_never_replaces_the_program_s () =
   | exception exn ->
       failf "a passing-path release raised %s" (Printexc.to_string exn)
   | () -> failf "a passing-path release failure was swallowed");
-  (* Except for the exceptions that end the run: a [Timeout] delivered in a
-     candidate's release outranks the failure in hand, or the engine would
-     accept it as a shrink step and report a converged counterexample. The
-     three fatal ones outrank it for the same reason. *)
+  (* Except for a control and a fatal exception, which are about the run or
+     the case: a timeout delivered in a candidate's release outranks the
+     failure in hand, or the engine would accept it as a shrink step and
+     report a converged counterexample. A timeout that cuts a [Fun.protect]
+     release is unwrapped and outranks it too. *)
   List.iter
-    (fun (label, exn) ->
-      match Stateful.execute ~scope:(releasing exn) failing with
+    (fun (label, exn, scope) ->
+      match Stateful.execute ~scope failing with
       | exception raised when raised = exn -> ()
       | exception Failure.Check_failure _ ->
           failf "a %s from a failing path's release was dropped" label
@@ -873,7 +873,23 @@ let a_release_failure_never_replaces_the_program_s () =
           failf "the release's %s came back as %s" label
             (Printexc.to_string raised)
       | () -> failf "the failing program did not fail")
-    [ ("Timeout", Failure.Control (`Timeout 0.5)); ("Sys.Break", Sys.Break) ]
+    (List.map
+       (fun (label, exn) -> (label, exn, releasing exn))
+       [
+         ("Skip", Failure.Control (`Skip None));
+         ("Timeout", Failure.Control (`Timeout 0.5));
+         ("Exit_attempt", Failure.Control `Exit);
+         ("Discard", Failure.Control `Discard);
+         ("Sys.Break", Sys.Break);
+       ]
+    @ [
+        ( "Timeout in a finally",
+          Failure.Control (`Timeout 0.5),
+          fun run ->
+            Fun.protect
+              ~finally:(fun () -> raise (Failure.Control (`Timeout 0.5)))
+              run );
+      ])
 
 (* A scope that returns without running the program fails the case rather
    than passing it: a program that never ran is not a passing program. *)
@@ -2023,8 +2039,8 @@ let suite =
       control_exceptions_escape_pre_and_next_unconverted );
     ( "a failing step points at its command",
       a_failing_step_points_at_its_command );
-    ( "assertions, skips and discards from ~pre are specification bugs",
-      assertions_skips_and_discards_from_pre_are_specification_bugs );
+    ( "assertions from ~pre are specification bugs",
+      assertions_from_pre_are_specification_bugs );
     ( "control exceptions escape a body unconverted",
       control_exceptions_escape_a_body_unconverted );
     ("a scope releases on every path", a_scope_releases_on_every_path);

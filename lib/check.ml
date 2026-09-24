@@ -254,10 +254,10 @@ let require_match ?__POS__ ?msg ?pp extract v =
 
 (* Exceptions
 
-   The control exceptions are re-raised from inside the thunk: without the
-   guard, a [raises] over code that itself calls [equal] would swallow the
-   assertion failure and report "wrong exception" instead of the real
-   error. *)
+   Only an [`Exception] is compared: without that, a [raises] over code that
+   itself calls [equal] would swallow the assertion failure and report "wrong
+   exception" instead of the real error, and a [raises_match] that accepts
+   anything would hide an intercepted [exit]. *)
 
 (* The exception's constructor name and message payload, for the stdlib's
    string-carrying exceptions — the only ones whose message a renderer can
@@ -281,38 +281,30 @@ let message_diff expected_exn raised =
       Some { Failure.constructor; expected_message; actual_message }
   | _ -> None
 
-(* The backtrace is read before the comparison, which can itself raise and
-   would then replace it. It is thus computed on the passing path too. *)
 let raises ?__POS__ ?msg expected_exn fn =
-  match fn () with
-  | _ -> fail_raise ?__POS__ ?msg ~expected:(Printexc.to_string expected_exn) ()
-  | exception
-      ((Failure.Check_failure _ | Failure.Control (`Skip _ | `Timeout _)) as e)
-    ->
-      raise e
-  | exception raised ->
-      let backtrace = Failure.recorded_backtrace () in
+  match Failure.catch fn with
+  | Ok _ ->
+      fail_raise ?__POS__ ?msg ~expected:(Printexc.to_string expected_exn) ()
+  | Error (`Exception (raised, backtrace)) ->
       if raised <> expected_exn then
         fail_raise ?__POS__ ?msg
           ~expected:(Printexc.to_string expected_exn)
           ~actual:(Printexc.to_string raised)
-          ?backtrace
+          ~backtrace:(Failure.backtrace_to_string backtrace)
           ?message_diff:(message_diff expected_exn raised)
           ()
+  | Error c -> Failure.reraise c
 
 let raises_match ?__POS__ ?msg pred fn =
-  match fn () with
-  | _ -> fail_raise ?__POS__ ?msg ~predicate:true ()
-  | exception
-      ((Failure.Check_failure _ | Failure.Control (`Skip _ | `Timeout _)) as e)
-    ->
-      raise e
-  | exception raised ->
-      let backtrace = Failure.recorded_backtrace () in
+  match Failure.catch fn with
+  | Ok _ -> fail_raise ?__POS__ ?msg ~predicate:true ()
+  | Error (`Exception (raised, backtrace)) ->
       if not (pred raised) then
         fail_raise ?__POS__ ?msg ~predicate:true
           ~actual:(Printexc.to_string raised)
-          ?backtrace ()
+          ~backtrace:(Failure.backtrace_to_string backtrace)
+          ()
+  | Error c -> Failure.reraise c
 
 module Exn = struct
   (* The message constraint resolves once, when the predicate is built,

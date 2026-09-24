@@ -80,11 +80,10 @@ val with_capture :
     [fn] has not run, the descriptors are as they were, and [t] has no current
     log, never that of the attempt before.
 
-    Raises [Fun.Finally_raised], which carries the [Sys_error], if the last
-    drain fails. The descriptors are restored first. It is raised also if the
-    restoration fails. The exception replaces the result of [fn] and whatever
-    [fn] raised, even an exception that {!Failure.is_fatal} asks every catch
-    site to raise again. *)
+    Raises the [Sys_error] of the last drain, after the descriptors are
+    restored, if [fn] returned and the drain fails. What [fn] raised wins over a
+    failed last drain. Raises [Unix.Unix_error] if the descriptors cannot be
+    restored. *)
 
 val abandon : t -> unit
 (** [abandon t] ends the redirection of an attempt that is still running, from

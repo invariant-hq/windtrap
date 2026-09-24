@@ -17,21 +17,19 @@
     draws, and a recorded root seed replays every failure (guarantee 7 of
     [doc/dev/architecture.md]).
 
-    {b Laws.} A law returns [()] to pass and raises to fail. A failure belongs
-    to one of two classes: a [Failure.Check_failure], or any other exception.
-    The shrink search keeps to the class of the first failure (see {!run}). It
-    runs the law again on candidates, so a law must be deterministic.
-    - A [Failure.Control `Discard] discards the case.
-    - A [Failure.Control (`Skip _)] skips the whole test, and {!run} raises it
-      again unchanged. A shrink candidate that raises it is a rejected
-      candidate, so a skip never replaces a failure already found.
-    - A [Failure.Control (`Timeout _)] times the whole test out while no
-      generated case has failed: during the examples, a generation, or the first
-      run of a case. Once a generated case has failed, it ends the shrink search
-      instead (see {!run}).
-    - Every other exception fails the case, [Failure.Control `Exit] and the
-      [Failure.is_fatal] exceptions ([Sys.Break], [Out_of_memory],
-      [Stack_overflow]) included.
+    {b Laws.} A law returns [()] to pass and raises to fail. The engine calls
+    it, the generator and the printers through [Failure.catch], and keeps
+    {{!Failure.section-catching}its rule} as the owner of [`Discard]. A failure
+    is a [Failure.fault] of one of two classes, an assertion or any other
+    exception, and the shrink search keeps to the class of the first failure
+    (see {!run}). It runs the law again on candidates, so a law must be
+    deterministic.
+    - A [`Discard] discards the case.
+    - Any other control is raised again through {!run} while no generated case
+      has failed: during the examples, a generation, or the first run of a case.
+      Once a generated case has failed, a [`Timeout] ends the shrink search and
+      any other control rejects the candidate, so nothing replaces the failure
+      found (see {!run}).
 
     {b Output.} The engine prints nothing. Its texts ride the {!outcome}, in the
     {!Failure.Property} payload of a [Fail] and in the {!type-stats}, and
@@ -197,35 +195,33 @@ val run :
     first discard. It gives up even when [count] is already met, as under
     [~count:0] with examples that discard past the budget.
 
-    A [gen] that raises a [Failure.Control `Discard] discards the case, and one
-    that raises a [Failure.Control] of [`Skip] or [`Timeout] raises it through
-    [run]. Any other exception of [gen] fails the case unshrunk, with
-    [<generator raised before producing a value>] as its counterexample, and
-    [Failure.Check_failure], [Failure.Control `Exit] and the [Failure.is_fatal]
-    exceptions are among them.
+    A [gen] that discards discards the case, and one that raises any other
+    control raises it through [run]. A fault of [gen] fails the case unshrunk,
+    with [<generator raised before producing a value>] as its counterexample and
+    the fault as its [inner].
 
     {b Shrinking.} A generated case that fails is shrunk by a search that
     descends the tree of its sample. At each node the search runs [law] on the
     candidates in order and moves to the first that fails in the class of the
     first failure, either a [Failure.Check_failure] or any other exception. The
-    two failures need not be equal. A candidate that passes, discards or skips
-    is rejected.
+    two failures need not be equal. A candidate that passes or raises a control
+    other than [`Timeout] is rejected.
 
     The search ends at a node with no accepted candidate. It also ends, and
     marks the failure [shrink_exhausted], after {!shrink_budget} steps, and when
-    the forcing of a candidate raises, as a function given to {!Gen.map} or a
-    [pre] of {!Stateful} can. That exception is dropped, whatever it is, so no
-    report names it.
+    the forcing of a candidate raises anything but a [`Timeout], as a function
+    given to {!Gen.map} or a [pre] of {!Stateful} can. That exception is
+    dropped, whatever it is, so no report names it.
 
-    A [Failure.Control (`Timeout _)] raised anywhere in the search ends it as
-    well. The failure then describes the last accepted node, its [timed_out]
-    holds the limit, and the test does not time out. [case_index] is always that
-    of the first failure, so a replay descends the same path, and a timeout
-    changes only where on that path the descent stops.
+    A [`Timeout] raised anywhere in the search ends it as well. The failure then
+    describes the last accepted node, its [timed_out] holds the limit, and the
+    test does not time out. [case_index] is always that of the first failure, so
+    a replay descends the same path, and a timeout changes only where on that
+    path the descent stops.
 
     Raises [Invalid_argument] if [count] or [max_discard] is negative, inside
-    the running test, where [run] executes. Raises a [Failure.Control] of
-    [`Skip] or [`Timeout] when [law] or [gen] raises it outside the search, and
-    no outcome then exists. A timeout delivered while the counterexample is
-    formatted does not leave [run], since the guard of [Gen.Engine.render]
-    catches it. *)
+    the running test, where [run] executes. Raises a [Failure.Control] other
+    than [`Discard] when [law] or [gen] raises it outside the search, and no
+    outcome then exists. A control delivered while the counterexample is
+    formatted does not leave [run], since the guard of [Gen.Engine.render] turns
+    it into text. *)

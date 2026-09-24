@@ -208,24 +208,16 @@ val in_order : ?__POS__:pos -> ?msg:string -> subs:string list -> string -> unit
 
 (** {1:exceptions Exceptions}
 
-    Both verbs raise again, untouched, a {!Failure.Check_failure} and a
-    {!Failure.Control} of [`Skip] or [`Timeout] that the function raises, before
-    any comparison and before [pred] is applied. Without that, an assertion that
-    fails inside the function would be reported as the wrong exception.
+    Both verbs call the function through {!Failure.catch} and compare only an
+    [`Exception], before [pred] is applied. They raise again, untouched, a
+    {!Failure.Check_failure} and every {!Failure.Control}, so an assertion that
+    fails inside the function is not reported as the wrong exception, an
+    intercepted [exit] is never accepted, and an [assume] inside the function
+    discards the case.
 
-    Nothing else passes through, against
-    {{!Failure.section-control}the rule of a failure boundary}. A
-    {!Failure.Control} of [`Exit] or [`Discard] and the {!Failure.is_fatal}
-    exceptions are compared, or given to [pred], as any exception is. When
-    {!raises_match} is given a predicate that accepts one, it returns [()] and
-    the exception is lost. An intercepted [exit] then leaves no trace, and an
-    [assume] inside the function does not discard the case. When one of them
-    does not match, a fatal exception included, it becomes a
-    {!Failure.Check_failure} and the run goes on.
-
-    Both build a {!Failure.raised}, hold an exception as [Printexc.to_string]
-    gives it, and take the backtrace from {!Failure.recorded_backtrace} before
-    they compare. *)
+    Both build a {!Failure.raised}, and hold an exception as
+    [Printexc.to_string] gives it and its backtrace as
+    {!Failure.backtrace_to_string} gives it. *)
 
 val raises : ?__POS__:pos -> ?msg:string -> exn -> (unit -> 'a) -> unit
 (** [raises e f] is [()] iff [f ()] raises an exception equal to [e] under

@@ -422,18 +422,18 @@ module Engine : sig
       default margin. A sample with nothing to print renders as [Value] of the
       placeholder [<no printer: attach one with Gen.with_pp>].
 
-      It never raises. A printer that raises, whatever the exception, turns the
-      whole text into [<printer raised EXN>], [EXN] being the exception as
-      [Printexc.to_string] prints it. The guard is around the whole document and
-      catches a [Failure.Control] and the [Failure.is_fatal] exceptions too. *)
+      A printer that raises turns the whole text into [<printer raised EXN>],
+      [EXN] being the exception as [Printexc.to_string] prints it, a
+      [Failure.Control] included. The guard is around the whole document, and
+      only what [Failure.catch] never returns leaves it. *)
 
   val render_value : 'a t -> 'a -> string
   (** [render_value gen v] is [v] through [gen]'s printer, or {!render}'s
       placeholder when [gen] has none. It is for a bare value with no tree to
       render from. It reads the generator's printer and never a node, so a value
       of a {!Gen.map} or a {!Gen.bind} without {!Gen.with_pp} is the placeholder
-      here, where a sample of the same generator renders as a pre-image. It
-      never raises, by {!render}'s guard. *)
+      here, where a sample of the same generator renders as a pre-image. It has
+      {!render}'s guard. *)
 
   (** {1:building Building generators} *)
 

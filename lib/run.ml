@@ -127,7 +127,7 @@ let for_subset config ~log_dir ~bail =
 type fixture_state =
   | Acquired of exn
   | Skipped of string option
-  | Failed of exn * Printexc.raw_backtrace
+  | Failed of Failure.fault
 
 type fixture_entry = {
   fx_name : string;
@@ -298,29 +298,24 @@ let subtest name fn =
     frame.fr_subtests <-
       (match frame.fr_subtests with _ :: rest -> rest | [] -> [])
   in
-  match fn () with
-  | () -> pop ()
-  | exception Failure.Check_failure failure ->
+  match Failure.catch fn with
+  | exception fatal ->
+      (* What [catch] never returns stops the run, with the label popped. *)
+      let backtrace = Printexc.get_raw_backtrace () in
+      pop ();
+      Printexc.raise_with_backtrace fatal backtrace
+  | Ok () -> pop ()
+  | Error (`Assertion failure) ->
       (* Record and return: siblings continue. The label is
          computed before popping so it includes this subtest's name. *)
       add_failure frame (relabel frame failure);
       pop ()
-  | exception (Failure.Control (`Skip _ | `Timeout _) as control) ->
-      (* The runner owns skip and timeout: they abort the whole test. *)
-      let backtrace = Printexc.get_raw_backtrace () in
-      pop ();
-      Printexc.raise_with_backtrace control backtrace
-  | exception exn when Failure.is_fatal exn ->
-      let backtrace = Printexc.get_raw_backtrace () in
-      pop ();
-      Printexc.raise_with_backtrace exn backtrace
-  | exception exn ->
+  | Error (`Exception (exn, backtrace)) ->
       (* Any other exception is this sub-case's failure, not the test's:
          record it labeled, with its backtrace, and let siblings run. Its
          location is the declaration, named here as the runner names it for
          an uncaught exception at the test boundary — no verb raised it, so
          there is no site to have missed. *)
-      let backtrace = Printexc.get_raw_backtrace () in
       let failure =
         Failure.raised ?loc:frame.fr_loc ~actual:(Printexc.to_string exn)
           ~backtrace:(Failure.backtrace_to_string backtrace)
@@ -328,6 +323,11 @@ let subtest name fn =
       in
       add_failure frame (relabel frame failure);
       pop ()
+  | Error (#Failure.control as c) ->
+      (* A control is the runner's or, inside a law, the engine's: a skip
+         or a timeout ends the whole test, a discard the case. *)
+      pop ();
+      Failure.reraise c
 
 (* Baselines *)
 
@@ -503,14 +503,17 @@ let restore_env frame =
   frame.fr_env <- [];
   List.iter
     (fun entry ->
-      match Os.setenv entry.er_name entry.er_prior with
-      | () -> ()
-      | exception exn when not (Failure.is_fatal exn) ->
+      match
+        Failure.catch (fun () -> Os.setenv entry.er_name entry.er_prior)
+      with
+      | Ok () -> ()
+      | Error c ->
           restore_failure frame ?loc:entry.er_loc
             (Printf.sprintf
                "the test set %s and its prior binding could not be restored: \
                 %s; every later test in this process sees the test's value"
-               entry.er_name (Printexc.to_string exn)))
+               entry.er_name
+               (Failure.caught_to_string c)))
     entries
 
 let reclaim frame =
@@ -551,11 +554,10 @@ let fixture : type a. ?teardown:(a -> unit) -> (unit -> a) -> unit -> a =
     | Some { fx_state = Skipped reason; _ } ->
         (* Every later use skips with the cached reason. *)
         raise (Failure.Control (`Skip reason))
-    | Some { fx_state = Failed (exn, backtrace); _ } ->
-        Printexc.raise_with_backtrace exn backtrace
+    | Some { fx_state = Failed fault; _ } -> Failure.reraise fault
     | None -> (
-        match create () with
-        | value ->
+        match Failure.catch create with
+        | Ok value ->
             let fx_release =
               Option.map (fun teardown () -> teardown value) teardown
             in
@@ -568,10 +570,9 @@ let fixture : type a. ?teardown:(a -> unit) -> (unit -> a) -> unit -> a =
               };
             run.acquired <- id :: run.acquired;
             value
-        | exception Failure.Control (`Skip reason) ->
+        | Error (`Skip reason as skip) ->
             (* A skip during acquisition is cached as a skip,
                not an error — nothing is registered for release. *)
-            let backtrace = Printexc.get_raw_backtrace () in
             Hashtbl.replace run.fixtures id
               {
                 fx_name = name;
@@ -579,23 +580,25 @@ let fixture : type a. ?teardown:(a -> unit) -> (unit -> a) -> unit -> a =
                 fx_state = Skipped reason;
                 fx_release = None;
               };
-            Printexc.raise_with_backtrace
-              (Failure.Control (`Skip reason))
-              backtrace
-        | exception exn ->
-            let backtrace = Printexc.get_raw_backtrace () in
+            Failure.reraise skip
+        | Error (#Failure.fault as fault) ->
             Hashtbl.replace run.fixtures id
               {
                 fx_name = name;
                 fx_loc = loc;
-                fx_state = Failed (exn, backtrace);
+                fx_state = Failed fault;
                 fx_release = None;
               };
-            Printexc.raise_with_backtrace exn backtrace)
+            Failure.reraise fault
+        | Error (#Failure.control as c) ->
+            (* A timeout, an exit or a discard is about the calling test,
+               not the fixture: nothing is cached, and the next call
+               acquires again. *)
+            Failure.reraise c)
 
-let release_failure entry exn =
+let release_failure entry c =
   Failure.message ?loc:entry.fx_loc
-    (entry.fx_name ^ ": release raised " ^ Printexc.to_string exn)
+    (entry.fx_name ^ ": release raised " ^ Failure.caught_to_string c)
   |> Failure.with_phase Failure.Release
 
 (* Release order is contract: reverse acquisition, [t.acquired]'s order. A
@@ -615,13 +618,13 @@ let release_fixtures t ~announce =
             t.releasing <- Some entry.fx_name;
             (* [Loc.delimit]: a location captured inside a release teardown
                must not walk past the runner into its caller. *)
-            match Loc.delimit release with
-            | () ->
+            match Failure.catch (fun () -> Loc.delimit release) with
+            | Ok () ->
                 t.releasing <- None;
                 release_all acc
-            | exception exn when not (Failure.is_fatal exn) ->
+            | Error c ->
                 t.releasing <- None;
-                release_all (release_failure entry exn :: acc)))
+                release_all (release_failure entry c :: acc)))
   in
   (* What escapes (a fatal exception, a raising [announce]) abandons the
      remaining releases. *)
@@ -835,6 +838,15 @@ let xpass_failure (case : Test_tree.case) =
   Failure.message ?loc:case.Test_tree.loc
     (Pp.str "expected to fail%s, but the test passed" reason)
 
+(* Whether two raises are one exception on its way out: the body's, raised
+   again through a scope that let it pass. *)
+let same_raise (a : Failure.caught) (b : Failure.caught) =
+  match (a, b) with
+  | `Assertion a, `Assertion b -> a == b
+  | `Exception (a, _), `Exception (b, _) -> a == b
+  | (#Failure.control as a), (#Failure.control as b) -> a == b
+  | (#Failure.fault | #Failure.control), _ -> false
+
 (* One attempt of one test: fresh frame installed by the caller. Returns the
    classified outcome, for property tests the engine's stats, whether the
    attempt's failures are all kept corrections, and whether it is the test's
@@ -858,37 +870,41 @@ let run_attempt run frame (case : Test_tree.case) ~limit ~groups ~test_name =
         prop_stats := Some stats;
         record_failure ph (gave_up_failure ?loc:case.Test_tree.loc stats)
   in
-  let classify ph exn backtrace =
-    match exn with
-    | Prop_outcome outcome -> record_prop_outcome ph outcome
-    | Failure.Check_failure failure -> record_failure ph failure
-    | Failure.Control (`Skip reason) ->
-        if !skipped = None then skipped := Some reason
-    | Failure.Control (`Timeout limit) ->
-        record_failure ph (timeout_failure ?loc:case.Test_tree.loc limit)
-    | Failure.Control `Exit ->
-        record_failure ph
-          (Failure.message ?loc:case.Test_tree.loc
-             "the test called exit and was intercepted; a test must return or \
-              raise, never exit the process")
-    | exn ->
+  let classify ph : Failure.caught -> unit = function
+    | `Exception (Prop_outcome outcome, _) -> record_prop_outcome ph outcome
+    | `Assertion failure -> record_failure ph failure
+    | `Exception (exn, backtrace) ->
         record_failure ph
           (Failure.raised ?loc:case.Test_tree.loc
              ~actual:(Printexc.to_string exn)
              ~backtrace:(Failure.backtrace_to_string backtrace)
              ())
+    | `Skip reason -> if !skipped = None then skipped := Some reason
+    | `Timeout limit ->
+        record_failure ph (timeout_failure ?loc:case.Test_tree.loc limit)
+    | `Exit ->
+        record_failure ph
+          (Failure.message ?loc:case.Test_tree.loc
+             "the test called exit and was intercepted; a test must return or \
+              raise, never exit the process")
+    | `Discard as discard ->
+        (* An [assume] or a [reject] outside a property, where nothing owns
+           the discard. *)
+        record_failure ph
+          (Failure.raised ?loc:case.Test_tree.loc
+             ~actual:(Failure.caught_to_string discard)
+             ())
   in
-  (* Run one phase, classifying everything non-fatal it raises. [Loc.delimit]
-     bounds location capture: a tail-called assertion whose own frame is gone
+  (* Run one phase, classifying everything it raises. [Loc.delimit] bounds
+     location capture: a tail-called assertion whose own frame is gone
      yields no location here rather than the runner's caller. *)
   let guard : type r. Failure.phase -> (unit -> r) -> r option =
    fun ph fn ->
     phase := ph;
-    match Loc.delimit fn with
-    | value -> Some value
-    | exception exn when not (Failure.is_fatal exn) ->
-        let backtrace = Printexc.get_raw_backtrace () in
-        classify ph exn backtrace;
+    match Failure.catch (fun () -> Loc.delimit fn) with
+    | Ok value -> Some value
+    | Error c ->
+        classify ph c;
         None
   in
   (* A scoping function owns acquisition, the body and release in one call,
@@ -918,36 +934,37 @@ let run_attempt run frame (case : Test_tree.case) ~limit ~groups ~test_name =
       incr entries;
       if !entries = 1 then begin
         phase := Failure.Body;
-        match Loc.delimit (fun () -> body resource) with
-        | () ->
+        match
+          Failure.catch (fun () -> Loc.delimit (fun () -> body resource))
+        with
+        | Ok () ->
             body_left := true;
             phase := Failure.Teardown;
             renew ()
-        | exception exn when not (Failure.is_fatal exn) ->
-            let backtrace = Printexc.get_raw_backtrace () in
+        | Error c ->
             body_left := true;
-            body_exn := Some exn;
-            classify Failure.Body exn backtrace;
+            body_exn := Some c;
+            classify Failure.Body c;
             phase := Failure.Teardown;
             (* The body may have consumed the window; the scope's release
                still has to be bounded. *)
             renew ();
-            Printexc.raise_with_backtrace exn backtrace
+            Failure.reraise c
       end
     in
     phase := Failure.Setup;
-    (match Loc.delimit (fun () -> scope callback) with
-    | () -> ()
-    | exception exn when not (Failure.is_fatal exn) ->
-        let backtrace = Printexc.get_raw_backtrace () in
+    (match Failure.catch (fun () -> Loc.delimit (fun () -> scope callback)) with
+    | Ok () -> ()
+    | Error c ->
         scope_raised := true;
         (* The body's own exception on its way out is already recorded. *)
-        if not (match !body_exn with Some e -> e == exn | None -> false) then
+        if not (match !body_exn with Some b -> same_raise b c | None -> false)
+        then
           classify
             (if !entries = 0 then Failure.Setup
              else if !body_left then Failure.Teardown
              else Failure.Body)
-            exn backtrace);
+            c);
     (* A scope that raised — or skipped — instead of calling back has
        already said what happened; only a clean return needs explaining. *)
     if !entries = 0 && not !scope_raised then
@@ -972,12 +989,13 @@ let run_attempt run frame (case : Test_tree.case) ~limit ~groups ~test_name =
     with_isolated_random ~path:(Test_tree.path_to_string case.Test_tree.path)
       (fun () ->
         with_timeout limit (fun renew ->
-            match phases renew with
-            | () -> ()
-            | exception Failure.Control (`Timeout limit) ->
+            match Failure.catch (fun () -> phases renew) with
+            | Ok () -> ()
+            | Error (`Timeout limit) ->
                 (* The alarm fired between two phase guards. *)
                 record_failure !phase
-                  (timeout_failure ?loc:case.Test_tree.loc limit)))
+                  (timeout_failure ?loc:case.Test_tree.loc limit)
+            | Error c -> Failure.reraise c))
   in
   (* Reclamation runs after the attempt, outside the timeout window and the
      capture redirection, on every path where the runner regains control —
@@ -987,14 +1005,14 @@ let run_attempt run frame (case : Test_tree.case) ~limit ~groups ~test_name =
   (match
      with_frame frame (fun () ->
          match
-           Capture.with_capture (capture run) ~groups ~test_name boundary
+           Failure.catch (fun () ->
+               Capture.with_capture (capture run) ~groups ~test_name boundary)
          with
-         | () -> ()
-         | exception exn when not (Failure.is_fatal exn) ->
+         | Ok () -> ()
+         | Error c ->
              (* Capture setup or restore failed (e.g. the log file could not
                 be created): a failure of this test, not of the run. *)
-             let backtrace = Printexc.get_raw_backtrace () in
-             classify Failure.Body exn backtrace)
+             classify Failure.Body c)
    with
   | () -> reclaim frame
   | exception exn ->

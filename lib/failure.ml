@@ -99,11 +99,52 @@ let () =
         Some "windtrap discard (assume or reject outside a property)"
     | _ -> None)
 
-(* Boundary rules *)
+(* Catching the user's code *)
 
+type fault = [ `Assertion of t | `Exception of exn * Printexc.raw_backtrace ]
+type caught = [ fault | control ]
+
+(* An interrupt and an exhausted resource must stop the run, not fail one
+   test, so no site ever sees them. *)
 let is_fatal = function
   | Sys.Break | Out_of_memory | Stack_overflow -> true
   | _ -> false
+
+(* A [Fun.protect] whose finally was cut by the timeout, or by an interrupt,
+   wraps what cut it: unwrapped, the timeout reaches the runner as itself and
+   the interrupt stops the run. Any other exception of a finally stays
+   wrapped, since it is the user's own. *)
+let rec classify exn backtrace : caught =
+  match exn with
+  | Check_failure t -> `Assertion t
+  | Control c -> (c :> caught)
+  | Fun.Finally_raised (Control _ as inner) -> classify inner backtrace
+  | Fun.Finally_raised inner when is_fatal inner -> classify inner backtrace
+  | exn when is_fatal exn -> Printexc.raise_with_backtrace exn backtrace
+  | exn -> `Exception (exn, backtrace)
+
+let catch f =
+  match f () with
+  | value -> Ok value
+  | exception exn ->
+      (* Taken first: the runtime keeps one backtrace, and any raise inside
+         [classify] would replace it. *)
+      let backtrace = Printexc.get_raw_backtrace () in
+      Error (classify exn backtrace)
+
+let to_exn : [< caught ] -> exn = function
+  | `Assertion t -> Check_failure t
+  | `Exception (exn, _) -> exn
+  | (`Skip _ | `Timeout _ | `Exit | `Discard) as c -> Control c
+
+let reraise c =
+  match (c :> caught) with
+  | `Exception (exn, backtrace) -> Printexc.raise_with_backtrace exn backtrace
+  | c -> raise (to_exn c)
+
+let caught_to_string c = Printexc.to_string (to_exn c)
+
+(* Backtraces *)
 
 (* Below the deepest frame of the reader's own code sit windtrap's: the
    delimiter the runner wraps callbacks in, the attempt guard, the verb that
@@ -147,15 +188,6 @@ let backtrace_to_string raw =
         done;
         Buffer.contents buffer
       end
-
-(* The backtrace of the most recently raised exception, when the runtime
-   recorded one. Read before anything else can raise. *)
-let recorded_backtrace () =
-  if Printexc.backtrace_status () then
-    match backtrace_to_string (Printexc.get_raw_backtrace ()) with
-    | "" -> None
-    | bt -> Some bt
-  else None
 
 (* Bounds. They are contract: [failure.mli] states each one, so a change here
    is a change to what users were told. *)
@@ -333,7 +365,8 @@ let raised ?loc ?msg ?expected ?actual ?(predicate = false) ?backtrace
          expected = cap_opt expected;
          actual = cap_opt actual;
          predicate;
-         backtrace = cap_opt backtrace;
+         backtrace =
+           (match backtrace with Some "" -> None | _ -> cap_opt backtrace);
          message_diff = Option.map bound_message_diff message_diff;
        })
 

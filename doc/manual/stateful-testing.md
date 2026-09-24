@@ -333,8 +333,8 @@ windtrap never sees the resource, so releasing on the failing path is
 the scope's own job — `let r = acquire () in run r; release r` leaks
 whenever the program fails. What windtrap guarantees is that the
 failure reaches you: the program's exception is re-raised *through* the
-scope, a release failure never replaces it (only a timeout or a fatal
-exception outranks a failure in hand), a scope that returns without
+scope, a release failure never replaces it (only a skip, a timeout, an
+`exit`, a discard or an interrupt outranks a failure in hand), a scope that returns without
 calling back fails the case, and one that calls back twice raises
 `Invalid_argument`. A scope that raises or skips *before* calling back
 propagates as it is — the pattern for a suite gated on a resource the

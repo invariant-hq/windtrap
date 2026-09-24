@@ -587,17 +587,16 @@ val raises : ?__POS__:pos -> ?msg:string -> exn -> (unit -> 'a) -> unit
     as a diff of the messages.
 
     An exception that carries what structural equality cannot compare, such as a
-    function, needs {!raises_match}. A verb's failure, a {!skip} or a timeout
-    that [f] raises is not the exception [raises] waits for. It passes through
-    and ends the test. *)
+    function, needs {!raises_match}. A verb's failure, a {!skip}, a timeout, a
+    call to [exit] or an {!assume} that [f] raises is not the exception [raises]
+    waits for. It passes through and keeps its meaning. *)
 
 val raises_match :
   ?__POS__:pos -> ?msg:string -> (exn -> bool) -> (unit -> 'a) -> unit
 (** [raises_match pred f] asserts that [f ()] raises an exception that satisfies
     [pred], which must be total. The failure prints the raised exception, or
-    says that [f] returned. A verb's failure, a {!skip} and a timeout pass
-    through it as through {!raises}. {!Exn} has predicates for the standard
-    exceptions. *)
+    says that [f] returned. What passes through {!raises} passes through it,
+    whatever [pred] says. {!Exn} has predicates for the standard exceptions. *)
 
 (** Exception predicates for {!raises_match}.
 
@@ -1135,7 +1134,8 @@ val prop :
     bodies and the invariant of a {!stateful} test. There a discard drops the
     whole program and a label counts once per program. The
     {{!section-properties}reports} of a property say where labels and discards
-    are printed. *)
+    are printed. {!assume} and {!reject} work too in a function given to a
+    generator, where a discard drops the case or the shrink candidate. *)
 
 val assume : bool -> unit
 (** [assume cond] discards the current case unless [cond] holds. A discarded
@@ -1310,8 +1310,9 @@ val stateful :
 
     A program's failure is raised again through [scope], so a scope that
     swallows it cannot pass the case. A release that raises over a failing
-    program is dropped and the counterexample stands. Over a passing program it
-    fails the case.
+    program is dropped and the counterexample stands, unless the release skips,
+    times out, exits or discards, which keeps its meaning. Over a passing
+    program it fails the case.
 
     {b Warning.} {!temp_dir}, {!temp_file}, {!setenv} and {!chdir} last for the
     attempt, never for a case (see {{!section-body}the running test}). A scope
@@ -1509,10 +1510,11 @@ val subtest : string -> (unit -> unit) -> unit
     subtests after it still run, and the test fails at the end with every
     failure recorded.
 
-    A {!skip} or a timeout ends the whole test, which still fails on what was
-    recorded. A subtest names a failure and is not a test. [-f] cannot select a
-    subtest, where it can select a child of {!cases}. Inside the law of a
-    property a subtest failure is not shrunk.
+    A {!skip}, a timeout or a call to [exit] ends the whole test, which still
+    fails on what was recorded, and inside the law of a property an {!assume}
+    discards the case. A subtest names a failure and is not a test. [-f] cannot
+    select a subtest, where it can select a child of {!cases}. Inside the law of
+    a property a subtest failure is not shrunk.
 
     {[
     test "every backend honours the contract" (fun () ->
@@ -1675,9 +1677,9 @@ val run : ?argv:string array -> string -> test list -> int
 
     A call to [exit] in code under test does not end the run. It is recorded as
     the failure of its test. A handler that catches every exception around the
-    call defeats this, as it hides an assertion's failure. Code that exits must
-    be tested in a child process. {!run} turns the recording of backtraces on
-    and leaves it on.
+    call defeats this, as it hides an assertion's failure, a {!skip}, a timeout
+    and an {!assume}. Code that exits must be tested in a child process. {!run}
+    turns the recording of backtraces on and leaves it on.
 
     While it executes, and not on Windows, {!run} handles [SIGINT], [SIGTERM]
     and [SIGHUP]. It prints what it interrupted, as in

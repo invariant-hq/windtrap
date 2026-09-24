@@ -141,17 +141,16 @@ let scoped scope ?__POS__ ?tags ?timeout ?retries name fn =
 (* A bracket is a scoped test whose scope is spelled by hand rather than
    with [Fun.protect]: a raising teardown must reach the runner as itself
    — an assertion, a skip, the re-armed timeout — not wrapped in
-   [Finally_raised], and a fatal exception must not run user code on its
-   way out. The body's exception keeps its backtrace across the teardown. *)
+   [Finally_raised], and a fatal exception, which [Failure.catch] never
+   returns, must not run user code on its way out. *)
 let bracket ?__POS__ ?tags ?timeout ?retries ~setup ~teardown name fn =
   let scope k =
     let resource = setup () in
-    match k resource with
-    | () -> teardown resource
-    | exception exn ->
-        let backtrace = Printexc.get_raw_backtrace () in
-        if not (Failure.is_fatal exn) then teardown resource;
-        Printexc.raise_with_backtrace exn backtrace
+    match Failure.catch (fun () -> k resource) with
+    | Ok () -> teardown resource
+    | Error c ->
+        teardown resource;
+        Failure.reraise c
   in
   scoped scope ?__POS__ ?tags ?timeout ?retries name fn
 

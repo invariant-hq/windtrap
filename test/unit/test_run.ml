@@ -3237,11 +3237,11 @@ let () =
   expect_run "exit-prop suite runs" ~config tests @@ fun outcome ->
   match result_of outcome [ "law-bomb" ] with
   | Some r ->
-      check "exit in a property law shrinks to a counterexample"
+      check "exit in a property law is the intercepted exit, not a case"
         (match r.Run.outcome with
-        | Failure.Fail [ { Failure.kind = Failure.Property _; _ } ] -> true
-        | _ -> false);
-      check "the engine's stats are recorded" (r.Run.prop_stats <> None)
+        | Failure.Fail [ { Failure.kind = Failure.Message text; _ } ] ->
+            contains "the test called exit and was intercepted" text
+        | _ -> false)
   | None -> check "law-bomb recorded" false
 
 let () =
@@ -3292,13 +3292,15 @@ let () =
     ]
   in
   expect_run "exit-subtest suite runs" ~config tests @@ fun outcome ->
-  check "siblings run after an exit-bombed subtest" !sibling_ran;
+  check "an exit in a subtest ends the test" (not !sibling_ran);
   match failure_list (outcome_of outcome [ "sub-bomb" ]) with
   | [ f ] ->
-      check "the sub-case failure renders the interception"
-        (match f.Failure.kind with
-        | Failure.Raise { actual = Some text; _ } ->
-            contains "Exit_attempt" text
+      check "the failure is the test's interception, unlabelled"
+        (f.Failure.subtest = []
+        &&
+        match f.Failure.kind with
+        | Failure.Message text ->
+            contains "the test called exit and was intercepted" text
         | _ -> false)
   | _ -> check "exit-subtest: exactly one failure" false
 
@@ -3475,6 +3477,46 @@ let () =
   check "colour, threshold, -v, JUnit, GitHub and invocation decide nothing"
     (decided plain <> None && decided plain = decided dressed)
 
+(* A timeout is about the test that was running, never about what it was
+   doing: a fixture that times out while acquiring caches nothing, and a
+   finally that the timeout cut is a timeout of the teardown, not a
+   [Fun.Finally_raised]. *)
+
+let () =
+  with_temp_root @@ fun root ->
+  let config = base_config ~log_dir:root () in
+  let acquisitions = ref 0 in
+  let slow_first =
+    Run.fixture (fun () ->
+        incr acquisitions;
+        if !acquisitions = 1 then busy_forever ();
+        "acquired")
+  in
+  let tests =
+    [
+      Test_tree.test ~timeout:0.02 "acquires past its limit" (fun () ->
+          ignore (slow_first ()));
+      Test_tree.test "acquires again" (fun () ->
+          Check.equal Testable.string "acquired" (slow_first ()));
+      Test_tree.scoped
+        (fun k -> Fun.protect ~finally:busy_forever (fun () -> k ()))
+        ~timeout:0.02 "a finally cut by the timeout"
+        (fun () -> ());
+    ]
+  in
+  expect_run "timeout control suite runs" ~config tests @@ fun outcome ->
+  check "a timeout while acquiring is not cached"
+    (outcome_of outcome [ "acquires again" ] = Some Failure.Pass);
+  check_int "the later call acquires again" ~expected:2 ~actual:!acquisitions;
+  match
+    failure_list (outcome_of outcome [ "a finally cut by the timeout" ])
+  with
+  | [ f ] ->
+      check "a finally cut by the timeout is a teardown timeout"
+        (f.Failure.phase = Failure.Teardown
+        && contains "timed out after" (message_of f))
+  | _ -> check "one failure for the cut finally" false
+
 (* subtest: what passes through, what it labels, where *)
 
 let () =
@@ -3495,10 +3537,10 @@ let () =
         (f.Failure.subtest = [] && contains "timed out" (message_of f))
   | _ -> check "one timeout failure" false);
   match failure_list (outcome_of outcome [ "discards in a subtest" ]) with
-  | f :: _ ->
-      check "an assume inside a subtest inside a law fails the test"
-        (f.Failure.subtest = [ "discards in a subtest"; "assumes" ])
-  | [] -> check "the property failed" false
+  | [ f ] ->
+      check "an assume inside a subtest inside a law discards the case"
+        (f.Failure.subtest = [] && contains "property gave up" (message_of f))
+  | _ -> check "the property gave up" false
 
 let () =
   with_temp_root @@ fun root ->

@@ -200,11 +200,11 @@ let test_drain_failure_restores () =
           Unix.close Unix.stderr)
     with
     | () -> `Returned
-    | exception Fun.Finally_raised _ -> `Finally_raised
+    | exception Sys_error _ -> `Sys_error
     | exception _ -> `Other
   in
-  is_true ~msg:"the failed cleanup drain propagates as Finally_raised"
-    (outcome = `Finally_raised);
+  is_true ~msg:"the failed cleanup drain raises its Sys_error"
+    (outcome = `Sys_error);
   is_true ~msg:"descriptor 1 is restored despite the failed drain"
     (fd_id Unix.stdout = out_before);
   is_true ~msg:"descriptor 2 is restored despite the failed drain"
@@ -261,24 +261,26 @@ let test_first_drain_failure () =
   is_true ~msg:"descriptor 1 is as it was" (fd_id Unix.stdout = out_before);
   is_true ~msg:"the state has no current log" (Capture.output_tail cap = None)
 
-let test_last_drain_replaces_fatal () =
+let test_body_exception_wins_over_last_drain () =
   let root = temp_dir () in
   let cap = Capture.create ~log_dir:root ~suite:"s" () in
+  let out_before = fd_id Unix.stdout and err_before = fd_id Unix.stderr in
   let outcome =
     match
       Capture.with_capture cap ~groups:[] ~test_name:"t" (fun () ->
           Printf.eprintf " ";
           Unix.close Unix.stderr;
-          raise Stack_overflow)
+          raise Not_found)
     with
     | () -> `Returned
-    | exception Fun.Finally_raised (Sys_error _) -> `Finally_raised
-    | exception Stack_overflow -> `Fatal
+    | exception Not_found -> `Body
     | exception _ -> `Other
   in
   (try flush stderr with Sys_error _ -> ());
-  is_true ~msg:"the failed last drain replaces even a fatal exception"
-    (outcome = `Finally_raised)
+  is_true ~msg:"the body's exception is raised, not the drain's"
+    (outcome = `Body);
+  is_true ~msg:"descriptor 1 is restored" (fd_id Unix.stdout = out_before);
+  is_true ~msg:"descriptor 2 is restored" (fd_id Unix.stderr = err_before)
 
 let test_one_text_in_arrival_order () =
   let root = temp_dir () in
@@ -721,8 +723,8 @@ let tests =
       test_setup_failure_isolation;
     test "a failed cleanup drain still restores" test_drain_failure_restores;
     test "a failed first drain runs nothing" test_first_drain_failure;
-    test "a failed last drain replaces a fatal exception"
-      test_last_drain_replaces_fatal;
+    test "the body's exception wins over a failed last drain"
+      test_body_exception_wins_over_last_drain;
     test "one text in arrival order" test_one_text_in_arrival_order;
     test "create creates nothing" test_create_creates_nothing;
     test "abandon ignores a failed drain" test_abandon_ignores_drain_failure;

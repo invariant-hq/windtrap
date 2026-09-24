@@ -1016,35 +1016,50 @@ let the_summary_is_of_the_reported_counterexample () =
 let exit_and_fatal_exceptions =
   [ Failure.Control `Exit; Sys.Break; Out_of_memory; Stack_overflow ]
 
-let a_law_s_exit_and_fatal_exceptions_fail_the_case () =
+(* An exit is the runner's and a fatal exception stops the run, so neither
+   is a failure of the case to shrink. *)
+let a_law_s_exit_and_fatal_exceptions_pass_through () =
   List.iter
     (fun exn ->
       let name = Printexc.to_string exn in
-      let failure, _ =
-        expect_fail
-          (Property.run ~root ~path:"fatal law" Gen.int (fun _ _ -> raise exn))
-      in
-      equal ~msg:name (option string) (Some name) (inner_exception failure))
+      match
+        Property.run ~root ~path:"fatal law" Gen.int (fun _ _ -> raise exn)
+      with
+      | exception raised -> is_true ~msg:(name ^ " escapes") (raised = exn)
+      | _ -> failf "%s became an outcome" name)
     exit_and_fatal_exceptions
 
-let a_generator_s_control_exceptions_fail_the_case_unshrunk () =
+let a_generator_s_exception_fails_the_case_unshrunk () =
+  let raising exn = Gen_engine.make (fun _ -> raise exn) in
+  let failed exn =
+    let failure, _ =
+      expect_fail
+        (Property.run ~root ~path:"raising gen" (raising exn) (fun _ _ -> ()))
+    in
+    let rendered, _, shrink_steps, _, _, _, inner = property_payload failure in
+    equal ~msg:"the placeholder" string
+      "<generator raised before producing a value>" rendered;
+    equal ~msg:"unshrunk" int 0 shrink_steps;
+    inner
+  in
+  (match failed Not_found with
+  | Some { Failure.kind = Failure.Raise { actual = Some "Not_found"; _ }; _ } ->
+      ()
+  | _ -> fail "the inner failure is not the generator's exception");
+  (match
+     failed (Failure.Check_failure (Failure.message "from the generator"))
+   with
+  | Some { Failure.kind = Failure.Message "from the generator"; _ } -> ()
+  | _ -> fail "the inner failure is not the generator's assertion");
   List.iter
     (fun exn ->
       let name = Printexc.to_string exn in
-      let gen = Gen_engine.make (fun _ -> raise exn) in
-      let failure, _ =
-        expect_fail (Property.run ~root ~path:"raising gen" gen (fun _ _ -> ()))
-      in
-      let rendered, _, shrink_steps, _, _, _, _ = property_payload failure in
-      equal
-        ~msg:(name ^ ": the placeholder")
-        string "<generator raised before producing a value>" rendered;
-      equal ~msg:(name ^ ": unshrunk") int 0 shrink_steps;
-      equal
-        ~msg:(name ^ ": the inner exception")
-        (option string) (Some name) (inner_exception failure))
-    (Failure.Check_failure (Failure.message "from the generator")
-    :: exit_and_fatal_exceptions)
+      match
+        Property.run ~root ~path:"raising gen" (raising exn) (fun _ _ -> ())
+      with
+      | exception raised -> is_true ~msg:(name ^ " escapes") (raised = exn)
+      | _ -> failf "%s became an outcome" name)
+    exit_and_fatal_exceptions
 
 let a_generator_that_discards_discards_the_case () =
   let always = Gen_engine.make (fun _ -> raise (Failure.Control `Discard)) in
@@ -1203,10 +1218,10 @@ let a_replay_descends_the_same_path_whatever_the_configuration () =
 
 let suite =
   [
-    ( "a law's exit and fatal exceptions fail the case",
-      a_law_s_exit_and_fatal_exceptions_fail_the_case );
-    ( "a generator's control exceptions fail the case unshrunk",
-      a_generator_s_control_exceptions_fail_the_case_unshrunk );
+    ( "a law's exit and fatal exceptions pass through",
+      a_law_s_exit_and_fatal_exceptions_pass_through );
+    ( "a generator's exception fails the case unshrunk",
+      a_generator_s_exception_fails_the_case_unshrunk );
     ( "a generator that discards discards the case",
       a_generator_that_discards_discards_the_case );
     ("a context used after its run", a_context_used_after_its_run);
