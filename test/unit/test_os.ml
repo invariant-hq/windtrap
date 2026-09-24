@@ -693,7 +693,12 @@ module Path_suite = struct
           equal ~msg:"sanitize is deterministic" string sanitized
             (Os.sanitize_component long);
           not_equal ~msg:"distinct long names stay distinct" string sanitized
-            (Os.sanitize_component (String.make 100 'b')));
+            (Os.sanitize_component (String.make 100 'b'));
+          equal ~msg:"a result of exactly 80 bytes is kept whole" string
+            (String.make 80 'a')
+            (Os.sanitize_component (String.make 80 'a'));
+          equal ~msg:"one of 81 bytes is cut" int 73
+            (String.length (Os.sanitize_component (String.make 81 'a'))));
       (* Digests computed apart from windtrap, with Python's hashlib. *)
       test "sanitize_component's digest is MD5" (fun () ->
           equal ~msg:"the first 8 digits on a changed name" string
@@ -733,6 +738,10 @@ module Path_suite = struct
             (fun () ->
               is_false ~msg:"a file under an unreadable directory (EACCES)"
                 (Os.file_exists inside)));
+      test "mkdir_p of the empty path or the current directory does nothing"
+        (fun () ->
+          Os.mkdir_p "";
+          Os.mkdir_p ".");
       test "mkdir_p leaves an existing file alone" (fun () ->
           let file = temp_file () in
           Out_channel.with_open_bin file (fun oc -> output_string oc "kept");
