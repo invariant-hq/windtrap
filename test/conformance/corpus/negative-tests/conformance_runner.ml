@@ -1,9 +1,9 @@
 (* Windtrap-authored runner main for this corpus directory (mirrors the
    inline_tests backend's generated runner). The module aliases force
    link order: every fixture module initializes — registering its tests
-   — before the protocol runs. Import_test pulls in Export_test. *)
+   — before the protocol runs. Import_test pulls in Export_test. Chdir
+   runs in a process of its own (chdir_runner.ml). *)
 
-module _ = Chdir
 module _ = Escaped_strings
 module _ = Exact
 module _ = Flexible

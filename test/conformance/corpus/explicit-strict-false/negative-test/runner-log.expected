@@ -1,0 +1,94 @@
+conformance: 1 test
+──────────────────────── failures ────────────────────────
+  FAIL  Nine › line_4
+    test/conformance/corpus/explicit-strict-false/negative-test/nine.ml:8
+      8 │ [%expect
+
+    expect: mismatch
+    @@ -1,1 +1,1 @@
+    - goodbye
+    + hello
+
+    test/conformance/corpus/explicit-strict-false/negative-test/nine.ml:16
+      16 │ [%expect
+
+    expect: mismatch
+    @@ -1,1 +1,1 @@
+    - goodbye
+    + hello
+
+    test/conformance/corpus/explicit-strict-false/negative-test/nine.ml:24
+      24 │ [%expect
+
+    expect: mismatch
+    @@ -1,1 +1,1 @@
+    - goodbye
+    + hello
+
+    test/conformance/corpus/explicit-strict-false/negative-test/nine.ml:33
+      33 │ [%expect
+
+    expect: mismatch
+    @@ -1,1 +1,1 @@
+    - goodbye
+    + hello
+
+    test/conformance/corpus/explicit-strict-false/negative-test/nine.ml:41
+      41 │ [%expect
+
+    expect: mismatch
+    @@ -1,1 +1,1 @@
+    - goodbye
+    + hello
+
+    test/conformance/corpus/explicit-strict-false/negative-test/nine.ml:50
+      50 │ [%expect
+
+    expect: mismatch
+    @@ -1,1 +1,1 @@
+    - goodbye
+    + hello
+
+    test/conformance/corpus/explicit-strict-false/negative-test/nine.ml:60
+      60 │ [%expect
+
+    expect: mismatch
+    @@ -1,1 +1,1 @@
+    - goodbye
+    + hello
+
+    test/conformance/corpus/explicit-strict-false/negative-test/nine.ml:69
+      69 │ [%expect
+
+    expect: mismatch
+    @@ -1,1 +1,1 @@
+    - goodbye
+    + hello
+
+    test/conformance/corpus/explicit-strict-false/negative-test/nine.ml:79
+      79 │ [%expect
+
+    expect: mismatch
+    @@ -1,1 +1,1 @@
+    - goodbye
+    + hello
+    captured output (last 10 of 18 lines):
+      
+      
+      
+      hello
+      
+      hello
+      
+      
+      hello
+      
+    full log: <log>
+    accept: dune promote test/conformance/corpus/explicit-strict-false/negative-test/nine.ml
+──────────────────────────────────────────────────────────
+
+corrections (1):
+  wrote test/conformance/corpus/explicit-strict-false/negative-test/nine.ml.corrected (9 expectations)
+
+1 failed, 1 correction written in <duration>.
+--- stderr ---

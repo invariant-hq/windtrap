@@ -23,6 +23,10 @@
  (action
   (run
    %{dep:../../../../cli/inline_runner/drive/drive.exe}
+   --mask
+   full-log
+   --env
+   WINDTRAP_SLOW_THRESHOLD=0
    --placeholder
    unflushed_stubs_output.ml
    --run
@@ -35,6 +39,11 @@
  (alias runtest)
  (action
   (diff runner-exit.expected runner-exit)))
+
+(rule
+ (alias runtest)
+ (action
+  (diff runner-log.expected runner-log)))
 
 (rule
  (alias runtest)

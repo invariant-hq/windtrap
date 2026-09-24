@@ -1,0 +1,21 @@
+conformance: 4 tests
+──────────────────────── failures ────────────────────────
+  FAIL  Similar_distinct_outputs › similar failing
+    test/conformance/corpus/negative-tests/divergent/similar_distinct_outputs.ml:12
+      12 │ [%expect {| bar |}]
+
+    expect: mismatch
+    @@ -1,1 +1,1 @@
+    - bar
+    + foo
+    captured output (1 line):
+      foo
+    full log: <log>
+    accept: dune promote test/conformance/corpus/negative-tests/divergent/similar_distinct_outputs.ml
+──────────────────────────────────────────────────────────
+
+corrections (1):
+  wrote test/conformance/corpus/negative-tests/divergent/similar_distinct_outputs.ml.corrected (1 expectation)
+
+3 passed, 1 failed, 1 correction written in <duration>.
+--- stderr ---

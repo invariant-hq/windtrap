@@ -1,0 +1,20 @@
+conformance: 1 test
+──────────────────────── failures ────────────────────────
+  FAIL  Chdir › line_1
+    test/conformance/corpus/negative-tests/chdir.ml:6
+      6 │ [%expect]
+
+    expect: mismatch
+    @@ -0,0 +1,1 @@
+    + About to change dir
+    captured output (1 line):
+      About to change dir
+    full log: <log>
+    accept: dune promote test/conformance/corpus/negative-tests/chdir.ml
+──────────────────────────────────────────────────────────
+
+corrections (1):
+  wrote test/conformance/corpus/negative-tests/chdir.ml.corrected (1 expectation)
+
+1 failed, 1 correction written in <duration>.
+--- stderr ---

@@ -24,6 +24,10 @@
  (action
   (run
    %{dep:../../../../cli/inline_runner/drive/drive.exe}
+   --mask
+   full-log
+   --env
+   WINDTRAP_SLOW_THRESHOLD=0
    --placeholder
    functor.ml
    --run
@@ -36,6 +40,11 @@
  (alias runtest)
  (action
   (diff functor-exit.expected functor-exit)))
+
+(rule
+ (alias runtest)
+ (action
+  (diff functor-log.expected functor-log)))
 
 (rule
  (alias runtest)
@@ -55,6 +64,10 @@
  (action
   (run
    %{dep:../../../../cli/inline_runner/drive/drive.exe}
+   --mask
+   full-log
+   --env
+   WINDTRAP_SLOW_THRESHOLD=0
    --placeholder
    control_chars.ml
    --run
@@ -67,6 +80,11 @@
  (alias runtest)
  (action
   (diff control_chars-exit.expected control_chars-exit)))
+
+(rule
+ (alias runtest)
+ (action
+  (diff control_chars-log.expected control_chars-log)))
 
 (rule
  (alias runtest)

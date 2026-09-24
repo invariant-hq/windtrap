@@ -19,7 +19,6 @@
  (modules
   conformance_runner
   corpus_shim
-  chdir
   escaped_strings
   exact
   export_test
@@ -41,7 +40,6 @@
  (targets
   runner-log
   runner-exit
-  chdir.ml.corrected
   escaped_strings.ml.corrected
   exact.ml.corrected
   flexible.ml.corrected
@@ -54,7 +52,6 @@
   trailing.ml.corrected
   unidiomatic_syntax.ml.corrected)
  (deps
-  chdir.ml
   escaped_strings.ml
   exact.ml
   export_test.ml
@@ -71,8 +68,10 @@
  (action
   (run
    %{dep:../../../cli/inline_runner/drive/drive.exe}
-   --placeholder
-   chdir.ml
+   --mask
+   full-log
+   --env
+   WINDTRAP_SLOW_THRESHOLD=0
    --placeholder
    escaped_strings.ml
    --placeholder
@@ -105,6 +104,50 @@
  (alias runtest)
  (action
   (diff runner-exit.expected runner-exit)))
+
+(rule
+ (alias runtest)
+ (action
+  (diff runner-log.expected runner-log)))
+
+; chdir.ml leaves its process in a directory it deleted, so it runs in a
+; process of its own: a later fixture that read the working directory
+; would otherwise fail in its place.
+
+(executable
+ (name chdir_runner)
+ (modules chdir_runner chdir)
+ (libraries ppx_windtrap.runtime)
+ (preprocess
+  (pps ppx_windtrap)))
+
+(rule
+ (targets chdir-log chdir-exit chdir.ml.corrected)
+ (deps chdir.ml)
+ (action
+  (run
+   %{dep:../../../cli/inline_runner/drive/drive.exe}
+   --mask
+   full-log
+   --env
+   WINDTRAP_SLOW_THRESHOLD=0
+   --placeholder
+   chdir.ml
+   --run
+   chdir
+   %{dep:chdir_runner.exe}
+   inline-test-runner
+   conformance)))
+
+(rule
+ (alias runtest)
+ (action
+  (diff chdir-exit.expected chdir-exit)))
+
+(rule
+ (alias runtest)
+ (action
+  (diff chdir-log.expected chdir-log)))
 
 (rule
  (alias runtest)

@@ -1,0 +1,21 @@
+conformance: 1 test
+──────────────────────── failures ────────────────────────
+  FAIL  Foo › addition
+    test/conformance/corpus/negative-tests/for-mdx/foo.ml:6
+      6 │ [%expect {| 4 |}]
+
+    expect: mismatch
+    @@ -1,1 +1,1 @@
+    - 4
+    + 3
+    captured output (1 line):
+      3
+    full log: <log>
+    accept: dune promote test/conformance/corpus/negative-tests/for-mdx/foo.ml
+──────────────────────────────────────────────────────────
+
+corrections (1):
+  wrote test/conformance/corpus/negative-tests/for-mdx/foo.ml.corrected (1 expectation)
+
+1 failed, 1 correction written in <duration>.
+--- stderr ---

@@ -1,0 +1,720 @@
+conformance: 41 tests
+──────────────────────── failures ────────────────────────
+  FAIL  Escaped_strings › escaped carriage return
+    test/conformance/corpus/negative-tests/escaped_strings.ml:3
+      3 │ [%expect ""];
+
+    expect: mismatch
+    @@ -0,0 +1,1 @@
+    + a\x0db
+
+    test/conformance/corpus/negative-tests/escaped_strings.ml:5
+      5 │ [%expect_exact ""];
+
+    expect_exact: mismatch
+    @@ -0,0 +1,1 @@
+    + a\x0db
+
+    test/conformance/corpus/negative-tests/escaped_strings.ml:7
+      7 │ [%expect ""];
+
+    expect: mismatch
+    @@ -0,0 +1,2 @@
+    + a
+    + b
+
+    test/conformance/corpus/negative-tests/escaped_strings.ml:9
+      9 │ [%expect_exact ""];
+
+    expect_exact: mismatch
+    @@ -0,0 +1,2 @@
+    + a\x0d
+    + b
+
+    test/conformance/corpus/negative-tests/escaped_strings.ml:11
+      11 │ [%expect ""];
+
+    expect: mismatch
+    @@ -0,0 +1,2 @@
+    + a
+    + b
+
+    test/conformance/corpus/negative-tests/escaped_strings.ml:13
+      13 │ [%expect_exact ""]
+
+    expect_exact: mismatch
+    @@ -0,0 +1,2 @@
+    + a
+    + \x0db
+    captured output (5 lines):
+      ababa
+      ba
+      ba
+      ba
+      b
+    full log: <log>
+    accept: dune promote test/conformance/corpus/negative-tests/escaped_strings.ml
+
+  FAIL  Escaped_strings › escaped tab
+    test/conformance/corpus/negative-tests/escaped_strings.ml:18
+      18 │ [%expect ""];
+
+    expect: mismatch
+    @@ -0,0 +1,1 @@
+    + a	b
+
+    test/conformance/corpus/negative-tests/escaped_strings.ml:20
+      20 │ [%expect_exact ""];
+
+    expect_exact: mismatch
+    @@ -0,0 +1,1 @@
+    + a	b
+
+    test/conformance/corpus/negative-tests/escaped_strings.ml:22
+      22 │ [%expect ""];
+
+    expect: mismatch
+    @@ -0,0 +1,2 @@
+    + a
+    + b
+
+    test/conformance/corpus/negative-tests/escaped_strings.ml:24
+      24 │ [%expect_exact ""];
+
+    expect_exact: mismatch
+    @@ -0,0 +1,2 @@
+    + a	
+    + b
+
+    test/conformance/corpus/negative-tests/escaped_strings.ml:26
+      26 │ [%expect ""];
+
+    expect: mismatch
+    @@ -0,0 +1,2 @@
+    + a
+    + b
+
+    test/conformance/corpus/negative-tests/escaped_strings.ml:28
+      28 │ [%expect_exact ""]
+
+    expect_exact: mismatch
+    @@ -0,0 +1,2 @@
+    + a
+    + 	b
+    captured output (5 lines):
+      a	ba	ba	
+      ba	
+      ba
+      	ba
+      	b
+    full log: <log>
+    accept: dune promote test/conformance/corpus/negative-tests/escaped_strings.ml
+
+  FAIL  Escaped_strings › escaped quote
+    test/conformance/corpus/negative-tests/escaped_strings.ml:33
+      33 │ [%expect ""];
+
+    expect: mismatch
+    @@ -0,0 +1,1 @@
+    + a"b
+
+    test/conformance/corpus/negative-tests/escaped_strings.ml:35
+      35 │ [%expect_exact ""]
+
+    expect_exact: mismatch
+    @@ -0,0 +1,1 @@
+    + a"b
+    captured output (1 line):
+      a"ba"b
+    full log: <log>
+    accept: dune promote test/conformance/corpus/negative-tests/escaped_strings.ml
+
+  FAIL  Escaped_strings › escaped trailing carriage return
+    test/conformance/corpus/negative-tests/escaped_strings.ml:40
+      40 │ [%expect ""];
+
+    expect: mismatch
+    @@ -0,0 +1,2 @@
+    + a
+    + b
+
+    test/conformance/corpus/negative-tests/escaped_strings.ml:42
+      42 │ [%expect_exact ""];
+
+    expect_exact: mismatch
+    @@ -0,0 +1,2 @@
+    + a\x0d
+    + b\x0d
+
+    test/conformance/corpus/negative-tests/escaped_strings.ml:44
+      44 │ [%expect];
+
+    expect: mismatch
+    @@ -0,0 +1,2 @@
+    + a
+    + b
+
+    test/conformance/corpus/negative-tests/escaped_strings.ml:46
+      46 │ [%expect_exact]
+
+    expect_exact: mismatch
+    @@ -0,0 +1,2 @@
+    + a\x0d
+    + b\x0d
+    captured output (8 lines):
+      a
+      b
+      a
+      b
+      a
+      b
+      a
+      b
+    full log: <log>
+    accept: dune promote test/conformance/corpus/negative-tests/escaped_strings.ml
+
+  FAIL  Escaped_strings › unescaped carriage return --- empty expect
+    test/conformance/corpus/negative-tests/escaped_strings.ml:51
+      51 │ [%expect];
+
+    expect: mismatch
+    @@ -0,0 +1,2 @@
+    + a
+    + b
+
+    test/conformance/corpus/negative-tests/escaped_strings.ml:53
+      53 │ [%expect_exact]
+
+    expect_exact: mismatch
+    @@ -0,0 +1,2 @@
+    + a\x0d
+    + b
+    captured output (3 lines):
+      a
+      ba
+      b
+    full log: <log>
+    accept: dune promote test/conformance/corpus/negative-tests/escaped_strings.ml
+
+  FAIL  Escaped_strings › unescaped carriage return --- populated expect
+    test/conformance/corpus/negative-tests/escaped_strings.ml:63
+      63 │ [%expect_exact
+
+    expect_exact: mismatch
+    @@ -1,2 +1,2 @@
+    - a
+    + a\x0d
+      b
+    captured output (3 lines):
+      a
+      ba
+      b
+    full log: <log>
+    accept: dune promote test/conformance/corpus/negative-tests/escaped_strings.ml
+
+  FAIL  Exact › line_4
+    test/conformance/corpus/negative-tests/exact.ml:6
+      6 │ [%expect_exact
+
+    expect_exact: mismatch
+    @@ -1,3 +1,1 @@
+    - 
+    -   foobarbaz
+    -   
+    + foobarbaz
+    captured output (1 line):
+      foobarbaz
+    full log: <log>
+    accept: dune promote test/conformance/corpus/negative-tests/exact.ml
+
+  FAIL  Exact › line_13
+    test/conformance/corpus/negative-tests/exact.ml:15
+      15 │ [%expect_exact
+
+    expect_exact: mismatch
+    @@ -1,3 +1,2 @@
+      
+    -     foobarbaz
+    -   
+    + foobarbaz
+    captured output (2 lines):
+      
+      foobarbaz
+    full log: <log>
+    accept: dune promote test/conformance/corpus/negative-tests/exact.ml
+
+  FAIL  Exact › line_22
+    test/conformance/corpus/negative-tests/exact.ml:24
+      24 │ [%expect_exact {| foobarbaz |}]
+
+    expect_exact: mismatch
+    @@ -1,1 +1,1 @@
+    -  foobarbaz 
+    + foobarbaz
+    captured output (1 line):
+      foobarbaz
+    full log: <log>
+    accept: dune promote test/conformance/corpus/negative-tests/exact.ml
+
+  FAIL  Flexible › line_13
+    test/conformance/corpus/negative-tests/flexible.ml:15
+      15 │ [%expect {||}]
+
+    expect: mismatch
+    @@ -0,0 +1,1 @@
+    + hello
+    captured output (1 line):
+      hello
+    full log: <log>
+    accept: dune promote test/conformance/corpus/negative-tests/flexible.ml
+
+  FAIL  Flexible › line_18
+    test/conformance/corpus/negative-tests/flexible.ml:20
+      20 │ [%expect
+
+    expect: mismatch
+    @@ -0,0 +1,1 @@
+    + hello
+    captured output (1 line):
+      hello
+    full log: <log>
+    accept: dune promote test/conformance/corpus/negative-tests/flexible.ml
+
+  FAIL  Flexible › line_25
+    test/conformance/corpus/negative-tests/flexible.ml:27
+      27 │ [%expect
+
+    expect: mismatch
+    @@ -0,0 +1,1 @@
+    + hello
+    captured output (1 line):
+      hello
+    full log: <log>
+    accept: dune promote test/conformance/corpus/negative-tests/flexible.ml
+
+  FAIL  Flexible › line_32
+    test/conformance/corpus/negative-tests/flexible.ml:34
+      34 │ [%expect
+
+    expect: mismatch
+    @@ -1,1 +1,1 @@
+    - WRONG
+    + hello
+    captured output (1 line):
+      hello
+    full log: <log>
+    accept: dune promote test/conformance/corpus/negative-tests/flexible.ml
+
+  FAIL  Flexible › line_39
+    test/conformance/corpus/negative-tests/flexible.ml:41
+      41 │ [%expect
+
+    expect: mismatch
+    @@ -1,1 +1,1 @@
+    - WRONG
+    + hello
+    captured output (1 line):
+      hello
+    full log: <log>
+    accept: dune promote test/conformance/corpus/negative-tests/flexible.ml
+
+  FAIL  Flexible › line_46
+    test/conformance/corpus/negative-tests/flexible.ml:48
+      48 │ [%expect
+
+    expect: mismatch
+    @@ -1,1 +1,1 @@
+    - WRONG
+    + hello
+    captured output (1 line):
+      hello
+    full log: <log>
+    accept: dune promote test/conformance/corpus/negative-tests/flexible.ml
+
+  FAIL  Flexible › line_53
+    test/conformance/corpus/negative-tests/flexible.ml:55
+      55 │ [%expect
+
+    expect: mismatch
+    @@ -1,1 +1,1 @@
+    - WRONG
+    + hello
+    captured output (1 line):
+      hello
+    full log: <log>
+    accept: dune promote test/conformance/corpus/negative-tests/flexible.ml
+
+  FAIL  Flexible › line_63
+    test/conformance/corpus/negative-tests/flexible.ml:65
+      65 │ [%expect {||}]
+
+    expect: mismatch
+    @@ -0,0 +1,2 @@
+    + one1
+    + two
+    captured output (2 lines):
+      one1
+      two
+    full log: <log>
+    accept: dune promote test/conformance/corpus/negative-tests/flexible.ml
+
+  FAIL  Flexible › line_68
+    test/conformance/corpus/negative-tests/flexible.ml:70
+      70 │ [%expect
+
+    expect: mismatch
+    @@ -0,0 +1,2 @@
+    + one2
+    + two
+    captured output (2 lines):
+      one2
+      two
+    full log: <log>
+    accept: dune promote test/conformance/corpus/negative-tests/flexible.ml
+
+  FAIL  Flexible › line_75
+    test/conformance/corpus/negative-tests/flexible.ml:77
+      77 │ [%expect
+
+    expect: mismatch
+    @@ -0,0 +1,2 @@
+    + one3
+    + two
+    captured output (2 lines):
+      one3
+      two
+    full log: <log>
+    accept: dune promote test/conformance/corpus/negative-tests/flexible.ml
+
+  FAIL  Flexible › line_82
+    test/conformance/corpus/negative-tests/flexible.ml:84
+      84 │ [%expect
+
+    expect: mismatch
+    @@ -1,1 +1,2 @@
+    - WRONG
+    + one4
+    + two
+    captured output (2 lines):
+      one4
+      two
+    full log: <log>
+    accept: dune promote test/conformance/corpus/negative-tests/flexible.ml
+
+  FAIL  Flexible › line_89
+    test/conformance/corpus/negative-tests/flexible.ml:91
+      91 │ [%expect
+
+    expect: mismatch
+    @@ -1,1 +1,2 @@
+    - WRONG
+    + one5
+    + two
+    captured output (2 lines):
+      one5
+      two
+    full log: <log>
+    accept: dune promote test/conformance/corpus/negative-tests/flexible.ml
+
+  FAIL  Flexible › line_96
+    test/conformance/corpus/negative-tests/flexible.ml:98
+      98 │ [%expect
+
+    expect: mismatch
+    @@ -1,1 +1,2 @@
+    - WRONG
+    + one6
+    + two
+    captured output (2 lines):
+      one6
+      two
+    full log: <log>
+    accept: dune promote test/conformance/corpus/negative-tests/flexible.ml
+
+  FAIL  Flexible › line_104
+    test/conformance/corpus/negative-tests/flexible.ml:106
+      106 │ [%expect
+
+    expect: mismatch
+    @@ -1,2 +1,2 @@
+    - WRONG
+    - THING
+    + one8
+    + two
+    captured output (2 lines):
+      one8
+      two
+    full log: <log>
+    accept: dune promote test/conformance/corpus/negative-tests/flexible.ml
+
+  FAIL  Flexible › line_112
+    test/conformance/corpus/negative-tests/flexible.ml:114
+      114 │ [%expect
+
+    expect: mismatch
+    @@ -1,2 +1,2 @@
+    - WRONG
+    - THING
+    + one9
+    + two
+    captured output (2 lines):
+      one9
+      two
+    full log: <log>
+    accept: dune promote test/conformance/corpus/negative-tests/flexible.ml
+
+  FAIL  Flexible › line_121
+    test/conformance/corpus/negative-tests/flexible.ml:123
+      123 │ [%expect
+
+    expect: mismatch
+    @@ -1,2 +1,2 @@
+    - WRONG
+    -    THING
+    + one10
+    + two
+    captured output (2 lines):
+      one10
+      two
+    full log: <log>
+    accept: dune promote test/conformance/corpus/negative-tests/flexible.ml
+
+  FAIL  Flexible › line_130
+    test/conformance/corpus/negative-tests/flexible.ml:132
+      132 │ [%expect
+
+    expect: mismatch
+    @@ -1,2 +1,2 @@
+    -    WRONG
+    - THING
+    + one11
+    + two
+    captured output (2 lines):
+      one11
+      two
+    full log: <log>
+    accept: dune promote test/conformance/corpus/negative-tests/flexible.ml
+
+  FAIL  Missing › line_12
+    test/conformance/corpus/negative-tests/missing.ml:15
+      15 │ [%expect];
+
+    expect: mismatch
+    @@ -0,0 +1,2 @@
+    + hello
+    + goodbye
+    captured output (2 lines):
+      hello
+      goodbye
+    full log: <log>
+    accept: dune promote test/conformance/corpus/negative-tests/missing.ml
+
+  FAIL  Normal_strings › short quoted string
+    test/conformance/corpus/negative-tests/normal_strings.ml:3
+      3 │ [%expect ""]
+
+    expect: mismatch
+    @@ -0,0 +1,2 @@
+    + foo
+    + bar
+    captured output (2 lines):
+      foo
+      bar
+    full log: <log>
+    accept: dune promote test/conformance/corpus/negative-tests/normal_strings.ml
+
+  FAIL  Normal_strings › long quoted string
+    test/conformance/corpus/negative-tests/normal_strings.ml:15
+      15 │ [%expect ""]
+
+    expect: mismatch
+    @@ -0,0 +1,5 @@
+    + XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
+    + XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
+    + XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
+    + XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
+    + XXXXXXXXXXXXXXXXXXXX XXXXXXXXXXXXXXXXXXX
+    captured output (7 lines):
+      
+          XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
+          XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
+          XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
+          XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
+          XXXXXXXXXXXXXXXXXXXX XXXXXXXXXXXXXXXXXXX
+          
+    full log: <log>
+    accept: dune promote test/conformance/corpus/negative-tests/normal_strings.ml
+
+  FAIL  Normal_strings › quoted strings with leading spaces
+    test/conformance/corpus/negative-tests/normal_strings.ml:26
+      26 │ [%expect ""];
+
+    expect: mismatch
+    @@ -0,0 +1,4 @@
+    + live
+    +   long
+    +     and
+    + prosper
+
+    test/conformance/corpus/negative-tests/normal_strings.ml:34
+      34 │ [%expect ""]
+
+    expect: mismatch
+    @@ -0,0 +1,4 @@
+    + live
+    +   loooooooooooooooooooooooooooooooooooooooooooooooooooooooooooong
+    +     and
+    + prosper
+    captured output (last 10 of 11 lines):
+          live
+            long
+              and
+          prosper
+          
+          live
+            loooooooooooooooooooooooooooooooooooooooooooooooooooooooooooong
+              and
+          prosper
+          
+    full log: <log>
+    accept: dune promote test/conformance/corpus/negative-tests/normal_strings.ml
+
+  FAIL  Semicolon › line_1
+    test/conformance/corpus/negative-tests/semicolon.ml:3
+      3 │ [%expect {| two |}]
+
+    expect: mismatch
+    @@ -1,1 +1,1 @@
+    - two
+    + one
+    captured output (1 line):
+      one
+    full log: <log>
+    accept: dune promote test/conformance/corpus/negative-tests/semicolon.ml
+
+  FAIL  Spacing › line_3
+    test/conformance/corpus/negative-tests/spacing.ml:6
+      6 │ [%expect
+
+    expect: mismatch
+    @@ -1,4 +1,3 @@
+      one
+      two(no newline)
+    - 
+      three
+
+    test/conformance/corpus/negative-tests/spacing.ml:24
+      24 │ [%expect
+
+    expect: mismatch
+    @@ -1,3 +1,3 @@
+    -   one
+    + one
+      two(2)
+    -   three
+    + three
+
+    test/conformance/corpus/negative-tests/spacing.ml:32
+      32 │ [%expect
+
+    expect: mismatch
+    @@ -1,3 +1,3 @@
+    -   one
+    - two
+    -   three
+    +  one
+    + blah
+    +  three
+    captured output (last 10 of 11 lines):
+      two(no newline)
+      threeone
+      two(1)
+      three
+      one
+      two(2)
+      three
+        one
+       blah
+        three
+    full log: <log>
+    accept: dune promote test/conformance/corpus/negative-tests/spacing.ml
+
+  FAIL  String_extension_syntax › correction for expect node
+    test/conformance/corpus/negative-tests/string_extension_syntax.ml:6
+      6 │ {%expect xxx|what|xxx}
+
+    expect: mismatch
+    @@ -1,1 +1,4 @@
+    - what
+    + Testing
+    + 1
+    + 2
+    + 3
+    captured output (4 lines):
+      Testing
+      1
+      2
+      3
+    full log: <log>
+    accept: dune promote test/conformance/corpus/negative-tests/string_extension_syntax.ml
+
+  FAIL  String_extension_syntax › correction for expect exact node
+    test/conformance/corpus/negative-tests/string_extension_syntax.ml:14
+      14 │ {%expect_exact|what|}
+
+    expect_exact: mismatch
+    @@ -1,1 +1,4 @@
+    - what
+    + Testing
+    + 1
+    + 2
+    + 3
+    captured output (4 lines):
+      Testing
+      1
+      2
+      3
+    full log: <log>
+    accept: dune promote test/conformance/corpus/negative-tests/string_extension_syntax.ml
+
+  FAIL  String_padding › line_1
+    test/conformance/corpus/negative-tests/string_padding.ml:3
+      3 │ [%expect "goodbye"]
+
+    expect: mismatch
+    @@ -1,1 +1,1 @@
+    - goodbye
+    + hello
+    captured output (1 line):
+      hello
+    full log: <log>
+    accept: dune promote test/conformance/corpus/negative-tests/string_padding.ml
+
+  FAIL  Unidiomatic_syntax › line_1
+    test/conformance/corpus/negative-tests/unidiomatic_syntax.ml:4
+      4 │ [%expect {| Good night, moon. |}]
+
+    expect: mismatch
+    @@ -1,1 +1,1 @@
+    - Good night, moon.
+    + Hello, world.
+    captured output (1 line):
+      Hello, world.
+    full log: <log>
+    accept: dune promote test/conformance/corpus/negative-tests/unidiomatic_syntax.ml
+──────────────────────────────────────────────────────────
+
+corrections (10):
+  wrote test/conformance/corpus/negative-tests/escaped_strings.ml.corrected (21 expectations)
+  wrote test/conformance/corpus/negative-tests/exact.ml.corrected (3 expectations)
+  wrote test/conformance/corpus/negative-tests/flexible.ml.corrected (17 expectations)
+  wrote test/conformance/corpus/negative-tests/missing.ml.corrected (1 expectation)
+  wrote test/conformance/corpus/negative-tests/normal_strings.ml.corrected (4 expectations)
+  wrote test/conformance/corpus/negative-tests/semicolon.ml.corrected (1 expectation)
+  wrote test/conformance/corpus/negative-tests/spacing.ml.corrected (3 expectations)
+  wrote test/conformance/corpus/negative-tests/string_extension_syntax.ml.corrected (2 expectations)
+  wrote test/conformance/corpus/negative-tests/string_padding.ml.corrected (1 expectation)
+  wrote test/conformance/corpus/negative-tests/unidiomatic_syntax.ml.corrected (1 expectation)
+
+5 passed, 36 failed, 10 corrections written in <duration>.
+--- stderr ---
