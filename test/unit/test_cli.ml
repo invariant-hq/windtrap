@@ -90,8 +90,8 @@ let () =
       "--arm";
       "lib/a.ml:1:0:add";
     ] (fun p ->
-      is_true ~msg:"filter" (p.Cli.filter = Some "pat");
-      is_true ~msg:"exclude" (p.Cli.exclude = Some "ex");
+      is_true ~msg:"filter" (p.Cli.filter = [ "pat" ]);
+      is_true ~msg:"exclude" (p.Cli.exclude = [ "ex" ]);
       is_true ~msg:"tags accumulate in order" (p.Cli.tags = [ "a"; "b" ]);
       is_true ~msg:"exclude_tags" (p.Cli.exclude_tags = [ "c" ]);
       is_true ~msg:"failed_only" (p.Cli.failed_only = Some true);
@@ -116,8 +116,8 @@ let () =
   expect_ok "long spellings and --flag=value"
     [ "--filter=abc"; "--exclude=xyz"; "--prop-count=7"; "--color=ALWAYS" ]
     (fun p ->
-      is_true ~msg:"--filter=" (p.Cli.filter = Some "abc");
-      is_true ~msg:"--exclude=" (p.Cli.exclude = Some "xyz");
+      is_true ~msg:"--filter=" (p.Cli.filter = [ "abc" ]);
+      is_true ~msg:"--exclude=" (p.Cli.exclude = [ "xyz" ]);
       is_true ~msg:"--prop-count=" (p.Cli.prop_count = Some 7);
       is_true ~msg:"--color= is case-insensitive" (p.Cli.color = Some Os.Always));
   expect_ok "-x is a boolean" [ "-x" ] (fun p ->
@@ -128,8 +128,13 @@ let () =
     | Cli.Invalid_value { source = "--fail-fast"; value = "2"; _ } -> true
     | _ -> false);
   expect_ok "later occurrence of a single-valued flag wins"
-    [ "-f"; "first"; "-f"; "second" ] (fun p ->
-      is_true ~msg:"last wins" (p.Cli.filter = Some "second"));
+    [ "--junit"; "first"; "--junit"; "second" ] (fun p ->
+      is_true ~msg:"last wins" (p.Cli.junit = Some "second"));
+  expect_ok "a second -f adds a pattern, it does not replace the first"
+    [ "-f"; "first"; "--filter"; "second"; "-e"; "x"; "--exclude=y" ] (fun p ->
+      equal ~msg:"the patterns, in the order given" (list string)
+        [ "first"; "second" ] p.Cli.filter;
+      equal ~msg:"-e likewise" (list string) [ "x"; "y" ] p.Cli.exclude);
   expect_ok "repeatable flags accept the inline spelling"
     [ "--tag=a"; "--exclude-tag=b"; "--tag=c" ] (fun p ->
       is_true ~msg:"inline tags accumulate"
@@ -153,22 +158,19 @@ let () =
 let () =
   reg "positionals" @@ fun () ->
   expect_ok "a bare argument is the filter" [ "somepattern" ] (fun p ->
-      is_true ~msg:"positional filter" (p.Cli.filter = Some "somepattern"));
+      equal ~msg:"positional filter" (list string) [ "somepattern" ]
+        p.Cli.filter);
   expect_ok "arguments after -- are positionals" [ "--"; "-weird" ] (fun p ->
-      is_true ~msg:"post -- positional" (p.Cli.filter = Some "-weird"));
-  expect_error "two positionals are rejected" [ "one"; "two" ] (function
-    | Cli.Extra_positional { filter = "one"; extra = "two" } -> true
-    | _ -> false);
-  expect_error "-f plus a positional is rejected" [ "-f"; "one"; "two" ]
-    (function
-    | Cli.Extra_positional { filter = "one"; extra = "two" } -> true
-    | _ -> false);
-  expect_error "two positionals after -- are rejected" [ "--"; "a"; "b" ]
-    (function
-    | Cli.Extra_positional { filter = "a"; extra = "b" } -> true
-    | _ -> false);
+      equal ~msg:"post -- positional" (list string) [ "-weird" ] p.Cli.filter);
+  expect_ok "a second positional is a second pattern" [ "one"; "two" ] (fun p ->
+      equal ~msg:"both, in order" (list string) [ "one"; "two" ] p.Cli.filter);
+  expect_ok "positionals and -f add up, in the order given"
+    [ "one"; "-f"; "two"; "three"; "--"; "-four" ] (fun p ->
+      equal ~msg:"every pattern" (list string)
+        [ "one"; "two"; "three"; "-four" ]
+        p.Cli.filter);
   expect_ok "a lone dash is an ordinary positional" [ "-" ] (fun p ->
-      is_true ~msg:"dash filter" (p.Cli.filter = Some "-"))
+      equal ~msg:"dash filter" (list string) [ "-" ] p.Cli.filter)
 
 (* Parsing: help and version stop early *)
 
@@ -273,7 +275,6 @@ let () =
       Cli.Missing_value "--filter";
       Cli.Invalid_value
         { source = "--prop-count"; value = "x"; expected = "an int" };
-      Cli.Extra_positional { filter = "a"; extra = "b" };
     ]
   in
   List.iter
@@ -296,8 +297,6 @@ let () =
       ( Cli.Invalid_value
           { source = "--prop-count"; value = "x"; expected = "an int" },
         "invalid value 'x' for --prop-count: expected an int" );
-      ( Cli.Extra_positional { filter = "a"; extra = "b" },
-        "unexpected argument 'b': the filter is already 'a'" );
       ( Cli.Incompatible_flags ("--mutate", "--arm"),
         "options '--mutate' and '--arm' cannot be combined" );
     ];
@@ -413,7 +412,7 @@ let () =
   (match parse [ "--probe"; "next" ] with
   | Ok p ->
       is_true ~msg:"a bare flag never consumes the next argument"
-        (p.Cli.junit = Some "<bare>" && p.Cli.filter = Some "next")
+        (p.Cli.junit = Some "<bare>" && p.Cli.filter = [ "next" ])
   | Error e -> fail (Cli.error_message e));
   match parse [ "--probe=bad" ] with
   | Error (Cli.Invalid_value { source = "--probe"; value = "bad"; _ }) ->
@@ -509,7 +508,7 @@ let () =
 let () =
   reg "usage line" @@ fun () ->
   equal ~msg:"usage is one line with the basename" string
-    "usage: mytests.exe [OPTIONS] [PATTERN]"
+    "usage: mytests.exe [OPTIONS] [PATTERN...]"
     (Cli.usage ~prog:"/some/path/mytests.exe")
 
 (* Resolution: defaults *)
@@ -529,7 +528,7 @@ let () =
   clear_env ();
   let config = resolve Cli.empty in
   is_true ~msg:"default: no filters"
-    (config.Run.filter = None && config.Run.exclude = None);
+    (config.Run.filter = [] && config.Run.exclude = []);
   is_true ~msg:"default: no tags"
     (config.Run.tags = [] && config.Run.exclude_tags = []);
   is_true ~msg:"default: flags off"
@@ -557,9 +556,30 @@ let () =
   clear_env ();
   setenv "WINDTRAP_FILTER" (Some "envpat");
   let config = resolve Cli.empty in
-  is_true ~msg:"env fills an absent flag" (config.Run.filter = Some "envpat");
-  let config = resolve { Cli.empty with Cli.filter = Some "clipat" } in
-  is_true ~msg:"CLI beats env" (config.Run.filter = Some "clipat")
+  is_true ~msg:"env fills an absent flag" (config.Run.filter = [ "envpat" ]);
+  let config = resolve { Cli.empty with Cli.filter = [ "clipat" ] } in
+  is_true ~msg:"CLI beats env" (config.Run.filter = [ "clipat" ])
+
+(* The patterns repeat as the tags do, but their mirrors hold one pattern,
+   so the command line's patterns replace the mirror's instead of adding
+   to it. *)
+let () =
+  reg "patterns: the command line replaces the mirror" @@ fun () ->
+  clear_env ();
+  setenv "WINDTRAP_FILTER" (Some " a, b ");
+  setenv "WINDTRAP_EXCLUDE" (Some "c,d");
+  let config = resolve Cli.empty in
+  equal ~msg:"a comma is part of the filter pattern" (list string) [ "a, b" ]
+    config.Run.filter;
+  equal ~msg:"and of the exclusion pattern" (list string) [ "c,d" ]
+    config.Run.exclude;
+  let config =
+    resolve { Cli.empty with Cli.filter = [ "x"; "y" ]; exclude = [ "z" ] }
+  in
+  equal ~msg:"the command line's filter patterns, the mirror's dropped"
+    (list string) [ "x"; "y" ] config.Run.filter;
+  equal ~msg:"likewise for the exclusion" (list string) [ "z" ]
+    config.Run.exclude
 
 let () =
   reg "tags are additive across layers" @@ fun () ->
@@ -584,7 +604,7 @@ let () =
   setenv "WINDTRAP_PROP_COUNT" (Some " 12 ");
   setenv "WINDTRAP_JUNIT" (Some " out.xml ");
   let s = settings Cli.empty in
-  is_true ~msg:"a pattern is trimmed" (s.Run.filter = Some "parser");
+  is_true ~msg:"a pattern is trimmed" (s.Run.filter = [ "parser" ]);
   is_true ~msg:"a shard is trimmed" (s.Run.shard = Some (2, 4));
   is_true ~msg:"a count is trimmed" (s.Run.prop_count = Some 12);
   is_true ~msg:"a path is trimmed" (s.Run.junit = Some "out.xml")
@@ -682,7 +702,7 @@ let () =
   is_true ~msg:"WINDTRAP_STREAM" config.Run.stream;
   is_true ~msg:"WINDTRAP_TIMEOUT" (config.Run.timeout = Some 1.5);
   is_true ~msg:"WINDTRAP_PROP_COUNT" (config.Run.prop_count = Some 7);
-  is_true ~msg:"WINDTRAP_EXCLUDE" (config.Run.exclude = Some "skipme")
+  is_true ~msg:"WINDTRAP_EXCLUDE" (config.Run.exclude = [ "skipme" ])
 
 (* The mirrors that only existed as flags. Under `dune runtest` the mirrors
    *are* the CLI, so a flag without one is a documented feature no dune user
@@ -877,7 +897,7 @@ let () =
     (mutation (parsed [ "--mutate=lib/a.ml, lib/b.ml" ])
     = Run.Loop [ "lib/a.ml"; "lib/b.ml" ]);
   is_true ~msg:"the bare flag never consumes the next argument"
-    ((parsed [ "--mutate"; "lib/a.ml" ]).Cli.filter = Some "lib/a.ml");
+    ((parsed [ "--mutate"; "lib/a.ml" ]).Cli.filter = [ "lib/a.ml" ]);
   is_true ~msg:"--arm takes the identifier, unparsed"
     (mutation (parsed [ "--arm"; "lib/a.ml:9:12:add" ])
     = Run.Armed "lib/a.ml:9:12:add");
@@ -1012,8 +1032,8 @@ let () =
 let () =
   reg "a flag takes the next argument whatever it looks like" @@ fun () ->
   expect_ok "-f --verbose" [ "-f"; "--verbose" ] (fun p ->
-      equal ~msg:"the filter is the flag-shaped word" (option string)
-        (Some "--verbose") p.Cli.filter;
+      equal ~msg:"the filter is the flag-shaped word" (list string)
+        [ "--verbose" ] p.Cli.filter;
       equal ~msg:"and --verbose was not read as a flag" (option bool) None
         p.Cli.verbose)
 

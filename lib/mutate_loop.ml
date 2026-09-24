@@ -831,8 +831,7 @@ let run_children renderer ~locations ~scratch ~dry_run_wall ~suite ~config
    are tested, not which tests judge them, so a scoped run's records are
    project-true for this executable, merely fewer. *)
 let narrows_suite ~(config : Run.config) ~focus =
-  config.Run.filter <> None || config.Run.exclude <> None
-  || config.Run.tags <> []
+  config.Run.filter <> [] || config.Run.exclude <> [] || config.Run.tags <> []
   || config.Run.exclude_tags <> []
   || config.Run.failed_only || focus || config.Run.shard <> None
 

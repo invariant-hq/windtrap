@@ -163,9 +163,10 @@ val selection_description : Run.config -> string option
     of the command line, or is [None] when nothing does. It names in this order
     the filter, the exclusion, the tags, the excluded tags, [--failed] and the
     shard, and never an in-source focus. The parts are joined by commas and a
-    final [and], as in [tag "a", "b" and shard 1/3]. A value stands in double
-    quotes, with its double quotes, backslashes and control characters escaped
-    and the rest as typed. *)
+    final [and], as in [tag "a", "b" and shard 1/3], and the patterns of the
+    filter or of the exclusion by [or], as in [filter "a" or "b"]. A value
+    stands in double quotes, with its double quotes, backslashes and control
+    characters escaped and the rest as typed. *)
 
 val empty_selection_reason :
   declared:int -> selection:string option -> string option

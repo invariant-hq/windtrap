@@ -14,6 +14,16 @@ names the selection back to the reader in the words they typed.
   math › adds
   math › subtracts
 
+Patterns add up, where tags narrow: a second -f, or a second bare
+pattern, keeps the tests that contain either one, and an empty
+selection names every pattern back.
+
+  $ run ./suite_main.exe -l -f adds boom
+  math › adds
+  boom
+  $ run ./suite_main.exe -l zzznope yyy
+  windtrap: no tests ran: filter "zzznope" or "yyy" matched none of 5 tests.
+
 A listing whose filter matches nothing says why on stderr, leaves
 stdout empty for whatever reads the paths, and still exits 0: it did
 what it was asked, and answering a mistyped filter with silence would be

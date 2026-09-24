@@ -339,7 +339,7 @@ let () =
   check_int "a malformed mirror exits 2 under --corrected" ~expected:2
     ~actual:code;
   check_contains "the usage line names argv.(0)"
-    ~sub:"usage: child [OPTIONS] [PATTERN]" err;
+    ~sub:"usage: child [OPTIONS] [PATTERN...]" err;
   with_temp_root (fun log_dir ->
       let code, _, _ = spawn_child [ "--child"; "empty-partition"; log_dir ] in
       check_int "a partition that declares no test exits 2" ~expected:2

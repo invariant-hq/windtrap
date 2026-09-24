@@ -78,8 +78,8 @@ inventory. The ones that matter daily:
 
 | flag | env mirror | effect |
 | --- | --- | --- |
-| `-f PATTERN` (or bare `PATTERN`) | `WINDTRAP_FILTER` | run tests whose path contains PATTERN |
-| `-e PATTERN` | `WINDTRAP_EXCLUDE` | skip tests whose path contains PATTERN |
+| `-f PATTERN` (or bare `PATTERN`) | `WINDTRAP_FILTER` | run tests whose path contains PATTERN (repeatable: any of them; env holds one) |
+| `-e PATTERN` | `WINDTRAP_EXCLUDE` | skip tests whose path contains PATTERN (repeatable; env holds one) |
 | `--tag L` / `--exclude-tag L` | `WINDTRAP_TAG` / `WINDTRAP_EXCLUDE_TAG` | select by tag (repeatable; env takes commas) |
 | `--failed` | — | rerun only the last run's failures |
 | `-l`, `--list` | — | list the selection without running |

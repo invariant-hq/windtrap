@@ -512,15 +512,17 @@ let quote s =
    filter that matched nothing nor how many tests there were to match. *)
 let selection_description (config : Run.config) =
   let quoted values = String.concat ", " (List.map quote values) in
+  (* A test is kept by any one pattern, and dropped by any one. *)
+  let either values = String.concat " or " (List.map quote values) in
   let parts =
     List.concat
       [
         (match config.Run.filter with
-        | Some f -> [ Pp.str "filter %s" (quote f) ]
-        | None -> []);
+        | [] -> []
+        | ps -> [ Pp.str "filter %s" (either ps) ]);
         (match config.Run.exclude with
-        | Some e -> [ Pp.str "exclusion %s" (quote e) ]
-        | None -> []);
+        | [] -> []
+        | ps -> [ Pp.str "exclusion %s" (either ps) ]);
         (match config.Run.tags with
         | [] -> []
         | ts -> [ Pp.str "tag %s" (quoted ts) ]);

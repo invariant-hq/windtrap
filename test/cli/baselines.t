@@ -325,4 +325,4 @@ usage error.
   $ cat out
   $ cat err
   windtrap: options '-u' and '--corrected' cannot be combined
-  usage: suite_main.exe [OPTIONS] [PATTERN]
+  usage: suite_main.exe [OPTIONS] [PATTERN...]

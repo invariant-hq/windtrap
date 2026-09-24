@@ -106,8 +106,9 @@ type 'a testable = 'a Testable.t
     A test is named by its path: the names of its enclosing groups, then its
     own, printed joined with [" › "]. [-f], or a bare pattern on the command
     line, keeps the tests whose path string contains the pattern, and [-e] drops
-    them. Each takes one pattern, and a repeated flag replaces the previous one.
-    {!run} refuses a suite in which two tests have one path.
+    them. Patterns add up: a test is kept when it contains one of the [-f]
+    patterns, and dropped when it contains one of the [-e] patterns. {!run}
+    refuses a suite in which two tests have one path.
 
     The path is also the test's identity. It keys the
     {{!section-properties}seeds} of a property, the last failed tests [--failed]
@@ -1639,8 +1640,10 @@ val run : ?argv:string array -> string -> test list -> int
     whose mirror is [WINDTRAP_MUTATE_ARM].
 
     [--tag] and [--exclude-tag] add up, across repeated flags, across the
-    comma-separated list of their mirrors, and across both. Flags that change
-    what prints change no outcome and no exit code.
+    comma-separated list of their mirrors, and across both. [WINDTRAP_FILTER]
+    and [WINDTRAP_EXCLUDE] hold one pattern each, commas included, and the
+    patterns of [-f] or [-e] on the command line replace that of the mirror.
+    Flags that change what prints change no outcome and no exit code.
 
     {b Warning.} A changed variable does not make dune run a test again. On a
     stanza that already passed, a mirror does nothing without

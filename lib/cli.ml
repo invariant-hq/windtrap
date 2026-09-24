@@ -10,8 +10,8 @@
 (* Parsed flags *)
 
 type parsed = {
-  filter : string option;
-  exclude : string option;
+  filter : string list;
+  exclude : string list;
   tags : string list;
   exclude_tags : string list;
   shard : (int * int) option;
@@ -37,8 +37,8 @@ type parsed = {
 
 let empty =
   {
-    filter = None;
-    exclude = None;
+    filter = [];
+    exclude = [];
     tags = [];
     exclude_tags = [];
     shard = None;
@@ -68,7 +68,6 @@ type error =
   | Unknown_flag of string
   | Missing_value of string
   | Invalid_value of { source : string; value : string; expected : string }
-  | Extra_positional of { filter : string; extra : string }
   | Incompatible_flags of string * string
 
 (* The argument grammar *)
@@ -90,9 +89,9 @@ type arg =
     }
 
 (* How a flag's WINDTRAP_* mirror layers under the command line. [Single
-   absent]: the flag holds one value, so the first layer that decides it
-   wins — the mirror is read only while [absent p], and a mirror whose flag
-   the command line already decided is never even parsed, which is what
+   absent]: the first layer that gives the flag decides it — the mirror
+   is read only while [absent p], and a mirror whose flag the command
+   line already decided is never even parsed, which is what
    lets a valid [--timeout] shadow a malformed WINDTRAP_TIMEOUT.
    [Repeatable]: every layer contributes ([--tag], [--exclude-tag]), and
    the variable holds a comma-separated list, one token per item. *)
@@ -167,15 +166,20 @@ let color_of_string ~source value =
 
 let table =
   [
+    (* The patterns repeat as the tags do, but their mirrors hold one
+       pattern each, because a test name may hold a comma: the command
+       line's patterns replace the mirror's instead of adding to it. *)
     Flag_entry
       {
         short = Some "-f";
         long = "--filter";
         arg =
           set_string (fun ~source:_ acc value ->
-              Ok { acc with filter = Some value });
-        doc = "Run only tests whose path contains PATTERN.";
-        mirror = mirrored "WINDTRAP_FILTER" (fun p -> p.filter = None);
+              Ok { acc with filter = acc.filter @ [ value ] });
+        doc =
+          "Run only tests whose path contains PATTERN (repeatable: any of \
+           them).";
+        mirror = mirrored "WINDTRAP_FILTER" (fun p -> p.filter = []);
       };
     Flag_entry
       {
@@ -183,9 +187,9 @@ let table =
         long = "--exclude";
         arg =
           set_string (fun ~source:_ acc value ->
-              Ok { acc with exclude = Some value });
-        doc = "Skip tests whose path contains PATTERN.";
-        mirror = mirrored "WINDTRAP_EXCLUDE" (fun p -> p.exclude = None);
+              Ok { acc with exclude = acc.exclude @ [ value ] });
+        doc = "Skip tests whose path contains PATTERN (repeatable).";
+        mirror = mirrored "WINDTRAP_EXCLUDE" (fun p -> p.exclude = []);
       };
     Flag_entry
       {
@@ -199,7 +203,7 @@ let table =
                 (fun ~source:_ acc value ->
                   Ok { acc with tags = acc.tags @ [ value ] });
             };
-        doc = "Run only tests tagged LABEL (repeatable).";
+        doc = "Run only tests tagged LABEL (repeatable: all of them).";
         mirror = repeatable "WINDTRAP_TAG";
       };
     Flag_entry
@@ -558,8 +562,6 @@ let error_message = function
   | Missing_value flag -> Pp.str "option '%s' requires an argument" flag
   | Invalid_value { source; value; expected } ->
       Pp.str "invalid value '%s' for %s: expected %s" value source expected
-  | Extra_positional { filter; extra } ->
-      Pp.str "unexpected argument '%s': the filter is already '%s'" extra filter
   | Incompatible_flags (first, second) ->
       Pp.str "options '%s' and '%s' cannot be combined" first second
 
@@ -579,28 +581,17 @@ let split_inline arg =
         Some (String.sub arg (eq + 1) (String.length arg - eq - 1)) )
 
 let ( let* ) = Result.bind
-
-let add_positional acc value =
-  match acc.filter with
-  | None -> Ok { acc with filter = Some value }
-  | Some filter -> Error (Extra_positional { filter; extra = value })
+let add_positional acc value = { acc with filter = acc.filter @ [ value ] }
 
 let rec parse_args entries acc = function
   | [] -> Ok acc
-  | "--" :: rest ->
-      List.fold_left
-        (fun acc value ->
-          let* acc = acc in
-          add_positional acc value)
-        (Ok acc) rest
+  | "--" :: rest -> Ok (List.fold_left add_positional acc rest)
   | arg :: rest when String.length arg > 2 && String.sub arg 0 2 = "--" ->
       let name, inline = split_inline arg in
       apply entries (find_long entries name) ~source:name ~inline acc rest
   | arg :: rest when String.length arg > 1 && arg.[0] = '-' ->
       apply entries (find_short entries arg) ~source:arg ~inline:None acc rest
-  | arg :: rest ->
-      let* acc = add_positional acc arg in
-      parse_args entries acc rest
+  | arg :: rest -> parse_args entries (add_positional acc arg) rest
 
 and apply entries entry ~source ~inline acc rest =
   match entry with
@@ -783,7 +774,7 @@ let settings cli =
 (* Help *)
 
 let usage ~prog =
-  Pp.str "usage: %s [OPTIONS] [PATTERN]" (Filename.basename prog)
+  Pp.str "usage: %s [OPTIONS] [PATTERN...]" (Filename.basename prog)
 
 (* cmdliner's spelling, which [split_inline] accepts: a value follows its
    short name after a space and its long name after [=]. *)
@@ -837,8 +828,8 @@ let help ~prog =
     ([ Pp.str "%s - windtrap test runner" (Filename.basename prog); "" ]
     @ [ usage ~prog; "" ]
     @ fill ~indent:0
-        "A bare PATTERN runs only tests whose full path contains it (same as \
-         -f PATTERN). (env VAR) after an option names the variable that sets \
-         it for a run with no command line, such as dune runtest."
+        "Each bare PATTERN is read as one -f PATTERN. (env VAR) after an \
+         option names the variable that sets it for a run with no command \
+         line, such as dune runtest."
     @ [ ""; "OPTIONS:" ] @ options
     @ ("ENVIRONMENT (no flag):" :: settings))

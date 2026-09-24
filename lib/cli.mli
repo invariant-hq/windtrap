@@ -25,8 +25,10 @@
     the variable as its source. {!settings} reads the mirrors in one pass, and a
     variable set to the empty string counts as unset.
     - The mirror of a flag that takes a value is one token, trimmed.
-    - The mirror of a repeatable flag is a comma-separated list, whose items are
-      trimmed and whose empty items are dropped.
+    - The mirror of [--tag] or [--exclude-tag] is a comma-separated list, whose
+      items are trimmed and whose empty items are dropped.
+    - [-f] and [-e] repeat as well, but their mirrors are one token each,
+      because a test name may hold a comma.
     - The mirror of a flag that takes no value is a boolean
       ({!Os.bool_of_string}). True gives the flag and false is its absence. Any
       other word is refused.
@@ -42,9 +44,12 @@
 (** {1:parsed Parsed flags} *)
 
 type parsed = {
-  filter : string option;
-      (** [-f PATTERN], [--filter PATTERN], or the positional argument. *)
-  exclude : string option;  (** [-e PATTERN], [--exclude PATTERN]. *)
+  filter : string list;
+      (** [-f PATTERN], [--filter PATTERN] and the positional arguments,
+          repeatable: the patterns in the order given. *)
+  exclude : string list;
+      (** [-e PATTERN], [--exclude PATTERN], repeatable: the patterns in the
+          order given. *)
   tags : string list;
       (** [--tag LABEL], repeatable: the labels in the order given. *)
   exclude_tags : string list;
@@ -108,9 +113,6 @@ type error =
           that carried [value], and [expected] describes what is accepted. A
           flag that takes no value and is given one, as in [--verbose=1], is
           refused this way, with [expected = "no argument"]. *)
-  | Extra_positional of { filter : string; extra : string }
-      (** A second positional argument [extra] came when the filter was already
-          [filter], from a positional argument or from [-f]. *)
   | Incompatible_flags of string * string
       (** Both flags were given, and they contradict each other. The payload is
           [("-u", "--corrected")] or [("--mutate", "--arm")], whatever spelling
@@ -130,15 +132,15 @@ val parse : string array -> (parsed, error) result
 (** [parse argv] is the flags of [argv], or the first error from the left.
     [argv.(0)] is not read, and an empty [argv] is [Ok empty]. It reads no
     environment and never raises.
-    - A repeated flag keeps its last value, and [--tag] and [--exclude-tag]
-      accumulate.
+    - A repeated flag keeps its last value, and [-f], [-e], [--tag] and
+      [--exclude-tag] accumulate.
     - A long flag also takes its value as [--flag=value]. A short flag does not,
       and [-f=x] and [-fx] are unknown flags.
     - A flag whose value is optional takes it only as [--flag=value]. Bare, it
       never takes the next argument.
-    - The first bare argument is [filter], and a second is {!Extra_positional}.
-      Every argument after [--] is positional, which is how a pattern that
-      starts with [-] is given.
+    - A bare argument is added to [filter], as [-f] adds one. Every argument
+      after [--] is positional, which is how a pattern that starts with [-] is
+      given.
     - Parsing stops at [--help] and at [--version], so the flags after them are
       not checked. An error before them still wins.
     - [-u] with [--corrected] is {!Incompatible_flags}. It is checked after the
@@ -150,7 +152,8 @@ val settings : parsed -> (Run.config, error) result
 (** [settings cli] is the configuration that one invocation resolves to. Each
     field is [cli]'s, else its mirror's, else that of {!Run.default_config}.
     - [tags] and [exclude_tags] add up, the command line's first and then the
-      mirror's.
+      mirror's. [filter] and [exclude] are the command line's patterns when it
+      gives one, and else the mirror's.
     - A mirror whose flag the command line gave is not read, so a valid
       [--timeout] hides a malformed [WINDTRAP_TIMEOUT]. Any other mirror that
       its flag would refuse is [Error (Invalid_value _)] naming the variable,
@@ -183,8 +186,8 @@ val color_mode : unit -> (Os.color_mode, error) result
 (** {1:help Help} *)
 
 val usage : prog:string -> string
-(** [usage ~prog] is [usage: <prog> [OPTIONS] [PATTERN]], with the basename of
-    [prog]. *)
+(** [usage ~prog] is [usage: <prog> [OPTIONS] [PATTERN...]], with the basename
+    of [prog]. *)
 
 val help : prog:string -> string
 (** [help ~prog] is the help page. It gives each flag with its spellings, its

@@ -455,9 +455,11 @@ val mutation_closing : config:Run.config -> mutation -> section list
     - when [m.survivors] is not empty, the [reproduce:] command, which arms the
       first survivor of [m] under the selection of [config]. Under [`Exe cmd],
       the invocation of [config], it is [cmd], [--arm] and the run's [-f], [-e],
-      [--tag], [--exclude-tag], [--shard] and [--failed]. Under [`Mirrors] it is
-      the mirrors of the same flags, [--failed] excepted, in front of a forced
-      [dune runtest] that names the mutation backend.
+      [--tag], [--exclude-tag], [--shard] and [--failed], a repeatable flag once
+      per value. Under [`Mirrors] it is the mirrors of the same flags in front
+      of a forced [dune runtest] that names the mutation backend, except
+      [--failed] and a filter or an exclusion of several patterns, which no
+      mirror can hold.
     - the outcome line, always last: the survivors among the reached mutants,
       with the words of [m.scope], then the killed, the never reached and the
       not tested. A zero term is omitted, the reached count excepted. Under

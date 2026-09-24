@@ -133,7 +133,7 @@ let () =
             (Run.default_config ()) with
             Run.log_dir = root;
             color = Os.Never;
-            exclude = Some "fails";
+            exclude = [ "fails" ];
           }
         in
         (* It raises on the Interrupted event, which the runner ignores. *)
@@ -1261,7 +1261,7 @@ let () =
   let code, out, err = run_in_process ~argv:[ "--help" ] root "codes" [] in
   check_int "--help returns 0" ~expected:0 ~actual:code;
   check_contains "--help prints the page on stdout, flushed"
-    ~sub:"usage: codes [OPTIONS] [PATTERN]" out;
+    ~sub:"usage: codes [OPTIONS] [PATTERN...]" out;
   check_string "--help prints nothing on stderr" ~expected:"" ~actual:err;
   let code, out, _ = run_in_process ~argv:[ "--version" ] root "codes" [] in
   check_int "--version returns 0" ~expected:0 ~actual:code;

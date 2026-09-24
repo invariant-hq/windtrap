@@ -27,8 +27,8 @@ type mutation = No_mutation | Loop of string list | Armed of string
    coupling. *)
 type config = {
   seed : Seed.seed;
-  filter : string option;
-  exclude : string option;
+  filter : string list;
+  exclude : string list;
   tags : string list;
   exclude_tags : string list;
   shard : (int * int) option;
@@ -52,8 +52,8 @@ type config = {
 let default_config () =
   {
     seed = Seed.random ();
-    filter = None;
-    exclude = None;
+    filter = [];
+    exclude = [];
     tags = [];
     exclude_tags = [];
     shard = None;
@@ -104,8 +104,8 @@ let default_config () =
 let for_subset config ~log_dir ~bail =
   {
     config with
-    filter = None;
-    exclude = None;
+    filter = [];
+    exclude = [];
     shard = None;
     failed_only = false;
     bail;
@@ -1195,8 +1195,8 @@ let case_selected (config : config) ~predicate ~allowed ~focus_active
     (case : Test_tree.case) =
   let path = Test_tree.path_to_string case.Test_tree.path in
   let contains pattern = Text.contains_substring ~pattern path in
-  (match config.filter with None -> true | Some p -> contains p)
-  && (match config.exclude with None -> true | Some p -> not (contains p))
+  (config.filter = [] || List.exists contains config.filter)
+  && (not (List.exists contains config.exclude))
   && Test_tree.Tag.accepts predicate case.Test_tree.tags
   && allowed path
   && (match config.shard with

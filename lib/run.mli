@@ -45,11 +45,12 @@ type mutation =
 
 type config = {
   seed : Seed.seed;  (** [--seed]: the root seed of the run. *)
-  filter : string option;
-      (** [-f], or the bare pattern: keeps the tests whose path string contains
-          it (see {{!section-selection}selection}). *)
-  exclude : string option;
-      (** [-e]: drops the tests whose path string contains it. *)
+  filter : string list;
+      (** [-f] and the bare patterns: keeps the tests whose path string contains
+          one of them, and [[]] keeps every test (see
+          {{!section-selection}selection}). *)
+  exclude : string list;
+      (** [-e]: drops the tests whose path string contains one of them. *)
   tags : string list;  (** [--tag]: the tags a test must carry, all of them. *)
   exclude_tags : string list;
       (** [--exclude-tag]: the tags a test must not carry, any of them. *)
@@ -576,8 +577,8 @@ val list_selection :
 
     A test runs iff every layer below admits it. The layers intersect, and an
     absent one admits every test.
-    - Its path string ({!Test_tree.path_to_string}) contains [config.filter] and
-      does not contain [config.exclude].
+    - Its path string ({!Test_tree.path_to_string}) contains one pattern of
+      [config.filter] and none of [config.exclude].
     - Its tags hold every tag of [config.tags] and none of
       [config.exclude_tags]. A tag in both lists is only excluded (see
       {!Test_tree.Tag.predicate}).

@@ -36,7 +36,7 @@ let () =
   check "default config: root seed is a valid token"
     (String.length (Seed.to_string config.Run.seed) = 19);
   check "default config: no filters"
-    (config.Run.filter = None && config.Run.exclude = None);
+    (config.Run.filter = [] && config.Run.exclude = []);
   check "default config: no tags"
     (config.Run.tags = [] && config.Run.exclude_tags = []);
   check "default config: flags off"
@@ -62,8 +62,8 @@ let () =
     {
       (Run.default_config ()) with
       Run.seed = 0x5eedL;
-      filter = Some "f";
-      exclude = Some "e";
+      filter = [ "f" ];
+      exclude = [ "e" ];
       shard = Some (1, 2);
       failed_only = true;
       tags = [ "t" ];
@@ -76,8 +76,8 @@ let () =
   in
   let child = Run.for_subset parent ~log_dir:"/tmp/child" ~bail:true in
   check "for_subset: path selection cleared"
-    (child.Run.filter = None && child.Run.exclude = None
-   && child.Run.shard = None && not child.Run.failed_only);
+    (child.Run.filter = [] && child.Run.exclude = [] && child.Run.shard = None
+   && not child.Run.failed_only);
   check "for_subset: tags and seed kept"
     (child.Run.tags = [ "t" ]
     && child.Run.exclude_tags = [ "x" ]
@@ -1413,22 +1413,31 @@ let () =
   let config filter exclude =
     { (base_config ~log_dir:root ()) with Run.filter; exclude }
   in
-  expect_run "filter selects a subtree"
-    ~config:(config (Some "math") None)
-    suite
+  expect_run "filter selects a subtree" ~config:(config [ "math" ] []) suite
   @@ fun outcome ->
   check "only matching tests ran"
     (ran_names outcome = [ "math/add"; "math/sub" ]);
   check_int "selected mirrors the run" ~expected:2
     ~actual:(List.length outcome.Run.selected);
   check_int "total counts the whole suite" ~expected:3 ~actual:outcome.Run.total;
-  expect_run "exclude drops matches" ~config:(config None (Some "math")) suite
+  expect_run "exclude drops matches" ~config:(config [] [ "math" ]) suite
   @@ fun outcome ->
   check "only non-excluded tests ran" (ran_names outcome = [ "text/trim" ]);
   expect_run "filter and exclude compose"
-    ~config:(config (Some "math") (Some "sub"))
+    ~config:(config [ "math" ] [ "sub" ])
     suite
-  @@ fun outcome -> check "compose" (ran_names outcome = [ "math/add" ])
+  @@ fun outcome ->
+  check "compose" (ran_names outcome = [ "math/add" ]);
+  expect_run "a test that contains either filter pattern runs"
+    ~config:(config [ "sub"; "trim" ] [])
+    suite
+  @@ fun outcome ->
+  check "either pattern keeps" (ran_names outcome = [ "math/sub"; "text/trim" ]);
+  expect_run "a test that contains either exclusion pattern is dropped"
+    ~config:(config [] [ "add"; "trim" ])
+    suite
+  @@ fun outcome ->
+  check "either pattern drops" (ran_names outcome = [ "math/sub" ])
 
 let () =
   with_temp_root @@ fun root ->
@@ -1530,7 +1539,7 @@ let () =
   @@ fun outcome ->
   check "exit 1" (outcome.Run.exit_code = 1);
   expect_run "a filter matching nothing exits 2"
-    ~config:{ config with Run.filter = Some "zzz-nothing" }
+    ~config:{ config with Run.filter = [ "zzz-nothing" ] }
     [ Test_tree.test "ok" (fun () -> ()) ]
   @@ fun outcome ->
   check "exit 2, nothing recorded"
@@ -1777,7 +1786,7 @@ let () =
     {
       (base_config ~log_dir:root ()) with
       Run.shard = Some (k, 3);
-      filter = Some "t-one";
+      filter = [ "t-one" ];
     }
   in
   let outcomes =
@@ -2486,11 +2495,11 @@ let () =
     !seen
   in
   check "a selection holding a property says so"
-    (started ~filter:None = Some (true, 2));
+    (started ~filter:[] = Some (true, 2));
   check "a selected property alone says so"
-    (started ~filter:(Some "law") = Some (true, 1));
+    (started ~filter:[ "law" ] = Some (true, 1));
   check "a selection that leaves the property out does not"
-    (started ~filter:(Some "plain") = Some (false, 1))
+    (started ~filter:[ "plain" ] = Some (false, 1))
 
 (* Property wiring *)
 
@@ -3112,7 +3121,7 @@ let () =
   expect_run "survivors: full failing run" ~config tests @@ fun _ ->
   t1_fixed := true;
   expect_run "survivors: filtered rerun of t1"
-    ~config:{ config with Run.filter = Some "t1" }
+    ~config:{ config with Run.filter = [ "t1" ] }
     tests
   @@ fun outcome ->
   check "only t1 reran and passed"
@@ -3123,7 +3132,7 @@ let () =
   @@ fun outcome ->
   check "t2's entry survived the filtered run" (ran_names outcome = [ "t2" ]);
   expect_run "--failed composes with a disjoint filter"
-    ~config:{ config with Run.failed_only = true; filter = Some "t1" }
+    ~config:{ config with Run.failed_only = true; filter = [ "t1" ] }
     tests
   @@ fun outcome ->
   check "a nonempty allowlist the filter rejects runs nothing, exit 2"
@@ -3876,7 +3885,7 @@ let () =
     ]
   in
   let config =
-    { (base_config ~log_dir:"/tmp/unused" ()) with Run.filter = Some "y" }
+    { (base_config ~log_dir:"/tmp/unused" ()) with Run.filter = [ "y" ] }
   in
   expect_startup_error "the focus sites of the declared tree, in order" ~config
     tests (function

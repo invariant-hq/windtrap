@@ -587,8 +587,8 @@ let test_selection_description () =
        (describe
           {
             base with
-            Run.filter = Some "pars er";
-            exclude = Some "it's";
+            Run.filter = [ "pars er" ];
+            exclude = [ "it's" ];
             tags = [ "a"; "b c" ];
             exclude_tags = [ "d" ];
             failed_only = true;
@@ -596,7 +596,16 @@ let test_selection_description () =
           }));
   equal ~msg:"a control byte is escaped, so the line stays one" string
     "filter \"a\\nb\""
-    (Option.get (describe { base with Run.filter = Some "a\nb" }))
+    (Option.get (describe { base with Run.filter = [ "a\nb" ] }));
+  (* Patterns widen: a test is kept by any one, and the sentence says
+     "or" where the tags, which a test must all carry, are listed. *)
+  equal ~msg:"several patterns, each named, joined with or" (option string)
+    (Some {|filter "a" or "b" and exclusion "c" or "d"|})
+    (describe { base with Run.filter = [ "a"; "b" ]; exclude = [ "c"; "d" ] });
+  equal ~msg:"the empty selection names every pattern" (option string)
+    (Some {|filter "a" or "b" matched none of 5 tests|})
+    (Report.empty_selection_reason ~declared:5
+       ~selection:(describe { base with Run.filter = [ "a"; "b" ] }))
 
 let test_no_tests () =
   (* No header, so no selection and no declared count: nothing to say
@@ -4622,8 +4631,8 @@ let test_mutation_reproduce () =
     let config =
       {
         (config ~invocation ()) with
-        Run.filter = Some "stays positive";
-        exclude = Some "slow";
+        Run.filter = [ "stays positive" ];
+        exclude = [ "slow"; "flaky io" ];
         tags = [ "unit"; "fast" ];
         exclude_tags = [ "flaky" ];
         shard = Some (2, 4);
@@ -4637,13 +4646,18 @@ let test_mutation_reproduce () =
   in
   equal ~msg:"a narrowed run: each selection flag, restated" string
     "reproduce: ./t.exe --arm lib/calc.ml:13:11:add -f 'stays positive' -e \
-     'slow' --tag unit --tag fast --exclude-tag flaky --shard 2/4 --failed"
+     'slow' -e 'flaky io' --tag unit --tag fast --exclude-tag flaky --shard \
+     2/4 --failed"
     (narrowed (`Exe "./t.exe"));
-  equal ~msg:"under a build action: their mirrors, and --failed has none" string
+  equal
+    ~msg:
+      "under a build action: their mirrors, and neither --failed nor two \
+       patterns have one"
+    string
     "reproduce: WINDTRAP_MUTATE_ARM=lib/calc.ml:13:11:add \
-     WINDTRAP_FILTER='stays positive' WINDTRAP_EXCLUDE='slow' \
-     WINDTRAP_TAG=unit,fast WINDTRAP_EXCLUDE_TAG=flaky WINDTRAP_SHARD=2/4 dune \
-     runtest --force --instrument-with ppx_windtrap.mutate"
+     WINDTRAP_FILTER='stays positive' WINDTRAP_TAG=unit,fast \
+     WINDTRAP_EXCLUDE_TAG=flaky WINDTRAP_SHARD=2/4 dune runtest --force \
+     --instrument-with ppx_windtrap.mutate"
     (narrowed `Mirrors);
   equal ~msg:"no survivor, nothing to arm: never reached alone has none" string
     "\u{ab}no reproduce line\u{bb}"
@@ -5417,7 +5431,7 @@ let test_selection_escapes () =
   equal ~msg:"a double quote and a backslash are escaped" (option string)
     (Some {|filter "a\"b\\c"|})
     (Report.selection_description
-       { (Run.default_config ()) with Run.filter = Some {|a"b\c|} })
+       { (Run.default_config ()) with Run.filter = [ {|a"b\c|} ] })
 
 let test_excused_is_slow () =
   let excused = { Fixtures.excused_result with Run.duration = 2.0 } in

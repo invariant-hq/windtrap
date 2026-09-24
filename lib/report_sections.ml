@@ -1468,15 +1468,22 @@ let reproduce_line ~invocation ~selection id =
 (* A survivor of a narrowed run survived that selection only, and a test
    left out of it may kill the mutant: the command restates each
    selection flag of the run, in the spelling [reproduce_line] puts it.
-   [--failed] has no mirror. *)
+   [--failed] has no mirror, and a pattern's mirror holds one pattern, so
+   under the mirrors several patterns are left out, as [--failed] is: the
+   command then runs more tests, never fewer. *)
 let selection_words invocation (c : Run.config) =
   let one flag var value =
     Option.to_list (Option.map (fun v -> (flag, var, [ v ])) value)
   in
   let many flag var = function [] -> [] | values -> [ (flag, var, values) ] in
+  let patterns flag var values =
+    match (invocation, values) with
+    | `Mirrors, _ :: _ :: _ -> []
+    | _ -> many flag var (List.map shell_quote values)
+  in
   let items =
-    one "-f" "WINDTRAP_FILTER" (Option.map shell_quote c.Run.filter)
-    @ one "-e" "WINDTRAP_EXCLUDE" (Option.map shell_quote c.Run.exclude)
+    patterns "-f" "WINDTRAP_FILTER" c.Run.filter
+    @ patterns "-e" "WINDTRAP_EXCLUDE" c.Run.exclude
     @ many "--tag" "WINDTRAP_TAG" (List.map shell_word c.Run.tags)
     @ many "--exclude-tag" "WINDTRAP_EXCLUDE_TAG"
         (List.map shell_word c.Run.exclude_tags)

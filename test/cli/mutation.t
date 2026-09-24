@@ -69,7 +69,7 @@ mutant itself, so an armed parent would mutate its own dry run.
   $ cat out
   $ cat err
   windtrap: options '--mutate' and '--arm' cannot be combined
-  usage: suite_main.exe [OPTIONS] [PATTERN]
+  usage: suite_main.exe [OPTIONS] [PATTERN...]
 
 The mirrors reach the same code: WINDTRAP_MUTATE=1 with --arm is the
 same refusal, and a falsy WINDTRAP_MUTATE is no mutation run at all.

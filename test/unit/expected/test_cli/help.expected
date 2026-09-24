@@ -1,20 +1,19 @@
 mytests.exe - windtrap test runner
 
-usage: mytests.exe [OPTIONS] [PATTERN]
+usage: mytests.exe [OPTIONS] [PATTERN...]
 
-A bare PATTERN runs only tests whose full path contains it (same as -f PATTERN).
-(env VAR) after an option names the variable that sets it for a run with no
-command line, such as dune runtest.
+Each bare PATTERN is read as one -f PATTERN. (env VAR) after an option names the
+variable that sets it for a run with no command line, such as dune runtest.
 
 OPTIONS:
   -f PATTERN, --filter=PATTERN (env WINDTRAP_FILTER)
-      Run only tests whose path contains PATTERN.
+      Run only tests whose path contains PATTERN (repeatable: any of them).
 
   -e PATTERN, --exclude=PATTERN (env WINDTRAP_EXCLUDE)
-      Skip tests whose path contains PATTERN.
+      Skip tests whose path contains PATTERN (repeatable).
 
   --tag=LABEL (env WINDTRAP_TAG)
-      Run only tests tagged LABEL (repeatable).
+      Run only tests tagged LABEL (repeatable: all of them).
 
   --exclude-tag=LABEL (env WINDTRAP_EXCLUDE_TAG)
       Skip tests tagged LABEL (repeatable).

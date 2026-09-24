@@ -21,7 +21,7 @@ stderr.
   $ run ./suite_main.exe --help > out 2> err
   $ sed -n '1p;3p' out
   suite_main.exe - windtrap test runner
-  usage: suite_main.exe [OPTIONS] [PATTERN]
+  usage: suite_main.exe [OPTIONS] [PATTERN...]
   $ cat err
 
 --version prints one line and exits 0. The version itself is the
@@ -42,7 +42,7 @@ nothing on stdout:
   $ cat out
   $ cat err
   windtrap: unknown option '--nosuchflag'
-  usage: suite_main.exe [OPTIONS] [PATTERN]
+  usage: suite_main.exe [OPTIONS] [PATTERN...]
 
 A flag one slip from a real one is named:
 
@@ -50,7 +50,7 @@ A flag one slip from a real one is named:
   [2]
   $ cat err
   windtrap: unknown option '--filtre'; did you mean '--filter'?
-  usage: suite_main.exe [OPTIONS] [PATTERN]
+  usage: suite_main.exe [OPTIONS] [PATTERN...]
 
 The knobs that went are unknown flags like any other. -x stops at the
 first failure and takes no count; the shrink budget is fixed. Neither
@@ -60,17 +60,17 @@ is close enough to a live flag to earn a suggestion:
   [2]
   $ cat err
   windtrap: unknown option '--bail'
-  usage: suite_main.exe [OPTIONS] [PATTERN]
+  usage: suite_main.exe [OPTIONS] [PATTERN...]
   $ run ./suite_main.exe --max-shrink 5 > out 2> err
   [2]
   $ cat err
   windtrap: unknown option '--max-shrink'
-  usage: suite_main.exe [OPTIONS] [PATTERN]
+  usage: suite_main.exe [OPTIONS] [PATTERN...]
   $ run ./suite_main.exe --fail-fast=2 > out 2> err
   [2]
   $ cat err
   windtrap: invalid value '2' for --fail-fast: expected no argument
-  usage: suite_main.exe [OPTIONS] [PATTERN]
+  usage: suite_main.exe [OPTIONS] [PATTERN...]
 
 A value the flag cannot take names the flag and what it expected:
 
@@ -79,7 +79,7 @@ A value the flag cannot take names the flag and what it expected:
   $ cat out
   $ cat err
   windtrap: invalid value 'x' for --prop-count: expected a positive integer
-  usage: suite_main.exe [OPTIONS] [PATTERN]
+  usage: suite_main.exe [OPTIONS] [PATTERN...]
 
 Under `dune runtest` there is no command line and the mirrors are the
 CLI, so a value arriving through the environment is refused with the
@@ -93,14 +93,14 @@ mirror refuses what --color refuses; neither falls back to a default.
   [2]
   $ cat err
   windtrap: invalid value 'nope' for WINDTRAP_PROP_COUNT: expected a positive integer
-  usage: suite_main.exe [OPTIONS] [PATTERN]
+  usage: suite_main.exe [OPTIONS] [PATTERN...]
   $ run WINDTRAP_STREAM=maybe ./suite_main.exe > out 2> err
   [2]
   $ cat err
   windtrap: invalid value 'maybe' for WINDTRAP_STREAM: expected a boolean: 1/0, true/false, yes/no or on/off
-  usage: suite_main.exe [OPTIONS] [PATTERN]
+  usage: suite_main.exe [OPTIONS] [PATTERN...]
   $ run WINDTRAP_COLOR=sometimes ./suite_main.exe > out 2> err
   [2]
   $ cat err
   windtrap: invalid value 'sometimes' for WINDTRAP_COLOR: expected always, never or auto
-  usage: suite_main.exe [OPTIONS] [PATTERN]
+  usage: suite_main.exe [OPTIONS] [PATTERN...]

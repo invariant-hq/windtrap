@@ -513,8 +513,10 @@ Coverage and packaging:
 
 ### Running tests
 
-- **The command line.** `-f`/`--filter PATTERN` (or a bare pattern),
-  `-e`/`--exclude`, `--tag` and `--exclude-tag` (repeatable), `--shard
+- **The command line.** `-f`/`--filter PATTERN` (or bare patterns),
+  `-e`/`--exclude`, `--tag` and `--exclude-tag`, all four repeatable: a
+  test runs when its path contains any `-f` pattern and carries every
+  `--tag`, and is dropped by any `-e` pattern or `--exclude-tag`. `--shard
   K/N`, `--failed`, `-l`/`--list`, `-x`/`--fail-fast`, `--timeout`,
   `--slow-threshold`, `--seed s1:…`, `--prop-count`, `-u`/`--update`,
   `--corrected`, `-s`/`--stream`, `-v`/`--verbose`, `--junit PATH`,
