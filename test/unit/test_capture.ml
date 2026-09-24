@@ -213,6 +213,133 @@ let test_drain_failure_restores () =
      drain it to the real stderr and leave later tests a clean channel. *)
   try flush stderr with Sys_error _ -> ()
 
+(* A drain that fails before the attempt: descriptor 2 is read-only with a
+   byte buffered for it, so [drain] and the first drain of [with_capture]
+   both fail. (A closed descriptor 2 would be reused by the log file the
+   attempt opens.) The real descriptor 2 is put back afterwards. *)
+let test_first_drain_failure () =
+  if Sys.win32 then skip ~reason:"POSIX only" ();
+  let root = temp_dir () in
+  let cap = Capture.create ~log_dir:root ~suite:"s" () in
+  let out_before = fd_id Unix.stdout in
+  let saved = Unix.dup Unix.stderr in
+  let ran = ref false in
+  let drain_raised, outcome =
+    Fun.protect
+      ~finally:(fun () ->
+        Unix.dup2 saved Unix.stderr;
+        Unix.close saved;
+        try flush stderr with Sys_error _ -> ())
+      (fun () ->
+        Printf.eprintf " ";
+        let read_only = Unix.openfile "/dev/null" [ Unix.O_RDONLY ] 0 in
+        Unix.dup2 read_only Unix.stderr;
+        Unix.close read_only;
+        let drain_raised =
+          match Capture.drain () with
+          | () -> false
+          | exception Sys_error _ -> true
+        in
+        (* A failed flush drops what it held: buffer a byte again. *)
+        Printf.eprintf " ";
+        let outcome =
+          match
+            Capture.with_capture cap ~groups:[] ~test_name:"t" (fun () ->
+                ran := true)
+          with
+          | () -> `Returned
+          | exception Sys_error _ -> `Sys_error
+          | exception _ -> `Other
+        in
+        (drain_raised, outcome))
+  in
+  is_true ~msg:"drain raises Sys_error on a descriptor it cannot write"
+    drain_raised;
+  is_true ~msg:"with_capture raises the first drain's Sys_error"
+    (outcome = `Sys_error);
+  is_false ~msg:"the function did not run" !ran;
+  is_true ~msg:"descriptor 1 is as it was" (fd_id Unix.stdout = out_before);
+  is_true ~msg:"the state has no current log" (Capture.output_tail cap = None)
+
+let test_last_drain_replaces_fatal () =
+  let root = temp_dir () in
+  let cap = Capture.create ~log_dir:root ~suite:"s" () in
+  let outcome =
+    match
+      Capture.with_capture cap ~groups:[] ~test_name:"t" (fun () ->
+          Printf.eprintf " ";
+          Unix.close Unix.stderr;
+          raise Stack_overflow)
+    with
+    | () -> `Returned
+    | exception Fun.Finally_raised (Sys_error _) -> `Finally_raised
+    | exception Stack_overflow -> `Fatal
+    | exception _ -> `Other
+  in
+  (try flush stderr with Sys_error _ -> ());
+  is_true ~msg:"the failed last drain replaces even a fatal exception"
+    (outcome = `Finally_raised)
+
+let test_one_text_in_arrival_order () =
+  let root = temp_dir () in
+  let cap = Capture.create ~log_dir:root ~suite:"s" () in
+  Capture.with_capture cap ~groups:[] ~test_name:"t" (fun () ->
+      print_string "1";
+      flush stdout;
+      prerr_string "2";
+      flush stderr;
+      print_string "3";
+      flush stdout;
+      prerr_string "4";
+      flush stderr);
+  equal ~msg:"both descriptors in the order the bytes arrived" string "1234"
+    (read_file (concat_all root [ "s"; "t.output" ]))
+
+let test_create_creates_nothing () =
+  let root = temp_dir () in
+  let log_dir = Filename.concat root "logs" in
+  let cap = Capture.create ~log_dir ~suite:"s" () in
+  is_false ~msg:"no directory before an attempt" (Sys.file_exists log_dir);
+  Capture.with_capture cap ~groups:[] ~test_name:"t" ignore;
+  is_true ~msg:"the attempt makes it" (Sys.file_exists log_dir)
+
+let test_abandon_ignores_drain_failure () =
+  let root = temp_dir () in
+  let cap = Capture.create ~log_dir:root ~suite:"s" () in
+  let out_before = fd_id Unix.stdout and err_before = fd_id Unix.stderr in
+  let abandoned = ref false and after = ref None in
+  Capture.with_capture cap ~groups:[] ~test_name:"t" (fun () ->
+      Printf.eprintf " ";
+      Unix.close Unix.stderr;
+      (match Capture.abandon cap with
+      | () -> abandoned := true
+      | exception Sys_error _ -> ());
+      after := Some (fd_id Unix.stdout, fd_id Unix.stderr));
+  is_true ~msg:"abandon ignores the Sys_error of its drain" !abandoned;
+  is_true ~msg:"and the real descriptors are back"
+    (!after = Some (out_before, err_before))
+
+let test_unopenable_log () =
+  let root = temp_dir () in
+  let cap = Capture.create ~log_dir:root ~suite:"s" () in
+  let log = concat_all root [ "s"; "t.output" ] in
+  let first = ref "?" and away = ref "?" in
+  let tail_away = ref None and back = ref "?" in
+  Capture.with_capture cap ~groups:[] ~test_name:"t" (fun () ->
+      print_string "abc";
+      first := Capture.output cap;
+      print_string "def";
+      Sys.rename log (log ^ ".away");
+      away := Capture.output cap;
+      tail_away := Capture.output_tail cap;
+      Sys.rename (log ^ ".away") log;
+      back := Capture.output cap);
+  equal ~msg:"the first window" string "abc" !first;
+  equal ~msg:"output is empty while the log cannot be opened" string "" !away;
+  is_true ~msg:"output_tail is None then" (!tail_away = None);
+  equal ~msg:"the cursor stayed, so the unread bytes come back" string "def"
+    !back
+
 (* Disabled ([--stream]) *)
 
 (* Abandon: what a signal handler does to an attempt it will not return
@@ -592,6 +719,13 @@ let tests =
     test "a failed setup leaves the descriptors untouched"
       test_setup_failure_isolation;
     test "a failed cleanup drain still restores" test_drain_failure_restores;
+    test "a failed first drain runs nothing" test_first_drain_failure;
+    test "a failed last drain replaces a fatal exception"
+      test_last_drain_replaces_fatal;
+    test "one text in arrival order" test_one_text_in_arrival_order;
+    test "create creates nothing" test_create_creates_nothing;
+    test "abandon ignores a failed drain" test_abandon_ignores_drain_failure;
+    test "a log that cannot be opened reads as nothing" test_unopenable_log;
     test "abandon restores the descriptors from inside an attempt" test_abandon;
     test "Disabled (--stream) behavior" test_disabled;
     test "bounded tails with drop counts" test_bounded_tail;
