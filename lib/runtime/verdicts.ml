@@ -143,6 +143,17 @@ let add_verdict buffer = function
           add_witness buffer w)
         ws
 
+(* The records after the header. Every number is in decimal, and every
+   string is length-prefixed as [<byte length> <bytes>], so it may hold any
+   byte, a line feed included:
+
+     <record count>
+     <file> <line> <col> <rewrite> <before> <after> <verdict>
+
+   with one such line for each record, in [Mutate.compare_id] order.
+   [<verdict>] is [unreached], [killed], or [survived <n>] and then [n]
+   reaching tests, each written as [<k>] and then its [k] names.
+   [of_string] reads this grammar and nothing else. *)
 let to_string ?identity t =
   let buffer = Buffer.create 1024 in
   Instr.add_header format buffer identity;

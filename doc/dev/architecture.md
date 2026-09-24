@@ -245,8 +245,9 @@ is a design decision, recorded here first.
     lives only in the reporting command.
 11. **Instrumentation data is transient, versioned, and never touches
     the source tree**; a mutant catalogue is a literal in the binary.
-12. **A mutant changes meaning only in a forked child, only when armed,
-    only in a build that asked**; an armed process announces it before
-    any output and concludes with one verdict line; armed checking is
-    read-only; the aggregate is the one mutation exit code a build may
-    gate on.
+12. **A mutant changes meaning only when armed, only in a build that
+    asked, and only in the process that armed it**: a forked child of
+    the `--mutate` loop, or the run itself under `--arm`; an armed
+    process announces it before any output and concludes with one
+    verdict line; armed checking is read-only; the aggregate is the one
+    mutation exit code a build may gate on.

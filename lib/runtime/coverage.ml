@@ -127,6 +127,16 @@ let visit counts index =
 
 type identity = Instr.identity = { exe : string; digest : string }
 
+(* The records after the header, one item to a line, every number in
+   decimal:
+
+     <file count>
+     <byte length> <file>             for each file, in the order of names
+     <point count>
+     <start_ofs> <end_ofs> <count>    for each point, in table order
+
+   A file name is length-prefixed, so it may hold any byte. [of_string]
+   reads this grammar and nothing else. *)
 let to_string ?identity t =
   let buffer = Buffer.create 1024 in
   Instr.add_header format buffer identity;
@@ -241,6 +251,11 @@ let remove_predecessors dir ~digest =
             try Sys.remove (Filename.concat dir name) with Sys_error _ -> ())
         entries
 
+(* XXX Only the two writes are guarded. [snapshot], [dump_identity] and
+   [to_string] run outside the [try]s, and [to_string] raises
+   [Invalid_argument] for an identity whose [exe] is [""], which
+   [Instr.exe_identity] gives for an executable whose own file name starts
+   with [_build]. *)
 let dump () =
   if not !dumped then begin
     dumped := true;
@@ -359,6 +374,9 @@ let line_range starts p =
   let last = line_of starts (max p.start_ofs (p.end_ofs - 1)) in
   (first, last)
 
+(* One extent that touches a line marks it. Marking only the lines that lie
+   wholly inside unvisited extents would hide an unvisited arm that shares
+   its line with visited code. *)
 let lines_of_extents ~source extents =
   let starts = line_starts source in
   if Array.length starts = 0 then []

@@ -278,6 +278,11 @@ let read_nat c what =
   if n < 0 then parse_fail "negative %s" what;
   n
 
+(* A count of items that each take at least one byte cannot exceed the
+   length of the input, so a larger one is corrupt. The bound is what keeps
+   a corrupt count from sizing an [Array.make] in the parser of a format.
+   The whole length is looser than what remains after the cursor, and it
+   protects the allocation as well. *)
 let read_count c what =
   let n = read_nat c what in
   if n > c.len then parse_fail "%s exceeds data" what;
