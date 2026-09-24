@@ -303,7 +303,11 @@ let run_suite ~suite ~config tests =
       (* A block's [accept:] line is committed when its test ends, before
          the run knows its exit code; dune reaches the [diff?] that registers
          a [.corrected] file only after an action that exits 0. *)
-      let written = Baseline.writes (Run.baselines outcome.Run.run) in
+      let written =
+        List.filter
+          (function Baseline.Written _ -> true | Baseline.Refused _ -> false)
+          (Baseline.writes (Run.baselines outcome.Run.run))
+      in
       if
         config.Run.baseline = Baseline.Corrected
         && written <> [] && outcome.Run.exit_code = 1

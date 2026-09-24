@@ -1616,11 +1616,13 @@ let execute_plan ?(on_event = fun _ -> ())
   let uncorrected =
     List.filter (fun path -> not (List.mem path corrected_paths)) failed_paths
   in
+  let refused =
+    List.exists
+      (function Baseline.Refused _ -> true | Baseline.Written _ -> false)
+      (Baseline.writes baselines)
+  in
   let exit_code =
-    if
-      uncorrected <> [] || release_failures <> []
-      || Baseline.refusals baselines <> []
-    then 1
+    if uncorrected <> [] || release_failures <> [] || refused then 1
     else if executed = 0 then 2
     else 0
   in

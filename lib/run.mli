@@ -148,8 +148,7 @@ val capture : t -> Capture.t
 
 val baselines : t -> Baseline.t
 (** [baselines t] is the baseline registry of the run. After the run,
-    {!Baseline.writes} and {!Baseline.refusals} of it say what was written and
-    what could not be. *)
+    {!Baseline.writes} of it says what was written and what could not be. *)
 
 (** {1:frames Frames} *)
 
@@ -505,13 +504,13 @@ type outcome = {
           its corrections. *)
   exit_code : int;
       (** [1] when a row counts as failed, when a release failed, or when a
-          correction could not be written ({!Baseline.refusals}). A test whose
-          failures are all kept corrections does not count here, because under
-          [--corrected] the [diff?] that follows the run decides. Otherwise [2]
-          when no test executed, in an empty suite and in an empty selection,
-          and else [0]. A selection whose tests all skipped gives [0], and so
-          does a run whose only failures were expected. A caller may return
-          another code. *)
+          correction could not be written (a {!Baseline.Refused} entry). A test
+          whose failures are all kept corrections does not count here, because
+          under [--corrected] the [diff?] that follows the run decides.
+          Otherwise [2] when no test executed, in an empty suite and in an empty
+          selection, and else [0]. A selection whose tests all skipped gives
+          [0], and so does a run whose only failures were expected. A caller may
+          return another code. *)
 }
 (** The type for finished runs: what a report renders, and what the caller needs
     to exit. *)
@@ -675,8 +674,8 @@ val list_selection :
     accept them. The mark is {!Failure.Skipped} when the skip alone broke the
     rule, and {!Failure.Failed_outside} otherwise. An [xfail] test checks
     without correcting, in every mode. The kept corrections are written once
-    ({!Baseline.write}), after the last test, the release of the fixtures and
-    the update of the store, and before {!execute} returns. The observer was
+    ({!Baseline.val-write}), after the last test, the release of the fixtures
+    and the update of the store, and before {!execute} returns. The observer was
     given the failures that offer them earlier, as each test finished. *)
 
 (** {2:release Fixture release}

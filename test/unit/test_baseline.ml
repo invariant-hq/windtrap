@@ -74,7 +74,7 @@ let () =
   is_true ~msg:"nothing was created"
     (not (exists (Filename.concat root "test")));
   B.write t;
-  is_true ~msg:"Check mode writes nothing" (B.writes t = [] && B.refusals t = [])
+  is_true ~msg:"Check mode writes nothing" (B.writes t = [])
 
 let () =
   reg "file: both sides canonicalize" @@ fun () ->
@@ -170,7 +170,7 @@ let () =
           is_true ~msg:"a literal outside the root cannot be corrected" true
       | _ -> is_true ~msg:"escaping literal: Unresolvable" false);
       B.write t;
-      is_true ~msg:"nothing written" (B.writes t = [] && B.refusals t = []))
+      is_true ~msg:"nothing written" (B.writes t = []))
     [ B.Check; B.Corrected; B.Update ]
 
 (* Corrected mode *)
@@ -191,7 +191,7 @@ let () =
   is_true ~msg:"the file itself is not created"
     (not (exists (Filename.concat root help)));
   is_true ~msg:"the write is reported"
-    (B.writes t = [ { B.path = corrected; literals = 0 } ] && B.refusals t = [])
+    (B.writes t = [ B.Written { path = corrected; literals = 0 } ])
 
 let () =
   reg "the registry law: one content per key per run" @@ fun () ->
@@ -248,7 +248,8 @@ let () =
   is_true ~msg:"no .corrected beside it"
     (not (exists (Filename.concat root (help ^ ".corrected"))));
   is_true ~msg:"the write is reported"
-    (B.writes t = [ { B.path = Filename.concat root help; literals = 0 } ])
+    (B.writes t
+    = [ B.Written { path = Filename.concat root help; literals = 0 } ])
 
 let () =
   reg "update: an equal baseline writes nothing" @@ fun () ->
@@ -280,7 +281,7 @@ let () =
   equal ~msg:"the source is untouched" string source
     (read_raw (Filename.concat root "test/t.ml"));
   is_true ~msg:"one literal reported"
-    (B.writes t = [ { B.path = corrected; literals = 1 } ])
+    (B.writes t = [ B.Written { path = corrected; literals = 1 } ])
 
 let () =
   reg "literal correction: in place under Update, several per file" @@ fun () ->
@@ -307,7 +308,7 @@ let () =
     (read_raw (Filename.concat root "test/t.ml"));
   is_true ~msg:"two literals in one write"
     (B.writes t
-    = [ { B.path = Filename.concat root "test/t.ml"; literals = 2 } ])
+    = [ B.Written { path = Filename.concat root "test/t.ml"; literals = 2 } ])
 
 let () =
   reg "literal correction: a drifted source is refused" @@ fun () ->
@@ -319,14 +320,13 @@ let () =
       B.check t (literal " old ") "new");
   ignore (B.settle t ~keep:true);
   B.write t;
-  is_true ~msg:"nothing written" (B.writes t = []);
-  (match B.refusals t with
-  | [ (path, reason) ] ->
+  (match B.writes t with
+  | [ B.Refused { path; reason } ] ->
       is_true ~msg:"the refusal names the file"
         (path = Filename.concat root "test/t.ml");
       is_true ~msg:"and the reason"
         (Text.contains_substring ~pattern:"rebuild and rerun" reason)
-  | _ -> is_true ~msg:"one refusal" false);
+  | _ -> is_true ~msg:"one refusal and nothing written" false);
   equal ~msg:"the file is left alone" string edited
     (read_raw (Filename.concat root "test/t.ml"))
 
@@ -432,7 +432,9 @@ let () =
     (read_raw (Filename.concat top "proj/a.txt"));
   is_true ~msg:"and reported absolute"
     (List.for_all
-       (fun (w : B.written) -> not (Filename.is_relative w.B.path))
+       (function
+         | B.Written { path; _ } | B.Refused { path; _ } ->
+             not (Filename.is_relative path))
        (B.writes t))
 
 let () =
@@ -560,17 +562,16 @@ let () =
   (* A directory where the file goes: the rename over it fails. *)
   Os.mkdir_p (Filename.concat root "out/x");
   B.write t;
-  is_true ~msg:"nothing written" (B.writes t = []);
-  match B.refusals t with
-  | [ (path, reason) ] ->
+  match B.writes t with
+  | [ B.Refused { path; reason } ] ->
       equal ~msg:"the refusal names the file" string
         (Filename.concat root "out/x")
         path;
       is_true ~msg:"with the Sys_error's message" (reason <> "")
-  | _ -> fail "one refusal"
+  | _ -> fail "one refusal and nothing written"
 
 let () =
-  reg "write stops at a directory it cannot create, sources first" @@ fun () ->
+  reg "a directory that cannot be created refuses its file alone" @@ fun () ->
   if Sys.win32 then skip ~reason:"POSIX only" ();
   if Unix.geteuid () = 0 then
     skip ~reason:"root writes a read-only directory" ();
@@ -587,33 +588,60 @@ let () =
   Unix.chmod read_only 0o500;
   Fun.protect
     ~finally:(fun () -> Unix.chmod read_only 0o700)
-    (fun () ->
-      raises_match ~msg:"the mkdir's Unix_error passes"
-        (function Unix.Unix_error _ -> true | _ -> false)
-        (fun () -> B.write t));
-  is_true ~msg:"the source was written first"
+    (fun () -> B.write t);
+  (match B.writes t with
+  | [
+   B.Refused { path = refused; reason };
+   B.Written { path = source; literals = 1 };
+   B.Written { path = after; literals = 0 };
+  ] ->
+      equal ~msg:"the file under the read-only directory is refused" string
+        (Filename.concat root "ro/sub/x")
+        refused;
+      equal ~msg:"because its directory cannot be created" string
+        (Printf.sprintf "cannot create directory %s: %s"
+           (Os.display_path (Filename.concat root "ro/sub"))
+           (Unix.error_message Unix.EACCES))
+        reason;
+      equal ~msg:"the source is written" string
+        (Filename.concat root "test/t.ml")
+        source;
+      equal ~msg:"and so is the file after the refusal" string
+        (Filename.concat root "z.txt")
+        after
+  | _ -> fail "one refusal and two writes, in path order");
+  is_true ~msg:"the literal is rewritten"
     (Text.contains_substring ~pattern:"{| new |}"
        (read_raw (Filename.concat root "test/t.ml")));
-  is_false ~msg:"the file after the failure was not"
-    (exists (Filename.concat root "z.txt"))
+  equal ~msg:"the file after the refusal holds its content" string "z\n"
+    (read_raw (Filename.concat root "z.txt"))
 
 let () =
-  reg "refusals are in path order" @@ fun () ->
+  reg "refused and written files are in one list, in path order" @@ fun () ->
   let root = temp_dir () in
   let edited = "let () =\n  expect (f ()) @@ __POS_OF__ {| edited |}\n" in
-  write_raw (Filename.concat root "test/b.ml") edited;
+  write_raw (Filename.concat root "test/c.ml") edited;
+  write_raw (Filename.concat root "test/b.ml") source;
   write_raw (Filename.concat root "test/a.ml") edited;
   let t = B.create ~root ~cwd:root ~mode:B.Update () in
   let lit file =
     B.Literal { pos = (file, 2, 19, 40); value = " old "; exact = false }
   in
-  expect_pass "b first" (fun () -> B.check t (lit "test/b.ml") "new");
+  expect_pass "c first" (fun () -> B.check t (lit "test/c.ml") "new");
+  expect_pass "then b" (fun () -> B.check t (lit "test/b.ml") "new");
   expect_pass "then a" (fun () -> B.check t (lit "test/a.ml") "new");
   ignore (B.settle t ~keep:true);
   B.write t;
-  equal ~msg:"sorted by path" (list string)
-    [ Filename.concat root "test/a.ml"; Filename.concat root "test/b.ml" ]
-    (List.map fst (B.refusals t))
+  let file name = Filename.concat root ("test/" ^ name) in
+  equal ~msg:"sorted by path, whatever their outcome" (list string)
+    [
+      "refused " ^ file "a.ml"; "wrote " ^ file "b.ml"; "refused " ^ file "c.ml";
+    ]
+    (List.map
+       (function
+         | B.Written { path; _ } -> "wrote " ^ path
+         | B.Refused { path; _ } -> "refused " ^ path)
+       (B.writes t))
 
 let tests = List.rev !registered
 let () = exit @@ Windtrap.run "baseline" tests

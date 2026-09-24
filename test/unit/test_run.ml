@@ -2784,7 +2784,7 @@ let () =
     && read_file (baseline root ^ ".corrected") = "hello\n");
   check "and the file itself is not" (not (Sys.file_exists (baseline root)));
   (match Baseline.writes (Run.baselines outcome.Run.run) with
-  | [ { Baseline.path; literals = 0 } ] ->
+  | [ Baseline.Written { path; literals = 0 } ] ->
       check "one write reported" (path = baseline root ^ ".corrected")
   | _ -> check "one write reported" false);
   (* Update mode: accepted silently, in place, green. *)
@@ -2796,7 +2796,7 @@ let () =
     (Sys.file_exists (baseline root) && read_file (baseline root) = "hello\n");
   check "the write is reported"
     (Baseline.writes (Run.baselines outcome.Run.run)
-    = [ { Baseline.path = baseline root; literals = 0 } ]);
+    = [ Baseline.Written { path = baseline root; literals = 0 } ]);
   expect_run "the accepted baseline matches from then on" ~config:base suite
   @@ fun outcome ->
   check "green" (outcome.Run.exit_code = 0 && failed_paths outcome = [])
@@ -2919,7 +2919,8 @@ let () =
         ~expected:0 ~actual:outcome.Run.exit_code;
       check
         (name ^ ": the correction is written once")
-        (writes outcome = [ { Baseline.path = corrected_file; literals = 1 } ]
+        (writes outcome
+         = [ Baseline.Written { path = corrected_file; literals = 1 } ]
         && read_file corrected_file = text "new"
         && read_file source = text "old"))
     [ 0; 2 ];
@@ -2932,7 +2933,7 @@ let () =
       && outcome_of outcome [ "stale" ] = Some Failure.Pass
       && outcome.Run.exit_code = 0);
     check "update: the literal is accepted in place, once"
-      (writes outcome = [ { Baseline.path = source; literals = 1 } ]
+      (writes outcome = [ Baseline.Written { path = source; literals = 1 } ]
       && read_file source = text "new") );
   ( expect_run "check, ~retries:2" ~config:base
       (suite ~retries:2 ~also_fails:never)
@@ -2953,8 +2954,8 @@ let () =
     check "the third attempt's correction is the one kept"
       (attempts outcome = 3
       && only_the_mismatch outcome && outcome.Run.exit_code = 0
-      && writes outcome = [ { Baseline.path = corrected_file; literals = 1 } ])
-  );
+      && writes outcome
+         = [ Baseline.Written { path = corrected_file; literals = 1 } ]) );
   (* The attempt that would fail an assertion beside a correction already
      kept never runs: the test ends as it does without retries. *)
   expect_run "corrected, a second attempt would fail an assertion"
@@ -2966,7 +2967,8 @@ let () =
   check "so no correction is written beside a failure outside the expectations"
     (attempts outcome = 1
     && only_the_mismatch outcome && outcome.Run.exit_code = 0
-    && writes outcome = [ { Baseline.path = corrected_file; literals = 1 } ])
+    && writes outcome
+       = [ Baseline.Written { path = corrected_file; literals = 1 } ])
 
 (* An expected failure is a failure: an xfail test's stale baseline is the
    mismatch the annotation expects, so its attempt checks read-only in

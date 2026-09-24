@@ -35,7 +35,9 @@ type correction =
   | Patch of where * Source_patch.patch
   | Content of where * string
 
-type written = { path : string; literals : int }
+type write =
+  | Written of { path : string; literals : int }
+  | Refused of { path : string; reason : string }
 
 type t = {
   mode : mode;
@@ -44,8 +46,7 @@ type t = {
   entries : (key, entry) Hashtbl.t;
   mutable pending : (key * correction) list; (* this attempt's, newest first *)
   mutable kept : correction list; (* newest first *)
-  mutable writes : written list;
-  mutable refusals : (string * string) list;
+  mutable writes : write list;
 }
 
 let absolute path =
@@ -72,7 +73,6 @@ let create ?root ?cwd ~mode () =
     pending = [];
     kept = [];
     writes = [];
-    refusals = [];
   }
 
 let mode t = t.mode
@@ -211,10 +211,28 @@ let destination t where =
   | Update | Check -> (where.source, where.source)
 
 let write t =
-  let refuse path reason = t.refusals <- (path, reason) :: t.refusals in
-  let publish path contents =
-    Os.mkdir_p (Filename.dirname path);
-    Os.atomic_write ~path contents
+  (* One file's every failure is its refusal, so the files after it are
+     still written. *)
+  let publish output ~literals contents =
+    let outcome =
+      match
+        Result.map
+          (fun text ->
+            Os.mkdir_p (Filename.dirname output);
+            Os.atomic_write ~path:output text)
+          (contents ())
+      with
+      | Ok () -> Written { path = output; literals }
+      | Error reason | (exception Sys_error reason) ->
+          Refused { path = output; reason }
+      | exception Unix.Unix_error (error, _, dir) ->
+          let reason =
+            Printf.sprintf "cannot create directory %s: %s"
+              (Os.display_path dir) (Unix.error_message error)
+          in
+          Refused { path = output; reason }
+    in
+    t.writes <- outcome :: t.writes
   in
   (* Patches group by the file they rewrite, contents stand alone. *)
   let patches, contents =
@@ -240,21 +258,14 @@ let write t =
       (fun output entries ->
         let input = fst (List.hd entries) in
         let patches = List.map snd entries in
-        match Source_patch.apply (read_file input) patches with
-        | Ok text ->
-            publish output text;
-            t.writes <-
-              { path = output; literals = List.length patches } :: t.writes
-        | Error error -> refuse output (Source_patch.error_message error)
-        | exception Sys_error reason -> refuse output reason)
+        publish output ~literals:(List.length patches) (fun () ->
+            Result.map_error Source_patch.error_message
+              (Source_patch.apply (read_file input) patches)))
       patches;
     String_map.iter
-      (fun output text ->
-        match publish output text with
-        | () -> t.writes <- { path = output; literals = 0 } :: t.writes
-        | exception Sys_error reason -> refuse output reason)
+      (fun output text -> publish output ~literals:0 (fun () -> Ok text))
       contents
   end
 
-let writes t = List.sort (fun a b -> compare a.path b.path) t.writes
-let refusals t = List.sort compare t.refusals
+let path = function Written { path; _ } | Refused { path; _ } -> path
+let writes t = List.sort (fun a b -> String.compare (path a) (path b)) t.writes

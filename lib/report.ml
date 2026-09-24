@@ -677,8 +677,11 @@ let flaky_section t flaky_results =
 let corrections baselines =
   List.sort
     (fun (a, _) (b, _) -> String.compare a b)
-    (List.map
-       (fun { Baseline.path; literals } -> (Os.display_path path, literals))
+    (List.filter_map
+       (function
+         | Baseline.Written { path; literals } ->
+             Some (Os.display_path path, literals)
+         | Baseline.Refused _ -> None)
        (Baseline.writes baselines))
 
 let accepts baselines =
@@ -699,10 +702,12 @@ let corrections_section t ~accepted rows =
     rows
 
 let refusals baselines =
-  List.map
-    (fun (path, reason) ->
-      spf "could not write %s: %s" (Os.display_path path) reason)
-    (Baseline.refusals baselines)
+  List.filter_map
+    (function
+      | Baseline.Refused { path; reason } ->
+          Some (spf "could not write %s: %s" (Os.display_path path) reason)
+      | Baseline.Written _ -> None)
+    (Baseline.writes baselines)
 
 let rec drop n = function _ :: rest when n > 0 -> drop (n - 1) rest | l -> l
 

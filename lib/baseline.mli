@@ -11,8 +11,8 @@
     ({!type-subject}). {!check} compares the two, and what the run does when
     they differ is its {!type-mode}. Under {!Corrected} and {!Update} the check
     records a correction, {!settle} keeps or drops the corrections of each
-    attempt, and {!write} writes the kept ones once. A registry ({!t}) is one
-    value per run, and the module holds no global state.
+    attempt, and {!val-write} writes the kept ones once. A registry ({!t}) is
+    one value per run, and the module holds no global state.
 
     A file baseline is lines of text. Both sides of its comparison and every
     file written are made canonical: CR and CRLF line endings become LF and the
@@ -40,8 +40,8 @@ type mode =
     path of a file as the subject spells it. A key is accepted with at most one
     content among the kept attempts of a run (see {!check}). Two spellings of
     one file, as ["a/b"] and ["a/./b"], are two keys. Each reads the file and
-    each can record a correction, and {!write} then writes the later of the two
-    contents without any mismatch between them. *)
+    each can record a correction, and {!val-write} then writes the later of the
+    two contents without any mismatch between them. *)
 type subject =
   | Literal of { pos : Loc.pos; value : string; exact : bool }
       (** The string literal at [pos], compiled to [value]. It is compared byte
@@ -59,9 +59,9 @@ type subject =
 
 type t
 (** The type for registries: the keys checked so far with the content that each
-    compares against, the corrections recorded, and what {!write} wrote. A
-    registry is mutable and not thread-safe. A client must create one per run
-    and must not share it between runs. *)
+    compares against, the corrections recorded, and what {!val-write} did with
+    each file. A registry is mutable and not thread-safe. A client must create
+    one per run and must not share it between runs. *)
 
 val create : ?root:string -> ?cwd:string -> mode:mode -> unit -> t
 (** [create ~mode ()] is an empty registry for a run in [mode].
@@ -119,8 +119,8 @@ val check : t -> ?loc:Loc.t -> ?correct:bool -> subject -> string -> unit
 
 val settle : t -> keep:bool -> int
 (** [settle t ~keep] closes the attempt that recorded corrections since the
-    previous call. With [keep] they are kept for {!write}. Otherwise they are
-    dropped, and their keys are no longer accepted, so the next attempt is
+    previous call. With [keep] they are kept for {!val-write}. Otherwise they
+    are dropped, and their keys are no longer accepted, so the next attempt is
     compared with the baselines as they were first read. Which attempts keep
     their corrections is the rule of the runner (see
     {{!Run.section-corrections}corrections}).
@@ -144,30 +144,24 @@ val write : t -> unit
     then: the copy that the run read under {!Corrected}, the file itself under
     {!Update}.
 
-    A source file that the patcher refuses ({!Source_patch.error}), or that
-    cannot be read, is recorded in {!refusals}, and none of its literals is
-    written. So is a file baseline whose write raises [Sys_error].
+    [write] raises no [Sys_error] and no [Unix.Unix_error]. A file that cannot
+    be written is a {!Refused} entry of {!writes}, none of its literals is
+    written, and the files after it are still written. It is refused when its
+    source cannot be read, when the patcher refuses it ({!Source_patch.error}),
+    when a parent directory cannot be created, or when its write fails. *)
 
-    Raises [Sys_error] if a patched source file cannot be written, and
-    [Unix.Unix_error] if a parent directory cannot be created. The source files
-    are written first and then the file baselines, each in the order of their
-    paths, and the corrections that follow the one that raised are not written.
-*)
+(** The type for what {!val-write} did with one file. [path] is absolute: the
+    [.corrected] file under {!Corrected}, the file itself under {!Update}. *)
+type write =
+  | Written of { path : string; literals : int }
+      (** [path] was written with [literals] patched literals, [0] for a file
+          baseline. *)
+  | Refused of { path : string; reason : string }
+      (** [path] was not written, for [reason]: the sentence of
+          {!Source_patch.error_message}, the message of the [Sys_error], or that
+          a directory cannot be created, with the directory and the system's
+          message. *)
 
-type written = {
-  path : string;
-      (** The file written, as an absolute path: the [.corrected] file under
-          {!Corrected}, the file itself under {!Update}. *)
-  literals : int;  (** The literals patched in it, [0] for a file baseline. *)
-}
-(** The type for what {!write} wrote. *)
-
-val writes : t -> written list
-(** [writes t] is the files that {!write} wrote, in the order of their paths. *)
-
-val refusals : t -> (string * string) list
-(** [refusals t] is the files that {!write} recorded as not written, each with
-    its reason, in the order of their paths. The path is the file that would
-    have been written, and the reason is the sentence of
-    {!Source_patch.error_message} or the message of the [Sys_error]. A write
-    failure that {!write} raises is in neither list. *)
+val writes : t -> write list
+(** [writes t] is every file that {!val-write} attempted, in the order of their
+    paths. *)

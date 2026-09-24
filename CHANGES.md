@@ -406,8 +406,9 @@ Coverage and packaging:
   property's `replay:` after it.
   The end-of-run report names what was written, one line per file; a file
   that cannot be written — a literal that no longer decodes to the value
-  the binary was compiled with, an unwritable path — is named with its
-  reason and fails the run.
+  the binary was compiled with, an unwritable path, a directory that
+  cannot be created — is named with its reason and fails the run, and the
+  files after it are still written.
 - A test is not retried past an attempt whose corrections were kept: the
   next attempt would be compared with the text just recorded. Under
   `--corrected` a test declared with `~retries` whose only failure is a

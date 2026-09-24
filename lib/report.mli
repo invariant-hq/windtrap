@@ -221,12 +221,12 @@ val finish :
     {b Flaky tests.} One row per passing result with [r.attempts > 1], in the
     order of [results], with the attempt that passed.
 
-    {b Corrections.} One row per file of [Baseline.writes baselines], in the
-    order of the paths as {!Os.display_path} prints them. A row says whether the
-    file was written beside its baseline or accepted in place, which
-    {!val:Baseline.mode} decides. The row of a source file counts its
-    expectations. Without [baselines] there is no section and the summary has no
-    corrections term.
+    {b Corrections.} One row per {!Baseline.Written} entry of
+    [Baseline.writes baselines], in the order of the paths as {!Os.display_path}
+    prints them. A row says whether the file was written beside its baseline or
+    accepted in place, which {!val:Baseline.mode} decides. The row of a source
+    file counts its expectations. Without [baselines] there is no section and
+    the summary has no corrections term.
 
     {b Summary.} Its terms come in this order: passed, with the flaky among
     them, skipped, expected failures, failed, with the subtest failures among
@@ -262,9 +262,9 @@ val interrupted :
     before it returns any failure. *)
 
 val refusals : Baseline.t -> string list
-(** [refusals baselines] is one sentence per file that the run could not write,
-    in the order of {!Baseline.refusals}: the path through {!Os.display_path}
-    and the reason. It prints nothing. *)
+(** [refusals baselines] is one sentence per {!Baseline.Refused} entry of
+    {!Baseline.writes}, in its order: the path through {!Os.display_path} and
+    the reason. It prints nothing. *)
 
 (** {1:github The GitHub Actions envelope}
 

@@ -710,7 +710,7 @@ let () =
   @@ fun outcome ->
     check_int "update run exits 0" ~expected:0 ~actual:outcome.Run.exit_code;
     match Baseline.writes (Run.baselines outcome.Run.run) with
-    | [ { Baseline.path = written; literals = 0 } ] ->
+    | [ Baseline.Written { path = written; literals = 0 } ] ->
         check "acceptance wrote the file"
           (written = path && read_file path = "hello\n")
     | _ -> check "acceptance recorded one write" false );
@@ -916,7 +916,7 @@ let () =
   check_int "both are recorded corrections: the exit code is left alone"
     ~expected:0 ~actual:outcome.Run.exit_code;
   match Baseline.writes (Run.baselines outcome.Run.run) with
-  | [ { Baseline.path = written; literals = 2 } ] ->
+  | [ Baseline.Written { path = written; literals = 2 } ] ->
       check "one corrected file holds both literals"
         (written = path ^ ".corrected"
         && read_file written
@@ -949,7 +949,7 @@ let () =
   check_int "baseline in bracket: exit code" ~expected:0
     ~actual:outcome.Run.exit_code;
   match Baseline.writes (Run.baselines outcome.Run.run) with
-  | [ { Baseline.path; literals = 0 } ] ->
+  | [ Baseline.Written { path; literals = 0 } ] ->
       check "the bracket's baseline is accepted under the root"
         (path = Filename.concat root "src/bracketed.expected")
   | _ -> check "bracket baseline accepted a file" false
