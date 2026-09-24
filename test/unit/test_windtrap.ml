@@ -1658,7 +1658,8 @@ let once_waiting root signal pid =
   await 2000
 
 let () =
-  if not Sys.win32 then begin
+  if Sys.win32 then skip_scenario ~reason:"POSIX only" __POS__
+  else (
     List.iter
       (fun (name, signal) ->
         with_temp_root @@ fun root ->
@@ -1754,14 +1755,14 @@ let () =
     check "and the run then dies by the SIGTERM that followed"
       (status = Unix.WSIGNALED Sys.sigterm);
     check_string "having said so once"
-      ~expected:"windtrap: interrupted in deep \u{203a} waits\n" ~actual:err
-  end
+      ~expected:"windtrap: interrupted in deep \u{203a} waits\n" ~actual:err)
 
 (* A process a test forks inherits the handlers and not the run: killed, it
    dies silently, as it did before a run handled signals, and the run goes
    on. *)
 let () =
-  if not Sys.win32 then begin
+  if Sys.win32 then skip_scenario ~reason:"POSIX only" __POS__
+  else
     with_temp_root @@ fun root ->
     let reaped = ref None in
     let code, out, err =
@@ -1786,11 +1787,11 @@ let () =
       ("and its one line on stdout: " ^ out)
       (String.starts_with ~prefix:"forks: 1 passed in " out
       && List.length (String.split_on_char '\n' out) = 2)
-  end
 
 (* The handlers are the run's: what was installed before it is back after. *)
 let () =
-  if not Sys.win32 then begin
+  if Sys.win32 then skip_scenario ~reason:"POSIX only" __POS__
+  else
     with_temp_root @@ fun root ->
     let mine (_ : int) = () in
     let signals = [ Sys.sigint; Sys.sigterm; Sys.sighup ] in
@@ -1808,7 +1809,6 @@ let () =
           | Sys.Signal_handle f -> f == mine
           | Sys.Signal_default | Sys.Signal_ignore -> false))
       signals before
-  end
 
 (* Summary *)
 

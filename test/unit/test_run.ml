@@ -1113,7 +1113,8 @@ let () =
 (* Timeouts (Unix only) *)
 
 let () =
-  if not Sys.win32 then (
+  if Sys.win32 then skip_scenario ~reason:"POSIX only" __POS__
+  else
     with_temp_root @@ fun root ->
     let config = base_config ~log_dir:root () in
     let td_after_timeout = ref false in
@@ -1156,10 +1157,11 @@ let () =
       failure_list (outcome_of outcome [ "teardown-after-body-timeout" ])
     in
     check "body timeout: teardown still ran" !td_after_timeout;
-    check "body timeout: only the body entry" (phases_of fs = [ Failure.Body ]))
+    check "body timeout: only the body entry" (phases_of fs = [ Failure.Body ])
 
 let () =
-  if not Sys.win32 then
+  if Sys.win32 then skip_scenario ~reason:"POSIX only" __POS__
+  else
     with_temp_root @@ fun root ->
     let config =
       { (base_config ~log_dir:root ()) with Run.timeout = Some 0.2 }
@@ -1173,7 +1175,8 @@ let () =
       | _ -> false)
 
 let () =
-  if not Sys.win32 then (
+  if Sys.win32 then skip_scenario ~reason:"POSIX only" __POS__
+  else
     with_temp_root @@ fun root ->
     let config = base_config ~log_dir:root () in
     let ran = ref [] in
@@ -1194,12 +1197,13 @@ let () =
         check "setup timeout message says timed out"
           (contains "timed out" (message_of f))
     | _ -> check "setup timeout: exactly one failure" false);
-    check "setup timeout: neither body nor teardown ran" (!ran = []))
+    check "setup timeout: neither body nor teardown ran" (!ran = [])
 
 let () =
   (* Fixture releases run outside per-test timeouts: a release slower than
      the tightest test timeout must complete untimed (RFC "Resources"). *)
-  if not Sys.win32 then (
+  if Sys.win32 then skip_scenario ~reason:"POSIX only" __POS__
+  else
     with_temp_root @@ fun root ->
     let config = base_config ~log_dir:root () in
     let release_done = ref false in
@@ -1218,7 +1222,7 @@ let () =
       (outcome_of outcome [ "tight" ] = Some Failure.Pass);
     check "the slow release completed, untimed and unfailed"
       (!release_done && release_rows outcome = []);
-    check "the run stayed green" (outcome.Run.exit_code = 0))
+    check "the run stayed green" (outcome.Run.exit_code = 0)
 
 let () =
   (* The exit guard belongs to the process that armed it. A forked child
@@ -1226,7 +1230,8 @@ let () =
      check the child's [exit] was intercepted: it returned into the runner,
      ran every remaining test, printed a second report, and exited with the
      run's code instead of its own. *)
-  if not Sys.win32 then (
+  if Sys.win32 then skip_scenario ~reason:"POSIX only" __POS__
+  else
     with_temp_root @@ fun root ->
     let config = base_config ~log_dir:root () in
     let child_status = ref (-1) in
@@ -1244,7 +1249,7 @@ let () =
     expect_run "a forked child exits on its own terms" ~config tests
     @@ fun outcome ->
     check "the child's exit code reached the parent" (!child_status = 3);
-    check "the test passed" (outcome.Run.exit_code = 0))
+    check "the test passed" (outcome.Run.exit_code = 0)
 
 let () =
   (* The timer is one-shot and [Failure.Timeout] is not fatal, so the body's
@@ -1252,7 +1257,8 @@ let () =
      the window was re-armed there, a teardown that blocked after a body
      timeout ran unbounded: the whole run hung with no output. Both phases
      must time out, and both must be reported. *)
-  if not Sys.win32 then (
+  if Sys.win32 then skip_scenario ~reason:"POSIX only" __POS__
+  else
     with_temp_root @@ fun root ->
     let config = base_config ~log_dir:root () in
     let spin s =
@@ -1283,7 +1289,7 @@ let () =
         check "the body timed out" (List.mem Failure.Body phases);
         check "the teardown timed out too, rather than running unbounded"
           (List.mem Failure.Teardown phases)
-    | _ -> check "the test failed" false)
+    | _ -> check "the test failed" false
 
 let () =
   (* A scope is one call, so the limit covers acquire, body and release
@@ -1291,7 +1297,8 @@ let () =
      callback: without that, a scope that blocks while reclaiming after a
      body timeout would run unbounded, exactly as a bracket teardown
      would. *)
-  if not Sys.win32 then (
+  if Sys.win32 then skip_scenario ~reason:"POSIX only" __POS__
+  else
     with_temp_root @@ fun root ->
     let config = base_config ~log_dir:root () in
     let spin s =
@@ -1332,13 +1339,14 @@ let () =
         check "release times out: one Teardown timeout"
           (f.Failure.phase = Failure.Teardown
           && contains "timed out" (message_of f))
-    | _ -> check "release times out: exactly one failure" false)
+    | _ -> check "release times out: exactly one failure" false
 
 let () =
   (* D2: a timeout expiring during the shrink search ends the search at the
      last accepted node and reports the counterexample in hand, marked —
      the budget bounds wall time without erasing what the engine found. *)
-  if not Sys.win32 then (
+  if Sys.win32 then skip_scenario ~reason:"POSIX only" __POS__
+  else
     with_temp_root @@ fun root ->
     let config =
       { (base_config ~log_dir:root ()) with Run.timeout = Some 0.2 }
@@ -1363,10 +1371,11 @@ let () =
     | _ -> check "mid-shrink timeout: one Property failure" false);
     check "the whole-test budget bounds the wall time" (wall < 0.8);
     check "a timed-out-mid-shrink prop is an ordinary failed test"
-      (outcome.Run.exit_code = 1))
+      (outcome.Run.exit_code = 1)
 
 let () =
-  if not Sys.win32 then
+  if Sys.win32 then skip_scenario ~reason:"POSIX only" __POS__
+  else
     with_temp_root @@ fun root ->
     let config =
       { (base_config ~log_dir:root ()) with Run.timeout = Some 0.2 }
@@ -1384,7 +1393,8 @@ let () =
    both routes converge on the same Test_tree fields, so the memo semantics
    pinned above (pre-failure timeout, mid-shrink marking) hold unchanged. *)
 let () =
-  if not Sys.win32 then (
+  if Sys.win32 then skip_scenario ~reason:"POSIX only" __POS__
+  else
     with_temp_root @@ fun root ->
     let config = base_config ~log_dir:root () in
     let attempts = ref 0 in
@@ -1421,7 +1431,7 @@ let () =
     | Some r ->
         check "cases ~retries gives each child the extra attempts"
           (r.Run.outcome = Failure.Pass && r.Run.attempts = 3)
-    | None -> check "flaky-table row recorded" false)
+    | None -> check "flaky-table row recorded" false
 
 (* Retries *)
 
@@ -2185,7 +2195,8 @@ let () =
 let () =
   (* Restoration is not the pass path's privilege: it happens on failure,
      on skip, and on a timeout that cut the body short. *)
-  if not Sys.win32 then (
+  if Sys.win32 then skip_scenario ~reason:"POSIX only" __POS__
+  else
     Fun.protect ~finally:unbind_scoped @@ fun () ->
     with_temp_root @@ fun root ->
     let config = base_config ~log_dir:root () in
@@ -2215,7 +2226,7 @@ let () =
     check "the timing-out test is a failure"
       (failed_paths outcome = [ "fails"; "times out" ]);
     check "the binding is restored after failure, skip, and timeout alike"
-      (!after = [ Some "before"; Some "before"; Some "before" ]))
+      (!after = [ Some "before"; Some "before"; Some "before" ])
 
 (* A directory that no longer exists is exactly the state a missing
    restoration leaves behind, so reading the working directory must not

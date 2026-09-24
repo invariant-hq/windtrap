@@ -21,6 +21,7 @@ let suite = ref ""
 let started = ref 0.
 let failures = ref 0
 let count = ref 0
+let skipped = ref 0
 
 (* The ANSI decision, captured by [init] before it clears the
    environment — the same resolution the windtrap suites make
@@ -73,6 +74,14 @@ let check_string name ~expected ~actual =
     Printf.printf "%s: %s: %s\n  expected: %S\n  actual:   %S\n%!" !suite
       (fail_tag ~ansi:!ansi) name expected actual
   end
+
+(* A scenario that cannot run on this platform says so, and the summary
+   counts it: a guard that checked nothing would pass it in silence. The
+   scenario is named by its position, as in [skip_scenario ~reason __POS__]. *)
+let skip_scenario ~reason (file, line, _, _) =
+  incr skipped;
+  Printf.printf "%s: SKIP: %s:%d (%s)\n%!" !suite (Filename.basename file) line
+    reason
 
 let expect_invalid_arg name fn =
   incr count;
@@ -187,7 +196,7 @@ let with_temp_root ?(prefix = "windtrap-meta-") f =
    run, red wraps the failed segment, exactly as Report.finish styles
    them. Pinned against the renderer by test_report's dialect test. *)
 
-let summary_line ~ansi ~suite ~failures ~count ~duration =
+let summary_line ?(skipped = 0) ~ansi ~suite ~failures ~count ~duration () =
   let st style s = Windtrap.Private.Pp.styled_string ~ansi style s in
   if count = 0 then Printf.sprintf "%s: no checks ran." suite
   else
@@ -206,11 +215,15 @@ let summary_line ~ansi ~suite ~failures ~count ~duration =
       else if Float.round ms < 1000. then Printf.sprintf "%.0fms" ms
       else Printf.sprintf "%.1fs" duration
     in
-    Printf.sprintf "%s: %s in %s." suite counts duration
+    let skipped =
+      if skipped = 0 then ""
+      else Printf.sprintf ", %d scenarios skipped" skipped
+    in
+    Printf.sprintf "%s: %s%s in %s." suite counts skipped duration
 
 let finish () =
   let duration = Unix.gettimeofday () -. !started in
   print_endline
-    (summary_line ~ansi:!ansi ~suite:!suite ~failures:!failures ~count:!count
-       ~duration);
+    (summary_line ~skipped:!skipped ~ansi:!ansi ~suite:!suite
+       ~failures:!failures ~count:!count ~duration ());
   exit (if !failures = 0 then 0 else 1)

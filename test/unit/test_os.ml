@@ -329,24 +329,24 @@ module Atomic_suite = struct
     equal ~msg:"replace empty size" int 0 (Unix.stat path).Unix.st_size
 
   let test_default_permissions_respect_the_umask () =
-    if not Sys.win32 then (
-      let directory = temp_dir () in
-      let path = Filename.concat directory "target" in
-      with_umask 0o022 (fun () -> Os.atomic_write ~path "x");
-      equal ~msg:"default permissions under umask 022" int 0o644
-        ((Unix.stat path).Unix.st_perm land 0o777))
+    if Sys.win32 then skip ~reason:"POSIX only" ();
+    let directory = temp_dir () in
+    let path = Filename.concat directory "target" in
+    with_umask 0o022 (fun () -> Os.atomic_write ~path "x");
+    equal ~msg:"default permissions under umask 022" int 0o644
+      ((Unix.stat path).Unix.st_perm land 0o777)
 
   let test_explicit_permissions_respect_the_umask () =
-    if not Sys.win32 then (
-      let directory = temp_dir () in
-      let strict = Filename.concat directory "strict" in
-      with_umask 0o022 (fun () -> Os.atomic_write ~perm:0o600 ~path:strict "x");
-      equal ~msg:"explicit 0o600 under umask 022" int 0o600
-        ((Unix.stat strict).Unix.st_perm land 0o777);
-      let masked = Filename.concat directory "masked" in
-      with_umask 0o077 (fun () -> Os.atomic_write ~perm:0o666 ~path:masked "x");
-      equal ~msg:"0o666 masked by umask 077" int 0o600
-        ((Unix.stat masked).Unix.st_perm land 0o777))
+    if Sys.win32 then skip ~reason:"POSIX only" ();
+    let directory = temp_dir () in
+    let strict = Filename.concat directory "strict" in
+    with_umask 0o022 (fun () -> Os.atomic_write ~perm:0o600 ~path:strict "x");
+    equal ~msg:"explicit 0o600 under umask 022" int 0o600
+      ((Unix.stat strict).Unix.st_perm land 0o777);
+    let masked = Filename.concat directory "masked" in
+    with_umask 0o077 (fun () -> Os.atomic_write ~perm:0o666 ~path:masked "x");
+    equal ~msg:"0o666 masked by umask 077" int 0o600
+      ((Unix.stat masked).Unix.st_perm land 0o777)
 
   (* Failure paths *)
 
@@ -405,40 +405,42 @@ module Atomic_suite = struct
     (* The portable failure-injection route: a read-only parent makes temporary
        creation fail before the target is ever touched. Root ignores directory
        permissions, so the check is skipped when running as root. *)
-    if (not Sys.win32) && Unix.geteuid () <> 0 then (
-      let directory = temp_dir () in
-      let locked = Filename.concat directory "locked" in
-      Unix.mkdir locked 0o700;
-      let path = Filename.concat locked "target" in
-      write_file path "previous contents";
-      Unix.chmod locked 0o500;
-      Fun.protect
-        ~finally:(fun () -> Unix.chmod locked 0o700)
-        (fun () ->
-          let message =
-            expect_sys_error "read-only parent" ~path (fun () ->
-                Os.atomic_write ~path "replacement")
-          in
-          is_true ~msg:"read-only parent names the failing step"
-            (contains message "cannot create temporary file");
-          equal ~msg:"read-only parent leaves the target untouched" string
-            "previous contents" (read_file path);
-          equal ~msg:"read-only parent gains no temporary" (list string)
-            [ "target" ] (sorted_directory locked)))
+    if Sys.win32 then skip ~reason:"POSIX only" ();
+    if Unix.geteuid () = 0 then
+      skip ~reason:"root ignores directory permissions" ();
+    let directory = temp_dir () in
+    let locked = Filename.concat directory "locked" in
+    Unix.mkdir locked 0o700;
+    let path = Filename.concat locked "target" in
+    write_file path "previous contents";
+    Unix.chmod locked 0o500;
+    Fun.protect
+      ~finally:(fun () -> Unix.chmod locked 0o700)
+      (fun () ->
+        let message =
+          expect_sys_error "read-only parent" ~path (fun () ->
+              Os.atomic_write ~path "replacement")
+        in
+        is_true ~msg:"read-only parent names the failing step"
+          (contains message "cannot create temporary file");
+        equal ~msg:"read-only parent leaves the target untouched" string
+          "previous contents" (read_file path);
+        equal ~msg:"read-only parent gains no temporary" (list string)
+          [ "target" ] (sorted_directory locked))
 
   let test_replacement_takes_the_temporary_permissions () =
     (* Frozen documented behavior: rename replaces the target's previous
        permission bits with the temporary's. *)
-    if not Sys.win32 then (
-      let directory = temp_dir () in
-      let path = Filename.concat directory "target" in
-      write_file path "read-only contents";
-      Unix.chmod path 0o444;
-      with_umask 0o022 (fun () -> Os.atomic_write ~path "replaced");
-      equal ~msg:"read-only target bytes replaced" string "replaced"
-        (read_file path);
-      equal ~msg:"read-only target permissions replaced" int 0o644
-        ((Unix.stat path).Unix.st_perm land 0o777))
+    if Sys.win32 then skip ~reason:"POSIX only" ();
+    let directory = temp_dir () in
+    let path = Filename.concat directory "target" in
+    write_file path "read-only contents";
+    Unix.chmod path 0o444;
+    with_umask 0o022 (fun () -> Os.atomic_write ~path "replaced");
+    equal ~msg:"read-only target bytes replaced" string "replaced"
+      (read_file path);
+    equal ~msg:"read-only target permissions replaced" int 0o644
+      ((Unix.stat path).Unix.st_perm land 0o777)
 
   let test_target_symlink_is_refused_not_followed () =
     (* Refusal subsumes the two protections this test has pinned in turn:
@@ -447,24 +449,24 @@ module Atomic_suite = struct
        regular file for it while its referent kept the old bytes — reported
        as success to the caller. Publication never changes what kind of
        thing a path names; both sides survive byte-intact. *)
-    if not Sys.win32 then (
-      let directory = temp_dir () in
-      let referent = Filename.concat directory "referent" in
-      let path = Filename.concat directory "target" in
-      write_file referent "referent bytes";
-      Unix.symlink referent path;
-      (match Os.atomic_write ~path "new target" with
-      | () -> is_true ~msg:"a symlinked target must be refused" false
-      | exception Sys_error message ->
-          is_true ~msg:"the refusal names the linkness"
-            (contains message "symbolic link"));
-      is_true ~msg:"the link survives as a link"
-        ((Unix.lstat path).Unix.st_kind = Unix.S_LNK);
-      equal ~msg:"the referent keeps its bytes" string "referent bytes"
-        (read_file referent);
-      equal ~msg:"no temporary survives the refusal" (list string)
-        [ "referent"; "target" ]
-        (sorted_directory directory))
+    if Sys.win32 then skip ~reason:"POSIX only" ();
+    let directory = temp_dir () in
+    let referent = Filename.concat directory "referent" in
+    let path = Filename.concat directory "target" in
+    write_file referent "referent bytes";
+    Unix.symlink referent path;
+    (match Os.atomic_write ~path "new target" with
+    | () -> is_true ~msg:"a symlinked target must be refused" false
+    | exception Sys_error message ->
+        is_true ~msg:"the refusal names the linkness"
+          (contains message "symbolic link"));
+    is_true ~msg:"the link survives as a link"
+      ((Unix.lstat path).Unix.st_kind = Unix.S_LNK);
+    equal ~msg:"the referent keeps its bytes" string "referent bytes"
+      (read_file referent);
+    equal ~msg:"no temporary survives the refusal" (list string)
+      [ "referent"; "target" ]
+      (sorted_directory directory)
 
   (* Atomicity under concurrency *)
 

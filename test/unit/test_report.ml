@@ -5001,7 +5001,7 @@ let test_summary_dialect () =
   equal ~msg:"harness green one-liner is the renderer's bytes plus \"checks\""
     string (insert_checks green)
     (Harness.summary_line ~ansi:true ~suite:"mylib" ~failures:0 ~count:2
-       ~duration:0.5);
+       ~duration:0.5 ());
   (* Failing: the summary ends the transcript; the harness line is the
      same bytes with the suite prefix (the renderer's header already
      named the suite) and "checks". *)
@@ -5020,7 +5020,7 @@ let test_summary_dialect () =
   equal ~msg:"harness failing line matches the renderer's styling bytes" string
     ("mylib: " ^ insert_checks failing_summary)
     (Harness.summary_line ~ansi:true ~suite:"mylib" ~failures:1 ~count:2
-       ~duration:0.5);
+       ~duration:0.5 ());
   (* The harness check lines' FAIL tag: the renderer's own FAIL header
      bytes, derived from the rendered block ("  FAIL  <name>"), not
      hardcoded — restyle the renderer's tag and this fails until the
@@ -5050,7 +5050,7 @@ let test_summary_dialect () =
   (* Monochrome: identical wording, zero escape bytes on both sides. *)
   let plain =
     Harness.summary_line ~ansi:false ~suite:"mylib" ~failures:0 ~count:2
-      ~duration:0.5
+      ~duration:0.5 ()
   in
   equal ~msg:"harness monochrome line carries no styling bytes" string
     "mylib: 2 checks passed in 500ms." plain;
