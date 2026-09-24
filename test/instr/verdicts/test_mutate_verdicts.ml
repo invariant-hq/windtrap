@@ -296,6 +296,42 @@ let verdict_tests =
              (fun (r : V.record) ->
                Format.asprintf "%a %a" pp_id r.V.id pp_verdict r.V.verdict)
              (V.records (V.merge (V.merge c b) a))));
+    test
+      "record_of_mutant keeps the identifier and renderings, not the dismissal"
+      (fun () ->
+        let m = id ~file:"lib/calc.ml" ~line:4 ~col:2 ~rewrite:"sub" in
+        equal ~msg:"the record" record_t
+          (record ~before:"a - b" ~after:"a + b" m V.Killed)
+          (V.record_of_mutant
+             {
+               M.id = m;
+               before = "a - b";
+               after = "a + b";
+               dismissed = Some "equivalent";
+             }
+             V.Killed));
+    test "add checks no identifier, and the file of one it took does not parse"
+      (fun () ->
+        List.iter
+          (fun (name, bad) ->
+            let t = V.add V.empty (record bad V.Unreached) in
+            equal ~msg:(name ^ ": add keeps it") (list string)
+              [ M.id_to_string bad ]
+              (List.map
+                 (fun (r : V.record) -> M.id_to_string r.V.id)
+                 (V.records t));
+            match V.of_string (V.to_string t) with
+            | Error (V.Corrupt _) -> ()
+            | Error e -> failf "%s: expected Corrupt, got %a" name V.pp_error e
+            | Ok _ -> failf "%s: what to_string wrote parsed" name)
+          [
+            ("an empty file", id ~file:"" ~line:1 ~col:0 ~rewrite:"lt");
+            ("line 0", id ~file:"a.ml" ~line:0 ~col:0 ~rewrite:"lt");
+            ( "a negative column",
+              id ~file:"a.ml" ~line:1 ~col:(-1) ~rewrite:"lt" );
+            ( "an unknown rewrite",
+              id ~file:"a.ml" ~line:1 ~col:0 ~rewrite:"plus" );
+          ]);
     test "collections order their bindings by identifier" (fun () ->
         let t =
           List.fold_left
@@ -529,6 +565,20 @@ let rejection_tests =
           "empty executable identity" );
       ]
       (fun (name, s, sub) -> check_corrupt name ~sub s);
+    test "one malformed record refuses the whole file" (fun () ->
+        check_corrupt "a valid record, then a malformed one" ~sub:"line"
+          "windtrap-mutants-v3\n\
+           2\n\
+           8 lib/a.ml 1 2 3 add 1 b 1 a killed\n\
+           8 lib/a.ml 0 2 3 add 1 b 1 a unreached\n");
+    test "the drop rewrite is read, though no instrumenter emits it" (fun () ->
+        let t, _ =
+          ok_error "drop"
+            (V.of_string
+               "windtrap-mutants-v3\n1\n8 lib/a.ml 1 2 4 drop 1 b 1 a killed\n")
+        in
+        equal ~msg:"its record" (list string) [ "lib/a.ml:1:2:drop" ]
+          (List.map (fun (r : V.record) -> M.id_to_string r.V.id) (V.records t)));
     test "load reports an unreadable file" (fun () ->
         match V.load (scratch "does-not-exist.mutants") with
         | Error (V.Unreadable { path; _ }) ->
