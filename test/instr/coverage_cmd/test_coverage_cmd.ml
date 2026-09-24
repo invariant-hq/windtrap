@@ -27,33 +27,14 @@
 open Windtrap
 module C = Windtrap_runtime.Coverage
 module I = Windtrap_runtime.Instr
-
-let check name cond = is_true ~msg:name cond
-let check_int name ~expected ~actual = equal ~msg:name int expected actual
-let check_string name ~expected ~actual = equal ~msg:name text expected actual
-
-let check_contains name ~needle haystack =
-  contains ~msg:name ~sub:needle haystack
-
-let check_absent name ~needle haystack =
-  not_contains ~msg:name ~sub:needle haystack
-
-(* Boolean containment for predicates; shadows the facade assertion,
-   which the helpers above already captured. *)
-let contains needle haystack =
-  let n = String.length needle and h = String.length haystack in
-  let rec loop i =
-    if i + n > h then false
-    else if String.sub haystack i n = needle then true
-    else loop (i + 1)
-  in
-  loop 0
+module Child = Windtrap_test_support.Child
+module Scratch = Windtrap_test_support.Scratch
 
 (* Scratch and process helpers *)
 
 (* Hermeticity: absolute paths throughout, so the test behaves the same
-   under dune's sandbox and by hand; scratch lives in a private temp
-   directory removed at exit. *)
+   under dune's sandbox and by hand; each test's scratch lives in its own
+   temp_dir. *)
 let exe_dir = Filename.dirname Sys.executable_name
 let child_exe = Filename.concat exe_dir "inline_child.exe"
 
@@ -62,28 +43,9 @@ let windtrap_exe =
     (Filename.concat ".."
        (Filename.concat ".." (Filename.concat ".." "bin/main.exe")))
 
-(* Symlink-aware (the child's capture log trap plants a `latest`
-   symlink): directories recurse, everything else — symlinks included —
-   unlinks; never follows. *)
-let rec remove_tree path =
-  match (Unix.lstat path).Unix.st_kind with
-  | Unix.S_DIR ->
-      Array.iter
-        (fun name -> remove_tree (Filename.concat path name))
-        (Sys.readdir path);
-      Sys.rmdir path
-  | _ -> Sys.remove path
-  | exception Unix.Unix_error _ -> ()
-  | exception Sys_error _ -> ()
-
-let scratch_dir =
-  let dir = Filename.temp_file "windtrap_cov_cli" "" in
-  Sys.remove dir;
-  Sys.mkdir dir 0o755;
-  at_exit (fun () -> remove_tree dir);
-  dir
-
-let scratch path = Filename.concat scratch_dir path
+(* [scratch name] is a path named [name] in a directory of the test's
+   own; nothing exists there yet. *)
+let scratch name = Filename.concat (temp_dir ()) name
 
 let rec mkdir_p dir =
   if not (Sys.file_exists dir) then begin
@@ -93,61 +55,24 @@ let rec mkdir_p dir =
 
 let write_file path contents =
   mkdir_p (Filename.dirname path);
-  let oc = open_out_bin path in
-  output_string oc contents;
-  close_out oc
+  Out_channel.with_open_bin path (fun oc -> output_string oc contents)
 
-let read_file path =
-  match open_in_bin path with
-  | ic ->
-      Fun.protect
-        ~finally:(fun () -> close_in_noerr ic)
-        (fun () -> really_input_string ic (in_channel_length ic))
-  | exception Sys_error _ -> ""
+let read_file path = In_channel.with_open_bin path In_channel.input_all
 
-(* [capture ~env ?cwd exe args] runs [exe] through the shell and returns
-   (exit code, stdout, stderr). The child's environment is stated, never
-   inherited: nothing of this process's survives but what a process
-   needs to start (PATH, HOME, TMPDIR and the locale), colour is off, and
-   [env] adds the scenario's own NAME=value words for env(1). The
+(* [capture ?env ?cwd exe args] runs [exe] and returns (exit code,
+   stdout, stderr). The child's environment is stated, never inherited:
+   nothing of this process's survives but what a process needs to start,
+   colour is off, and [env] adds the scenario's own bindings. The
    children link the core, and the tree-wide mutation run hands this
    suite WINDTRAP_MUTATE=1: a child that inherited it would run the loop
    in place of its scenario. Every inline_child run must carry
    WINDTRAP_COVERAGE_FILE so its at_exit dump lands in scratch, never in
    the real _build. *)
-let run_counter = ref 0
-
-let inherited =
-  List.concat_map
-    (fun name ->
-      match Sys.getenv_opt name with
-      | Some value -> [ name ^ "=" ^ value ]
-      | None -> [])
-    [ "PATH"; "HOME"; "TMPDIR"; "LANG"; "LC_ALL" ]
-
 let capture ?(env = []) ?cwd exe args =
-  incr run_counter;
-  let out = scratch (Printf.sprintf "out-%d.txt" !run_counter)
-  and err = scratch (Printf.sprintf "err-%d.txt" !run_counter) in
-  let command =
-    String.concat " "
-      (List.map Filename.quote
-         (("env" :: "-i" :: inherited)
-         @ ("WINDTRAP_COLOR=never" :: env)
-         @ (exe :: args)))
-    ^ " > " ^ Filename.quote out ^ " 2> " ^ Filename.quote err
-  in
-  let command =
-    match cwd with
-    | None -> command
-    | Some dir -> "cd " ^ Filename.quote dir ^ " && " ^ command
-  in
-  let code = Sys.command command in
-  (code, read_file out, read_file err)
+  let r = Child.run ?cwd ~env exe args in
+  (Child.exit_code r, r.Child.out, r.Child.err)
 
 (* The run prints no number; the dump is the report *)
-
-let dump_counter = ref 0
 
 (* Each child dumps into its own fresh directory, so a run never reads
    or overwrites another's data. The child links the windtrap core,
@@ -156,10 +81,9 @@ let dump_counter = ref 0
    `windtrap coverage` merges — and the assertions that read it scope
    themselves with [C.filter]. *)
 let child ?(env = []) ?(args = []) () =
-  incr dump_counter;
-  let dump = scratch (Printf.sprintf "dump-%d/self.coverage" !dump_counter) in
+  let dump = scratch "self.coverage" in
   let code, out, err =
-    capture ~env:(("WINDTRAP_COVERAGE_FILE=" ^ dump) :: env) child_exe args
+    capture ~env:(("WINDTRAP_COVERAGE_FILE", dump) :: env) child_exe args
   in
   (code, out, err, dump)
 
@@ -172,19 +96,22 @@ let dump_of ?(only = "lib/fake.ml") path =
 
 (* Six lines of nine characters: block [i] is line [i + 1]'s text. Four
    of six blocks visited leaves lines 5-6 uncovered — the shape the
-   reporting command renders from this run's dump. *)
+   reporting command renders from this run's dump. Written once, read by
+   every run that registers it. *)
 let child_source =
   "line1----\nline2----\nline3----\nline4----\nline5----\nline6----\n"
 
-let child_src_path = scratch "child-src.ml"
+let child_src_path =
+  let path = Filename.concat (Scratch.dir "windtrap-coverage-cmd") "src.ml" in
+  write_file path child_source;
+  path
 
 let child_src_env =
-  write_file child_src_path child_source;
   [
-    "CHILD_FILE=" ^ child_src_path;
-    "CHILD_TOTAL=6";
-    "CHILD_VISITED=4";
-    "CHILD_LINE_LEN=10";
+    ("CHILD_FILE", child_src_path);
+    ("CHILD_TOTAL", "6");
+    ("CHILD_VISITED", "4");
+    ("CHILD_LINE_LEN", "10");
   ]
 
 let dump_is_the_report =
@@ -192,55 +119,56 @@ let dump_is_the_report =
   let code, out, _, dump =
     child ~env:child_src_env ~args:[ "--color"; "never" ] ()
   in
-  check_int "an instrumented child exits 0" ~expected:0 ~actual:code;
-  check_absent "the run prints no coverage line" ~needle:"coverage:" out;
-  check_absent "and draws no per-file table" ~needle:"uncovered lines" out;
+  equal ~msg:"an instrumented child exits 0" int 0 code;
+  not_contains ~msg:"the run prints no coverage line" ~sub:"coverage:" out;
+  not_contains ~msg:"and draws no per-file table" ~sub:"uncovered lines" out;
   (* The at_exit dump of the same run is what carries the measurement,
      and names the executable that wrote it, so `windtrap coverage` can
      merge and vet it. *)
   (match dump_of ~only:child_src_path dump with
   | Some (t, exe) ->
       let s = C.summary t in
-      check "the dump holds what the run measured"
-        (s.C.visited = 4 && s.C.total = 6);
-      check "the dump records the child executable's identity"
+      equal ~msg:"the dump holds what the run measured" (pair int int) (4, 6)
+        (s.C.visited, s.C.total);
+      is_true ~msg:"the dump records the child executable's identity"
         (exe
         = Some
             {
               C.exe = I.exe_identity ~exe:child_exe;
               digest = Digest.to_hex (Digest.file child_exe);
             })
-  | None -> check "the dump holds what the run measured" false);
+  | None -> fail "the child's dump does not load");
   (* Guarantee 10: coverage never changes outcomes or exit codes. *)
   let code, _, _, dump =
-    child ~env:("CHILD_FAIL=1" :: child_src_env) ~args:[ "--color"; "never" ] ()
+    child
+      ~env:(("CHILD_FAIL", "1") :: child_src_env)
+      ~args:[ "--color"; "never" ] ()
   in
-  check_int "a failing instrumented run still exits 1" ~expected:1 ~actual:code;
-  check "and still dumps"
-    (match dump_of ~only:child_src_path dump with
-    | Some (t, _) -> (C.summary t).C.total = 6
-    | None -> false);
+  equal ~msg:"a failing instrumented run still exits 1" int 1 code;
+  (match dump_of ~only:child_src_path dump with
+  | Some (t, _) -> equal ~msg:"and still dumps" int 6 (C.summary t).C.total
+  | None -> fail "the failing run's dump does not load");
   (* An uninstrumented child registers nothing: the file may exist
      anyway, because under `--instrument-with` the windtrap core this
      child links registers and dumps. What must be true either way is
      that the child contributed nothing to it. *)
   let code, _, _, dump =
-    child ~env:[ "CHILD_TOTAL=0" ] ~args:[ "--color"; "never" ] ()
+    child ~env:[ ("CHILD_TOTAL", "0") ] ~args:[ "--color"; "never" ] ()
   in
-  check_int "an uninstrumented child exits 0" ~expected:0 ~actual:code;
-  check "an uninstrumented run contributes nothing to the dump"
+  equal ~msg:"an uninstrumented child exits 0" int 0 code;
+  is_true ~msg:"an uninstrumented run contributes nothing to the dump"
     (match dump_of dump with None -> true | Some (t, _) -> C.is_empty t);
   (* The retired knobs are gone: an unknown option and an unlisted
      variable, never silently ignored ones. *)
   let code, _, err, _ = child ~args:[ "--coverage"; "report" ] () in
-  check_int "--coverage is no longer an option" ~expected:2 ~actual:code;
-  check_contains "--coverage is reported as unknown"
-    ~needle:"unknown option '--coverage'" err;
+  equal ~msg:"--coverage is no longer an option" int 2 code;
+  contains ~msg:"--coverage is reported as unknown"
+    ~sub:"unknown option '--coverage'" err;
   let code, out, _, _ = child ~args:[ "--help" ] () in
-  check_int "--help exits 0" ~expected:0 ~actual:code;
-  check_absent "--help lists no coverage flag" ~needle:"--coverage" out;
-  check_contains "--help lists the dump override"
-    ~needle:"WINDTRAP_COVERAGE_FILE" out
+  equal ~msg:"--help exits 0" int 0 code;
+  not_contains ~msg:"--help lists no coverage flag" ~sub:"--coverage" out;
+  contains ~msg:"--help lists the dump override" ~sub:"WINDTRAP_COVERAGE_FILE"
+    out
 
 (* A fake merged project for `windtrap coverage` *)
 
@@ -259,15 +187,17 @@ let collection name adds =
     (fun acc (file, points, counts) ->
       match C.add acc ~file ~points ~counts with
       | Ok t -> t
-      (* Built at module load, outside any test: a broken fixture is a
-         loud crash, not an assertion. *)
-      | Error _ -> failwith (name ^ ": fixture collection does not build"))
+      | Error e ->
+          failf "%s: the fixture collection does not build: %a" name C.pp_error
+            e)
     C.empty adds
 
 (* Two executables' worth of data: foo.ml visited [1;0;0] in one and
    [0;1;0] in the other (merge must add to 2/3, uncovered line 3);
-   bar.ml only in the second (1/2, uncovered line 2). Total 3/5 = 60%. *)
-let proj =
+   bar.ml only in the second (1/2, uncovered line 2). Total 3/5 = 60%.
+   Each test that reads it plants its own copy, so what one test adds to
+   the tree no other test sees. *)
+let proj () =
   let root = scratch "proj" in
   write_file
     (Filename.concat root "lib/foo.ml")
@@ -296,67 +226,69 @@ let proj =
 let coverage_cmd ?cwd ?inside_dune args =
   let inside_dune =
     match inside_dune with
-    | Some context -> [ "INSIDE_DUNE=" ^ context ]
+    | Some context -> [ ("INSIDE_DUNE", context) ]
     | None -> []
   in
   capture ~env:inside_dune ?cwd windtrap_exe ("coverage" :: args)
+
+(* [occurs ~sub s] is [true] iff [sub] occurs in [s]: a predicate, for
+   finding and counting lines, where the facade's [contains] asserts. *)
+let occurs ~sub s =
+  let n = String.length s and m = String.length sub in
+  let rec go i = i + m <= n && (String.sub s i m = sub || go (i + 1)) in
+  go 0
+
+let lines_with ~sub text =
+  List.filter (occurs ~sub) (String.split_on_char '\n' text)
 
 (* The reporting command: merge, table, walk-up *)
 
 let reporting_command =
   test "the reporting command: merge, table, walk-up" @@ fun () ->
+  let proj = proj () in
   let code, out, err = coverage_cmd ~cwd:proj [] in
-  check_int "the merged report exits 0" ~expected:0 ~actual:code;
-  check "the merged report keeps stderr empty" (err = "");
-  check_string
-    "the table under its header row, the outcome last: counts merge across \
-     executables, each file reports its uncovered line"
-    ~expected:
-      "   cover    points   file         uncovered lines (-u shows the source)\n\
-      \   50.0%    1/2      lib/bar.ml   2\n\
-      \   66.7%    2/3      lib/foo.ml   3\n\
-       coverage: 60.0% (3/5 points)\n"
-    ~actual:out;
-  check_contains "counts merge across executables"
-    ~needle:"coverage: 60.0% (3/5 points)" out;
-  check_contains "foo.ml adds counts from both executables" ~needle:"2/3" out;
-  check_contains "foo.ml reports its uncovered line" ~needle:"lib/foo.ml   3\n"
+  equal ~msg:"the merged report exits 0" int 0 code;
+  equal ~msg:"the merged report keeps stderr empty" text "" err;
+  equal
+    ~msg:
+      "the table under its header row, the outcome last: counts merge across \
+       executables, each file reports its uncovered line"
+    text
+    "   cover    points   file         uncovered lines (-u shows the source)\n\
+    \   50.0%    1/2      lib/bar.ml   2\n\
+    \   66.7%    2/3      lib/foo.ml   3\n\
+     coverage: 60.0% (3/5 points)\n"
     out;
-  check_contains "bar.ml reports from one executable alone" ~needle:"1/2" out;
-  check_contains "bar.ml reports its uncovered line" ~needle:"lib/bar.ml   2\n"
-    out;
-  check_absent "no row repeats the column's name" ~needle:"uncovered:" out;
-  check_absent "the table paints no excerpts by default" ~needle:"\u{258c}" out;
   (* Discovery walks up from a subdirectory to the project root. *)
   let code, out, _ = coverage_cmd ~cwd:(Filename.concat proj "lib") [] in
-  check_int "walk-up discovery exits 0" ~expected:0 ~actual:code;
-  check_contains "walk-up discovery finds the same data"
-    ~needle:"coverage: 60.0% (3/5 points)" out;
-  check_contains "walk-up discovery still resolves sources"
-    ~needle:"lib/foo.ml   3\n" out;
+  equal ~msg:"walk-up discovery exits 0" int 0 code;
+  contains ~msg:"walk-up discovery finds the same data"
+    ~sub:"coverage: 60.0% (3/5 points)" out;
+  contains ~msg:"walk-up discovery still resolves sources"
+    ~sub:"lib/foo.ml   3\n" out;
   (* Explicit PATH arguments replace discovery; sources then resolve
      against the current directory only. *)
   let code, out, _ =
-    coverage_cmd ~cwd:scratch_dir [ Filename.concat proj "_build/_coverage" ]
+    coverage_cmd ~cwd:(temp_dir ()) [ Filename.concat proj "_build/_coverage" ]
   in
-  check_int "an explicit PATH exits 0" ~expected:0 ~actual:code;
-  check_contains "an explicit PATH merges the same data"
-    ~needle:"coverage: 60.0% (3/5 points)" out;
-  check_contains "unresolvable sources are named, not silently blank"
-    ~needle:"(source not found)" out;
+  equal ~msg:"an explicit PATH exits 0" int 0 code;
+  contains ~msg:"an explicit PATH merges the same data"
+    ~sub:"coverage: 60.0% (3/5 points)" out;
+  contains ~msg:"unresolvable sources are named, not silently blank"
+    ~sub:"(source not found)" out;
   (* Excerpts. *)
   let code, out, _ = coverage_cmd ~cwd:proj [ "--show-uncovered" ] in
-  check_int "--show-uncovered exits 0" ~expected:0 ~actual:code;
-  check_contains "--show-uncovered paints the uncovered arm" ~needle:"\u{258c}"
+  equal ~msg:"--show-uncovered exits 0" int 0 code;
+  contains ~msg:"--show-uncovered paints the uncovered arm" ~sub:"\u{258c}" out;
+  contains ~msg:"--show-uncovered shows the uncovered source" ~sub:"let c = 3"
     out;
-  check_contains "--show-uncovered shows the uncovered source"
-    ~needle:"let c = 3" out;
-  check_contains "the source is shown, so the header does not say how"
-    ~needle:"file         uncovered lines\n" out;
-  check_contains "a file's heading ends on its numbers"
-    ~needle:"\nlib/foo.ml: 66.7% (2/3)\n\n" out;
-  check "and the outcome follows the last file, one blank line under it"
-    (String.ends_with ~suffix:"\n\ncoverage: 60.0% (3/5 points)\n" out)
+  contains ~msg:"the source is shown, so the header does not say how"
+    ~sub:"file         uncovered lines\n" out;
+  contains ~msg:"a file's heading ends on its numbers"
+    ~sub:"\nlib/foo.ml: 66.7% (2/3)\n\n" out;
+  ends_with
+    ~msg:"and the outcome follows the last file, one blank line under it"
+    ~affix:"\n\ncoverage: 60.0% (3/5 points)\n" out
 
 (* A tree built without dune: the executable is under no build
    directory, so it dumps under the working directory's _windtrap, the
@@ -374,35 +306,30 @@ let standalone_layout =
   let code, out, _ =
     capture ~cwd:proj ~env:child_src_env exe [ "--color"; "never" ]
   in
-  check_int "the copied child exits 0" ~expected:0 ~actual:code;
-  check_absent "and prints no coverage line" ~needle:"coverage:" out;
+  equal ~msg:"the copied child exits 0" int 0 code;
+  not_contains ~msg:"and prints no coverage line" ~sub:"coverage:" out;
   let estate = Filename.concat proj "_windtrap/coverage" in
-  check "the dump directory is <cwd>/_windtrap/coverage"
+  is_true ~msg:"the dump directory is <cwd>/_windtrap/coverage"
     (Sys.file_exists estate && Sys.is_directory estate);
-  check "and no _build was grown"
-    (not (Sys.file_exists (Filename.concat proj "_build")));
+  is_false ~msg:"and no _build was grown"
+    (Sys.file_exists (Filename.concat proj "_build"));
   let code, out, err = coverage_cmd ~cwd:proj [] in
-  check_int "the reporting command finds it without arguments" ~expected:0
-    ~actual:code;
-  check "with no exclusion: the identity is the copy's absolute path" (err = "");
+  equal ~msg:"the reporting command finds it without arguments" int 0 code;
+  equal ~msg:"with no exclusion: the identity is the copy's absolute path" text
+    "" err;
   (* Under --instrument-with the copied child links an instrumented core and
      dumps its points too, which widens the table's columns: pin the child's
      row, not the padding around it. *)
-  let row =
-    match
-      List.find_opt (contains child_src_path) (String.split_on_char '\n' out)
-    with
-    | Some line -> line
-    | None -> ""
-  in
-  check_contains "and reports what the run measured" ~needle:"4/6" row;
+  (match lines_with ~sub:child_src_path out with
+  | [ row ] -> contains ~msg:"and reports what the run measured" ~sub:"4/6" row
+  | rows ->
+      failf "%d rows name the child's source in:\n%s" (List.length rows) out);
   (* Walk-up applies to this layout too. *)
   let sub = Filename.concat proj "lib/deep" in
   mkdir_p sub;
   let code, out, _ = coverage_cmd ~cwd:sub [] in
-  check_int "walk-up finds _windtrap from a subdirectory" ~expected:0
-    ~actual:code;
-  check_contains "and merges the same data" ~needle:"4/6" out
+  equal ~msg:"walk-up finds _windtrap from a subdirectory" int 0 code;
+  contains ~msg:"and merges the same data" ~sub:"4/6" out
 
 (* `dune exec windtrap -- coverage` under a private --build-dir: dune
    exports the context it built in as INSIDE_DUNE, and the estate is
@@ -428,52 +355,50 @@ let inside_dune_estate =
     (C.to_string private_dir);
   let context = Filename.concat proj "_build_ci/default" in
   let code, out, err = coverage_cmd ~cwd:proj ~inside_dune:context [] in
-  check_int "the command exits 0" ~expected:0 ~actual:code;
-  check "and excludes nothing" (err = "");
-  check_contains "the private build directory's estate, not the shared one's"
-    ~needle:"coverage: 33.3% (1/3 points)" out;
+  equal ~msg:"the command exits 0" int 0 code;
+  equal ~msg:"and excludes nothing" text "" err;
+  contains ~msg:"the private build directory's estate, not the shared one's"
+    ~sub:"coverage: 33.3% (1/3 points)" out;
   (* Without it, the ancestor scan finds the shared _build first. *)
   let _, out, _ = coverage_cmd ~cwd:proj [] in
-  check_contains "unset, the scan reports the shared _build"
-    ~needle:"coverage: 100.0% (3/3 points)" out;
+  contains ~msg:"unset, the scan reports the shared _build"
+    ~sub:"coverage: 100.0% (3/3 points)" out;
   (* A boolean spelling — a harness's INSIDE_DUNE=1 — names no build
      directory, and the scan runs as if it were unset. *)
   let _, out, _ = coverage_cmd ~cwd:proj ~inside_dune:"1" [] in
-  check_contains "a value that names no build directory is ignored"
-    ~needle:"coverage: 100.0% (3/3 points)" out
+  contains ~msg:"a value that names no build directory is ignored"
+    ~sub:"coverage: 100.0% (3/3 points)" out
 
 (* --min matrix *)
 
 let min_matrix =
   test "--min gates the merged percentage" @@ fun () ->
+  let proj = proj () in
   let code, out, _ = coverage_cmd ~cwd:proj [ "--min"; "50" ] in
-  check_int "--min below the total exits 0" ~expected:0 ~actual:code;
-  check_contains "--min ok prints the verdict" ~needle:"minimum 50%: ok" out;
-  check "on the outcome line, which is the last"
-    (String.ends_with
-       ~suffix:"\ncoverage: 60.0% (3/5 points), minimum 50%: ok\n" out);
-  check_absent "and the gate is no line of its own" ~needle:"\nminimum" out;
+  equal ~msg:"--min below the total exits 0" int 0 code;
+  ends_with
+    ~msg:"--min ok prints the verdict on the outcome line, which is last"
+    ~affix:"\ncoverage: 60.0% (3/5 points), minimum 50%: ok\n" out;
+  not_contains ~msg:"and the gate is no line of its own" ~sub:"\nminimum" out;
   let code, out, _ = coverage_cmd ~cwd:proj [ "--min"; "60" ] in
-  check_int "--min at the total exits 0" ~expected:0 ~actual:code;
-  check_contains "--min at the boundary is ok" ~needle:"minimum 60%: ok" out;
+  equal ~msg:"--min at the total exits 0" int 0 code;
+  contains ~msg:"--min at the boundary is ok" ~sub:"minimum 60%: ok" out;
   let code, out, _ = coverage_cmd ~cwd:proj [ "--min"; "80" ] in
-  check_int "--min above the total exits 1" ~expected:1 ~actual:code;
-  check "--min failure states the measurement and its fraction, last"
-    (String.ends_with
-       ~suffix:"\ncoverage: 60.0% (3/5 points), minimum 80%: FAILED\n" out);
+  equal ~msg:"--min above the total exits 1" int 1 code;
+  ends_with ~msg:"--min failure states the measurement and its fraction, last"
+    ~affix:"\ncoverage: 60.0% (3/5 points), minimum 80%: FAILED\n" out;
   let code, out, _ = coverage_cmd ~cwd:proj [ "-u"; "--min"; "80" ] in
-  check_int "the source view gates alike" ~expected:1 ~actual:code;
-  check "and ends on the same line, after its last file"
-    (String.ends_with
-       ~suffix:"\n\ncoverage: 60.0% (3/5 points), minimum 80%: FAILED\n" out);
+  equal ~msg:"the source view gates alike" int 1 code;
+  ends_with ~msg:"and ends on the same line, after its last file"
+    ~affix:"\n\ncoverage: 60.0% (3/5 points), minimum 80%: FAILED\n" out;
   let code, _, err = coverage_cmd ~cwd:proj [ "--min"; "eleventy" ] in
-  check_int "a malformed --min exits 2" ~expected:2 ~actual:code;
-  check_contains "a malformed --min is a usage error"
-    ~needle:"invalid value 'eleventy' for --min" err;
+  equal ~msg:"a malformed --min exits 2" int 2 code;
+  contains ~msg:"a malformed --min is a usage error"
+    ~sub:"invalid value 'eleventy' for --min" err;
   let code, _, err = coverage_cmd ~cwd:proj [ "--min"; "120" ] in
-  check_int "an out-of-range --min exits 2" ~expected:2 ~actual:code;
-  check_contains "an out-of-range --min is a usage error"
-    ~needle:"expected a percentage" err
+  equal ~msg:"an out-of-range --min exits 2" int 2 code;
+  contains ~msg:"an out-of-range --min is a usage error"
+    ~sub:"expected a percentage" err
 
 (* --json *)
 
@@ -570,38 +495,35 @@ let json_well_formed s =
 
 let json_shape =
   test "--json emits the frozen shape" @@ fun () ->
+  let proj = proj () in
   let code, out, err = coverage_cmd ~cwd:proj [ "--json" ] in
-  check_int "--json exits 0" ~expected:0 ~actual:code;
-  check "--json keeps stderr empty" (err = "");
-  check "--json is well-formed" (json_well_formed out);
+  equal ~msg:"--json exits 0" int 0 code;
+  equal ~msg:"--json keeps stderr empty" text "" err;
+  is_true ~msg:"--json is well-formed" (json_well_formed out);
   (* The design-frozen shape: summary + files with path/visited/total/
      percentage/uncovered_lines (design 1c). *)
-  check_contains "json: the summary object"
-    ~needle:
-      "\"summary\": { \"visited\": 3, \"total\": 5, \"percentage\": 60.00 }"
+  contains ~msg:"json: the summary object"
+    ~sub:"\"summary\": { \"visited\": 3, \"total\": 5, \"percentage\": 60.00 }"
     out;
-  check_contains "json: files carry paths" ~needle:"\"path\": \"lib/foo.ml\""
-    out;
-  check_contains "json: per-file counts" ~needle:"\"visited\": 2, \"total\": 3"
-    out;
-  check_contains "json: per-file percentage" ~needle:"\"percentage\": 66.67" out;
-  check_contains "json: uncovered lines" ~needle:"\"uncovered_lines\": [3]" out;
-  check_contains "json: bar.ml is present" ~needle:"\"path\": \"lib/bar.ml\""
-    out;
+  contains ~msg:"json: files carry paths" ~sub:"\"path\": \"lib/foo.ml\"" out;
+  contains ~msg:"json: per-file counts" ~sub:"\"visited\": 2, \"total\": 3" out;
+  contains ~msg:"json: per-file percentage" ~sub:"\"percentage\": 66.67" out;
+  contains ~msg:"json: uncovered lines" ~sub:"\"uncovered_lines\": [3]" out;
+  contains ~msg:"json: bar.ml is present" ~sub:"\"path\": \"lib/bar.ml\"" out;
   (* --json --min: stdout stays a pure JSON artifact. *)
   let code, out, err = coverage_cmd ~cwd:proj [ "--json"; "--min"; "80" ] in
-  check_int "--json --min still gates" ~expected:1 ~actual:code;
-  check "--json --min keeps stdout pure JSON" (json_well_formed out);
-  check_contains "--json --min moves the verdict to stderr" ~needle:"FAILED" err;
-  check_string "where it is windtrap's own line, behind the anchor"
-    ~expected:"windtrap: coverage: 60.0% (3/5 points), minimum 80%: FAILED\n"
-    ~actual:err;
+  equal ~msg:"--json --min still gates" int 1 code;
+  is_true ~msg:"--json --min keeps stdout pure JSON" (json_well_formed out);
+  equal
+    ~msg:
+      "--json --min moves the verdict to stderr, where it is windtrap's own \
+       line, behind the anchor"
+    text "windtrap: coverage: 60.0% (3/5 points), minimum 80%: FAILED\n" err;
   let code, out, err = coverage_cmd ~cwd:proj [ "--json"; "--min"; "50" ] in
-  check_int "--json --min met exits 0" ~expected:0 ~actual:code;
-  check "and keeps stdout pure JSON" (json_well_formed out);
-  check_string "with the same sentence on stderr"
-    ~expected:"windtrap: coverage: 60.0% (3/5 points), minimum 50%: ok\n"
-    ~actual:err
+  equal ~msg:"--json --min met exits 0" int 0 code;
+  is_true ~msg:"and keeps stdout pure JSON" (json_well_formed out);
+  equal ~msg:"with the same sentence on stderr" text
+    "windtrap: coverage: 60.0% (3/5 points), minimum 50%: ok\n" err
 
 (* --expect: exhaustiveness *)
 
@@ -611,6 +533,7 @@ let expectations =
      never saw (baz.ml), a preprocessed twin of one it did (foo.pp.ml),
      a lexer source whose generated module it did (bar.mll), and a
      dot-directory to skip. *)
+  let proj = proj () in
   let root = scratch "expect" in
   List.iter
     (fun name ->
@@ -629,54 +552,55 @@ let expectations =
       ("lib/.hidden/ghost.ml", "let e = 5\n");
     ];
   let code, out, err = coverage_cmd ~cwd:root [ "--expect"; "lib" ] in
-  check_int "a directory with an unseen source exits 1" ~expected:1 ~actual:code;
-  check_contains "the report still renders" ~needle:"coverage: 60.0%" out;
-  check_contains "the unseen source is named" ~needle:"lib/baz.ml" err;
-  check_contains "and the reasons it can be absent" ~needle:"not instrumented"
-    err;
-  check_contains "behind windtrap's one anchor"
-    ~needle:
+  equal ~msg:"a directory with an unseen source exits 1" int 1 code;
+  contains ~msg:"the report still renders" ~sub:"coverage: 60.0%" out;
+  contains
+    ~msg:
+      "the unseen source is named, with the reasons it can be absent, behind \
+       windtrap's one anchor"
+    ~sub:
       "windtrap: lib/baz.ml: expected source has no coverage data (not \
        instrumented, or linked into no test executable that ran)\n"
     err;
-  check_absent "a preprocessed twin is its source" ~needle:"foo.pp.ml" err;
-  check_absent "a lexer source is its generated module" ~needle:"bar.mll" err;
-  check_absent "dot-directories are skipped" ~needle:"ghost.ml" err;
+  not_contains ~msg:"a preprocessed twin is its source" ~sub:"foo.pp.ml" err;
+  not_contains ~msg:"a lexer source is its generated module" ~sub:"bar.mll" err;
+  not_contains ~msg:"dot-directories are skipped" ~sub:"ghost.ml" err;
   let code, _, err =
     coverage_cmd ~cwd:root
       [ "--expect"; "lib"; "--do-not-expect"; "lib/baz.ml" ]
   in
-  check_int "--do-not-expect exempts the unseen source" ~expected:0 ~actual:code;
-  check "and nothing is warned about" (err = "");
+  equal ~msg:"--do-not-expect exempts the unseen source" int 0 code;
+  equal ~msg:"and nothing is warned about" text "" err;
   let code, _, _ =
     coverage_cmd ~cwd:root [ "--expect=lib"; "--do-not-expect=lib/baz.ml" ]
   in
-  check_int "--expect=PATH and --do-not-expect=PATH equal the two-word forms"
-    ~expected:0 ~actual:code;
+  equal ~msg:"--expect=PATH and --do-not-expect=PATH equal the two-word forms"
+    int 0 code;
   let code, _, _ = coverage_cmd ~cwd:root [ "--expect"; "lib/foo.ml" ] in
-  check_int "a single covered file passes" ~expected:0 ~actual:code;
+  equal ~msg:"a single covered file passes" int 0 code;
   let code, _, err = coverage_cmd ~cwd:root [ "--expect"; "lib/nope" ] in
-  check_int "a nonexistent --expect path exits 1" ~expected:1 ~actual:code;
-  check_contains "a nonexistent --expect path is named" ~needle:"lib/nope" err;
+  equal ~msg:"a nonexistent --expect path exits 1" int 1 code;
+  contains ~msg:"a nonexistent --expect path is named" ~sub:"lib/nope" err;
   let code, _, err = coverage_cmd ~cwd:root [ "--expect" ] in
-  check_int "--expect without an argument exits 2" ~expected:2 ~actual:code;
-  check_contains "--expect without an argument says so" ~needle:"--expect" err;
+  equal ~msg:"--expect without an argument exits 2" int 2 code;
+  contains ~msg:"--expect without an argument says so" ~sub:"--expect" err;
   (* Under a machine format stdout stays the artifact; both gates run. *)
   let code, out, err =
     coverage_cmd ~cwd:root [ "--json"; "--expect"; "lib"; "--min"; "80" ]
   in
-  check_int "--json --expect --min exits 1" ~expected:1 ~actual:code;
-  check "--json --expect keeps stdout pure JSON" (json_well_formed out);
-  check_contains "the missing source is on stderr" ~needle:"lib/baz.ml" err;
-  check_contains "and so is the --min verdict" ~needle:"FAILED" err
+  equal ~msg:"--json --expect --min exits 1" int 1 code;
+  is_true ~msg:"--json --expect keeps stdout pure JSON" (json_well_formed out);
+  contains ~msg:"the missing source is on stderr" ~sub:"lib/baz.ml" err;
+  contains ~msg:"and so is the --min verdict" ~sub:"FAILED" err
 
 (* --lcov: the tracefile *)
 
 let lcov_output =
   test "--lcov emits a tracefile" @@ fun () ->
+  let proj = proj () in
   let code, out, err = coverage_cmd ~cwd:proj [ "--lcov" ] in
-  check_int "--lcov exits 0" ~expected:0 ~actual:code;
-  check "--lcov keeps stderr empty" (err = "");
+  equal ~msg:"--lcov exits 0" int 0 code;
+  equal ~msg:"--lcov keeps stderr empty" text "" err;
   (* Files by name, every touched line with its hits (the merged
      counts: foo [1;1;0], bar [1;0]), then the line totals. *)
   equal ~msg:"--lcov is the frozen tracefile" string
@@ -698,57 +622,63 @@ let lcov_output =
     out;
   (* --lcov --min: stdout stays a pure tracefile. *)
   let code, out, err = coverage_cmd ~cwd:proj [ "--lcov"; "--min"; "80" ] in
-  check_int "--lcov --min still gates" ~expected:1 ~actual:code;
-  check_absent "--lcov --min keeps stdout pure" ~needle:"minimum" out;
-  check_contains "--lcov --min moves the verdict to stderr" ~needle:"FAILED" err;
-  check_absent "the outcome line stays off a tracefile" ~needle:"coverage:" out;
-  check_string "the sentence is the report's, behind the anchor"
-    ~expected:"windtrap: coverage: 60.0% (3/5 points), minimum 80%: FAILED\n"
-    ~actual:err;
+  equal ~msg:"--lcov --min still gates" int 1 code;
+  not_contains ~msg:"--lcov --min keeps stdout pure" ~sub:"minimum" out;
+  not_contains ~msg:"the outcome line stays off a tracefile" ~sub:"coverage:"
+    out;
+  equal
+    ~msg:
+      "--lcov --min moves the verdict to stderr, the report's sentence behind \
+       the anchor"
+    text "windtrap: coverage: 60.0% (3/5 points), minimum 80%: FAILED\n" err;
   (* Two owners of stdout is a usage error. *)
   let code, _, err = coverage_cmd ~cwd:proj [ "--lcov"; "--json" ] in
-  check_int "--lcov --json exits 2" ~expected:2 ~actual:code;
-  check_contains "--lcov --json names the clash" ~needle:"--lcov" err;
+  equal ~msg:"--lcov --json exits 2" int 2 code;
+  contains ~msg:"--lcov --json names the clash" ~sub:"--lcov" err;
   (* A file whose source is missing is omitted and named, never painted. *)
   let orphan = scratch "lcov-orphan" in
   write_file
     (Filename.concat orphan "_build/_coverage/x.coverage")
     (C.to_string (collection "x" [ ("lib/gone.ml", bar_points, [| 1; 0 |]) ]));
   let code, out, err = coverage_cmd ~cwd:orphan [ "--lcov" ] in
-  check_int "a missing source still exits 0" ~expected:0 ~actual:code;
-  check_absent "a missing source has no record" ~needle:"SF:" out;
-  check_contains "a missing source is named on stderr" ~needle:"lib/gone.ml" err;
-  check_string "behind windtrap's one anchor"
-    ~expected:
-      "windtrap: lib/gone.ml: source not found; omitted from the lcov output\n"
-    ~actual:err
+  equal ~msg:"a missing source still exits 0" int 0 code;
+  not_contains ~msg:"a missing source has no record" ~sub:"SF:" out;
+  equal ~msg:"a missing source is named on stderr, behind windtrap's one anchor"
+    text
+    "windtrap: lib/gone.ml: source not found; omitted from the lcov output\n"
+    err
 
 (* Loud failures *)
 
 let loud_failures =
   test "failures are loud: no data, corrupt data, usage errors" @@ fun () ->
+  let proj = proj () in
   (* Nothing to report. *)
   let empty = scratch "empty-root" in
   mkdir_p empty;
   let code, _, err = coverage_cmd ~cwd:empty [] in
-  check_int "no .coverage files exit 1" ~expected:1 ~actual:code;
-  check_contains "no files: the hint names the backend, not a build tool"
-    ~needle:"ppx_windtrap.coverage" err;
-  check_absent "and spells no dune command" ~needle:"dune " err;
+  equal ~msg:"no .coverage files exit 1" int 1 code;
+  contains ~msg:"no files: the hint names the backend, not a build tool"
+    ~sub:"ppx_windtrap.coverage" err;
+  not_contains ~msg:"and spells no dune command" ~sub:"dune " err;
   (* Corrupt and foreign files are rejected loudly (guarantee 11). *)
-  let corrupt = scratch "corrupt/_build/_coverage/bad.coverage" in
-  write_file corrupt "not a coverage file\n";
-  let code, _, err = coverage_cmd ~cwd:(scratch "corrupt") [] in
-  check_int "a corrupt file exits 1" ~expected:1 ~actual:code;
-  check_contains "a corrupt file is named" ~needle:"bad.coverage" err;
-  let v1 = scratch "v1/_build/_coverage/old.coverage" in
-  write_file v1 "WINDTRAP-COVERAGE-1\nsome v1 payload\n";
-  let code, _, err = coverage_cmd ~cwd:(scratch "v1") [] in
-  check_int "a v1-format file exits 1" ~expected:1 ~actual:code;
-  check_contains "a v1-format file is named" ~needle:"old.coverage" err;
-  check_contains
-    "a foreign format instructs deletion (re-running cannot remove it)"
-    ~needle:"delete" err;
+  let corrupt = scratch "corrupt" in
+  write_file
+    (Filename.concat corrupt "_build/_coverage/bad.coverage")
+    "not a coverage file\n";
+  let code, _, err = coverage_cmd ~cwd:corrupt [] in
+  equal ~msg:"a corrupt file exits 1" int 1 code;
+  contains ~msg:"a corrupt file is named" ~sub:"bad.coverage" err;
+  let v1 = scratch "v1" in
+  write_file
+    (Filename.concat v1 "_build/_coverage/old.coverage")
+    "WINDTRAP-COVERAGE-1\nsome v1 payload\n";
+  let code, _, err = coverage_cmd ~cwd:v1 [] in
+  equal ~msg:"a v1-format file exits 1" int 1 code;
+  contains ~msg:"a v1-format file is named" ~sub:"old.coverage" err;
+  contains
+    ~msg:"a foreign format instructs deletion (re-running cannot remove it)"
+    ~sub:"delete" err;
   (* Mismatched point tables across executables. *)
   let mismatch = scratch "mismatch" in
   let one =
@@ -763,52 +693,45 @@ let loud_failures =
     (Filename.concat mismatch "_build/_coverage/two.coverage")
     (C.to_string two);
   let code, _, err = coverage_cmd ~cwd:mismatch [] in
-  check_int "mismatched point tables exit 1" ~expected:1 ~actual:code;
-  check_contains "mismatched point tables name the file" ~needle:"lib/foo.ml"
-    err;
-  check_contains "the mismatch hint is a full re-run, not deletion first"
-    ~needle:"from one build" err;
+  equal ~msg:"mismatched point tables exit 1" int 1 code;
+  contains ~msg:"mismatched point tables name the file" ~sub:"lib/foo.ml" err;
+  contains ~msg:"the mismatch hint is a full re-run, not deletion first"
+    ~sub:"from one build" err;
   (* Usage errors. *)
   let code, _, err = coverage_cmd ~cwd:proj [ "--frobnicate" ] in
-  check_int "an unknown option exits 2" ~expected:2 ~actual:code;
-  check_contains "an unknown option is named"
-    ~needle:"unknown option '--frobnicate'" err;
+  equal ~msg:"an unknown option exits 2" int 2 code;
+  equal ~msg:"a usage error is the anchored sentence, then the usage line" text
+    "windtrap: unknown option '--frobnicate'\n\
+     usage: windtrap coverage [OPTIONS] [PATH...]\n"
+    err;
   let code, out, _ = coverage_cmd ~cwd:proj [ "--help" ] in
-  check_int "coverage --help exits 0" ~expected:0 ~actual:code;
-  check_contains "coverage --help documents --min, its sentence under it"
-    ~needle:"  --min=PCT\n      Exit 1 when total coverage is below PCT.\n" out;
-  check_contains "a description wraps and is never cut"
-    ~needle:
+  equal ~msg:"coverage --help exits 0" int 0 code;
+  contains ~msg:"coverage --help documents --min, its sentence under it"
+    ~sub:"  --min=PCT\n      Exit 1 when total coverage is below PCT.\n" out;
+  contains ~msg:"a description wraps and is never cut"
+    ~sub:
       "  --expect=PATH\n\
       \      Exit 1 unless every .ml/.mll/.mly under PATH (or PATH itself) has\n\
       \      coverage data; repeatable.\n"
     out;
-  check_contains "coverage --help opens on the name line, then the usage line"
-    ~needle:
+  contains ~msg:"coverage --help opens on the name line, then the usage line"
+    ~sub:
       "windtrap coverage - merge .coverage files and report\n\n\
        usage: windtrap coverage [OPTIONS] [PATH...]\n"
     out;
-  check_contains "and names the one variable that has no flag"
-    ~needle:
+  contains ~msg:"and names the one variable that has no flag"
+    ~sub:
       "ENVIRONMENT (no flag):\n\
       \  WINDTRAP_COLOR\n\
       \      Color output: always, never or auto.\n"
     out;
   List.iter
     (fun line ->
-      check
-        (Printf.sprintf "coverage --help fits 80 columns: %s" line)
-        (String.length line <= 80))
+      at_most
+        ~msg:(Printf.sprintf "coverage --help fits 80 columns: %s" line)
+        int ~than:80 (String.length line))
     (String.split_on_char '\n' out);
-  check_string "a usage error is the anchored sentence, then the usage line"
-    ~expected:
-      "windtrap: unknown option '--frobnicate'\n\
-       usage: windtrap coverage [OPTIONS] [PATH...]\n"
-    ~actual:err;
   (* Top-level dispatch. *)
-  let code, _, err = capture windtrap_exe [] in
-  check_int "no command exits 2" ~expected:2 ~actual:code;
-  check_contains "no command prints usage" ~needle:"usage: windtrap" err;
   let commands =
     "usage: windtrap <command> [OPTIONS]\n\n\
      COMMANDS:\n\
@@ -821,43 +744,48 @@ let loud_failures =
     \      Print this help and exit.\n\n\
      See `windtrap <command> --help` for a subcommand's options.\n"
   in
-  check_string "no command says so, then the usage line and the commands"
-    ~expected:("windtrap: no command given\n" ^ commands)
-    ~actual:err;
+  let code, _, err = capture windtrap_exe [] in
+  equal ~msg:"no command exits 2" int 2 code;
+  equal ~msg:"no command says so, then the usage line and the commands" text
+    ("windtrap: no command given\n" ^ commands)
+    err;
   let code, _, err = capture windtrap_exe [ "frobnicate" ] in
-  check_int "an unknown command exits 2" ~expected:2 ~actual:code;
-  check_string
-    "an unknown command is named, then the usage line, the commands there are \
-     and the pointer to their help"
-    ~expected:("windtrap: unknown command 'frobnicate'\n" ^ commands)
-    ~actual:err;
+  equal ~msg:"an unknown command exits 2" int 2 code;
+  equal
+    ~msg:
+      "an unknown command is named, then the usage line, the commands there \
+       are and the pointer to their help"
+    text
+    ("windtrap: unknown command 'frobnicate'\n" ^ commands)
+    err;
   let code, out, _ = capture windtrap_exe [ "--help" ] in
-  check_int "windtrap --help exits 0" ~expected:0 ~actual:code;
-  check_contains "windtrap --help lists the subcommand" ~needle:"coverage" out;
-  check_contains "windtrap --help opens on the name line, then the usage line"
-    ~needle:
+  equal ~msg:"windtrap --help exits 0" int 0 code;
+  contains ~msg:"windtrap --help opens on the name line, then the usage line"
+    ~sub:
       "windtrap - reports merged from instrumented test runs\n\n\
        usage: windtrap <command> [OPTIONS]\n"
     out;
+  contains ~msg:"windtrap --help lists the subcommand" ~sub:"  coverage\n" out;
   List.iter
     (fun line ->
-      check
-        (Printf.sprintf "windtrap --help fits 80 columns: %s" line)
-        (String.length line <= 80))
+      at_most
+        ~msg:(Printf.sprintf "windtrap --help fits 80 columns: %s" line)
+        int ~than:80 (String.length line))
     (String.split_on_char '\n' out)
 
 (* --min boundaries *)
 
 let min_boundaries =
   test "--min boundaries and spellings" @@ fun () ->
+  let proj = proj () in
   (* The 0 and 100 rails. *)
   let code, out, _ = coverage_cmd ~cwd:proj [ "--min"; "0" ] in
-  check_int "--min 0 always passes" ~expected:0 ~actual:code;
-  check_contains "--min 0 prints its verdict" ~needle:"minimum 0%: ok" out;
+  equal ~msg:"--min 0 always passes" int 0 code;
+  contains ~msg:"--min 0 prints its verdict" ~sub:"minimum 0%: ok" out;
   let code, out, _ = coverage_cmd ~cwd:proj [ "--min"; "100" ] in
-  check_int "--min 100 fails below full coverage" ~expected:1 ~actual:code;
-  check_contains "--min 100 states the shortfall"
-    ~needle:"coverage: 60.0% (3/5 points), minimum 100%: FAILED\n" out;
+  equal ~msg:"--min 100 fails below full coverage" int 1 code;
+  contains ~msg:"--min 100 states the shortfall"
+    ~sub:"coverage: 60.0% (3/5 points), minimum 100%: FAILED\n" out;
   let full = scratch "fullproj" in
   let all =
     collection "full"
@@ -870,17 +798,16 @@ let min_boundaries =
     (Filename.concat full "_build/_coverage/full.coverage")
     (C.to_string all);
   let code, out, _ = coverage_cmd ~cwd:full [ "--min"; "100" ] in
-  check_int "--min 100 passes at exactly 100%" ~expected:0 ~actual:code;
-  check_contains "full coverage meets the 100% gate" ~needle:"minimum 100%: ok"
-    out;
+  equal ~msg:"--min 100 passes at exactly 100%" int 0 code;
+  contains ~msg:"full coverage meets the 100% gate" ~sub:"minimum 100%: ok" out;
   (* The --min=PCT spelling, including the empty value. *)
   let code, out, _ = coverage_cmd ~cwd:proj [ "--min=50" ] in
-  check_int "--min=PCT equals the two-word form" ~expected:0 ~actual:code;
-  check_contains "--min=PCT prints its verdict" ~needle:"minimum 50%: ok" out;
+  equal ~msg:"--min=PCT equals the two-word form" int 0 code;
+  contains ~msg:"--min=PCT prints its verdict" ~sub:"minimum 50%: ok" out;
   let code, _, err = coverage_cmd ~cwd:proj [ "--min=" ] in
-  check_int "an empty --min= exits 2" ~expected:2 ~actual:code;
-  check_contains "an empty --min= is an invalid value, not an unknown option"
-    ~needle:"invalid value '' for --min" err;
+  equal ~msg:"an empty --min= exits 2" int 2 code;
+  contains ~msg:"an empty --min= is an invalid value, not an unknown option"
+    ~sub:"invalid value '' for --min" err;
   (* The gate compares raw percentages, not their renderings: 2/3 rounds
      to the 66.7 it is gated against and still falls short. The verdict
      makes no comparative claim, so the fraction is what says why. *)
@@ -892,39 +819,43 @@ let min_boundaries =
     (Filename.concat thirds "_build/_coverage/t.coverage")
     (C.to_string two_of_three);
   let code, out, _ = coverage_cmd ~cwd:thirds [ "--min"; "66.7" ] in
-  check_int "the gate compares raw percentages" ~expected:1 ~actual:code;
-  check_contains "a display-equal shortfall still fails, with its fraction"
-    ~needle:"coverage: 66.7% (2/3 points), minimum 66.7%: FAILED\n" out
+  equal ~msg:"the gate compares raw percentages" int 1 code;
+  contains ~msg:"a display-equal shortfall still fails, with its fraction"
+    ~sub:"coverage: 66.7% (2/3 points), minimum 66.7%: FAILED\n" out
 
 (* Discovery and merge robustness *)
 
 let discovery_robustness =
   test "discovery and merge robustness" @@ fun () ->
+  let proj = proj () in
   (* An existing but empty _build/_coverage is "no files", loudly. *)
   let bare = scratch "bare" in
   mkdir_p (Filename.concat bare "_build/_coverage");
   let code, _, err = coverage_cmd ~cwd:bare [] in
-  check_int "an empty _build/_coverage exits 1" ~expected:1 ~actual:code;
-  check_contains "an empty _build/_coverage prints the no-files hint"
-    ~needle:"no .coverage files found" err;
-  check_string "behind windtrap's one anchor, the hint on its own line"
-    ~expected:
-      "windtrap: no .coverage files found\n\
-       Instrument the library under test with ppx_windtrap.coverage and run \
-       its tests first; every instrumented test executable writes its dump at \
-       exit, under the build directory's _coverage or under _windtrap/coverage.\n"
-    ~actual:err;
+  equal ~msg:"an empty _build/_coverage exits 1" int 1 code;
+  equal
+    ~msg:
+      "an empty _build/_coverage prints the no-files hint, behind windtrap's \
+       one anchor, the hint on its own line"
+    text
+    "windtrap: no .coverage files found\n\
+     Instrument the library under test with ppx_windtrap.coverage and run its \
+     tests first; every instrumented test executable writes its dump at exit, \
+     under the build directory's _coverage or under _windtrap/coverage.\n"
+    err;
   (* A truncated file is corrupt and named, never partially merged. *)
   let serialized =
     C.to_string
       (collection "trunc" [ ("lib/foo.ml", foo_points, [| 1; 0; 0 |]) ])
   in
-  let cut = scratch "trunc/_build/_coverage/cut.coverage" in
-  write_file cut (String.sub serialized 0 (String.length serialized - 4));
-  let code, _, err = coverage_cmd ~cwd:(scratch "trunc") [] in
-  check_int "a truncated file exits 1" ~expected:1 ~actual:code;
-  check_contains "a truncated file is named" ~needle:"cut.coverage" err;
-  check_contains "a truncated file is called corrupt" ~needle:"corrupt" err;
+  let trunc = scratch "trunc" in
+  write_file
+    (Filename.concat trunc "_build/_coverage/cut.coverage")
+    (String.sub serialized 0 (String.length serialized - 4));
+  let code, _, err = coverage_cmd ~cwd:trunc [] in
+  equal ~msg:"a truncated file exits 1" int 1 code;
+  contains ~msg:"a truncated file is named" ~sub:"cut.coverage" err;
+  contains ~msg:"a truncated file is called corrupt" ~sub:"corrupt" err;
   (* A dump recorded as written by the reporting binary itself gets no
      special treatment: it is judged by its identity like any other —
      here the recorded executable does not exist under this root, so
@@ -940,32 +871,31 @@ let discovery_robustness =
          }
        (collection "self" [ ("lib/ghost.ml", foo_points, [| 1; 1; 1 |]) ]));
   let code, out, err = coverage_cmd ~cwd:selfish [] in
-  check_int "a directory holding only the reporter's own dump exits 1"
-    ~expected:1 ~actual:code;
-  check_contains "the dump is excluded like any other orphan"
-    ~needle:"self.coverage" err;
-  check_contains "and the run says every file found was excluded, and why"
-    ~needle:"windtrap: found 1 .coverage file and every one is orphaned\n" err;
-  check_absent "and nothing is merged" ~needle:"ghost.ml" out;
+  equal ~msg:"a directory holding only the reporter's own dump exits 1" int 1
+    code;
+  contains ~msg:"the dump is excluded like any other orphan"
+    ~sub:"self.coverage" err;
+  contains ~msg:"and the run says every file found was excluded, and why"
+    ~sub:"windtrap: found 1 .coverage file and every one is orphaned\n" err;
+  not_contains ~msg:"and nothing is merged" ~sub:"ghost.ml" out;
   (* An explicit .coverage FILE argument is honored as-is. *)
   let code, out, _ =
-    coverage_cmd ~cwd:scratch_dir
+    coverage_cmd ~cwd:(temp_dir ())
       [ Filename.concat proj "_build/_coverage/windtrap-a.coverage" ]
   in
-  check_int "an explicit file argument exits 0" ~expected:0 ~actual:code;
-  check_contains "an explicit file argument reports its data alone"
-    ~needle:"coverage: 33.3% (1/3 points)" out;
+  equal ~msg:"an explicit file argument exits 0" int 0 code;
+  contains ~msg:"an explicit file argument reports its data alone"
+    ~sub:"coverage: 33.3% (1/3 points)" out;
   (* A rule-action cwd — inside _build — resolves the root by the
      topmost-_build rule (the runtime's), never the ancestor scan. *)
   mkdir_p (Filename.concat proj "_build/default/examples");
   let code, out, _ =
     coverage_cmd ~cwd:(Filename.concat proj "_build/default/examples") []
   in
-  check_int "a cwd inside _build exits 0" ~expected:0 ~actual:code;
-  check_contains "a cwd inside _build resolves the workspace root"
-    ~needle:"coverage: 60.0% (3/5 points)" out;
-  check_contains "sources resolve from that root too" ~needle:"lib/foo.ml   3\n"
-    out;
+  equal ~msg:"a cwd inside _build exits 0" int 0 code;
+  contains ~msg:"a cwd inside _build resolves the workspace root"
+    ~sub:"coverage: 60.0% (3/5 points)" out;
+  contains ~msg:"sources resolve from that root too" ~sub:"lib/foo.ml   3\n" out;
   (* E2's trap: v1 garbage planted at _build/.sandbox/_build/_coverage
      must not capture discovery from a sandboxed action's cwd — the
      topmost _build wins. *)
@@ -976,53 +906,55 @@ let discovery_robustness =
   let code, out, err =
     coverage_cmd ~cwd:(Filename.concat proj "_build/.sandbox/0abc/default") []
   in
-  check_int "a sandboxed cwd escapes planted garbage" ~expected:0 ~actual:code;
-  check_contains "a sandboxed cwd reports the workspace data"
-    ~needle:"coverage: 60.0% (3/5 points)" out;
-  check_absent "the planted v1 file is never read" ~needle:"junk.coverage" err
+  equal ~msg:"a sandboxed cwd escapes planted garbage" int 0 code;
+  contains ~msg:"a sandboxed cwd reports the workspace data"
+    ~sub:"coverage: 60.0% (3/5 points)" out;
+  not_contains ~msg:"the planted v1 file is never read" ~sub:"junk.coverage" err
 
 (* Explicit PATH arguments are a contract (qa-jul29 F-3) *)
 
 let explicit_path_contract =
   test "explicit PATH arguments are loud when invalid" @@ fun () ->
+  let proj = proj () in
+  let elsewhere = temp_dir () in
   (* A nonexistent explicit path is an error naming the path and the
      reason — never a silent drop into the no-data report, whose
      instrument-your-library remedy would be wrong here. *)
   let absent = scratch "no-such-dir/absent.coverage" in
-  let code, _, err = coverage_cmd ~cwd:scratch_dir [ absent ] in
-  check_int "a missing explicit path exits 1" ~expected:1 ~actual:code;
-  check_contains "a missing explicit path is named" ~needle:absent err;
-  check_contains "a missing explicit path states the reason"
-    ~needle:"no such file or directory" err;
-  check_absent "a missing explicit path never blames instrumentation"
-    ~needle:"Instrument the library" err;
+  let code, _, err = coverage_cmd ~cwd:elsewhere [ absent ] in
+  equal ~msg:"a missing explicit path exits 1" int 1 code;
+  contains ~msg:"a missing explicit path is named" ~sub:absent err;
+  contains ~msg:"a missing explicit path states the reason"
+    ~sub:"no such file or directory" err;
+  not_contains ~msg:"a missing explicit path never blames instrumentation"
+    ~sub:"Instrument the library" err;
   (* An existing file without the .coverage suffix — a renamed dump —
      is equally loud, whatever its content. *)
   let renamed = scratch "renamed.cov" in
   write_file renamed
     (C.to_string
        (collection "renamed" [ ("lib/foo.ml", foo_points, [| 1; 0; 0 |]) ]));
-  let code, _, err = coverage_cmd ~cwd:scratch_dir [ renamed ] in
-  check_int "a wrong-suffix explicit file exits 1" ~expected:1 ~actual:code;
-  check_contains "a wrong-suffix explicit file is named" ~needle:renamed err;
-  check_contains "a wrong-suffix explicit file states the reason"
-    ~needle:"not a .coverage file" err;
-  check_absent "a wrong-suffix explicit file never blames instrumentation"
-    ~needle:"Instrument the library" err;
+  let code, _, err = coverage_cmd ~cwd:elsewhere [ renamed ] in
+  equal ~msg:"a wrong-suffix explicit file exits 1" int 1 code;
+  contains ~msg:"a wrong-suffix explicit file is named" ~sub:renamed err;
+  contains ~msg:"a wrong-suffix explicit file states the reason"
+    ~sub:"not a .coverage file" err;
+  not_contains ~msg:"a wrong-suffix explicit file never blames instrumentation"
+    ~sub:"Instrument the library" err;
   (* An invalid path beside a valid one still fails the invocation:
      explicit arguments never narrow silently. *)
   let valid = Filename.concat proj "_build/_coverage/windtrap-a.coverage" in
-  let code, _, err = coverage_cmd ~cwd:scratch_dir [ valid; absent ] in
-  check_int "one bad path fails the whole invocation" ~expected:1 ~actual:code;
-  check_contains "the bad path is the one named" ~needle:absent err;
+  let code, _, err = coverage_cmd ~cwd:elsewhere [ valid; absent ] in
+  equal ~msg:"one bad path fails the whole invocation" int 1 code;
+  contains ~msg:"the bad path is the one named" ~sub:absent err;
   (* Directory arguments keep the scan's tolerance: an existing
      directory holding no dumps falls through to the no-data report. *)
   let empty_dir = scratch "explicit-empty" in
   mkdir_p empty_dir;
-  let code, _, err = coverage_cmd ~cwd:scratch_dir [ empty_dir ] in
-  check_int "an empty explicit directory exits 1" ~expected:1 ~actual:code;
-  check_contains "an empty explicit directory is a no-data report"
-    ~needle:"no .coverage files found" err
+  let code, _, err = coverage_cmd ~cwd:elsewhere [ empty_dir ] in
+  equal ~msg:"an empty explicit directory exits 1" int 1 code;
+  contains ~msg:"an empty explicit directory is a no-data report"
+    ~sub:"no .coverage files found" err
 
 (* The staleness pass: orphaned and outdated dumps *)
 
@@ -1067,10 +999,10 @@ let staleness_pass =
      inclusion. *)
   let root = stale_root "stale-fresh" in
   let code, out, err = coverage_cmd ~cwd:root [] in
-  check_int "a fresh identity-carrying dump exits 0" ~expected:0 ~actual:code;
-  check "a fresh identity-carrying dump warns about nothing" (err = "");
-  check_contains "a fresh identity-carrying dump merges"
-    ~needle:"coverage: 100.0% (3/3 points)" out;
+  equal ~msg:"a fresh identity-carrying dump exits 0" int 0 code;
+  equal ~msg:"a fresh identity-carrying dump warns about nothing" text "" err;
+  contains ~msg:"a fresh identity-carrying dump merges"
+    ~sub:"coverage: 100.0% (3/3 points)" out;
   (* Orphan: a second dump whose executable no longer exists. *)
   let root = stale_root "stale-orphan" in
   write_dump root "gone.coverage"
@@ -1081,42 +1013,41 @@ let staleness_pass =
       }
     [ ("lib/ghost.ml", ghost_points, [| 0 |]) ];
   let code, out, err = coverage_cmd ~cwd:root [] in
-  check_int "an orphaned dump still reports the live data" ~expected:0
-    ~actual:code;
-  check_contains "the orphan is excluded from the merge"
-    ~needle:"coverage: 100.0% (3/3 points)" out;
-  check_absent "the orphan's files stay out of the table" ~needle:"ghost.ml" out;
-  check_contains "the orphan warning names the dump" ~needle:"gone.coverage" err;
-  check_contains "the orphan warning names the missing executable"
-    ~needle:"default/test/gone.exe" err;
-  check_contains "the orphan warning says what it did" ~needle:"excluding it"
-    err;
+  equal ~msg:"an orphaned dump still reports the live data" int 0 code;
+  contains ~msg:"the orphan is excluded from the merge"
+    ~sub:"coverage: 100.0% (3/3 points)" out;
+  not_contains ~msg:"the orphan's files stay out of the table" ~sub:"ghost.ml"
+    out;
+  contains ~msg:"the orphan warning names the dump" ~sub:"gone.coverage" err;
+  contains ~msg:"the orphan warning names the missing executable"
+    ~sub:"default/test/gone.exe" err;
+  contains ~msg:"the orphan warning says what it did" ~sub:"excluding it" err;
   (* Stale: the executable was rebuilt since the dump — its content no
      longer matches the recorded digest (its mtime is irrelevant). *)
   let root = stale_root "stale-rebuilt" in
   ignore (plant_exe root "default/test/a.exe" "an uninstrumented rebuild");
   let code, _, err = coverage_cmd ~cwd:root [] in
-  check_int "a lone stale dump exits 1 (nothing left to report)" ~expected:1
-    ~actual:code;
-  check_contains "the stale warning names the dump" ~needle:"a.coverage" err;
-  check_contains "the stale warning says the executable was rebuilt"
-    ~needle:"rebuilt since" err;
-  check_contains "the remedy is an instrumented re-run"
-    ~needle:"re-run the suite instrumented" err;
-  check_contains "the remedy names the cached-run cause" ~needle:"cached" err;
-  check_contains "the remedy is one line behind windtrap's one anchor"
-    ~needle:
+  equal ~msg:"a lone stale dump exits 1 (nothing left to report)" int 1 code;
+  contains ~msg:"the stale warning names the dump" ~sub:"a.coverage" err;
+  contains ~msg:"the stale warning says the executable was rebuilt"
+    ~sub:"rebuilt since" err;
+  contains
+    ~msg:
+      "the remedy is an instrumented re-run that names the cached-run cause, \
+       one line behind windtrap's one anchor"
+    ~sub:
       "windtrap: re-run the suite instrumented (forcing the runs your build \
        tool cached), then merge again; delete the files whose executable no \
        longer exists\n"
     err;
-  check_absent "the command's own prefix is gone" ~needle:"windtrap coverage:"
+  not_contains ~msg:"the command's own prefix is gone" ~sub:"windtrap coverage:"
     err;
-  check_absent "and spells no dune command" ~needle:"dune " err;
-  check_contains
-    "excluding everything is loud: the count, what the files are, where they \
-     came from and the usual cause"
-    ~needle:
+  not_contains ~msg:"and spells no dune command" ~sub:"dune " err;
+  contains
+    ~msg:
+      "excluding everything is loud: the count, what the files are, where they \
+       came from and the usual cause"
+    ~sub:
       "windtrap: found 1 .coverage file and every one is stale\n\
       \  They were written by executables that no longer exist or have been \
        rebuilt since.\n\
@@ -1150,28 +1081,25 @@ let staleness_pass =
       }
     [ ("lib/ghost.ml", ghost_points, [| 1 |]) ];
   let code, _, err = coverage_cmd ~cwd:root [] in
-  check_int "five excluded dumps and nothing else exits 1" ~expected:1
-    ~actual:code;
-  let lines = String.split_on_char '\n' err in
-  check_int "at most three files are named" ~expected:3
-    ~actual:(List.length (List.filter (contains "; excluding it") lines));
-  check_contains "the first three, in path order" ~needle:"c.coverage" err;
-  check_absent "the fourth is counted, not named" ~needle:"d.coverage" err;
-  check_contains "the rest are one line, then the summary with its split"
-    ~needle:
+  equal ~msg:"five excluded dumps and nothing else exits 1" int 1 code;
+  equal ~msg:"at most three files are named" int 3
+    (List.length (lines_with ~sub:"; excluding it" err));
+  contains ~msg:"the first three, in path order" ~sub:"c.coverage" err;
+  not_contains ~msg:"the fourth is counted, not named" ~sub:"d.coverage" err;
+  contains ~msg:"the rest are one line, then the summary with its split"
+    ~sub:
       "excluding it\n\
        windtrap: ... and 2 more like that\n\
        windtrap: found 5 .coverage files and every one is stale or orphaned (1 \
        orphaned)\n"
     err;
-  check_int "the remedy still prints once" ~expected:1
-    ~actual:(List.length (List.filter (contains "then merge again") lines));
-  check_absent "three or fewer excluded files draw no count line"
-    ~needle:"more like that"
-    (let root = stale_root "stale-few" in
-     ignore (plant_exe root "default/test/a.exe" "an uninstrumented rebuild");
-     let _, _, err = coverage_cmd ~cwd:root [] in
-     err);
+  equal ~msg:"the remedy still prints once" int 1
+    (List.length (lines_with ~sub:"then merge again" err));
+  (let root = stale_root "stale-few" in
+   ignore (plant_exe root "default/test/a.exe" "an uninstrumented rebuild");
+   let _, _, err = coverage_cmd ~cwd:root [] in
+   not_contains ~msg:"three or fewer excluded files draw no count line"
+     ~sub:"more like that" err);
   (* Stale beside fresh — the revert trap, measured against the blessed
      alias: reverting sources to an already-tested state makes that
      test action a dune cache hit, so its dump is never rewritten and
@@ -1185,21 +1113,16 @@ let staleness_pass =
     [ ("lib/ghost.ml", ghost_points, [| 1 |]) ];
   ignore (plant_exe root "default/test/b.exe" "the reverted build");
   let code, out, err = coverage_cmd ~cwd:root [] in
-  check_int "a stale dump beside a fresh one exits 0" ~expected:0 ~actual:code;
-  check_contains "the fresh data still gates alone"
-    ~needle:"coverage: 100.0% (3/3 points)" out;
-  check_absent "the stale dump's files stay out of the table" ~needle:"ghost.ml"
-    out;
-  check_contains "the partial-exclusion warning names the dump"
-    ~needle:"b.coverage" err;
-  check_contains "the partial-exclusion remedy is the same sentence"
-    ~needle:"then merge again" err;
-  check_int "said once" ~expected:1
-    ~actual:
-      (List.length
-         (List.filter
-            (fun line -> contains "then merge again" line)
-            (String.split_on_char '\n' err)));
+  equal ~msg:"a stale dump beside a fresh one exits 0" int 0 code;
+  contains ~msg:"the fresh data still gates alone"
+    ~sub:"coverage: 100.0% (3/3 points)" out;
+  not_contains ~msg:"the stale dump's files stay out of the table"
+    ~sub:"ghost.ml" out;
+  contains ~msg:"the partial-exclusion warning names the dump" ~sub:"b.coverage"
+    err;
+  equal ~msg:"the partial-exclusion remedy is the same sentence, said once" int
+    1
+    (List.length (lines_with ~sub:"then merge again" err));
   (* An absolute identity resolves without a _build root. *)
   let root = stale_root "stale-abs" in
   write_dump root "abs.coverage"
@@ -1210,15 +1133,15 @@ let staleness_pass =
       }
     [ ("lib/ghost.ml", ghost_points, [| 1 |]) ];
   let _, out, err = coverage_cmd ~cwd:root [] in
-  check_contains "a missing absolute identity is an orphan"
-    ~needle:"no-such-exe" err;
-  check_absent "the absolute orphan is excluded" ~needle:"ghost.ml" out;
+  contains ~msg:"a missing absolute identity is an orphan" ~sub:"no-such-exe"
+    err;
+  not_contains ~msg:"the absolute orphan is excluded" ~sub:"ghost.ml" out;
   (* Usage rail: the flag is gone, and an unknown flag is a usage
      error, never a silently ignored argument. *)
   let code, _, err = coverage_cmd ~cwd:root [ "--stale=include" ] in
-  check_int "--stale is no longer an option" ~expected:2 ~actual:code;
-  check_contains "--stale is reported as unknown"
-    ~needle:"unknown option '--stale=include'" err
+  equal ~msg:"--stale is no longer an option" int 2 code;
+  contains ~msg:"--stale is reported as unknown"
+    ~sub:"unknown option '--stale=include'" err
 
 (* Raise attribution end to end (the frozen expression-grade scope) *)
 
@@ -1231,35 +1154,34 @@ let raise_child_exe = Filename.concat exe_dir "raise_child.exe"
 
 let raise_attribution =
   test "raise attribution end to end" @@ fun () ->
-  incr dump_counter;
-  let dump = scratch (Printf.sprintf "dump-%d.coverage" !dump_counter) in
+  let dump = scratch "raise.coverage" in
   let fixture = "test/instr/coverage_cmd/covcli_fixture.ml" in
   let code, out, _ =
     capture
-      ~env:[ "WINDTRAP_COVERAGE_FILE=" ^ dump ]
+      ~env:[ ("WINDTRAP_COVERAGE_FILE", dump) ]
       raise_child_exe [ "--color"; "never" ]
   in
-  check_int "the raise child exits 0" ~expected:0 ~actual:code;
-  check_absent "the run prints no number of its own" ~needle:"coverage:" out;
+  equal ~msg:"the raise child exits 0" int 0 code;
+  not_contains ~msg:"the run prints no number of its own" ~sub:"coverage:" out;
   match dump_of ~only:fixture dump with
-  | None -> check "the raise child's dump loads" false
+  | None -> fail "the raise child's dump does not load"
   | Some (t, _) -> (
       let s = C.summary t in
-      check "exactly one point - the out-edge - is unvisited"
-        (s.C.total = 3 && s.C.visited = 2);
+      equal ~msg:"exactly one point - the out-edge - is unvisited"
+        (pair int int) (2, 3) (s.C.visited, s.C.total);
       match C.file_reports t with
       | [ r ] ->
-          check_int "one uncovered extent: the raising call" ~expected:1
-            ~actual:(List.length r.C.uncovered_extents);
+          equal ~msg:"one uncovered extent: the raising call" int 1
+            (List.length r.C.uncovered_extents);
           (* The fixture source is a declared test dep, copied beside the
              executable — resolved absolutely so a by-hand run from
              anywhere in the checkout reads it too. *)
           let source =
             read_file (Filename.concat exe_dir "covcli_fixture.ml")
           in
-          check "the fixture source is a test dep" (source <> "");
-          check "the uncovered extent is the call line (line 7)"
-            (C.lines_of_extents ~source r.C.uncovered_extents = [ 7 ]);
+          equal ~msg:"the uncovered extent is the call line (line 7)" (list int)
+            [ 7 ]
+            (C.lines_of_extents ~source r.C.uncovered_extents);
           (* Replant source and dump in a scratch project: the reporting
              command must attribute the unreached out-edge to the call
              line. *)
@@ -1269,20 +1191,16 @@ let raise_attribution =
             (Filename.concat root "_build/_coverage/raise.coverage")
             (C.to_string t);
           let code, out, _ = coverage_cmd ~cwd:root [] in
-          check_int "the raise report exits 0" ~expected:0 ~actual:code;
-          check_contains "the report totals the unreached out-edge"
-            ~needle:"coverage: 66.7% (2/3 points)" out;
-          check_contains "the unreached out-edge is an uncovered line"
-            ~needle:"covcli_fixture.ml   7\n" out;
+          equal ~msg:"the raise report exits 0" int 0 code;
+          contains ~msg:"the report totals the unreached out-edge"
+            ~sub:"coverage: 66.7% (2/3 points)" out;
+          contains ~msg:"the unreached out-edge is an uncovered line"
+            ~sub:"covcli_fixture.ml   7\n" out;
           let code, out, _ = coverage_cmd ~cwd:root [ "--show-uncovered" ] in
-          check_int "the raise excerpt exits 0" ~expected:0 ~actual:code;
-          check_contains "the excerpt paints the raising call" ~needle:"boom ()"
-            out
+          equal ~msg:"the raise excerpt exits 0" int 0 code;
+          contains ~msg:"the excerpt paints the raising call" ~sub:"boom ()" out
       | reports ->
-          check
-            (Printf.sprintf "exactly one instrumented file, got %d"
-               (List.length reports))
-            false)
+          failf "exactly one instrumented file, got %d" (List.length reports))
 
 (* Containment rails: JUnit and uninstrumented modes *)
 
@@ -1292,25 +1210,25 @@ let junit_rails =
      instrumented run. *)
   let junit = scratch "junit.xml" in
   let code, out, _, _ =
-    child ~env:[ "CHILD_VISITED=9" ]
+    child
+      ~env:[ ("CHILD_VISITED", "9") ]
       ~args:[ "--junit"; junit; "--color"; "never" ]
       ()
   in
-  check_int "an instrumented --junit run exits 0" ~expected:0 ~actual:code;
-  check_absent "the run prints no coverage line beside --junit"
-    ~needle:"coverage:" out;
+  equal ~msg:"an instrumented --junit run exits 0" int 0 code;
+  not_contains ~msg:"the run prints no coverage line beside --junit"
+    ~sub:"coverage:" out;
   let xml = read_file junit in
-  check "the JUnit report was written" (xml <> "");
-  check_contains "the JUnit report is JUnit" ~needle:"<testsuites" xml;
-  check_absent "JUnit carries no coverage line" ~needle:"coverage:" xml;
-  check_absent "JUnit carries no coverage counts" ~needle:"points)" xml;
+  contains ~msg:"the JUnit report is JUnit" ~sub:"<testsuites" xml;
+  not_contains ~msg:"JUnit carries no coverage line" ~sub:"coverage:" xml;
+  not_contains ~msg:"JUnit carries no coverage counts" ~sub:"points)" xml;
   (* An uninstrumented run renders nothing — no line, no empty table. *)
   let code, out, _, _ =
-    child ~env:[ "CHILD_TOTAL=0" ] ~args:[ "--color"; "never" ] ()
+    child ~env:[ ("CHILD_TOTAL", "0") ] ~args:[ "--color"; "never" ] ()
   in
-  check_int "an uninstrumented run exits 0" ~expected:0 ~actual:code;
-  check_absent "an uninstrumented run renders no coverage line"
-    ~needle:"coverage:" out
+  equal ~msg:"an uninstrumented run exits 0" int 0 code;
+  not_contains ~msg:"an uninstrumented run renders no coverage line"
+    ~sub:"coverage:" out
 
 (* The suite *)
 
