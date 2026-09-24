@@ -53,6 +53,64 @@ let () =
             Unix.sleepf 60.)
           ignore
       in
+      (* [leftovers]: what an interrupted run leaves as it was. The first
+         test records a correction, the second fails, and the third sets a
+         variable inside a bracket and waits. The fixture's release reads
+         the variable. [second]: a release that hangs after the first
+         signal, for the second to end. *)
+      if mode = "leftovers" then begin
+        Unix.putenv "WINDTRAP_PROJECT_ROOT" root;
+        let reads_env =
+          fixture
+            ~teardown:(fun () ->
+              Out_channel.with_open_bin (Filename.concat root "env at release")
+                (fun oc ->
+                  output_string oc
+                    (Option.value ~default:"<unset>"
+                       (Sys.getenv_opt "WINDTRAP_LEFT"))))
+            ignore
+        in
+        exit
+        @@ Windtrap.run
+             ~argv:
+               [|
+                 "signal-child";
+                 "-o";
+                 Filename.concat root "logs";
+                 "--color";
+                 "never";
+                 "--corrected";
+               |]
+             "signals"
+             [
+               test "corrects" (fun () ->
+                   reads_env ();
+                   expect_file "new\n" "c.expected");
+               test "fails" (fun () -> equal int 1 2);
+               bracket ~setup:ignore ~teardown:(touch "teardown ran") "waits"
+                 (fun () ->
+                   setenv "WINDTRAP_LEFT" (Some "set by the test");
+                   waits ());
+             ]
+      end;
+      if mode = "second" then begin
+        let lingers =
+          fixture
+            ~teardown:(fun () ->
+              touch "releasing" ();
+              Unix.sleepf 60.)
+            ignore
+        in
+        exit
+        @@ Windtrap.run
+             ~argv:[| "signal-child"; "-o"; root; "--color"; "never" |]
+             "signals"
+             [
+               test "holds and waits" (fun () ->
+                   lingers ();
+                   waits ());
+             ]
+      end;
       let tests =
         if mode = "releasing" then
           [
@@ -78,11 +136,11 @@ let () =
             exclude = Some "fails";
           }
         in
+        (* It raises on the Interrupted event, which the runner ignores. *)
         let signal_self = function
           | Run.Test_finished _ -> Unix.kill (Unix.getpid ()) Sys.sigterm
-          | Run.Run_started _ | Run.Test_started _ | Run.Fixture_release _
-          | Run.Interrupted _ ->
-              ()
+          | Run.Interrupted _ -> raise Exit
+          | Run.Run_started _ | Run.Test_started _ | Run.Fixture_release _ -> ()
         in
         ignore (Report.run ~on_event:signal_self ~suite:"signals" config tests);
         exit 3
@@ -1418,7 +1476,8 @@ let () =
                 (Sys.readdir root))))
       [ ("INT", Sys.sigint); ("TERM", Sys.sigterm); ("HUP", Sys.sighup) ];
     (* A signal that arrives in the executor's own code, here an observer,
-       is honoured before the next test starts. *)
+       is honoured before the next test starts; the observer's exception on
+       the Interrupted event is ignored. *)
     ( with_temp_root @@ fun root ->
       let status, out, err = signal_child root "between" ignore in
       check "between tests: the run dies by the signal"
@@ -1463,6 +1522,55 @@ let () =
       (status = Unix.WSIGNALED Sys.sigterm);
     check_string "having said so once"
       ~expected:"windtrap: interrupted in deep \u{203a} waits\n" ~actual:err)
+
+(* What a signal leaves: the interrupted test's teardown does not run, no
+   correction is written, the store is not updated, and the test's
+   binding is still there when the fixtures are released. *)
+let () =
+  if Sys.win32 then skip_scenario ~reason:"POSIX only" __POS__
+  else
+    with_temp_root @@ fun root ->
+    let status, _, _ =
+      signal_child root "leftovers" (once_waiting root Sys.sigterm)
+    in
+    check "leftovers: the run dies by the signal"
+      (status = Unix.WSIGNALED Sys.sigterm);
+    check "the interrupted test's teardown does not run"
+      (not (Sys.file_exists (Filename.concat root "teardown ran")));
+    check "no correction is written"
+      (not (Sys.file_exists (Filename.concat root "c.expected.corrected")));
+    check "the store is not updated"
+      (not
+         (Sys.file_exists
+            (List.fold_left Filename.concat root
+               [ "logs"; "signals"; ".last-failed" ])));
+    check_string "and what setenv changed stays" ~expected:"set by the test"
+      ~actual:
+        (if Sys.file_exists (Filename.concat root "env at release") then
+           read_file (Filename.concat root "env at release")
+         else "<no release>")
+
+(* The first signal restores the default dispositions: a second one, while
+   a release hangs, kills at once. *)
+let () =
+  if Sys.win32 then skip_scenario ~reason:"POSIX only" __POS__
+  else
+    with_temp_root @@ fun root ->
+    let status, _, _ =
+      signal_child root "second" (fun pid ->
+          once_waiting root Sys.sigterm pid;
+          let releasing = Filename.concat root "releasing" in
+          let rec await tries =
+            if Sys.file_exists releasing then Unix.kill pid Sys.sigint
+            else if tries = 0 then Unix.kill pid Sys.sigkill
+            else begin
+              Unix.sleepf 0.01;
+              await (tries - 1)
+            end
+          in
+          await 2000)
+    in
+    check "a second signal kills at once" (status = Unix.WSIGNALED Sys.sigint)
 
 (* A process a test forks inherits the handlers and not the run: killed, it
    dies silently, as it did before a run handled signals, and the run goes
@@ -1516,6 +1624,396 @@ let () =
           | Sys.Signal_handle f -> f == mine
           | Sys.Signal_default | Sys.Signal_ignore -> false))
       signals before
+
+(* Where a helper's failure is located. The lines are found in this file's
+   copy beside the executable, by the markers in their comments. *)
+
+let source_line marker =
+  let text =
+    read_file
+      (Filename.concat
+         (Filename.dirname Sys.executable_name)
+         "test_windtrap.ml")
+  in
+  let rec find n = function
+    | [] -> 0
+    | line :: rest -> if contains marker line then n else find (n + 1) rest
+  in
+  find 1 (String.split_on_char '\n' text)
+
+let[@inline never] own_line_helper x =
+  is_true x (* helper: own line *);
+  ()
+
+let[@inline never] tail_helper x = is_true x
+let[@inline never] pos_helper ?__POS__ x = is_true ?__POS__ x
+
+let[@inline never] calls_tail_helper () =
+  tail_helper false (* helper: caller *);
+  ()
+
+let () =
+  with_temp_root @@ fun root ->
+  let config = base_config ~log_dir:root () in
+  let tests =
+    [
+      test "own line" (fun () -> own_line_helper false);
+      test "tail" calls_tail_helper;
+      test "passed on" (fun () ->
+          pos_helper ~__POS__:("given.ml", 7, 0, 0) false;
+          ());
+    ]
+  in
+  expect_run "helper location suite runs" ~config tests @@ fun outcome ->
+  let line path =
+    match failure_list (outcome_of outcome path) with
+    | [ { Failure.loc = Some l; _ } ] -> (l.Loc.file, l.Loc.line)
+    | _ -> ("<none>", 0)
+  in
+  check_int "a helper that wraps a verb reports its own line"
+    ~expected:(source_line ("(* helper: " ^ "own line *)"))
+    ~actual:(snd (line [ "own line" ]));
+  check_int "a wrapped call in tail position reports the caller's line"
+    ~expected:(source_line ("(* helper: " ^ "caller *)"))
+    ~actual:(snd (line [ "tail" ]));
+  check "a helper that passes ?__POS__ on reports the caller's location"
+    (line [ "passed on" ] = ("given.ml", 7))
+
+(* The witness's printer and equality, as the verbs use them *)
+
+let () =
+  with_temp_root @@ fun root ->
+  let config = base_config ~log_dir:root () in
+  let raising =
+    Testable.make ~pp:(fun _ _ -> failwith "pp boom") ~equal:( = )
+  in
+  expect_run "raising printer suite runs" ~config
+    [ test "prints" (fun () -> equal raising 1 2) ]
+  @@ fun outcome ->
+  match failure_list (outcome_of outcome [ "prints" ]) with
+  | [ f ] ->
+      let block =
+        Pp.str "%a" (fun ppf f -> Report.pp_failure ~ansi:false ppf f) f
+      in
+      check_contains "a raising printer replaces the failure"
+        ~sub:"uncaught exception:" block;
+      check_contains "with that exception" ~sub:"pp boom" block;
+      check "and no value" (not (contains "expected" block))
+  | _ -> check "one failure" false
+
+let () =
+  let pairs = ref [] in
+  let recording =
+    Testable.make ~pp:Format.pp_print_int ~equal:(fun a b ->
+        pairs := (a, b) :: !pairs;
+        true)
+  in
+  equal recording 1 2;
+  check "the equality takes the expected value first" (!pairs = [ (1, 2) ]);
+  pairs := [];
+  mem recording 1 [ 2; 3 ];
+  check "mem passes x as the expected value"
+    (List.for_all (fun (a, _) -> a = 1) !pairs && !pairs <> [])
+
+(* A tag named by both flags is excluded, in either order: it is dropped,
+   and no longer required. *)
+
+let () =
+  with_temp_root @@ fun root ->
+  let tests = [ test ~tags:[ "x" ] "tagged" ignore; test "untagged" ignore ] in
+  List.iter
+    (fun argv ->
+      let _, listed, _ =
+        run_in_process ~argv:("-l" :: argv) root "both" tests
+      in
+      check_string
+        ("a tag named by both flags is excluded: " ^ String.concat " " argv)
+        ~expected:"untagged\n" ~actual:listed)
+    [
+      [ "--tag"; "x"; "--exclude-tag"; "x" ];
+      [ "--exclude-tag"; "x"; "--tag"; "x" ];
+    ]
+
+(* cases evaluates at declaration, outside any test *)
+
+let () =
+  expect_invalid_arg "temp_dir in a cases name raises at declaration" (fun () ->
+      cases
+        ~name:(fun _ ->
+          ignore (temp_dir ());
+          "x")
+        "c" [ 1 ] ignore);
+  expect_invalid_arg "setenv too" (fun () ->
+      cases
+        ~name:(fun _ ->
+          setenv "WINDTRAP_TEST_CASES" (Some "x");
+          "x")
+        "c" [ 1 ] ignore)
+
+(* A fixture's failed create, raised again with its first backtrace *)
+
+let[@inline never] failing_create () =
+  ignore (failwith "no database");
+  ()
+
+let () =
+  with_temp_root @@ fun root ->
+  let config = base_config ~log_dir:root () in
+  let db = fixture failing_create in
+  expect_run "failed fixture suite runs" ~config
+    [ test "first" (fun () -> db ()); test "second" (fun () -> db ()) ]
+  @@ fun outcome ->
+  match failure_list (outcome_of outcome [ "second" ]) with
+  | [ { Failure.kind = Failure.Raise { backtrace = Some bt; _ }; _ } ] ->
+      check_contains "the second call carries the first create's backtrace"
+        ~sub:"failing_create" bt
+  | _ -> check "a Raise failure with a backtrace" false
+
+(* Retries of a property replay the same cases *)
+
+let thirds l =
+  let n = List.length l / 3 in
+  let rec take k l =
+    if k = 0 then [] else List.hd l :: take (k - 1) (List.tl l)
+  in
+  let rec drop k l = if k = 0 then l else drop (k - 1) (List.tl l) in
+  (take n l, take n (drop n l), drop (2 * n) l)
+
+let () =
+  with_temp_root @@ fun root ->
+  let config = base_config ~log_dir:root () in
+  let drawn = ref [] and called = ref [] in
+  let tests =
+    [
+      group ~retries:2 "g"
+        [
+          prop ~count:5 "p" (Gen.int_range 0 1000) (fun x ->
+              drawn := x :: !drawn;
+              is_true (x < 0));
+          stateful ~count:3 ~steps:5 "s" ~model:0
+            ~scope:(fun k -> k (ref 0))
+            [
+              command "add" (Gen.int_range 0 9) ~next:( + ) (fun _ x r ->
+                  called := x :: !called;
+                  r := !r + x;
+                  is_true (!r < 5));
+            ];
+        ];
+    ]
+  in
+  expect_run "retried properties suite runs" ~config tests @@ fun outcome ->
+  let attempts path =
+    match result_of outcome path with Some r -> r.Run.attempts | None -> 0
+  in
+  check_int "a prop inherits the group's retries" ~expected:3
+    ~actual:(attempts [ "g"; "p" ]);
+  check_int "so does a stateful test" ~expected:3
+    ~actual:(attempts [ "g"; "s" ]);
+  let a, b, c = thirds (List.rev !drawn) in
+  check "every retry of a prop replays the same cases"
+    (a <> [] && a = b && b = c);
+  let a, b, c = thirds (List.rev !called) in
+  check "every retry of a stateful test replays the same programs"
+    (a <> [] && a = b && b = c)
+
+(* Gen's documented frequencies and bound *)
+
+let () =
+  let module Engine = Gen_engine in
+  let draws gen n =
+    let rec go state k acc =
+      if k = 0 then List.rev acc
+      else
+        let tree, state = Engine.run gen state in
+        go state (k - 1) (Engine.Shrink_tree.root tree :: acc)
+    in
+    go (Seed.make 0x5eedL) n []
+  in
+  let share p l =
+    float_of_int (List.length (List.filter p l)) /. float_of_int (List.length l)
+  in
+  let none = share Option.is_none (draws (Gen.option Gen.int) 10_000) in
+  check
+    ("Gen.option gives None with probability 0.15: " ^ string_of_float none)
+    (none > 0.13 && none < 0.17);
+  let ok = share Result.is_ok (draws (Gen.result Gen.int Gen.int) 10_000) in
+  check
+    ("Gen.result gives Ok with probability 0.75: " ^ string_of_float ok)
+    (ok > 0.73 && ok < 0.77);
+  let tries = ref 0 in
+  let never =
+    Gen.such_that
+      (fun _ ->
+        incr tries;
+        false)
+      Gen.int
+  in
+  (match Engine.sample never (Seed.make 0x5eedL) with
+  | _ -> check "such_that gives up" false
+  | exception Engine.Rejected -> ());
+  check_int "such_that tries at most 100 draws" ~expected:100 ~actual:!tries
+
+let () =
+  with_temp_root @@ fun root ->
+  let config = base_config ~log_dir:root () in
+  let branch tag =
+    Gen.with_pp (fun ppf -> Format.fprintf ppf "%s:%d" tag) Gen.int
+  in
+  expect_run "examples printer suite runs" ~config
+    [
+      prop ~count:0 ~examples:[ 5 ] "example"
+        (Gen.one_of [ branch "first"; branch "second" ])
+        (fun _ -> is_true false);
+    ]
+  @@ fun outcome ->
+  match failure_list (outcome_of outcome [ "example" ]) with
+  | [ f ] ->
+      check_contains "an example under one_of prints with the first branch's"
+        ~sub:"first:5"
+        (Pp.str "%a" (fun ppf f -> Report.pp_failure ~ansi:false ppf f) f)
+  | _ -> check "one failure" false
+
+(* Corrections that fail the run *)
+
+let () =
+  Fun.protect ~finally:clear_env @@ fun () ->
+  clear_env ();
+  with_temp_root @@ fun root ->
+  Unix.putenv "WINDTRAP_PROJECT_ROOT" root;
+  close_out (open_out (Filename.concat root "blocker"));
+  let code, _, _ =
+    run_in_process ~argv:[ "-u" ] root "unwritable"
+      [ test "accepts" (fun () -> expect_file "v" "blocker/x.expected") ]
+  in
+  check_int "a correction that cannot be written fails the run" ~expected:1
+    ~actual:code;
+  Out_channel.with_open_bin (Filename.concat root "t.ml") (fun oc ->
+      output_string oc "let () =\n  expect x @@ __POS_OF__ {| edited |}\n");
+  let code, _, _ =
+    run_in_process ~argv:[ "-u" ] root "drifted"
+      [ test "accepts" (fun () -> expect "new" (("t.ml", 2, 14, 0), " old ")) ]
+  in
+  check_int "a correction refused because the source changed fails the run"
+    ~expected:1 ~actual:code
+
+let () =
+  Fun.protect ~finally:clear_env @@ fun () ->
+  clear_env ();
+  with_temp_root @@ fun root ->
+  Unix.putenv "WINDTRAP_PROJECT_ROOT" root;
+  Unix.mkdir (Filename.concat root "dir.expected") 0o700;
+  Out_channel.with_open_bin (Filename.concat root "rel.expected") (fun oc ->
+      output_string oc "v\n");
+  let config = base_config ~log_dir:(Filename.concat root "_logs") () in
+  let tests =
+    [
+      test "unreadable" (fun () ->
+          raises_match Check.Exn.sys_error (fun () ->
+              expect_file "x" "dir.expected"));
+      test "moved" (fun () ->
+          chdir (temp_dir ());
+          expect_file "v" "rel.expected");
+    ]
+  in
+  expect_run "expect_file edges suite runs" ~config tests @@ fun outcome ->
+  check "expect_file raises Sys_error on a file it cannot read"
+    (outcome_of outcome [ "unreadable" ] = Some Failure.Pass);
+  check "a relative expect_file path does not follow chdir"
+    (outcome_of outcome [ "moved" ] = Some Failure.Pass)
+
+(* current_test and subtest *)
+
+let () =
+  with_temp_root @@ fun root ->
+  let config = base_config ~log_dir:root () in
+  let seen = ref [] in
+  let tests =
+    [
+      test ~retries:1 "t" (fun () ->
+          seen := current_test () :: !seen;
+          subtest "s" (fun () -> seen := current_test () :: !seen);
+          if List.length !seen = 2 then fail "first attempt");
+      prop ~count:20 "law" (Gen.int_range 0 1000) (fun x ->
+          subtest "s" (fun () -> is_true (x < 10)));
+    ]
+  in
+  expect_run "current_test and subtest suite runs" ~config tests
+  @@ fun outcome ->
+  check "current_test is the same in every attempt and in a subtest"
+    (List.length !seen = 4 && List.for_all (fun p -> p = [ "t" ]) !seen);
+  let fs = failure_list (outcome_of outcome [ "law" ]) in
+  check "a subtest failure inside a law fails the test unshrunk"
+    (fs <> []
+    && List.for_all
+         (fun (f : Failure.t) ->
+           f.Failure.subtest = [ "law"; "s" ]
+           &&
+           match f.Failure.kind with
+           | Failure.Property _ -> false
+           | _ -> true)
+         fs)
+
+(* The last failed tests under --corrected and -x *)
+
+let () =
+  Fun.protect ~finally:clear_env @@ fun () ->
+  clear_env ();
+  with_temp_root @@ fun root ->
+  Unix.putenv "WINDTRAP_PROJECT_ROOT" root;
+  let tests =
+    [
+      test "corrects" (fun () -> expect_file "new\n" "c.expected");
+      test "later" ignore;
+    ]
+  in
+  let _, out, _ =
+    run_in_process ~argv:[ "--corrected"; "-x" ] root "kept" tests
+  in
+  check_contains "a test of kept corrections still stops -x" ~sub:"1 not run"
+    out;
+  let _, listed, _ =
+    run_in_process ~argv:[ "-l"; "--failed" ] root "kept" tests
+  in
+  check_string "and enters the last failed tests" ~expected:"corrects\n"
+    ~actual:listed
+
+let () =
+  with_temp_root @@ fun root ->
+  let fails name = test name (fun () -> equal int 1 2) in
+  let tests = [ fails "a"; fails "b" ] in
+  ignore (run_in_process root "bailed" tests);
+  ignore (run_in_process ~argv:[ "-x" ] root "bailed" tests);
+  let _, listed, _ =
+    run_in_process ~argv:[ "-l"; "--failed" ] root "bailed" tests
+  in
+  check_string "a test not executed after -x keeps its entry" ~expected:"a\nb\n"
+    ~actual:listed
+
+(* What prints changes no outcome and no exit code *)
+
+let () =
+  with_temp_root @@ fun root ->
+  let tests =
+    [ test "passes" ignore; test "fails" (fun () -> equal int 1 2) ]
+  in
+  let code argv =
+    let c, _, _ = run_in_process ~argv root "printing" tests in
+    c
+  in
+  let plain = code [] in
+  check_int "a failing run" ~expected:1 ~actual:plain;
+  List.iter
+    (fun argv ->
+      check_int
+        ("the exit code under " ^ String.concat " " argv)
+        ~expected:plain ~actual:(code argv))
+    [
+      [ "-v" ];
+      [ "--color"; "always" ];
+      [ "--slow-threshold"; "0" ];
+      [ "-s" ];
+      [ "--junit"; Filename.concat root "junit.xml" ];
+    ]
 
 (* Summary *)
 
