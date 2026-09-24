@@ -1698,7 +1698,8 @@ let a_raising_printer_renders_the_exception () =
       | exception raised ->
           is_true ~msg:(Printexc.to_string exn ^ " escapes") (raised == exn)
       | text -> failf "%s was rendered as %S" (Printexc.to_string exn) text)
-    [ Sys.Break; Out_of_memory; Stack_overflow ]
+    [ Sys.Break; Out_of_memory ];
+  equal string "<printer raised Stack overflow>" (rendered Stack_overflow)
 
 let make_without_pp_has_nothing_to_print () =
   let gen =

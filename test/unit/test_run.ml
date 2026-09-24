@@ -469,7 +469,7 @@ let () =
     Run.fixture ~teardown:(fun v -> released := v :: !released) (fun () -> "ok")
   in
   let fx_fatal =
-    Run.fixture ~teardown:(fun _ -> raise Stack_overflow) (fun () -> "fatal")
+    Run.fixture ~teardown:(fun _ -> raise Out_of_memory) (fun () -> "fatal")
   in
   let tests =
     [
@@ -480,7 +480,7 @@ let () =
   in
   (match Run.execute config ~suite:"suite" tests with
   | _ -> check "a fatal teardown leaves execute" false
-  | exception Stack_overflow -> check "a fatal teardown leaves execute" true);
+  | exception Out_of_memory -> check "a fatal teardown leaves execute" true);
   check "the fatal abandons the remaining releases" (!released = []);
   check "the slot is emptied on the fatal path" (not (Run.active ()))
 
@@ -514,9 +514,9 @@ let () =
           | () -> ()
           | exception Failure.Control (`Skip (Some "later")) ->
               control := "skip" :: !control);
-          (match Run.subtest "fatal" (fun () -> raise Stack_overflow) with
+          (match Run.subtest "fatal" (fun () -> raise Out_of_memory) with
           | () -> ()
-          | exception Stack_overflow -> control := "fatal" :: !control);
+          | exception Out_of_memory -> control := "fatal" :: !control);
           Run.subtest "clean" (fun () -> Check.fail "x"));
     ]
   in
@@ -3517,6 +3517,27 @@ let () =
         && contains "timed out after" (message_of f))
   | _ -> check "one failure for the cut finally" false
 
+(* A stack overflow is the failure of the recursion that raised it: the
+   test fails and the run goes on. *)
+
+let () =
+  with_temp_root @@ fun root ->
+  let config = base_config ~log_dir:root () in
+  let tests =
+    [
+      Test_tree.test "overflows" (fun () -> raise Stack_overflow);
+      Test_tree.test "runs after" ignore;
+    ]
+  in
+  expect_run "stack overflow suite runs" ~config tests @@ fun outcome ->
+  (match failure_list (outcome_of outcome [ "overflows" ]) with
+  | [ { Failure.kind = Failure.Raise { actual = Some actual; _ }; _ } ] ->
+      check "a stack overflow is an uncaught exception of its test"
+        (actual = "Stack overflow")
+  | _ -> check "one failure for the overflow" false);
+  check "the next test runs"
+    (outcome_of outcome [ "runs after" ] = Some Failure.Pass)
+
 (* subtest: what passes through, what it labels, where *)
 
 let () =
@@ -3997,12 +4018,12 @@ let () =
       Test_tree.test "corrects" (fun () ->
           fx ();
           Run.check_baseline (Baseline.File "c.expected") "v");
-      Test_tree.test "overflows" (fun () -> raise Stack_overflow);
+      Test_tree.test "runs out of memory" (fun () -> raise Out_of_memory);
     ]
   in
   (match Run.execute config ~suite:"suite" tests with
   | _ -> check "a fatal exception leaves execute" false
-  | exception Stack_overflow -> ());
+  | exception Out_of_memory -> ());
   check "after a fatal exception: fixtures released" !released;
   check "no store, no correction"
     ((not (Sys.file_exists (Filename.concat root "_logs/suite/.last-failed")))

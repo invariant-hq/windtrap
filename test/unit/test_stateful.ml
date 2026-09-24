@@ -1896,11 +1896,7 @@ let a_specification_bug_numbers_the_kept_calls () =
   equal string {|call 2: boom, ~pre raised Failure("nth")|} (find 0)
 
 let fatal_exceptions =
-  [
-    ("Sys.Break", Sys.Break);
-    ("Out_of_memory", Out_of_memory);
-    ("Stack_overflow", Stack_overflow);
-  ]
+  [ ("Sys.Break", Sys.Break); ("Out_of_memory", Out_of_memory) ]
 
 let every_fatal_exception_escapes_as_itself () =
   List.iter

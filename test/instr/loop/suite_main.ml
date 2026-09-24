@@ -97,7 +97,7 @@ let crash =
   ]
 
 (* Leaves through a FATAL exception, which no failure boundary in the
-   runner may swallow ({!Failure.is_fatal}): armed, it escapes
+   runner may swallow ({!Failure.catch} never returns it): armed, it escapes
    [Run.execute] and reaches the mutation child's own wrapper, which is
    the only thing between it and OCaml's uncaught-exception handler — and
    that handler runs [at_exit]. Unarmed the answer is 2 and nothing
@@ -105,7 +105,7 @@ let crash =
 let fatal =
   [
     test "crasher raises a fatal exception when the answer changes" (fun () ->
-        if Subject.crasher 3 1 <> 2 then raise Stack_overflow;
+        if Subject.crasher 3 1 <> 2 then raise Out_of_memory;
         equal int 2 (Subject.crasher 3 1));
   ]
 

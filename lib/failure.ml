@@ -104,11 +104,11 @@ let () =
 type fault = [ `Assertion of t | `Exception of exn * Printexc.raw_backtrace ]
 type caught = [ fault | control ]
 
-(* An interrupt and an exhausted resource must stop the run, not fail one
-   test, so no site ever sees them. *)
-let is_fatal = function
-  | Sys.Break | Out_of_memory | Stack_overflow -> true
-  | _ -> false
+(* An interrupt and an exhausted memory must stop the run, not fail one
+   test, so no site ever sees them. A [Stack_overflow] is not among them:
+   OCaml 5 recovers from it, and it is the failure of the recursion that
+   raised it. *)
+let is_fatal = function Sys.Break | Out_of_memory -> true | _ -> false
 
 (* A [Fun.protect] whose finally was cut by the timeout, or by an interrupt,
    wraps what cut it: unwrapped, the timeout reaches the runner as itself and

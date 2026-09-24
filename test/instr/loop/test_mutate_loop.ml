@@ -686,7 +686,7 @@ let reach_tests =
    Stdlib's exit machinery, and after a loop that forked five children the
    file must name the parent once.
 
-   The [fatal] fixture is the case that makes it bite: [Stack_overflow] is
+   The [fatal] fixture is the case that makes it bite: [Out_of_memory] is
    fatal, so no failure boundary in the runner may swallow it, it escapes
    [Run.execute], and the child's own wrapper is the only thing between
    it and OCaml's uncaught-exception handler — which runs [at_exit] before

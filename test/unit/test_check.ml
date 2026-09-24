@@ -1095,8 +1095,9 @@ let tests =
             ("Discard", F.Control `Discard);
             ("Sys.Break", Sys.Break);
             ("Out_of_memory", Out_of_memory);
-            ("Stack_overflow", Stack_overflow);
-          ]);
+          ];
+        passes "a Stack_overflow is compared as any exception" (fun () ->
+            Check.raises Stack_overflow (fun () -> raise Stack_overflow)));
     test "an exception from a witness, a ?pp or a predicate escapes the verb"
       (fun () ->
         let escapes name f =

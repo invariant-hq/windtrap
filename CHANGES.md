@@ -176,7 +176,7 @@ Coverage and packaging:
   test, and the body's failure is re-raised through the scope so its
   cleanup runs. `bracket` is `scoped` over the scope its `~setup` and
   `~teardown` write, so the two share one protocol; a fatal exception
-  (`Sys.Break`, `Out_of_memory`, `Stack_overflow`) skips the teardown and
+  (`Sys.Break`, `Out_of_memory`) skips the teardown and
   ends the run.
 
 ### Assertions
@@ -484,6 +484,10 @@ Coverage and packaging:
   of timing it out too. `Sys.Break` and `Out_of_memory` stop the run from
   everywhere, a counterexample printer included, and the body's exception
   is reported over a capture log that failed to flush.
+- **A `Stack_overflow` is an ordinary failure**: the test that overflowed
+  fails with it (a property shrinks it like any exception) and the run
+  goes on. OCaml 5 recovers from it; only `Sys.Break` and `Out_of_memory`
+  end the run.
 
 ### Running tests
 

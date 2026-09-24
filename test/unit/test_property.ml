@@ -1014,7 +1014,7 @@ let the_summary_is_of_the_reported_counterexample () =
     (summary_of failure = None)
 
 let exit_and_fatal_exceptions =
-  [ Failure.Control `Exit; Sys.Break; Out_of_memory; Stack_overflow ]
+  [ Failure.Control `Exit; Sys.Break; Out_of_memory ]
 
 (* An exit is the runner's and a fatal exception stops the run, so neither
    is a failure of the case to shrink. *)
@@ -1028,6 +1028,14 @@ let a_law_s_exit_and_fatal_exceptions_pass_through () =
       | exception raised -> is_true ~msg:(name ^ " escapes") (raised = exn)
       | _ -> failf "%s became an outcome" name)
     exit_and_fatal_exceptions
+
+let a_law_s_stack_overflow_fails_the_case () =
+  let failure, _ =
+    expect_fail
+      (Property.run ~root ~path:"overflow" Gen.int (fun _ _ ->
+           raise Stack_overflow))
+  in
+  equal (option string) (Some "Stack overflow") (inner_exception failure)
 
 let a_generator_s_exception_fails_the_case_unshrunk () =
   let raising exn = Gen_engine.make (fun _ -> raise exn) in
@@ -1220,6 +1228,8 @@ let suite =
   [
     ( "a law's exit and fatal exceptions pass through",
       a_law_s_exit_and_fatal_exceptions_pass_through );
+    ( "a law's Stack_overflow fails the case",
+      a_law_s_stack_overflow_fails_the_case );
     ( "a generator's exception fails the case unshrunk",
       a_generator_s_exception_fails_the_case_unshrunk );
     ( "a generator that discards discards the case",

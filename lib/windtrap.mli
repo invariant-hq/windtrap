@@ -248,7 +248,7 @@ val bracket :
     runner calls [setup ()], passes the resource to [fn], then calls [teardown]
     on it. [teardown] runs iff [setup] returned, and then on every outcome of
     [fn], skip and timeout included. A fatal exception ([Sys.Break],
-    [Out_of_memory], [Stack_overflow]) skips it and ends the run.
+    [Out_of_memory]) skips it and ends the run.
 
     It is {!scoped} over the scope that runs the three in order. What [setup]
     raises is a [[setup]] failure. What [teardown] raises is a [[teardown]]

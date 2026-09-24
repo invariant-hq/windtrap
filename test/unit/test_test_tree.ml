@@ -491,12 +491,12 @@ let () =
       "b"
       (fun () ->
         mark "body";
-        raise Stack_overflow)
+        raise Out_of_memory)
   in
   let fatal =
     match scope_of "bracket" tree () with
     | () -> false
-    | exception Stack_overflow -> true
+    | exception Out_of_memory -> true
   in
   is_true ~msg:"the fatal exception propagates" fatal;
   is_true ~msg:"the teardown did not run" (List.rev !log = [ "setup"; "body" ])

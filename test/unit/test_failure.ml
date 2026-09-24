@@ -630,7 +630,11 @@ let tests =
             | exception raised ->
                 is_true ~msg:(name ^ " raised again") (raised == exn)
             | Ok () | Error _ -> failf "%s was returned" name)
-          [ Sys.Break; Out_of_memory; Stack_overflow ]);
+          [ Sys.Break; Out_of_memory ];
+        is_true ~msg:"a Stack_overflow is an exception"
+          (match F.catch (fun () -> raise Stack_overflow) with
+          | Error (`Exception (Stack_overflow, _)) -> true
+          | _ -> false));
     test "catch unwraps a finally cut by a control or a fatal exception"
       (fun () ->
         let cut exn () = Fun.protect ~finally:(fun () -> raise exn) ignore in

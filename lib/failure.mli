@@ -302,10 +302,10 @@ exception Control of control
       other control rejects the candidate, and a printer turns what it raises
       into text.
 
-    [Sys.Break], [Out_of_memory] and [Stack_overflow] never reach a site, since
-    an interrupt or an exhausted resource must stop the run and not fail one
-    test. A handler of the user's that catches every exception still swallows a
-    control. *)
+    [Sys.Break] and [Out_of_memory] never reach a site, since an interrupt or an
+    exhausted memory must stop the run and not fail one test. A [Stack_overflow]
+    is an exception as any other. A handler of the user's that catches every
+    exception still swallows a control. *)
 
 type fault = [ `Assertion of t | `Exception of exn * Printexc.raw_backtrace ]
 (** The type for what the user's code raised about itself: a {!Check_failure},
@@ -316,10 +316,10 @@ type caught = [ fault | control ]
 
 val catch : (unit -> 'a) -> ('a, caught) result
 (** [catch f] is [Ok (f ())], or [Error c] where [c] classifies what [f ()]
-    raised. It raises [Sys.Break], [Out_of_memory] and [Stack_overflow] again
-    with their backtrace and never returns them. A [Fun.Finally_raised] that
-    carries a {!Control} or one of those three is unwrapped first, so a finally
-    cut by the timeout is a [`Timeout]. *)
+    raised. It raises [Sys.Break] and [Out_of_memory] again with their backtrace
+    and never returns them. A [Fun.Finally_raised] that carries a {!Control} or
+    one of those two is unwrapped first, so a finally cut by the timeout is a
+    [`Timeout]. *)
 
 val reraise : [< caught ] -> 'a
 (** [reraise c] raises again what {!catch} returned: the same exception, with
