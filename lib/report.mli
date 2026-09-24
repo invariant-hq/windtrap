@@ -289,7 +289,7 @@ val annotation :
   string
 (** [annotation ~path f] is the [::error] command for [f], a failure of the test
     at [path]. Its [file] and [line] are those of the location of [f], when it
-    has one, and its title names the test, [path] through
+    has one, and its title is [Test failure: <path>], [path] through
     {!Report_sections.sanitize_name}. The message is the
     {!Report_sections.pp_failure} entry of [f] without styling and without the
     source line, hint lines included, with [path] as their filter. [invocation]
