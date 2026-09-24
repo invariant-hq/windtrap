@@ -8,7 +8,7 @@
    baseline missing/mismatch, property with inner failure, body + teardown
    pair, captured tail with a drop count) at both levels — compact (nothing
    per test, the header iff a block follows) and verbose (a line per test)
-   — the noteworthy rule, the slow and flaky blocks, ANSI styling and diff
+   — when a compact run prints more than its summary, the slow and flaky blocks, ANSI styling and diff
    highlighting, ANSI hygiene under ansi:false (payload-borne escapes
    stripped), the live displays, the failure projections (headline,
    pp_failure), degenerate equalities, diff and proposed-content display
@@ -879,7 +879,7 @@ let test_summary_terms () =
          Report.header r ~suite:"s" ~tests:2 ~seed:None ();
          Report.finish r ~results:excused ~duration:0.001 ()))
 
-(* The noteworthy rule *)
+(* When a compact run prints more than its summary line *)
 
 let test_compact_green_one_liner () =
   let passes = [ Fixtures.result [ "a" ] Failure.Pass ] in
@@ -1034,17 +1034,8 @@ let test_slow_duration_semantics () =
      ^ "\n\nslow tests (1, over 1s):\n  2.0s  boom\n\n1 failed in 2.0s.\n")
     t;
   contains ~msg:"the failure is counted once" ~sub:"\n1 failed in 2.0s.\n" t;
-  let occurrences ~sub s =
-    let n = String.length sub in
-    let rec go i acc =
-      if i + n > String.length s then acc
-      else if String.sub s i n = sub then go (i + 1) (acc + 1)
-      else go (i + 1) acc
-    in
-    go 0 0
-  in
   is_true ~msg:"exactly one warning line for the slow failure"
-    (occurrences ~sub:"  2.0s  boom" t = 1)
+    (occurrences_of ~sub:"  2.0s  boom" t = 1)
 
 let test_slow_threshold_zero () =
   let slow_pass = Fixtures.result [ "t" ] Failure.Pass ~duration:5.0 in
@@ -1564,7 +1555,7 @@ let test_degenerate_equalities () =
 
 let test_ansi_hygiene () =
   (* User pp output may carry raw escapes; under [ansi:false] the transcript
-     must contain none (render.mli), under [ansi:true] they pass through.
+     must contain none (report.mli), under [ansi:true] they pass through.
 
      The two ways it contains none are not the same. A comparison surface
      escapes them, keeping every byte the value had — the block below is
@@ -2199,7 +2190,7 @@ let test_value_elision () =
     (failure_block
        (Failure.equality ~not_:true ~expected:lines ~actual:lines ()))
 
-(* Exception message diffs (amendment B1) *)
+(* Exception message diffs *)
 
 let test_raise_message_diff () =
   let b = failure_block Fixtures.raise_message_failure in
@@ -2285,7 +2276,7 @@ let test_raise_message_diff_guards () =
        (Failure.raised ~expected:{|Failure("boom")|}
           ~actual:"Parse_error(\n  line 3)" ()))
 
-(* Expected failures (amendment B12) *)
+(* Expected failures *)
 
 let test_xfail_line () =
   let line =
@@ -2389,7 +2380,7 @@ let test_xpass_is_loud () =
   contains ~msg:"unexpected pass: reason in the failure block"
     ~sub:"expected to fail (issue #42), but the test passed" t
 
-(* Subtest failures (amendment B13) *)
+(* Subtest failures *)
 
 let test_subtest_projection () =
   is_true ~msg:"subtest entries recognized by their components"
@@ -2510,7 +2501,7 @@ let test_prop_stats () =
   contains ~msg:"prop stats: its labels still print"
     ~sub:"labels (100 passing cases):" b1
 
-(* Containment blocks (D5 §2) *)
+(* Containment blocks *)
 
 let not_contains_failure =
   Failure.containment ~found_at:10 ~claim:{|string not containing "secret"|}
@@ -2751,7 +2742,7 @@ let test_demand_headlines () =
 
 let test_satisfies_no_refinement () =
   (* The claim sentence is a description, not a rendering: never diff or
-     refine the two (D5 §2). *)
+     refine the two. *)
   let f = Failure.predicate ~claim:"value satisfying the predicate" "-3" in
   let b = failure_block f in
   contains ~msg:"satisfies: two label lines"
@@ -2895,7 +2886,7 @@ let test_trailing_whitespace_hunks () =
       \    + a\n"
     snap
 
-(* Uncaught exceptions (D5 §5) *)
+(* Uncaught exceptions *)
 
 let test_uncaught_wording () =
   let b = failure_block (Failure.raised ~actual:"Not_found" ()) in
@@ -3018,7 +3009,7 @@ let test_inner_label_without_location () =
     located;
   not_contains ~msg:"and no [with:]" ~sub:"which failed with:" located
 
-(* Command hints per invocation (D5 §1) *)
+(* Command hints per invocation *)
 
 let test_hints_per_invocation () =
   let exe = `Exe "./_build/default/qa/x/t.exe" in
@@ -3352,7 +3343,7 @@ let test_property_replay_line () =
   in
   not_contains ~msg:"an ordinary failure prints none" ~sub:"replay:" plain
 
-(* Verbose label distributions (D5 §7) *)
+(* Verbose label distributions *)
 
 let test_verbose_pass_labels () =
   let stats =
@@ -3399,7 +3390,7 @@ let test_verbose_pass_labels () =
   not_contains ~msg:"verbose: XFAIL lines print no table" ~sub:"labels ("
     excused
 
-(* Name sanitization on terminal surfaces (render/F-2) *)
+(* Name sanitization on terminal surfaces *)
 
 let test_name_sanitization () =
   let hostile = [ "first\nhalf" ] in
@@ -3501,7 +3492,7 @@ let test_name_sanitization () =
   contains ~msg:"and so does an expected failure's"
     ~sub:{|  XFAIL  excused (expected failure: issue\t42)|} rows
 
-(* Source excerpts resolve against the project root (render/F-1) *)
+(* Source excerpts resolve against the project root *)
 
 (* The location is the bare [file:line]: no anchor word, and nothing about
    [~__POS__] anywhere in the output. A phase other than the body is its
@@ -5203,16 +5194,16 @@ let tests =
     test "captured tail" test_tail;
     test "bounds: a backtrace's ten frames" test_backtrace_cap;
     test "bounds: a long value's middle" test_value_elision;
-    test "raise message diff (B1)" test_raise_message_diff;
+    test "raise message diff" test_raise_message_diff;
     test "raise message diff guards" test_raise_message_diff_guards;
-    test "xfail line (B12)" test_xfail_line;
+    test "xfail line" test_xfail_line;
     test "xpass-string collision stays excused (F4)" test_excused_collision;
     test "finish with excused failures" test_finish_excused;
     test "unexpected pass is loud" test_xpass_is_loud;
-    test "subtest projection (B13)" test_subtest_projection;
+    test "subtest projection" test_subtest_projection;
     test "subtest rendering" test_subtest_rendering;
     test "property stats" test_prop_stats;
-    test "containment: claim-aware block (D5 §2)" test_containment_block;
+    test "containment: claim-aware block" test_containment_block;
     test "containment: multi-line haystack block" test_containment_multiline;
     test "containment: not-found display cap" test_containment_not_found_cap;
     test "containment: headline forms" test_containment_headlines;
@@ -5220,15 +5211,14 @@ let tests =
     test "containment: demanded-occurrence headlines" test_demand_headlines;
     test "satisfies/matches: no refinement against the claim"
       test_satisfies_no_refinement;
-    test "hunks: trailing whitespace visualized on changed lines (D5 §4)"
+    test "hunks: trailing whitespace visualized on changed lines"
       test_trailing_whitespace_hunks;
-    test "raise: uncaught wording (D5 §5)" test_uncaught_wording;
+    test "raise: uncaught wording" test_uncaught_wording;
     test "property: timed-out shrink marker (D2)" test_timed_out_marker;
     test "property: spent shrink budget marker (D2)" test_budget_spent_marker;
     test "property: inner label without a location (D4)"
       test_inner_label_without_location;
-    test "hints: accept and replay per invocation (D5 §1)"
-      test_hints_per_invocation;
+    test "hints: accept and replay per invocation" test_hints_per_invocation;
     test "hints: armed runs, one line per command line, no rerun"
       test_hint_lines;
     test "a withheld correction: no accept, the reason, nothing after it"
@@ -5236,12 +5226,11 @@ let tests =
     test "an armed run's FAIL titles" test_armed_titles;
     test "hints: no run advertises --failed" test_no_rerun_hint;
     test "the property replay line is the only one" test_property_replay_line;
-    test "verbose PASS prints the label table (D5 §7)" test_verbose_pass_labels;
-    test "terminal name sanitization (render/F-2)" test_name_sanitization;
+    test "verbose PASS prints the label table" test_verbose_pass_labels;
+    test "terminal name sanitization" test_name_sanitization;
     test "the location forms" test_location_forms;
     test "the mark prints only where it aligns" test_mark_criterion;
-    test "excerpts resolve against the project root (render/F-1)"
-      test_excerpt_project_root;
+    test "excerpts resolve against the project root" test_excerpt_project_root;
     test "corrections: the written files, per mode" test_corrections_section;
     test "corrections: the quiet gate and refusals" test_corrections_quiet;
     test "coverage: the whole table, colour and plain" test_coverage_table;

@@ -125,7 +125,7 @@ module Env_suite = struct
           contains ~msg:"the expected clause names the spellings" ~sub:"1/0"
             Os.bool_expected);
       test "value mirrors are passed through unparsed, like the seed" (fun () ->
-          (* The CLI layer owns validation (prop/F-4): a malformed winning
+          (* The CLI layer owns validation: a malformed winning
              token must reach it verbatim so it can error naming the
              variable, never vanish into a silent default. *)
           setenv "WINDTRAP_PROP_COUNT" (Some "500");
@@ -214,7 +214,7 @@ module Env_suite = struct
           is_false ~msg:"auto plain pipe"
             (Os.resolve_color Os.Auto ~tty:false ~inside_dune:false
                ~term_dumb:false);
-          (* TERM=dumb disables ANSI in Auto mode only (render/F-4): a dumb
+          (* TERM=dumb disables ANSI in Auto mode only: a dumb
              terminal renders no escape sequences, but an explicit request
              still wins. *)
           is_false ~msg:"auto on a dumb tty"
@@ -750,7 +750,7 @@ module Path_suite = struct
                 (Os.default_log_dir ()));
       test "display spells report paths project-root relative" (fun () ->
           (* The one producer of [wrote]/hint path spellings for both the
-             library and inline runners (D5 §8; ppx/F-6). *)
+             library and inline runners. *)
           let root = Os.project_root () in
           equal ~msg:"build prefix stripped, root-relative" string "qa/x/t.exe"
             (Os.display_path (root ^ "/_build/default/qa/x/t.exe"));

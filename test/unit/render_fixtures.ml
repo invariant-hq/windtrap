@@ -97,10 +97,9 @@ let body_teardown =
     Failure.with_phase Failure.Teardown (Failure.message "teardown exploded");
   ]
 
-(* B-package fixtures (amendments B1/B12/B13)
-   Additions only: the values above feed byte-exact goldens. *)
+(* Additions only from here: the values above feed byte-exact goldens. *)
 
-(* B1: same constructor, different message payloads — the message-diff case. *)
+(* Same constructor, different message payloads — the message-diff case. *)
 let raise_message_failure =
   Failure.raised
     ~loc:(loc "test/test_bounds.ml" 8)
@@ -114,7 +113,7 @@ let raise_message_failure =
       }
     ()
 
-(* B12: an xfail annotation, an excused failing result (annotated, not
+(* An xfail annotation, an excused failing result (annotated, not
    counted), and the runner's synthesized unexpected-pass result (annotated
    and counted — the record's bit keeps it loud). *)
 let xfail_reason = { Test_tree.reason = Some "issue #42" }
@@ -139,7 +138,7 @@ let xpass_result =
            "expected to fail (issue #42), but the test passed";
        ])
 
-(* B13: one test whose failure list mixes two subtest entries (their
+(* One test whose failure list mixes two subtest entries (their
    sub-case components carried as data, as Run.subtest records them) and
    one plain body failure. *)
 let subtest_failure name =
@@ -180,5 +179,4 @@ let results =
     result [ "platform"; "windows paths" ] (Failure.Skip (Some "unix only"));
   ]
 
-let failed_count = 6
 let duration = 6.5

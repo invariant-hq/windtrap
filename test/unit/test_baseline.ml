@@ -53,7 +53,6 @@ let file_help = B.File help
 (* A source file holding one flexible literal, and its subject: the
    position [__POS_OF__] records starts at its own token. *)
 let source = "let () =\n  expect (f ()) @@ __POS_OF__ {| old |}\n"
-let literal_pos = ("test/t.ml", 2, 19, 40)
 
 (* Keys are positions: a second literal in a test needs its own line. *)
 let literal ?(line = 2) ?(exact = false) value =

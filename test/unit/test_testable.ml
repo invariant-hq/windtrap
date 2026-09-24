@@ -4,7 +4,7 @@
   ---------------------------------------------------------------------------*)
 
 (* Tests for Testable: instance printing and equality tables, tolerance
-   semantics (RFC v3 amendment B8), and combinator composition. The witness sits below Check, so assertions on
+   semantics, and combinator composition. The witness sits below Check, so assertions on
    it go through booleans and string renderings, never through the witness
    under test. *)
 
@@ -120,7 +120,7 @@ let tests =
           (T.quad T.int T.int T.int T.int)
           (1, 2, 3, 4) ~expected:"(1, 2, 3, 4)";
         (* Failures print the sides in the sorted order the equality
-           compared (D5 §3): the diff shows the multiset difference, never
+           compared: the diff shows the multiset difference, never
            the incidental arrival order. *)
         check_prints "slist prints the sorted sides the equality compared"
           (T.slist T.int Int.compare)

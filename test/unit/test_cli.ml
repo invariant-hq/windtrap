@@ -348,10 +348,10 @@ let () =
   expect_ok "--slow-threshold=SECS parses inline" [ "--slow-threshold=0.5" ]
     (fun p -> is_true ~msg:"inline threshold" (p.Cli.slow_threshold = Some 0.5))
 
-(* --shard (amendment B14) *)
+(* --shard *)
 
 let () =
-  reg "--shard parsing (B14)" @@ fun () ->
+  reg "--shard parsing" @@ fun () ->
   expect_ok "--shard K/N parses" [ "--shard"; "2/4" ] (fun p ->
       is_true ~msg:"shard pair" (p.Cli.shard = Some (2, 4)));
   expect_ok "--shard=K/N parses inline" [ "--shard=1/1" ] (fun p ->
@@ -852,7 +852,7 @@ let () =
   | Ok _ | Error _ ->
       is_true ~msg:"a zero env prop count errors with its source" false);
   clear_env ();
-  (* Malformed mirror tokens error like their flags (prop/F-4): same knob,
+  (* Malformed mirror tokens error like their flags: same knob,
      same garbage, same loud refusal in every layer. *)
   setenv "WINDTRAP_PROP_COUNT" (Some "1O0");
   (match Cli.settings Cli.empty with
@@ -1103,10 +1103,10 @@ let () =
         ~msg:"a malformed winning env threshold errors, as WINDTRAP_TIMEOUT's"
         false
 
-(* Resolution: --shard and WINDTRAP_SHARD (amendment B14) *)
+(* Resolution: --shard and WINDTRAP_SHARD *)
 
 let () =
-  reg "--shard resolution (B14)" @@ fun () ->
+  reg "--shard resolution" @@ fun () ->
   clear_env ();
   let config = resolve Cli.empty in
   is_true ~msg:"no layer means no shard" (config.Run.shard = None);

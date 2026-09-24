@@ -17,11 +17,6 @@ module Pp = Windtrap.Private.Pp
 
 let starts_with prefix text = String.starts_with ~prefix text
 
-let show_ints values =
-  "[" ^ String.concat "; " (List.map string_of_int values) ^ "]"
-
-let show_int_lists lists = String.concat " " (List.map show_ints lists)
-
 (* One fixed root for the whole suite; per-test streams come from indexes.
    Everything below is deterministic across runs and machines. *)
 let root = 0x00c0ffee1234abcdL
@@ -1083,7 +1078,7 @@ let mixed_one_of_derives_no_printer () =
     ~msg:(Printf.sprintf "printerless branch rendered %S" (render printerless))
     (rendering printerless = Value placeholder)
 
-(* The RFC's shape example: [map] under each branch makes the choice
+(* The shape example: [map] under each branch makes the choice
    printerless, so a counterexample renders the pre-image of the drawn
    branch, and [with_pp] at the top prints the shape itself. *)
 type shape = Circle of float | Rect of float * float

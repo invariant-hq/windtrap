@@ -477,7 +477,7 @@ let test_stable_paths () =
     (concat_all root [ "s"; "g"; "t.output" ])
     first
 
-(* Saved descriptors are close-on-exec (cli/F-5) *)
+(* Saved descriptors are close-on-exec *)
 
 (* The re-exec'd child: captures, spawns a minute-long sleeper whose own
    stdio is /dev/null, prints the sleeper's pid on its restored stdout, and
@@ -496,7 +496,7 @@ let child_spawn_holder log_dir =
   exit 0
 
 let test_saved_descriptors_are_cloexec () =
-  (* cli/F-5: capture's saved dups of the real stdout/stderr must be
+  (* Capture's saved dups of the real stdout/stderr must be
      close-on-exec — an exec'd child that outlives the run must not hold
      the runner's stdout open, or a piped reader (`suite.exe | cat`, dune
      runtest) waits on the child after the suite finished. EOF on the
@@ -563,7 +563,7 @@ let dispatch_child () =
 (* The log fd itself is close-on-exec *)
 
 let test_log_fd_is_cloexec () =
-  (* The companion of cli/F-5: the .output fd must be as close-on-exec as
+  (* The companion of the test above: the .output fd must be as close-on-exec as
      the saved dups. An exec'd child writes through the redirected fds 1-2
      and must not also inherit the raw log fd. The child probes which of
      its fds 3-9 alias its own stdout — the log file during capture — so

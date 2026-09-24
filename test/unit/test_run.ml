@@ -489,7 +489,7 @@ let () =
   check "the registry is drained even after a fatal"
     (Run.release_fixtures run ~announce:ignore = [] && !released = [])
 
-(* current_test (B9) *)
+(* current_test *)
 
 let () =
   expect_invalid_arg "current_test outside a run raises" (fun () ->
@@ -503,7 +503,7 @@ let () =
   check "current_test is the executing test's full path"
     (!seen = [ "users"; "sessions"; "login" ])
 
-(* subtest (B13) *)
+(* subtest *)
 
 let () =
   expect_invalid_arg "subtest outside a run raises" (fun () ->
@@ -599,7 +599,7 @@ let () =
             (msg_of failure = "t › clean")
       | _ -> check "post-control subtest failure shape" false)
 
-(* temp_dir / temp_file (B9) *)
+(* temp_dir / temp_file *)
 
 let () =
   expect_invalid_arg "temp_dir outside a run raises" (fun () -> Run.temp_dir ());
@@ -721,7 +721,7 @@ let () =
   check "a later attempt gets a fresh scratch directory" (d1 <> d2);
   Run.reclaim second
 
-(* Fixture acquisition skips (amendment C1) *)
+(* Fixture acquisition skips *)
 
 let () =
   let attempts = ref 0 in
@@ -1201,7 +1201,7 @@ let () =
 
 let () =
   (* Fixture releases run outside per-test timeouts: a release slower than
-     the tightest test timeout must complete untimed (RFC "Resources"). *)
+     the tightest test timeout must complete untimed. *)
   if Sys.win32 then skip_scenario ~reason:"POSIX only" __POS__
   else
     with_temp_root @@ fun root ->
@@ -1724,7 +1724,7 @@ let () =
     ]
   @@ fun outcome -> check "all-skipped ratification" (outcome.Run.exit_code = 0)
 
-(* Expected failures (amendment B12) *)
+(* Expected failures *)
 
 let () =
   with_temp_root @@ fun root ->
@@ -1899,7 +1899,7 @@ let () =
   expect_run "--failed reruns an unexpected pass" ~config:rerun tests
   @@ fun outcome -> check "xp reran" (ran_names outcome = [ "xp" ])
 
-(* Sharding (amendment B14) *)
+(* Sharding *)
 
 let shard_names = [ "t-one"; "t-two"; "t-three"; "t-four"; "t-five" ]
 
@@ -1936,9 +1936,8 @@ let () =
          List.filter (fun n -> List.mem n bucket) shard_names = bucket)
        buckets);
   check "shard buckets are stable across runs" (bucket 1 = List.nth buckets 0);
-  (* The mapping itself is frozen (amendment B14: stable across machines and
-     windtrap versions): this golden assignment may only change by amending
-     the RFC. *)
+  (* The mapping itself is frozen, stable across machines and windtrap
+     versions: this golden assignment changes only with that promise. *)
   let golden =
     [ [ "t-two"; "t-four"; "t-five" ]; []; [ "t-one"; "t-three" ] ]
   in
@@ -2024,7 +2023,7 @@ let () =
       check "a malformed hand-built shard fails loudly" true
   | Ok _ | Error _ -> check "a malformed hand-built shard fails loudly" false
 
-(* Test-body operations through the boundary (B9, B10, B13) *)
+(* Test-body operations through the boundary *)
 
 let () =
   with_temp_root @@ fun root ->
@@ -2438,7 +2437,7 @@ let () =
                entries))
   | None -> check "prop-sub recorded" false
 
-(* Fixture acquisition skips (amendment C1) *)
+(* Fixture acquisition skips *)
 
 let () =
   with_temp_root @@ fun root ->

@@ -1021,7 +1021,7 @@ let () =
         (contains "already active" rendered)
   | _ -> check "run inside a test body fails with a Raise payload" false
 
-(* The B-package through the facade
+(* The assertion verbs, body operations and xfail through the facade
 
    Deep semantics live in test/check and test/structure; this block only
    proves the facade wiring: the new verbs raise their typed claims, the
@@ -1062,7 +1062,7 @@ let () =
       xfail (test "unexpected pass" (fun () -> ()));
     ]
   in
-  expect_run "b-package" ~config suite @@ fun outcome ->
+  expect_run "facade wiring" ~config suite @@ fun outcome ->
   (match failure_list (outcome_of outcome [ "satisfies" ]) with
   | [
    {
@@ -1113,9 +1113,9 @@ let () =
     (not (List.mem "expected failure" (failed_paths outcome)));
   check "an unexpected pass counts as failed"
     (List.mem "unexpected pass" (failed_paths outcome));
-  check_int "b-package exit code" ~expected:1 ~actual:outcome.Run.exit_code
+  check_int "facade wiring exit code" ~expected:1 ~actual:outcome.Run.exit_code
 
-(* B-package edges
+(* Their edges
 
    The corners the happy paths above do not reach: empty needles, a raising
    extractor, xfail composed with cases and with slow selection, and
@@ -1620,7 +1620,6 @@ let () =
 (* INT, TERM and HUP end a run on what it knows: one [windtrap:] line
    naming the stopped test, the summary with what did not run, and a death
    by the same signal, so the parent sees the signal and not a code. *)
-let read_file path = In_channel.with_open_bin path In_channel.input_all
 
 let signal_child root mode signal_it =
   let file name =

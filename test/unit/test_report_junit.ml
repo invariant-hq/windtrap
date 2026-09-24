@@ -135,7 +135,7 @@ let test_withheld_correction () =
        </failure>"
     doc
 
-(* The invocation-spelled hints (D5 §1) *)
+(* The invocation-spelled hints *)
 
 let test_invocation_hints () =
   (* The JUnit body carries the same hint bytes as the terminal block:
@@ -179,7 +179,7 @@ let test_invocation_hints () =
     replay;
   contains ~msg:"replay hint bytes equal the terminal block's" ~sub:replay doc
 
-(* Expected failures (amendment B12) *)
+(* Expected failures *)
 
 let test_excused_as_skipped () =
   let results =
@@ -220,7 +220,7 @@ let test_excused_as_skipped () =
     ~sub:{|failures="1"|} xpass;
   not_contains ~msg:"an unexpected pass is not a skip" ~sub:"<skipped" xpass
 
-(* Subtests (amendment B13) *)
+(* Subtests *)
 
 let test_subtests_as_testcases () =
   let doc =
@@ -436,8 +436,7 @@ let tests =
     test "golden document" test_golden;
     test "full fixture run is well-formed" test_full_run;
     test "the message attribute's forms" test_message_forms;
-    test "bodies carry the invocation-spelled hints (D5 §1)"
-      test_invocation_hints;
+    test "bodies carry the invocation-spelled hints" test_invocation_hints;
     test "excused failures report as skipped" test_excused_as_skipped;
     test "a withheld correction offers no acceptance" test_withheld_correction;
     test "subtests become testcases" test_subtests_as_testcases;

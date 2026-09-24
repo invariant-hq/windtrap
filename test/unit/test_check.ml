@@ -106,7 +106,7 @@ let raise_payload name f k =
       k (expected, actual, backtrace)
   | _ -> fail (name ^ ": kind is Raise")
 
-(* Enrichment variant: [k] gets the recorded message diff (B1). *)
+(* Enrichment variant: [k] gets the recorded message diff. *)
 let raise_message_diff name f k =
   match caught name f with
   | { F.kind = F.Raise { message_diff; _ }; _ } -> k message_diff
