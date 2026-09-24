@@ -395,5 +395,224 @@ let () =
   expect_pass "the file under the root is read" (fun () ->
       B.check t file_help "source")
 
+(* The registry's edges *)
+
+let () =
+  reg "mode is the mode of create" @@ fun () ->
+  List.iter
+    (fun mode ->
+      is_true ~msg:"mode" (B.mode (B.create ~root:"/" ~cwd:"/" ~mode ()) = mode))
+    [ B.Check; B.Corrected; B.Update ]
+
+let () =
+  reg "two spellings of one file are two keys, and the later content is written"
+  @@ fun () ->
+  let root = temp_dir () in
+  let t = B.create ~root ~cwd:root ~mode:B.Update () in
+  expect_pass "the first spelling records" (fun () ->
+      B.check t (B.File "a/b.txt") "one");
+  expect_pass "the second spelling is another key" (fun () ->
+      B.check t (B.File "a/./b.txt") "two");
+  equal ~msg:"two corrections" int 2 (B.settle t ~keep:true);
+  B.write t;
+  equal ~msg:"the later content, no mismatch between them" string "two\n"
+    (read_raw (Filename.concat root "a/b.txt"))
+
+let () =
+  reg "a relative root is made absolute when the registry is created"
+  @@ fun () ->
+  let top = temp_dir () in
+  chdir top;
+  let t = B.create ~root:"proj" ~cwd:"proj" ~mode:B.Update () in
+  chdir (temp_dir ());
+  expect_pass "accepted" (fun () -> B.check t (B.File "a.txt") "x");
+  ignore (B.settle t ~keep:true);
+  B.write t;
+  equal ~msg:"written under the root as it stood at create" string "x\n"
+    (read_raw (Filename.concat top "proj/a.txt"));
+  is_true ~msg:"and reported absolute"
+    (List.for_all
+       (fun (w : B.written) -> not (Filename.is_relative w.B.path))
+       (B.writes t))
+
+let () =
+  reg "a root that ends in a slash is never a build action" @@ fun () ->
+  let root = temp_dir () in
+  write_raw (Filename.concat root help) "source\n";
+  write_raw (Filename.concat root ("_build/default/" ^ help)) "copy\n";
+  let t =
+    B.create ~root:(root ^ "/")
+      ~cwd:(Filename.concat root "_build/default/test")
+      ~mode:B.Check ()
+  in
+  expect_pass "the file under the root is read, not dune's copy" (fun () ->
+      B.check t file_help "source")
+
+let () =
+  reg "create raises Sys_error when the root needs an unreadable directory"
+  @@ fun () ->
+  let gone = Filename.concat (temp_dir ()) "gone" in
+  Unix.mkdir gone 0o700;
+  chdir gone;
+  Unix.rmdir gone;
+  (match Sys.getcwd () with
+  | _ -> skip ~reason:"this system reads a removed working directory" ()
+  | exception Sys_error _ -> ());
+  setenv "WINDTRAP_PROJECT_ROOT" (Some "relative");
+  raises_match ~msg:"Os.project_root's Sys_error passes" Check.Exn.sys_error
+    (fun () -> B.create ~cwd:"/" ~mode:B.Check ())
+
+(* Checking *)
+
+let () =
+  reg "a check computes no location and carries the one given" @@ fun () ->
+  let root = temp_dir () in
+  let t = B.create ~root ~cwd:root ~mode:B.Check () in
+  let loc_of ?loc () =
+    match B.check t ?loc (B.File "x") "v" with
+    | () -> failf "the check passed"
+    | exception Failure.Check_failure f -> f.Failure.loc
+  in
+  is_true ~msg:"no location without one" (loc_of () = None);
+  let loc = { Loc.file = "test/t.ml"; line = 7; column = 2 } in
+  is_true ~msg:"the given location" (loc_of ~loc () = Some loc)
+
+let () =
+  reg "~correct:false checks whatever the mode" @@ fun () ->
+  let root = temp_dir () in
+  List.iter
+    (fun mode ->
+      let t = B.create ~root ~cwd:root ~mode () in
+      ignore
+        (expect_failure "a mismatch fails" (fun () ->
+             B.check t ~correct:false (B.File "x") "v"));
+      equal ~msg:"and records no correction" int 0 (B.settle t ~keep:true))
+    [ B.Corrected; B.Update ]
+
+let () =
+  reg "the failure bounds its texts, the correction holds actual whole"
+  @@ fun () ->
+  let root = temp_dir () in
+  let big =
+    String.concat "" (List.init 20_000 (fun i -> string_of_int i ^ "\n"))
+  in
+  let t = B.create ~root ~cwd:root ~mode:B.Corrected () in
+  (match expect_failure "missing" (fun () -> B.check t file_help big) with
+  | Some (_, Failure.Missing { proposed }) ->
+      is_true ~msg:"the proposal is bounded"
+        (String.length proposed < String.length big)
+  | _ -> is_true ~msg:"missing: Missing payload" false);
+  ignore (B.settle t ~keep:true);
+  B.write t;
+  equal ~msg:"the .corrected holds every byte" string big
+    (read_raw (Filename.concat root (help ^ ".corrected")))
+
+let () =
+  reg "check raises Sys_error on an existing file it cannot read" @@ fun () ->
+  let root = temp_dir () in
+  Unix.mkdir (Filename.concat root "dir.expected") 0o700;
+  let t = B.create ~root ~cwd:root ~mode:B.Check () in
+  raises_match ~msg:"a directory where the baseline is" Check.Exn.sys_error
+    (fun () -> B.check t (B.File "dir.expected") "v")
+
+(* Settling and writing *)
+
+let () =
+  reg "settle ~keep:false returns 0 whatever the attempt recorded" @@ fun () ->
+  let root = temp_dir () in
+  let t = B.create ~root ~cwd:root ~mode:B.Update () in
+  expect_pass "one" (fun () -> B.check t (B.File "a") "1");
+  expect_pass "two" (fun () -> B.check t (B.File "b") "2");
+  equal ~msg:"two dropped, 0 returned" int 0 (B.settle t ~keep:false)
+
+let () =
+  reg "a second write writes nothing" @@ fun () ->
+  let root = temp_dir () in
+  let t = B.create ~root ~cwd:root ~mode:B.Update () in
+  expect_pass "accepted" (fun () -> B.check t file_help "first");
+  ignore (B.settle t ~keep:true);
+  B.write t;
+  let path = Filename.concat root help in
+  write_raw path "edited\n";
+  B.write t;
+  equal ~msg:"the file keeps the edit" string "edited\n" (read_raw path);
+  equal ~msg:"one write reported" int 1 (List.length (B.writes t))
+
+let () =
+  reg "update replaces a file baseline whatever happened to it" @@ fun () ->
+  let root = temp_dir () in
+  let path = Filename.concat root help in
+  write_raw path "old\n";
+  let t = B.create ~root ~cwd:root ~mode:B.Update () in
+  expect_pass "accepted" (fun () -> B.check t file_help "new");
+  write_raw path "edited since\n";
+  ignore (B.settle t ~keep:true);
+  B.write t;
+  equal ~msg:"the correction replaces the edit" string "new\n" (read_raw path)
+
+let () =
+  reg "a file baseline whose write fails is a refusal" @@ fun () ->
+  let root = temp_dir () in
+  let t = B.create ~root ~cwd:root ~mode:B.Update () in
+  expect_pass "accepted" (fun () -> B.check t (B.File "out/x") "v");
+  ignore (B.settle t ~keep:true);
+  (* A directory where the file goes: the rename over it fails. *)
+  Os.mkdir_p (Filename.concat root "out/x");
+  B.write t;
+  is_true ~msg:"nothing written" (B.writes t = []);
+  match B.refusals t with
+  | [ (path, reason) ] ->
+      equal ~msg:"the refusal names the file" string
+        (Filename.concat root "out/x")
+        path;
+      is_true ~msg:"with the Sys_error's message" (reason <> "")
+  | _ -> fail "one refusal"
+
+let () =
+  reg "write stops at a directory it cannot create, sources first" @@ fun () ->
+  if Sys.win32 then skip ~reason:"POSIX only" ();
+  if Unix.geteuid () = 0 then
+    skip ~reason:"root writes a read-only directory" ();
+  let root = temp_dir () in
+  write_raw (Filename.concat root "test/t.ml") source;
+  let read_only = Filename.concat root "ro" in
+  Unix.mkdir read_only 0o700;
+  let t = B.create ~root ~cwd:root ~mode:B.Update () in
+  expect_pass "a literal" (fun () -> B.check t (literal " old ") "new");
+  expect_pass "a file under the read-only directory" (fun () ->
+      B.check t (B.File "ro/sub/x") "v");
+  expect_pass "a file after it" (fun () -> B.check t (B.File "z.txt") "z");
+  ignore (B.settle t ~keep:true);
+  Unix.chmod read_only 0o500;
+  Fun.protect
+    ~finally:(fun () -> Unix.chmod read_only 0o700)
+    (fun () ->
+      raises_match ~msg:"the mkdir's Unix_error passes"
+        (function Unix.Unix_error _ -> true | _ -> false)
+        (fun () -> B.write t));
+  is_true ~msg:"the source was written first"
+    (Text.contains_substring ~pattern:"{| new |}"
+       (read_raw (Filename.concat root "test/t.ml")));
+  is_false ~msg:"the file after the failure was not"
+    (exists (Filename.concat root "z.txt"))
+
+let () =
+  reg "refusals are in path order" @@ fun () ->
+  let root = temp_dir () in
+  let edited = "let () =\n  expect (f ()) @@ __POS_OF__ {| edited |}\n" in
+  write_raw (Filename.concat root "test/b.ml") edited;
+  write_raw (Filename.concat root "test/a.ml") edited;
+  let t = B.create ~root ~cwd:root ~mode:B.Update () in
+  let lit file =
+    B.Literal { pos = (file, 2, 19, 40); value = " old "; exact = false }
+  in
+  expect_pass "b first" (fun () -> B.check t (lit "test/b.ml") "new");
+  expect_pass "then a" (fun () -> B.check t (lit "test/a.ml") "new");
+  ignore (B.settle t ~keep:true);
+  B.write t;
+  equal ~msg:"sorted by path" (list string)
+    [ Filename.concat root "test/a.ml"; Filename.concat root "test/b.ml" ]
+    (List.map fst (B.refusals t))
+
 let tests = List.rev !registered
 let () = exit @@ Windtrap.run "baseline" tests
