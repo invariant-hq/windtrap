@@ -233,7 +233,8 @@ let write ~invocation ?armed ~suite ~duration ~results target =
   let document = render ~invocation ?armed ~suite ~results ~duration () in
   match
     (* The directory form has to exist before the first suite writes into
-       it, and nothing else creates it. *)
+       it, and nothing else creates it. The test is physical: [path] returns
+       [target] itself for the file form and a fresh string otherwise. *)
     if file != target then Os.mkdir_p (Filename.dirname file);
     Os.atomic_write ~path:file document
   with

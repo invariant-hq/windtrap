@@ -3,50 +3,58 @@
    SPDX-License-Identifier: ISC
   ---------------------------------------------------------------------------*)
 
-(** The report's blocks: the failure projection every transport shares, and the
-    section vocabulary the coverage and mutation reports project into.
+(** The report's blocks.
 
-    Everything here derives from data ({!Failure.t}, {!type:coverage},
-    {!type:mutation}) and prints under one explicit [ansi] decision; no function
-    reads the environment or the terminal. Section data never carries escape
-    codes. {!Report} composes these blocks into the transcript; {!Report_junit}
-    projects through them. *)
+    The module holds the one projection of a {!Failure.t} that every transport
+    of a run shares, and the section vocabulary of the coverage and mutation
+    reports. {!pp_failure} formats the entry of a failure and {!hints} the
+    commands that close its block. {!coverage_report}, {!survivor_block},
+    {!mutation_closing} and {!mutation_report} build {!section} lists, which
+    {!print} writes.
+
+    Everything printed here derives from data: a {!Failure.t}, a
+    {!type:coverage} or a {!type:mutation}. A producer builds that data and
+    never text that carries a style or a command, so nothing is formatted where
+    a failure is raised. Styling is the [ansi] decision that the caller passes
+    to {!pp_failure} and to {!print}, and section data holds no escape code. The
+    module names no instrumentation runtime, so whoever holds one builds the
+    records and spells the identifiers in them.
+
+    No function reads the terminal or a colour setting, and each writes only on
+    the formatter that it is given: where and when its text shows is its
+    caller's contract. {!pp_failure} under [~excerpt:true] opens the located
+    source file, and the path of a file baseline prints through
+    {!Os.display_path}. Both read {!Os.project_root}, hence the environment and
+    the working directory.
+
+    A cap is a constant of [report_sections.ml], named here beside its value. *)
 
 (** {1:failures Failure projections}
 
-    The projection of one {!Failure.t} shared by the terminal failure blocks,
-    the JUnit document and the GitHub annotations. *)
+    An entry is what {!pp_failure} prints for one failure. *)
 
 val headline : Failure.t -> string
-(** [headline f] is [f] as one unstyled sentence, for single-line fields such as
-    JUnit [message] attributes: {!labeled_msg} and [": "] when there is one,
-    then the failure ([contract › shape [0]: expected [1; 2], got [1; 3]]). The
-    sentences are [expected X, got Y], [both sides equal: X],
-    [both sides render as: X], [expected and actual differ (N diff lines)] for a
-    multi-line equality, [needle N not found (K-byte haystack)],
-    [needle N found at byte B],
-    [element I N out of order: at byte B, before byte C],
-    [element I N not found at or after byte C (K-byte haystack)],
-    [expected exception E, raised F], [expected exception E, none raised],
-    [expected an exception, none raised], [uncaught exception: E],
-    [exception did not satisfy the predicate: E], [<subject>: mismatch],
-    [<subject>: no baseline],
-    [<subject>: cannot resolve the path under the project root],
-    [property failed (case N, shrunk S steps[, shrinking timed out|, shrink
-     limit reached]): [computed from ]<v>], [<v>] being the failure's [summary]
-    when it has one, and a message's text. Newlines are spaces, escape codes are
-    stripped, and past 80 code points the line ends in […]. *)
+(** [headline f] is [f] as one unstyled sentence, for a field that holds a
+    single line. It is [labeled_msg f] and [": "] when there is one, then one
+    clause for the facts of [f.kind], which {!pp_failure} prints in full. Line
+    feeds, carriage returns and tabs become spaces, and escape sequences are
+    stripped. Past 80 code points ([max_headline_chars]) the sentence is cut and
+    ends in an ellipsis. Any other control byte is left to the escaping of the
+    field that receives the sentence. *)
 
 val is_subtest_failure : Failure.t -> bool
-(** [is_subtest_failure f] is [true] iff [f]'s [subtest] components are
-    non-empty, i.e. it was recorded inside {!Run.subtest}. Classification reads
-    the record, never the [msg] text. *)
+(** [is_subtest_failure f] is [true] iff [f.subtest] is not empty, that is iff
+    [f] was recorded inside {!Run.subtest}. It reads the record and never the
+    text of [f.msg]. {!Report} counts such entries as the subtest failures of
+    its summary, and {!Report_junit} writes each as a testcase of its own. *)
 
 val labeled_msg : Failure.t -> string option
-(** [labeled_msg f] is [f]'s [msg] slot as reports display it: for a sub-case
-    entry the [leaf › name] label from its [subtest] components, with the user's
-    [?msg] after [": "] when there is one; for a plain failure the [?msg]
-    itself. *)
+(** [labeled_msg f] is the label of [f] in a single-line field. For a failure
+    recorded inside {!Run.subtest} it is the components of [f.subtest], the
+    test's own name first, joined by {!Test_tree.path_to_string}. [": "] and
+    [f.msg] follow when there is one. For any other failure it is [f.msg].
+
+    An entry of {!pp_failure} does not print it. *)
 
 val pp_failure :
   ansi:bool ->
@@ -58,95 +66,106 @@ val pp_failure :
   Format.formatter ->
   Failure.t ->
   unit
-(** [pp_failure ~ansi ppf f] formats [f]'s entry in a report block. Every line
-    but the blank one after a source line is indented four spaces, and the
-    output ends with a newline. In order:
+(** [pp_failure ~ansi ppf f] formats the entry of [f] on [ppf], styled iff
+    [ansi]. The entry ends with a newline and holds, in this order:
+    - the location of [f], with its phase before it when [f.phase] is not
+      {!Failure.Body}. The phase stands alone when [f] has no location.
+    - under [~excerpt:true], the source line at that location and a blank line.
+    - the names of the subtests that [f] was recorded in, without the test's own
+      name.
+    - [f.msg], line by line.
+    - the facts of [f.kind], as the paragraphs below list them.
+    - under [~hints:true], the lines of {!hints} for [f] alone.
 
-    - The location, the bare [<file:line>]. A phase other than {!Failure.Body}
-      is the tag [[setup]], [[teardown]] or [[release]] before it
-      ([[teardown] test/db.ml:36]), alone on the line when [f] has no location.
-    - When [excerpt] is [true] (default [false]) and the file is readable, the
-      located source line under it as [  <N> │ <src>], [<src>] without its
-      leading and trailing whitespace and printed as a single-line value is
-      (below), then one blank line: relative paths resolve against
-      {!Os.project_root} first, then as given. An unreadable file prints
-      neither.
-    - [subtest   <name>], the anchor padded as [expected] is, for an entry
-      recorded inside {!Run.subtest}, then the [?msg] annotation, each of its
-      lines at the block's indentation, the other control bytes escaped as a
-      name's are ({!sanitize_name}).
-    - The kind's fact lines: [expected]/[actual] over two single-line values.
-      Under [ansi] the changed spans print bold in their side's colour inside an
-      otherwise plain value and no [~] line prints, save under a side with a
-      changed span of spaces, which colour cannot show; without it one [~] per
-      changed code point prints under each side that has a changed span, omitted
-      when a side holds a tab or a code point outside U+0020 to U+024F. A pair
-      refinement declines prints each side whole in its colour and no [~] line.
-      A unified line diff for multi-line renderings; [both sides equal: <v>] for
-      a negation; [both sides render as: <v>] over
-      [the printer shows less than the equality compares] for a pair the printer
-      cannot tell apart;
-      [values differ only by a trailing newline (on the <side> side)]. A diff
-      prints at most 200 lines, then [… (+N more diff lines)]; a [-]/[+] pair
-      that differs only in trailing spaces and tabs has a [~] line under the [-]
-      line.
-    - [needle  <%S>: <verdict>] over [haystack  <excerpt>] (an [element  <i>]
-      line first for an [in_order] chain break), the occurrence marked as a
-      changed span is, in the haystack or in its line of a multi-line
-      [haystack:] block; then [(excerpt: bytes A-B of a T-byte haystack)] iff
-      the excerpt is partial.
-    - [expected exception  <e>] over [raised  <e>], never marked, a rendering
-      that spans lines an indented block under its anchor, and
-      [but no exception was raised] in place of the second side;
-      [raised <Constructor> with the wrong message:] over the two messages as
-      [expected]/[actual], [%S]-quoted and marked as any two values are;
-      [uncaught exception:], or
-      [raised exception does not satisfy the predicate:] for a [raises_match]
-      rejection, over the exception indented two more;
-      [expected an exception, but none was raised]; then the backtrace, at most
-      {!max_lines} frames and [… (+N more frames)].
-    - A baseline's first fact line, [expect: mismatch], [expect_exact: mismatch]
-      or [expect_file "<path>": mismatch|no baseline], then a mismatch's
-      correction as hunks with no [---]/[+++] head, or the trailing-newline
-      sentence when that is all an [expect_exact] differs by; a missing file's
-      as [proposed (N lines):] over at most 20 [+ ] lines indented two more,
-      then [… (+N more lines)]; an unresolvable path prints
-      [<subject>: the path cannot be proven to lie under the project root],
-      [unverified path: <candidate>] and
-      [(set WINDTRAP_PROJECT_ROOT to the directory the path is relative to)].
-    - [counterexample (case N, shrunk S steps): <v>] ([shrunk 1 step]), a
-      multi-line value as a block under it; a failure with a [summary] prints
-      the summary as [<v>] and its table under it, the header row faint; a
-      pre-image prints [computed from <p>] and, indented two more, the aside
-      [(the value has no printer, so this is the input that map and bind
-       computed it from; attach a printer with Gen.with_pp to see the value)]; a
-      search cut short prints
-      [timed out after <T>s while shrinking; counterexample may not be minimal]
-      or [shrinking stopped after S steps; counterexample may not be minimal];
-      then [which failed at:], or [which failed with:] when the inner failure
-      has no location, over the inner failure's entry, indented two more, no
-      blank line after its source line.
-    - A message's text.
-    - When [hints] is [true] (the default), {!val-hints} of [[f]].
+    The captured output of the test is no part of an entry, because it belongs
+    to the test and each transport places it.
 
-    A single-line value over 800 bytes, a needle and a source line included,
-    prints its first and last 400, cut on code points, around
-    [… (N bytes elided)], [N] counting the carried value's bytes, and is never
-    marked.
+    - [excerpt] defaults to [false]. The source line prints when the file can be
+      read and holds the line, and the blank line prints only with it. A
+      relative path is tried under {!Os.project_root} first and then as given.
+      The line is bounded and escaped as a single-line value is.
+    - [hints] defaults to [true].
+    - [filter], [invocation] and [armed] are the arguments of {!hints}. Without
+      [filter] a command carries no filter.
 
-    The captured-output tail is not rendered here; it is per test, and the
-    transports place it.
+    {b Equality.} Two single-line renderings print as the expected side over the
+    actual side, and the spans of {!Diff.refine} mark what changed. With [ansi]
+    a changed span is styled in its side's colour and bold. Without it a line of
+    [~] marks the span under each side that has one. A pair that {!Diff.refine}
+    declines, and one whose expected side is a claim ({!Failure.predicate}),
+    print each side in one style and unmarked.
 
-    Compared data and a source line print each C0 byte and DEL as a lowercase
-    [\xNN] escape (LF and TAB excepted) under both [ansi] settings, payload text
-    inside [%S] quotes carrying OCaml's escapes instead; the author's own words
-    ([?msg], a {!Failure.Message} text, a backtrace) and test names are
-    ANSI-stripped under [ansi:false] and pass through under [ansi:true]. *)
+    When a side spans lines the entry is the unified diff of {!val:Diff.hunks},
+    the expected lines as the deleted ones. It prints at most 200 lines
+    ([max_diff_lines]), hunk heads included, and then a count of the rest. A
+    deleted line and the one inserted line that answers it may differ in
+    trailing blanks alone. A marker line then prints under the deleted one,
+    under both [ansi] settings.
+
+    Three equalities have nothing to mark. A negated one ([not_]) prints the one
+    value that both sides render as. An equality whose renderings are equal byte
+    for byte prints that value too, with a line saying that the printer shows
+    less than the equality compares. One whose renderings differ by a final
+    newline alone prints a sentence that names the longer side.
+
+    {b Containment.} The entry prints the chain index of an {!Failure.Ordered}
+    demand, then the needle with the verdict of the search. The verdict says
+    whether and at which byte the needle was found, and for an ordered demand at
+    which byte the search had resumed. The excerpt of the haystack follows,
+    whole, with the occurrence marked in it as a changed span is. Its byte range
+    comes last, when it is not the whole haystack.
+
+    {b Raise.} The entry prints the expected exception over the raised one, each
+    in one style and never marked, or over a sentence when nothing was raised. A
+    [message_diff] prints the shared constructor once, then the two messages as
+    the sides of an equality, quoted as OCaml strings. An assertion that named
+    no exception prints the raised one, under a line that tells an uncaught
+    exception from a rejected [raises_match] predicate. When nothing was raised
+    it prints a sentence instead. The recorded backtrace closes the entry, at
+    most {!max_lines} frames and then a count of the rest.
+
+    {b Baseline.} The first line names the expectation and its state: [expect],
+    [expect_exact], or [expect_file] with its path through {!Os.display_path}. A
+    mismatch then prints the correction as hunks, from the baseline to the
+    produced text and under the cap of an equality's diff. It prints the
+    final-newline sentence of an equality when that is all that differs. A
+    missing baseline prints the content that it would hold, at most 20 lines
+    ([max_proposed_lines]) and then a count of the rest. An unresolvable path
+    prints the unproven path and names [WINDTRAP_PROJECT_ROOT] as the way out.
+
+    {b Property.} The head line names the case and carries the counterexample.
+    An explicit example is named by its one-based index, any other case by its
+    zero-based index and, when it has some, by its shrink steps. A [summary] and
+    a {!Failure.Pre_image} print as {!type:Failure.kind} asks of a renderer. A
+    search that the timeout cut short, or that stopped without converging
+    ([shrink_exhausted]), adds a line that says which.
+
+    The entry of the inner failure comes last. It is an entry as above, nested,
+    with no blank line after its source line and no hint lines.
+
+    {b Message.} The text prints line by line, and an empty text as a
+    placeholder that says so.
+
+    {b Bounds and escaping.} A single-line value, a needle and a source line
+    included, prints whole up to 800 bytes ([max_value_bytes]). A longer one
+    prints at most 400 bytes from each end around the number of bytes left out,
+    and is never marked. {!Text.elide_middle} makes the cut, before any
+    escaping.
+
+    Compared data and source lines print each C0 control byte and DEL as a
+    lowercase [\xNN] escape, LF and TAB excepted, under both [ansi] settings. A
+    needle and the messages of a [message_diff] carry OCaml's escapes instead.
+    The escape is a projection, which equality, containment and baseline storage
+    never see.
+
+    [f.msg] and the subtest names print as a name does ({!sanitize_name}), while
+    the text of a message and a backtrace go through neither escape. In all four
+    an escape sequence passes under [ansi] and is stripped without it. *)
 
 val max_lines : int
-(** [max_lines] is the one bound on a block's unbounded texts: the frames of a
-    backtrace {!pp_failure} prints, and the lines of a captured tail its
-    transports print. *)
+(** [max_lines] is [10], the bound on the two texts of a block that have no
+    other. {!pp_failure} prints at most that many frames of a backtrace, and
+    {!Report} at most that many lines of captured output in a failure block. *)
 
 val hints :
   ?armed:string ->
@@ -155,51 +174,69 @@ val hints :
   Failure.t list ->
   string list
 (** [hints ~filter failures] is the hint lines of a block whose entries are
-    [failures], unindented: a word and a command line that runs at least the
-    block's test, and says what the block does not. One line per distinct
-    command line: [accept:] for each missing or mismatched baseline, then
-    [replay:] for each seeded property failure; [[]] when there is neither.
+    [failures], unindented and unstyled. A hint line is a word and a command
+    that runs as pasted and says what the block does not.
 
-    A baseline failure whose correction the run withheld
-    ({!Failure.with_withheld}) has no [accept:], the command having nothing to
-    promote or rewrite, and the lines then open with the fact line that says
-    why:
-    [no correction was kept: the test also failed outside its expectations; fix
-     that failure and rerun], or
-    [no correction was kept: the test also skipped; skip before the expectation
-     or not at all, and rerun].
+    The lines are one [accept:] for each baseline failure that is missing or
+    mismatched, then one [replay:] for each {!Failure.Property} failure whose
+    case was generated. Equal lines print once, and the result is [[]] when no
+    failure has a command. A baseline failure whose correction the run withheld
+    ({!Failure.with_withheld}) has no [accept:], since the command would accept
+    nothing. The lines then open with one fact line, which gives the reason of
+    the first such failure.
 
-    [filter] is the test's path string, single-quoted into the command line (as
-    [$'…'] with its control bytes escaped when it holds one, so a hint is always
-    one line); [None] (a fixture-release row) spells the launcher alone.
-    [invocation] (default [`Mirrors]) is the launcher: under [`Exe cmd] the
-    lines are [replay: cmd --seed S [--prop-count N] -f 'P'] and
-    [accept: cmd -u -f 'P']; under [`Mirrors] they are
-    [replay: WINDTRAP_SEED=S … dune runtest] and [accept: dune promote <file>],
-    a missing file's being
-    [accept: touch '<file>' && dune runtest; dune promote <file>]. [armed] is
-    the armed mutant's identifier: [replay:] carries it as [--arm ID] after the
-    launcher, or as a leading [WINDTRAP_MUTATE_ARM=ID] under [`Mirrors], and no
-    [accept:] prints, an armed run's baseline failures being the mutant's. *)
+    - [filter] is the path of the block's test as a string. It is single-quoted
+      into each command, in the [$'…'] form when it holds a control byte, so a
+      hint is one line whatever the path holds. [None] spells the commands
+      without a filter.
+    - [invocation] is how the run was started ({!type:Run.invocation}) and
+      defaults to [`Mirrors]. Under [`Exe cmd] a command is [cmd] as given and
+      then its flags. Under [`Mirrors] a [replay:] sets the mirrors of those
+      flags in front of [dune runtest], and an [accept:] is [dune promote].
+    - [armed] is the identifier of the armed mutant, passed through
+      {!shell_word}. Every [replay:] then arms it. Neither an [accept:] nor the
+      fact line of a withheld correction prints, because the baseline failures
+      of an armed run are the mutant's.
+
+    A [replay:] carries the armed mutant, the seed, the filter, and the case
+    count when the failure's [count] is [Some _] (see {!type:Failure.kind}). An
+    [accept:] carries [-u] and the filter, or under [`Mirrors] the file that
+    holds the baseline. That file is the one of the failure's location for a
+    literal, and the path of a file baseline through {!Os.display_path}. *)
+
+(** {1:names Names and command words} *)
 
 val sanitize_name : string -> string
-(** [sanitize_name s] is [s] with C0 control bytes and DEL escaped OCaml-style
-    ([\n], [\t], [\xNN]) and ESC left alone: how every terminal surface prints a
-    user-controlled name. *)
+(** [sanitize_name s] is [s] with each C0 control byte and DEL escaped, ESC
+    excepted: LF, TAB and CR by their OCaml names, the others as [\xNN]. This
+    module prints through it the subtest names and the lines of [f.msg] of an
+    entry, the path of a file baseline and the name of a reaching test. The
+    strings that do not go through it are named where they print, at
+    {!Report.create}, {!type:coverage_file}, {!type:witness}, {!type:mutant} and
+    {!type:mutation}. A name has no line structure to keep, so its LF and TAB
+    are escaped where those of compared data are not ({!pp_failure}). ESC is
+    left to the sink, which strips escape sequences under [ansi:false] and
+    passes them under [ansi:true]. *)
 
 val shell_word : string -> string
-(** [shell_word s] is [s] as one word of a command line a POSIX shell reads: [s]
-    itself when it is made of letters, digits and [_-./:=+,@%], single-quoted
-    otherwise ([$'…'] when it holds a control byte). What spells a launcher
-    passes the executable's path through it, so a hint runs as pasted. *)
+(** [shell_word s] is [s] as one word of a shell command line. It is [s] itself
+    when [s] is not empty and made of letters, digits and the characters of
+    [_-./:=+,@%], and [s] in single quotes otherwise. A word that holds a
+    control byte takes the [$'…'] form, which bash, zsh and ksh read and POSIX
+    [sh] does not define.
+
+    Whoever spells the [cmd] of an [`Exe] invocation passes the path of the
+    executable through it, so a printed command runs as pasted. *)
 
 (** {1:sections The section vocabulary}
 
-    The lines, rows, excerpts and rules instrumentation reports are made of. A
-    {!Hint} carries no spans by construction. *)
+    The lines, tables, source excerpts and rules that the coverage and mutation
+    reports are made of. Adding a constructor to {!section} is a design
+    amendment, as adding one to {!type:Failure.kind} is. *)
 
 type span = { style : Pp.style option; text : string }
-(** The type for a styled run of text. *)
+(** The type for a run of text under one style, or under none. Styles do not
+    nest ({!Pp.style}), so a line is a flat list of spans. *)
 
 val plain : string -> span
 (** [plain text] is [text] unstyled. *)
@@ -208,208 +245,225 @@ val styled : Pp.style -> string -> span
 (** [styled style text] is [text] under [style]. *)
 
 type column = { gap : string; align : [ `Left | `Right ]; width : int option }
-(** The type for a table column: the text before the cell, its alignment, and a
-    width floor ([None] fits the widest cell). *)
+(** The type for a column of {!Rows}. [gap] is the text before each cell,
+    [align] the side on which its cells are aligned, and [width] a floor in code
+    points. A column is as wide as its widest cell and at least [width].
+    {!mutation_report} uses the floor to keep the executables of all its blocks
+    in one column. *)
 
 type excerpt = {
-  source : string;  (** The file's text. *)
-  marked_lines : int list;  (** The 1-based lines to mark. *)
+  source : string;  (** The text of the file. *)
+  marked_lines : int list;
+      (** The one-based lines to mark, in any order. A line outside [source] is
+          dropped. *)
 }
 (** The type for a source excerpt: the marked lines of [source], each with one
-    line of context, touching windows merged. *)
+    line of context on either side. *)
 
 (** The type for report sections. *)
 type section =
-  | Line of span list  (** One line; [Line []] is a blank line. *)
-  | Hint of string  (** One unstyled line: a command to type. *)
+  | Line of span list  (** One line. [Line []] is a blank line. *)
+  | Hint of string
+      (** One line that is a command to type. It takes no span, so a hint
+          carries no style. *)
   | Rows of { margin : string; columns : column list; rows : span list list }
-      (** A table: each row's cells padded to the widest cell of their column,
-          trailing spaces stripped. *)
+      (** A table. A row is [margin], then for each column its [gap] and its
+          cell, which is padded to the width of its column outside its style.
+          Trailing spaces are stripped, and a cell beyond [columns] is not
+          printed. *)
   | Excerpt of excerpt
-      (** The excerpt's regions, a faint [·····] between two: each line as
-          [  <N> │ <text>], the number right-aligned in at least four columns, a
-          marked line carrying the red [▌] in its margin, [<text>] escaped as
-          {!pp_failure} escapes a source line. *)
-  | Rule of string option  (** A faint 58-column {!rule}. *)
+      (** The regions of an excerpt, windows that overlap or touch forming one
+          region. Each line carries its number, and a marked line a marker. The
+          text of a line is escaped as {!pp_failure} escapes compared data and
+          is otherwise whole, neither dedented nor elided. *)
+  | Rule of string option
+      (** A {!rule} of the width that every report shares, with its label when
+          given. *)
 
 val rule : width:int -> string option -> string
-(** [rule ~width label] is a rule of [width] columns of [─], unstyled, [label]
-    centred in it when given ([── label ──]). *)
+(** [rule ~width label] is a horizontal rule [width] columns wide, unstyled,
+    with [label] centred in it when given. A long label takes the rule past
+    [width]. *)
 
 val print : out:Format.formatter -> ansi:bool -> section list -> unit
-(** [print ~out ~ansi sections] writes [sections] to [out] in order, styled
-    under [ansi] (no escape codes at all under [ansi:false]), and flushes [out].
-*)
+(** [print ~out ~ansi sections] writes [sections] to [out] in order and flushes
+    [out]. Spans are styled iff [ansi]. Under [ansi:false] every line is also
+    stripped of escape sequences. *)
 
 (** {1:coverage Coverage}
 
-    The coverage report drawn by [windtrap coverage] over merged files. The
-    records below are built by whoever holds the runtime; this module orders
-    nothing and counts nothing. *)
+    The report of [windtrap coverage] over merged data. This module derives the
+    percentages and the line ranges from them, and changes no order and no
+    count. *)
 
 type coverage_file = {
-  file : string;  (** The source file name as recorded at instrumentation. *)
-  visited : int;  (** Points visited at least once. *)
-  total : int;  (** Points instrumented. *)
+  file : string;
+      (** The name of the source file as recorded at instrumentation. It does
+          not go through {!sanitize_name}. *)
+  visited : int;  (** The points visited at least once. *)
+  total : int;  (** The points instrumented. *)
   uncovered : int list;
-      (** The 1-based source lines the unvisited points touch, sorted, without
-          duplicates. [[]] when [source] is [None]. *)
+      (** The one-based source lines that the unvisited points touch. The
+          producer must sort the list and remove its duplicates, because the
+          ranges are read off it as given. It is [[]] when [source] is [None],
+          because a point is attributed to a line only through the text. *)
   source : string option;
-      (** The source text, when the builder found it and it is consistent with
-          the recorded data. *)
+      (** The source text, when the producer found it and it agrees with the
+          recorded data. The source view of [`Full] needs it. *)
   stale : bool;
-      (** [true] when the source was found but changed since the data was
-          recorded; [source] is then [None] and [uncovered] is [[]]. *)
+      (** [true] when the source was found and has changed since the data was
+          recorded. [source] is then [None] and [uncovered] is [[]]. *)
 }
-(** The type for one line of the per-file table. *)
+(** The type for the row of one file. *)
 
 type coverage = {
-  visited : int;  (** Points visited at least once, over all files. *)
-  total : int;  (** Points instrumented, over all files. *)
-  files : coverage_file list;
-      (** The per-file table, in print order: by file name, as the builder
-          orders it. *)
+  visited : int;  (** The points visited at least once, over all files. *)
+  total : int;  (** The points instrumented, over all files. *)
+  files : coverage_file list;  (** The files, in the order their rows print. *)
 }
 (** The type for a whole coverage report. *)
 
 val coverage_line : min:float option -> visited:int -> total:int -> span list
-(** [coverage_line ~min ~visited ~total] is the report's outcome line,
-    [coverage: 87.2% (312/358 points)], followed under a gate [min] by
-    [, minimum 80%: ok] (green) or [, minimum 90%: FAILED] (red): the gate is
-    met iff the unrounded percentage is at least [min]. A percentage, here and
-    throughout the report, is red below [min], or below 80 when [min] is [None],
-    and unstyled otherwise. *)
+(** [coverage_line ~min ~visited ~total] is the outcome line of the report: the
+    percentage of [visited] in [total], 100 for zero points, and the two counts.
+    Under a gate [min] the line goes on with the gate and says whether it is
+    met, that is whether the unrounded percentage is at least [min]. A
+    percentage, here and in every line of {!coverage_report}, is styled as
+    failing below [min], or below 80 when [min] is [None]. *)
 
 val coverage_report :
   mode:[ `Report | `Full ] -> min:float option -> coverage -> section list
-(** [coverage_report ~mode ~min c] is the coverage report for [c]. In order:
+(** [coverage_report ~mode ~min c] is the coverage report of [c], and [`Full] is
+    the [-u] of the command. It holds, in this order:
+    - when [c.files] is not empty, a header row that names the columns, then one
+      row per file in the order of [c.files]. A row holds the percentage of the
+      file, its visited and total points, its name and its uncovered lines as
+      ranges. A fully covered file has no ranges. In their place a stale file
+      says that its source changed and how to refresh the data, and a file whose
+      unvisited points have no line says that its source was not found.
+    - under [`Full], for each file that has uncovered lines and a [source], a
+      heading with the name and the numbers of the file, then the {!Excerpt} of
+      its uncovered lines.
+    - {!coverage_line}, always last.
 
-    - When [c] has files, a faint header row naming the columns, each label at
-      its column ([cover], [points], [file] and
-      [uncovered lines (-u shows the source)], the parenthesis omitted under
-      [`Full]; long file names take this row past 80 columns), then one row per
-      file: its percentage, visited/total, name and uncovered line ranges
-      ([88-94, 121]). A row prints its first eight ranges, then [(+N more)], [N]
-      the ranges not shown; nothing is fitted to a width. A file whose unvisited
-      points have no line attribution says [(source not found)], a stale one
-      [stale: the source changed; re-run the instrumented tests].
-    - Under [`Full], after one blank line, per file with uncovered lines and a
-      readable source: [<file>: 75.0% (111/148)], the name bold, a blank line
-      and the file's {!Excerpt}; one blank line between files and one after the
-      last.
-    - {!coverage_line}, always last. *)
+    A row shows its first eight ranges ([max_ranges]), then the number of ranges
+    left out. Under [`Report] the last label of the header row carries the hint
+    that [-u] shows the source. Nothing is fitted to a width, so a long file
+    name or a row of eight ranges can pass 80 columns. *)
 
 (** {1:mutation Mutation}
 
-    The mutation report: survivor blocks, the never-reached rows, the reproduce
-    command and the outcome line. The mutation loop commits a survivor's block
-    when it finds it and ends on {!mutation_closing}; [windtrap mutants] prints
-    {!mutation_report} over a merge. Which mutants survived, in which order, and
-    their reaching tests are the producer's. *)
+    The mutation report: survivor blocks, the never-reached section, the
+    [reproduce:] command and the outcome line. {!mutation_report} is made of
+    {!survivor_block} and of the sections of {!mutation_closing}, so the two
+    reports end alike.
+
+    Which mutants survived, in which order, and their reaching tests are the
+    producer's. No count is measured here, since each one is a field of
+    {!type:mutation}, the length of one of its lists, or their sum. *)
 
 type witness = {
   test : string;
-      (** The test's full path, as {!Test_tree.path_to_string} spells it. *)
-  loc : Loc.t option;  (** Where the test is declared, when it is known. *)
+      (** The path of the test, as {!Test_tree.path_to_string} spells it. *)
+  loc : Loc.t option;
+      (** Where the test is declared, when the producer knows it. *)
   exe : string option;
-      (** The test executable that ran the test. [None] in a per-executable
-          report, where the column is omitted. *)
+      (** The executable that ran the test. It is [None] in the report of one
+          executable, which has no such column. It does not go through
+          {!sanitize_name}. *)
 }
-(** The type for a survivor's reaching tests: a test that evaluated the mutated
-    line and did not fail when it changed. *)
+(** The type for a reaching test of a survivor: a test that evaluated the
+    mutated site and did not fail when it changed. *)
 
 type mutant = {
   id : string;
-      (** The mutant's identifier in the runtime's canonical spelling
-          ([lib/calc.ml:9:12:add]). *)
-  file : string;  (** The mutated source file. *)
-  line : int;  (** 1-based line of the mutated expression. *)
-  before : string;  (** The original expression's source text. *)
-  after : string;  (** The armed expression's source text. *)
+      (** The identifier of the mutant, spelled by the producer with the
+          runtime's own function. The report prints it and hands it to [--arm]
+          through {!shell_word}, without spelling it again. *)
+  file : string;
+      (** The mutated source file. No function of this module reads it. *)
+  line : int;  (** The one-based line of the mutated expression. *)
+  before : string;  (** The source text of the original expression. *)
+  after : string;  (** The source text of the expression that replaces it. *)
   source : string option;
-      (** The mutated file's text, when the producer could read it; the source
-          line is dropped otherwise. *)
+      (** The text of the mutated file, when the producer could read it. *)
 }
-(** The type for one mutant as a block draws it. *)
+(** The type for a mutant as a block shows it. [id], [before] and [after] do not
+    go through {!sanitize_name}. *)
 
 type survivor = {
   mutant : mutant;  (** The mutant that survived. *)
   witnesses : witness list;
-      (** The tests that ran the line and did not fail. Never empty, never
-          truncated. *)
+      (** The reaching tests of [mutant]. The list must not be empty, because a
+          mutant that no test evaluated is never reached and is no survivor. It
+          is never truncated. *)
 }
-(** The type for one survived mutant. *)
+(** The type for a survived mutant. *)
 
-(** The type for what a report's reached count is relative to, the outcome
-    line's subject: [5 reached by this suite],
-    [2 reached by the 2 selected tests], [12 reached, 3 executables]. *)
+(** The type for what the reached count of a report is relative to. The outcome
+    line names it. *)
 type scope =
-  | Suite  (** A per-executable run over its whole suite. *)
+  | Suite  (** The run of one executable over its whole suite. *)
   | Selected of int
-      (** A per-executable run whose selection narrowed the suite to this many
-          tests. *)
+      (** The run of one executable whose selection narrowed the suite to this
+          many tests. *)
   | Executables of int
-      (** The aggregate over this many executables' verdict files. *)
+      (** A merge over the verdict files of this many executables. *)
 
 type mutation = {
   survivors : survivor list;
-      (** Every survived mutant, in the order its block prints. Never capped. *)
+      (** Every survivor, in the order in which its block prints. *)
   unreached : (string * int) list;
-      (** The source file and 1-based line of every mutant no test evaluated. *)
-  killed : int;  (** How many mutants were killed. *)
+      (** The file and the one-based line of each mutant that no test evaluated,
+          one pair per mutant. The file does not go through {!sanitize_name}. *)
+  killed : int;  (** The number of mutants killed. *)
   not_tested : int;
-      (** How many reached mutants have no verdict: those an interrupted loop
-          did not finish. [0] in every other report. *)
+      (** The number of reached mutants that have no verdict, which are those
+          that an interrupted loop did not finish. It is [0] in every other
+          report. *)
   scope : scope;  (** What the reached count is relative to. *)
 }
-(** The type for a whole mutation report. The reached count is
+(** The type for a whole mutation report. Its reached count is
     [killed + List.length survivors + not_tested]. *)
 
 val survivor_block : exe_width:int option -> survivor -> section list
-(** [survivor_block ~exe_width s] is [s]'s block:
-
-    - [  SURVIVED  lib/calc.ml:9:12:add  a - b → a + b], [SURVIVED] red and the
-      identifier bold.
-    - The mutated source line as {!pp_failure} prints a located one
-      ([      9 │ | Sub -> a - b]), when the source is known and has the line.
-    - A blank line, then [3 tests ran this line and none failed:], singular
-      [1 test ran this line and did not fail:], and
-      [3 tests in 2 executables ran this line and none failed:] when the
-      reaching tests name several executables.
-    - One row per reaching test: its name ({!sanitize_name}) padded to the
-      widest of the block, then its faint location. Under [exe_width = Some w]
-      the executable comes first, padded to [w] columns. *)
+(** [survivor_block ~exe_width s] is the block of [s]. It holds, in this order:
+    - the title, with the identifier of the mutant and its rewrite, from
+      [before] to [after].
+    - the mutated source line, as {!pp_failure} prints a source line, when
+      [source] is known and holds the line.
+    - the sentence that counts the reaching tests, and their executables when
+      they name several.
+    - one row per reaching test: its name through {!sanitize_name}, then its
+      location when it has one. Under [exe_width = Some w] the executable comes
+      first, in a column at least [w] wide that is empty for a test that names
+      none. *)
 
 val mutation_closing : config:Run.config -> mutation -> section list
 (** [mutation_closing ~config m] is what ends a report whose survivor blocks are
-    already printed, under a [survivors] rule, after a run's summary line. In
-    order:
-
-    - The rule that closes the blocks, when [m.survivors] is not empty.
-    - When [m.unreached] is not empty, after a blank line: the rule
-      [never reached (N)], [N] the mutants; one row per file, by name: how many
-      of them it holds, right-aligned in yellow, the file, and [lines 40-41, 57]
-      over their distinct lines, eight at most as in a {!coverage_report} row; a
-      closing rule.
-    - A blank line, when either printed.
-    - When [m.survivors] is not empty, [reproduce: <command>], the command that
-      arms the first of them: [<cmd> --arm <id>] under [`Exe cmd], and under
-      [`Mirrors]
-      [WINDTRAP_MUTATE_ARM=<id> dune runtest --force --instrument-with
-       ppx_windtrap.mutate], [cmd] and the choice of spelling being the
-      invocation of [config]. The command restates the run's selection: [-f],
-      [-e], [--tag], [--exclude-tag], [--shard] and [--failed] after [--arm]
-      under [`Exe], their mirrors ahead of [dune runtest] under [`Mirrors],
-      [--failed] excepted. Unstyled.
-    - The outcome line, zero terms omitted:
-      [mutants: 1 survived of 12 reached, 11 killed, 2 never reached, 3 not
-       tested, 3 executables], survived red, killed green, never reached yellow.
-*)
+    already printed under an opening rule. It holds, in this order:
+    - the rule that closes the blocks, when [m.survivors] is not empty. It is
+      decided on [m], whatever was printed.
+    - when [m.unreached] is not empty, the never-reached section, between an
+      opening rule that carries the number of mutants and a closing rule. It has
+      one row per file, in name order: the number of its mutants, the file, and
+      their distinct lines as ranges, bounded as {!coverage_report} bounds those
+      of a row.
+    - when [m.survivors] is not empty, the [reproduce:] command, which arms the
+      first survivor of [m] under the selection of [config]. Under [`Exe cmd],
+      the invocation of [config], it is [cmd], [--arm] and the run's [-f], [-e],
+      [--tag], [--exclude-tag], [--shard] and [--failed]. Under [`Mirrors] it is
+      the mirrors of the same flags, [--failed] excepted, in front of a forced
+      [dune runtest] that names the mutation backend.
+    - the outcome line, always last: the survivors among the reached mutants,
+      with the words of [m.scope], then the killed, the never reached and the
+      not tested. A zero term is omitted, the reached count excepted. Under
+      [Executables _] the line ends on the number of executables. *)
 
 val mutation_report : invocation:Run.invocation -> mutation -> section list
-(** [mutation_report ~invocation m] is [m] as a report at rest: when
-    [m.survivors] is not empty the rule [survivors (N)], one {!survivor_block}
-    per survivor with one blank line between two, the executables one column for
-    the report, and a closing rule; then, each after one blank line when
-    something precedes it, the never-reached section and the last lines of
-    {!mutation_closing} for a run that selects every test. *)
+(** [mutation_report ~invocation m] is [m] as a report at rest. It holds one
+    {!survivor_block} per survivor, between an opening rule that carries their
+    number and a closing rule. The executables of all blocks form one column,
+    which is absent when no reaching test names an executable. The never-reached
+    section, the [reproduce:] command and the outcome line follow, as
+    {!mutation_closing} builds them for a run that selects every test. *)

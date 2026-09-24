@@ -3,59 +3,75 @@
    SPDX-License-Identifier: ISC
   ---------------------------------------------------------------------------*)
 
-(** The JUnit report: run results as one JUnit XML document, and where it is
-    written.
+(** The JUnit report: the result rows of a run as one JUnit XML document, and
+    the file that it is written to.
 
-    A [testsuites] root wraps one [testsuite] with one [testcase] per result in
-    execution order carrying its time; failures are [failure] elements whose
-    text is the unstyled {!Report_sections.pp_failure} block; skips are
-    [skipped] elements; a failing test's captured tail is its [system-out]; a
-    pass on a retry is a [testcase] whose [system-out] says
-    [passed on attempt N]. An excused expected failure ({!Run.result.counted}
-    false) becomes a [skipped] testcase whose message names the expectation from
-    {!Run.result.xfail}; its failures are not emitted. An [xfail] test that
-    passed arrives as an ordinary counted failure whose message names the reason
-    and needs no mapping. Each subtest failure entry
-    ({!Report_sections.is_subtest_failure}) becomes its own [testcase] named by
-    the entry's [msg] slot, under the parent's [classname], with time [0.000],
-    directly after the parent's testcase; the parent keeps its non-subtest
-    failures and its captured tail, and with only subtest failures carries no
-    [failure] element of its own.
+    {!write} is the entry point, which {!Report.run} calls under [--junit] only.
+    Nothing of the document reaches the terminal. *)
 
-    Every emitted field is ANSI-stripped ({!Text.strip_ansi}), reduced to the
-    XML 1.0 character range (other bytes, malformed UTF-8 included, become
-    U+FFFD) and XML-escaped, so no payload can make the document malformed.
-    Rendering is pure and deterministic. *)
+(** {1:document The document}
 
-(** {1:rendering Rendering} *)
+    The document is one XML 1.0 document, declared as UTF-8. Its root is a
+    [testsuites] element named [windtrap], which holds one [testsuite] named
+    after the suite. Both carry the same [tests], [failures], [errors],
+    [skipped] and [time] attributes. Every [time] is in seconds with three
+    decimals, and that of the suite is the duration of the run.
 
-val render :
-  ?invocation:Run.invocation ->
-  ?armed:string ->
-  suite:string ->
-  results:Run.result list ->
-  duration:float ->
-  unit ->
-  string
-(** [render ~suite ~results ~duration ()] is the complete XML document
-    ([<?xml ?>] declaration, final newline) for [results] in list order. [suite]
-    names the [testsuite] and prefixes every [classname]
-    ([<suite>.<groups dot-joined>], [<suite>] for ungrouped tests); a
-    [testcase]'s [name] is its full path ({!Test_tree.path_to_string}). [tests],
-    [failures] and [skipped] count the emitted testcases (a counted failing
-    result adds one to [failures] iff it has non-subtest entries; excused
-    failures count as [skipped]); [errors] is always [0]. [duration] is the
-    suite [time] in seconds. [invocation] (default [`Mirrors]) and [armed], the
-    armed mutant's identifier, spell each failure's hint lines
-    ({!Report_sections.hints}). *)
+    {b Testcases.} Each {!Run.type-result} is one [testcase], in the order of
+    the rows. Its [name] is the full path of the row
+    ({!Test_tree.path_to_string}). Its [classname] is the suite's name followed
+    by the names of the test's groups, all joined by [.], and a dot inside a
+    name is not escaped. Its [time] is the row's [duration]. The row of a
+    fixture release is a testcase like any other.
+    - A pass is an empty [testcase]. A pass on a retry, which is a [Pass] row
+      with [attempts > 1], holds a [system-out] whose text is
+      [passed on attempt N].
+    - A skip holds a [skipped] element, whose [message] is the reason of the
+      skip when it gave one.
+    - A counted failure holds one [failure] element for each of the test's own
+      failures. The [message] of the element is {!Report_sections.headline}. Its
+      text is the entry of {!Report_sections.pp_failure} under [ansi:false] and
+      without excerpt. The entry ends with its hint lines
+      ({!Report_sections.hints}), whose filter is the full path of the test.
+    - A [system-out] follows these elements when a failure of the test, that of
+      a subtest included, has a captured tail. It holds the whole text of the
+      first such {!Failure.type-tail}. A line before the text counts the earlier
+      bytes that the capture dropped, and a line after it names the full log,
+      each when there is one.
+
+    {b Subtests.} Each failure recorded in a subtest
+    ({!Report_sections.is_subtest_failure}) is a [testcase] of its own, which
+    comes right after that of its test and has the same [classname]. Its [name]
+    is {!Report_sections.labeled_msg}, it holds the one [failure], and its
+    [time] is [0.000] because a subtest is not timed. The testcase of the test
+    keeps the other failures and the captured tail, and it holds no [failure]
+    when every failure is a subtest's.
+
+    {b Expected failures.} A [Fail] row whose [counted] is [false] is a
+    [testcase] that holds a [skipped] element, whose [message] is
+    [expected failure: <reason>], or [expected failure] when [xfail] gives no
+    reason. Its failures are not written.
+
+    {b Counts.} [tests], [failures] and [skipped] count the testcases of the
+    document and not the rows. Each subtest failure adds one to [tests] and one
+    to [failures]. A counted failing row adds one to [failures] iff the test has
+    a failure of its own, however many [failure] elements that makes. A skip and
+    an expected failure each add one to [skipped]. [errors] is always [0], and
+    no [error] element is ever written, because every kind of failure is a JUnit
+    failure.
+
+    {b Validity.} Every string that the rows supply is first stripped of its
+    escape sequences ({!Text.strip_ansi}). It is then reduced to the [Char]
+    range of XML 1.0, in which any other code point and each malformed UTF-8
+    sequence becomes U+FFFD. It is escaped last, as element text or as an
+    attribute value. No payload can therefore make the document malformed.
+
+    {b Determinism.} The document holds no clock, no host name and no timestamp.
+    Its paths are printed against {!Os.project_root}, which reads the
+    environment and the working directory, so equal rows under an equal
+    environment give equal documents. *)
 
 (** {1:writing Writing} *)
-
-val path : suite:string -> string -> string
-(** [path ~suite target] is the file [suite]'s report is written to for the
-    [--junit] value [target]: a [target] naming an [.xml] file is that file;
-    anything else is a directory and the report lands at [<target>/<suite>.xml],
-    [suite] made filename-safe ({!Os.sanitize_component}). *)
 
 val write :
   invocation:Run.invocation ->
@@ -65,7 +81,45 @@ val write :
   results:Run.result list ->
   string ->
   unit
-(** [write ~invocation ?armed ~suite ~duration ~results target] writes
-    {!render}'s document to {!path}[ ~suite target], creating the directory when
-    [target] is one. A report that cannot be written is a warning on standard
-    error, never a failed run. *)
+(** [write ~invocation ?armed ~suite ~duration ~results target] writes the
+    {{!section-document}document} of [results] to the file that [target], the
+    value of [--junit], names for [suite].
+    - A [target] that ends in [.xml] is that file, as given. The test is that of
+      [Filename.check_suffix], on the name alone. Every suite that reads the
+      same value writes the same file, and the last one wins.
+    - Any other [target] is a directory, and the file is [<target>/<name>.xml],
+      where [name] is {!Os.sanitize_component}[ suite]. Two suites that share
+      the directory get two files, as far as {!Os.sanitize_component} tells
+      their names apart. [write] creates the directory and its parents
+      ({!Os.mkdir_p}), and it never creates the parent of an [.xml] target.
+
+    [invocation] and [armed], which is the identifier of an armed mutant, spell
+    the hint lines of each failure. The caller must pass those of the run, so
+    that the text of a [failure] is the lines of the block on the terminal.
+
+    {!Os.atomic_write} writes the file, so an existing report is replaced whole.
+    A report that cannot be written is one warning on standard error
+    ({!Os.warn}), at every verbosity, and never a failed run. [write] catches
+    the [Sys_error] and the [Unix.Unix_error] of these two functions for it, and
+    no other exception. *)
+
+(**/**)
+
+(* The two halves of [write], exported for the unit suite. [render ?invocation
+   ?armed ~suite ~results ~duration ()] is the document that [write] writes, as
+   a string, from its XML declaration to a final newline. [invocation] defaults
+   to [`Mirrors]. It opens no file and writes nothing. [path ~suite target] is
+   the file that [write] writes to for [target], and it reads no file system. *)
+
+val render :
+  ?invocation:Run.invocation ->
+  ?armed:string ->
+  suite:string ->
+  results:Run.result list ->
+  duration:float ->
+  unit ->
+  string
+
+val path : suite:string -> string -> string
+
+(**/**)

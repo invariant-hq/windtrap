@@ -5,179 +5,205 @@
 
 (** Command-line and environment resolution into the run configuration.
 
-    One declarative table drives everything here: every knob is one row, a flag
-    beside its optional [WINDTRAP_*] mirror. {!parse} reads an argument vector
-    into a {!type:parsed} record of raw flag values, {!settings} merges parsed
-    flags and environment mirrors into one {!Run.config} with the precedence CLI
-    > environment > default, and {!help} renders the inventory from the same
-    rows. A mirror is applied through its flag's own parser, so a variable
-    accepts and refuses exactly what its flag does, with the same [expected]
-    wording, naming the variable as the source of a bad value. A plain value is
-    one token, trimmed; a repeatable flag's is a comma-separated list; a
-    valueless flag's is a boolean ({!Os.bool_of_string}), refused when it spells
-    neither; an optional-value flag's reads both ways, a boolean as the bare
-    flag or its absence and anything else as the value, trimmed. [-l],
-    [--failed], [-x], [-u], [--corrected], [-h] and [-V] have no mirror.
+    {!parse} reads an argument vector into the {!type-parsed} flags, {!settings}
+    resolves them with the environment and the defaults into a
+    {!Run.type-config}, and {!val-help} is the help page. One table drives the
+    three. A row is a flag beside its optional mirror, or a setting that only
+    the environment spells, which {!val-help} lists and nothing here reads.
 
-    Nothing here prints or exits: failures are returned as a typed {!type:error}
-    for the caller to render with {!error_message} and exit [2], and
-    [--help]/[--version] come back as flags on {!type:parsed}. *)
+    Nothing here prints or exits, and where a text shows is its caller's
+    contract. An error is returned as an {!type-error}, and [--help] and
+    [--version] come back as fields of {!type-parsed} for the caller to act on.
+
+    {b Mirrors.} A mirror is the [WINDTRAP_*] variable of a flag. Under
+    [dune runtest] an executable gets no command line, and the mirrors are its
+    command line. A mirror is named [WINDTRAP_] then the long flag in capitals,
+    with [_] for [-], except that of [--arm], which is [WINDTRAP_MUTATE_ARM].
+
+    A mirror is read by the parser of its flag, so a variable accepts and
+    refuses what its flag does, with the same [expected] wording. An error names
+    the variable as its source. {!settings} reads the mirrors in one pass, and a
+    variable set to the empty string counts as unset.
+    - The mirror of a flag that takes a value is one token, trimmed.
+    - The mirror of a repeatable flag is a comma-separated list, whose items are
+      trimmed and whose empty items are dropped.
+    - The mirror of a flag that takes no value is a boolean
+      ({!Os.bool_of_string}). True gives the flag and false is its absence. Any
+      other word is refused.
+    - The mirror of a flag whose value is optional reads both ways. A boolean is
+      the bare flag or its absence, and any other word is the value, trimmed.
+
+    Seven flags have no mirror, and none must be given one. [-l], [--failed] and
+    [-x] serve a loop of runs by hand, which is a command line's, and a listing
+    is not a run. [-u] and [--corrected] accept baselines, and a build action
+    must never accept one because of a variable in its environment. [-h] and
+    [-V] only print. *)
 
 (** {1:parsed Parsed flags} *)
 
 type parsed = {
   filter : string option;
-      (** [-f PATTERN], [--filter PATTERN], or the positional argument: run only
-          tests whose full path contains [PATTERN]. *)
-  exclude : string option;
-      (** [-e PATTERN], [--exclude PATTERN]: skip tests whose full path contains
-          [PATTERN]. *)
+      (** [-f PATTERN], [--filter PATTERN], or the positional argument. *)
+  exclude : string option;  (** [-e PATTERN], [--exclude PATTERN]. *)
   tags : string list;
-      (** [--tag LABEL], repeatable: required tags, in the order given. *)
+      (** [--tag LABEL], repeatable: the labels in the order given. *)
   exclude_tags : string list;
-      (** [--exclude-tag LABEL], repeatable: dropped tags, in the order given.
-      *)
+      (** [--exclude-tag LABEL], repeatable: the labels in the order given. *)
   shard : (int * int) option;
-      (** [--shard K/N]: run only tests whose path hashes into bucket [K] of
-          [N]. [K] and [N] are plain decimal numerals; parses only with
-          [1 <= K <= N]. *)
-  failed_only : bool option;
-      (** [--failed]: rerun only the last run's recorded failures. *)
+      (** [--shard K/N], with [1 <= K <= N]. [K] and [N] are plain decimal
+          numerals, so a sign, [0x] and [_] are refused. *)
+  failed_only : bool option;  (** [--failed]. *)
   list_only : bool option;
-      (** [-l], [--list]: list selected tests without running them. *)
-  bail : bool option;
-      (** [-x], [--fail-fast]: stop after the first counted failure. *)
-  stream : bool option;
-      (** [-s], [--stream]: run against the real descriptors instead of
-          capturing. *)
-  update : bool option;
-      (** [-u], [--update]: accept baseline changes in place
-          ({!Baseline.Update}); refused under CI by the runner. *)
-  corrected : bool option;
-      (** [--corrected]: write every correction as [<file>.corrected]
-          ({!Baseline.Corrected}), for a [diff?] action and [dune promote]. *)
+      (** [-l], [--list]. {!settings} ignores it, and the caller lists the
+          selection (see {!Run.list_selection}). *)
+  bail : bool option;  (** [-x], [--fail-fast]. *)
+  stream : bool option;  (** [-s], [--stream]. *)
+  update : bool option;  (** [-u], [--update], for {!Baseline.Update}. *)
+  corrected : bool option;  (** [--corrected], for {!Baseline.Corrected}. *)
   seed : Seed.seed option;
-      (** [--seed TOKEN]: the root seed, an [s1:] token parsed by
-          {!Seed.of_string}. *)
+      (** [--seed TOKEN]: an [s1:] token, read by {!Seed.of_string}. *)
   timeout : float option;
-      (** [--timeout SECONDS]: default per-test limit; must be positive. *)
+      (** [--timeout SECONDS]: a finite and positive number. *)
   slow_threshold : float option;
-      (** [--slow-threshold SECONDS]: seconds an untagged test may take before
-          the report warns; must be non-negative, [0] disables. *)
-  prop_count : int option;
-      (** [--prop-count N]: generated cases per property; must be positive. *)
-  verbose : bool option;  (** [-v], [--verbose]: one status line per test. *)
-  junit : string option;  (** [--junit PATH]: also write JUnit XML to [PATH]. *)
+      (** [--slow-threshold SECONDS]: a finite and non-negative number. *)
+  prop_count : int option;  (** [--prop-count N]: a positive integer. *)
+  verbose : bool option;  (** [-v], [--verbose]. *)
+  junit : string option;  (** [--junit PATH]. *)
   color : Os.color_mode option;
-      (** [--color MODE]: [always], [never], or [auto]. *)
-  log_dir : string option;
-      (** [-o DIR], [--output DIR]: root directory for capture logs. *)
+      (** [--color MODE]: [always], [never] or [auto], in any case. *)
+  log_dir : string option;  (** [-o DIR], [--output DIR]. *)
   mutate : string list option;
-      (** [--mutate[=PREFIX,...]]: run the mutation loop over every mutant this
-          executable catalogues ([Some []], the bare flag) or only those whose
-          recorded source path starts with one of the prefixes. *)
+      (** [--mutate[=PREFIX,…]]: [Some []] for the bare flag, and else the
+          comma-separated prefixes. *)
   arm : string option;
-      (** [--arm ID]: run once with mutant [ID] armed. The identifier is kept
-          unparsed ({!Windtrap_runtime.Mutate.id_of_string} owns its grammar).
-      *)
-  help : bool;  (** [-h], [--help]: the caller prints {!help} and exits [0]. *)
-  version : bool;
-      (** [-V], [--version]: the caller prints its version and exits [0]. *)
+      (** [--arm ID]: the identifier as typed. It is not parsed here, so a
+          malformed one is no {!type-error}, and
+          [Windtrap_runtime.Mutate.id_of_string] reports it. *)
+  help : bool;  (** [-h], [--help]. *)
+  version : bool;  (** [-V], [--version]. *)
 }
-(** The type for raw parse results: one field per flag, [None] (or [[]], or
-    [false] for {!parsed.help} and {!parsed.version}) when the flag was absent.
-*)
+(** The type for the flags of one command line, one field per flag, before the
+    environment and the defaults. An absent flag is [None], [[]] for a
+    repeatable one, and [false] for [help] and [version]. A [bool option] field
+    is [None] or [Some true] and never [Some false]. {!Run.type-config} says
+    what a run does with each. *)
 
 val empty : parsed
 (** [empty] is the record with every flag absent. *)
 
 (** {1:errors Errors} *)
 
-(** The type for parse and resolution errors. [source] names the flag as typed
-    ([--seed]) or the environment variable ([WINDTRAP_SEED]) that carried the
-    offending value. *)
+(** The type for the errors of {!parse} and {!settings}. *)
 type error =
-  | Unknown_flag of string  (** The flag is not in the inventory. *)
+  | Unknown_flag of string
+      (** The flag is not in the table. The payload is the flag as typed,
+          without any [=value]. An argument of two bytes or more that starts
+          with [-] is read as a flag, so [-1] and a bundled [-xv] are unknown
+          flags. *)
   | Missing_value of string
-      (** The flag requires an argument; none was left. *)
+      (** The flag takes a value and the command line ended. A flag takes the
+          next argument whatever it looks like. *)
   | Invalid_value of { source : string; value : string; expected : string }
-      (** The argument did not parse; [expected] describes the accepted form. *)
+      (** [value] was refused. [source] is the flag as typed, or the variable
+          that carried [value], and [expected] describes what is accepted. A
+          flag that takes no value and is given one, as in [--verbose=1], is
+          refused this way, with [expected = "no argument"]. *)
   | Extra_positional of { filter : string; extra : string }
-      (** A second positional argument [extra] arrived with the filter already
-          set to [filter]. *)
+      (** A second positional argument [extra] came when the filter was already
+          [filter], from a positional argument or from [-f]. *)
   | Incompatible_flags of string * string
-      (** Both flags were given and they contradict each other: [-u] and
-          [--corrected], or [--mutate] and [--arm]. *)
+      (** Both flags were given, and they contradict each other. The payload is
+          [("-u", "--corrected")] or [("--mutate", "--arm")], whatever spelling
+          or mirror carried them. *)
 
 val error_message : error -> string
-(** [error_message error] is a one-line description of [error] for users, naming
-    the offending flag or variable, to be printed behind [windtrap:]
-    ({!Os.say}). An unknown long flag of [n] bytes ends
-    [; did you mean '<flag>'?] when a long flag lies within [max 2 (n / 3)]
-    edits of it (insertion, deletion, substitution, or transposition of two
-    adjacent bytes): the nearest, the first in {!help}'s order on a tie. A short
-    flag gets no suggestion. Not stable for programmatic matching. *)
+(** [error_message error] is one sentence on [error] for a user, which names the
+    flag or the variable concerned. It is not stable enough for a program to
+    match.
+
+    An unknown long flag ends with the nearest long flag when one is near, as in
+    [; did you mean '--junit'?], and a short flag gets no suggestion. *)
 
 (** {1:parsing Parsing} *)
 
 val parse : string array -> (parsed, error) result
-(** [parse argv] reads the argument vector [argv] ([argv.(0)] is ignored) into a
-    {!type:parsed} record, or is [Error error] on the first flag that fails.
-    Repeated single-valued flags keep the last occurrence; [--tag] and
-    [--exclude-tag] accumulate in order. Long flags also accept [--flag=value];
-    a flag whose value is optional takes it only that way. The first bare
-    argument becomes {!parsed.filter} (a second one is {!Extra_positional});
-    arguments after [--] are all positionals. Parsing stops at [-h]/[--help] and
-    [-V]/[--version]. [-u] with [--corrected] is {!Incompatible_flags}. *)
+(** [parse argv] is the flags of [argv], or the first error from the left.
+    [argv.(0)] is not read, and an empty [argv] is [Ok empty]. It reads no
+    environment and never raises.
+    - A repeated flag keeps its last value, and [--tag] and [--exclude-tag]
+      accumulate.
+    - A long flag also takes its value as [--flag=value]. A short flag does not,
+      and [-f=x] and [-fx] are unknown flags.
+    - A flag whose value is optional takes it only as [--flag=value]. Bare, it
+      never takes the next argument.
+    - The first bare argument is [filter], and a second is {!Extra_positional}.
+      Every argument after [--] is positional, which is how a pattern that
+      starts with [-] is given.
+    - Parsing stops at [--help] and at [--version], so the flags after them are
+      not checked. An error before them still wins.
+    - [-u] with [--corrected] is {!Incompatible_flags}. It is checked after the
+      scan, so it also wins over a [--help] that follows the two. *)
 
 (** {1:resolution Resolution} *)
 
 val settings : parsed -> (Run.config, error) result
-(** [settings cli] is the configuration one invocation resolves to: [cli] with
-    each field's [WINDTRAP_*] mirror filled into what the command line left
-    open, then {!Run.default_config}'s value; [tags] and [exclude_tags] are
-    additive across both layers. [mutation] is {!Run.Loop} of {!parsed.mutate}'s
-    prefixes or {!Run.Armed} of {!parsed.arm}'s identifier; both, whichever
-    layer each arrived by, is [Error (Incompatible_flags _)]. [github] is
-    {!Os.in_github_actions}[ ()]; [invocation] is left [`Mirrors]. A mirror
-    value the flag would reject is [Error (Invalid_value _)] naming the
-    variable; a mirror whose flag the command line decided is not parsed.
-    [WINDTRAP_MUTATE] reads as the optional-value rule says: a truthy spelling
-    is the bare [--mutate], a falsy one its absence, anything else its prefixes.
-    {!parsed.help} and {!parsed.version} are ignored.
+(** [settings cli] is the configuration that one invocation resolves to. Each
+    field is [cli]'s, else its mirror's, else that of {!Run.default_config}.
+    - [tags] and [exclude_tags] add up, the command line's first and then the
+      mirror's.
+    - A mirror whose flag the command line gave is not read, so a valid
+      [--timeout] hides a malformed [WINDTRAP_TIMEOUT]. Any other mirror that
+      its flag would refuse is [Error (Invalid_value _)] naming the variable,
+      and is never ignored. The mirrors are read in the order of {!val-help},
+      and the first error ends the resolution.
+    - [baseline] is {!Baseline.Update} under [update], else
+      {!Baseline.Corrected} under [corrected], else {!Baseline.Check}.
+    - [mutation] is {!Run.Loop} of [mutate], {!Run.Armed} of [arm], or
+      {!Run.No_mutation}. Both at once is [Error (Incompatible_flags _)],
+      whichever layer gave each, and it is checked after every mirror.
+      [WINDTRAP_MUTATE=1] is the bare flag, [WINDTRAP_MUTATE=0] its absence, and
+      [WINDTRAP_MUTATE=lib/calc.ml] a prefix. A prefix that spells a boolean
+      cannot go through the variable.
+    - [log_dir]: a relative [-o DIR] is made absolute against the working
+      directory, and is kept as given when that directory cannot be read.
+    - [github] is {!Os.in_github_actions}[ ()], [allow_focus] is [false] and
+      [invocation] is [`Mirrors]. [list_only], [help] and [version] are ignored.
 
-    Effects: reads the environment, and draws a root seed ({!Seed.random}) when
-    no layer provides one. *)
+    It never raises. It reads the environment and the working directory, and on
+    every call it draws a seed from {!Seed.random}, which the result carries
+    when no layer gives one. *)
 
 val color_mode : unit -> (Os.color_mode, error) result
-(** [color_mode ()] is [WINDTRAP_COLOR] read through [--color]'s parser, for a
-    command with no [--color] flag ([windtrap coverage], [windtrap mutants]):
-    {!Os.Auto} when unset, the mode it spells, or [Error (Invalid_value _)]
-    naming the variable. Effects: reads the environment. *)
+(** [color_mode ()] is [WINDTRAP_COLOR] read by the parser of [--color], for a
+    command that has no such flag. It is [Ok Os.Auto] when the variable is unset
+    or empty, and [Error (Invalid_value _)] naming the variable for a word that
+    the flag would refuse. The runner needs no such call, because {!settings}
+    reads the variable as it reads every mirror. *)
 
 (** {1:help Help} *)
 
 val usage : prog:string -> string
-(** [usage ~prog] is the one-line usage summary
-    (["usage: <prog> [OPTIONS] [PATTERN]"]); [prog] is shortened to its
-    basename. Callers print it with {!error_message} before exiting [2]. *)
+(** [usage ~prog] is [usage: <prog> [OPTIONS] [PATTERN]], with the basename of
+    [prog]. *)
 
 val help : prog:string -> string
-(** [help ~prog] is the full help page, generated from the table that drives
-    {!parse}: the name line, the usage line, a paragraph, then per flag a line
-    with its spellings ([-f PATTERN, --filter=PATTERN]) followed by
-    [(env WINDTRAP_X)] when it has a mirror, and its description indented under
-    it as whole sentences, wrapped and never shortened; the variables no flag
-    can spell follow in the same form. Every line fits 80 columns when the
-    basename of [prog] leaves the first two within them. *)
+(** [help ~prog] is the help page. It gives each flag with its spellings, its
+    mirror and its description, in the order of the table, then the settings
+    that only a variable spells. It ends with a newline.
+
+    Every line fits 80 columns when the basename of [prog] leaves the first two
+    within them. *)
 
 (**/**)
 
-(* The argument grammar, the two table-driven passes and the help heading
-   a row renders to, exposed for the grammar's own tests, which pin each
-   row kind over a synthetic row so that a flag adopting one adds a row
-   and nothing else. Not an interface — every other caller goes through
-   [parse], [settings] and [help]. *)
+(* The argument grammar and the two passes over a table of rows, exported for
+   the unit suite. Every other caller goes through [parse], [settings] and
+   [help]. [lib/cli.ml] describes [arg] and [layering] at their definitions.
+   [parse_entries entries] is [parse] over [entries]. [layer_entries entries
+   cli] is [cli] with each mirror of [entries] filled into the fields that the
+   command line left open, or the first error, and it reads the environment.
+   [flag_heading entry] is the heading of [entry] in [help], without its
+   indentation. *)
 
 type arg =
   | Flag of (parsed -> parsed)

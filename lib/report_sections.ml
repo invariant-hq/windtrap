@@ -4,14 +4,14 @@
 
    The failure blocks adapt windtrap v1's progress.ml, rebuilt over typed
    Failure payloads and Diff data — the report projects run data, never
-   alters it. The section vocabulary is v3's: one gutter renderer serving
-   coverage's per-file report and mutation's survivor blocks.
+   alters it.
   ---------------------------------------------------------------------------*)
 
 let spf = Printf.sprintf
 
-(* Layout constants — illustrative, not contract. The report is not a
-   canvas: one width, so a pipe and a wide terminal are byte-identical. *)
+(* Caps and layout constants. [report_sections.mli] states the caps beside
+   their values. The report is not a canvas: one width, so a pipe and a
+   wide terminal are byte-identical. *)
 let columns = 80
 let rule_width = 58 (* of an instrumentation report's rules *)
 let max_diff_lines = 200
@@ -369,8 +369,8 @@ let diff_lines hunks =
   List.fold_left (fun acc h -> acc + 1 + List.length h.Diff.lines) 0 hunks
 
 (* The failure as one sentence after the label and the user's message,
-   padding collapsed, escape codes stripped. A diff has no side short enough
-   to quote and says how long it is. *)
+   line breaks and tabs turned into spaces, escape codes stripped. A diff
+   has no side short enough to quote and says how long it is. *)
 let headline (f : Failure.t) =
   let fact =
     match f.kind with
@@ -1083,9 +1083,9 @@ let is_subtest_failure (f : Failure.t) = f.Failure.subtest <> []
    two projections into it, drawn knowing nothing about the runtimes that
    measured the data — the subsystem that owns the numbers builds section
    data, and every name the runtime owns (a mutant identifier, the arming
-   variable) arrives pre-spelled with the runtime's own functions. A second copy of
-   any of these drawers is exactly the drift the coverage command's
-   structure exists to prevent. *)
+   variable) arrives pre-spelled with the runtime's own functions. A source
+   line has two drawers: [source_excerpt] for a failure block and a
+   survivor block, [excerpt] for the coverage source view alone. *)
 
 (* The sink: where sections print and whether they style. With
    [ansi:false] every line is stripped at the sink, so escape codes
@@ -1127,6 +1127,8 @@ type column = { gap : string; align : [ `Left | `Right ]; width : int option }
 
 (* Line numbers as ranges ([88-94, 121]). *)
 
+(* [lines] is ascending and without duplicates: a coverage producer's
+   obligation for a row's ranges, [List.sort_uniq] at the two other callers. *)
 let collapse_ranges lines =
   let rec loop acc range_start range_end = function
     | [] -> List.rev ((range_start, range_end) :: acc)
@@ -1638,6 +1640,8 @@ let outcome ~invocation ~selection (m : mutation) =
         [ Hint (reproduce_line ~invocation ~selection first.mutant.id) ])
   @ [ Line (mutation_summary_spans m) ]
 
+(* The closing rule is decided on [m.survivors], not on what was printed: the
+   caller hands over the survivors whose blocks it committed. *)
 let mutation_closing ~(config : Run.config) (m : mutation) =
   let invocation = config.Run.invocation in
   let selection = selection_words invocation config in

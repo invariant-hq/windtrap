@@ -9,7 +9,10 @@
    Unix lacks (binding to "" is not unbinding: Sys.getenv_opt then
    answers Some ""). On Windows unsetenv is the empty assignment _putenv
    documents as deletion. Os.setenv has already rejected the names POSIX
-   rejects, so a failure here is an allocation failure. */
+   rejects, so a failure here is an allocation failure.
+
+   On Darwin and Linux the clock is the one that goes on while the machine
+   is suspended (mach_continuous_time, CLOCK_BOOTTIME). */
 
 #include <caml/mlvalues.h>
 #include <caml/alloc.h>

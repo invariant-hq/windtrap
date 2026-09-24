@@ -21,7 +21,7 @@ type hunk = {
   lines : line list;
 }
 
-(* Bounds (implementation constants, not contract) *)
+(* Bounds *)
 
 (* Above this many differing lines (both sides summed, after stripping the
    common outer lines) the region is reported as delete-all/insert-all

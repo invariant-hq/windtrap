@@ -3,96 +3,108 @@
    SPDX-License-Identifier: ISC
   ---------------------------------------------------------------------------*)
 
-(** Failure as data: typed failure records, per-test outcomes, and the control
+(** Failure as data: the failure record, the outcome of a test and the control
     exceptions.
 
-    Every failure site constructs one {!t}: a typed {!kind}, a {!phase}, an
-    optional {!Loc.t}, and an optional captured-output {!tail}. A test's
-    {!outcome} carries a failure {e list}: a body failure and a teardown failure
-    are two entries. Failures hold no styling or command text (guarantee 4);
-    they hold pp-rendered values, each bounded at construction with a marker
-    stating the original size (64 KiB). Assertion verbs raise {!Check_failure};
-    {!Skip_test}, {!Timeout} and {!Exit_attempt} are the other control
-    exceptions the runner understands. *)
+    Failures are data and renderers are projections (guarantee 4 of
+    [doc/dev/architecture.md]). A failure site builds one {!t} with a
+    {{!section-constructors}constructor} and raises it in a {!Check_failure}, or
+    records it when the site is the runner's. A renderer reads it and changes
+    nothing. Nothing here prints.
+
+    A failure holds no styling and no command. A renderer spells the [replay:]
+    and [accept:] commands from the payload and from the invocation of the run.
+    What a failure holds is the text that cannot be made again after the failure
+    site: printed values, messages and a backtrace, stored as given and bounded
+    by the constructor. *)
 
 (** {1:types Types} *)
 
-(** The type for execution phases; constructors default to {!Body} and the
-    runner reclassifies with {!with_phase}. *)
+(** The type for the part of a test that a failure interrupted. *)
 type phase =
-  | Body  (** The test body. *)
-  | Setup
-      (** A [bracket]'s setup function, or a [scoped] test's scope before it
-          reached the body. *)
+  | Body  (** The body of the test. *)
+  | Setup  (** The setup of a bracket, or a scope before it called back. *)
   | Teardown
-      (** A [bracket]'s teardown function, or a [scoped] test's scope after the
-          body returned. *)
-  | Release  (** A fixture release at end of run. *)
+      (** The teardown of a bracket, or a scope after the body left the
+          callback, by returning or by raising. It is also the phase of a
+          working directory or an environment binding that the runner could not
+          restore after the attempt. *)
+  | Release  (** The release of a fixture at the end of the run. *)
 
 type tail = {
   text : string;
-      (** The verbatim final bytes of the test's captured output, bounded by
-          {!tail_bytes}; never starts inside a UTF-8 sequence. *)
+      (** The last bytes that the test wrote, at most {!tail_bytes} of them. A
+          value that {!val-tail} builds from well-formed UTF-8 never starts
+          inside a sequence. *)
   omitted_bytes : int;
-      (** Bytes of captured output preceding [text] that are not retained; [0]
-          means [text] is the complete output. *)
+      (** The bytes of output before [text], which the tail does not keep. This
+          field is the record of the cut, and [text] holds no marker. *)
   log_path : string option;
-      (** The per-test log file holding the full output, when capture wrote one.
+      (** The log file that holds the whole output, when the capture wrote one.
       *)
 }
-(** The type for bounded captured-output tails (guarantee 5). *)
+(** The type for the bounded end of a test's captured output. A failing test's
+    captured output is in its report, bounded, with the full log's path
+    (guarantee 5, see {!Report.result}). *)
 
 (** The type for what a baseline check compared against. *)
 type baseline =
   | Literal of { exact : bool }
-      (** The literal at the failure's location: [expect_exact]'s iff [exact],
-          else [expect]'s. *)
+      (** The literal at the location of the failure, compared byte for byte iff
+          [exact]. A renderer takes its source file from [loc]. *)
   | File of string
-      (** The file at this path, relative to the project root ([expect_file]),
-          stored as the call named it. *)
+      (** The file at this path, stored as the expectation spelled it and never
+          bounded, since a renderer names the file from it. *)
 
-(** The type for baseline failure states; see {!Baseline.check}. *)
+(** The type for how a baseline check failed (see {!Baseline.check}). *)
 type baseline_state =
   | Missing of { proposed : string }
-      (** No baseline exists; [proposed] is the content the check would accept.
-      *)
+      (** No baseline exists, and [proposed] is the content that the check would
+          accept. *)
   | Mismatch of { expected : string; actual : string }
       (** The baseline [expected] differs from the produced [actual], both in
-          their comparison form. *)
+          their comparison form. A renderer computes the diff from them. *)
   | Unresolvable of { candidate : string }
-      (** The baseline's path cannot be proven to lie under the project root;
-          [candidate] is the unproven path. *)
+      (** The path cannot be proven to lie under the project root. [candidate]
+          is the unproven path, stored whole. *)
 
 (** The type for why the attempt that recorded a baseline failure kept none of
-    its corrections; see {!Run}, {e Corrections}. *)
+    its corrections (see {{!Run.section-corrections}corrections}). *)
 type withheld =
   | Failed_outside
-      (** The attempt also ended in a failure that is not a baseline failure. *)
-  | Skipped  (** The attempt also skipped. *)
+      (** The attempt also has a failure that is not a baseline failure, whether
+          or not it skipped as well. *)
+  | Skipped
+      (** Every failure of the attempt is a baseline failure, and the attempt
+          skipped. *)
 
 type message_diff = {
-  constructor : string;  (** The exception constructor both sides share. *)
-  expected_message : string;  (** The expected exception's message payload. *)
-  actual_message : string;  (** The raised exception's message payload. *)
+  constructor : string;
+      (** The constructor that both exceptions share, which the producer names
+          from the exceptions and never from a rendering. *)
+  expected_message : string;  (** The message of the expected exception. *)
+  actual_message : string;  (** The message of the raised exception. *)
 }
-(** The type for a right-constructor, wrong-message exception failure: both
-    exceptions carry the same constructor and a message payload
-    ([Invalid_argument], [Failure], [Sys_error]) and the two messages differ.
-    Recorded only when all three hold. *)
+(** The type for an exception failure with the right constructor and the wrong
+    message. A producer must record one only when both exceptions share a
+    constructor that carries a message ([Invalid_argument], [Failure],
+    [Sys_error]) and their messages differ. {!raised} checks none of it, and a
+    renderer decides on the presence of the value alone. *)
 
-(** The type for what a containment assertion demanded of the needle beyond
-    occurrence. *)
+(** The type for what a containment assertion demanded of its needle beyond an
+    occurrence, which [found_at] records. *)
 type containment_demand =
   | Anywhere
-      (** One occurrence, anywhere: [contains], [not_contains] and the affix
-          verbs, whose position demand lives in their claim. *)
+      (** An occurrence anywhere: every containment verb but [in_order]. The
+          demand of an affix verb on the position is in its [claim] only. *)
   | Ordered of { index : int; resumed_at : int }
-      (** [in_order]: the needle is the chain element at zero-based [index] and
-          its search began at byte [resumed_at], the end of the previous
-          element's match. [found_at] keeps its plain meaning, the needle's
-          first occurrence anywhere. *)
+      (** The needle is element [index], from zero, of an [in_order] chain, and
+          its search started at byte [resumed_at]. [found_at] is still the first
+          occurrence anywhere, so [None] says that the needle is not in the
+          string, and [Some _] that it is there before [resumed_at]. *)
 
-(** The type for typed failure payloads; renderers pattern match on it. *)
+(** The type for failure payloads. A renderer matches on it without a wildcard,
+    so a new constructor is a design amendment that every renderer answers. *)
 type kind =
   | Equality of {
       expected : string;
@@ -100,33 +112,35 @@ type kind =
       not_ : bool;
       diffable : bool;
     }
-      (** Two sides that should have matched did not: [equal], [not_equal], the
-          boolean, unwrapping and predicate verbs. [expected] and [actual] are
-          the rendered values or constructor descriptions (["Some _"]), expected
-          first. [not_] is [true] for a negated assertion, both strings then
-          rendering the same value. [diffable] is [false] when [expected] is a
-          claim sentence ({!predicate}) rather than a rendering: renderers
-          refine neither side against the other. *)
+      (** Two sides that had to match did not. [expected] and [actual] are
+          printed values, or descriptions of a constructor such as [Some _].
+          Under [not_], a negated assertion, both must hold one rendering, and a
+          renderer prints [expected] once and never reads [actual]. [diffable]
+          is [false] when [expected] is a claim in words ({!predicate}), and a
+          renderer then computes no diff and marks neither side against the
+          other. *)
   | Containment of {
       claim : string;
-          (** A one-line description of what was asserted
-              ([string containing "eof"]), never diffed. *)
-      needle : string;  (** The needle, verbatim, bounded. *)
+          (** What was asserted, in one line, as [string containing "eof"]. It
+              is carried as data, and no renderer shows it. *)
+      needle : string;  (** The needle. *)
       found_at : int option;
-          (** The byte offset of the needle's first occurrence in the haystack:
-              [None] for a failed [contains], [Some _] for a failed
-              [not_contains]. *)
-      haystack_length : int;  (** The haystack's total byte length. *)
+          (** The byte offset of the first occurrence of the needle in the
+              haystack, if any: [None] for a failed [contains], [Some _] for a
+              failed [not_contains]. For an affix verb [Some _] says that the
+              needle occurs, and not where it was demanded (see {!Ordered} for
+              [in_order]). *)
+      haystack_length : int;  (** The length of the whole haystack in bytes. *)
       excerpt : string;
-          (** A bounded window of the haystack centred on the {!Ordered} cursor,
-              else on [found_at] when [Some _], else the haystack's head; see
-              {!containment}. Renderers show it whole. *)
+          (** A window of the haystack, which {!containment} bounds and a
+              renderer shows whole. [found_at] can lie outside it, and the
+              needle can run past its end. *)
       excerpt_offset : int;
-          (** The byte offset of [excerpt] within the haystack. *)
-      demand : containment_demand;  (** What was demanded beyond occurrence. *)
-    }
-      (** A containment assertion ([contains], [not_contains], the affix verbs,
-          [in_order]) failed. *)
+          (** The byte offset of [excerpt] in the haystack. With
+              [haystack_length] it gives the bytes left out on each side. *)
+      demand : containment_demand;
+          (** What was demanded beyond an occurrence. *)
+    }  (** A containment assertion failed. *)
   | Raise of {
       expected : string option;
       actual : string option;
@@ -134,121 +148,210 @@ type kind =
       backtrace : string option;
       message_diff : message_diff option;
     }
-      (** An exception assertion failed. [expected] is the rendered expected
-          exception (or a predicate description), [None] when only {e some}
-          exception was demanded; [actual] the rendered raised exception, [None]
-          when nothing was raised; [backtrace] the raised exception's backtrace
-          when recorded; [message_diff] is [Some _] exactly for a
-          right-constructor, wrong-message failure. [predicate] is [true] iff
-          the assertion was [raises_match]; [false] with no [expected] records
-          an uncaught exception. *)
+      (** An exception assertion failed, or an exception was raised that nothing
+          expected. [expected] and [actual] are the expected and the raised
+          exception, printed. [predicate] is [true] iff the assertion was a
+          [raises_match], whether its function returned or raised. [backtrace]
+          is that of the raised exception, as {!backtrace_to_string} gives it,
+          when one was recorded.
+
+          A renderer tells four shapes apart, in this order.
+          + A [message_diff]: the right constructor with the wrong message.
+          + An [expected]: a [raises] named this exception, and its function
+            raised another one, which is [actual], or returned.
+          + An [actual] alone: an exception that a predicate rejected when
+            [predicate] is [true], and an uncaught exception otherwise.
+          + Neither: an exception that was demanded and never raised. *)
   | Baseline of {
       baseline : baseline;
       state : baseline_state;
       withheld : withheld option;
-          (** [Some _] iff the attempt kept none of its corrections: no command
-              accepts this failure's until the test is otherwise clean. [None]
-              from {!val-baseline}; the runner sets it with {!with_withheld}. *)
+          (** [Some _] iff the attempt kept none of its corrections (see
+              {!with_withheld}). *)
     }
-      (** A baseline check failed: what was compared against and how the
-          comparison ended. The acceptance command is spelled by renderers from
-          the invocation. *)
+      (** A baseline check failed: what it compared against and how it ended. *)
   | Property of {
       rendered : string;
+          (** The counterexample as printed, after shrinking, or the text that
+              stands for one (see {!Property.outcome}). *)
       summary : string option;
-          (** [Some line] iff [rendered] is a table, its first line naming the
-              columns: [line] says in one line what the table holds (a stateful
-              program's [2 calls, last: get]). Renderers print [line] where a
-              one-line counterexample goes and the table under it. *)
+          (** [Some line] iff [rendered] is a table whose first line names the
+              columns. [line] then says in one line what the table holds, as
+              [2 calls, last: get] does for a stateful program. A renderer must
+              print [line] where a one-line counterexample goes, and the table
+              under it with its first line as the header row. *)
       case_index : int;
+          (** The zero-based index of the failing case: the position of an
+              example among the examples, or for a generated case the index that
+              {!Seed.derive} took, which counts the discarded cases too. *)
       shrink_steps : int;
+          (** The accepted shrink steps that led to [rendered]. *)
       shrink_exhausted : bool;
-          (** [true] iff the shrink search stopped (budget spent, or a candidate
-              raised) rather than converging on a minimum. *)
+          (** [true] iff the shrink search stopped before it converged, because
+              it spent its budget or because the forcing of a candidate raised.
+              [rendered] is then the best node that the search reached. *)
       timed_out : float option;
-      root : Seed.seed;
+          (** [Some limit] iff the limit of the test, in seconds, expired during
+              the shrink search, of which [rendered] is then the last accepted
+              node. It is never [Some _] beside [examples]. *)
+      root : Seed.seed;  (** The root seed of the run. *)
       count : int option;
+          (** The case count when the configuration of the run gave it, and
+              [None] when the declaration or the default of the engine did. A
+              renderer restates it in the [replay:] command only when it is
+              present, since a replay under another count reaches another case.
+          *)
       examples : bool;
+          (** [true] iff the case is one of the explicit examples, which are
+              never seeded or shrunk, so such a failure has no [replay:]
+              command. *)
       rendering : rendering;
-          (** What [rendered] is; renderers mark a pre-image as such and name
-              [Gen.with_pp] under it. *)
+          (** What [rendered] is, which the producer states. *)
       inner : t option;
-    }
-      (** A property failed. [rendered] is the printed (shrunk) counterexample,
-          [case_index] the zero-based failing case, [shrink_steps] how many
-          shrinks led to it, [inner] the {!Check_failure} the body raised at it.
-          [examples] is [true] when the case came from the explicit examples
-          list, never seeded or shrunk. [timed_out] is [Some limit] when the
-          timeout expired during the shrink search, never alongside [examples].
-          [root] and [count] are the replay line's ingredients: the root seed,
-          and the case count when run configuration supplied it. *)
-  | Message of string  (** A direct failure ([fail], [failf], and kin). *)
+          (** The failure of the law on the reported counterexample: the payload
+              of the {!Check_failure} that the law raised, or for any other
+              exception a [Raise] failure with no [expected], the exception as
+              printed, its backtrace and no location. A failure that
+              {!Property.run} builds always has one. *)
+    }  (** A property failed. *)
+  | Message of string
+      (** A direct failure: the text of a [fail], or a failure that the library
+          words itself, as it does a timeout and an intercepted [exit]. *)
 
-(** The type for what a {!Property} failure's [rendered] text is. *)
+(** The type for what the [rendered] of a {!constructor-Property} failure is. *)
 and rendering =
-  | Value  (** The counterexample, through its generator's printer. *)
+  | Value
+      (** The text of the counterexample itself: a value through the printer of
+          its generator, a failing example, or a placeholder that says why no
+          value is printed. *)
   | Pre_image
       (** What a printerless [map] or [bind] computed the counterexample from,
-          printed by the generators that drew it. *)
+          printed by the generators that drew it (see [Gen.Engine.render]). It
+          is the input of the mapping functions and not the value that the law
+          received, and a renderer must mark it as such. *)
 
 and t = {
-  kind : kind;
-  phase : phase;
-  loc : Loc.t option;  (** [None] renders without a location header. *)
-  msg : string option;  (** The user's [?msg] annotation, when given. *)
+  kind : kind;  (** The payload. *)
+  phase : phase;  (** The phase that the failure interrupted. *)
+  loc : Loc.t option;
+      (** The location of the failure, when it has one: that of the failing
+          call, or the declaration site of the test where the runner found none.
+          Nothing in the record tells the two apart. The [loc] of a
+          {!constructor-Property} failure is the declaration of the property,
+          and the site of the assertion is on its [inner]. *)
+  msg : string option;
+      (** The [?msg] of the assertion, when given. For the failure of a call,
+          {!Stateful} writes the label of the call before it. *)
   subtest : string list;
-      (** The sub-case label's components (the test's leaf name, then the
-          enclosing subtest names outermost first) when the failure was recorded
-          inside {!Run.subtest}; [[]] otherwise. Classification reads this
-          field, never [msg]. *)
+      (** The label of a subtest, for a failure that {!Run.subtest} recorded:
+          the name of the test, then the names of the open subtests, outermost
+          first. It is [[]] otherwise. A renderer classifies a subtest failure
+          by this field and never by [msg], so an annotation of the user cannot
+          pass a plain failure off as one. It derives the displayed label from
+          this field too. *)
   output_tail : tail option;
-      (** Attached by the runner after the test completes; [None] until
-          {!with_output_tail}. *)
+      (** The captured output of the attempt. [None] until {!with_output_tail}.
+      *)
 }
-(** The type for structured test failures. *)
+(** The type for failures. The record is concrete, and two clients write fields
+    past the constructors. {!Run} writes [loc] and [subtest], and {!Stateful}
+    writes the [msg] and the [loc] of the failure of a call. The bound of the
+    {{!section-constructors}constructors} is then the client's to keep. *)
 
-(** {1:exceptions Control exceptions} *)
+(** {1:exceptions Control exceptions}
+
+    The runner acts on these four at the boundary of an attempt (see
+    {{!Run.section-attempts}attempts}). The property engine defines a fifth,
+    {!Property.Discard}, which has a meaning inside a law only.
+
+    A {e failure boundary} is a catch site that turns a raised exception into a
+    recorded failure: the boundary of an attempt, a subtest, a verb that calls a
+    function of the user, an engine that runs a law. Every boundary is a catch
+    site, which {!is_fatal} binds. A boundary below that of the attempt must
+    also raise again {!Skip_test} and {!Timeout}, which are the runner's to act
+    on, and inside a law {!Property.Discard}, which is the engine's. It records
+    a {!Check_failure} when that is its purpose, and raises it again otherwise.
+    {!Exit_attempt} has no rule below the boundary of the attempt, where it is
+    an exception as any other.
+
+    The shrink search of {!Property.run} is the one exception to the rule. Once
+    a case has failed, a {!Timeout} ends the search and a candidate that skips
+    is rejected, so neither replaces the failure found (see [timed_out]). *)
 
 exception Check_failure of t
-(** Raised by every assertion verb on failure. *)
+(** Raised to fail the running test with a finished failure. The assertion verbs
+    raise it, and so do {!Baseline.check}, {!Capture.val-output} when nothing is
+    captured, and {!Stateful} for the failure of a call. *)
 
 exception Skip_test of string option
-(** Raised to skip the current test; the payload is the reason. *)
+(** Raised to skip the running test. The payload is the reason. *)
 
 exception Timeout of float
-(** Raised when a test exceeds its timeout; the payload is the limit in seconds.
-*)
+(** Raised when a test exceeds its limit, which is the payload, in seconds. The
+    runner raises it from a signal handler, so it can surface at any allocation
+    or poll point of the code that runs then, the library's own included. *)
 
 exception Exit_attempt
-(** Raised by the runner's exit guard when code under test calls [Stdlib.exit]
-    while a run is active: the raise from the [at_exit] handler cancels the
-    exit, so the attempt surfaces at the nearest failure boundary. Carries no
-    payload, an [at_exit] handler cannot observe the exit code. Registered with
-    a [Printexc] printer. *)
+(** Raised by the exit guard of {!Run} when code under test calls [Stdlib.exit]
+    while a run is active, in the process that owns the run. The raise cancels
+    the exit, and the exception travels from the call to [exit] as any other
+    does (see {{!Run.section-exits}exits}).
 
-(** {1:boundaries Boundary rules} *)
+    It carries no payload, because the guard cannot see the exit code. This
+    module registers a [Printexc] printer for it, so every site that prints it
+    gives [Exit_attempt (code under test called exit; intercepted by windtrap)].
+*)
+
+(** {1:boundaries Boundary rules}
+
+    The two rules that every failure boundary shares: which exceptions it must
+    let through, and how the backtrace of one that it records becomes text. *)
 
 val is_fatal : exn -> bool
 (** [is_fatal exn] is [true] iff [exn] is [Sys.Break], [Out_of_memory] or
-    [Stack_overflow]: the exceptions no failure boundary may swallow. *)
+    [Stack_overflow]. A catch site must raise these again and record no failure,
+    because an interrupt or an exhausted resource must stop the run and not fail
+    one test. *)
 
 val backtrace_to_string : Printexc.raw_backtrace -> string
-(** [backtrace_to_string raw] is [raw] rendered for a report: the one conversion
-    every transport uses. It is {!Printexc.raw_backtrace_to_string} minus the
-    trailing run of windtrap's own frames ({!Loc.own_unit}); only a trailing run
-    is dropped, and a backtrace that never crossed user code is kept whole.
-    Frames keep their original positions. *)
+(** [backtrace_to_string raw] is [raw] as the text of a payload. A producer must
+    convert with it, or with {!recorded_backtrace}, and never with
+    [Printexc.raw_backtrace_to_string], so that every report shows the same
+    frames.
+
+    The result is the text of [Printexc.raw_backtrace_to_string] without the
+    trailing run of windtrap's own frames ({!Loc.own_unit}). Only a trailing run
+    is dropped, so a callback of the user that windtrap called keeps its frame
+    and the frames below it, and a backtrace that never crossed code of the user
+    is kept whole. The frames keep their positions, so the first line still
+    reads [Raised at]. An empty backtrace gives [""], which a payload can thus
+    hold. *)
 
 val recorded_backtrace : unit -> string option
-(** [recorded_backtrace ()] is {!backtrace_to_string} of the most recently
-    raised exception's backtrace, or [None] when recording is off or the
-    backtrace is empty. Read it before anything else can raise. *)
+(** [recorded_backtrace ()] is {!backtrace_to_string} of the backtrace of the
+    exception raised last, or [None] when backtraces are not recorded or when
+    that text is empty. A handler must call it before anything else can raise,
+    because the runtime keeps one such backtrace. *)
 
 (** {1:constructors Constructors}
 
-    Constructors default [phase] to {!Body}, bound every payload string, and
-    capture no location: pass [?loc:(Loc.resolve ?__POS__ ())] at failure sites
-    and omit [loc] where it would be a guess. *)
+    A constructor builds a {!Body} failure with no subtest label and no captured
+    output. It captures no location, so a failure site passes
+    [?loc:(Loc.resolve ?__POS__ ())] and leaves [loc] out where it would be a
+    guess.
+
+    {b Bounds.} A constructor stores a text of at most 64 KiB, 65 536 bytes, as
+    given. It cuts a longer one to its longest prefix of at most 64 KiB that
+    ends on a code-point boundary, and appends [... (truncated; N bytes total)],
+    where [N] is the length of the original. The marker is part of the stored
+    string, so a renderer prints it with the value.
+
+    The bound applies to [msg], to a backtrace and to the texts of every
+    payload, with three exceptions. The path of a {!File} and the [candidate] of
+    an {!Unresolvable} are stored whole, and an [excerpt] has the bounds of
+    {!containment}. Two texts that agree on their first 64 KiB and have the same
+    length are stored as equal strings, and nothing in the payload then tells
+    them from two equal renderings. *)
 
 val equality :
   ?loc:Loc.t ->
@@ -258,8 +361,9 @@ val equality :
   actual:string ->
   unit ->
   t
-(** [equality ~expected ~actual ()] is a diffable {!Equality} failure over the
-    two rendered values; [not_] defaults to [false]. *)
+(** [equality ~expected ~actual ()] is a diffable {!Equality} failure over two
+    printed values. [not_] defaults to [false]. A claim against a value takes
+    {!predicate}, and a containment failure takes {!containment}. *)
 
 val containment :
   ?loc:Loc.t ->
@@ -271,22 +375,24 @@ val containment :
   haystack:string ->
   unit ->
   t
-(** [containment ~claim ~needle ~haystack ()] is a {!Containment} failure
-    storing [claim], [needle] and [demand] (default {!Anywhere}) as given, and a
-    bounded excerpt of [haystack]: a window around an {!Ordered} demand's
-    cursor, else around [found_at] when given, else the head of [haystack]. An
-    anchored window is bounded by {!tail_bytes}; a head window by the first 10
-    lines or 1 KiB, whichever comes first; both are cut on UTF-8 code-point
-    boundaries, so an anchored window may exceed its bound by up to three bytes.
-    The bound is applied here, once.
+(** [containment ~claim ~needle ~haystack ()] is a {!Containment} failure with
+    [claim], [needle], [found_at] and [demand] as given and a bounded excerpt of
+    [haystack]. [demand] defaults to {!Anywhere}.
 
-    Raises [Invalid_argument] if [found_at], or an {!Ordered} demand's
-    [resumed_at], is negative or past the end of [haystack]. *)
+    The excerpt is cut here, once. Its anchor is the [resumed_at] of an
+    {!Ordered} demand, or else [found_at]. With an anchor the excerpt is a
+    window of at most {!tail_bytes} bytes around it. Without one it is the head
+    of the haystack: its first 10 lines or its first 1 KiB, whichever ends
+    first. Every cut falls on a code-point boundary, so an anchored window can
+    pass its bound by up to three bytes.
+
+    Raises [Invalid_argument] if [found_at], or the [resumed_at] of an
+    {!Ordered} demand, is negative or greater than the length of [haystack]. *)
 
 val predicate : ?loc:Loc.t -> ?msg:string -> claim:string -> string -> t
-(** [predicate ~claim value] is an {!Equality} failure with [diffable] unset:
-    [claim] describes what the assertion demanded and takes the expected side,
-    [value] is the rendered value that failed it. *)
+(** [predicate ~claim value] is an {!Equality} failure that is not diffable.
+    [claim] says in one line what the assertion demanded and takes the expected
+    side, and [value] is the printed value that failed it. *)
 
 val raised :
   ?loc:Loc.t ->
@@ -298,13 +404,14 @@ val raised :
   ?message_diff:message_diff ->
   unit ->
   t
-(** [raised ()] is a {!Raise} failure. All payload fields default to absent
-    ([predicate] to [false]); see {!kind}. Pass [message_diff] only when it
-    holds. *)
+(** [raised ()] is a {!Raise} failure. Every text defaults to absent and
+    [predicate] to [false]. A failure site must pass [message_diff] only when it
+    holds (see {!type-message_diff}), and must make [backtrace] with
+    {!backtrace_to_string} or {!recorded_backtrace}. Neither is checked. *)
 
 val baseline : ?loc:Loc.t -> baseline -> baseline_state -> t
-(** [baseline b state] is a {!Baseline} failure of the baseline [b] in [state].
-*)
+(** [baseline b state] is a {!constructor-Baseline} failure of [b] in [state],
+    with nothing withheld. *)
 
 val property :
   ?loc:Loc.t ->
@@ -322,43 +429,61 @@ val property :
   unit ->
   t
 (** [property ~rendered ~case_index ~shrink_steps ~root ~examples ()] is a
-    {!Property} failure; see {!kind}. [timed_out], [count] and [summary] default
-    to [None], [rendering] to {!Value}. *)
+    {!constructor-Property} failure with the fields given. [inner], [timed_out],
+    [count] and [summary] default to [None], [shrink_exhausted] to [false] and
+    [rendering] to {!Value}. Nothing is validated, so the invariants that
+    {!type-kind} states are the producer's to keep. *)
 
 val message : ?loc:Loc.t -> string -> t
-(** [message text] is a {!Message} failure carrying [text]. *)
+(** [message text] is a {!Message} failure that carries [text]. *)
 
-(** {1:updating Updating} *)
+(** {1:updating Updating}
+
+    A failure is built where it happens, and the runner classifies and completes
+    it at the boundary of the attempt with these three. *)
 
 val with_phase : phase -> t -> t
-(** [with_phase phase f] is [f] with its phase replaced. *)
+(** [with_phase phase f] is [f] with [phase] as its phase. *)
 
 val with_output_tail : tail -> t -> t
-(** [with_output_tail tail f] is [f] carrying [tail] as its captured-output
-    tail. *)
+(** [with_output_tail tail f] is [f] with [tail] as its captured output, in
+    place of any that it had. *)
 
 val with_withheld : withheld -> t -> t
-(** [with_withheld why f] is [f] with its correction withheld for [why] if [f]
-    is a {!Baseline} failure, and [f] otherwise. *)
+(** [with_withheld why f] is [f] with its correction withheld for [why] when [f]
+    is a {!constructor-Baseline} failure, in any state, and [f] otherwise. It
+    does not reach the [inner] of a {!constructor-Property} failure. *)
+
+(** {1:tails Captured-output tails} *)
 
 val tail : ?log_path:string -> ?omitted_bytes:int -> string -> tail
-(** [tail text] is a {!tail} retaining the final {!tail_bytes} bytes of [text],
-    cut so the retained suffix never starts inside a UTF-8 sequence. Bytes cut
-    here are added to [omitted_bytes] (default [0]), the bytes the capture layer
-    already dropped.
+(** [tail text] is a {!type-tail} that keeps the last {!tail_bytes} bytes of
+    [text]. A [text] of at most that many bytes is kept as given. Otherwise the
+    cut moves forward to a code-point boundary, by at most three bytes, and the
+    bytes cut are added to [omitted_bytes].
+    - [omitted_bytes] is the bytes that the caller had dropped before [text].
+      Defaults to [0].
+    - [log_path] is the log file of the whole output. Defaults to none.
 
-    Raises [Invalid_argument] if [omitted_bytes < 0]. *)
+    Raises [Invalid_argument] if [omitted_bytes] is negative. *)
 
 val tail_bytes : int
-(** [tail_bytes] is the number of final bytes {!tail} retains (8 KiB). Readers
-    of captured output size their reads by it. *)
+(** [tail_bytes] is [8_192], 8 KiB: the bytes that a {!type-tail} keeps, and the
+    bound of an anchored excerpt of {!containment}. A reader of captured output
+    must size its read by it, since {!val-tail} discards what is beyond it and a
+    shorter read leaves a report short. *)
 
 (** {1:outcomes Per-test outcomes} *)
 
-(** The type for per-test results. A failed test carries one entry per phase
-    that failed; [Fail []] never occurs. Timing and attempt counts live in the
-    run record. *)
+(** The type for the outcome of a test, and of the release of a fixture. It does
+    not say whether the test counts as failed, which {!Run.result} does. *)
 type outcome =
   | Pass
-  | Fail of t list  (** Non-empty, in the order the failures occurred. *)
-  | Skip of string option  (** Skipped, with the reason from {!Skip_test}. *)
+  | Fail of t list
+      (** Never empty, in the order in which the failures were recorded. The
+          entries are never merged, so a body failure and a teardown failure are
+          two entries, and one phase can add several, as each failing subtest
+          and each failing expectation does. *)
+  | Skip of string option
+      (** Skipped, with the first reason that the attempt gave. An attempt that
+          skipped and also recorded a failure is a [Fail]. *)

@@ -5,233 +5,343 @@
   ---------------------------------------------------------------------------*)
 
 (** Operating-system access: the monotonic clock, the process environment,
-    atomic file writes, and the paths a run resolves.
+    atomic file writes, the paths that a run resolves and prints, and standard
+    error.
 
-    Paths returned by this module use ['/'] as separator. *)
+    {!reconstruct}, {!build_root} and {!display_path} read every backslash of a
+    path as a separator, on every platform, and return paths spelled with [/].
+    So does the rule of the {{!section-root}build directory}, and with it
+    {!project_root} and {!default_log_dir} when they follow that directory. On a
+    POSIX system, where a backslash is a byte of a file name, a name that holds
+    one is read as another path. {!display_artifact}, and {!project_root} under
+    [WINDTRAP_PROJECT_ROOT] or from the current directory, spell separators as
+    their inputs do. *)
 
 (** {1:clock Monotonic clock}
 
-    Monotonic time never goes backwards and ignores system clock adjustments; it
-    is the base of every duration windtrap reports. Derived from
-    {{:https://erratique.ch/software/mtime}mtime}. *)
+    Monotonic time never goes backwards and ignores the adjustments of the
+    system clock. The durations of tests and of runs are measured on it. *)
 
 type counter
 (** The type for points in monotonic time. *)
 
 val counter : unit -> counter
-(** [counter ()] samples the current monotonic time. Raises [Sys_error] if the
-    platform's monotonic clock is unavailable. *)
-
-val count : counter -> int64
-(** [count start] is the number of nanoseconds elapsed since [start],
-    non-negative. *)
+(** [counter ()] is the current point in monotonic time. Raises [Sys_error] if
+    the clock of the platform is unavailable or fails. {!count_s} raises the
+    same, and so does the initialization of this module, so on such a platform a
+    program that links the library fails when it starts. *)
 
 val count_s : counter -> float
-(** [count_s start] is [count start] in seconds. *)
+(** [count_s start] is the time elapsed since [start], in seconds. It is never
+    negative. *)
 
 (** {1:env Environment variables}
 
-    Readers re-read the environment on every call; nothing is cached. A variable
-    set to the empty string counts as unset. The [WINDTRAP_*] mirror of a runner
-    flag is declared beside that flag in {!Cli}'s table and parsed by the flag's
-    own parser; this section holds the raw lookup and the value vocabularies the
-    parsers share. *)
+    Every reader reads the environment on each call, and nothing is cached. A
+    variable that is set to the empty string counts as unset, for every variable
+    that is read here and for every mirror.
+
+    The section holds the raw lookup, the one writer, and the vocabularies that
+    the parsers of values share. It is not the inventory of variables. The
+    [WINDTRAP_*] mirror of a flag is declared beside that flag in the table of
+    {!Cli}. The parser of the flag reads it, so a mirror accepts and refuses
+    what its flag does. A caller of {!getenv} must likewise refuse a value that
+    it cannot parse, naming the variable, and never read a default out of it.
+
+    Two [WINDTRAP_*] variables mirror no flag. {!project_root} reads
+    [WINDTRAP_PROJECT_ROOT]. The coverage runtime reads [WINDTRAP_COVERAGE_FILE]
+    itself, because it cannot link this module. *)
 
 val getenv : string -> string option
-(** [getenv var] is the value of [var], or [None] when it is unset or empty.
-    Unparsed and untrimmed. *)
+(** [getenv var] is the value of [var], or [None] when [var] is unset or empty.
+    The value is neither parsed nor trimmed. *)
 
 val setenv : string -> string option -> unit
-(** [setenv name (Some value)] binds [name] to [value] in the process
-    environment; [setenv name None] unbinds it, so [Sys.getenv_opt name] is then
-    [None], not [Some ""]. The change is process-global and immediate. The
-    primitive under {!Run.setenv}; nothing else in the library writes the
-    environment.
+(** [setenv name (Some value)] binds [name] to [value] in the environment of the
+    process. [setenv name None] unbinds it, after which [Sys.getenv_opt name] is
+    [None] and not [Some ""]. The change is immediate and belongs to the
+    process, so the readers of this module, [Sys.getenv_opt] and every child
+    process started afterwards see it. [setenv] restores nothing.
 
-    Raises [Invalid_argument] when [name] is empty or contains ['='], and
-    [Unix.Unix_error] or [Sys_error] when the environment cannot be changed. *)
+    Raises [Invalid_argument] if [name] is empty or contains [=], before any
+    change. Raises [Unix.Unix_error] or [Sys_error] if the environment cannot be
+    changed. *)
 
 val bool_of_string : string -> bool option
-(** [bool_of_string s] is the boolean [s] spells, case-insensitively and after
-    trimming: [Some true] for [1], [true], [yes], [y] and [on]; [Some false] for
-    [0], [false], [no], [n] and [off]; [None] for anything else. Every boolean
-    variable reads this vocabulary and refuses a [None]. *)
+(** [bool_of_string s] is the boolean that [s] spells, in any case and after
+    trimming. It is [Some true] for [1], [true], [yes], [y] and [on],
+    [Some false] for [0], [false], [no], [n] and [off], and [None] for any other
+    word.
+
+    The reader of a variable decides what a [None] means, and the
+    {{!section-platform}presence variables} count it as set. *)
 
 val bool_expected : string
-(** [bool_expected] describes the spellings {!bool_of_string} accepts, for an
-    error message's [expected] clause. *)
+(** [bool_expected] describes the spellings of {!bool_of_string} for the
+    [expected] clause of an error, and leaves out [y] and [n]. *)
 
 val split_comma : string -> string list
-(** [split_comma value] splits [value] on commas, trims each item and drops the
-    empty ones: [WINDTRAP_TAG="a, b ,,c "] is [["a"; "b"; "c"]]. *)
+(** [split_comma value] is the items of [value] between its commas, each
+    trimmed, without the empty ones. ["a, b ,,c "] gives [["a"; "b"; "c"]]. *)
 
-(** {2:platform Platform and CI detection}
+(** {2:platform Detecting dune, a CI and the terminal}
 
-    [CI], [GITHUB_ACTIONS] and [INSIDE_DUNE] are set to arbitrary values by
-    other tools, so any value but a falsy spelling ({!bool_of_string}) counts as
-    set. *)
+    Other tools set [CI], [GITHUB_ACTIONS] and [INSIDE_DUNE] to arbitrary
+    values. Each of the three therefore counts as set unless it is unset, empty,
+    or a false spelling of {!bool_of_string}, so neither [CI=false] nor [CI=0]
+    is a CI. *)
 
 val inside_dune : unit -> bool
-(** [inside_dune ()] is [true] iff [INSIDE_DUNE] is set: the process was started
-    by dune. *)
+(** [inside_dune ()] is [true] iff [INSIDE_DUNE] is set in the sense above,
+    which means that dune started the process. *)
 
 val is_tty_stdout : unit -> bool
-(** [is_tty_stdout ()] is [true] iff standard output is a terminal. *)
+(** [is_tty_stdout ()] is [true] iff standard output is a terminal. Standard
+    error has no counterpart, because nothing styles it. *)
 
 val term_dumb : unit -> bool
-(** [term_dumb ()] is [true] iff [TERM] is exactly [dumb]. *)
+(** [term_dumb ()] is [true] iff [TERM] is [dumb], compared as it is. *)
 
 val in_ci : unit -> bool
-(** [in_ci ()] is [true] iff [CI] is set. Gates focused-test commits, [-u] and
-    GitHub annotations. *)
+(** [in_ci ()] is [true] iff [CI] is set in the sense above. *)
 
 val in_github_actions : unit -> bool
-(** [in_github_actions ()] is [true] iff {!in_ci} and [GITHUB_ACTIONS] is set;
-    the workflow variable without [CI] is not GitHub Actions. *)
+(** [in_github_actions ()] is [true] iff {!in_ci} and [GITHUB_ACTIONS] is set in
+    the sense above. The variable of the workflow without [CI] is not GitHub
+    Actions. *)
 
 (** {2:color Colour} *)
 
 (** The type for colour preferences, from [--color] or [WINDTRAP_COLOR]. *)
 type color_mode =
-  | Always  (** Emit ANSI styling unconditionally. *)
-  | Never  (** Never emit ANSI styling. *)
-  | Auto  (** Style on a terminal or under dune, unless [TERM] is dumb. *)
+  | Always  (** Style, whatever the environment says. *)
+  | Never  (** Never style. *)
+  | Auto
+      (** Style on a terminal or under dune, unless [TERM] is [dumb] or
+          [NO_COLOR] is set (see {!resolve_color}). *)
 
 val color_mode_of_string : string -> color_mode option
-(** [color_mode_of_string s] is the mode [s] spells, [always], [never] or [auto]
-    case-insensitively, and [None] for anything else. *)
+(** [color_mode_of_string s] is the mode that [s] spells, which is [always],
+    [never] or [auto] in any case, and [None] for any other word. It does not
+    trim. It is the one vocabulary of [--color] and [WINDTRAP_COLOR], so the
+    variable accepts and refuses what the flag does. *)
 
 val resolve_color :
   color_mode -> tty:bool -> inside_dune:bool -> term_dumb:bool -> bool
-(** [resolve_color mode ~tty ~inside_dune ~term_dumb] is the ANSI decision for
-    [mode] on a sink whose terminal status is [tty]: [Always] is [true], [Never]
-    is [false], and [Auto] styles iff [tty || inside_dune], not [term_dumb], and
-    [NO_COLOR] is unset (any non-empty value counts). The caller names the sink;
-    [NO_COLOR] is the one input read here. *)
+(** [resolve_color mode ~tty ~inside_dune ~term_dumb] is whether ANSI styling is
+    emitted on a sink. [Always] is [true] and wins over [NO_COLOR] and [TERM],
+    and [Never] is [false]. [Auto] is [(tty || inside_dune) && not term_dumb]
+    when [NO_COLOR] is unset, and [false] when it is set, to any non-empty
+    value. [NO_COLOR] is the one input that is read here.
+
+    The caller must pass the mode that won its own precedence, whether the sink
+    is a terminal, {!inside_dune} and {!term_dumb}. *)
 
 (** {1:atomic Atomic file writes}
 
-    {!atomic_write} writes a temporary sibling and renames it over the target,
-    so no reader ever observes a partial file. Temporaries live in the target's
-    directory under {!temp_prefix}; a directory scan skips {!is_temp_name}
-    entries. Writes are atomic with respect to observers but not synced to
-    stable storage. *)
+    {!atomic_write} writes a temporary file beside its target and renames it
+    over the target, so no reader observes a partial file, not even that of a
+    concurrent run or of a run that crashed. The name of a temporary starts with
+    [.tmp-], and a scan of a directory that receives such writes must skip the
+    entries of that prefix.
 
-val temp_prefix : string
-(** [temp_prefix] is [".tmp-"], the reserved basename prefix of temporary files.
-    Baseline names must not collide with it. *)
-
-val is_temp_name : string -> bool
-(** [is_temp_name name] is [true] iff the basename [name] starts with
-    {!temp_prefix}. *)
+    A write is atomic to observers and is not synced to stable storage. A run
+    that is killed before the rename leaves its temporary behind. *)
 
 val atomic_write : ?perm:int -> path:string -> string -> unit
-(** [atomic_write ~path contents] atomically creates or replaces the file at
-    [path] with exactly [contents]: the bytes go to a fresh {!temp_prefix}
-    temporary in [path]'s directory, which is then renamed over [path]. On
-    failure the temporary is removed (best effort) and [path] is untouched. A
-    successful rename replaces [path]'s previous permissions with the
-    temporary's. [perm] is the created file's permission bits, subject to the
-    umask; defaults to [0o666]. A [path] that names a symbolic link is refused
-    before any write.
+(** [atomic_write ?perm ~path contents] creates the file at [path], or replaces
+    it, with [contents] and nothing else. The bytes go to a fresh temporary in
+    the directory of [path], which is then renamed over [path]. That directory
+    must exist, because none is created. A [path] that names a symbolic link is
+    refused before any write. On a failure the temporary is removed, as far as
+    it can be, and [path] is untouched.
 
-    Raises [Sys_error], with a message that starts with [path] and names the
-    failing step, on failure of any step; [Sys.Break], [Out_of_memory] and
-    [Stack_overflow] pass through after the same cleanup. Raises
-    [Invalid_argument] if [perm] has bits outside [0o777], before any
-    file-system access. *)
+    [perm] is the permission bits of the new file, subject to the umask, and
+    defaults to [0o666]. A file that is replaced takes them too, whatever its
+    own were.
 
-(** {1:root Project root and log root} *)
+    Raises [Sys_error] if a step fails or if [path] is a symbolic link, with a
+    message that starts with [path] and, for a step, names it. [Sys.Break],
+    [Out_of_memory] and [Stack_overflow] pass through after the same cleanup.
+    Raises [Invalid_argument] if [perm] has bits outside [0o777], before any
+    access to the file system. *)
 
-val build_dir_of_path : string -> string option
-(** [build_dir_of_path path] is [path] cut after its first component whose name
-    starts with [_build], e.g. ["/w/_build"] for
-    ["/w/_build/default/test/t.exe"], or [None] when no component does. Lexical;
-    backslashes are read as separators. *)
+(** {1:root Project root and log root}
 
-val build_dir : unit -> string option
-(** [build_dir ()] is the build directory this process belongs to:
-    {!build_dir_of_path} of [INSIDE_DUNE] when that variable holds a path with a
-    build component, else of [Sys.executable_name], else [None]. Relative paths
-    are made absolute against the current directory. *)
+    The build directory of a process is a path cut after its first component
+    whose name starts with [_build]. It is [/w/_build] for
+    [/w/_build/default/test/t.exe], and [/w/_build_ci] for
+    [/w/_build_ci/.sandbox/3f/default]. The path is the value of [INSIDE_DUNE]
+    when it holds such a path, and [Sys.executable_name] otherwise. A relative
+    one is made absolute against the current directory. The rule is lexical, it
+    reads every backslash of the path as a separator, on every platform, and it
+    spells the directory with [/]. No marker file is consulted.
+
+    Reading the current directory raises [Sys_error] when that directory is
+    gone, as after a test that removes the directory that it moved into.
+    {!project_root} and {!default_log_dir} let the exception pass. *)
 
 val project_root : unit -> string
-(** [project_root ()] is [WINDTRAP_PROJECT_ROOT] when set (made absolute against
-    the current directory if relative), else the parent of {!build_dir} when
-    there is one, else the current directory. No marker file is consulted. *)
+(** [project_root ()] is [WINDTRAP_PROJECT_ROOT] when it is set, made absolute
+    against the current directory. It is else the parent of the build directory
+    when there is one, and else the current directory. The variable is for an
+    executable outside any build directory that is run from a subdirectory of
+    its project.
+
+    The value of the variable is not normalized, and under a root with a
+    trailing [/] or a [.] segment {!display_path} and {!display_artifact} remove
+    no prefix.
+
+    Raises [Sys_error] if the current directory is needed and cannot be read. *)
 
 val default_log_dir : unit -> string
-(** [default_log_dir ()] is the root of capture logs and the last-failed store
-    when [-o] does not name one: [<build_dir>/_tests] when {!build_dir} is
-    found, else [<temporary directory>/windtrap]. *)
+(** [default_log_dir ()] is the root of the capture logs and of the last-failed
+    store when [-o] names none. It is [_tests] under the build directory when
+    there is one, and else [windtrap] under [Filename.get_temp_dir_name ()].
+    Both are keyed by suite under that root, so two suites share the root and no
+    file. Raises [Sys_error] as {!project_root} does. *)
 
-(** {1:reconstruction Sandbox reconstruction}
+(** {1:reconstruction Source tree and build tree}
 
-    A compile-time source path is mapped back to the project's source tree, and
-    a path that cannot be proven to lie under the root is an error, never a
-    guess. *)
+    A compile-time source path, from [__POS__] or from debug information, names
+    a file as the compiler saw it, which under dune is a copy under [_build].
+    {!reconstruct} maps such a path back under the project root. A path that
+    cannot be proven to lie under the root is an error and never a guess.
+    {!build_root} serves the other direction, from a source file to the copy
+    that dune made of it. *)
 
 val reconstruct : root:string -> string -> (string, string) result
 (** [reconstruct ~root file] maps the compile-time source path [file] to an
-    absolute path under [root]: strips a [_build/<context>/] segment (or the
-    [_build/.sandbox/<hash>/<context>/] of a sandboxed action), resolves a
-    relative path against [root], and lexically normalizes [.], [..] and
-    repeated separators. It is [Ok abs] only when [abs] is proven to lie
-    strictly under [root], otherwise [Error candidate] with the unproven path.
-    [root] must be absolute. The proof is lexical: symlinks are not resolved and
-    the target need not exist. *)
+    absolute path under [root]. It proceeds in this order:
+    + It reads every backslash of [file] and of [root] as a separator, on every
+      platform.
+    + It strips from [file] the first build directory component, whose name
+      starts with [_build], together with the context after it. That is
+      [_build/<context>/], or [_build/.sandbox/<hash>/<context>/] for a
+      sandboxed action. What stands before the component is kept, and so is a
+      build directory with no context after it. ["/w/_build/default/test/t.ml"]
+      resolves as ["/w/test/t.ml"] does.
+    + It resolves a relative path against [root].
+    + It normalizes [.], [..] and repeated separators lexically.
+
+    The result is [Ok abs] only when [abs] lies strictly under [root]. It is
+    otherwise [Error candidate], where [candidate] is the unproven path, not
+    normalized, for the report of the error. [root] must be absolute, and every
+    call is an [Error] when it is not.
+
+    The proof is lexical, so no symbolic link is resolved and the target need
+    not exist. On a POSIX system the proven path of a [file] that holds a
+    backslash is not the path of that file. [reconstruct] never raises. *)
 
 val build_root : string -> string option
-(** [build_root dir] is the build context [dir] lies in, cut after its first
-    build directory component and the context after it, e.g.
-    ["/w/_build/default"] for ["/w/_build/default/test"], or [None]. Lexical.
-    Dune's copy of a source file [f] under the project root is
+(** [build_root dir] is the build context that [dir] lies in, which is [dir] cut
+    after its first build directory component and the context after it, or
+    [None] when [dir] has none. It is ["/w/_build/default"] for
+    ["/w/_build/default/test"], and ["/w/_build/.sandbox/3f/default"] for a
+    directory of a sandboxed action. It is lexical, and reads backslashes as
+    {!reconstruct} does.
+
+    The copy that dune makes of a source file [f] under the project root is
     [<build root>/<f relative to the root>]. *)
 
 (** {1:display Display paths} *)
 
 val display_path : string -> string
-(** [display_path path] is [path] as printed in reports and command hints: a
-    leading {!project_root} prefix removed, a [_build/<context>/] segment
-    stripped as {!reconstruct} strips it, interior ["."] and empty segments
-    dropped ([".."] untouched). Best effort: a path outside the root is returned
-    normalized, otherwise unchanged. *)
+(** [display_path path] is [path] as reports and printed commands show it, which
+    is relative to the project root and the same bytes from every producer.
+    - A leading {!project_root} prefix is removed, and a build segment is then
+      stripped from the rest as {!reconstruct} strips one.
+    - For a [path] that is not under the root, the segment is stripped first and
+      the prefix is removed from the result.
+    - Empty segments and [.] segments are dropped, [..] is kept, and backslashes
+      become [/].
+
+    A path outside the root is returned normalized and otherwise unchanged.
+    [display_path] never raises. When the current directory cannot be read, no
+    prefix is removed and the rest is done. *)
 
 val display_artifact : string -> string
-(** [display_artifact path] is [path] with a leading {!project_root} prefix
-    removed and nothing else: the form for a real file under [_build], such as a
-    capture log. Both display functions are total: when the current directory
-    cannot be read, the path is returned as given. *)
+(** [display_artifact path] is [path] without a leading {!project_root} prefix,
+    and nothing else is changed. It is the form for a file that the build wrote
+    under [_build], as a capture log is. {!display_path} would strip the build
+    segment of such a path, which then does not open.
+
+    [display_artifact] never raises. When the current directory cannot be read,
+    [path] is returned as given. *)
 
 (** {1:components Path components} *)
 
 val sanitize_component : string -> string
-(** [sanitize_component s] is [s] as a safe single path component:
-    alphanumerics, ['-'], ['_'] and ['.'] are kept, every other character
-    becomes ['_']. The mapping is injective: a name it altered, and ["."],
-    [".."] and the empty string (which become ["unnamed"]), carry a short digest
-    of [s]; an unaltered name is returned unchanged. Results longer than 80
-    bytes are truncated to 40 bytes plus a full digest. *)
+(** [sanitize_component s] is [s] as one safe path component. ASCII letters,
+    digits, [-], [_] and [.] are kept, and every other byte becomes [_].
+    - A name that this changes ends in [-] and the first 8 hexadecimal digits of
+      the MD5 digest of [s].
+    - [.], [..] and the empty string become [unnamed], with the same ending.
+    - A name that this does not change is returned as it is.
+    - A result longer than 80 bytes, a changed one or not, is cut to its first
+      40 bytes, [_] and the whole digest.
+
+    The digest is of [s] as given, so a name maps to the same component in every
+    run, whatever the order of execution. Two names that differ only in replaced
+    bytes get different components unless their digests collide. The mapping is
+    not injective beyond that, because an unchanged name can equal the component
+    of another name. *)
 
 (** {1:fs Filesystem helpers} *)
 
 val file_exists : string -> bool
-(** [file_exists path] is [true] iff [path] exists; [false] on any error. *)
+(** [file_exists path] is [true] iff [path] exists, and [false] on any error. *)
 
 val mkdir_p : string -> unit
-(** [mkdir_p path] creates [path] and any missing parents with permissions
-    [0o770]. Existing components are left alone. *)
+(** [mkdir_p path] creates the directory [path] and its missing parents, with
+    permissions [0o770] under the umask. A component that exists is left alone,
+    even when it is a file, and so is one that another process creates
+    meanwhile. Raises [Unix.Unix_error] if a directory cannot be created. *)
 
 (** {1:stderr Standard error} *)
 
 val say : string -> unit
-(** [say message] writes ["windtrap: " ^ message] and a newline on standard
-    error, the one form of everything windtrap says about itself; a [message] of
-    several lines is anchored on its first. Standard output is flushed first,
-    [Format]'s formatter and the channel, so a log that merges both streams
-    keeps their order; standard error is flushed after. A control byte in
-    [message] other than a line feed is written escaped ([\t], [\x1b]). *)
+(** [say message] writes ["windtrap: "], [message] and a newline on standard
+    error. It is the one form of what windtrap says about itself, at every
+    verbosity, never styled and no part of a report. The runtime libraries
+    cannot link this module, and write the same prefix themselves.
+    - A [message] of several lines is anchored on its first, so the prefix
+      prints once.
+    - Each control byte of [message] other than LF is written as an escape,
+      [\t], [\r] or [\xNN], DEL included. Bytes from [0x80] up pass.
+    - Standard output is flushed first, [Format.std_formatter] and then the
+      channel, so a log that merges the two streams keeps their order. A
+      [Sys_error] from that flush is dropped, so a closed standard output does
+      not cost the line. [Format.err_formatter] is flushed before the line, and
+      standard error after it.
+
+    A client that prints through a formatter of its own, or that draws a live
+    line, must flush or erase it first. A [Sys_error] from standard error itself
+    is not caught. *)
 
 val warn : string -> unit
-(** [warn message] is [say ("warning: " ^ message)]: the line of something the
-    run survives, its verdict and exit code standing. *)
+(** [warn message] is [say ("warning: " ^ message)]. It is for something that
+    the run survives, with its outcome and its exit code unchanged. *)
+
+(**/**)
+
+(* Values with no client but the unit suite. [count start] is the nanoseconds
+   elapsed since [start], never negative, and [count_s] is [count] in seconds.
+   [temp_prefix] is [".tmp-"], the prefix of the temporaries of [atomic_write].
+   [is_temp_name name] is [true] iff [name] starts with [temp_prefix], where
+   [name] is a directory entry, a basename and no path. [build_dir_of_path
+   path] is [path] cut after its first component whose name starts with
+   [_build], or [None] when no component does. It is lexical, reads backslashes
+   as separators, spells its result with [/], and lets any component qualify,
+   the name of a file included. [build_dir ()] is the build directory of the
+   process as the section on roots defines it, or [None], and raises
+   [Sys_error] as [project_root] does. [lib/runtime/instr.ml] restates the rule
+   of [build_dir_of_path], because the runtime links no core. *)
+
+val count : counter -> int64
+val temp_prefix : string
+val is_temp_name : string -> bool
+val build_dir_of_path : string -> string option
+val build_dir : unit -> string option
+
+(**/**)

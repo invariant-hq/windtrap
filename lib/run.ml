@@ -97,7 +97,10 @@ let default_config () =
    log directory is the child's own so that its capture files and its
    last-failed store cannot touch the parent's. A child reports nothing,
    so it writes no JUnit either; and it is not itself a mutation run —
-   the loop is its parent, and it arms what the parent hands it. *)
+   the loop is its parent, and it arms what the parent hands it.
+
+   [allow_focus]: the run of the parent already passed the CI focus guard
+   over the same tree, so a child has nothing left to refuse. *)
 let for_subset config ~log_dir ~bail =
   {
     config with
@@ -133,6 +136,8 @@ type fixture_entry = {
   fx_release : (unit -> unit) option;
 }
 
+(* Consumers dispatch on the subject, never on the path: a declared test
+   may be named ["fixture release"]. *)
 type subject = Test | Fixture_release
 
 let fixture_release_path = [ "fixture release" ]
@@ -339,15 +344,12 @@ let subtest name fn =
 
 (* The registry is the run's; the failure's location is the caller's
    ([loc], the literal's position or the call frame). A check without one
-   reaches [add_failure] unfilled and is attributed there, marked. *)
-(* A checkpoint, not an assertion: a mismatch is recorded on the frame
-   and the call returns, so the body continues to its later expectations,
-   the attempt fails at its end with every mismatch reported, and a
-   correcting run records every correction in one pass — one
-   [dune promote] accepts them all. The labeling is [subtest]'s, so a
-   checkpoint inside a subtest carries its name. The one baseline failure
-   that still raises is a path that cannot be proven under the project
-   root: nothing after it is meaningful. *)
+   reaches [add_failure] unfilled and takes the declaration site there. *)
+(* An expectation records and returns where an assertion raises: the body
+   goes on to its later expectations, and a correcting run records every
+   correction of the attempt in one pass. A label is [subtest]'s. The one
+   baseline failure that still raises is a path that cannot be proven under
+   the project root: nothing after it is meaningful. *)
 let check_baseline ?loc subject actual =
   let frame = current_frame () in
   match
@@ -1612,9 +1614,8 @@ let execute_plan ?(on_event = fun _ -> ())
   in
   Option.iter interrupt run.interrupted;
   (* Releases run after the last test, outside any per-test timeout,
-     including under -x. A failure here is part of the run's verdict,
-     so it is recorded the moment it happens: one row per failure, after
-     every test row. *)
+     including under -x. A failure here is part of the run's verdict: one
+     row per failure, after every test row. *)
   let release_failures = release ~on_event run in
   List.iter
     (fun failure ->
@@ -1630,8 +1631,10 @@ let execute_plan ?(on_event = fun _ -> ())
   let full = (not bailed) && executed = total in
   update_last_failed (store_path config ~suite) ~full ~results:test_results
     ~failed_paths;
-  (* Corrections are written once, after the last test and before the
-     report; a correction that reached nothing fails the run. *)
+  (* Corrections are written once, after the last test. The blocks that
+     offer them were committed as each test finished; the end-of-run
+     sections and the JUnit file follow. A correction that reached nothing
+     fails the run. *)
   Baseline.write baselines;
   Option.iter interrupt run.interrupted;
   (* A test whose failures are all kept corrections leaves the exit code

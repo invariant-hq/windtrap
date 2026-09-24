@@ -118,7 +118,11 @@ let reset = "\027[0m"
 (* An empty payload is returned bare: wrapping it would emit an open code
    and its reset with nothing between them — invisible, but real bytes on
    lines that are assembled from optional fragments (the attempt suffix on
-   a FAIL header is empty on all but a retried test). *)
+   a FAIL header is empty on all but a retried test).
+
+   There is no styled ['a t] combinator, because an escape sequence is
+   bytes that [Format] counts as columns. The renderer styles fragments of
+   a line that it has already laid out and measured. *)
 let styled_string ~ansi style s =
   if (not ansi) || String.length s = 0 then s
   else code_of_style style ^ s ^ reset

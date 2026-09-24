@@ -3,11 +3,9 @@
    SPDX-License-Identifier: ISC
   ---------------------------------------------------------------------------*)
 
-(* Capture mechanics adapted from v1's lib/log_trap.ml (fd-level dup2
-   redirection, formatter draining before descriptor restoration) and the
-   live half of v1's lib/expect.ml (incremental consumption). Retention is
-   bounded-tail (tail + exact drop count) over a simple file-based design:
-   the file is complete, only the failure report is bounded. *)
+(* Retention is file-based: the log of an attempt is complete, and only the
+   tail that a failure carries is bounded, with the count of the bytes it
+   leaves out. *)
 
 (* Capture state *)
 
@@ -157,6 +155,9 @@ let with_file_in path f =
   | ic ->
       Fun.protect ~finally:(fun () -> close_in_noerr ic) (fun () -> Some (f ic))
 
+(* Under [--stream] no captured bytes exist. A silent [""] would make an
+   expectation on [output ()] pass against nothing, so the call fails the
+   test. *)
 let stream_error = "this test requires capture; rerun without --stream"
 
 let output ?__POS__ t =

@@ -5,84 +5,145 @@
 
 (** Rewriting string literals in OCaml source at recorded positions.
 
-    A correction of an [expect] literal is a {!patch}: the position the literal
-    was compiled at, the value it was compiled with, and the value to write.
-    {!apply} rewrites a file's bytes with every patch of that file at once,
-    keeping each literal's delimiter and the author's layout elsewhere. The
-    flexible comparison form ({!normalize}) and the formatting of a flexible
-    payload ({!format_flexible}) are ppx_expect's. *)
+    The correction of a literal is a {!type-patch}: the position that the
+    literal was compiled at, the value that it was compiled with, how it is
+    compared, and the text to write. {!apply} rewrites the bytes of a file with
+    every patch of that file at once, and {!normalize} is the form under which a
+    flexible literal is compared.
+
+    The comparison form and the layout of a corrected literal are those of
+    ppx_expect, so a correction is byte for byte the one that ppx_expect writes.
+    Every function is pure, and none raises. *)
 
 (** {1:flexible Flexible text} *)
 
 val normalize : string -> string
-(** [normalize s] is the comparison form of a flexible literal: every line
-    right-stripped, blank leading and trailing lines dropped, and the block
-    dedented by the smallest indentation of its nonempty lines. Two texts match
-    flexibly iff their normalizations are equal. *)
+(** [normalize s] is the form under which a flexible literal is compared. Two
+    texts match flexibly iff their normalizations are equal. It is [s] after
+    three steps:
+    - Every line is stripped of its trailing whitespace.
+    - The blank lines at both ends are dropped.
+    - The block is dedented by the smallest indentation of its nonempty lines.
 
-(** {1:literals Literal rendering} *)
-
-(** The type for string literal delimiters. *)
-type delimiter =
-  | Quote  (** ["…"]: a correction escapes its lines onto one source line. *)
-  | Tag of string
-      (** [{tag|…|tag}]: a correction grows the tag until the contents hold
-          neither delimiter. The string-extension spelling of an expect node,
-          [{%expect tag|…|tag}], is this delimiter with its head kept. *)
-
-val fix_tag : contents:string -> string -> string
-(** [fix_tag ~contents tag] is [tag] extended with ["xxx"] until neither [{tag|]
-    nor [|tag}] occurs in [contents]. *)
-
-val format_flexible : delimiter:delimiter -> column:int -> string -> string
-(** [format_flexible ~delimiter ~column raw] is the contents of a flexible
-    literal for the output [raw]: a single line padded with one space on each
-    side under {!Tag} and bare under {!Quote}; several lines each indented at
-    [column + 2] under {!Tag}, opening after a newline and closing on a line of
-    that indentation, and indented by one space under {!Quote}. *)
-
-val literal : delimiter:delimiter -> string -> string
-(** [literal ~delimiter contents] is the literal text holding [contents]:
-    [{tag|contents|tag}] with the tag grown by {!fix_tag}, or ["…"] with every
-    line escaped and joined by [\n]. *)
+    Whitespace is space, TAB, LF, VT, FF and CR, so a CR LF line end reads as
+    LF. Indentation counts the leading spaces of a line and nothing else, and a
+    line loses all its leading whitespace. A block that is indented with tabs
+    thus loses its relative indentation. *)
 
 (** {1:patches Patches} *)
 
-(** The type for how a literal is compared and therefore rewritten. *)
+(** The type for how the client compares a literal, which decides how {!apply}
+    lays out its new contents. *)
 type style =
-  | Flexible  (** [expect]: contents are reformatted by {!format_flexible}. *)
-  | Exact  (** [expect_exact]: contents are written verbatim. *)
+  | Flexible
+      (** Compared under {!normalize}. The new contents are laid out by
+          {!apply}. *)
+  | Exact
+      (** Compared byte for byte. The new contents are the [content] of the
+          patch as given, inside the delimiter of the literal. *)
 
 type patch
-(** The type for one literal rewrite. *)
+(** The type for the rewrite of one literal. *)
 
 val patch : site:Loc.pos -> literal:string -> style:style -> string -> patch
-(** [patch ~site ~literal ~style content] rewrites the literal at [site], whose
-    compiled value is [literal], to hold [content]. [site] is the position of
-    the [__POS_OF__ literal] expression (parenthesized or not), of the literal
-    itself, or of an [[%expect]] node whose payload the literal is; a node with
-    no payload compiles to the empty literal and is patched by inserting one. *)
+(** [patch ~site ~literal ~style content] is the rewrite of the literal at
+    [site], whose compiled value is [literal], to hold [content]. It checks
+    nothing.
+    - [site] is the position of one of three things: a [__POS_OF__ literal]
+      expression, in parentheses or not, the literal itself, or an expect node,
+      spelled [[%expect …]] or [{%expect|…|}], whose payload is the literal.
+    - [literal] must be the value that the running executable was compiled with,
+      because {!apply} refuses a patch whose [literal] is not what the source
+      decodes to ({!Drifted}). A node without payload, [[%expect]], compiles to
+      [""]. *)
 
-(** The type for refused patches. *)
+(** The type for refused patches. The payload is the [site] of the patch. *)
 type error =
   | No_literal of Loc.pos
-      (** No string literal follows the position in the file. *)
+      (** No string literal follows the position. The line is not in the file,
+          or the literal is never closed, or something other than whitespace,
+          [(], [__POS_OF__] and the head of a node stands before it, a comment
+          included. *)
   | Drifted of Loc.pos
-      (** The literal at the position decodes to a value other than the one the
-          patch was compiled with: the file changed since the build. *)
+      (** The literal at the position decodes to another value than the
+          [literal] of the patch, or the node has no payload and that [literal]
+          is not [""]. The file changed since the build. *)
 
 val error_message : error -> string
-(** [error_message e] is a one-line description of [e] naming the site. *)
+(** [error_message e] is one sentence on [e], on one line, which names the file
+    of the site, as compiled, and its line:
+    [no string literal at the recorded position] for {!No_literal}, and for
+    {!Drifted} that the literal differs from the value the binary was compiled
+    with, then [rebuild and rerun]. It prints nowhere but as the reason of a
+    refusal ({!Report.refusals}). *)
 
 val apply : string -> patch list -> (string, error) result
-(** [apply source patches] is [Ok text], [source] with every patch applied: from
-    each patch's position the file is lexed past an optional opening
-    parenthesis, the [__POS_OF__] token, an expect node's head and whitespace to
-    one string literal, which is replaced by {!literal} of the new contents
-    (formatted by {!format_flexible} at the position's line indentation for a
-    {!Flexible} patch) in its own delimiter; a node with no payload gets the
-    literal inserted before its closing bracket. A literal decodes as the lexer
-    compiles it, escapes and continuation lines resolved and a CRLF newline read
-    as LF. Patches apply in position order and the rest of the file is
-    byte-identical. [Error e] names the first patch refused, and nothing is
-    applied. *)
+(** [apply source patches] is [Ok text], where [text] is [source] with every
+    patch applied. [source] is the bytes of the file that the positions were
+    recorded in. The caller must pass the patches of that file alone, because
+    the file of a position is compared with nothing.
+
+    {b Decoding.} The literal that follows the position decodes as the compiler
+    reads it under OCaml 5.2 and later, with its escapes and continuation lines
+    resolved and a CR LF newline read as LF. OCaml 5.0 and 5.1 keep the CR of
+    such a newline in the compiled value. No version drops more than one CR
+    before an LF, and the decoder drops them all. In both cases the patch is
+    refused as {!Drifted}.
+
+    {b Rewriting.} The literal is replaced by one that holds the new contents in
+    its own delimiter. A quoted literal stays quoted. Each line is escaped by
+    [String.escaped] and the lines are joined by [\n], so the literal is one
+    source line and its non-ASCII bytes become decimal escapes. A [{tag|…|tag}]
+    literal keeps its tag and its contents are written raw. The tag grows by
+    [xxx] until the contents hold neither [{tag|] nor [|tag}].
+
+    The head of a [{%expect tag|…|tag}] node is kept. A node without payload
+    gets a space and a [{|…|}] literal before its closing bracket.
+
+    The new contents of an {!Exact} patch are its [content] as given. Those of a
+    {!Flexible} patch are the lines of [normalize content], laid out as follows,
+    where [c] is the number of leading spaces of the line that holds the
+    position:
+    - With no line, the contents are one space in a tagged literal and empty in
+      a quoted one.
+    - One line stands between two spaces in a tagged literal, and bare in a
+      quoted one.
+    - Several lines in a tagged literal are a newline, then each line indented
+      by [c + 2] spaces before its own indentation, then a last line of [c + 2]
+      spaces, on which the delimiter closes.
+    - Several lines in a quoted literal are a space and a newline, then each
+      line indented by one space before its own indentation, then a newline and
+      a space.
+
+    The literal that a {!Flexible} patch writes normalizes to
+    [normalize content], so the corrected literal matches on the next run.
+
+    {b The result.} The patches apply in the order of their positions, whatever
+    the order of the list. Every byte outside the replaced literals is copied,
+    and in a CR LF file the lines of a new literal end in LF alone. [patches]
+    must hold one patch at most for a literal.
+
+    [Error e] is the first patch of the list that is refused, and no patch is
+    then applied. *)
+
+(**/**)
+
+(* The rendering of a literal, exported for the unit suite. Every other
+    caller goes through [apply], whose contract states what a correction looks
+    like. [delimiter] is the delimiter of a string literal: [Quote] is ["…"],
+    [Tag tag] is [{tag|…|tag}], and [Tag ""] is [{|…|}]. [fix_tag ~contents tag]
+    is [tag] followed by as many [xxx] as it takes for [contents] to hold
+    neither [{tag|] nor [|tag}], so a tag that conflicts with nothing is
+    returned as given. [format_flexible ~delimiter ~column raw] is the contents,
+    without delimiter, of a flexible literal for the output [raw], laid out as
+    [apply] says with [column] for [c]. [column] must not be negative.
+    [literal ~delimiter contents] is the literal that holds [contents], as
+    [apply] writes one, with no head of a node. *)
+
+type delimiter = Quote | Tag of string
+
+val fix_tag : contents:string -> string -> string
+val format_flexible : delimiter:delimiter -> column:int -> string -> string
+val literal : delimiter:delimiter -> string -> string
+
+(**/**)

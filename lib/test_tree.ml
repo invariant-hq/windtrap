@@ -1,11 +1,6 @@
 (*---------------------------------------------------------------------------
    Copyright (c) 2026 Invariant Systems. All rights reserved.
    SPDX-License-Identifier: ISC
-
-   The tree shape and traversal derive from windtrap v1's lib/test.ml,
-   rebuilt without group hooks, with group-level defaults resolved at
-   flatten time, and with declaration-location capture for failure
-   attribution.
   ---------------------------------------------------------------------------*)
 
 (* Tags *)
@@ -119,7 +114,9 @@ let group ?__POS__ ?tags ?timeout ?retries name children =
   Group { name; children; loc; annotations }
 
 (* The rows are plain children: the table's tags, limit and retries sit on
-   the group and reach each row as its defaults. *)
+   the group and reach each row as its defaults. [name] is required: a child's
+   path is its identity, and a positional default would give other seeds and
+   another store entry to every later child whenever a row is inserted. *)
 let cases ?__POS__ ?tags ?timeout ?retries ~name base inputs fn =
   let annotations = declared ?tags ?timeout ?retries () in
   let loc = Loc.resolve ?__POS__ () in

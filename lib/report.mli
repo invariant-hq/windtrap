@@ -3,63 +3,78 @@
    SPDX-License-Identifier: ISC
   ---------------------------------------------------------------------------*)
 
-(** The run report: the terminal transcript, the GitHub Actions envelope, and
-    the one composition that executes a suite and reports it.
+(** The run report.
 
-    A report is a projection of {!Run.result} rows and their {!Failure.t}
-    payloads, written under one [ansi] decision made at {!create}; nothing here
-    alters status, counts or scheduling (guarantee 4). The failure blocks, the
-    section vocabulary and the instrumentation reports are {!Report_sections}'s;
-    the JUnit document is {!Report_junit}'s.
+    The module renders the transcript of a run (its header, live line, [-v]
+    rows, failure blocks, end-of-run sections and summary), the GitHub Actions
+    envelope around it, and the lines that a mutation run adds. {!run} executes
+    a suite and reports it. {!create}, {!observe} and {!finish} serve a renderer
+    that is fed by hand.
 
-    What is committed when: a compact run shows the erasable live tail on a
-    terminal and commits each failure block when its test finishes, after the
-    header and the [── failures ──] rule, so a run that dies has printed what it
-    knew; the rule that closes the failures, the end-of-run sections (slow
-    tests, flaky tests, corrections) and the summary follow at the end, and a
-    green run with none of them is its summary line alone. Under
-    [Run.config.verbose] the header prints at once and one status row is
-    committed per finished test, a failed test's block under its row.
-    [Run.config.stream] changes no line of the transcript: a streamed test's own
-    bytes precede what the report writes next, {!Capture.drain} running before
-    the report writes on (a test's standard error is not ordered against it).
-    The summary is the last line, save the empty run's [list:] hint; every
-    committed write is flushed. Exact layout (column positions, display bounds)
-    is not contract. *)
+    A report is a projection of {!type:Run.result} rows and of the {!Failure.t}
+    payloads in them, written under one [ansi] decision made at {!create}.
+    Nothing here alters a status, a count or the scheduling of a run (guarantee
+    4 of [doc/dev/architecture.md]). The entries of a failure block and the
+    sections of a mutation report are {!Report_sections}', and the JUnit
+    document is {!Report_junit}'s. *)
 
 (** {1:renderer The renderer} *)
 
 type t
-(** The type for transcript renderer state: presentation state only; dropping a
-    renderer loses no run data. *)
+(** The type for renderers. A renderer is mutable and serves one run, because it
+    counts the results and the blocks that it committed. *)
 
 val create : out:Format.formatter -> ansi:bool -> ?live:bool -> Run.config -> t
-(** [create ~out ~ansi config] is a renderer writing to [out]. [ansi] is whether
-    styling is emitted: under [ansi:false] the transcript contains no escape
-    codes at all (sequences in test names and captured output are stripped),
-    under [ansi:true] they pass through; compared values are escaped into
-    visible text either way ({!pp_failure}). [live] (default [false], and off
-    regardless under [ansi:false] and under [config.stream], where a test's own
-    bytes would land on it) is whether {!begin_test} and {!mutation_testing}
-    maintain a self-erasing progress display; pass the sink's TTY status.
-    [config.verbose], [config.stream], [config.slow_threshold] ([0.] disables
-    slow warnings), [config.invocation] and the identifier of a
-    [config.mutation] that is {!Run.Armed} are read once here. Names print with
-    C0 control bytes and DEL escaped ({!Report_sections.sanitize_name}); the
-    width is [80] columns and a failure block shows the last [10] lines of the
-    captured tail with the full log's path.
+(** [create ~out ~ansi config] is a renderer that writes to [out].
+    - [ansi] is whether styling is emitted. Under [ansi:false] every line is
+      stripped of the escape sequences that a test name or captured output may
+      hold. Under [ansi:true] they pass through.
+    - [live] is whether {!begin_test}, {!note} and {!mutation_testing} draw the
+      live line, which the next write erases. Defaults to [false], and a caller
+      passes whether [out] is a terminal. The live line is off whatever [live]
+      is under [ansi:false] and under [config.stream]. It is the one line that
+      is cut to a width, which is 80 columns ([columns] in [report.ml]).
+
+    [create] reads [config.verbose], [config.stream], [config.slow_threshold],
+    [config.invocation], from which every [accept:] and [replay:] command is
+    spelled, and the identifier of a [config.mutation] that is {!Run.Armed}. It
+    reads no other field.
+
+    The names of tests, suites and fixtures, and the reasons of a skip and of an
+    expected failure, print through {!Report_sections.sanitize_name}. The labels
+    of a property, the path of a correction and the three strings of
+    {!mutation_armed} do not go through it.
 
     Raises [Invalid_argument] if [config.slow_threshold] is negative or not
     finite. *)
 
 val terminal : Run.config -> t
-(** [terminal config] is the run's renderer on [Format.std_formatter]: colour
-    from {!Os.resolve_color} over [config.color], the terminal status and
-    [INSIDE_DUNE]/[TERM]; the live tail on iff standard output is a terminal and
-    the run is not under GitHub Actions. Reads the environment and the terminal
-    status of standard output. *)
+(** [terminal config] is the renderer of a run on [Format.std_formatter].
+    Styling is {!Os.resolve_color} of [config.color], of whether standard output
+    is a terminal, of {!Os.inside_dune} and of {!Os.term_dumb}. The live line is
+    on iff standard output is a terminal and the run is not under GitHub Actions
+    ({!Os.in_github_actions}), within what {!create} allows. [terminal] thus
+    reads the terminal status of standard output and, through these functions,
+    [INSIDE_DUNE], [TERM], [NO_COLOR], [CI] and [GITHUB_ACTIONS]. *)
 
-(** {1:transcript The transcript} *)
+(** {1:transcript The transcript}
+
+    {!header} comes first. {!begin_test} and {!result} follow for each test, in
+    the order in which the tests finish, and {!finish} or {!interrupted} comes
+    last.
+
+    A compact run is one without [config.verbose]. It commits the block of a
+    counted failure when its test finishes. The rule that closes the blocks, the
+    end-of-run sections and the summary wait for {!finish}. Under
+    [config.verbose] the header prints at once and every finished test commits a
+    row, with the block of a failed test under its row.
+
+    [config.stream] changes no line of the transcript. Under it {!result},
+    {!note}, {!finish} and {!interrupted} first call {!Capture.drain}, so the
+    bytes that a streamed test wrote precede what the report writes next.
+
+    Whatever a function of this section writes, it erases the live line first,
+    and a function that commits lines flushes [out] before it returns. *)
 
 val header :
   t ->
@@ -70,62 +85,105 @@ val header :
   seed:Seed.seed option ->
   unit ->
   unit
-(** [header t ~suite ~tests ~seed] records the run header
-    ([mylib: 48 tests (seed s1:…)]) and prints it under [verbose]; compact
-    prints it before its first failure block or end-of-run section, and not at
-    all on a run that has neither. [seed] is shown when given; [tests] is the
-    number of selected tests: it scales the live tail's [[k/n]] counter and the
-    summary's [N not run] is counted against it. [declared] (default [tests]),
-    how many tests the suite declares before selection, and [selection]
-    ({!selection_description}) are not printed; the summary uses them to say why
-    nothing ran. *)
+(** [header t ~suite ~tests ~seed ()] records the header of the run, which names
+    [suite], counts [tests] and carries [seed] when given. It prints at once
+    under [config.verbose]. A compact run prints it before its first failure
+    block or end-of-run section, and when it has neither it prints no header and
+    its summary names the suite and carries the seed instead.
+    - [tests] is the number of selected tests. The live line counts against it,
+      and the summary counts as not run those of them that have no result.
+    - [declared] is the number of tests that the suite declares before
+      selection. Defaults to [tests].
+    - [selection] describes what narrowed the run (see
+      {!selection_description}).
+    - [seed] is the root seed to show.
+
+    The header prints neither [declared] nor [selection], which the summary uses
+    to say why no test ran. Without a call to [header], a renderer prints no
+    header, names no suite, counts no test as not run and explains no empty run.
+*)
 
 val begin_test : t -> path:string list -> unit
-(** [begin_test t ~path] shows the test at [path] on the live display
-    ([Running [3/48] name…] under [verbose], a faint [  [3/48] name…] tail
-    otherwise), erased before anything else prints. Prints nothing unless [live]
-    and [ansi] are set. *)
+(** [begin_test t ~path] draws the live line for the test at [path], with its
+    position among the selected tests. The line shows only while the live line
+    is on (see {!create}). *)
 
 val result : t -> Run.result -> unit
-(** [result t r] erases the live display and commits what [r] is owed, flushed.
-    Under [verbose] that is [r]'s status line: status tag, full path
-    ({!Test_tree.path_to_string}), duration (the skip reason for a [SKIP]), the
-    attempt count when [r.attempts > 1], and a passing property's label
-    distribution under it. A failing result that did not count
-    ([r.counted = false]) renders as a dim [XFAIL] tag with [r.xfail]'s reason;
-    an [xfail] test that passed arrives as a counted failure whose message names
-    the reason. A counted failure's status line is its block's title, qualified
-    by [(mutant armed)] in an armed run: the block's lines ({!finish} describes
-    them) follow it, then one blank line. Compact prints nothing for a result
-    that did not count as failed, and for one that did its failure block,
-    preceded once per run by the header and the 58-column [── failures ──] rule
-    and separated from the previous block by one blank line. *)
+(** [result t r] commits what [r] is owed. A client must call it once per
+    finished test and in the order of the tests, because {!finish} relies on the
+    order of the blocks.
+
+    Under [config.verbose] every result commits a row with its status, its path,
+    its duration and, when [r.attempts > 1], the number of attempts. A skip
+    shows its reason in place of a duration, and on the terminal the reason
+    shows nowhere else. A passing property that collected labels prints its
+    label table under its row. A failing [r] with [r.counted = false] is an
+    excused expected failure. Its row carries the reason of [r.xfail], and its
+    failures print nowhere on the terminal.
+
+    A counted failure commits its block in both kinds of run. Under
+    [config.verbose] its row is the title of the block. In a compact run nothing
+    else prints, and the first block follows the header and the rule that opens
+    the failures, which carries no count. A block holds, in this order:
+    - the title. It carries the number of attempts when [r.attempts > 1] and, in
+      an armed run, the mark of the armed mutant. Under [config.verbose] it also
+      says when a failure of [r] is a missing baseline file, which a compact
+      title does not.
+    - one {!Report_sections.pp_failure} entry per failure of [r], with its
+      source line.
+    - the label table of a property: the distribution of the collected labels
+      over the passing cases, then the hits of each demanded label when one of
+      several coverage demands is unmet.
+    - the captured output of the first failure of [r] that carries a
+      {!type:Failure.tail}: its last {!Report_sections.max_lines} lines, under a
+      heading that counts the lines and the bytes left out, then the path of the
+      full log when the capture wrote one.
+    - {!Report_sections.hints} for the whole test, without a filter for a
+      fixture release.
+
+    [result] reads the record, [r.outcome] and [r.counted], and never a message.
+*)
 
 val note : t -> string -> unit
-(** [note t line] prints the run-scoped notice [line] ([releasing db]) on its
-    own line under [verbose], as an erasable live line under [live] otherwise,
-    and not at all elsewhere. *)
+(** [note t line] shows the run-scoped notice [line], through
+    {!Report_sections.sanitize_name}. Under [config.verbose] it is a committed
+    line. Otherwise it is drawn as the live line when that is on, and is not
+    shown when it is off. *)
 
 val observe :
   t -> seed:Seed.seed -> selection:string option -> Run.event -> unit
-(** [observe t ~seed ~selection event] streams [event] through [t]: the header
-    on [Run_started], carrying the run's root [seed] iff a selected test is a
-    property; the live tail on [Test_started]; {!result} on [Test_finished]; the
-    release notice on [Fixture_release]; {!interrupted} on [Interrupted]. Never
-    raises. *)
+(** [observe t ~seed ~selection event] renders [event] through [t]:
+    - [Run_started] is {!header} over the counts of the event, with [selection],
+      and with [seed] iff the event's [properties] is [true], that is iff a
+      selected test is a property.
+    - [Test_started] is {!begin_test}, and [Test_finished] is {!result}.
+    - [Fixture_release] is [note t ("releasing " ^ name)].
+    - [Interrupted] is {!interrupted}, without [before_summary].
+
+    [observe] raises nothing of its own, whatever the event holds. An exception
+    from the output functions of [out] passes through it. *)
+
+(** {2:selection The selection} *)
 
 val selection_description : Run.config -> string option
-(** [selection_description config] describes what narrows the run (the filter,
-    exclusion, tags, [--failed], the shard) as the reader typed it
-    ([filter "parser"], [tag "a", "b" and shard 1/3]), or [None] when nothing
-    does. Control characters are escaped, the rest is verbatim. *)
+(** [selection_description config] describes what narrows the run, in the words
+    of the command line, or is [None] when nothing does. It names in this order
+    the filter, the exclusion, the tags, the excluded tags, [--failed] and the
+    shard, and never an in-source focus. The parts are joined by commas and a
+    final [and], as in [tag "a", "b" and shard 1/3]. A value stands in double
+    quotes, with its double quotes, backslashes and control characters escaped
+    and the rest as typed. *)
 
 val empty_selection_reason :
   declared:int -> selection:string option -> string option
-(** [empty_selection_reason ~declared ~selection] is the clause {!finish} puts
-    after ["no tests ran: "]: ["the suite declares none"] when [declared] is
-    [0], else ["<selection> matched none of N tests"] when something narrowed
-    it, else [None]. Exported for [--list]. *)
+(** [empty_selection_reason ~declared ~selection] is why a run has no test to
+    run, as the clause that follows [no tests ran: ]. It is
+    [Some "the suite declares none"] when [declared] is [0], and otherwise
+    [Some "<selection> matched none of <declared> tests"] when [selection] is
+    given, with [test] for one. It is [None] for a suite that declares tests and
+    that nothing narrowed, which has nothing to explain. *)
+
+(** {2:ending The end of the run} *)
 
 val finish :
   t ->
@@ -135,59 +193,54 @@ val finish :
   ?before_summary:(unit -> unit) ->
   unit ->
   unit
-(** [finish t ~results ~duration ()] ends the transcript. [results] extends, in
-    order, the results {!result} was given. In order:
+(** [finish t ~results ~duration ()] ends the transcript, in a compact and in a
+    [config.verbose] run alike. It commits, in this order:
+    - the failure blocks that {!result} did not commit. [results] must extend,
+      in order, the results that {!result} was given, because [finish] skips as
+      many of its first counted failures as [t] committed blocks. The others are
+      the rows that the executor records after the last test without an event,
+      which are the failed releases of fixtures.
+    - in a compact run that committed a block, the rule that closes the
+      failures.
+    - the sections that have rows: slow tests, flaky tests, corrections. A
+      compact run that has printed no header prints it before the first.
+    - what [before_summary ()] writes. It runs after [out] is flushed and
+      defaults to doing nothing.
+    - the summary. It is the last line of the transcript, save the one hint of
+      an empty run. The verdict of an armed run and the report of a loop follow
+      it (see {{!section-mutation}mutation lines}).
 
-    - The failure blocks not committed yet (the rows the executor records after
-      the last test), as {!result} commits them: under the [── failures ──] rule
-      in a compact run, under their status lines in a [verbose] one; then, in a
-      compact run that committed a block, the 58-column rule that closes them
-      and one blank line. A block is the title ([  FAIL  <path>], qualified by
-      [(N attempts)] when [r.attempts > 1] and by [(mutant armed)] in an armed
-      run), one {!pp_failure} entry per failure with its source line, a blank
-      line between two entries, the property label table, the captured tail, and
-      last {!Report_sections.hints} for the whole test, a fixture-release row's
-      without a filter. The tail is its last {!Report_sections.max_lines} lines,
-      indented two more, under [captured output (N lines):],
-      [captured output (last 10 of N lines):] or
-      [captured output (last 10 lines, B earlier bytes omitted):], [B] every
-      byte of the output before the first line shown, then [full log: <path>] at
-      the heading's column.
-    - One blank line before the first section below in a [verbose] run, unless a
-      failed row's block has just closed on one; one after each section.
-    - [slow tests (N, over Ts):], one [<duration>  <path>] row per completed
-      test over the threshold that is not [slow_tagged], slowest first; none
-      when the threshold is [0.]. Skips never count as slow.
-    - [flaky tests (N):], one [passed on attempt K  <path>] row per passing
-      result with [attempts > 1], in run order.
-    - [corrections (N):], one [wrote <path>] ([--corrected]) or
-      [accepted <path>] ([-u]) row per {!Baseline.writes} entry of [baselines],
-      sorted by the displayed path ({!Os.display_path}), a source file's row
-      ending in [(N expectations)].
-    - The summary, always last:
-      [4 passed (1 flaky), 1 skipped, 2 expected failures, 6 failed (3 subtest
-       failures), 2 not run, 1 correction written in 6.5s.], zero terms omitted.
-      Flaky tests count as passed, excused results as expected failures only,
-      [not run] is the header's [tests] minus the test rows of [results], and
-      corrections count files. It is prefixed with the suite name, and followed
-      by the seed the header would have carried, when no header printed. A run
-      with no result says [no tests ran: <reason>.] there instead
-      ({!empty_selection_reason}), and when a selection emptied it one line
-      follows, the one line after an outcome: [list: <launcher> -l] under an
-      [`Exe] invocation, [(list the suite's tests with -l)] under a build
-      action, which has no launcher to restate.
+    {b Slow tests.} One row per result whose duration is at least
+    [config.slow_threshold], slowest first, under a heading that gives the
+    threshold. A skip and a test tagged [slow] ([r.slow_tagged]) are exempt. A
+    failed test is not, so it has its block and its row, and an excused one is
+    listed too. A threshold of [0.] disables the section.
 
-    [before_summary] (default: nothing) runs between the last section and the
-    summary, after [t]'s formatter is flushed: what it writes sits against the
-    sections, and the summary stays the last line.
+    {b Flaky tests.} One row per passing result with [r.attempts > 1], in the
+    order of [results], with the attempt that passed.
 
-    One blank line follows each section (a [verbose] run has no failures
-    section), the last one's after [before_summary] ran, so a compact run with
-    nothing to show (no counted failure, no slow or flaky test, no correction)
-    prints exactly the summary line. A measured duration prints as [N.Nms] below
-    10 ms, [Nms] below one second and [N.Ns] from there, rounded before its unit
-    is chosen; the threshold prints as configured. Durations are
-    {!Run.result.duration}, attempts summed. *)
+    {b Corrections.} One row per file of [Baseline.writes baselines], in the
+    order of the paths as {!Os.display_path} prints them. A row says whether the
+    file was written beside its baseline or accepted in place, which
+    {!val:Baseline.mode} decides. The row of a source file counts its
+    expectations. Without [baselines] there is no section and the summary has no
+    corrections term.
+
+    {b Summary.} Its terms come in this order: passed, with the flaky among
+    them, skipped, expected failures, failed, with the subtest failures among
+    them, not run, and the corrections written or accepted. A term of zero is
+    omitted, and [duration] closes the line. A flaky test counts as passed, an
+    excused result as an expected failure only, and a failed fixture release as
+    failed although it is no test. The tests not run are the [tests] of
+    {!header} less the test rows of [results], never below [0]. Subtest failures
+    are the entries of counted failures for which {!is_subtest_failure} holds,
+    and corrections count files.
+
+    A run with no result at all says instead that no tests ran, with the reason
+    of {!empty_selection_reason} when there is one. When a selection emptied a
+    suite that declares tests, one line follows the summary. It is the command
+    that lists the tests under an [`Exe] invocation, and a line that names [-l]
+    under [`Mirrors]. *)
 
 val interrupted :
   t ->
@@ -199,33 +252,34 @@ val interrupted :
   unit ->
   unit
 (** [interrupted t ~running ~results ~duration ()] ends the transcript of a run
-    a signal is stopping: [windtrap: interrupted in <path>] on standard error
-    ({!Os.say}), [running] the test that was stopped; when it is [None],
-    [windtrap: interrupted while releasing <fixture>] if the signal stopped the
-    release of [releasing], else [windtrap: interrupted between tests]. Then
-    {!finish} over [results], whose summary counts what did not finish as
-    [N not run]: a run stopped before its first result is [N not run] alone. *)
-
-(** {1:baselines Baselines} *)
+    that a signal is stopping. It first says on standard error ({!Os.say}) what
+    the signal interrupted: the test at [running], or when [running] is [None]
+    the release of the fixture [releasing], or else the gap between two tests.
+    It then calls {!finish} over [results], with [before_summary] and without
+    [baselines]. *)
 
 val refusals : Baseline.t -> string list
-(** [refusals baselines] is one line for {!Os.say} per file the run could not
-    write ({!Baseline.refusals}): [could not write <path>: <reason>]. *)
+(** [refusals baselines] is one sentence per file that the run could not write,
+    in the order of {!Baseline.refusals}: the path through {!Os.display_path}
+    and the reason. It prints nothing. *)
 
 (** {1:github The GitHub Actions envelope}
 
-    Workflow commands for log folding and failure annotations, written to
-    standard output at column zero when [Run.config.github]. Every function is
-    pure and returns complete command lines ending in a newline. Messages are
-    ANSI-stripped and percent-encode [%], CR and LF as [%25], [%0D] and [%0A];
-    properties ([file], [line], [title]) additionally encode [:] and [,] as
-    [%3A] and [%2C], so no payload can terminate or restructure a command. *)
+    Workflow commands that fold the transcript and annotate its failures. {!run}
+    writes them on standard output, at column zero, when [config.github] is set,
+    so they show under GitHub Actions only. Every function here is pure and
+    returns whole command lines, each ending in a newline. A message is stripped
+    of escape sequences and percent-encodes [%], CR and LF. A property ([file],
+    [line], [title]) also encodes [:] and [,], so no payload can end a command
+    or add a property to it. *)
 
 val group_start : string -> string
-(** [group_start name] is the [::group::<name>] command line. *)
+(** [group_start name] is the command that opens a folded log section named
+    [name]. *)
 
 val group_end : string
-(** [group_end] is the [::endgroup::] command line. *)
+(** [group_end] is the command that closes the section that {!group_start}
+    opened. *)
 
 val annotation :
   ?invocation:Run.invocation ->
@@ -233,82 +287,97 @@ val annotation :
   path:string list ->
   Failure.t ->
   string
-(** [annotation ~path f] is one [::error] command line for [f], raised by the
-    test at [path]: [file=]/[line=] from [f]'s location when it has one,
-    [Test failure: <path>] as [title], the path spelled as the block's title
-    spells it ({!Report_sections.sanitize_name}), and as message the unstyled
-    {!pp_failure} block, hints included, with newlines [%0A]-encoded. A subtest
-    entry annotates at the parent test, with the entry's own location and its
-    [subtest] line. [invocation] (default [`Mirrors]) and [armed] spell the
-    hints. *)
+(** [annotation ~path f] is the [::error] command for [f], a failure of the test
+    at [path]. Its [file] and [line] are those of the location of [f], when it
+    has one, and its title names the test, [path] through
+    {!Report_sections.sanitize_name}. The message is the
+    {!Report_sections.pp_failure} entry of [f] without styling and without the
+    source line, hint lines included, with [path] as their filter. [invocation]
+    and [armed] are those of {!Report_sections.hints}, and [invocation] defaults
+    to [`Mirrors]. *)
 
 val annotations :
   ?invocation:Run.invocation -> ?armed:string -> Run.result list -> string
-(** [annotations results] is the concatenated {!annotation} lines for every
-    failure of every counted failed result ({!Run.result.counted}), in run
-    order; [""] when none. Excused expected failures produce no annotation. *)
+(** [annotations results] is the {!annotation} of every failure of every counted
+    failed result of [results] ([r.counted]), in order, concatenated, and [""]
+    when there is none. *)
 
 (** {1:mutation Mutation lines}
 
-    The lines a mutation run prints on the terminal renderer: an armed run's,
-    then a loop's report, whose blocks and closing sections are
-    {!Report_sections}'s. *)
+    The lines that a mutation run adds to the transcript: the announcement and
+    the verdict of an armed run, and the report of a [--mutate] loop. They print
+    on the formatter of the renderer in every mode, whatever [config.verbose]
+    and [config.stream] are. *)
+
+(** {2:armed The armed run}
+
+    An armed process announces its mutant before any other output and ends on
+    one verdict line (guarantee 12 of [doc/dev/architecture.md]). The order is
+    the client's: a client must call {!mutation_armed} before {!run} and at most
+    one of the three verdict functions after it.
+
+    These four functions erase the live line and write their line, and do not
+    flush: a client must flush [out] and the standard descriptors after the
+    announcement and after the verdict. *)
 
 val mutation_armed : t -> id:string -> before:string -> after:string -> unit
-(** [mutation_armed t ~id ~before ~after] prints the armed announcement
-    ([mutant lib/calc.ml:9:12:add armed: a - b → a + b]), which an armed process
-    prints before any other output (guarantee 12). *)
+(** [mutation_armed t ~id ~before ~after] prints the announcement of an armed
+    run: the identifier of the mutant and its rewrite, from [before] to [after].
+*)
 
 val mutation_killed : t -> unit
-(** [mutation_killed t] prints [mutant killed.], closing an armed run whose
-    mutant made a test fail. *)
+(** [mutation_killed t] prints the verdict of an armed run in which the mutant
+    made a test fail. *)
 
 val mutation_survived : t -> hits:int -> unit
-(** [mutation_survived t ~hits] prints
-    [mutant survived: the armed site was evaluated 3 times and no test failed.]
-    ([1 time]), closing an armed run that completed green with the site
-    evaluated [hits] times. *)
+(** [mutation_survived t ~hits] prints the verdict of an armed run in which no
+    test failed although the armed site was evaluated. The line states [hits],
+    the number of evaluations. *)
 
 val mutation_not_evaluated : t -> unit
-(** [mutation_not_evaluated t] prints
-    [mutant not evaluated: no selected test ran the site.], closing an armed run
-    that never evaluated the site. *)
+(** [mutation_not_evaluated t] prints the verdict of an armed run in which no
+    selected test evaluated the armed site. *)
+
+(** {2:loop The report of a loop}
+
+    A client must call {!mutation_testing} before each child,
+    {!mutation_survivor} when a child ends on a survivor, and {!mutation_finish}
+    once, last. {!mutation_refused} and {!mutation_interrupted} are the two
+    other ways in which a report ends. *)
 
 val mutation_testing : t -> index:int -> total:int -> id:string -> unit
-(** [mutation_testing t ~index ~total ~id] shows the mutant a loop is trying,
-    the [index]th of [total], on the live display
-    ([  [3/5] lib/calc.ml:9:12:add…], faint), erased before anything else
-    prints. Prints nothing unless [live] and [ansi] are set. *)
+(** [mutation_testing t ~index ~total ~id] draws the live line for the mutant
+    that the loop is trying: [index], counted from [1], [total], and [id]
+    through {!Report_sections.sanitize_name}. The line shows only while the live
+    line is on (see {!create}). *)
 
 val mutation_survivor : t -> Report_sections.survivor -> unit
-(** [mutation_survivor t s] erases the live display and commits [s]'s
-    {!Report_sections.survivor_block}, flushed: after one blank line, and before
-    the first block of [t] the 58-column [── survivors ──] rule, which carries
-    no count, the loop not knowing it yet. *)
+(** [mutation_survivor t s] commits the {!Report_sections.survivor_block} of
+    [s], flushed. The first call precedes the block by the rule that opens the
+    survivors, which carries no count. A block has no column of executables. *)
 
 val mutation_finish : t -> Report_sections.mutation -> unit
-(** [mutation_finish t m] erases the live display and ends a loop's report with
-    {!Report_sections.mutation_closing} of [m] under [t]'s configuration,
-    flushed. [m.survivors] are the survivors {!mutation_survivor} was given, in
-    order. *)
+(** [mutation_finish t m] ends the report of a loop with
+    {!Report_sections.mutation_closing} of [m] under the configuration of [t],
+    flushed. [m.survivors] must be the survivors that {!mutation_survivor} was
+    given, in order. The closing rule prints iff that list is not empty,
+    whatever [t] committed, and [reproduce:] arms its first. *)
 
 val mutation_refused : t -> string -> unit
-(** [mutation_refused t message] erases the live display and says [message] on
-    standard error ({!Os.say}): how a loop that cannot go on stops, the blocks
-    it committed left as they are. *)
+(** [mutation_refused t message] erases the live line, flushes [out] and says
+    [message] on standard error ({!Os.say}). *)
 
 val mutation_interrupted :
   t -> testing:string option -> Report_sections.mutation -> unit
-(** [mutation_interrupted t ~testing m] ends the report of a loop a signal is
-    stopping: [windtrap: interrupted while testing <id>] on standard error
-    ({!Os.say}), [testing] the mutant whose child was stopped, or
-    [windtrap: interrupted during the determinism probe] when it is [None]; then
-    {!mutation_finish} over [m], whose [not_tested] counts the reached mutants
-    left without a verdict. *)
+(** [mutation_interrupted t ~testing m] ends the report of a loop that a signal
+    is stopping. It says on standard error what was interrupted: the child of
+    the mutant [testing], or the determinism probe when [testing] is [None]. It
+    then calls {!mutation_finish} over [m]. *)
 
 (** {1:projections Failure projections}
 
-    {!Report_sections}'s failure projection, re-exported. *)
+    The failure projection of {!Report_sections}, under the names of this
+    module. *)
 
 val headline : Failure.t -> string
 (** [headline] is {!Report_sections.headline}. *)
@@ -331,7 +400,7 @@ val pp_failure :
   unit
 (** [pp_failure] is {!Report_sections.pp_failure}. *)
 
-(** {1:running Running, reported} *)
+(** {1:running Running} *)
 
 val run :
   ?on_event:(Run.event -> unit) ->
@@ -339,24 +408,38 @@ val run :
   Run.config ->
   Test_tree.t list ->
   (Run.outcome, Run.startup_error) result
-(** [run ~suite config tests] is {!Run.execute}[ config ~suite tests] with the
-    run's whole report on standard output: the transcript on {!terminal},
-    {!observe}d as the run happens, inside the [::group::] envelope when
-    [config.github], then for a run that happened {!finish} over {!Run.results}
-    and {!Run.baselines}, the envelope's close and the {!annotations} block
-    after it sitting between the sections and the summary, then the {!refusals}
-    lines on standard error and {!Report_junit.write} to [config.junit], last.
-    Both standard formatters are flushed before it returns.
+(** [run ~suite config tests] is [Run.execute config ~suite tests] with the
+    whole report of the run written. It proceeds in this order:
+    + It builds [terminal config] and, when [config.github] is set, opens the
+      envelope with [group_start suite].
+    + It executes the run with {!observe} as its observer, over [config.seed]
+      and [selection_description config].
+    + For a run that the executor did not refuse, it calls {!finish} over
+      {!val:Run.results} and {!val:Run.baselines}. The [before_summary] closes
+      the envelope and then writes the {!val:annotations}.
+    + It says the {!refusals} on standard error, then writes the JUnit file with
+      {!Report_junit.write} when [config.junit] is set.
+    + It flushes both standard formatters and returns [Ok] of the executor's
+      outcome.
 
-    [Ok outcome] is the executor's outcome, reported. [Error error] is a refused
-    startup: the envelope is closed and {!Run.startup_message} is on standard
-    error; the caller decides what to do with {!Run.startup_exit_code}.
+    [Error error] is a refused startup. [run] then closes the envelope and says
+    [Run.startup_message error] on standard error, in place of a transcript. The
+    exit code ({!Run.startup_exit_code}) is the caller's to apply.
 
-    [on_event] (default: ignore) is a second subscriber to {!Run.execute}'s
-    observer, composed after the transcript's; it must be total.
+    An interrupted run does not return. On [Interrupted], [run] ends the
+    transcript with {!interrupted}, whose [before_summary] is the close of the
+    envelope and the annotations, and calls [on_event]. The process then dies by
+    the signal, with no refusal said and no JUnit file written.
 
-    Everything reports through [Format.std_formatter] and the standard
-    descriptors, so a caller that forks mid-run flushes both formatters and both
-    descriptors before every fork. Reads the environment, writes standard output
-    and the JUnit file when [config.junit] is set, plus everything
-    {!Run.execute} does. *)
+    [on_event] is a second observer of the run, called after the transcript's
+    for every event. It must not raise (see {!Run.execute}) and defaults to
+    doing nothing.
+
+    The whole report goes through [Format.std_formatter] and the standard
+    descriptors. A caller that forks must therefore first flush both standard
+    formatters and both descriptors, or the child prints the buffered bytes
+    again. Beyond what {!Run.execute} does, [run] reads the environment
+    ({!terminal}) and writes standard output, standard error and the JUnit file.
+    Each block also reads the source file of a located failure and
+    {!Os.project_root}. The paths of a correction, of a refusal and of a full
+    log are printed against that root. *)

@@ -9,8 +9,8 @@
 
 type seed = int64
 
-(* Token codec. Format frozen at v3.0: "s1:" then 16 lowercase hex digits,
-   most-significant nibble first. *)
+(* Token codec. Format frozen under the [s1] prefix: "s1:" then 16 lowercase
+   hex digits, most-significant nibble first. *)
 
 let token_prefix = "s1:"
 let hex_digits = "0123456789abcdef"
@@ -52,7 +52,7 @@ let to_string seed =
   Bytes.unsafe_to_string text
 
 (* SplitMix64 core. The constants and the transition are the reference
-   algorithm's and are frozen at v3.0. *)
+   algorithm's and are frozen under the [s1] prefix. *)
 
 let golden_gamma = 0x9e3779b97f4a7c15L
 
@@ -65,7 +65,7 @@ let mix64 z =
   in
   Int64.(logxor z (shift_right_logical z 31))
 
-(* Derivation. Frozen at v3.0: hash64 is 64-bit FNV-1a over the
+(* Derivation. Frozen under the [s1] prefix: hash64 is 64-bit FNV-1a over the
    path's bytes; the case seed is
    mix64 (mix64 (root lxor hash64 path) + golden_gamma * index). *)
 
@@ -97,6 +97,9 @@ let bits64 { position; gamma } =
   let position = Int64.add position gamma in
   (mix64 position, { position; gamma })
 
+(* The rejection loop has no step bound. It ends with probability 1: the
+   threshold is below [bound], so fewer than half of the words are rejected
+   whatever [bound] is. *)
 let below ~bound state =
   if Int64.compare bound 0L <= 0 then
     invalid_arg "Seed.below: non-positive bound";

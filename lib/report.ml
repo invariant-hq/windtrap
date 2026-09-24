@@ -21,9 +21,9 @@ module Sections = Report_sections
 
 let spf = Printf.sprintf
 
-(* Layout constants, illustrative and no contract. The transcript is a
-   report, not a canvas: one width, so a pipe and a wide terminal are
-   byte-identical, and one captured-output tail, the last
+(* Layout constants. [columns] is a cap that [report.mli] states. The
+   transcript is a report, not a canvas: one width, so a pipe and a wide
+   terminal are byte-identical, and one captured-output tail, the last
    [Sections.max_lines] lines of the [Failure.tail_bytes] the capture kept,
    with the full log's path beside them. Neither is configurable. *)
 let duration_column = 51
@@ -67,8 +67,8 @@ type t = {
   live : bool;
   slow_threshold : float; (* seconds; 0. disables the slow machinery *)
   invocation : Run.invocation;
-      (* the hint context: every acceptance, replay and rerun line derives
-         from the one value the facade computed at startup. *)
+      (* the hint context: every [accept:] and [replay:] line derives from
+         the one value the facade computed at startup. *)
   armed : string option; (* the armed mutant's identifier *)
   config : Run.config;
       (* the selection a mutation loop's [reproduce:] command restates *)
@@ -209,6 +209,8 @@ let draw_live t text =
     t.live_pending <- true
   end
 
+(* The denominator follows the count when more results arrive than [header]
+   announced, so the counter never reads [5/4]. *)
 let begin_test t ~path =
   if t.live then begin
     let name = sanitize_name (Test_tree.path_to_string path) in
@@ -835,6 +837,9 @@ let rec drop_trailing_newlines s =
     drop_trailing_newlines (String.sub s 0 (len - 1))
   else s
 
+(* The filter is the row's path for a fixture release too, where [pp_body]
+   passes none: such a row holds no baseline or property failure, so no hint
+   reads it. *)
 let annotation ?(invocation = `Mirrors) ?armed ~path (f : Failure.t) =
   let path_string = Test_tree.path_to_string path in
   let location =
@@ -876,7 +881,9 @@ let annotations ?invocation ?armed results =
 
 (* The lines an armed run is owed. The announcement prints
    unconditionally, because guarantee 12 makes it the promise that a run
-   whose output does not say so has no mutant armed. *)
+   whose output does not say so has no mutant armed. The four write one
+   line and do not flush: [Mutate_loop] flushes the descriptors after the
+   announcement and after the verdict. *)
 
 let mutation_armed t ~id ~before ~after =
   clear_live t;

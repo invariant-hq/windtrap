@@ -127,7 +127,10 @@ let run_case ctx body value =
    already found. Candidate runs use a scratch context: their labels
    never pollute the committed tables. The accepted classification is
    captured during the descent, so the final inner failure needs no extra
-   body run. *)
+   body run. The descent is bounded: an accepted step descends one level of
+   the sample's tree, which is finite in depth for [Gen]'s generators, and
+   [shrink_budget] bounds the accepted steps on any other tree. Nothing but
+   the per-test timeout bounds the candidates probed at one node. *)
 
 let same_kind original candidate =
   match (original, candidate) with
@@ -168,8 +171,10 @@ let shrink ~budget ~body tree first_class =
   in
   (* Best-so-far state lives in refs updated at each accepted step, so a
      [Timeout] firing at any poll point leaves them at the last accepted
-     node. The descent wrapper below is the single place in the engine that
-     consumes a timeout — everywhere else it propagates to the runner. *)
+     node. The descent wrapper below is the one handler of a timeout in this
+     module. One delivered while the counterexample is formatted is caught
+     by the guard of [Gen.Engine.render]; everywhere else it propagates to
+     the runner. *)
   let best = ref (tree, 0, first_class) in
   let timed_out = ref None in
   (* A descent that stopped is not a descent that converged, and the two used
@@ -211,12 +216,16 @@ let default_count = 100
    setting. Sized against the primitives' descent: an integer's candidates
    halve the gap to its origin, so each accepted step at least halves the
    distance to the smallest failing value, and a 64-bit integer takes at
-   most 64 steps under any threshold law; a quad of them at most 256, and
-   a list one step per deleted chunk or shrunk element. 10_000 is forty
-   such quads, or a list of a hundred and fifty full-range integers each
-   shrunk bit by bit. A search that spends it is reported as stopped
-   ([shrink_exhausted]) rather than minimal; the per-test timeout, not
-   this number, bounds a search that must not run away. *)
+   most 64 steps under any threshold law, one that fails iff the value lies
+   at least some distance from the origin; a quad of them at most 256, and
+   a list one step per deleted chunk or shrunk element. 10_000 is about
+   forty such quads, or a list of a hundred and fifty full-range integers
+   each shrunk bit by bit. A law that is not a threshold can accept more
+   steps per integer, each still strictly nearer the origin. A change to a
+   primitive's candidates reopens this sizing. A search that spends it is
+   reported as stopped ([shrink_exhausted]) rather than minimal; the
+   per-test timeout, not this number, bounds a search that must not run
+   away. *)
 let shrink_budget = 10_000
 
 let inner_failure = function

@@ -94,7 +94,9 @@ let color_mode_of_string s =
 
 (* NO_COLOR is read here rather than passed: it is a fact about the
    environment, not about one sink, and every command must honour it. An
-   explicit [Always] still wins: the user asked. *)
+   explicit [Always] still wins: the user asked. [inside_dune] counts as a
+   terminal because dune captures the output and renders its escape
+   sequences back to the user. *)
 let resolve_color mode ~tty ~inside_dune ~term_dumb =
   match mode with
   | Always -> true
@@ -240,8 +242,9 @@ let absolute path =
 
 (* INSIDE_DUNE first: dune exports the context it is building in, which
    is the one answer under a sandboxed action and under a private build
-   directory. A value that is not such a path (a harness's INSIDE_DUNE=1)
-   names no build directory and the executable's own path decides. *)
+   directory. A value that is no path (a harness's INSIDE_DUNE=1) is a
+   relative path like any other, so it names a build directory only when
+   the working directory lies under one. *)
 let build_dir () =
   List.find_map
     (fun path -> build_dir_of_path (absolute path))
@@ -286,7 +289,9 @@ let rec after_build_context = function
 
 (* Not exported: [reconstruct] and [display_path] are the two ways out,
    and both prove or relativize the result. A bare strip is the unproven
-   guess this module refuses to hand out. *)
+   guess this module refuses to hand out. [Baseline.write] creates
+   directories from a reconstructed path, so a guess would create them in
+   the wrong place. *)
 let strip_build_prefix path =
   let p = normalize_sep path in
   let comps = String.split_on_char '/' p in

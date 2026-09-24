@@ -5,91 +5,112 @@
 
 (** The assertion verbs.
 
-    {!Windtrap} re-exports every verb flat and states the contract a test author
-    reads; this interface states the payload each verb builds. A failing verb
-    constructs one {!Failure.t} (a typed kind, an optional location, the [?msg]
-    annotation) and raises {!Failure.Check_failure}; verbs never print, diff or
-    touch run state. The location is [?__POS__] when given, else a best-effort
-    call-stack capture, else none ({!Loc.resolve}). {!skip} is not a failure: it
-    raises {!Failure.Skip_test}. *)
+    A verb returns when its claim holds. When it does not, the verb builds one
+    {!Failure.t} with a {{!Failure.section-constructors}constructor} of
+    {!Failure}, which bounds every text that it is given. The failure is located
+    by {!Loc.resolve}, and the verb raises it in a {!Failure.Check_failure}.
+    This interface states the payload that each verb builds, for whoever reads
+    or renders a failure. {!skip} raises {!Failure.Skip_test} and builds no
+    failure.
+
+    A verb prints nothing, computes no diff and reads no state of the run. A
+    passing verb resolves no location and calls no printer. Only {!raises} and
+    {!raises_match} catch an exception, and only from the function that they
+    run. What the equality, the order or the printer of a witness, a [?pp], a
+    predicate or an [extract] raises escapes the verb as it is. *)
+
+(* The facade declares every value below again, with the contract that a test's
+   author reads ([{1:assertions}] in windtrap.mli). A change to one text is a
+   change to the other. *)
 
 (** {1:types Types} *)
 
 type pos = Loc.pos
-(** The type of [__POS__] payloads: file, line, start column, end column. *)
+(** The type for [__POS__] values. *)
 
 type 'a printer = Format.formatter -> 'a -> unit
-(** The type for value printers, as taken by [?pp]. *)
+(** The type for value printers, as a [?pp] takes one. Without its [?pp] a verb
+    puts {!Pp.abstract}, [<abstract>], in the payload. *)
 
 type 'a testable = 'a Testable.t
-(** The type for assertion witnesses; see {!Testable}. *)
+(** The type for witnesses (see {!Testable}). {!equal}, {!not_equal} and {!mem}
+    read the equality and the printer of their witness, and {!satisfies} its
+    printer only. The {{!section-orders}ordering verbs} read its order and its
+    printer. *)
 
 (** {1:equalities Equalities}
 
-    Each verb builds a diffable {!Failure.equality} over two rendered values or
-    constructor descriptions, expected first. The witness renders only on
-    failure. *)
+    Each verb builds a diffable {!Failure.equality}, the expected side first.
+    {!require_some}, {!require_ok} and {!require_error} build the same one. *)
 
 val equal : ?__POS__:pos -> ?msg:string -> 'a testable -> 'a -> 'a -> unit
-(** [equal t expected actual] is [()] iff [Testable.equal t expected actual]. *)
+(** [equal t expected actual] is [()] iff [Testable.equal t expected actual].
+    The payload holds both values through [t]'s printer. *)
 
 val not_equal : ?__POS__:pos -> ?msg:string -> 'a testable -> 'a -> 'a -> unit
-(** [not_equal t a b] is [()] iff [a] and [b] are not equal under [t]. The
-    payload sets [not_] and stores [a]'s rendering on both sides. *)
+(** [not_equal t a b] is [()] iff [Testable.equal t a b] is [false]. The payload
+    sets [not_] and holds the rendering of [a] on both sides. [b] is never
+    printed. *)
 
 val is_true : ?__POS__:pos -> ?msg:string -> bool -> unit
-(** [is_true b] is [()] iff [b]. The payload compares ["true"] against
-    ["false"]. *)
+(** [is_true b] is [()] iff [b]. The payload has ["true"] as [expected] and
+    ["false"] as [actual]. *)
 
 val is_false : ?__POS__:pos -> ?msg:string -> bool -> unit
-(** [is_false b] is [()] iff [not b]. *)
+(** [is_false b] is [()] iff [not b]. The payload has ["false"] as [expected]
+    and ["true"] as [actual]. *)
 
 val is_none : ?__POS__:pos -> ?msg:string -> ?pp:'a printer -> 'a option -> unit
-(** [is_none o] is [()] iff [o] is [None]. The payload compares ["None"] against
-    ["Some " ^ pp v], [pp] defaulting to {!Pp.abstract}. *)
+(** [is_none o] is [()] iff [o] is [None]. The payload has ["None"] as
+    [expected], and as [actual] ["Some "] followed by the value through [pp]. *)
 
 val is_some : ?__POS__:pos -> ?msg:string -> 'a option -> unit
-(** [is_some o] is [()] iff [o] is [Some _]. Payload-identical to
-    {!require_some}'s. *)
+(** [is_some o] is [()] iff [o] is [Some _]. Its payload is that of
+    {!require_some}. It takes no [?pp], since the failing side is [None]. *)
 
 val is_ok :
   ?__POS__:pos -> ?msg:string -> ?pp:'e printer -> ('a, 'e) result -> unit
-(** [is_ok r] is [()] iff [r] is [Ok _]. Payload-identical to {!require_ok}'s.
+(** [is_ok r] is [()] iff [r] is [Ok _]. Its payload is that of {!require_ok}.
 *)
 
 val is_error :
   ?__POS__:pos -> ?msg:string -> ?pp:'a printer -> ('a, 'e) result -> unit
-(** [is_error r] is [()] iff [r] is [Error _]. Payload-identical to
-    {!require_error}'s. *)
+(** [is_error r] is [()] iff [r] is [Error _]. Its payload is that of
+    {!require_error}. *)
 
 (** {1:unwrapping Unwrapping}
 
-    Assert the constructor and return the payload. The rejected side renders
-    with the caller's printer, {!Pp.abstract} without one, only on failure. *)
+    Each verb asserts a constructor and returns the value under it. *)
 
 val require_some : ?__POS__:pos -> ?msg:string -> 'a option -> 'a
-(** [require_some o] is [v] iff [o] is [Some v]. *)
+(** [require_some o] is [v] iff [o] is [Some v]. The payload has ["Some _"] as
+    [expected] and ["None"] as [actual]. *)
 
 val require_ok :
   ?__POS__:pos -> ?msg:string -> ?pp:'e printer -> ('a, 'e) result -> 'a
-(** [require_ok r] is [v] iff [r] is [Ok v]; [pp] renders the rejected [Error]
-    payload. *)
+(** [require_ok r] is [v] iff [r] is [Ok v]. The payload has ["Ok _"] as
+    [expected], and as [actual] ["Error "] followed by the error through [pp].
+*)
 
 val require_error :
   ?__POS__:pos -> ?msg:string -> ?pp:'a printer -> ('a, 'e) result -> 'e
-(** [require_error r] is [e] iff [r] is [Error e]; [pp] renders the rejected
-    [Ok] payload. *)
+(** [require_error r] is [e] iff [r] is [Error e]. The payload has ["Error _"]
+    as [expected], and as [actual] ["Ok "] followed by the value through [pp].
+*)
 
 val require_match :
   ?__POS__:pos -> ?msg:string -> ?pp:'a printer -> ('a -> 'b option) -> 'a -> 'b
-(** [require_match extract v] is [b] iff [extract v] is [Some b]. Its payload is
-    {!Failure.predicate}'s with ["a match"] as the claim. An exception raised by
-    [extract] propagates unchanged. *)
+(** [require_match extract v] is [b] iff [extract v] is [Some b]. The payload is
+    a {!Failure.predicate} whose claim is ["a match"] and whose value is [v],
+    the input of [extract], through [pp]. *)
 
 (** {1:predicates Predicates}
 
-    Both build a {!Failure.predicate} payload: a claim sentence on the expected
-    side, a rendered value on the actual side, no diff between them. *)
+    Each verb builds a {!Failure.predicate}: a claim in words on the expected
+    side, a printed value on the actual side, and no diff between them. The
+    claim completes the word [expected], as in [expected less than 3]. The
+    {{!section-orders}ordering verbs} and {!require_match} build the same
+    payload. *)
 
 val satisfies :
   ?__POS__:pos ->
@@ -99,117 +120,165 @@ val satisfies :
   ('a -> bool) ->
   'a ->
   unit
-(** [satisfies t pred v] is [()] iff [pred v]. [claim] takes the expected side
-    and defaults to ["value satisfying the predicate"]; [t]'s equality is never
-    consulted. [pred] must be total. *)
+(** [satisfies t pred v] is [()] iff [pred v]. [pred] must be total. The payload
+    holds [claim] and [v] through [t]'s printer. [claim] defaults to
+    ["value satisfying the predicate"]. Nothing ties it to [pred], so the
+    expected side of such a payload is the caller's own text. *)
 
 val mem : ?__POS__:pos -> ?msg:string -> 'a testable -> 'a -> 'a list -> unit
-(** [mem t x xs] is [()] iff [xs] has an element equal to [x] under [t]. The
-    claim names [x], the value is [xs], both through [t]'s printer. *)
+(** [mem t x xs] is [()] iff [List.exists (Testable.equal t x) xs], so [x] takes
+    the expected side of [t]'s equality. The claim is [a list containing <x>]
+    and the value is [xs] through [Testable.list t]. {!contains} is membership
+    over bytes. *)
 
 (** {1:orders Orders}
 
-    The four verbs compare under [t]'s order ({!Testable.compare}) and build a
-    {!Failure.predicate} payload whose claim is the relation and the bound
-    rendered by [t] (["less than 3"]) and whose value is [v] rendered by [t].
-    [t]'s equality is never consulted. All four raise [Invalid_argument], naming
-    the verb and [Testable.with_compare], when [t] carries no order. *)
+    The four verbs compare [v] with [than] under the order of [t]
+    ({!Testable.compare}), and read the sign of [compare v than]. They build a
+    {!Failure.predicate} whose claim is the relation and the bound through [t]'s
+    printer, as [less than 3], and whose value is [v] through the same printer.
+    The relations are [less than], [at most], [greater than] and [at least]. The
+    claim is built from the relation and the bound that the verb compares, so it
+    cannot differ from the comparison. The equality of [t] is never read, so a
+    witness with a tolerance orders without it.
+
+    Each verb raises [Invalid_argument] when [t] carries no order, whether or
+    not its claim holds. The message names the verb and [Testable.with_compare].
+*)
 
 val less : ?__POS__:pos -> ?msg:string -> 'a testable -> than:'a -> 'a -> unit
-(** [less t ~than v] is [()] iff [v] ranks strictly below [than]. *)
+(** [less t ~than v] is [()] iff [compare v than < 0]. *)
 
 val at_most :
   ?__POS__:pos -> ?msg:string -> 'a testable -> than:'a -> 'a -> unit
-(** [at_most t ~than v] is [()] iff [v] ranks below or the same as [than]. *)
+(** [at_most t ~than v] is [()] iff [compare v than <= 0]. *)
 
 val greater :
   ?__POS__:pos -> ?msg:string -> 'a testable -> than:'a -> 'a -> unit
-(** [greater t ~than v] is [()] iff [v] ranks strictly above [than]. *)
+(** [greater t ~than v] is [()] iff [compare v than > 0]. *)
 
 val at_least :
   ?__POS__:pos -> ?msg:string -> 'a testable -> than:'a -> 'a -> unit
-(** [at_least t ~than v] is [()] iff [v] ranks above or the same as [than]. *)
+(** [at_least t ~than v] is [()] iff [compare v than >= 0]. *)
 
 (** {1:containment String containment}
 
-    Each verb builds a {!Failure.containment} payload: the needle, the
-    haystack's length, the byte offset of the needle's first occurrence anywhere
-    when there is one, and a bounded excerpt. The [demand] field tells the verbs
-    apart. *)
+    The five verbs compare bytes. Each builds a {!Failure.containment} from a
+    claim in one line, the needle and the whole haystack, and
+    {!Failure.containment} owns the excerpt and its bounds. [found_at] is always
+    the first occurrence of the needle from byte [0] of the haystack, when it
+    has one.
+
+    Three fields tell the failures apart. [demand] is {!Failure.Ordered} for
+    {!in_order} and {!Failure.Anywhere} for the other four. [found_at] tells a
+    failed {!contains} from a failed {!not_contains} (see
+    {!Failure.Containment}). Only the claim tells {!starts_with} and
+    {!ends_with} from those two and from each other, and no renderer shows a
+    claim. *)
 
 val contains : ?__POS__:pos -> ?msg:string -> sub:string -> string -> unit
-(** [contains ~sub s] is [()] iff [s] contains [sub] as a byte substring; the
-    empty needle is contained in every string. *)
+(** [contains ~sub s] is [()] iff [sub] occurs in [s]. The empty string occurs
+    in every string. *)
 
 val not_contains : ?__POS__:pos -> ?msg:string -> sub:string -> string -> unit
-(** [not_contains ~sub s] is [()] iff [s] does not contain [sub]; it always
+(** [not_contains ~sub s] is [()] iff [sub] does not occur in [s], so it always
     fails when [sub] is empty. *)
 
 val starts_with : ?__POS__:pos -> ?msg:string -> affix:string -> string -> unit
-(** [starts_with ~affix s] is [()] iff [s] begins with [affix]. The payload
-    records the affix's first occurrence when it has one. *)
+(** [starts_with ~affix s] is [()] iff [String.starts_with ~prefix:affix s]. *)
 
 val ends_with : ?__POS__:pos -> ?msg:string -> affix:string -> string -> unit
-(** [ends_with ~affix s] is [()] iff [s] ends with [affix]; the payload is
-    {!starts_with}'s. *)
+(** [ends_with ~affix s] is [()] iff [String.ends_with ~suffix:affix s]. The
+    payload is built as {!starts_with} builds it, with a claim of its own, so
+    [found_at] is the leftmost occurrence and not the one nearest the end. *)
 
 val in_order : ?__POS__:pos -> ?msg:string -> subs:string list -> string -> unit
 (** [in_order ~subs s] is [()] iff every element of [subs] occurs in [s], each
-    match beginning at or after the end of the previous element's match; matches
-    are leftmost, so [["aa"; "aa"]] needs four [a]s, and an empty element
-    matches at the cursor without advancing it. The failing element is the
-    needle; a {!Failure.Ordered} demand carries its zero-based index and the
-    byte the search resumed from, and the excerpt windows on that cursor.
+    match starting at or after the end of the match before it. A match is the
+    leftmost one from there, so [["aa"; "aa"]] needs four [a]s, and an empty
+    element matches where the search stands without moving it.
 
-    Raises [Invalid_argument] if [subs] is empty. *)
+    The needle of the payload is the first element that has no such match, under
+    a {!Failure.Ordered} demand, where [found_at] keeps its meaning.
+
+    Raises [Invalid_argument] if [subs] is empty, whatever [s] is, because an
+    assertion that demands nothing is a mistake and not a passing test. *)
 
 (** {1:exceptions Exceptions}
 
-    Both verbs re-raise {!Failure.Check_failure}, {!Failure.Skip_test} and
-    {!Failure.Timeout} from inside the thunk unchanged, so the control
-    exceptions cannot be asserted. Both build a {!Failure.raised} payload. *)
+    Both verbs raise again, untouched, a {!Failure.Check_failure}, a
+    {!Failure.Skip_test} and a {!Failure.Timeout} that the function raises,
+    before any comparison and before [pred] is applied. Without that, an
+    assertion that fails inside the function would be reported as the wrong
+    exception.
+
+    Nothing else passes through, against
+    {{!Failure.section-exceptions}the rule of a failure boundary}.
+    {!Failure.Exit_attempt}, {!Property.Discard} and the {!Failure.is_fatal}
+    exceptions are compared, or given to [pred], as any exception is. When
+    {!raises_match} is given a predicate that accepts one, it returns [()] and
+    the exception is lost. An intercepted [exit] then leaves no trace, and an
+    [assume] inside the function does not discard the case. When one of them
+    does not match, a fatal exception included, it becomes a
+    {!Failure.Check_failure} and the run goes on.
+
+    Both build a {!Failure.raised}, hold an exception as [Printexc.to_string]
+    gives it, and take the backtrace from {!Failure.recorded_backtrace} before
+    they compare. *)
 
 val raises : ?__POS__:pos -> ?msg:string -> exn -> (unit -> 'a) -> unit
-(** [raises e f] is [()] iff [f ()] raises an exception structurally equal to
-    [e] under [Stdlib.( = )]. The payload records the expected exception alone
-    when [f ()] returned, and both plus the raised one's backtrace otherwise,
-    with a {!Failure.message_diff} when the two share a constructor and differ
-    only in a message. A payload [( = )] cannot compare (a functional value)
-    makes the comparison raise [Invalid_argument], which propagates; use
-    {!raises_match} for such exceptions. *)
+(** [raises e f] is [()] iff [f ()] raises an exception equal to [e] under
+    [Stdlib.( = )].
+    - When [f ()] returns, the payload holds [e] as [expected] and nothing else.
+    - When [f ()] raises another exception, it holds both exceptions and the
+      backtrace of the raised one, when one was recorded. It also holds a
+      {!Failure.message_diff} when both are an [Invalid_argument], both a
+      [Failure] or both a [Sys_error], and their messages differ.
+
+    [predicate] is [false] in both. When [( = )] meets a functional value in the
+    two exceptions it raises [Invalid_argument], which escapes [raises] in place
+    of what [f] raised. {!raises_match} takes such an exception. *)
 
 val raises_match :
   ?__POS__:pos -> ?msg:string -> (exn -> bool) -> (unit -> 'a) -> unit
-(** [raises_match pred f] is [()] iff [f ()] raises an exception satisfying
-    [pred], which must be total. The payload's expected side is absent and its
-    [predicate] flag set. *)
+(** [raises_match pred f] is [()] iff [f ()] raises an exception that [pred]
+    accepts. [pred] must be total.
 
-(** Exception predicates for {!raises_match}: a constructor check and, with
-    [~substring], a byte-substring check on the message (the empty string always
-    matches). *)
+    The payload has no [expected] and sets [predicate], which is what tells a
+    rejected exception from an uncaught one. It holds the raised exception, with
+    its backtrace when one was recorded, when [pred] rejected one, and nothing
+    when [f ()] returned. It never holds a {!Failure.message_diff}, which only
+    {!raises} can build. *)
+
 module Exn : sig
+  (** Predicates on exceptions, for {!raises_match}. The three constructors are
+      those whose messages {!raises} compares. A predicate returns [false] on
+      any other exception and never raises. *)
+
   val invalid_arg : ?substring:string -> exn -> bool
-  (** [invalid_arg e] is [true] iff [e] is [Invalid_argument m] and [m] contains
-      [substring], if given. *)
+  (** [invalid_arg e] is [true] iff [e] is [Invalid_argument m] and [substring],
+      when given, occurs in [m] as bytes. The empty string occurs in every
+      message. *)
 
   val failure : ?substring:string -> exn -> bool
-  (** [failure e] is [true] iff [e] is [Failure m] and [m] contains [substring],
-      if given. *)
+  (** [failure e] is {!invalid_arg} for [Failure m], the exception of [Stdlib].
+  *)
 
   val sys_error : ?substring:string -> exn -> bool
-  (** [sys_error e] is [true] iff [e] is [Sys_error m] and [m] contains
-      [substring], if given. *)
+  (** [sys_error e] is {!invalid_arg} for [Sys_error m]. *)
 end
 
 (** {1:escapes Escape hatches} *)
 
 val fail : ?__POS__:pos -> string -> 'a
-(** [fail msg] raises {!Failure.Check_failure} carrying a {!Failure.message}
-    payload. Never returns. *)
+(** [fail msg] raises a {!Failure.Check_failure} whose payload is [msg], built
+    by {!Failure.message}. The text is the payload and not an annotation, so the
+    [msg] of the failure is [None]. It never returns. *)
 
 val failf : ?__POS__:pos -> ('a, Format.formatter, unit, 'b) format4 -> 'a
-(** [failf fmt ...] is {!fail} with a [Format] message. Never returns. *)
+(** [failf fmt ...] is {!fail} with a message that [Format] builds. It never
+    returns. *)
 
 val skip : ?reason:string -> unit -> 'a
-(** [skip ()] raises {!Failure.Skip_test} with [reason]; the runner reports the
-    current test as skipped. Never returns. *)
+(** [skip ?reason ()] raises {!Failure.Skip_test} with [reason]. It never
+    returns. *)

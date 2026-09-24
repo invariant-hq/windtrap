@@ -5,89 +5,195 @@
 
 (** The mutation loop: the parent process of a mutation run.
 
-    The facade's [run] calls {!execute_and_report} in place of {!Report.run};
-    that call is core windtrap's whole coupling to mutation. The dry run and its
-    reach map, the determinism probe, the fork loop, the verdict file and the
-    report live here, over the stdlib-only runtime ({!Windtrap_runtime.Mutate}
-    for the catalogue, the guard and the reach map, {!Windtrap_runtime.Verdicts}
-    for the verdict file). Which mutants a run tests and which one a process
-    arms arrive on {!Run.config.mutation}; in a [--list] run and under
-    {!Run.No_mutation} this module does nothing.
+    {!execute_and_report} is the one call through which a run becomes a mutation
+    run, and the entry point of a suite makes it in place of {!Report.run}.
+    Under [--mutate] it is the {{!section-loop}loop}: a dry run, a determinism
+    probe, and one forked child per reached mutant. Under [--arm] it is
+    {{!section-armed}one run with one mutant armed}.
 
-    Children run one at a time, in the catalogue's order, under a per-child
-    deadline; nothing bounds a whole run. A site the dry run evaluated only
-    outside a test is recorded as unreached. Mutation needs [Unix.fork] and
-    declines by name on Windows.
-
-    The report is printed as the loop runs: after the dry run's transcript, a
-    survivor's block when its child ends ({!Report.mutation_survivor}), the
-    mutant being tried on the live display in between, and the never-reached
-    rows, the reproduce command and the [mutants:] line when the last child has
-    ended ({!Report.mutation_finish}). The verdict file of a loop that ran whole
-    is written before those last lines, and what windtrap has to say about the
-    file follows them on standard error. *)
+    The module decides which mutants survived, in which order and with which
+    reaching tests. {!Report} and {!Report_sections} render what it decides. It
+    works over the runtime, which reads no environment and no flag:
+    {!Windtrap_runtime.Mutate} holds the catalogue, the arming and the reach
+    counts, and {!Windtrap_runtime.Verdicts} the verdict file. What a run tests
+    or arms arrives on [config.mutation] ({!Run.type-mutation}), which {!Cli}
+    resolves. *)
 
 (** {1:running Running} *)
 
 (** The type for what {!execute_and_report} did with the run. *)
 type run =
   | Ran of (Run.outcome, Run.startup_error) result
-      (** The suite ran once, ordinarily: no loop, or a loop that never started.
-          The caller finishes its post-run work (the focus warning, the
-          correction protocol, the exit) as on {!Report.run}'s result. *)
+      (** The result of {!Report.run}, which was called once: without mutation,
+          with one mutant armed, or after an [--arm] identifier that names no
+          file of this executable. The caller finishes its work on it as it does
+          after {!Report.run}. *)
   | Reported of int
-      (** The mutation run took the process over and has printed everything; the
-          process exits with this code. *)
+      (** The module has printed everything, and the process must exit with this
+          code, which is [0] or [1]. The outcome of a loop's dry run is not
+          returned, so the caller sees neither its focus, nor its corrections,
+          nor its exit code. The caller must do none of the work that follows a
+          run. *)
 
 val execute_and_report : suite:string -> Run.config -> Test_tree.t list -> run
-(** [execute_and_report ~suite config tests] is {!Report.run} over [config]
-    wrapped in the mode [config.mutation] names; under {!Run.No_mutation} it is
-    exactly [Ran (Report.run ~suite config tests)]. Forked children run
-    {!Run.execute} silently over {!Run.for_subset} of [config] with the reaching
-    tests as their allowlist. A process with a mutant armed, a child or the
-    parent under [--arm], checks baselines read-only (guarantee 12).
+(** [execute_and_report ~suite config tests] is {!Report.run} over the same
+    arguments, in the mode that [config.mutation] names.
+    - Under {!Run.No_mutation} it is [Ran (Report.run ~suite config tests)] and
+      nothing else, in an instrumented build as in any other.
+    - Under {!Run.Armed} it is the {{!section-armed}armed run}.
+    - Under {!Run.Loop} it is the {{!section-loop}loop}, and the result is
+      always [Reported].
 
-    Exit codes: [Reported 0] when the loop completed, whatever it found (only
-    the aggregate, [windtrap mutants], gates on survivors); [Reported 1] with a
-    message on [stderr] when it refused to start or could not finish, the
-    survivor blocks already printed left as they are: an [--arm] identifier that
-    is malformed, ambiguous or {!Windtrap_runtime.Mutate.Unmatched} within a
-    file this executable catalogues, a red or empty dry run, a [--mutate] of an
-    executable that links no instrumented module or whose prefixes leave it no
-    mutant, a probe disagreement, a supervision error, or a child that failed to
-    arm a mutant from this binary's own catalogue. Never [2].
-    {!Windtrap_runtime.Mutate.Uncatalogued} under [--arm] is not a refusal: one
-    line on [stderr], then [Ran] of the ordinary run. Asking for both flags is
-    [Cli]'s refusal.
+    [Reported 0] is a loop that ran whole, whatever it found. Only
+    [windtrap mutants], which merges the verdict files of every executable,
+    gates on survivors (guarantee 12 of [doc/dev/architecture.md]). [Reported 1]
+    is a loop that refused to start or could not go on, or an [--arm] identifier
+    that is refused. Each says its reason on standard error, and none falls back
+    to a default and runs on. No result is [Reported 2], because a dry run in
+    which no test ran is a refusal. *)
 
-    {b Signals.} From before its scratch directory exists until its verdict file
-    is written, the loop handles [SIGINT], [SIGTERM] and [SIGHUP] as
-    {!Run.execute} does while a run executes: not when the process was started
-    with the signal ignored, and the first of them puts the three back to their
-    default disposition. A child is a session of its own, which a terminal's
-    signal does not reach: the signal kills the running child's process group,
-    that child's mutant gets no verdict, and the loop ends its report as
-    {!Report.mutation_interrupted} does, the reached mutants left without a
-    verdict counted as [N not tested]. It then removes its scratch directory,
-    writes no verdict file, and sends itself the same signal, so its parent sees
-    a death by signal and no [at_exit] function runs. A signal that arrives once
-    the last child has ended stops nothing: the verdict file is written, a
-    second signal excepted, and from there on a signal costs the run at most the
-    end of its report.
+(** {1:loop The loop}
 
-    [SIGPIPE] is handled over the same span, because its default action would
-    kill the loop inside a write and leave the scratch directory behind. When
-    the reader of standard output has gone away ([… | head -1]), the write that
-    finds it gone fails, the loop stops as it does for the other signals but
-    says nothing and tries no closing report, and it dies by [SIGPIPE]. A reader
-    that leaves once the last child has ended finds the verdict file written.
-    When the process was started with [SIGPIPE] ignored, the failed write's
-    [Sys_error] escapes instead, the scratch directory removed.
+    The loop proceeds in this order, and its children run one at a time.
+    + It fixes the population, which is the catalogue of the executable
+      ({!val:Windtrap_runtime.Mutate.catalogue}) narrowed to the scope, without
+      the mutants that [[@mutate off]] dismisses. The scope is the list of
+      source-path prefixes that [--mutate] gave. A mutant is in scope when the
+      list is empty, or when one prefix is a prefix of its recorded file
+      ([String.starts_with]). A mutant out of scope is neither forked nor
+      recorded.
+    + It runs the dry run, which is {!Report.run} over [config] with [junit]
+      cleared, and which prints its ordinary transcript. A [--mutate] run thus
+      writes no JUnit file. Every other field is that of [config], [baseline]
+      included, so the dry run of a [--mutate -u] run accepts what a [-u] run
+      accepts. The events of the dry run tell the loop which tests reach which
+      mutant. A site that the dry run evaluated only outside a test, at module
+      initialization or in a fixture release, counts as unreached.
+    + It runs the determinism probe, which is one unarmed child over the tests
+      that the dry run executed. The probe agrees iff it executed as many tests,
+      skipped as many and counted no failure.
+    + It forks one child per reached mutant, in the order of the catalogue, and
+      never forks an unreached one. The report prints as the loop runs
+      ({!Report.mutation_testing}, {!Report.mutation_survivor}).
+    + When the last child has ended it writes the verdict file. It then ends the
+      report ({!Report.mutation_finish}), says on standard error what it has to
+      say about the file, and returns [Reported 0].
 
-    Effects: {!Report.run}'s and, under the loop, [fork]/[waitpid]/[pipe]/
-    [select], [setsid] in each child, [kill] of an expired or interrupted
-    child's process group, one scratch log directory per run (removed however
-    the loop ends, a second signal excepted), and one verdict file under
-    {!Windtrap_runtime.Verdicts.output_file}. Children never reach [Stdlib]'s
-    exit machinery: every exception, fatal included, is reduced to a verdict
-    line followed by [Unix._exit]. *)
+    {b Children.} A child runs {!Run.execute} over {!Run.for_subset} of
+    [config], with the reaching tests of its mutant as the allowlist. It checks
+    baselines read-only and records no correction (guarantee 12). Nothing that a
+    child prints is visible, because both of its standard descriptors are
+    [/dev/null]. No [at_exit] function runs in a child.
+
+    {b Verdicts.} A mutant is {!Windtrap_runtime.Verdicts.Killed} when its child
+    counted a failure, that of a fixture release included. It is also killed
+    when its child reported no survivor, because the child recorded no test,
+    passed its deadline, did not exit with [0], or left no complete line.
+
+    {b Limits.} Nothing bounds a whole run. A child that passes its deadline has
+    its process group killed, and the loop goes on. The deadline is the wall
+    time of the dry run, read on the system clock ([Unix.gettimeofday]), plus a
+    share for the tests of the child. The share is ten times
+    ([deadline_multiplier]) what the dry run measured for those tests, and at
+    least one second. The probe has the same deadline, over every executed test.
+
+    The runaway budget of a child ({!Windtrap_runtime.Mutate.arm}) is
+    [(hits * 8) + 1000] ([budget_of]) for a site that the dry run evaluated
+    [hits] times.
+
+    {b The verdict file.} The file holds one record per reached mutant, and one
+    [Unreached] record per unreached mutant of the population. It is written to
+    {!Windtrap_runtime.Verdicts.output_file} of the executable, by
+    {!Windtrap_runtime.Verdicts.save}. A file that cannot be written
+    ([Sys_error]) is one sentence on standard error after the report, and the
+    result is still [Reported 0].
+
+    Only a loop that ran whole, over the whole suite, writes it. A run whose
+    selection narrows the suite writes none and says so on standard error after
+    the report. [filter], [exclude], [tags], [exclude_tags], [failed_only],
+    [shard] and an active focus narrow the suite. The scope of [--mutate] does
+    not.
+
+    {b Refusals.} Each of these is [Reported 1] with one sentence on standard
+    error ({!Os.say}). The first six are tried in this order, and the last has
+    no one place in it:
+    - The platform is Windows, which has no [Unix.fork]. An armed run forks
+      nothing and is not refused.
+    - The dry run is refused at startup. {!Report.run} has said why, and the
+      code is [1] whatever {!Run.startup_exit_code} is.
+    - The exit code of the dry run is not [0], because no test ran ([2]) or
+      because the run is red.
+    - The population is empty, because the executable links no instrumented
+      module, because the prefixes leave no mutant, or because every mutant in
+      scope is dismissed.
+    - The probe disagrees with the dry run, passes its deadline, is refused at
+      startup, or reports nothing readable.
+    - A child cannot arm its mutant, or is refused at startup.
+    - The supervision fails. The scratch directory cannot be created, which is
+      tried before the probe, or [pipe], [fork] or [waitpid] fails for the probe
+      or for a child.
+
+    The last two can follow survivor blocks that are already committed.
+    {!Report.mutation_refused} then says the sentence, the blocks stay as they
+    are, no closing section prints, and no verdict file is written. *)
+
+(** {1:armed The armed run}
+
+    Under {!Run.Armed} the identifier is read by
+    {!Windtrap_runtime.Mutate.id_of_string} and armed by
+    {!Windtrap_runtime.Mutate.arm} in this process, which forks nothing.
+    - An identifier that is malformed, ambiguous, or
+      {!Windtrap_runtime.Mutate.Unmatched} within a file that this executable
+      catalogues is [Reported 1], with the sentence of
+      {!Windtrap_runtime.Mutate.pp_arm_error} on standard error, before anything
+      runs.
+    - {!Windtrap_runtime.Mutate.Uncatalogued} is no refusal, because one
+      identifier is handed to every test executable of a project, and most of
+      them were built from other sources. The same sentence goes to standard
+      error before the transcript, and the result is [Ran] of the ordinary run
+      under {!Run.No_mutation}.
+    - With the mutant armed, the run announces it and ends on one verdict line
+      ({{!Report.section-armed}the lines of an armed run}). It runs
+      {!Report.run} with [baseline] set to {!Baseline.Check}, so it records no
+      correction. It ends on no verdict line when no test ran, which is exit
+      code [2], or when its startup was refused.
+
+    The result of an armed run is [Ran], so its exit code is that of the
+    ordinary run, [2] included, and it writes its JUnit file. *)
+
+(** {1:signals Signals}
+
+    From before its scratch directory exists until its verdict file is written,
+    the loop handles [SIGINT], [SIGTERM] and [SIGHUP] as {!Run.execute} does
+    during a run (see its {{!Run.section-signals}signals}).
+
+    A child is a session of its own ([setsid]), which a terminal's signal does
+    not reach. The handler therefore kills the process group of the running
+    child, and the mutant of that child gets no verdict, whatever the child
+    reported. The loop then removes its scratch directory and writes no verdict
+    file. It ends its report with {!Report.mutation_interrupted}, in which the
+    reached mutants without a verdict count as not tested. It dies by the same
+    signal last, so its parent sees a death by signal and no [at_exit] function
+    runs.
+
+    A signal that arrives once the last child has ended stops nothing. The
+    verdict file is written, a second signal excepted, the report ends as usual,
+    and the result is [Reported 0].
+
+    [SIGPIPE] is handled over the same span. When the reader of standard output
+    has gone away, the write that finds it gone fails. The loop then stops as it
+    does for the other signals, except that it says nothing and tries no closing
+    report, and it dies by [SIGPIPE]. A reader that leaves once the last child
+    has ended finds the verdict file written. When the process was started with
+    [SIGPIPE] ignored, the [Sys_error] of the failed write escapes
+    {!execute_and_report} instead, after the scratch directory is removed. *)
+
+(** {1:effects Effects}
+
+    Beyond the effects of {!Report.run}, the loop calls [fork], [waitpid],
+    [pipe] and [select], and each child calls [setsid]. The loop calls [kill] on
+    the process group of a child that expired or was interrupted. It creates one
+    scratch directory per run under [Filename.get_temp_dir_name ()], and removes
+    it however the loop ends, a second signal excepted. For the source line of a
+    survivor it reads the recorded file of the mutant, under {!Os.project_root}
+    first and then as given. *)

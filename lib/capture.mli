@@ -3,89 +3,126 @@
    SPDX-License-Identifier: ISC
   ---------------------------------------------------------------------------*)
 
-(** Per-test output capture: fd-level redirection into per-test log files.
+(** Per-test output capture into log files.
 
-    A {!t} holds one run's capture state; the runner owns it and threads it
-    explicitly. {!with_capture} redirects file descriptors 1 and 2 with [dup2],
-    so C stubs and subprocesses inheriting the descriptors are captured too;
-    every drain (at capture entry and exit, and in {!output} and {!output_tail})
-    flushes the [Format] and channel buffers and C stdio. Capture is per
-    attempt: each {!with_capture} call truncates the test's log file and resets
-    the {!output} cursor, so a retried test starts from an empty file and its
-    report shows the final attempt's output. Log files live at
-    [<log_dir>/<suite>/<groups...>/<test>.output], every component made
-    filesystem-safe with {!Os.sanitize_component}, so a rerun overwrites the
-    previous run's logs. Under [--stream] capture is {!disabled}. The file holds
-    the complete output; {!output_tail} reads back a bounded suffix. *)
+    {!with_capture} redirects file descriptors 1 and 2 into the log file of one
+    attempt of a test. {!val-output} reads the file back incrementally, and
+    {!output_tail} reads the bounded end of it that a failure carries. {!create}
+    is the state of a run that captures, and {!disabled} that of a run under
+    [--stream], which captures nothing.
+
+    The redirection is a [dup2] of the descriptors, so the writes of C stubs and
+    of the subprocesses that inherit them are captured too. Both descriptors
+    write through one open file, so a log holds standard output and standard
+    error as one text, in the order in which the bytes reached the descriptors.
+    A buffer that holds bytes back changes that order.
+
+    The log of a test is [<log_dir>/<suite>/<groups...>/<test>.output], with
+    every component passed through {!Os.sanitize_component}. The path depends on
+    the identity of the test alone, so a run overwrites the logs of the run
+    before it. Each attempt truncates the log, so it holds the whole output of
+    the last attempt. The captured output of a counted failing test is in its
+    report, bounded, with the path of its log (see {!Report.result}), and the
+    output of any other test is in its log only.
+
+    The module keeps no state outside a {!t}, but descriptors 1 and 2 and the
+    buffers that a drain flushes belong to the process. *)
 
 (** {1:state Capture state} *)
 
 type t
-(** The type for one run's capture state: enabled, into per-test files under a
-    log directory, or {!disabled}. Enabled values are mutable and not
-    thread-safe. *)
+(** The type for the capture state of one run. A value either captures into the
+    log files under a directory or is {!disabled}. A capturing value is mutable
+    and not thread-safe. *)
 
 val create : log_dir:string -> suite:string -> unit -> t
-(** [create ~log_dir ~suite ()] is enabled capture state writing under
-    [log_dir/<suite>], [suite] sanitized into one path component. Nothing is
-    written until {!with_capture} runs a test. *)
+(** [create ~log_dir ~suite ()] is a state that captures under
+    [log_dir/<suite>], with [suite] made one path component by
+    {!Os.sanitize_component}. [log_dir] is the log directory of the run, taken
+    as given ({!Os.default_log_dir} is the default of a run). Nothing is created
+    or written before {!with_capture} runs an attempt. *)
 
 val disabled : t
-(** [disabled] is the capture state for [--stream] runs: {!with_capture} runs
-    bodies with the real descriptors, {!output_tail} is [None], and {!output}
-    raises. *)
+(** [disabled] is the state of a run under [--stream]. {!with_capture} then runs
+    its function on the real descriptors and writes no file, {!output_tail} is
+    [None], {!abandon} does nothing and {!val-output} raises. *)
 
 (** {1:capturing Capturing} *)
 
 val drain : unit -> unit
-(** [drain ()] forces buffered output through to descriptors 1 and 2: [Format]'s
-    two standard formatters, the [stdout] and [stderr] channels, then C stdio.
-    Every capture edge does it; a [--stream] run does it at each boundary
-    between a test's bytes and the report's, so that a row never precedes bytes
-    its test wrote. *)
+(** [drain ()] forces buffered output through to descriptors 1 and 2. It flushes
+    the two standard formatters of [Format], then the [stdout] and [stderr]
+    channels, then the C stdio streams of the same names. It reaches no other
+    buffer, such as a formatter of the user's or the buffers of a child process.
+
+    Raises [Sys_error] if a flush fails, as on a closed descriptor. *)
 
 val with_capture :
   t -> groups:string list -> test_name:string -> (unit -> 'a) -> 'a
-(** [with_capture t ~groups ~test_name fn] runs one attempt of the test
-    [test_name] under group path [groups] and is [fn ()]; exactly [fn ()] when
-    [t] is {!disabled}. Otherwise the attempt's log file (directories created)
-    is truncated on entry with the {!output} cursor reset, descriptors 1 and 2
-    are redirected into it for the duration of [fn] and restored on every exit,
-    return or raise, both edges drained; restoration happens even when the
-    closing drain fails, and that error still propagates. The saved originals
-    and the log descriptor are close-on-exec: a subprocess writes through the
-    redirected 1 and 2 and inherits neither. The file remains [t]'s current log
-    until the next call. Calls must not be nested.
+(** [with_capture t ~groups ~test_name fn] is [fn ()], run as one attempt of the
+    test [test_name] under the groups [groups].
 
-    Raises [Unix.Unix_error] if the log file cannot be created, leaving the
-    descriptors untouched and no attempt readable: {!output} is [""] and
-    {!output_tail} is [None] until the next call; the runner's per-test boundary
-    turns that into a test failure. *)
+    When [t] captures, it creates the directories of the log, truncates the log
+    and resets the cursor of {!val-output}, so a retry starts from an empty
+    file. Descriptors 1 and 2 write to the log while [fn] runs, and they are the
+    real ones again when [with_capture] returns or raises. It drains at the
+    start, so that what was buffered before the attempt stays out of its log,
+    and at the end, so that what the attempt left in a buffer reaches it.
+
+    The log and the saved descriptors are close-on-exec, so a subprocess writes
+    to the log through descriptors 1 and 2 and inherits neither. The log stays
+    the current log of [t] until the next call. Calls on one state must not be
+    nested. Nothing checks it, and after a nested call descriptors 1 and 2 never
+    return to the real ones.
+
+    Raises [Unix.Unix_error] if the directories or the log cannot be created or
+    a descriptor cannot be duplicated, and [Sys_error] if the first drain fails.
+    [fn] has not run, the descriptors are as they were, and [t] has no current
+    log, never that of the attempt before.
+
+    Raises [Fun.Finally_raised], which carries the [Sys_error], if the last
+    drain fails. The descriptors are restored first. It is raised also if the
+    restoration fails. The exception replaces the result of [fn] and whatever
+    [fn] raised, even an exception that {!Failure.is_fatal} asks every catch
+    site to raise again. *)
 
 val abandon : t -> unit
-(** [abandon t] ends the redirection of an attempt in flight, from outside
-    {!with_capture}: what the test buffered is drained into its log, then
-    descriptors 1 and 2 are the real ones again. For a run that stops inside a
-    test and will not return to it (a signal); a no-op when nothing is
-    redirected or [t] is {!disabled}. Raises [Unix.Unix_error] if the
-    descriptors cannot be restored. *)
+(** [abandon t] ends the redirection of an attempt that is still running, from
+    outside {!with_capture}, for a run that stops inside a test and never
+    returns to it. It drains what the test buffered into the log, ignoring a
+    [Sys_error] of the drain, and descriptors 1 and 2 are then the real ones
+    again. The log stays the current log of [t].
+
+    When nothing is redirected it restores nothing.
+
+    Raises [Unix.Unix_error] if a descriptor cannot be restored. *)
 
 (** {1:reading Reading captured output} *)
 
 val output : ?__POS__:Loc.pos -> t -> string
-(** [output t] drains the buffers and is the bytes the current attempt captured
-    since the previous [output] call (or since the attempt started), advancing
-    the cursor past them; [""] when everything has been consumed or no test has
-    been captured yet. When [t] is {!disabled}, raises {!Failure.Check_failure}
-    with the message ["this test requires capture; rerun without --stream"],
-    located at [Loc.resolve ?__POS__ ()]. *)
+(** [output t] is the bytes that the current attempt wrote since the previous
+    call, or since it started. It drains first, and moves its cursor past what
+    it returns.
+
+    It is [""] when everything was read already and when [t] has no current log.
+    It is also [""], and the cursor stays, when the log can no longer be opened.
+
+    Raises [Failure.Check_failure] when [t] is {!disabled}, since no bytes exist
+    to return. The failure is a {!Failure.Message} that reads
+    [this test requires capture; rerun without --stream], located at
+    [Loc.resolve ?__POS__ ()]. [__POS__] is read in that case only. Raises
+    [Sys_error] as {!drain} does. *)
 
 val output_tail : t -> Failure.tail option
-(** [output_tail t] is the bounded suffix of the current attempt's entire
-    captured output, from the start of the file regardless of the {!output}
-    cursor, as {!type:Failure.tail} data; [None] when [t] is {!disabled} or no
-    test has been captured. At most {!Failure.tail_bytes} final bytes are
-    retained, read without loading the rest of the file; bytes before them are
-    counted in [omitted_bytes], and [log_path] is the capture file. A cut inside
-    a UTF-8 sequence is moved past it, the skipped bytes counted as omitted;
-    invalid UTF-8 is kept verbatim. *)
+(** [output_tail t] is the end of what the current attempt wrote, as the
+    {!type:Failure.tail} that a failure carries. It drains first and reads the
+    log from its end, whatever the cursor of {!val-output}, so the bytes that
+    {!val-output} returned are in the tail too.
+
+    The tail keeps at most the last {!Failure.tail_bytes} bytes of the log and
+    reads no more than that. [omitted_bytes] counts the bytes before them, and
+    [log_path] is the log. A cut inside a UTF-8 sequence moves past it, the
+    bytes skipped counted as omitted, and invalid UTF-8 is kept as it is.
+
+    It is [None] when [t] has no current log, and when the log can no longer be
+    opened. Raises [Sys_error] as {!drain} does. *)

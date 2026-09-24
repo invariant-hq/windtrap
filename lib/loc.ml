@@ -8,7 +8,7 @@ type t = { file : string; line : int; column : int }
 
 let of_pos (file, line, column, _end_column) = { file; line; column }
 
-(* Backtrace-derived capture (provisional) *)
+(* Call-stack capture *)
 
 (* Slots are classified by the compilation unit of their defname: the
    segment before the first '.' of [Printexc.Slot.name]. A wrapped
@@ -69,6 +69,10 @@ let location_of_slot slot =
       | Some { Printexc.filename; line_number; start_char; _ } ->
           Some { file = filename; line = line_number; column = start_char })
 
+(* Reaching the delimiter means that every frame since the failing call was
+   windtrap's own, so a user frame beyond it belongs to the caller of the
+   runner and not to the failure site. The walk stops there and answers
+   [None]. *)
 let capture () =
   let raw = Printexc.get_callstack callstack_depth in
   let entries = Printexc.raw_backtrace_entries raw in

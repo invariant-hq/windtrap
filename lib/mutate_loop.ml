@@ -333,7 +333,12 @@ type report = {
    already in waitpid; [select] is what lets it wake on the deadline while
    it reads. The pipe is close-on-exec: a process a test
    [exec]s must not inherit the write end and hold the drain open past
-   its group's death. *)
+   its group's death.
+
+   XXX two windows stay open. A second signal between [fork] returning and
+   the pid being recorded kills the parent with the child alive, and a
+   signal between [waitpid] and the reset of [interrupt.child] is sent to a
+   pid that is already reaped. *)
 let fork_child ~deadline body =
   flush_descriptors ();
   let read_fd, write_fd =
@@ -712,6 +717,9 @@ let probed ~dry_run_wall ~suite ~config ~reach ~paths tests forks =
 
 (* One mutant *)
 
+(* A child that cannot arm reports an [error] line, which ends the loop
+   without a score. Running on with nothing armed would give a green suite
+   and score the mutant as a survivor. *)
 let mutant_line ~paths ~budget ~suite ~config ~(mutant : M.mutant) tests () =
   child_prologue ();
   match M.arm ~budget mutant.M.id with

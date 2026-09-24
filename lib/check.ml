@@ -1,10 +1,6 @@
 (*---------------------------------------------------------------------------
    Copyright (c) 2026 Invariant Systems. All rights reserved.
    SPDX-License-Identifier: ISC
-
-   Verb semantics — expected-before-actual, the payload conventions, and the
-   control-exception re-raise guard in the exception verbs — adapted from
-   windtrap v1's lib/check.ml.
   ---------------------------------------------------------------------------*)
 
 type pos = Loc.pos
@@ -23,8 +19,9 @@ let fail_equality ?__POS__ ?msg ?not_ ~expected ~actual () =
        (Failure.equality ?loc:(Loc.resolve ?__POS__ ()) ?msg ?not_ ~expected
           ~actual ()))
 
-(* Shared by [satisfies] and [require_match]: the claim sentence is the
-   whole of the difference between them. *)
+(* Shared by the verbs whose expected side is a claim: [satisfies], [mem],
+   [require_match] and the four ordering verbs. The claim is the whole of the
+   difference between them. *)
 let fail_predicate ?__POS__ ?msg ~claim value =
   raise
     (Failure.Check_failure
@@ -260,7 +257,7 @@ let require_match ?__POS__ ?msg ?pp extract v =
    The control exceptions are re-raised from inside the thunk: without the
    guard, a [raises] over code that itself calls [equal] would swallow the
    assertion failure and report "wrong exception" instead of the real
-   error (v1's guard). *)
+   error. *)
 
 (* The exception's constructor name and message payload, for the stdlib's
    string-carrying exceptions — the only ones whose message a renderer can
@@ -284,6 +281,8 @@ let message_diff expected_exn raised =
       Some { Failure.constructor; expected_message; actual_message }
   | _ -> None
 
+(* The backtrace is read before the comparison, which can itself raise and
+   would then replace it. It is thus computed on the passing path too. *)
 let raises ?__POS__ ?msg expected_exn fn =
   match fn () with
   | _ -> fail_raise ?__POS__ ?msg ~expected:(Printexc.to_string expected_exn) ()

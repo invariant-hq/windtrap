@@ -4,70 +4,105 @@
    SPDX-License-Identifier: ISC
   ---------------------------------------------------------------------------*)
 
-(** Diff data between two texts: unified line hunks and character refinement
-    spans.
+(** The difference between two texts, as data for a renderer.
 
-    Data for renderers, never presentation: no styling, labels or display
-    truncation. Renderers call {!hunks} on multi-line payloads (baseline
-    contents, long renderings) and {!refine} on a pair of differing lines or
-    short renderings. Both are pure; above internal size bounds the result
-    degrades ({!hunks} to a whole-region replacement, {!refine} to [None]) but a
-    difference is never reported as absent. The guards and the refinement noise
-    cutoff are implementation constants, not contract. *)
+    {!val:hunks} is the difference of two texts line by line, as unified hunks,
+    and {!refine} is the changed byte ranges of two strings. Both return data
+    without styling, labels or a cut for display, which are a renderer's.
+
+    Both functions are pure. Past a size bound {!val:hunks} gives a region whole
+    and {!refine} is [None]. Both results show the degradation, so a bound never
+    makes two different inputs look equal. The one difference that {!val:hunks}
+    does not report is a single trailing newline. *)
 
 (** {1:hunks Line hunks} *)
 
-(** The type for one line of a hunk, stored without its terminating newline. *)
+(** The type for the lines of a hunk. A line is stored without the LF that ended
+    it ({!Text.split_lines}). *)
 type line =
-  | Keep of string  (** Present in both texts (context). *)
-  | Delete of string  (** Present only in [expected]. *)
-  | Insert of string  (** Present only in [actual]. *)
+  | Keep of string  (** A line of both texts, which is context. *)
+  | Delete of string  (** A line of [expected] only. *)
+  | Insert of string  (** A line of [actual] only. *)
 
 type hunk = {
   expected_start : int;
-      (** 1-based line number in [expected] of the hunk's first expected-side
-          line, or the line the insertion precedes when it has none. *)
-  expected_count : int;
-      (** Number of expected-side lines in the hunk ({!Keep} + {!Delete}). *)
-  actual_start : int;  (** As {!expected_start}, for [actual]. *)
-  actual_count : int;
-      (** Number of actual-side lines in the hunk ({!Keep} + {!Insert}). *)
+      (** The 1-based number in [expected] of the first [Keep] or [Delete] line
+          of the hunk. When the hunk has none, it is the number of the next line
+          of [expected], which is one more than the unified format gives an
+          empty side. A renderer of [@@] heads must then subtract [1]. *)
+  expected_count : int;  (** The number of [Keep] and [Delete] lines. *)
+  actual_start : int;
+      (** As [expected_start], in [actual] and for [Keep] and [Insert] lines. *)
+  actual_count : int;  (** The number of [Keep] and [Insert] lines. *)
   lines : line list;
-      (** The hunk's lines in text order. Within a run of changes, deletions
-          precede insertions. *)
+      (** The lines in the order of the texts. Within a run of changes the
+          [Delete] lines come before the [Insert] lines. *)
 }
-(** The type for unified-diff hunks: a changed region with up to [context]
-    unchanged lines on each side. *)
+(** The type for unified hunks. A hunk is a changed region with up to [context]
+    unchanged lines before it and after it.
+
+    The [Keep] and [Delete] lines of a hunk, in order, are the lines
+    [expected_start] to [expected_start + expected_count - 1] of [expected]. Its
+    [Keep] and [Insert] lines are the same range of [actual]. *)
 
 val hunks :
   ?context:int -> expected:string -> actual:string -> unit -> hunk list
-(** [hunks ~expected ~actual ()] is the changed regions between the two texts
-    compared line by line, with [context] (default [3]) unchanged lines around
-    each region; regions at most [2 * context] lines apart merge. Texts split on
-    ['\n'] and a single trailing newline is not significant. [[]] iff both texts
-    split into equal line lists. Above an internal size bound a region is
-    reported as all deletions then all insertions rather than a minimal diff.
+(** [hunks ?context ~expected ~actual ()] is the changed regions between
+    [expected] and [actual], in the order of the texts and without overlap.
+    {!Text.split_lines} splits the texts, and two lines are equal when their
+    bytes are, trailing blanks included.
 
-    Raises [Invalid_argument] if [context < 0]. *)
+    [context] is the number of unchanged lines kept on each side of a region,
+    and defaults to [3]. Two regions with at most [2 * context] unchanged lines
+    between them are one hunk.
+
+    The result is [[]] iff the two texts split into equal lists of lines. The
+    split drops a single trailing newline, so ["a"] and ["a\n"] give [[]], and
+    [[]] does not prove that the strings are equal. A caller to whom that
+    newline matters must compare the strings itself, or pass texts in a
+    canonical or an encoded form.
+
+    The differing region lies between the common first lines and the common last
+    lines of the two texts. When it holds more than 2000 lines, both sides
+    summed ([myers_line_limit]), or needs more than 1000 edits
+    ([myers_max_edits]), the result is one hunk. It gives every [expected] line
+    of the region as a [Delete], then every [actual] line as an [Insert], around
+    the usual context. That hunk omits no line and its size has no bound, so a
+    renderer must bound what it shows. Below the two bounds the difference is
+    minimal, and which minimal one is returned is unspecified.
+
+    Raises [Invalid_argument] if [context] is negative. *)
 
 (** {1:refinement Character refinement} *)
 
 type span = { start : int; length : int }
-(** The type for byte ranges: [length] bytes at offset [start]. Spans from
-    {!refine} begin and end on UTF-8 code-point boundaries. *)
+(** The type for byte ranges: [length] bytes from the byte offset [start] of the
+    string given to {!refine}. A span of {!refine} begins and ends on the
+    boundary of a UTF-8 code point. *)
 
 type refinement = {
-  expected_spans : span list;  (** Changed ranges of [expected]. *)
-  actual_spans : span list;  (** Changed ranges of [actual]. *)
+  expected_spans : span list;  (** The changed ranges of [expected]. *)
+  actual_spans : span list;  (** The changed ranges of [actual]. *)
 }
-(** The type for refinement results. Span lists are ascending, non-overlapping
-    and coalesced. Equal inputs have two empty lists. *)
+(** The type for the results of {!refine}. Each list is ascending, without
+    overlap and coalesced, which means that adjacent changed code points form
+    one span.
+
+    [expected] without its spans and [actual] without its spans are the same
+    string, so a renderer can mark each side alone. *)
 
 val refine : expected:string -> actual:string -> refinement option
-(** [refine ~expected ~actual] is the changed regions of the two strings,
-    compared code point by code point with a minimal edit script. [None] when
-    highlighting would not help and the renderer should show both strings plain:
-    marking would cover half or more of a side's code points, or the differing
-    region exceeds an internal size guard. Malformed UTF-8 is compared
-    byte-faithfully, one replacement-sized unit at a time, following
-    {!String.get_utf_8_uchar}. *)
+(** [refine ~expected ~actual] is the changed ranges of the two strings,
+    compared code point by code point under a minimal script of insertions,
+    deletions and substitutions. Equal strings give [Some] of two empty lists.
+
+    The result is [None] when marks would not help a reader. It has two causes:
+    - The marks would cover half or more of the code points of a side
+      ([noise_threshold]). The share is taken per side, over the whole string.
+      ["13"] against ["14"] is thus [None].
+    - The differing region, between the common first and the common last code
+      points, holds [ma] code points of [expected] and [mb] of [actual], and
+      [(ma + 1) * (mb + 1)] is above 4000000 ([dp_cell_limit]).
+
+    Malformed UTF-8 is compared byte for byte, one unit at a time as
+    [String.get_utf_8_uchar] decodes it. *)

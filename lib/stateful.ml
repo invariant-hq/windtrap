@@ -318,7 +318,19 @@ let choice commands =
    that a deletion elsewhere invalidates is dropped in the same candidate.
    Masking on top of an assembled tree gets both wrong: a candidate deleting
    a call the mask already dropped equals its parent, and one reducing a
-   dropped call's argument into a kept one is longer than its parent. *)
+   dropped call's argument into a kept one is longer than its parent.
+
+   The drawn program is a fixed point of repair, so none of its immediate
+   candidates is longer than it. Deeper, the guarantee fails: a call that the
+   repair of a node dropped keeps its subtree in the unmasked list, so a
+   candidate deleting it or reducing its argument repeats its parent, and one
+   deleting an earlier call can make it legal again and be longer than its
+   parent. Ruling that out takes a tree assembled again at every node. A
+   repeat cannot loop: the engine accepts it as a step, and every accepted
+   step descends one level of the unmasked [Shrink_tree.list] tree, which is
+   finite in depth when the argument trees are. The length is fixed because
+   a drawn length would be a second shrink dimension, which chunk deletion
+   already covers. *)
 let program ?(steps = default_steps) ?pp_model ~model commands =
   let element = choice commands in
   let keep = repair model in
@@ -346,9 +358,9 @@ let program ?(steps = default_steps) ?pp_model ~model commands =
 
 (* Step attribution
 
-   The failing step is named in the [msg] slot, which renders as a single
-   line, so a user [?msg] is flattened and joined into it. This is data
-   construction, not rendering. *)
+   The failing step is named in the [msg] slot, which a headline renders as
+   a single line, so a user [?msg] is flattened and joined into it. This is
+   data construction, not rendering. *)
 
 let relabel ?loc label (failure : Failure.t) =
   let msg =
@@ -516,8 +528,8 @@ let execute ?loc ?invariant ~scope program =
 (* The entry point *)
 
 (* Stateful tests carry both tags: [Test_tree.Tag.prop] because they are properties —
-   [--tag prop] selects them and the run header prints the root seed exactly
-   when the suite declares one — and ["stateful"] so a suite can select or
+   [--tag prop] selects them and a report shows the root seed exactly when
+   the selection holds one — and ["stateful"] so a suite can select or
    exclude them on their own cost profile. *)
 let stateful_tag = "stateful"
 

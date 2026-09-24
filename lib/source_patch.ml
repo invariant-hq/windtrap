@@ -99,10 +99,10 @@ let fix_tag ~contents tag =
   in
   fix tag
 
-(* Format raw output as the contents of a flexible payload whose node
-   starts at [column]: multi-line contents are indented [column + 2],
-   matching ppx_expect so first promotes after adoption produce no
-   churn. *)
+(* Format raw output as the contents of a flexible payload. [column] is
+   the indentation of the line that holds the node, in leading spaces:
+   multi-line contents are indented [column + 2], matching ppx_expect so
+   first promotes after adoption produce no churn. *)
 let format_flexible ~delimiter ~column raw =
   match pretty_lines raw with
   | [] -> ( match delimiter with Tag _ -> " " | Quote -> "")
@@ -238,9 +238,10 @@ let rec find_literal source i =
         find_literal source (i + String.length position_token)
     | _ -> None
 
-(* The lexer's newline rule for every string literal: a run of CRs before
-   an LF is one LF, so a CRLF source compiles to the same value as its
-   LF twin. A lone CR is an ordinary byte. *)
+(* A run of CRs before an LF is read as one LF, and a lone CR is an
+   ordinary byte. OCaml 5.2 and later drop one CR before an LF and earlier
+   versions none, so a literal that the compiler reads otherwise is refused
+   as [Drifted]. *)
 let decode_newlines s =
   if not (String.contains s '\r') then s
   else begin

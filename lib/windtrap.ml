@@ -359,7 +359,10 @@ let run_listing ~suite ~config tests =
 let run ?(argv = Sys.argv) suite tests =
   (* [Run.active], not a frame probe: the slot also holds the run itself
      between attempts — a fixture release or an observer starting a
-     nested run is refused like a test body would be. *)
+     nested run is refused like a test body would be. The check stands
+     before [Cli.parse]: [--help], [--version] and a usage error return
+     without reaching [Run.execute], which would otherwise be the only
+     refusal. *)
   if Run.active () then invalid_arg Run.active_run_error;
   let prog =
     if Array.length argv > 0 && argv.(0) <> "" then argv.(0) else suite

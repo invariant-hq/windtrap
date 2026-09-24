@@ -151,12 +151,13 @@ let recorded_backtrace () =
     | bt -> Some bt
   else None
 
-(* Bounds. Implementation constants, not contract — except [tail_bytes],
-   which the .mli exposes because capture-side readers must size their
-   reads by it. *)
+(* Bounds. They are contract: [failure.mli] states each one, so a change here
+   is a change to what users were told. *)
 
-(* Payload strings are pp-rendered values or user messages; past this many
-   bytes they are cut with Text's explicit truncation marker. *)
+(* A rendering cannot be made again once the failure site is left, so it is
+   captured there as a string and bounded once, here. Payload strings are
+   pp-rendered values or user messages; past this many bytes they are cut
+   with Text's explicit truncation marker. *)
 let value_limit = 65_536
 
 (* Captured-output tails retain at most this many final bytes; the cut is
@@ -316,6 +317,8 @@ let bound_message_diff { constructor; expected_message; actual_message } =
     actual_message = cap actual_message;
   }
 
+(* [message_diff] is stored as given. The failure site decides it with both
+   exceptions in hand, so that a renderer branches on the option alone. *)
 let raised ?loc ?msg ?expected ?actual ?(predicate = false) ?backtrace
     ?message_diff () =
   make ?loc ?msg
