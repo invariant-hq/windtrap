@@ -243,8 +243,10 @@ Coverage and packaging:
   and last 400 around `… (N bytes elided)` and draws no mark, a backtrace
   prints ten frames then `… (+N more frames)`, a diff 200 lines then `…
   (+N more diff lines)`.
-- **Control bytes are shown, not executed**: every compared value renders
-  C0 bytes and DEL as `\x1b`, `\x00`, keeping newlines and tabs, so a
+- **Control bytes are shown, not executed**: every line of a failure
+  entry (compared values, messages, subtest names, `fail` text and
+  backtraces) renders C0 bytes and DEL as `\x1b`, `\x0d`, keeping tabs
+  and splitting a text at its newlines, with colour on or off, so a
   failing assertion on styled output can be read and grepped. Floats
   render with the shortest decimal that round-trips, so `0.1 +. 0.2`
   reports `0.30000000000000004`.

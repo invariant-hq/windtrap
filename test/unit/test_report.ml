@@ -1348,7 +1348,8 @@ let test_headline () =
   let multi = h (Failure.message "line one\nline two") in
   is_true ~msg:"headline: never multi-line" (not (String.contains multi '\n'));
   let esc = h (Failure.message "\027[31mred\027[0m alert") in
-  is_true ~msg:"headline: payload escapes stripped" (esc = "red alert");
+  is_true ~msg:"headline: a payload escape is left to the field's escaping"
+    (esc = "\027[31mred\027[0m alert");
   is_true ~msg:"headline: empty message named"
     (h (Failure.message "") = "(empty failure message)");
   contains ~msg:"block: empty message named" ~sub:"(empty failure message)"
@@ -1642,7 +1643,9 @@ let test_ansi_hygiene () =
   contains ~msg:"ansi:false: an OSC payload survives the same way"
     ~sub:{|\x1b]0;title\x07 two|} plain;
   let colored = failure_block ~ansi:true (Failure.message (esc ^ " boom")) in
-  contains ~msg:"ansi:true: payload escapes pass through" ~sub:esc colored;
+  not_contains ~msg:"ansi:true: payload escapes are not obeyed" ~sub:esc colored;
+  contains ~msg:"ansi:true: payload escapes are shown"
+    ~sub:{|\x1b[31mred\x1b[0m boom|} colored;
   let hostile_line =
     with_renderer ~mode:`Verbose (fun r ->
         Report.result r
@@ -4694,7 +4697,7 @@ let test_mutation_armed_verdict () =
     "mutant survived: the armed site was evaluated 2 times and no test failed.\n"
     (survived 2)
 
-(* The GitHub Actions envelope: golden ::error annotation, %0A/%0D/%25
+(* The GitHub Actions envelope: golden ::error annotation, %0A/%25
    data encoding, %3A/%2C property encoding, ANSI stripping, group folding
    commands, and the run-level annotations block. *)
 
@@ -4709,7 +4712,8 @@ let test_github_golden () =
 let test_github_data_encoding () =
   let f = Failure.message "50% done\r\nnext: a,b" in
   let a = Report.annotation ~path:[ "t" ] f in
-  contains ~msg:"percent encoded first" ~sub:"50%25 done%0D%0A    next" a;
+  contains ~msg:"percent encoded first, a CR shown as the block shows it"
+    ~sub:"50%25 done\\x0d%0A    next" a;
   contains ~msg:"colons and commas untouched in message data" ~sub:"next: a,b" a;
   is_true ~msg:"annotation is one command line"
     (String.length a > 0

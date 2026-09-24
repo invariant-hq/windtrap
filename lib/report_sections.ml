@@ -280,48 +280,50 @@ let sanitize_name s =
     Buffer.contents buf
   end
 
-(* Failure projections *)
+(* Spans and the sink
 
-(* Comparison surfaces print the values a test produced, and a control byte
-   in one of those drives the terminal instead of appearing in the report:
-   ESC eats the label beside it and leaves the terminal coloured, CR
-   overwrites the line the reader needed, and a grep for the reported value
-   finds nothing. Every C0 byte and DEL therefore renders as a lowercase
-   [\xNN] escape — one rule, no mnemonics, so [\x] marks every escape a
-   reader sees — with LF and TAB the two exceptions, because line structure
-   and indentation ARE the layout the block is built from.
+   A line reaches its sink as spans, and the sink applies the style. A
+   report prints the values a test produced, the lines of its files and
+   the names it chose, and a control byte in one of those drives the
+   terminal instead of appearing in the report: ESC eats the label beside
+   it and leaves the terminal coloured, CR overwrites the line the reader
+   needed, and a grep for the reported value finds nothing. Windtrap's own
+   text holds no control byte, so the sink escapes every span
+   ([Text.escape_controls]) and thereby exactly what came from outside,
+   under both [ansi] settings. TAB is the one exception, because
+   indentation is the layout a block is built from; line structure is kept
+   by splitting a text into lines before it becomes spans.
 
    This is a projection, exactly like colour: equality, containment, and
-   baseline storage never see it. The transform is not injective — a value
-   holding the four characters [\x1b] renders like one holding the byte —
+   baseline storage never see it. The escape is not injective (a value
+   holding the four characters [\x1b] renders like one holding the byte),
    because the alternative is escaping the backslash, which would double
    every escape in the [%S] renderings that make up most of a transcript.
    Every structural decision (are the two renderings equal, do their line
    lists differ, which regions changed) is therefore made on the raw
-   values, and only the printed glyphs and their column arithmetic move
-   into escaped space.
+   values, and only the column arithmetic ([cols]) counts escaped glyphs. *)
+type span = { style : Pp.style option; text : string }
 
-   Distinct from [sanitize_name] above: a name has no line structure to
-   preserve, so it spells [\n] and [\t] out, and its ESC belongs to the
-   [ansi] policy rather than to this one. *)
-let control_byte c = (c < ' ' && c <> '\n' && c <> '\t') || c = '\127'
+let plain text = { style = None; text }
+let styled style text = { style = Some style; text }
 
-let show_controls s =
-  String.concat "\n"
-    (List.map Text.escape_controls (String.split_on_char '\n' s))
+let render ~ansi spans =
+  String.concat ""
+    (List.map
+       (fun { style; text } ->
+         let text = Text.escape_controls text in
+         match style with
+         | Some style -> Pp.styled_string ~ansi style text
+         | None -> text)
+       spans)
 
-(* [span], given in [s]'s byte coordinates, moved into those of
-   [show_controls s]. The escape is per byte and context-free, so escaping
-   a prefix and escaping the whole string agree on that prefix: the moved
-   span covers all four columns of every escape sequence it opened, which
-   is what keeps a [~~~] marker under the region it marks. *)
-let moved_span s ({ Diff.start; length } as span) =
-  if not (String.exists control_byte s) then span
-  else
-    {
-      Diff.start = String.length (show_controls (String.sub s 0 start));
-      length = String.length (show_controls (String.sub s start length));
-    }
+(* The columns of [text] as it prints: its code points once escaped. The
+   escape is per byte, so the columns of a prefix are those of the prefix
+   of the escaped text. *)
+let cols text = Text.length_utf8 (Text.escape_controls text)
+let width spans = List.fold_left (fun w { text; _ } -> w + cols text) 0 spans
+
+(* Failure projections *)
 
 (* The msg slot as displayed: a sub-case entry's [leaf › name] label
    (derived from the structured components — never sniffed from the text)
@@ -338,13 +340,11 @@ let labeled_msg (f : Failure.t) =
 (* Fact lines and the headline *)
 
 (* Plain quotes, not [%S]: a path's UTF-8 must not be byte-escaped, and
-   [sanitize_name] guards the line against control bytes as on every other
-   name surface. *)
+   its control bytes are the sink's to escape, as every text's are. *)
 let baseline_subject = function
   | Failure.Literal { exact = false } -> "expect"
   | Failure.Literal { exact = true } -> "expect_exact"
-  | Failure.File path ->
-      spf "expect_file \"%s\"" (sanitize_name (Os.display_path path))
+  | Failure.File path -> spf "expect_file \"%s\"" (Os.display_path path)
 
 (* A chain break and a plain miss answer the same question, the first in
    more words. *)
@@ -368,8 +368,9 @@ let diff_lines hunks =
   List.fold_left (fun acc h -> acc + 1 + List.length h.Diff.lines) 0 hunks
 
 (* The failure as one sentence after the label and the user's message,
-   line breaks and tabs turned into spaces, escape codes stripped. A diff
-   has no side short enough to quote and says how long it is. *)
+   line breaks and tabs turned into spaces. Any other control byte is left
+   to the escaping of the field that receives the sentence. A diff has no
+   side short enough to quote and says how long it is. *)
 let headline (f : Failure.t) =
   let fact =
     match f.kind with
@@ -453,10 +454,7 @@ let headline (f : Failure.t) =
   let line =
     String.map
       (function '\n' | '\r' | '\t' -> ' ' | c -> c)
-      (Text.strip_ansi
-         (match labeled_msg f with
-         | None -> fact
-         | Some msg -> msg ^ ": " ^ fact))
+      (match labeled_msg f with None -> fact | Some msg -> msg ^ ": " ^ fact)
   in
   let rec cut i chars =
     if i >= String.length line then line
@@ -467,23 +465,19 @@ let headline (f : Failure.t) =
   in
   cut 0 0
 
-(* [s] with the byte ranges [spans], ascending and disjoint, in [style]. *)
-let highlight ~ansi style s spans =
-  if (not ansi) || spans = [] then s
-  else begin
-    let buf = Buffer.create (String.length s + 16) in
-    let pos =
-      List.fold_left
-        (fun pos { Diff.start; length } ->
-          Buffer.add_string buf (String.sub s pos (start - pos));
-          Buffer.add_string buf
-            (Pp.styled_string ~ansi style (String.sub s start length));
-          start + length)
-        0 spans
-    in
-    Buffer.add_string buf (String.sub s pos (String.length s - pos));
-    Buffer.contents buf
-  end
+(* [s] as spans, the byte ranges [spans], ascending and disjoint, in
+   [style]. *)
+let highlight style s spans =
+  let pieces, pos =
+    List.fold_left
+      (fun (pieces, pos) { Diff.start; length } ->
+        ( styled style (String.sub s start length)
+          :: plain (String.sub s pos (start - pos))
+          :: pieces,
+          start + length ))
+      ([], 0) spans
+  in
+  List.rev (plain (String.sub s pos (String.length s - pos)) :: pieces)
 
 (* Whether colour shows [spans] of [s]: a span of spaces, or an empty one,
    has no glyph to colour. *)
@@ -494,7 +488,8 @@ let colour_shows s spans =
          String.for_all (fun c -> c = ' ') (String.sub s start length))
        spans)
 
-(* The [~~~] line under a plain string: one column per code point. *)
+(* The [~~~] line under [s] as it prints: one column per code point of its
+   escaped text. *)
 let marker_line s spans =
   if spans = [] then None
   else begin
@@ -502,8 +497,8 @@ let marker_line s spans =
     let col = ref 0 in
     List.iter
       (fun { Diff.start; length } ->
-        let scol = Text.length_utf8 (String.sub s 0 start) in
-        let width = max 1 (Text.length_utf8 (String.sub s start length)) in
+        let scol = cols (String.sub s 0 start) in
+        let width = max 1 (cols (String.sub s start length)) in
         if scol > !col then
           Buffer.add_string buf (String.make (scol - !col) ' ');
         Buffer.add_string buf (String.make width '~');
@@ -512,9 +507,9 @@ let marker_line s spans =
     Some (Buffer.contents buf)
   end
 
-(* Whether a [~] line under [s] lands under the code points it marks: a
-   code point past Latin Extended-B has no fixed width, and neither has a
-   tab unless the [~] line repeats it ([tabs]). *)
+(* Whether a [~] line under [s], an escaped text, lands under the code
+   points it marks: a code point past Latin Extended-B has no fixed width,
+   and neither has a tab unless the [~] line repeats it ([tabs]). *)
 let aligns ~tabs s =
   let rec scan i =
     i >= String.length s
@@ -555,7 +550,7 @@ let trailing_mark ~deleted ~inserted =
       else i
     in
     let shared = shared at in
-    let lead = show_controls (String.sub deleted 0 shared) in
+    let lead = Text.escape_controls (String.sub deleted 0 shared) in
     let marked =
       if String.length deleted > shared then String.length deleted - shared
       else String.length inserted - shared
@@ -573,8 +568,7 @@ let trailing_mark ~deleted ~inserted =
       Some (Buffer.contents buf, String.make marked '~')
 
 (* Hunks under a budget of [limit] lines, [@@] lines included. *)
-let pp_hunks ~ansi put ~ind ~limit hunks =
-  let st style s = Pp.styled_string ~ansi style s in
+let pp_hunks put ~ind ~limit hunks =
   let total = diff_lines hunks in
   let budget = ref limit in
   let emit line =
@@ -586,17 +580,17 @@ let pp_hunks ~ansi put ~ind ~limit hunks =
   let rec lines ~after_delete = function
     | [] -> ()
     | Diff.Keep s :: rest ->
-        emit (ind ^ "  " ^ show_controls s);
+        emit [ plain (ind ^ "  " ^ s) ];
         lines ~after_delete:false rest
     | Diff.Insert s :: rest ->
-        emit (ind ^ st `Red ("+ " ^ show_controls s));
+        emit [ plain ind; styled `Red ("+ " ^ s) ];
         lines ~after_delete:false rest
     | Diff.Delete s :: rest ->
         (* Green is the expected side and red the actual one, here as
            everywhere else, not the diff tool's red-for-removed: the sigils
            say which side is which, the colour carries the report's own
            meaning. *)
-        emit (ind ^ st `Green ("- " ^ show_controls s));
+        emit [ plain ind; styled `Green ("- " ^ s) ];
         let mark =
           match rest with
           | Diff.Insert inserted :: ([] | (Diff.Keep _ | Diff.Delete _) :: _)
@@ -608,7 +602,7 @@ let pp_hunks ~ansi put ~ind ~limit hunks =
            iff that line did, outside the budget. *)
         (match mark with
         | Some (pad, tildes) when !budget >= 0 ->
-            put (ind ^ "  " ^ pad ^ st `Red tildes)
+            put [ plain (ind ^ "  " ^ pad); styled `Red tildes ]
         | Some _ | None -> ());
         lines ~after_delete:true rest
   in
@@ -620,21 +614,26 @@ let pp_hunks ~ansi put ~ind ~limit hunks =
   List.iter
     (fun (h : Diff.hunk) ->
       emit
-        (ind
-        ^ st `Faint
+        [
+          plain ind;
+          styled `Faint
             (spf "@@ -%s +%s @@"
                (range h.expected_start h.expected_count)
-               (range h.actual_start h.actual_count)));
+               (range h.actual_start h.actual_count));
+        ];
       lines ~after_delete:false h.lines)
     hunks;
   if total > limit then
-    put (ind ^ st `Faint (spf "\u{2026} (+%d more diff lines)" (total - limit)))
+    put
+      [
+        plain ind;
+        styled `Faint (spf "\u{2026} (+%d more diff lines)" (total - limit));
+      ]
 
 (* A single-line value as it prints: its middle elided past
-   [max_value_bytes], cut in the carried bytes so the count is theirs, and
-   the control bytes of what is left escaped. *)
+   [max_value_bytes], cut in the carried bytes so the count is theirs. *)
 let elided s = String.length s > max_value_bytes
-let shown s = Text.elide_middle max_value_bytes ~show:show_controls s
+let shown s = Text.elide_middle max_value_bytes ~show:Fun.id s
 
 (* A located source line as a block shows it, the gutter and what follows
    it: dedented, and printed as a single-line value is, a file's bytes
@@ -643,32 +642,32 @@ let source_excerpt line text =
   ( spf "%d \u{2502}" line,
     match String.trim text with "" -> "" | text -> " " ^ shown text )
 
-(* What changed in [s], a value printed [lead] columns into its line. With
-   colour the spans are [style]d inside the plain value and no [~] line
-   prints, unless colour cannot show one of them; without it a [~] line
-   marks them, when [aligned]. *)
-let pp_marked ~ansi put ~lead ~aligned ~style ~before s spans =
+(* What changed in [s], a value printed after [before]. With colour the
+   spans are [style]d inside the plain value and no [~] line prints, unless
+   colour cannot show one of them; without it a [~] line marks them, when
+   [aligned]. *)
+let pp_marked ~ansi put ~aligned ~style ~before s spans =
   let tildes = (not ansi) || not (colour_shows s spans) in
-  put (before ^ highlight ~ansi style s spans);
+  put (before @ highlight style s spans);
   if tildes && aligned then
     Option.iter
       (fun m ->
         let at = String.index m '~' in
         put
-          (String.make (lead + at) ' '
-          ^ Pp.styled_string ~ansi style
-              (String.sub m at (String.length m - at))))
+          [
+            plain (String.make (width before + at) ' ');
+            styled style (String.sub m at (String.length m - at));
+          ])
       (marker_line s spans)
 
-(* Two single-line renderings under their anchors. Refinement ran against
-   the raw values and the spans are drawn against the escaped ones. A pair
+(* Two single-line renderings under their anchors. Refinement runs
+   against the raw values, and the sink escapes what the spans cut. A pair
    that does not refine prints each side whole in its colour: so does one
    whose anchors already state the difference ([marked] is off), and one
    with an elided side, which has no columns left to mark. *)
 let pp_sides ~ansi put ~ind ~anchors:(expected_anchor, actual_anchor) ~marked
     ~expected ~actual =
-  let st style s = Pp.styled_string ~ansi style s in
-  let width =
+  let gutter =
     2 + max (String.length expected_anchor) (String.length actual_anchor)
   in
   let marked = marked && not (elided expected || elided actual) in
@@ -676,48 +675,60 @@ let pp_sides ~ansi put ~ind ~anchors:(expected_anchor, actual_anchor) ~marked
     match if marked then Diff.refine ~expected ~actual else None with
     | None -> ([], [])
     | Some { Diff.expected_spans; actual_spans } ->
-        ( List.map (moved_span expected) expected_spans,
-          List.map (moved_span actual) actual_spans )
+        (expected_spans, actual_spans)
   in
   let refined = expected_spans <> [] || actual_spans <> [] in
   let expected = shown expected and actual = shown actual in
-  let aligned = aligns ~tabs:false expected && aligns ~tabs:false actual in
+  let aligned =
+    aligns ~tabs:false (Text.escape_controls expected)
+    && aligns ~tabs:false (Text.escape_controls actual)
+  in
   let side anchor ~whole ~span value spans =
     let before =
-      ind ^ st `Faint anchor ^ String.make (width - String.length anchor) ' '
+      [
+        plain ind;
+        styled `Faint anchor;
+        plain (String.make (gutter - String.length anchor) ' ');
+      ]
     in
-    if refined then
-      pp_marked ~ansi put
-        ~lead:(String.length ind + width)
-        ~aligned ~style:span ~before value spans
-    else put (before ^ st whole value)
+    if refined then pp_marked ~ansi put ~aligned ~style:span ~before value spans
+    else put (before @ [ styled whole value ])
   in
   side expected_anchor ~whole:`Green ~span:`Bold_green expected expected_spans;
   side actual_anchor ~whole:`Red ~span:`Bold_red actual actual_spans
 
 let pp_eq ~ansi put ~ind ~expected ~actual =
-  let st style s = Pp.styled_string ~ansi style s in
   if String.equal expected actual then begin
     (* The equality told the values apart and their printer did not
        ([equal float nan nan], a lossy pp). Decided on the raw renderings:
        escaping merges values it cannot tell apart, and a pair the printer
        did distinguish must never be reported as one it did not. *)
     if String.contains expected '\n' then begin
-      put (ind ^ st `Faint "both sides render as:");
+      put [ plain ind; styled `Faint "both sides render as:" ];
       List.iter
-        (fun l -> put (ind ^ "  " ^ l))
-        (Text.split_lines (show_controls expected))
+        (fun l -> put [ plain (ind ^ "  " ^ l) ])
+        (Text.split_lines expected)
     end
-    else put (ind ^ st `Faint "both sides render as:" ^ " " ^ shown expected);
-    put (ind ^ st `Faint "the printer shows less than the equality compares")
+    else
+      put
+        [
+          plain ind;
+          styled `Faint "both sides render as:";
+          plain (" " ^ shown expected);
+        ];
+    put
+      [
+        plain ind;
+        styled `Faint "the printer shows less than the equality compares";
+      ]
   end
   else if String.contains expected '\n' || String.contains actual '\n' then
     begin match Diff.hunks ~expected ~actual () with
-    | [] -> put (ind ^ newline_fact ~expected ~actual)
+    | [] -> put [ plain (ind ^ newline_fact ~expected ~actual) ]
     | hunks ->
-        put (ind ^ st `Faint "--- expected");
-        put (ind ^ st `Faint "+++ actual");
-        pp_hunks ~ansi put ~ind ~limit:max_diff_lines hunks
+        put [ plain ind; styled `Faint "--- expected" ];
+        put [ plain ind; styled `Faint "+++ actual" ];
+        pp_hunks put ~ind ~limit:max_diff_lines hunks
     end
   else
     pp_sides ~ansi put ~ind ~anchors:("expected", "actual") ~marked:true
@@ -725,19 +736,17 @@ let pp_eq ~ansi put ~ind ~expected ~actual =
 
 (* A rendering under the sentence or the anchor that names it: a block,
    each line in [style], so that no style spans a line. *)
-let pp_value_block ~ansi put ~ind style value =
-  let st style s = Pp.styled_string ~ansi style s in
+let pp_value_block put ~ind style value =
   if String.contains value '\n' then
     List.iter
-      (fun l -> put (ind ^ "  " ^ st style l))
-      (Text.split_lines (show_controls value))
-  else put (ind ^ "  " ^ st style (shown value))
+      (fun l -> put [ plain (ind ^ "  "); styled style l ])
+      (Text.split_lines value)
+  else put [ plain (ind ^ "  "); styled style (shown value) ]
 
 (* The sides of a [raises] that named its exception; [actual] is [None]
    when nothing was raised. The anchors state the difference, so nothing is
    marked; a rendering that spans lines is a block under its anchor. *)
 let pp_raise ~ansi put ~ind ~expected ~actual =
-  let st style s = Pp.styled_string ~ansi style s in
   let spans_lines s = String.contains s '\n' in
   match actual with
   | Some actual when not (spans_lines expected || spans_lines actual) ->
@@ -745,22 +754,25 @@ let pp_raise ~ansi put ~ind ~expected ~actual =
         ~anchors:("expected exception", "raised")
         ~marked:false ~expected ~actual
   | Some _ | None ->
-      let width = 2 + String.length "expected exception" in
+      let gutter = 2 + String.length "expected exception" in
       let side anchor style value =
         if spans_lines value then begin
-          put (ind ^ st `Faint (anchor ^ ":"));
-          pp_value_block ~ansi put ~ind style value
+          put [ plain ind; styled `Faint (anchor ^ ":") ];
+          pp_value_block put ~ind style value
         end
         else
           put
-            (ind ^ st `Faint anchor
-            ^ String.make (width - String.length anchor) ' '
-            ^ st style (shown value))
+            [
+              plain ind;
+              styled `Faint anchor;
+              plain (String.make (gutter - String.length anchor) ' ');
+              styled style (shown value);
+            ]
       in
       side "expected exception" `Green expected;
       begin match actual with
       | Some actual -> side "raised" `Red actual
-      | None -> put (ind ^ "but no exception was raised")
+      | None -> put [ plain (ind ^ "but no exception was raised") ]
       end
 
 (* The phase tag: on its own line when the failure has no location. *)
@@ -773,23 +785,19 @@ let phase_tag (f : Failure.t) =
 
 let rec pp_gen ~ansi ~excerpt ~inner ~hints:hinted ~filter ~invocation ~armed
     ~ind ppf (f : Failure.t) =
-  let st style s = Pp.styled_string ~ansi style s in
-  (* Payload strings from a user pp may carry escape codes: under
-     [ansi:false] every line is stripped at the sink. *)
-  let put line =
-    Pp.pf ppf "%s@\n" (if ansi then line else Text.strip_ansi line)
-  in
-  let put_ind line = put (ind ^ line) in
+  let put spans = Pp.pf ppf "%s@\n" (render ~ansi spans) in
+  let put_ind spans = put (plain ind :: spans) in
+  let put_text line = put_ind [ plain line ] in
   let put_block s =
-    List.iter (fun line -> put_ind ("  " ^ line)) (Text.split_lines s)
+    List.iter (fun line -> put_text ("  " ^ line)) (Text.split_lines s)
   in
   (match
-     Option.to_list (Option.map (st `Yellow) (phase_tag f))
-     @ Option.to_list
-         (Option.map (fun loc -> st `Faint (Loc.to_string loc)) f.loc)
+     ( Option.map (styled `Yellow) (phase_tag f),
+       Option.map (fun loc -> styled `Faint (Loc.to_string loc)) f.loc )
    with
-  | [] -> ()
-  | parts -> put_ind (String.concat " " parts));
+  | None, None -> ()
+  | Some part, None | None, Some part -> put_ind [ part ]
+  | Some tag, Some loc -> put_ind [ tag; plain " "; loc ]);
   (* The located source line is best effort. The blank line after it
      closes a block's head; an inner entry has none. *)
   (match f.loc with
@@ -797,30 +805,26 @@ let rec pp_gen ~ansi ~excerpt ~inner ~hints:hinted ~filter ~invocation ~armed
       Option.iter
         (fun text ->
           let gutter, text = source_excerpt line text in
-          put_ind ("  " ^ st `Faint gutter ^ text);
-          if not inner then put "")
+          put_ind [ plain "  "; styled `Faint gutter; plain text ];
+          if not inner then put [])
         (source_line file line)
   | Some _ | None -> ());
   (match f.subtest with
   | [] -> ()
-  | [ leaf ] -> put_ind (st `Faint "subtest" ^ "   " ^ sanitize_name leaf)
+  | [ leaf ] -> put_ind [ styled `Faint "subtest"; plain ("   " ^ leaf) ]
   | _ :: names ->
       put_ind
-        (st `Faint "subtest" ^ "   "
-        ^ sanitize_name (Test_tree.path_to_string names)));
-  Option.iter
-    (fun msg ->
-      List.iter
-        (fun line -> put_ind (sanitize_name line))
-        (Text.split_lines msg))
-    f.msg;
+        [
+          styled `Faint "subtest"; plain ("   " ^ Test_tree.path_to_string names);
+        ]);
+  Option.iter (fun msg -> List.iter put_text (Text.split_lines msg)) f.msg;
   (match f.kind with
   | Failure.Equality { not_ = true; expected; _ } ->
       if String.contains expected '\n' then begin
-        put_ind "both sides equal:";
-        put_block (show_controls expected)
+        put_text "both sides equal:";
+        put_block expected
       end
-      else put_ind (spf "both sides equal: %s" (shown expected))
+      else put_text (spf "both sides equal: %s" (shown expected))
   | Failure.Equality { expected = claim; actual = value; diffable = false; _ }
     ->
       (* A claim is a description, not a rendering: never diff or refine the
@@ -828,12 +832,15 @@ let rec pp_gen ~ansi ~excerpt ~inner ~hints:hinted ~filter ~invocation ~armed
          which, and that is as true of a description as of a value, and so is
          visibility: a [~claim] may be built around a rendered bound
          ([greater than <x>]). *)
-      put_ind (st `Faint "expected" ^ "  " ^ st `Green (shown claim));
+      put_ind
+        [ styled `Faint "expected"; plain "  "; styled `Green (shown claim) ];
       if String.contains value '\n' then begin
-        put_ind (st `Faint "actual:");
-        pp_value_block ~ansi put ~ind `Red value
+        put_ind [ styled `Faint "actual:" ];
+        pp_value_block put ~ind `Red value
       end
-      else put_ind (st `Faint "actual" ^ "    " ^ st `Red (shown value))
+      else
+        put_ind
+          [ styled `Faint "actual"; plain "    "; styled `Red (shown value) ]
   | Failure.Equality { expected; actual; _ } ->
       pp_eq ~ansi put ~ind ~expected ~actual
   | Failure.Containment
@@ -852,23 +859,27 @@ let rec pp_gen ~ansi ~excerpt ~inner ~hints:hinted ~filter ~invocation ~armed
          broke it has its own line: the rest of the block is about it. *)
       (match demand with
       | Failure.Ordered { index; _ } ->
-          put_ind (st `Faint "element" ^ "   " ^ string_of_int index)
+          put_ind
+            [ styled `Faint "element"; plain ("   " ^ string_of_int index) ]
       | Failure.Anywhere -> ());
       (* [%S] is [String.escaped] between quotes, OCaml's decimal escapes.
          An elided needle is cut in its carried bytes and each end escaped:
          a cut in the quoted text would split an escape and count its
          digits. *)
       put_ind
-        (st `Faint "needle" ^ "    \""
-        ^ Text.elide_middle max_value_bytes ~show:String.escaped needle
-        ^ "\": "
-        ^ containment_verdict ~demand ~found_at);
+        [
+          styled `Faint "needle";
+          plain
+            ("    \""
+            ^ Text.elide_middle max_value_bytes ~show:String.escaped needle
+            ^ "\": "
+            ^ containment_verdict ~demand ~found_at);
+        ];
       (* The occurrence's byte range inside the excerpt, when it is there to
          mark: a failed [not_contains] window always contains it, and an
          out-of-order chain break carries one that a cursor-anchored window
          may have left behind, hence the bounds test. The span is the
-         payload's, in raw bytes, moved into display coordinates where it
-         is drawn. *)
+         payload's, in raw bytes, as every span is. *)
       let occurrence =
         match found_at with
         | None -> None
@@ -882,27 +893,26 @@ let rec pp_gen ~ansi ~excerpt ~inner ~hints:hinted ~filter ~invocation ~armed
       in
       (* The occurrence is marked as a changed span is ([pp_marked]); the
          excerpt is the evidence and prints whole. *)
-      let haystack ~before ~lead line spans =
-        let shown = show_controls line in
+      let haystack ~before line spans =
         pp_marked ~ansi put
-          ~lead:(String.length ind + lead)
-          ~aligned:(aligns ~tabs:false shown) ~style:`Bold_red
-          ~before:(ind ^ before) shown
-          (List.map (moved_span line) spans)
+          ~aligned:(aligns ~tabs:false (Text.escape_controls line))
+          ~style:`Bold_red ~before:(plain ind :: before) line spans
       in
       if not (String.contains excerpt '\n') then
         haystack
-          ~before:(st `Faint "haystack" ^ "  ")
-          ~lead:10 excerpt
+          ~before:[ styled `Faint "haystack"; plain "  " ]
+          excerpt
           (Option.to_list occurrence)
       else begin
-        put_ind (st `Faint "haystack:");
+        put_ind [ styled `Faint "haystack:" ];
         (* [offset] is the line's first byte within the excerpt; an
            occurrence that spans lines is marked on its first. *)
         ignore
           (List.fold_left
              (fun offset line ->
-               haystack ~before:"  " ~lead:2 line
+               haystack
+                 ~before:[ plain "  " ]
+                 line
                  (match occurrence with
                  | Some { Diff.start; length }
                    when start >= offset && start < offset + String.length line
@@ -924,16 +934,18 @@ let rec pp_gen ~ansi ~excerpt ~inner ~hints:hinted ~filter ~invocation ~armed
         || excerpt_offset + String.length excerpt < haystack_length
       then
         put_ind
-          (st `Faint
-             (spf "(excerpt: bytes %d-%d of a %d-byte haystack)" excerpt_offset
-                (excerpt_offset + String.length excerpt - 1)
-                haystack_length))
+          [
+            styled `Faint
+              (spf "(excerpt: bytes %d-%d of a %d-byte haystack)" excerpt_offset
+                 (excerpt_offset + String.length excerpt - 1)
+                 haystack_length);
+          ]
   | Failure.Raise { expected; actual; predicate; backtrace; message_diff } -> (
       (match (message_diff, expected, actual) with
       | Some { Failure.constructor; expected_message; actual_message }, _, _ ->
           (* Right constructor, wrong payload: the messages are compared,
              the constructor said once. *)
-          put_ind (spf "raised %s with the wrong message:" constructor);
+          put_text (spf "raised %s with the wrong message:" constructor);
           pp_eq ~ansi put ~ind
             ~expected:(spf "%S" expected_message)
             ~actual:(spf "%S" actual_message)
@@ -941,51 +953,54 @@ let rec pp_gen ~ansi ~excerpt ~inner ~hints:hinted ~filter ~invocation ~armed
       | None, None, Some actual ->
           (* [predicate] tells a [raises_match] rejection from a test body's
              escape: the two demand different reactions. *)
-          put_ind
+          put_text
             (if predicate then
                "raised exception does not satisfy the predicate:"
              else "uncaught exception:");
-          pp_value_block ~ansi put ~ind `Red actual
-      | None, None, None -> put_ind "expected an exception, but none was raised");
+          pp_value_block put ~ind `Red actual
+      | None, None, None ->
+          put_text "expected an exception, but none was raised");
       match backtrace with
       | Some bt ->
           let frames = Text.split_lines bt in
-          List.iter (fun l -> put_ind (st `Faint l)) (take max_lines frames);
+          List.iter
+            (fun l -> put_ind [ styled `Faint l ])
+            (take max_lines frames);
           let more = List.length frames - max_lines in
           if more > 0 then
-            put_ind (st `Faint (spf "\u{2026} (+%d more frames)" more))
+            put_ind [ styled `Faint (spf "\u{2026} (+%d more frames)" more) ]
       | None -> ())
   | Failure.Baseline { baseline; state; withheld = _ } -> (
       let subject = baseline_subject baseline in
       match state with
       | Failure.Missing { proposed } ->
-          put_ind (subject ^ ": no baseline");
+          put_text (subject ^ ": no baseline");
           (* The file does not exist: its proposed text is all [+] and has
              no hunk to head. *)
-          let lines = Text.split_lines (show_controls proposed) in
+          let lines = Text.split_lines proposed in
           let n = List.length lines in
-          put_ind (spf "proposed (%d line%s):" n (if n = 1 then "" else "s"));
+          put_text (spf "proposed (%d line%s):" n (if n = 1 then "" else "s"));
           List.iter
-            (fun l -> put_ind ("  " ^ st `Red ("+ " ^ l)))
+            (fun l -> put_ind [ plain "  "; styled `Red ("+ " ^ l) ])
             (take max_proposed_lines lines);
           if n > max_proposed_lines then
             put_ind
-              ("  "
-              ^ st `Faint
-                  (spf "\u{2026} (+%d more lines)" (n - max_proposed_lines)))
+              [
+                plain "  ";
+                styled `Faint
+                  (spf "\u{2026} (+%d more lines)" (n - max_proposed_lines));
+              ]
       | Failure.Mismatch { expected; actual } -> (
-          put_ind (subject ^ ": mismatch");
+          put_text (subject ^ ": mismatch");
           match Diff.hunks ~expected ~actual () with
-          | [] -> put_ind (newline_fact ~expected ~actual)
-          | hunks -> pp_hunks ~ansi put ~ind ~limit:max_diff_lines hunks)
+          | [] -> put_text (newline_fact ~expected ~actual)
+          | hunks -> pp_hunks put ~ind ~limit:max_diff_lines hunks)
       | Failure.Unresolvable { candidate } ->
-          put_ind
+          put_text
             (subject
            ^ ": the path cannot be proven to lie under the project root");
-          put_ind
-            (spf "unverified path: %s"
-               (sanitize_name (Os.display_path candidate)));
-          put_ind
+          put_text (spf "unverified path: %s" (Os.display_path candidate));
+          put_text
             "(set WINDTRAP_PROJECT_ROOT to the directory the path is relative \
              to)")
   | Failure.Property
@@ -1013,65 +1028,68 @@ let rec pp_gen ~ansi ~excerpt ~inner ~hints:hinted ~filter ~invocation ~armed
       in
       (* A summarized counterexample is a table: the summary takes the
          value's place on the head, and the header row is structure. *)
-      (match (summary, Text.split_lines (show_controls rendered)) with
+      (match (summary, Text.split_lines rendered) with
       | Some summary, header :: rows ->
-          put_ind (head ^ " " ^ shown summary);
-          put_ind ("  " ^ st `Faint header);
-          List.iter (fun row -> put_ind ("  " ^ row)) rows
-      | Some _, [] | None, ([] | [ _ ]) -> put_ind (head ^ " " ^ shown rendered)
+          put_text (head ^ " " ^ shown summary);
+          put_ind [ plain "  "; styled `Faint header ];
+          List.iter (fun row -> put_text ("  " ^ row)) rows
+      | Some _, [] | None, ([] | [ _ ]) -> put_text (head ^ " " ^ shown rendered)
       | None, (_ :: _ :: _ as lines) ->
-          put_ind head;
-          List.iter (fun line -> put_ind ("  " ^ line)) lines);
+          put_text head;
+          List.iter (fun line -> put_text ("  " ^ line)) lines);
       (match rendering with
       | Failure.Value -> ()
       | Failure.Pre_image ->
           put_ind
-            ("  "
-            ^ st `Faint
+            [
+              plain "  ";
+              styled `Faint
                 "(the value has no printer, so this is the input that map and \
-                 bind");
+                 bind";
+            ];
           put_ind
-            ("  "
-            ^ st `Faint
+            [
+              plain "  ";
+              styled `Faint
                 " computed it from; attach a printer with Gen.with_pp to see \
-                 the value)"));
+                 the value)";
+            ]);
       (* What is reported is the best the search got to. [%gs] is the
          runner's [timed out after %gs], so one grep finds both. *)
       (match shrink_end with
       | Failure.Timed_out limit ->
-          put_ind
+          put_text
             (spf
                "timed out after %gs while shrinking; counterexample may not be \
                 minimal"
                limit)
       | Failure.Budget_spent ->
-          put_ind
+          put_text
             (spf
                "shrinking stopped after %d steps; counterexample may not be \
                 minimal"
                shrink_steps)
       | Failure.Candidate_raised text ->
           (* Two lines: the exception is the user's text, of any length. *)
-          put_ind
+          put_text
             (spf "shrinking stopped after %d steps: a candidate raised %s"
                shrink_steps text);
-          put_ind "counterexample may not be minimal"
+          put_text "counterexample may not be minimal"
       | Failure.Converged -> ());
       (* An inner failure raised in tail position has no site: [at:] over
          no location would misread. *)
       match inner_failure with
       | Some i ->
-          put_ind
+          put_text
             (match i.Failure.loc with
             | Some _ -> "which failed at:"
             | None -> "which failed with:");
           pp_gen ~ansi ~excerpt ~inner:true ~hints:false ~filter ~invocation
             ~armed ~ind:(ind ^ "  ") ppf i
       | None -> ())
-  | Failure.Message "" -> put_ind "(empty failure message)"
-  | Failure.Message m ->
-      List.iter (fun line -> put_ind line) (Text.split_lines m));
-  if hinted then List.iter put_ind (hints ?armed ~invocation ~filter [ f ])
+  | Failure.Message "" -> put_text "(empty failure message)"
+  | Failure.Message m -> List.iter put_text (Text.split_lines m));
+  if hinted then List.iter put_text (hints ?armed ~invocation ~filter [ f ])
 
 let pp_failure ~ansi ?(excerpt = false) ?(hints = true) ?filter
     ?(invocation = `Mirrors) ?armed ppf f =
@@ -1093,15 +1111,11 @@ let is_subtest_failure (f : Failure.t) = f.Failure.subtest <> []
    line has two drawers: [source_excerpt] for a failure block and a
    survivor block, [excerpt] for the coverage source view alone. *)
 
-(* The sink: where sections print and whether they style. With
-   [ansi:false] every line is stripped at the sink, so escape codes
-   arriving inside payload strings never reach a plain transcript. *)
+(* The sink: where sections print and whether they style. *)
 type sink = { out : Format.formatter; ansi : bool }
 
-let put k line =
-  Pp.pf k.out "%s@\n" (if k.ansi then line else Text.strip_ansi line)
-
-let st k style s = Pp.styled_string ~ansi:k.ansi style s
+let put_line k line = Pp.pf k.out "%s@\n" line
+let put k spans = put_line k (render ~ansi:k.ansi spans)
 
 let rule ~width = function
   | None -> dashes width
@@ -1118,16 +1132,7 @@ let rstrip s =
   done;
   String.sub s 0 !n
 
-type span = { style : Pp.style option; text : string }
-
-let plain text = { style = None; text }
-let styled style text = { style = Some style; text }
-
-let span_str k { style; text } =
-  match style with None -> text | Some style -> st k style text
-
-let line_str k spans = String.concat "" (List.map (span_str k) spans)
-let pad width s = s ^ String.make (max 0 (width - Text.length_utf8 s)) ' '
+let pad n s = s ^ String.make (max 0 (n - cols s)) ' '
 
 type column = { gap : string; align : [ `Left | `Right ]; width : int option }
 
@@ -1220,23 +1225,29 @@ type excerpt = { source : string; marked_lines : int list }
    test's are: they print as a failure block's source line does. *)
 let excerpt k e =
   let regions = excerpts ~source:e.source e.marked_lines in
-  let width =
+  let digits =
     List.fold_left
       (List.fold_left (fun w l ->
            max w (String.length (string_of_int l.number))))
       4 regions
   in
-  let gutter marked = if marked then st k `Red "  \u{258c}" else "   " in
+  let gutter marked =
+    if marked then styled `Red "  \u{258c}" else plain "   "
+  in
   List.iteri
     (fun i region ->
       if i > 0 then
-        put k (st k `Faint "   \u{00b7}\u{00b7}\u{00b7}\u{00b7}\u{00b7}");
+        put k [ styled `Faint "   \u{00b7}\u{00b7}\u{00b7}\u{00b7}\u{00b7}" ];
       List.iter
         (fun l ->
-          put k
+          put_line k
             (rstrip
-               (spf "%s%*d \u{2502} %s" (gutter l.marked) width l.number
-                  (show_controls l.text))))
+               (render ~ansi:k.ansi
+                  [
+                    gutter l.marked;
+                    plain (spf "%*d \u{2502} " digits l.number);
+                    plain l.text;
+                  ])))
         region)
     regions
 
@@ -1250,8 +1261,6 @@ type section =
   | Excerpt of excerpt
   | Rule of string option
 
-let span_width (s : span) = Text.length_utf8 s.text
-
 (* Padding sits outside a styled cell, and the rendered row is stripped of
    trailing spaces after styling, so a row whose last cell is empty sheds
    the padding before it. *)
@@ -1262,7 +1271,7 @@ let put_rows k ~margin ~columns rows =
         List.fold_left
           (fun w cells ->
             match List.nth_opt cells i with
-            | Some cell -> max w (span_width cell)
+            | Some cell -> max w (width [ cell ])
             | None -> w)
           (Option.value c.width ~default:0)
           rows)
@@ -1270,30 +1279,32 @@ let put_rows k ~margin ~columns rows =
   in
   List.iter
     (fun cells ->
-      let buf = Buffer.create 80 in
-      Buffer.add_string buf margin;
-      List.iteri
-        (fun i cell ->
-          match (List.nth_opt columns i, List.nth_opt widths i) with
-          | Some c, Some width ->
-              Buffer.add_string buf c.gap;
-              let pad = String.make (max 0 (width - span_width cell)) ' ' in
-              let text = span_str k cell in
-              Buffer.add_string buf
-                (match c.align with
-                | `Right -> pad ^ text
-                | `Left -> text ^ pad)
-          | _, _ -> ())
-        cells;
-      put k (rstrip (Buffer.contents buf)))
+      let line =
+        List.concat
+          (List.mapi
+             (fun i cell ->
+               match (List.nth_opt columns i, List.nth_opt widths i) with
+               | Some c, Some w ->
+                   let pad =
+                     plain (String.make (max 0 (w - width [ cell ])) ' ')
+                   in
+                   plain c.gap
+                   ::
+                   (match c.align with
+                   | `Right -> [ pad; cell ]
+                   | `Left -> [ cell; pad ])
+               | _, _ -> [])
+             cells)
+      in
+      put_line k (rstrip (render ~ansi:k.ansi (plain margin :: line))))
     rows
 
 let render_section k = function
-  | Line spans -> put k (line_str k spans)
-  | Hint line -> put k line
+  | Line spans -> put k spans
+  | Hint line -> put k [ plain line ]
   | Rows { margin; columns; rows } -> put_rows k ~margin ~columns rows
   | Excerpt e -> excerpt k e
-  | Rule label -> put k (st k `Faint (rule ~width:rule_width label))
+  | Rule label -> put k [ styled `Faint (rule ~width:rule_width label) ]
 
 let print ~out ~ansi sections =
   let k = { out; ansi } in
@@ -1358,8 +1369,7 @@ let coverage_report ~mode ~min (c : coverage) =
     max (String.length "points") (visited_width + 1 + total_width)
   in
   let file_width =
-    max (String.length "file")
-      (widest (fun (f : coverage_file) -> Text.length_utf8 f.file))
+    max (String.length "file") (widest (fun (f : coverage_file) -> cols f.file))
   in
   (* A row after its eight columns of margin and percentage. *)
   let lead ~points ~file =
@@ -1542,7 +1552,7 @@ let survivor_block ~exe_width (s : survivor) =
         let left gap width = { gap; align = `Left; width } in
         let test (w : witness) =
           [
-            plain (sanitize_name w.test);
+            plain w.test;
             styled `Faint
               (match w.loc with Some loc -> Loc.to_string loc | None -> "");
           ]
@@ -1618,9 +1628,7 @@ let unreached_section unreached =
         max w (String.length (string_of_int (List.length (lines_of file)))))
       0 files
   in
-  let file_width =
-    List.fold_left (fun w file -> max w (Text.length_utf8 file)) 0 files
-  in
+  let file_width = List.fold_left (fun w file -> max w (cols file)) 0 files in
   let lead file = spf "  %s   lines " (pad file_width file) in
   let row file =
     let lines = lines_of file in
@@ -1669,7 +1677,7 @@ let mutation_report ~invocation (m : mutation) =
       Some
         (List.fold_left
            (fun width (w : witness) ->
-             max width (Text.length_utf8 (Option.value w.exe ~default:"")))
+             max width (cols (Option.value w.exe ~default:"")))
            0 witnesses)
     else None
   in

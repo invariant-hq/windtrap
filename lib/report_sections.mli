@@ -37,10 +37,10 @@ val headline : Failure.t -> string
 (** [headline f] is [f] as one unstyled sentence, for a field that holds a
     single line. It is [labeled_msg f] and [": "] when there is one, then one
     clause for the facts of [f.kind], which {!pp_failure} prints in full. Line
-    feeds, carriage returns and tabs become spaces, and escape sequences are
-    stripped. Past 80 code points ([max_headline_chars]) the sentence is cut and
-    ends in an ellipsis. Any other control byte is left to the escaping of the
-    field that receives the sentence. *)
+    feeds, carriage returns and tabs become spaces. Past 80 code points
+    ([max_headline_chars]) the sentence is cut and ends in an ellipsis. Any
+    other control byte is left to the escaping of the field that receives the
+    sentence. *)
 
 val is_subtest_failure : Failure.t -> bool
 (** [is_subtest_failure f] is [true] iff [f.subtest] is not empty, that is iff
@@ -66,8 +66,8 @@ val pp_failure :
   Format.formatter ->
   Failure.t ->
   unit
-(** [pp_failure ~ansi ppf f] formats the entry of [f] on [ppf], styled iff
-    [ansi]. The entry ends with a newline and holds, in this order:
+(** [pp_failure ~ansi ppf f] formats the entry of [f] on [ppf], each line
+    through {!render}. The entry ends with a newline and holds, in this order:
     - the location of [f], with its phase before it when [f.phase] is not
       {!Failure.Body}. The phase stands alone when [f] has no location.
     - under [~excerpt:true], the source line at that location and a blank line.
@@ -154,15 +154,10 @@ val pp_failure :
     and is never marked. {!Text.elide_middle} makes the cut, before any
     escaping.
 
-    Compared data and source lines print each C0 control byte and DEL as a
-    lowercase [\xNN] escape, LF and TAB excepted, under both [ansi] settings. A
-    needle and the messages of a [message_diff] carry OCaml's escapes instead.
-    The escape is a projection, which equality, containment and baseline storage
-    never see.
-
-    [f.msg] and the subtest names print as a name does ({!sanitize_name}), while
-    the text of a message and a backtrace go through neither escape. In all four
-    an escape sequence passes under [ansi] and is stripped without it. *)
+    A text of several lines prints line by line, and every line of the entry is
+    escaped by {!render}. A needle and the messages of a [message_diff] carry
+    OCaml's escapes before that. The escape is a projection, which equality,
+    containment and baseline storage never see. *)
 
 val max_lines : int
 (** [max_lines] is [10], the bound on the two texts of a block that have no
@@ -216,15 +211,7 @@ val release_title : string
 
 val sanitize_name : string -> string
 (** [sanitize_name s] is [s] with each C0 control byte and DEL escaped, ESC
-    excepted: LF, TAB and CR by their OCaml names, the others as [\xNN]. This
-    module prints through it the subtest names and the lines of [f.msg] of an
-    entry, the path of a file baseline and the name of a reaching test. The
-    strings that do not go through it are named where they print, at
-    {!Report.create}, {!type:coverage_file}, {!type:witness}, {!type:mutant} and
-    {!type:mutation}. A name has no line structure to keep, so its LF and TAB
-    are escaped where those of compared data are not ({!pp_failure}). ESC is
-    left to the sink, which strips escape sequences under [ansi:false] and
-    passes them under [ansi:true]. *)
+    excepted: LF, TAB and CR by their OCaml names, the others as [\xNN]. *)
 
 val shell_word : string -> string
 (** [shell_word s] is [s] as one word of a shell command line. It is [s] itself
@@ -244,13 +231,23 @@ val shell_word : string -> string
 
 type span = { style : Pp.style option; text : string }
 (** The type for a run of text under one style, or under none. Styles do not
-    nest ({!Pp.style}), so a line is a flat list of spans. *)
+    nest ({!Pp.style}), so a line is a flat list of spans. [text] is any bytes,
+    a test's included: it prints through {!Text.escape_controls}, so a span
+    shows its bytes and never drives the terminal. *)
 
 val plain : string -> span
 (** [plain text] is [text] unstyled. *)
 
 val styled : Pp.style -> string -> span
 (** [styled style text] is [text] under [style]. *)
+
+val render : ansi:bool -> span list -> string
+(** [render ~ansi l] is [l] as one line: each text escaped, then styled iff
+    [ansi]. Every line that this module formats goes through it. *)
+
+val width : span list -> int
+(** [width l] is the columns of [l] as it prints, in code points, escapes
+    counted. Every padding and every [~] line of this module is measured so. *)
 
 type column = { gap : string; align : [ `Left | `Right ]; width : int option }
 (** The type for a column of {!Rows}. [gap] is the text before each cell,
@@ -282,8 +279,7 @@ type section =
   | Excerpt of excerpt
       (** The regions of an excerpt, windows that overlap or touch forming one
           region. Each line carries its number, and a marked line a marker. The
-          text of a line is escaped as {!pp_failure} escapes compared data and
-          is otherwise whole, neither dedented nor elided. *)
+          text of a line is whole, neither dedented nor elided. *)
   | Rule of string option
       (** A {!rule} of the width that every report shares, with its label when
           given. *)
@@ -294,9 +290,8 @@ val rule : width:int -> string option -> string
     [width]. *)
 
 val print : out:Format.formatter -> ansi:bool -> section list -> unit
-(** [print ~out ~ansi sections] writes [sections] to [out] in order and flushes
-    [out]. Spans are styled iff [ansi]. Under [ansi:false] every line is also
-    stripped of escape sequences. *)
+(** [print ~out ~ansi sections] writes [sections] to [out] in order, each line
+    through {!render}, and flushes [out]. *)
 
 (** {1:coverage Coverage}
 
@@ -306,8 +301,7 @@ val print : out:Format.formatter -> ansi:bool -> section list -> unit
 
 type coverage_file = {
   file : string;
-      (** The name of the source file as recorded at instrumentation. It does
-          not go through {!sanitize_name}. *)
+      (** The name of the source file as recorded at instrumentation. *)
   visited : int;  (** The points visited at least once. *)
   total : int;  (** The points instrumented. *)
   uncovered : int list;
@@ -377,8 +371,7 @@ type witness = {
       (** Where the test is declared, when the producer knows it. *)
   exe : string option;
       (** The executable that ran the test. It is [None] in the report of one
-          executable, which has no such column. It does not go through
-          {!sanitize_name}. *)
+          executable, which has no such column. *)
 }
 (** The type for a reaching test of a survivor: a test that evaluated the
     mutated site and did not fail when it changed. *)
@@ -396,8 +389,7 @@ type mutant = {
   source : string option;
       (** The text of the mutated file, when the producer could read it. *)
 }
-(** The type for a mutant as a block shows it. [id], [before] and [after] do not
-    go through {!sanitize_name}. *)
+(** The type for a mutant as a block shows it. *)
 
 type survivor = {
   mutant : mutant;  (** The mutant that survived. *)
@@ -423,7 +415,7 @@ type mutation = {
       (** Every survivor, in the order in which its block prints. *)
   unreached : (string * int) list;
       (** The file and the one-based line of each mutant that no test evaluated,
-          one pair per mutant. The file does not go through {!sanitize_name}. *)
+          one pair per mutant. *)
   killed : int;  (** The number of mutants killed. *)
   not_tested : int;
       (** The number of reached mutants that have no verdict, which are those
@@ -442,10 +434,9 @@ val survivor_block : exe_width:int option -> survivor -> section list
       [source] is known and holds the line.
     - the sentence that counts the reaching tests, and their executables when
       they name several.
-    - one row per reaching test: its name through {!sanitize_name}, then its
-      location when it has one. Under [exe_width = Some w] the executable comes
-      first, in a column at least [w] wide that is empty for a test that names
-      none. *)
+    - one row per reaching test: its name, then its location when it has one.
+      Under [exe_width = Some w] the executable comes first, in a column at
+      least [w] wide that is empty for a test that names none. *)
 
 val mutation_closing : config:Run.config -> mutation -> section list
 (** [mutation_closing ~config m] is what ends a report whose survivor blocks are
