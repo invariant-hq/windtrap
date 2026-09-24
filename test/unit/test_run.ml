@@ -1271,16 +1271,17 @@ let () =
       [
         Test_tree.bracket ~timeout:0.2 "body then teardown"
           ~setup:(fun () -> ())
-          ~teardown:(fun () -> spin 5.)
-          (fun () -> spin 5.);
+          ~teardown:(fun () -> spin 30.)
+          (fun () -> spin 30.);
       ]
     in
     let started = Unix.gettimeofday () in
     expect_run "a body timeout still bounds teardown" ~config tests
     @@ fun outcome ->
     let elapsed = Unix.gettimeofday () -. started in
-    (* Two windows of 0.2s, not ten seconds of spinning. *)
-    check "the run finished promptly" (elapsed < 3.0);
+    (* Two windows of 0.2s (0.4s measured), not a minute of spinning; the
+       bound leaves ten times the measure to a loaded host. *)
+    check "the run finished promptly" (elapsed < 5.0);
     match outcome_of outcome [ "body then teardown" ] with
     | Some (Failure.Fail failures) ->
         let phases =
@@ -1314,11 +1315,11 @@ let () =
           (fun fn ->
             Fun.protect ~finally:(fun () -> released := true) (fun () -> fn ()))
           ~timeout:0.2 "body times out"
-          (fun () -> spin 5.);
+          (fun () -> spin 30.);
         Test_tree.scoped
           (fun fn ->
             fn ();
-            spin 5.)
+            spin 30.)
           ~timeout:0.2 "release times out"
           (fun () -> ());
       ]
@@ -1326,8 +1327,9 @@ let () =
     let started = Unix.gettimeofday () in
     expect_run "scoped timeout suite runs" ~config tests @@ fun outcome ->
     let elapsed = Unix.gettimeofday () -. started in
-    (* Two windows of 0.2s, not ten seconds of spinning. *)
-    check "the run finished promptly" (elapsed < 3.0);
+    (* Two windows of 0.2s (0.4s measured), not a minute of spinning; the
+       bound leaves ten times the measure to a loaded host. *)
+    check "the run finished promptly" (elapsed < 5.0);
     (match failure_list (outcome_of outcome [ "body times out" ]) with
     | [ f ] ->
         check "body times out: one Body timeout"
@@ -1355,10 +1357,14 @@ let () =
       [
         (* Failing above a threshold keeps the descent walking the halving
            chain (the dest-first candidate passes and is rejected), so the
-           search is still alive when the alarm fires. *)
-        Run.prop "slow-shrink" (Gen.int_range 0 1000) (fun n ->
-            Unix.sleepf 0.04;
-            Check.is_true (n < 1));
+           search is still alive when the alarm fires. The first case fails
+           at once and every candidate takes half a second: the whole
+           descent, some twenty candidates, would take ten. *)
+        (let calls = ref 0 in
+         Run.prop "slow-shrink" (Gen.int_range 0 1000) (fun n ->
+             incr calls;
+             if !calls > 1 then Unix.sleepf 0.5;
+             Check.is_true (n < 1)));
       ]
     in
     let started = Unix.gettimeofday () in
@@ -1369,7 +1375,8 @@ let () =
         check "prop timeout mid-shrink reports the marked counterexample"
           (timed_out = Some 0.2)
     | _ -> check "mid-shrink timeout: one Property failure" false);
-    check "the whole-test budget bounds the wall time" (wall < 0.8);
+    (* 0.2s measured; the bound leaves ten times that to a loaded host. *)
+    check "the whole-test budget bounds the wall time" (wall < 2.0);
     check "a timed-out-mid-shrink prop is an ordinary failed test"
       (outcome.Run.exit_code = 1)
 

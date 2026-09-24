@@ -479,18 +479,20 @@ let test_stable_paths () =
 
 (* Saved descriptors are close-on-exec (cli/F-5) *)
 
-(* The re-exec'd child: captures, spawns a 10-second sleeper whose own
-   stdio is /dev/null, and exits. Under capture the child's real stdout is
-   the parent's pipe; only the saved dups could leak it to the sleeper. *)
+(* The re-exec'd child: captures, spawns a minute-long sleeper whose own
+   stdio is /dev/null, prints the sleeper's pid on its restored stdout, and
+   exits. Under capture the child's real stdout is the parent's pipe; only
+   the saved dups could leak it to the sleeper. *)
 let child_spawn_holder log_dir =
   let cap = Capture.create ~log_dir ~suite:"cloexec" () in
+  let sleeper = ref 0 in
   Capture.with_capture cap ~groups:[] ~test_name:"spawn" (fun () ->
       let null = Unix.openfile "/dev/null" [ Unix.O_RDWR ] 0 in
-      let pid =
-        Unix.create_process "/bin/sleep" [| "sleep"; "10" |] null null null
-      in
-      Unix.close null;
-      ignore pid);
+      sleeper :=
+        Unix.create_process "/bin/sleep" [| "sleep"; "60" |] null null null;
+      Unix.close null);
+  print_int !sleeper;
+  print_newline ();
   exit 0
 
 let test_saved_descriptors_are_cloexec () =
@@ -498,8 +500,8 @@ let test_saved_descriptors_are_cloexec () =
      close-on-exec — an exec'd child that outlives the run must not hold
      the runner's stdout open, or a piped reader (`suite.exe | cat`, dune
      runtest) waits on the child after the suite finished. EOF on the
-     child's pipe must arrive when the child exits (milliseconds), not
-     when its sleeper dies (10 s). *)
+     child's pipe must arrive when the child exits, while its sleeper
+     still lives, and no clock decides it. *)
   if Sys.win32 then skip ~reason:"no /bin/sleep on Windows" ();
   let root = temp_dir () in
   let out_read, out_write = Unix.pipe () in
@@ -513,19 +515,43 @@ let test_saved_descriptors_are_cloexec () =
       Unix.stdin out_write Unix.stderr
   in
   Unix.close out_write;
-  let started = Unix.gettimeofday () in
+  let output = Buffer.create 16 in
   let chunk = Bytes.create 4096 in
   let rec drain () =
-    if Unix.read out_read chunk 0 (Bytes.length chunk) > 0 then drain ()
+    let n = Unix.read out_read chunk 0 (Bytes.length chunk) in
+    if n > 0 then begin
+      Buffer.add_subbytes output chunk 0 n;
+      drain ()
+    end
   in
   drain ();
-  let elapsed = Unix.gettimeofday () -. started in
   Unix.close out_read;
   (match Unix.waitpid [] pid with
   | _, Unix.WEXITED 0 -> ()
   | _ -> fail "cloexec child did not exit cleanly");
-  is_true ~msg:"the pipe closes when the suite exits, not when its sleeper dies"
-    (elapsed < 5.0)
+  let sleeper =
+    require_some ~msg:"the child printed its sleeper's pid"
+      (int_of_string_opt (String.trim (Buffer.contents output)))
+  in
+  (* A process that died but is not yet reaped still answers [kill 0], and
+     the sleeper's EOF and its death are one event: ask [ps] for its state,
+     where a zombie reads [Z]. *)
+  let alive () =
+    let ps =
+      Unix.open_process_args_in "/bin/ps"
+        [| "ps"; "-o"; "stat="; "-p"; string_of_int sleeper |]
+    in
+    let state = String.trim (In_channel.input_all ps) in
+    ignore (Unix.close_process_in ps);
+    state <> "" && state.[0] <> 'Z'
+  in
+  Fun.protect
+    ~finally:(fun () ->
+      try Unix.kill sleeper Sys.sigkill with Unix.Unix_error _ -> ())
+    (fun () ->
+      is_true
+        ~msg:"the pipe closes when the suite exits, not when its sleeper dies"
+        (alive ()))
 
 (* Re-exec dispatch for the child above; this suite's own toplevel calls
    it before its run. Never returns for a child invocation. *)

@@ -30,13 +30,20 @@ module Clock_suite = struct
           Unix.sleepf 0.005;
           is_true (Os.count c >= 1_000_000L));
       test "count_s agrees with count within float rounding" (fun () ->
+          (* Read between two counts of the same counter, the seconds lie
+             between the two in nanoseconds: a unit slip either way (a
+             count in milliseconds, or in nanoseconds) falls outside, and
+             no wall-clock bound is involved. *)
           let c = Os.counter () in
           Unix.sleepf 0.001;
-          let ns = Os.count c in
+          let before = Os.count c in
           let s = Os.count_s c in
-          is_true ~msg:"count_s is seconds"
-            (s >= Int64.to_float ns /. 1_000_000_000.);
-          is_true ~msg:"count_s within a second here" (s < 1.));
+          let after = Os.count c in
+          let seconds ns = Int64.to_float ns /. 1_000_000_000. in
+          is_true ~msg:"count_s is no less than the count before it"
+            (s >= seconds before);
+          is_true ~msg:"count_s is no more than the count after it"
+            (s <= seconds after));
     ]
 end
 
