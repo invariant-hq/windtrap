@@ -26,7 +26,6 @@ let rewrites =
     "fsub";
     "and";
     "or";
-    "drop";
   ]
 
 let is_rewrite r = List.exists (String.equal r) rewrites

@@ -548,6 +548,9 @@ let rejection_tests =
         ( "unknown rewrite",
           "windtrap-mutants-v3\n1\n8 lib/a.ml 1 2 4 plus 1 b 1 a unreached\n",
           "unknown rewrite" );
+        ( "drop, which no instrumenter emits",
+          "windtrap-mutants-v3\n1\n8 lib/a.ml 1 2 4 drop 1 b 1 a unreached\n",
+          "unknown rewrite" );
         ( "truncated rendering",
           "windtrap-mutants-v3\n1\n8 lib/a.ml 1 2 3 add 80 b 1 a unreached\n",
           "truncated before" );
@@ -597,17 +600,6 @@ let rejection_tests =
            2\n\
            8 lib/a.ml 1 2 3 add 1 b 1 a killed\n\
            8 lib/a.ml 0 2 3 add 1 b 1 a unreached\n");
-    test "the drop rewrite is read, though no instrumenter emits it" (fun () ->
-        let t, _ =
-          ok_error "drop"
-            (snd
-               (load_text
-                  "windtrap-mutants-v3\n\
-                   1\n\
-                   8 lib/a.ml 1 2 4 drop 1 b 1 a killed\n"))
-        in
-        equal ~msg:"its record" (list string) [ "lib/a.ml:1:2:drop" ]
-          (List.map (fun (r : V.record) -> M.id_to_string r.V.id) (V.records t)));
     test "load reports an unreadable file" (fun () ->
         match V.load (scratch "does-not-exist.mutants") with
         | Error (V.Unreadable { path; _ }) ->

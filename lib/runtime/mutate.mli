@@ -47,15 +47,14 @@ type id = { file : string; line : int; col : int; rewrite : string }
 val rewrites : string list
 (** [rewrites] is the closed vocabulary of rewrite names, in this order:
     ["not"], the comparisons ["lt"], ["le"], ["gt"], ["ge"], ["eq"] and ["neq"],
-    the arithmetic ["add"], ["sub"], ["fadd"] and ["fsub"], the connectives
-    ["and"] and ["or"], and ["drop"]. A name is that of the replacement, never
-    that of the operator in the source.
+    the arithmetic ["add"], ["sub"], ["fadd"] and ["fsub"], and the connectives
+    ["and"] and ["or"]. A name is that of the replacement, never that of the
+    operator in the source.
 
     A name outside the list is refused wherever one enters: in a site table by
     {!register}, in an identifier by {!id_of_string} and in a verdict file by
     {!Verdicts.load}. {!arm} takes an {!type-id} and does not check its rewrite,
-    so an unknown one matches no site. No instrumenter emits ["drop"], so no
-    catalogue holds it, although the three places above accept it. *)
+    so an unknown one matches no site. *)
 
 val id_to_string : id -> string
 (** [id_to_string id] is [<file>:<line>:<col>:<rewrite>], as

@@ -172,6 +172,8 @@ let identity_tests =
            nothing. *)
         ("lib/calc.ml:9:12:plus", "unknown rewrite");
         ("lib/calc.ml:9:12:LT", "unknown rewrite");
+        (* No instrumenter emits it, so no identifier names it. *)
+        ("lib/calc.ml:9:12:drop", "unknown rewrite");
         ("add", "no ':' separator");
         (":add", "no position before the rewrite");
         ("lib/calc.ml:9:add", "no line number");
@@ -354,20 +356,6 @@ let registry_tests =
         ignore (g 0);
         equal ~msg:"until a new epoch opens" (list int) [ 1 ]
           (List.map (fun (r : M.reached) -> r.M.hits) (drain ())));
-    test "drop is catalogued, though no instrumenter emits it" (fun () ->
-        register_only ~file:"t/drop.ml"
-          ~sites:[| site ~line:3 ~col:2 ~rewrite:"drop" () |];
-        equal ~msg:"register accepts it" (list string) [ "t/drop.ml:3:2:drop" ]
-          (List.map
-             (fun (m : M.mutant) -> M.id_to_string m.M.id)
-             (List.filter
-                (fun (m : M.mutant) -> m.M.id.M.file = "t/drop.ml")
-                (catalogue ())));
-        equal ~msg:"and so does id_of_string" (result id_t string)
-          (Ok (id ~file:"t/drop.ml" ~line:3 ~col:2 ~rewrite:"drop"))
-          (Result.map_error
-             (fun e -> Format.asprintf "%a" M.pp_arm_error e)
-             (M.id_of_string "t/drop.ml:3:2:drop")));
     test
       "the empty file name is registered, and its identifier does not \
        round-trip" (fun () ->
@@ -445,6 +433,8 @@ let registry_tests =
         ("line 0", site ~line:0 ~col:0 ~rewrite:"lt" ());
         ("negative column", site ~line:1 ~col:(-1) ~rewrite:"lt" ());
         ("unknown rewrite", site ~line:1 ~col:0 ~rewrite:"plus" ());
+        ( "drop, which no instrumenter emits",
+          site ~line:1 ~col:0 ~rewrite:"drop" () );
       ]
       (fun (name, s) ->
         raises_match ~msg:name Exn.invalid_arg (fun () ->
