@@ -792,8 +792,8 @@ let refusal_tests =
         if core_instrumented then
           skip
             ~reason:
-              "the core is instrumented, so the bare flag would survey its \
-               mutants too"
+              "under --instrument-with the core is instrumented, so the bare \
+               flag would survey its mutants too"
             ();
         let code, out, _ = spawn [ ("WINDTRAP_MUTATE", "1") ] in
         equal ~msg:"exit code" int 0 code;
@@ -1079,7 +1079,8 @@ let read_only_tests =
    cause, so the CLOCK is the assertion: the whole run — dry run, probe
    and one child — measures 0.06 s here, while a deadline kill would add
    the child's full one-second floor on top. A run that finishes inside
-   that floor cannot have been ended by it. *)
+   that floor cannot have been ended by it, so the floor is the bound: the
+   widest one that still tells the two kills apart. *)
 
 let runaway_exe =
   Filename.concat (Filename.concat exe_dir "runaway") "runaway_main.exe"
@@ -1103,7 +1104,7 @@ let runaway_tests =
                "the guard cut it short, inside the child's own 1s deadline \
                 floor (%.2fs)"
                elapsed)
-          (elapsed < 0.9);
+          (elapsed < 1.0);
         match V.load path with
         | Error e -> failf "verdict file unreadable: %a" V.pp_error e
         | Ok (verdicts, _) ->
@@ -1123,6 +1124,37 @@ let runaway_tests =
    absolute sleep against an absolute deadline. It is the only clock over
    a child, and over a run there is none. *)
 
+(* Waits for a run that must end on its own, and ends it when it has not
+   within [seconds]: a run that the deadline under test failed to stop is
+   a failure of the test, never a hang of the suite. Ten seconds is ten
+   times what the one-second floor makes these runs take. The run is
+   stopped by SIGTERM first, which a loop answers by killing its running
+   child's group, so that no blocked child outlives the failure. *)
+let finish_within ?(seconds = 10.) ~what started =
+  let rec wait_until time =
+    match Unix.waitpid [ Unix.WNOHANG ] started.pid with
+    | 0, _ when Unix.gettimeofday () > time -> None
+    | 0, _ ->
+        Unix.sleepf 0.01;
+        wait_until time
+    | _, status -> Some status
+  in
+  match wait_until (Unix.gettimeofday () +. seconds) with
+  | Some status ->
+      (status, read_file started.out_path, read_file started.err_path)
+  | None ->
+      (try Unix.kill started.pid Sys.sigterm with Unix.Unix_error _ -> ());
+      if wait_until (Unix.gettimeofday () +. 5.) = None then begin
+        (try Unix.kill started.pid Sys.sigkill with Unix.Unix_error _ -> ());
+        ignore (Unix.waitpid [] started.pid)
+      end;
+      failf "%s: the run was still going after %.0fs" what seconds
+
+let exit_code = function
+  | Unix.WEXITED code -> code
+  | Unix.WSIGNALED signal -> failf "the run died of signal %d" signal
+  | Unix.WSTOPPED signal -> failf "the run stopped on signal %d" signal
+
 let rendered_verdicts path =
   match V.load path with
   | Error e -> failf "verdict file unreadable: %a" V.pp_error e
@@ -1136,23 +1168,17 @@ let deadline_tests =
   [
     test "a mutant that blocks is killed by its child's deadline" (fun () ->
         (try Sys.remove verdict_path with Sys_error _ -> ());
-        let started = Unix.gettimeofday () in
-        let code, out, err =
-          spawn ~args:[ mutate ] [ ("MUTATE_FIXTURE", "block") ]
+        let status, out, err =
+          finish_within ~what:"the blocked child's deadline"
+            (start ~args:[ mutate ] [ ("MUTATE_FIXTURE", "block") ])
         in
-        let elapsed = Unix.gettimeofday () -. started in
         equal
           ~msg:"the run completes: a blocked child is a score, not a refusal"
-          int 0 code;
+          int 0 (exit_code status);
         equal ~msg:"stderr" text "" err;
         contains ~msg:"the kill counted"
           ~sub:"mutants: 1 reached by this suite, 1 killed, 3 never reached\n"
           out;
-        is_true
-          ~msg:
-            (Printf.sprintf "the child's own deadline cut it short (%.1fs)"
-               elapsed)
-          (elapsed < 30.);
         equal ~msg:"the blocked mutant is killed" (list string) [ "killed" ]
           (List.filter_map
              (fun (id, v) -> if id = mutant_named "add" then Some v else None)
@@ -1160,50 +1186,21 @@ let deadline_tests =
     test "a slow but finite test is never killed by the clock" (fun () ->
         (* The regression the multiplier guards: the sleep runs armed and
            unarmed alike, so the dry run prices it into the deadline at
-           ten times its measured cost, and the kill must be the
-           assertion's. *)
+           ten times its measured cost. The slow test pins nothing about
+           [sub], so its mutant survives unless the clock kills the child:
+           the verdict, not a stopwatch, says which. *)
         (try Sys.remove verdict_path with Sys_error _ -> ());
-        let started = Unix.gettimeofday () in
         let code, out, err =
           spawn ~args:[ mutate ] [ ("MUTATE_FIXTURE", "slow") ]
         in
-        let elapsed = Unix.gettimeofday () -. started in
         equal ~msg:"exit code" int 0 code;
         equal ~msg:"stderr" text "" err;
-        (* The margin, asserted as a precondition rather than left to the
-           verdict. The run is three executions of the suite — dry run,
-           probe, one child — each containing [slow]'s 0.25 s sleep, so
-           the child cost at most the sleep plus one execution's
-           remainder, while its deadline was at least ten times the
-           sleep the dry run measured ([sleepf] cannot undershoot). A
-           machine too loaded to keep the child inside HALF that bound
-           fails here, on the arithmetic, not flakily on the verdict
-           below. *)
-        let sleep =
-          0.25
-          (* [slow]'s own [sleepf] *)
-        in
-        let overhead = Float.max 0. ((elapsed -. (3. *. sleep)) /. 3.) in
-        is_true
-          ~msg:
-            (Printf.sprintf
-               "precondition: one child's cost (%.2fs) stays inside half its \
-                %.2fs deadline floor"
-               (sleep +. overhead) (10. *. sleep))
-          (2. *. (sleep +. overhead) <= 10. *. sleep);
-        contains ~msg:"the mutant died"
-          ~sub:"mutants: 1 reached by this suite, 1 killed, 3 never reached\n"
+        contains ~msg:"the slow child ran to its end and survived"
+          ~sub:
+            "mutants: 1 survived of 1 reached by this suite, 3 never reached\n"
           out;
-        (* And the assertion killed it, not the clock: a deadline kill
-           would have added the child's whole 10x-the-sleep floor to a
-           run that already pays three sleeps. *)
-        is_true
-          ~msg:
-            (Printf.sprintf
-               "the run (%.2fs) finished inside the child's %.2fs deadline"
-               elapsed (10. *. sleep))
-          (elapsed < 10. *. sleep);
-        equal ~msg:"the mutant is killed" (list string) [ "killed" ]
+        equal ~msg:"and the verdict file says so" (list string)
+          [ "survived by slow > sleeps briefly and pins nothing about sub" ]
           (List.filter_map
              (fun (id, v) -> if id = mutant_named "add" then Some v else None)
              (rendered_verdicts verdict_path)));
@@ -1253,23 +1250,19 @@ let deadline_tests =
            than score anything. The fixture blocks only on its SECOND
            run, on the marker the dry run leaves. *)
         let marker = Filename.concat (temp_dir ()) "marker" in
-        let started = Unix.gettimeofday () in
-        let code, _, err =
-          spawn ~args:[ mutate ]
-            [
-              ("MUTATE_FIXTURE", "probe_block"); ("MUTATE_PROBE_MARKER", marker);
-            ]
+        let status, _, err =
+          finish_within ~what:"the probe's deadline"
+            (start ~args:[ mutate ]
+               [
+                 ("MUTATE_FIXTURE", "probe_block");
+                 ("MUTATE_PROBE_MARKER", marker);
+               ])
         in
-        let elapsed = Unix.gettimeofday () -. started in
-        equal ~msg:"a refusal, not a score" int 1 code;
+        equal ~msg:"a refusal, not a score" int 1 (exit_code status);
         contains ~msg:"named as the probe's own deadline"
           ~sub:"the determinism probe exceeded its deadline" err;
         contains ~msg:"and stated as a determinism claim" ~sub:"not a number"
-          err;
-        is_true
-          ~msg:
-            (Printf.sprintf "the probe's deadline cut it short (%.1fs)" elapsed)
-          (elapsed < 30.));
+          err);
   ]
 
 (* What a loop has printed while it still runs.
@@ -1403,12 +1396,15 @@ let reader_tests =
           (killed_verdicts ());
         is_false ~msg:"the scratch root is gone"
           (Sys.file_exists (scratch_root_of run.pid)));
-    test "a signal during the closing report finds the verdict file written"
+    test "a SIGINT late in the run ends it by SIGINT with the verdicts it had"
       (fun () ->
-        (* The pipe is filled and never read, so the loop blocks in the
-           write of its [mutants:] line, where SIGINT finds it. The flag
-           is on the open file the loop writes through as well: it is
-           cleared before the loop has anything to write. *)
+        (* The pipe is filled and never read, so the loop is most likely
+           blocked in the write of its [mutants:] line when SIGINT comes,
+           a moment after the verdict file appeared; nothing says it is,
+           and the claim does not need it: a signal after the write ends
+           the run by that signal and costs the file nothing. The flag is
+           on the open file the loop writes through as well: it is cleared
+           before the loop has anything to write. *)
         let run, reader, writer, open_gate = held_at_the_gate "pinned" in
         Unix.set_nonblock writer;
         let rec fill chunk =
@@ -1639,7 +1635,8 @@ let uninstrumented_tests =
         if core_instrumented then
           skip
             ~reason:
-              "the core is instrumented, so plain_main catalogues its mutants"
+              "under --instrument-with the core is instrumented, so plain_main \
+               catalogues its mutants"
             ();
         (* The bare flag, so this is the no-scope run: an empty catalogue
            is refused as uninstrumented whatever the scope. *)

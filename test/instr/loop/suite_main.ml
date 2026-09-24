@@ -137,13 +137,15 @@ let fatal =
      the derived deadline short. Under MUTATE_GRANDCHILD_PIDFILE the
      blocking test first spawns a subprocess that IGNORES SIGTERM — it
      outlives its inner sleeps for as long as its bounded loop respawns
-     them, so only an unignorable signal to the whole group clears it —
-     and records its pid: the file is how the harness finds the
-     grandchild to poll.
-   - [slow] sleeps on every run, armed and unarmed alike, then pins
-     [sub]: the dry run measures the sleep, so the derived deadline grows
-     tenfold with it, and a kill here must come from the assertion and
-     never from the clock.
+     them, thirty seconds at most, so only an unignorable signal to the
+     whole group clears it — and records its pid: the file is how the
+     harness finds the grandchild to poll.
+   - [slow] sleeps on every run, armed and unarmed alike, and pins nothing
+     about [sub]: the dry run measures the sleep, so the derived deadline
+     grows tenfold with it, and the mutant survives unless the clock
+     kills the child. The sleep is short: it only has to be a test that
+     takes time, since any deadline that priced in less than the test
+     itself would end it.
    - [probe_block] is green where the reach map is measured and BLOCKED
      where it is re-run: the dry run leaves the marker, the probe's
      unarmed re-run finds it and hangs. No mutant is armed in a probe,
@@ -159,7 +161,7 @@ let hang () =
           [|
             "sh";
             "-c";
-            "trap '' TERM; n=0; while [ $n -lt 600 ]; do sleep 1; n=$((n+1)); \
+            "trap '' TERM; n=0; while [ $n -lt 30 ]; do sleep 1; n=$((n+1)); \
              done";
           |]
           Unix.stdin Unix.stdout Unix.stderr
@@ -239,9 +241,9 @@ let pinned =
 
 let slow =
   [
-    test "sleeps briefly and still pins sub" (fun () ->
-        Unix.sleepf 0.25;
-        equal int 6 (Subject.sub 10 4));
+    test "sleeps briefly and pins nothing about sub" (fun () ->
+        Unix.sleepf 0.05;
+        is_true (Subject.sub 10 4 < 100));
   ]
 
 let probe_block =
