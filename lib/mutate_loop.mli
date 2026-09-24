@@ -132,7 +132,8 @@ val execute_and_report : suite:string -> Run.config -> Test_tree.t list -> run
     - A child cannot arm its mutant, or is refused at startup.
     - The supervision fails. The scratch directory cannot be created, which is
       tried before the probe, or [pipe], [fork] or [waitpid] fails for the probe
-      or for a child.
+      or for a child. [fork] fails in a process that has spawned a domain, in
+      the dry run or before it, and the sentence then says so.
 
     The last two can follow survivor blocks that are already committed.
     {!Report.mutation_refused} then says the sentence, the blocks stay as they

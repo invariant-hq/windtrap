@@ -226,6 +226,12 @@ let rec waitpid_retry pid =
    children is not a score. *)
 exception Supervision of string
 
+let domain_refusal =
+  "this process has spawned a domain, and OCaml refuses Unix.fork in a process \
+   that has: mutation testing runs every mutant in a forked child, so it \
+   cannot run in this one. Exclude the tests that spawn a domain (-e) to test \
+   the rest"
+
 (* Interruption
 
    A child is a session of its own, so a terminal's signal reaches the
@@ -352,6 +358,12 @@ let fork_child ~deadline body =
       Unix.close read_fd;
       Unix.close write_fd;
       raise (Supervision (spf "fork failed: %s" (Unix.error_message e)))
+  | exception Failure _ ->
+      (* OCaml 5's [Unix.fork] refuses a process that has ever spawned a
+         domain, joined or not, and says so with this [Failure]. *)
+      Unix.close read_fd;
+      Unix.close write_fd;
+      raise (Supervision domain_refusal)
   | 0 ->
       (try Unix.close read_fd with _ -> ());
       (try ignore (Unix.setsid ()) with _ -> ());

@@ -785,7 +785,8 @@ Coverage and packaging:
   `cmp` (comparisons in a boolean context), `con`, `ari`. Equivalent
   mutants are dismissed in the source with `[@mutate off "reason"]` in the
   four spellings the coverage attribute uses; there is no suppression
-  database. Mutation needs `Unix.fork` and declines by name on Windows.
+  database. Mutation needs `Unix.fork` and declines by name on Windows,
+  and in a process that has spawned a domain, which OCaml forbids to fork.
 - **`--arm ID`** runs the suite once with one mutant armed, announced
   before any output (`mutant <id> armed: <before> → <after>`) and closed
   with one verdict line (`mutant killed.`, `mutant survived: …`, `mutant

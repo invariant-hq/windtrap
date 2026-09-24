@@ -1047,6 +1047,20 @@ let refusal_tests =
            are not a weaker number, they are not a number\n"
           err;
         not_contains ~msg:"no number was produced" ~sub:"mutants: " out);
+    test "a suite that spawned a domain is refused, since the loop cannot fork"
+      (fun () ->
+        let code, out, err =
+          spawn ~args:[ mutate ] [ ("MUTATE_FIXTURE", "domain") ]
+        in
+        equal ~msg:"exit code" int 1 code;
+        equal ~msg:"the dry run's transcript, and no mutation report" text
+          "calc: 1 passed in <time>.\n" (masked out);
+        equal ~msg:"why, in one sentence" text
+          "windtrap: this process has spawned a domain, and OCaml refuses \
+           Unix.fork in a process that has: mutation testing runs every mutant \
+           in a forked child, so it cannot run in this one. Exclude the tests \
+           that spawn a domain (-e) to test the rest\n"
+          err);
     test "a selection that matched nothing is refused, never scored" (fun () ->
         let code, out, err = spawn ~args:[ mutate; "-f"; "no-such-test" ] [] in
         (* Never 2: "nothing ran" is a statement about a test selection

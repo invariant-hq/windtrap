@@ -67,6 +67,14 @@ let two_survivors =
 
 let red = [ test "always red" (fun () -> equal int 1 2) ]
 
+(* Spawns a domain and joins it: green, and from then on the process can
+   no longer fork. *)
+let domain =
+  [
+    test "sub in a domain of its own" (fun () ->
+        equal int 6 (Domain.join (Domain.spawn (fun () -> Subject.sub 10 4))));
+  ]
+
 (* Green in the process that measured the reach map and red in every fork
    of it — the sharpest possible non-determinism, and the one the probe
    exists to catch: without it the loop would score every mutant against a
@@ -393,6 +401,7 @@ let () =
   | "red" ->
       exit @@ run "calc" [ group "calc" (strong @ red); group "widen" weak ]
   | "flaky" -> exit @@ run "calc" [ group "calc" strong; group "flaky" flaky ]
+  | "domain" -> exit @@ run "calc" [ group "domain" domain ]
   | "skippy" ->
       exit @@ run "calc" [ group "calc" strong; group "skippy" skippy ]
   | "boundary" ->
