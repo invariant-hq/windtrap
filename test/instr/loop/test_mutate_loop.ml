@@ -260,6 +260,19 @@ let reproduce_command report =
    the loop failed to write. *)
 let verdict_path = V.output_file ~exe:suite_exe
 
+(* The [green] suite's loop under the directory's scope, run once for
+   every scenario that reads it: its exit code, its two streams, and the
+   verdict file as the run left it, read at once, before another
+   scenario's run rewrites the file. Each scenario still parses and
+   judges what it reads. *)
+type loop_run = { code : int; out : string; err : string; saved : string }
+
+let green =
+  lazy
+    ((try Sys.remove verdict_path with Sys_error _ -> ());
+     let code, out, err = spawn ~args:[ mutate ] [] in
+     { code; out; err; saved = read_file verdict_path })
+
 let catalogue_tests =
   [
     test "the catalogue is exactly the five sites the report accounts for"
@@ -312,7 +325,7 @@ let scope_tests =
         not_contains ~msg:"never the missing-backend diagnosis"
           ~sub:"links no instrumented module" err);
     test "a scope that matches keeps the whole fixture catalogue" (fun () ->
-        let code, out, _ = spawn ~args:[ mutate ] [] in
+        let { code; out; _ } = Lazy.force green in
         equal ~msg:"exit code" int 0 code;
         contains ~msg:"the fixture's reach, undiminished"
           ~sub:
@@ -336,8 +349,7 @@ let loop_tests =
     test
       "the loop kills one mutant, names the survivor's reaching tests and \
        counts the unreached by file" (fun () ->
-        (try Sys.remove verdict_path with Sys_error _ -> ());
-        let code, out, err = spawn ~args:[ mutate ] [] in
+        let { code; out; err; _ } = Lazy.force green in
         equal ~msg:"exit code (a survivor never fails the build)" int 0 code;
         equal ~msg:"stderr" text "" err;
         (* The dry run's ordinary summary, then the survivors section,
@@ -369,7 +381,7 @@ let loop_tests =
             reached\n")
           (masked out));
     test "a dismissed mutant is in no block and no count" (fun () ->
-        let _, out, _ = spawn ~args:[ mutate ] [] in
+        let { out; _ } = Lazy.force green in
         (* The [green] suite runs the [@mutate off] site and pins nothing
            about it, so without the dismissal it would be a second
            survivor and a third reached mutant. *)
@@ -384,7 +396,7 @@ let loop_tests =
           ~sub:(List.nth (Lazy.force catalogue) 4)
           out);
     test "the survivor block quotes the mutated source line" (fun () ->
-        let _, out, _ = spawn ~args:[ mutate ] [] in
+        let { out; _ } = Lazy.force green in
         contains ~msg:"excerpt row"
           ~sub:"\n      18 \u{2502} let widen a b = a + b\n" out);
     test "the reproduce command spells the flag that arms the survivor"
@@ -669,11 +681,10 @@ let no_trace_tests =
 let verdict_file_tests =
   [
     test "the loop writes a verdict file the runtime can read back" (fun () ->
-        (try Sys.remove verdict_path with Sys_error _ -> ());
-        let code, _, _ = spawn ~args:[ mutate ] [] in
+        let { code; saved; _ } = Lazy.force green in
         equal ~msg:"exit code" int 0 code;
-        is_true ~msg:"the file exists" (Sys.file_exists verdict_path);
-        match V.load verdict_path with
+        is_true ~msg:"the file exists" (saved <> "");
+        match V.of_string ~path:verdict_path saved with
         | Error e -> failf "verdict file unreadable: %a" V.pp_error e
         | Ok (verdicts, identity) ->
             is_true ~msg:"the writer identity is recorded" (identity <> None);
@@ -708,13 +719,14 @@ let verdict_file_tests =
               ~sub:"widen > widen is nonzero"
               (snd (List.hd survived)));
     test "a narrowed run reports in full but persists nothing" (fun () ->
-        (try Sys.remove verdict_path with Sys_error _ -> ());
-        let code, _, err = spawn ~args:[ mutate ] [] in
+        let { code; err; saved; _ } = Lazy.force green in
         equal ~msg:"the full run's exit code" int 0 code;
         not_contains ~msg:"a full run saves without comment"
           ~sub:"verdicts not saved" err;
-        let saved = read_file verdict_path in
         is_true ~msg:"and wrote the file" (saved <> "");
+        (* The file as the full run left it, whatever ran since. *)
+        Out_channel.with_open_bin verdict_path (fun oc ->
+            output_string oc saved);
         (* The selection reaches only [sub], whose mutant dies, so the
            loop completes — and its verdicts call [widen] unreached, which
            is exactly the selection-relative record that must not
@@ -742,12 +754,11 @@ let verdict_file_tests =
           (read_file verdict_path));
     test "a prefix-scoped run still writes: its records are project-true"
       (fun () ->
-        (try Sys.remove verdict_path with Sys_error _ -> ());
-        let code, _, err = spawn ~args:[ mutate ] [] in
+        let { code; err; saved; _ } = Lazy.force green in
         equal ~msg:"exit code" int 0 code;
         not_contains ~msg:"the scope narrows the mutants, not the tests"
           ~sub:"verdicts not saved" err;
-        is_true ~msg:"so the file was written" (Sys.file_exists verdict_path));
+        is_true ~msg:"so the file was written" (saved <> ""));
   ]
 
 let crash_tests =
@@ -1218,14 +1229,27 @@ let rendered_verdicts path =
           (M.id_to_string r.V.id, Format.asprintf "%a" pp_verdict r.V.verdict))
         (V.records verdicts)
 
+(* One run of [block], with its grandchild, serves both claims about a
+   blocked child: the deadline's kill and the death of its whole process
+   group. The verdict file and the grandchild's pid are read at once. *)
+let blocked =
+  lazy
+    ((try Sys.remove verdict_path with Sys_error _ -> ());
+     let pidfile = Filename.concat (temp_dir ()) "grandchild" in
+     let status, out, err =
+       finish_within ~what:"the blocked child's deadline"
+         (start ~args:[ mutate ]
+            [
+              ("MUTATE_FIXTURE", "block"); ("MUTATE_GRANDCHILD_PIDFILE", pidfile);
+            ])
+     in
+     let saved = read_file verdict_path in
+     (status, out, err, saved, read_file pidfile))
+
 let deadline_tests =
   [
     test "a mutant that blocks is killed by its child's deadline" (fun () ->
-        (try Sys.remove verdict_path with Sys_error _ -> ());
-        let status, out, err =
-          finish_within ~what:"the blocked child's deadline"
-            (start ~args:[ mutate ] [ ("MUTATE_FIXTURE", "block") ])
-        in
+        let status, out, err, saved, _ = Lazy.force blocked in
         equal
           ~msg:"the run completes: a blocked child is a score, not a refusal"
           int 0 (exit_code status);
@@ -1233,10 +1257,16 @@ let deadline_tests =
         contains ~msg:"the kill counted"
           ~sub:"mutants: 1 reached by this suite, 1 killed, 3 never reached\n"
           out;
-        equal ~msg:"the blocked mutant is killed" (list string) [ "killed" ]
-          (List.filter_map
-             (fun (id, v) -> if id = mutant_named "add" then Some v else None)
-             (rendered_verdicts verdict_path)));
+        match V.of_string ~path:verdict_path saved with
+        | Error e -> failf "verdict file unreadable: %a" V.pp_error e
+        | Ok (verdicts, _) ->
+            equal ~msg:"the blocked mutant is killed" (list string) [ "killed" ]
+              (List.filter_map
+                 (fun (r : V.record) ->
+                   if M.id_to_string r.V.id = mutant_named "add" then
+                     Some (Format.asprintf "%a" pp_verdict r.V.verdict)
+                   else None)
+                 (V.records verdicts)));
     test "a slow but finite test is never killed by the clock" (fun () ->
         (* The regression the multiplier guards: the sleep runs armed and
            unarmed alike, so the dry run prices it into the deadline at
@@ -1261,20 +1291,13 @@ let deadline_tests =
     test
       "an expired child's process group dies whole: no grandchild outlives the \
        run" (fun () ->
-        let pidfile = Filename.concat (temp_dir ()) "grandchild" in
-        let code, out, _ =
-          spawn ~args:[ mutate ]
-            [
-              ("MUTATE_FIXTURE", "block"); ("MUTATE_GRANDCHILD_PIDFILE", pidfile);
-            ]
-        in
-        equal ~msg:"the run completed" int 0 code;
+        let status, out, _, _, pidfile = Lazy.force blocked in
+        equal ~msg:"the run completed" int 0 (exit_code status);
         contains ~msg:"and scored the blocked mutant"
           ~sub:"mutants: 1 reached by this suite, 1 killed, 3 never reached\n"
           out;
         let pids =
-          List.filter_map int_of_string_opt
-            (String.split_on_char '\n' (read_file pidfile))
+          List.filter_map int_of_string_opt (String.split_on_char '\n' pidfile)
         in
         equal ~msg:"the blocking test recorded its one grandchild" int 1
           (List.length pids);
