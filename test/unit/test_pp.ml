@@ -98,19 +98,80 @@ let tests =
           (Pp.styled_string ~ansi:false `Green "plain");
         equal ~msg:"styled_string ~ansi:true wraps" string "\027[32mok\027[0m"
           (Pp.styled_string ~ansi:true `Green "ok");
-        (* Each style's code, on the surface renderers reach for: a style is
-           picked by name at the call site, so a swapped code is a silently
-           wrong color rather than a failure. *)
-        equal ~msg:"red code" string "\027[31mhi\027[0m"
-          (Pp.styled_string ~ansi:true `Red "hi");
-        equal ~msg:"bold code" string "\027[1mb\027[0m"
-          (Pp.styled_string ~ansi:true `Bold "b");
         (* Styling nothing is nothing: report lines are assembled from
            optional fragments, and an empty one must not leave an open code
            and its reset behind. *)
         equal ~msg:"styled_string ~ansi:true leaves the empty string bare"
           string ""
           (Pp.styled_string ~ansi:true `Faint ""));
+    (* A style is picked by name at the call site, so a swapped code is a
+       silently wrong colour rather than a failure. *)
+    test "each style has its own SGR code" (fun () ->
+        List.iter
+          (fun (name, style, code) ->
+            equal ~msg:name string
+              ("\027[" ^ code ^ "mx\027[0m")
+              (Pp.styled_string ~ansi:true style "x"))
+          [
+            ("bold", `Bold, "1");
+            ("faint", `Faint, "2");
+            ("red", `Red, "31");
+            ("green", `Green, "32");
+            ("yellow", `Yellow, "33");
+            ("cyan", `Cyan, "36");
+            ("white", `White, "37");
+            ("bold red is one sequence", `Bold_red, "1;31");
+            ("bold green is one sequence", `Bold_green, "1;32");
+          ]);
+    test "abstract is the placeholder <abstract>" (fun () ->
+        equal string "<abstract>" Pp.abstract);
+    test "option puts no parentheses around its value" (fun () ->
+        equal string "Some Some 1"
+          (s (Pp.option (Pp.option Pp.int)) (Some (Some 1))));
+    test "to_string breaks a long list at 78 columns" (fun () ->
+        let items = List.init 30 (fun i -> 1000 + i) in
+        let lines = String.split_on_char '\n' (s (Pp.list Pp.int) items) in
+        is_true ~msg:"the list breaks" (List.length lines > 1);
+        List.iter
+          (fun line ->
+            at_most ~msg:"no line passes the margin" int ~than:78
+              (String.length line))
+          lines;
+        (* Every line but the last is full: one more element and its
+           separator would pass the margin, so the break is at the margin
+           and not before it. *)
+        List.iter
+          (fun line ->
+            greater ~msg:"a broken line is full" int ~than:72
+              (String.length line))
+          (List.rev (List.tl (List.rev lines))));
+    test "no printer writes to a standard channel" (fun () ->
+        let b = Buffer.create 64 in
+        let ppf = Format.formatter_of_buffer b in
+        Pp.string ppf "s";
+        Pp.int ppf 1;
+        Pp.int32 ppf 1l;
+        Pp.int64 ppf 1L;
+        Pp.float_exact ppf 1.;
+        Pp.bool ppf true;
+        Pp.list Pp.int ppf [ 1; 2 ];
+        Pp.array Pp.int ppf [| 1 |];
+        Pp.option Pp.int ppf (Some 1);
+        Pp.result ~ok:Pp.int ~error:Pp.string ppf (Error "e");
+        Pp.pair Pp.int Pp.int ppf (1, 2);
+        Pp.brackets Pp.int ppf 1;
+        Pp.semi ppf ();
+        Pp.pf ppf "%d" 1;
+        Pp.flush ppf ();
+        ignore (Pp.str "%d" 1 : string);
+        ignore (Pp.to_string Pp.int 1 : string);
+        ignore (Pp.styled_string ~ansi:true `Red "r" : string);
+        Format.pp_print_flush Format.std_formatter ();
+        Format.pp_print_flush Format.err_formatter ();
+        flush stdout;
+        flush stderr;
+        equal ~msg:"nothing reached stdout or stderr" string "" (output ());
+        is_true ~msg:"the buffer got the text" (Buffer.length b > 0));
   ]
 
 let () = exit @@ Windtrap.run "pp" tests
