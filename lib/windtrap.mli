@@ -362,7 +362,8 @@ val focus : test -> test
 (** [focus t] is [t] focused. When a suite holds a focused test, only focused
     tests run, within the rest of the selection. A focused run warns on standard
     error that focus is active, whatever its exit code, and a focus that leaves
-    no test to run is named in the sentence that says no tests ran.
+    no test to run is named in the sentence that says no tests ran. A [--mutate]
+    run, whose output is its verdict, prints no such warning.
 
     Under [CI] (see the {{!section-command_line}environment}) a suite that holds
     a [focus], selected or not, is refused. {!run} names the [focus] sites on
@@ -1381,7 +1382,8 @@ val stateful :
     file. The [accept:] line of another file does nothing until a later run
     reaches that file's [diff?]. A correction is registered by dune only after
     an action that exits [0]. A [--corrected] run that wrote one and returns [1]
-    says so on standard error.
+    says so on standard error. A [--mutate] run corrects under [--corrected] or
+    [-u] in its pass before any mutant is armed, and prints no such warning.
 
     {b Without dune} [-u] rewrites the literals and the files in place,
     atomically, for review with [git diff]. Under [-u] a mismatch is accepted

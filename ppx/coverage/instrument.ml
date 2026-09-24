@@ -302,10 +302,11 @@ class instrumenter st =
        TMC rewrites calls that sit in a constructor argument of a tail
        expression, which is a position out-edge wrapping destroys: wrapping
        the call in [___windtrap_post_visit___] leaves the function with no
-       TMC-able call, and warning 71 is fatal under stock dune, so a
-       library with one TMC function simply fails to build under
-       [--instrument-with ppx_windtrap.coverage]. Under a non-fatal warning setting
-       it builds and the function silently becomes stack-consuming.
+       TMC-able call, and warning 71 is an error in dune's default dev
+       profile, so there a library with one TMC function fails to build
+       under [--instrument-with ppx_windtrap.coverage]. In the release
+       profile, or under any setting where the warning is not an error, it
+       builds and the function silently becomes stack-consuming.
 
        Out-edge points are given up inside such a body, exactly as they are
        given up in ordinary tail position, for the same reason: guarantee 10

@@ -99,8 +99,9 @@ val pp_failure :
     print each side in one style and unmarked.
 
     When a side spans lines the entry is the unified diff of {!val:Diff.hunks},
-    the expected lines as the deleted ones. It prints at most 200 lines
-    ([max_diff_lines]), hunk heads included, and then a count of the rest. A
+    the expected lines as the deleted ones, under the header pair [--- expected]
+    and [+++ actual]. It prints at most 200 lines of hunks ([max_diff_lines]),
+    hunk heads included and the header pair not, and then a count of the rest. A
     deleted line and the one inserted line that answers it may differ in
     trailing blanks alone. A marker line then prints under the deleted one,
     under both [ansi] settings.

@@ -1021,11 +1021,13 @@ let () =
 
 let () =
   reg "a short flag takes no inline value" @@ fun () ->
+  (* The payload is the argument whole: without its value, [-f] would name
+     a flag that exists. *)
   List.iter
     (fun arg ->
       expect_error (Printf.sprintf "%s is an unknown flag" arg) [ arg ]
         (function
-        | Cli.Unknown_flag _ -> true
+        | Cli.Unknown_flag f -> f = arg
         | _ -> false))
     [ "-f=x"; "-fx" ]
 

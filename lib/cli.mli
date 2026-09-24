@@ -101,10 +101,11 @@ val empty : parsed
 (** The type for the errors of {!parse} and {!settings}. *)
 type error =
   | Unknown_flag of string
-      (** The flag is not in the table. The payload is the flag as typed,
-          without any [=value]. An argument of two bytes or more that starts
-          with [-] is read as a flag, so [-1] and a bundled [-xv] are unknown
-          flags. *)
+      (** The flag is not in the table. The payload is the argument as typed,
+          but for the [=value] of a long flag: [--bogus=1] gives [--bogus], and
+          [-f=x] gives [-f=x]. An argument of two bytes or more that starts with
+          [-] is read as a flag, so [-1] and a bundled [-xv] are unknown flags.
+      *)
   | Missing_value of string
       (** The flag takes a value and the command line ended. A flag takes the
           next argument whatever it looks like. *)

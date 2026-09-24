@@ -155,9 +155,11 @@
     Two sites may share a line and a column under two rewrites.
 
     A site is numbered by the order of its allocation, from [0], and the numbers
-    are local to the file. The traversal goes from the top down, so a site comes
-    before the sites inside its operands, and those of the left operand before
-    those of the right one.
+    are local to the file. That order is the traversal's and not the source's. A
+    site comes before the sites inside its operands, and the operands of a
+    mutated operator come left to right. The else branch of an [if] comes before
+    its then branch, and both before its condition, and the body of a [while]
+    comes before its condition.
 
     The [before] and [after] texts of a site are printed from the parsetree and
     never cut out of the source. The attributes of the site are left out, and

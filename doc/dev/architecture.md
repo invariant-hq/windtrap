@@ -214,8 +214,8 @@ a lossy `%g` spelling is asked for at the call site.
 
 ## The twelve guarantees
 
-Each is pinned by a test (`doc/dev/testing.md` says which); changing one
-is a design decision, recorded here first.
+Each is pinned by a test; changing one is a design decision, recorded
+here first.
 
 1. **Checking never writes to the source tree.** `-u` writes in place,
    atomically, and is refused under `CI`; `--corrected` writes
@@ -249,7 +249,9 @@ is a design decision, recorded here first.
 10. **Coverage never changes what programs or tests mean**, and the gate
     lives only in the reporting command.
 11. **Instrumentation data is transient, versioned, and never touches
-    the source tree**; a mutant catalogue is a literal in the binary.
+    the source tree**, with one exception: an instrumented executable that
+    lies below no build directory writes under `_windtrap/` in its working
+    directory. A mutant catalogue is a literal in the binary.
 12. **A mutant changes meaning only when armed, only in a build that
     asked, and only in the process that armed it**: a forked child of
     the `--mutate` loop, or the run itself under `--arm`; an armed

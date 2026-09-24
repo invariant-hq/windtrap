@@ -239,10 +239,11 @@ let table =
         mirror = mirrored "WINDTRAP_SHARD" (fun p -> p.shard = None);
       };
     (* The three feedback-loop flags have no mirror: they want a command
-       line. Under [dune runtest] a variable cannot help a cached action —
-       the run that failed is exactly the one dune will not repeat until
-       something it depends on changes — and a listing is not a test run.
-       On a directly executed binary the loop is real. *)
+       line. Under [dune runtest] a variable would not help: dune runs a
+       failed action again on every invocation anyway, and it keeps a
+       passed one cached whatever variable is set, since it tracks none it
+       was not told of. A listing is not a test run. On a directly executed
+       binary the loop is real. *)
     Flag_entry
       {
         short = None;
@@ -475,7 +476,8 @@ let table =
     (* The settings no flag can set, after the flags so [--help] lists
        them where the flag rows end. Each is read where its owner
        consumes it: WINDTRAP_PROJECT_ROOT by [Os], and
-       WINDTRAP_COVERAGE_FILE by the coverage runtime at exit. *)
+       WINDTRAP_COVERAGE_FILE by the coverage runtime when the first
+       instrumented module registers. *)
     Env_setting
       {
         var = "WINDTRAP_PROJECT_ROOT";
