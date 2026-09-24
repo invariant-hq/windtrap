@@ -51,8 +51,8 @@ let () =
   reg "no arguments parse to the empty record" @@ fun () ->
   expect_ok "no arguments parse to the empty record" [] (fun p ->
       is_true ~msg:"empty record" (p = Cli.empty));
-  expect_ok "argv with only a program name is empty" [] (fun p ->
-      is_true ~msg:"still empty" (p = Cli.empty))
+  is_true ~msg:"an empty argv, no program name either, is empty"
+    (Cli.parse [||] = Ok Cli.empty)
 
 let () =
   reg "every flag in one vector" @@ fun () ->

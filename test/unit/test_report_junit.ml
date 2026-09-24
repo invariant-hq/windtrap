@@ -193,8 +193,11 @@ let test_excused_as_skipped () =
   check_well_formed "excused document is well-formed" doc;
   contains ~msg:"excused failure maps to skipped-with-message"
     ~sub:{|<skipped message="expected failure: issue #42"/>|} doc;
-  not_contains ~msg:"excused failures emit no failure element"
-    ~sub:{|<failure message="expected 1; actual 2"|} doc;
+  (* Alone, so the document's other failure cannot hide one. *)
+  not_contains ~msg:"excused failures emit no failure element" ~sub:"<failure"
+    (Report_junit.render ~suite:"s"
+       ~results:[ Fixtures.excused_result ]
+       ~duration:0.1 ());
   contains ~msg:"counts: excused is a skip, not a failure"
     ~sub:{|tests="3" failures="1" errors="0" skipped="1"|} doc;
   let no_reason =

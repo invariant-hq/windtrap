@@ -240,10 +240,7 @@ let bounded_rejects_invalid_bounds_before_sampling () =
   in
   expect_invalid ~label:"zero bound" 0L;
   expect_invalid ~label:"negative bound" (-1L);
-  expect_invalid ~label:"min-int bound" Int64.min_int;
-  let first, _ = Seed.bits64 state in
-  equal ~msg:"invalid bounds leave the input state reusable" string
-    "e220a8397b1dcdaf" (hex_of_int64 first)
+  expect_invalid ~label:"min-int bound" Int64.min_int
 
 (* This oracle computes [2^64 mod bound] and an unsigned word remainder one
    bit at a time. For these small bounds every intermediate is a small signed

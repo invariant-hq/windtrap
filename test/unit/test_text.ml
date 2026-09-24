@@ -105,9 +105,11 @@ let tests =
         equal ~msg:"never splits a multibyte char" string
           "\195\169... (truncated; 4 bytes total)"
           (Text.truncate_bytes_utf8 3 "éé");
-        is_true ~msg:"truncated prefix ends on a char boundary"
-          (let out = Text.truncate_bytes_utf8 5 "ééééé" in
-           String.length out > 0 && Char.code out.[0] land 0xC0 <> 0x80));
+        (* An odd budget over two-byte characters: the prefix backs up to
+           the last whole character, never ending half-way through one. *)
+        equal ~msg:"truncated prefix ends on a char boundary" string
+          "éé... (truncated; 10 bytes total)"
+          (Text.truncate_bytes_utf8 5 "ééééé"));
     test "first_occurrence returns the byte offset" (fun () ->
         equal ~msg:"match in the middle" (option int) (Some 1)
           (Text.first_occurrence ~pattern:"ell" "hello");

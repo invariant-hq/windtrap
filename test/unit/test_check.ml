@@ -839,8 +839,12 @@ let tests =
           (fun () ->
             Check.raises (Payload (1, "x")) (fun () -> raise (Payload (1, "y"))))
           (fun (expected, actual, _) ->
-            is_true ~msg:"raises: both exceptions rendered"
-              (expected <> None && actual <> None));
+            equal ~msg:"raises: the expected exception rendered" (option string)
+              (Some (Printexc.to_string (Payload (1, "x"))))
+              expected;
+            equal ~msg:"raises: the raised exception rendered" (option string)
+              (Some (Printexc.to_string (Payload (1, "y"))))
+              actual);
         (* Structural comparison cannot see through functional payloads: the
            compare raises and propagates raw — never a silent pass, never a
            "wrong exception" misreport. The .mli points such cases at
@@ -869,13 +873,9 @@ let tests =
           (fun (expected, actual, _) ->
             is_true ~msg:"raises: expected rendered"
               (expected = Some "Not_found");
-            is_true ~msg:"raises: raised exception rendered"
-              (match actual with
-              | Some s ->
-                  (* Printexc renders constructor and payload. *)
-                  String.length s > 0
-                  && String.sub s 0 (min 8 (String.length s)) <> "Not_foun"
-              | None -> false)));
+            equal ~msg:"raises: raised exception rendered" (option string)
+              (Some (Printexc.to_string (Payload (0, "z"))))
+              actual));
     test "raises: backtrace recording" (fun () ->
         let saved = Printexc.backtrace_status () in
         Fun.protect
@@ -1114,50 +1114,58 @@ let tests =
           | _ -> false
           | exception F.Skip_test None -> true
           | exception _ -> false));
+    (* Every verb of [Check] that fails with a location, each made to fail
+       once. [skip] is the one verb without a site: a skip is not a failure. *)
     test "?__POS__ wins over the captured location on every verb" (fun () ->
-        let with_pos name f =
-          let fl = caught name f in
-          is_true ~msg:(name ^ ": ?__POS__ wins") (fl.F.loc = Some fake_loc)
-        in
-        with_pos "equal: ?__POS__" (fun () ->
-            Check.equal ~__POS__:fake_pos Testable.int 1 2);
-        with_pos "not_equal: ?__POS__" (fun () ->
-            Check.not_equal ~__POS__:fake_pos Testable.int 1 1);
-        with_pos "is_true: ?__POS__" (fun () ->
-            Check.is_true ~__POS__:fake_pos false);
-        with_pos "is_false: ?__POS__" (fun () ->
-            Check.is_false ~__POS__:fake_pos true);
-        with_pos "require_some: ?__POS__" (fun () ->
-            ignore (Check.require_some ~__POS__:fake_pos None));
-        with_pos "require_ok: ?__POS__" (fun () ->
-            ignore (Check.require_ok ~__POS__:fake_pos (Error ())));
-        with_pos "require_error: ?__POS__" (fun () ->
-            ignore (Check.require_error ~__POS__:fake_pos (Ok ())));
-        with_pos "raises: ?__POS__" (fun () ->
-            Check.raises ~__POS__:fake_pos Not_found (fun () -> ()));
-        with_pos "raises_match: ?__POS__" (fun () ->
-            Check.raises_match ~__POS__:fake_pos (fun _ -> false) (fun () -> ()));
-        with_pos "contains: ?__POS__" (fun () ->
-            Check.contains ~__POS__:fake_pos ~sub:"z" "abc");
-        with_pos "not_contains: ?__POS__" (fun () ->
-            Check.not_contains ~__POS__:fake_pos ~sub:"a" "abc");
-        with_pos "in_order: ?__POS__" (fun () ->
-            Check.in_order ~__POS__:fake_pos ~subs:[ "b"; "a" ] "abc");
-        with_pos "satisfies: ?__POS__" (fun () ->
-            Check.satisfies ~__POS__:fake_pos Testable.int (fun _ -> false) 1);
-        with_pos "less: ?__POS__" (fun () ->
-            Check.less ~__POS__:fake_pos Testable.int ~than:1 1);
-        with_pos "at_most: ?__POS__" (fun () ->
-            Check.at_most ~__POS__:fake_pos Testable.int ~than:1 2);
-        with_pos "greater: ?__POS__" (fun () ->
-            Check.greater ~__POS__:fake_pos Testable.int ~than:1 1);
-        with_pos "at_least: ?__POS__" (fun () ->
-            Check.at_least ~__POS__:fake_pos Testable.int ~than:1 0);
-        with_pos "require_match: ?__POS__" (fun () ->
-            ignore (Check.require_match ~__POS__:fake_pos (fun _ -> None) 1));
-        with_pos "fail: ?__POS__" (fun () -> Check.fail ~__POS__:fake_pos "x");
-        with_pos "failf: ?__POS__" (fun () ->
-            Check.failf ~__POS__:fake_pos "x %d" 1));
+        let p = fake_pos in
+        List.iter
+          (fun (name, f) ->
+            let fl = caught name f in
+            is_true ~msg:(name ^ ": ?__POS__ wins") (fl.F.loc = Some fake_loc))
+          [
+            ("equal", fun () -> Check.equal ~__POS__:p Testable.int 1 2);
+            ("not_equal", fun () -> Check.not_equal ~__POS__:p Testable.int 1 1);
+            ("is_true", fun () -> Check.is_true ~__POS__:p false);
+            ("is_false", fun () -> Check.is_false ~__POS__:p true);
+            ("is_none", fun () -> Check.is_none ~__POS__:p (Some 1));
+            ("is_some", fun () -> Check.is_some ~__POS__:p None);
+            ("is_ok", fun () -> Check.is_ok ~__POS__:p (Error ()));
+            ("is_error", fun () -> Check.is_error ~__POS__:p (Ok ()));
+            ( "require_some",
+              fun () -> ignore (Check.require_some ~__POS__:p None) );
+            ( "require_ok",
+              fun () -> ignore (Check.require_ok ~__POS__:p (Error ())) );
+            ( "require_error",
+              fun () -> ignore (Check.require_error ~__POS__:p (Ok ())) );
+            ( "require_match",
+              fun () ->
+                ignore (Check.require_match ~__POS__:p (fun _ -> None) 1) );
+            ( "satisfies",
+              fun () ->
+                Check.satisfies ~__POS__:p Testable.int (fun _ -> false) 1 );
+            ("mem", fun () -> Check.mem ~__POS__:p Testable.int 3 [ 1; 2 ]);
+            ("less", fun () -> Check.less ~__POS__:p Testable.int ~than:1 1);
+            ( "at_most",
+              fun () -> Check.at_most ~__POS__:p Testable.int ~than:1 2 );
+            ( "greater",
+              fun () -> Check.greater ~__POS__:p Testable.int ~than:1 1 );
+            ( "at_least",
+              fun () -> Check.at_least ~__POS__:p Testable.int ~than:1 0 );
+            ("contains", fun () -> Check.contains ~__POS__:p ~sub:"z" "abc");
+            ( "not_contains",
+              fun () -> Check.not_contains ~__POS__:p ~sub:"a" "abc" );
+            ( "starts_with",
+              fun () -> Check.starts_with ~__POS__:p ~affix:"z" "abc" );
+            ("ends_with", fun () -> Check.ends_with ~__POS__:p ~affix:"z" "abc");
+            ( "in_order",
+              fun () -> Check.in_order ~__POS__:p ~subs:[ "b"; "a" ] "abc" );
+            ( "raises",
+              fun () -> Check.raises ~__POS__:p Not_found (fun () -> ()) );
+            ( "raises_match",
+              fun () -> Check.raises_match ~__POS__:p (fun _ -> false) ignore );
+            ("fail", fun () -> Check.fail ~__POS__:p "x");
+            ("failf", fun () -> Check.failf ~__POS__:p "x %d" 1);
+          ]);
     test "default location is captured from the call stack" (fun () ->
         (* Without ?__POS__ the location is captured from the call stack and
            points at this file — user code, not windtrap's frames. *)
@@ -1181,63 +1189,47 @@ let tests =
               "test_check.ml"
               (Filename.basename loc.Loc.file)
         | _ -> fail "failf: default location captured");
+    (* Every verb of [Check] that takes [?msg]: all but [fail], [failf] and
+       [skip], whose message is their argument. *)
     test "?msg propagates on every verb" (fun () ->
-        let msg_of name f = (caught name f).F.msg in
-        is_true ~msg:"equal: ?msg stored"
-          (msg_of "equal: ?msg" (fun () ->
-               Check.equal ~msg:"ids" Testable.int 1 2)
-          = Some "ids");
-        is_true ~msg:"not_equal: ?msg stored"
-          (msg_of "not_equal: ?msg" (fun () ->
-               Check.not_equal ~msg:"ids" Testable.int 1 1)
-          = Some "ids");
-        is_true ~msg:"is_false: ?msg stored"
-          (msg_of "is_false: ?msg" (fun () -> Check.is_false ~msg:"flag" true)
-          = Some "flag");
-        is_true ~msg:"require_ok: ?msg stored"
-          (msg_of "require_ok: ?msg" (fun () ->
-               ignore (Check.require_ok ~msg:"cfg" (Error ())))
-          = Some "cfg");
-        is_true ~msg:"raises: ?msg stored"
-          (msg_of "raises: ?msg" (fun () ->
-               Check.raises ~msg:"boom" Not_found (fun () -> ()))
-          = Some "boom");
-        is_true ~msg:"contains: ?msg stored"
-          (msg_of "contains: ?msg" (fun () ->
-               Check.contains ~msg:"log" ~sub:"z" "abc")
-          = Some "log");
-        is_true ~msg:"not_contains: ?msg stored"
-          (msg_of "not_contains: ?msg" (fun () ->
-               Check.not_contains ~msg:"log" ~sub:"a" "abc")
-          = Some "log");
-        is_true ~msg:"in_order: ?msg stored"
-          (msg_of "in_order: ?msg" (fun () ->
-               Check.in_order ~msg:"trace" ~subs:[ "b"; "a" ] "abc")
-          = Some "trace");
-        is_true ~msg:"satisfies: ?msg stored"
-          (msg_of "satisfies: ?msg" (fun () ->
-               Check.satisfies ~msg:"positive" Testable.int (fun _ -> false) 1)
-          = Some "positive");
-        is_true ~msg:"less: ?msg stored"
-          (msg_of "less: ?msg" (fun () ->
-               Check.less ~msg:"retries" Testable.int ~than:1 1)
-          = Some "retries");
-        is_true ~msg:"at_most: ?msg stored"
-          (msg_of "at_most: ?msg" (fun () ->
-               Check.at_most ~msg:"retries" Testable.int ~than:1 2)
-          = Some "retries");
-        is_true ~msg:"greater: ?msg stored"
-          (msg_of "greater: ?msg" (fun () ->
-               Check.greater ~msg:"rate" Testable.int ~than:1 1)
-          = Some "rate");
-        is_true ~msg:"at_least: ?msg stored"
-          (msg_of "at_least: ?msg" (fun () ->
-               Check.at_least ~msg:"rate" Testable.int ~than:1 0)
-          = Some "rate");
-        is_true ~msg:"require_match: ?msg stored"
-          (msg_of "require_match: ?msg" (fun () ->
-               ignore (Check.require_match ~msg:"tcp" (fun _ -> None) 1))
-          = Some "tcp"));
+        let m = "why" in
+        List.iter
+          (fun (name, f) ->
+            equal ~msg:(name ^ ": ?msg stored") (option string) (Some m)
+              (caught name f).F.msg)
+          [
+            ("equal", fun () -> Check.equal ~msg:m Testable.int 1 2);
+            ("not_equal", fun () -> Check.not_equal ~msg:m Testable.int 1 1);
+            ("is_true", fun () -> Check.is_true ~msg:m false);
+            ("is_false", fun () -> Check.is_false ~msg:m true);
+            ("is_none", fun () -> Check.is_none ~msg:m (Some 1));
+            ("is_some", fun () -> Check.is_some ~msg:m None);
+            ("is_ok", fun () -> Check.is_ok ~msg:m (Error ()));
+            ("is_error", fun () -> Check.is_error ~msg:m (Ok ()));
+            ("require_some", fun () -> ignore (Check.require_some ~msg:m None));
+            ("require_ok", fun () -> ignore (Check.require_ok ~msg:m (Error ())));
+            ( "require_error",
+              fun () -> ignore (Check.require_error ~msg:m (Ok ())) );
+            ( "require_match",
+              fun () -> ignore (Check.require_match ~msg:m (fun _ -> None) 1) );
+            ( "satisfies",
+              fun () -> Check.satisfies ~msg:m Testable.int (fun _ -> false) 1
+            );
+            ("mem", fun () -> Check.mem ~msg:m Testable.int 3 [ 1; 2 ]);
+            ("less", fun () -> Check.less ~msg:m Testable.int ~than:1 1);
+            ("at_most", fun () -> Check.at_most ~msg:m Testable.int ~than:1 2);
+            ("greater", fun () -> Check.greater ~msg:m Testable.int ~than:1 1);
+            ("at_least", fun () -> Check.at_least ~msg:m Testable.int ~than:1 0);
+            ("contains", fun () -> Check.contains ~msg:m ~sub:"z" "abc");
+            ("not_contains", fun () -> Check.not_contains ~msg:m ~sub:"a" "abc");
+            ("starts_with", fun () -> Check.starts_with ~msg:m ~affix:"z" "abc");
+            ("ends_with", fun () -> Check.ends_with ~msg:m ~affix:"z" "abc");
+            ( "in_order",
+              fun () -> Check.in_order ~msg:m ~subs:[ "b"; "a" ] "abc" );
+            ("raises", fun () -> Check.raises ~msg:m Not_found (fun () -> ()));
+            ( "raises_match",
+              fun () -> Check.raises_match ~msg:m (fun _ -> false) ignore );
+          ]);
   ]
 
 let () = exit @@ Windtrap.run "check" tests

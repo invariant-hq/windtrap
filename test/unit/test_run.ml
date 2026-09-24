@@ -373,8 +373,20 @@ let () =
   check "clean releases report no failures" (release_failures = []);
   check_int "only fixtures with a teardown are announced" ~expected:2
     ~actual:(List.length !announced);
+  (* [fixture (<file:line>)], the line of each [Run.fixture] above: a is
+     declared before b, and b's release is announced first. *)
+  let site name =
+    let prefix = "fixture (test/unit/test_run.ml:" in
+    if String.starts_with ~prefix name && String.ends_with ~suffix:")" name then
+      int_of_string_opt
+        (String.sub name (String.length prefix)
+           (String.length name - String.length prefix - 1))
+    else None
+  in
   check "announcements name the declaration site"
-    (List.for_all (fun name -> contains "fixture" name) !announced);
+    (match List.map site !announced with
+    | [ Some a; Some b ] -> a < b
+    | _ -> false);
   (match List.rev !log with
   | [ a1; r1; a2; r2 ] ->
       check "release order is reverse acquisition order"
@@ -431,16 +443,25 @@ let () =
   in_test run (fun _ ->
       ignore (fx_ok ());
       ignore (fx_bad ()));
-  (match Run.release_fixtures run ~announce:ignore with
+  (* Released in reverse: the raising fixture is announced first. *)
+  let announced = ref [] in
+  (match
+     Run.release_fixtures run ~announce:(fun name ->
+         announced := name :: !announced)
+   with
   | [ failure ] ->
       check "a raising teardown yields a Release-phase failure"
         (failure.Failure.phase = Failure.Release);
       (match failure.Failure.kind with
       | Failure.Message message ->
-          check "the failure names the fixture and the exception"
-            (contains "fixture" message
-            && contains "release raised" message
-            && contains "leak" message)
+          check_string "the failure names the fixture and the exception"
+            ~expected:
+              ((match List.rev !announced with
+                 | first :: _ -> first
+                 | [] -> "<nothing announced>")
+              ^ ": release raised "
+              ^ Printexc.to_string (Failure "leak"))
+            ~actual:message
       | _ -> check "release failure kind" false);
       check "the release failure carries the declaration site"
         (match failure.Failure.loc with
@@ -653,8 +674,15 @@ let () =
   Run.reclaim frame;
   check "reclaim removes every scratch path, recursively"
     (List.for_all (fun p -> not (Sys.file_exists p)) paths);
+  (* A second call does nothing: what stands at the attempt's scratch root
+     now is no longer the attempt's, and survives it. *)
+  let scratch = Filename.dirname (List.hd paths) in
+  Unix.mkdir scratch 0o700;
+  let sentinel = Filename.concat scratch "not-the-attempts" in
+  close_out (open_out sentinel);
   Run.reclaim frame;
-  check "reclaim is idempotent" true
+  check "a second reclaim does nothing" (Sys.file_exists sentinel);
+  if Sys.file_exists scratch then remove_tree scratch
 
 let () =
   (* Exception safety: paths created before a raising body are still
@@ -684,11 +712,9 @@ let () =
       let f = Run.temp_file ~suffix:"/evil" () in
       let plain = Run.temp_dir () in
       check "a hostile prefix is sanitized into the scratch directory"
-        (Filename.dirname d = Filename.dirname plain
-        && not (String.contains (Filename.basename d) '/'));
+        (Filename.dirname d = Filename.dirname plain);
       check "a hostile suffix is sanitized into the scratch directory"
-        (Filename.dirname f = Filename.dirname plain
-        && not (String.contains (Filename.basename f) '/')));
+        (Filename.dirname f = Filename.dirname plain));
   Run.reclaim frame
 
 let () =
@@ -1118,9 +1144,17 @@ let () =
     with_temp_root @@ fun root ->
     let config = base_config ~log_dir:root () in
     let td_after_timeout = ref false in
+    let body_times_out =
+      Test_tree.test ~timeout:0.2 "body-times-out" busy_forever
+    in
+    let declared =
+      match Test_tree.flatten [ body_times_out ] with
+      | [ case ] -> case.Test_tree.loc
+      | _ -> None
+    in
     let tests =
       [
-        Test_tree.test ~timeout:0.2 "body-times-out" busy_forever;
+        body_times_out;
         Test_tree.bracket ~timeout:0.3
           ~setup:(fun () -> ())
           ~teardown:(fun () -> busy_forever ())
@@ -1141,7 +1175,8 @@ let () =
          check "body timeout: message says timed out"
            (contains "timed out" (message_of f));
          (* The declaration is a timeout's natural site. *)
-         check "body timeout: located at the declaration" (f.Failure.loc <> None)
+         check "body timeout: located at the declaration"
+           (declared <> None && f.Failure.loc = declared)
      | _ -> check "body timeout: one failure" false);
     (let fs = failure_list (outcome_of outcome [ "teardown-times-out" ]) in
      match fs with
@@ -3331,9 +3366,11 @@ let () =
     [ Test_tree.test "new-test" (fun () -> ()) ]
   @@ fun outcome ->
   check "the replacement run is green" (outcome.Run.exit_code = 0);
-  expect_startup_error "dead entries no longer match"
+  (* The old test declared again: had its entry survived, [--failed] would
+     select it. *)
+  expect_startup_error "dead entries were dropped, not merely unmatched"
     ~config:{ config with Run.failed_only = true }
-    [ Test_tree.test "new-test" (fun () -> ()) ]
+    [ Test_tree.test "old-test" (fun () -> Check.fail "boom") ]
     (function Run.No_recorded_failures -> true | _ -> false)
 
 (* The exit guard (D1) *)

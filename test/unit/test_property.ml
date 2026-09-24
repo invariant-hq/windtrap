@@ -220,7 +220,7 @@ let discarding_example_is_counted_and_skipped () =
   is_true ~msg:"the discarded example must be counted"
     (stats.Property.discards >= 1)
 
-let examples_count_in_coverage_denominator () =
+let examples_count_as_cases_and_mark_cover_labels () =
   let body ctx x = Property.cover ctx "zero" (x = 0) in
   let stats =
     expect_pass
@@ -1010,8 +1010,8 @@ let suite =
       failing_example_without_printer_renders_placeholder );
     ( "discarding example is counted and skipped",
       discarding_example_is_counted_and_skipped );
-    ( "examples count in coverage denominator",
-      examples_count_in_coverage_denominator );
+    ( "examples count as cases and mark cover labels",
+      examples_count_as_cases_and_mark_cover_labels );
     ("assume exhaustion gives up", assume_exhaustion_gives_up);
     ("generation rejection gives up", generation_rejection_gives_up);
     ( "explicit max_discard bounds discards",

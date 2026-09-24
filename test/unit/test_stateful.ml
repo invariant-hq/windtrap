@@ -1497,12 +1497,9 @@ let long_programs_truncate_with_a_step_omitted_line () =
          (render gen program)
          (String.concat "\n" expected))
     (lines_of gen program = expected);
-  is_true
-    ~msg:
-      (Printf.sprintf
-         "the summary counts the rows that print, not the calls: %S"
-         (summary_of program))
-    (summary_of program = Pp.str "50 calls, last: %s" (List.nth drawn 49))
+  equal ~msg:"the summary counts the calls, not the rows that print" string
+    (Pp.str "50 calls, last: %s" (List.nth drawn 49))
+    (summary_of program)
 
 (* The model column is as wide as the cells that print, so a wide one
    inside the omitted middle costs the rows that print nothing. *)
@@ -1606,7 +1603,9 @@ let stateful_declares_a_prop_node_with_its_tags_timeout_and_site () =
    the only way to see that wiring is to run the node it declares. The body
    ends by raising the engine's outcome in a constructor [Run]'s
    interface does not export, so the evidence is the lifecycle the run left
-   behind rather than the outcome value. *)
+   behind rather than the outcome value. That constructor is recognised by
+   its name, the one thing of it this suite can see, and any other
+   exception the body raises escapes to fail the test. *)
 let run_declared_body tree =
   match (flattened tree).Test_tree.body with
   | Test_tree.Scoped _ ->
@@ -1614,9 +1613,9 @@ let run_declared_body tree =
   | Test_tree.Body body -> (
       match body () with
       | () -> failf "the property body returned without an engine outcome"
-      | exception ((Failure.Check_failure _ | Invalid_argument _) as raised) ->
-          raise raised
-      | exception _ -> ())
+      | exception outcome
+        when Printexc.exn_slot_name outcome = "Windtrap__Run.Prop_outcome" ->
+          ())
 
 let stateful_runs_one_fresh_system_per_case_over_steps_calls () =
   let scopes = ref 0 and releases = ref 0 in
@@ -1635,12 +1634,9 @@ let stateful_runs_one_fresh_system_per_case_over_steps_calls () =
          incr scopes;
          Fun.protect ~finally:(fun () -> incr releases) (fun () -> run ()))
        commands);
-  is_true ~msg:"the declared body ran no case at all" (!scopes > 0);
-  (* The declared ?count is an upper bound here rather than an equality:
-     nothing may raise it, and the engine default of 100 would. *)
-  is_true
-    ~msg:(Printf.sprintf "the declared ?count of 3 ran %d cases" !scopes)
-    (!scopes <= 3);
+  (* Every case passes and none discards, so the declared ?count is the
+     number of cases, where the engine's default would be 100. *)
+  equal ~msg:"the declared ?count of 3 is the number of cases" int 3 !scopes;
   is_true
     ~msg:(Printf.sprintf "%d releases for %d systems" !releases !scopes)
     (!releases = !scopes);
@@ -1685,10 +1681,7 @@ let a_callback_only_resource_runs_end_to_end () =
   run_declared_body
     (Windtrap.stateful ~count:5 ~steps:6 "sink" ~model:[] ~scope:with_sink
        commands);
-  is_true ~msg:"the declared body ran no case at all" (!opened > 0);
-  is_true
-    ~msg:(Printf.sprintf "the declared ?count of 5 ran %d cases" !opened)
-    (!opened <= 5);
+  equal ~msg:"the declared ?count of 5 is the number of cases" int 5 !opened;
   is_true
     ~msg:(Printf.sprintf "%d sinks closed for %d opened" !closed !opened)
     (!closed = !opened)

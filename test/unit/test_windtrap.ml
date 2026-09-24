@@ -804,6 +804,8 @@ let () =
   with_temp_root @@ fun root ->
   with_project_root root @@ fun () ->
   let config = base_config ~log_dir:(Filename.concat root "logs") () in
+  (* The stale literal's own position, as the verb receives it. *)
+  let stale_site = ref None in
   let suite =
     [
       test "flexible" (fun () ->
@@ -813,7 +815,10 @@ let () =
               b
           |});
       test "exact" (fun () -> expect_exact "a\n" @@ __POS_OF__ "a\n");
-      test "stale" (fun () -> expect "new" @@ __POS_OF__ {| old |});
+      test "stale" (fun () ->
+          let ((pos, _) as literal) = __POS_OF__ {| old |} in
+          stale_site := Some pos;
+          expect "new" literal);
       test "stale exact" (fun () -> expect_exact "new" @@ __POS_OF__ "new ");
     ]
   in
@@ -851,9 +856,12 @@ let () =
       check "the mismatch carries the normalized forms"
         (expected = "old" && actual = "new");
       check "the failure sits at the literal's position"
-        (match f.Failure.loc with
-        | Some loc -> String.ends_with ~suffix:"test_windtrap.ml" loc.Loc.file
-        | None -> false)
+        (match (f.Failure.loc, !stale_site) with
+        | Some loc, Some (file, line, _, _) ->
+            String.ends_with ~suffix:"test_windtrap.ml" loc.Loc.file
+            && String.ends_with ~suffix:"test_windtrap.ml" file
+            && loc.Loc.line = line
+        | _ -> false)
   | _ -> check "a stale literal fails with a Literal payload" false
 
 (* A stale expectation beside another failure: the run keeps no

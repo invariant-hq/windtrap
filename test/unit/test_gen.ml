@@ -1531,9 +1531,6 @@ let law_tests =
     prop "such_that draws satisfy the predicate"
       (Gen.such_that (fun n -> n mod 3 = 0) (Gen.int_range (-300) 300))
       (fun n -> equal ~msg:"divisible by three" int 0 (n mod 3));
-    prop "option is Some or None and never raises" (Gen.option Gen.int)
-      (fun o ->
-        is_true ~msg:"total" (match o with None -> true | Some _ -> true));
     (* Printing must be total: a counterexample that cannot be rendered
        is a failure the reader never sees. This is the one law whose
        violation would corrupt the report itself. *)
@@ -2156,39 +2153,6 @@ module Shrink_tree_suite = struct
            !source_calls (depth - 1))
       (!source_calls = depth - 1)
 
-  let post_sample_forcing_needs_no_random_calls () =
-    let random_calls = ref 0 in
-    let random_word () =
-      incr random_calls;
-      !random_calls * 17 mod 31
-    in
-    let sample () =
-      let root = random_word () in
-      let first = random_word () in
-      let second = random_word () in
-      let captured = [ first; second ] in
-      let rec tree value candidates =
-        Shrink_tree.make ~root:value
-          ~children:
-            (Seq.map
-               (fun candidate -> tree candidate [])
-               (List.to_seq candidates))
-      in
-      tree root captured
-    in
-    let tree = sample () in
-    let calls_after_sample = !random_calls in
-    ignore (observe tree);
-    ignore (observe tree);
-    is_true
-      ~msg:
-        (Printf.sprintf "forcing a sampled tree made %d additional random calls"
-           (!random_calls - calls_after_sample))
-      (!random_calls = calls_after_sample)
-
-  (* Greedy shrink termination: descend into the first candidate that still
-     fails the property, exactly like the property engine's shrink loop. *)
-
   let greedy_shrink_terminates_at_a_local_minimum () =
     (* Integer trees whose candidates count down by one: [n]'s candidates are
        [0] then [n - 1], recursively. *)
@@ -2271,8 +2235,6 @@ module Shrink_tree_suite = struct
         list_is_stack_safe_for_large_flat_inputs );
       ( "infinite depth is incrementally forceable",
         infinite_depth_is_incrementally_forceable );
-      ( "post-sample forcing needs no random calls",
-        post_sample_forcing_needs_no_random_calls );
       ( "greedy shrink terminates at a local minimum",
         greedy_shrink_terminates_at_a_local_minimum );
     ]

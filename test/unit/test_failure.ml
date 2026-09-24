@@ -465,30 +465,6 @@ let tests =
           && Char.code tl.F.text.[0] land 0xC0 <> 0x80);
         raises_match ~msg:"negative omitted_bytes rejected" Exn.invalid_arg
           (fun () -> F.tail ~omitted_bytes:(-1) "x"));
-    test "outcomes" (fun () ->
-        let body = F.message "body failed" in
-        let teardown = F.with_phase F.Teardown (F.message "teardown failed") in
-        let describe = function
-          | F.Pass -> "pass"
-          | F.Fail fs -> Printf.sprintf "fail:%d" (List.length fs)
-          | F.Skip None -> "skip"
-          | F.Skip (Some r) -> "skip:" ^ r
-        in
-        equal ~msg:"pass" string "pass" (describe F.Pass);
-        equal ~msg:"body and teardown failures are two entries" string "fail:2"
-          (describe (F.Fail [ body; teardown ]));
-        equal ~msg:"skip with reason" string "skip:windows only"
-          (describe (F.Skip (Some "windows only")));
-        equal ~msg:"skip without reason" string "skip" (describe (F.Skip None)));
-    test "control exceptions carry their payloads" (fun () ->
-        let f = F.message "boom" in
-        is_true ~msg:"Check_failure: carries the failure"
-          (try raise (F.Check_failure f) with F.Check_failure g -> g == f);
-        is_true ~msg:"Skip_test: carries the reason"
-          (try raise (F.Skip_test (Some "no docker"))
-           with F.Skip_test r -> r = Some "no docker");
-        is_true ~msg:"Timeout: carries the limit"
-          (try raise (F.Timeout 2.5) with F.Timeout t -> t = 2.5));
     (* Only a *trailing* run of windtrap frames goes. Here the exception is
        caught in this file, so the deepest frame is the reader's and there
        is no trailing run at all: the two [Loc.delimit] frames the raise

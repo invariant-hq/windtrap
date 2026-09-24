@@ -1869,7 +1869,7 @@ let test_control_bytes_are_render_only () =
         Check.equal Testable.text "\027" "\\x1b")
   in
   not_contains ~msg:"an escape collision is never called an identical rendering"
-    ~sub:"render identically" (failure_block merged)
+    ~sub:"both sides render as" (failure_block merged)
 
 let test_diff_truncation () =
   let text prefix =
@@ -5169,7 +5169,7 @@ let tests =
     test "run-scoped notes" test_note;
     test "green compact run is one named line" test_compact_green_one_liner;
     test "slow untagged tests are noteworthy" test_compact_slow_trigger;
-    test "slow durations sum attempts; failing slow tests warn once"
+    test "slow reads the recorded duration; failing slow tests warn once"
       test_slow_duration_semantics;
     test "slow threshold zero disables the machinery" test_slow_threshold_zero;
     test "verbose gains the slow warnings" test_verbose_slow_warnings;

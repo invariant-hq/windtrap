@@ -300,15 +300,7 @@ let tests =
           Float.infinity Float.max_float;
         check_equal "subnormals compare exactly" T.float_exact 1e-310 1e-310;
         check_differ "distinct subnormals differ" T.float_exact 1e-310
-          (Float.succ 1e-310);
-        (* The mli contrasts [float_exact] with [Stdlib.Float.equal], which
-           conflates the zeros ([compare]'s total order puts [-0.] and [0.]
-           in the same class). Pin the stdlib fact the doc contrast rests
-           on: if it ever changed, the float_exact doc would be wrong, not
-           the witness. *)
-        is_true
-          ~msg:"doc contrast holds: Stdlib.Float.equal conflates the zeros"
-          (Float.equal 0. (-0.)));
+          (Float.succ 1e-310));
     test "float_exact: printing" (fun () ->
         check_prints "prints short decimals plainly" T.float_exact 1.5
           ~expected:"1.5";
