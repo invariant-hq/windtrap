@@ -20,19 +20,7 @@ let hex_of_int64 value = Printf.sprintf "%016Lx" value
 (* Compares with Int64 equality (via the canonical hex image) and renders
    in hex, which is how the frozen literals are written. *)
 let hex64 = Testable.contramap hex_of_int64 string
-
-let checkf condition format =
-  Printf.ksprintf (fun message -> if not condition then fail message) format
-
-let expect_hex ~label expected actual =
-  equal ~msg:label string expected (hex_of_int64 actual)
-
-let expect_seed ~label result =
-  require_ok ~msg:label ~pp:Format.pp_print_string result
-
-let expect_seed_error ~label = function
-  | Error _ -> ()
-  | Ok seed -> failf "%s: unexpectedly accepted %s" label (hex_of_int64 seed)
+let pp_hex ppf value = Format.pp_print_string ppf (hex_of_int64 value)
 
 (* Token codec *)
 
@@ -51,7 +39,8 @@ let canonical_token_literals () =
     (fun (bits, text) ->
       equal ~msg:(text ^ " encode") string text (Seed.to_string bits);
       let decoded =
-        expect_seed ~label:(text ^ " decode") (Seed.of_string text)
+        require_ok ~msg:(text ^ " decode") ~pp:Format.pp_print_string
+          (Seed.of_string text)
       in
       equal ~msg:(text ^ " bits") hex64 bits decoded)
     vectors
@@ -63,7 +52,8 @@ let all_token_patterns_round_trip () =
     else begin
       let text = Seed.to_string bits in
       let decoded =
-        expect_seed ~label:("round trip " ^ text) (Seed.of_string text)
+        require_ok ~msg:("round trip " ^ text) ~pp:Format.pp_print_string
+          (Seed.of_string text)
       in
       equal ~msg:("round trip " ^ text) hex64 bits decoded;
       let bits =
@@ -98,7 +88,7 @@ let token_parser_rejects_malformed_text () =
   in
   List.iter
     (fun text ->
-      expect_seed_error ~label:(String.escaped text) (Seed.of_string text))
+      is_error ~msg:(String.escaped text) ~pp:pp_hex (Seed.of_string text))
     rejected
 
 (* Stream *)
@@ -154,9 +144,9 @@ let stream_matches_frozen_literals () =
         | [] -> ()
         | expected :: remaining ->
             let word, state = Seed.bits64 state in
-            expect_hex
-              ~label:(Printf.sprintf "%s output %d" label index)
-              expected word;
+            equal
+              ~msg:(Printf.sprintf "%s output %d" label index)
+              string expected (hex_of_int64 word);
             check_outputs (index + 1) state remaining
       in
       check_outputs 1 (Seed.make seed) outputs)
@@ -180,8 +170,8 @@ let states_are_immutable_and_deterministic () =
   let second, _ = Seed.bits64 successor in
   let repeated_second, _ = Seed.bits64 repeated_successor in
   equal ~msg:"reused successor output" hex64 second repeated_second;
-  expect_hex ~label:"first word" "e220a8397b1dcdaf" first;
-  expect_hex ~label:"second word" "6e789e6aa1b965f4" second
+  equal ~msg:"first word" string "e220a8397b1dcdaf" (hex_of_int64 first);
+  equal ~msg:"second word" string "6e789e6aa1b965f4" (hex_of_int64 second)
 
 let full_width_output_preserves_the_sign_bit () =
   let state = Seed.make 0L in
@@ -210,28 +200,36 @@ let bounded_edge_vectors () =
   List.iter
     (fun (bound, expected) ->
       let value, successor = Seed.below ~bound (Seed.make 0L) in
-      expect_hex ~label:("bounded " ^ hex_of_int64 bound) expected value;
-      checkf
-        (Int64.compare value 0L >= 0 && Int64.compare value bound < 0)
-        "bounded result %s is outside [0,%s)" (hex_of_int64 value)
-        (hex_of_int64 bound);
+      equal
+        ~msg:("bounded " ^ hex_of_int64 bound)
+        string expected (hex_of_int64 value);
+      is_true
+        ~msg:
+          (Printf.sprintf "bounded result %s is outside [0,%s)"
+             (hex_of_int64 value) (hex_of_int64 bound))
+        (Int64.compare value 0L >= 0 && Int64.compare value bound < 0);
       let next, _ = Seed.bits64 successor in
-      expect_hex ~label:"one-word successor" "6e789e6aa1b965f4" next)
+      equal ~msg:"one-word successor" string "6e789e6aa1b965f4"
+        (hex_of_int64 next))
     vectors
 
 let bounded_single_rejection_consumes_both_words () =
   let bound = 0x4000000000000001L in
   let value, successor = Seed.below ~bound (Seed.make 0x0123456789abcdefL) in
-  expect_hex ~label:"one-rejection result" "1573529b34a1d090" value;
+  equal ~msg:"one-rejection result" string "1573529b34a1d090"
+    (hex_of_int64 value);
   let next, _ = Seed.bits64 successor in
-  expect_hex ~label:"one-rejection successor" "2f90b72e996dccbe" next
+  equal ~msg:"one-rejection successor" string "2f90b72e996dccbe"
+    (hex_of_int64 next)
 
 let bounded_multiple_rejection_consumes_every_word () =
   let bound = 0x4000000000000001L in
   let value, successor = Seed.below ~bound (Seed.make 0x14L) in
-  expect_hex ~label:"two-rejection result" "0079d22ed225a1f6" value;
+  equal ~msg:"two-rejection result" string "0079d22ed225a1f6"
+    (hex_of_int64 value);
   let next, _ = Seed.bits64 successor in
-  expect_hex ~label:"two-rejection successor" "5c83eea29361787c" next
+  equal ~msg:"two-rejection successor" string "5c83eea29361787c"
+    (hex_of_int64 next)
 
 let bounded_rejects_invalid_bounds_before_sampling () =
   let state = Seed.make 0L in
@@ -244,8 +242,8 @@ let bounded_rejects_invalid_bounds_before_sampling () =
   expect_invalid ~label:"negative bound" (-1L);
   expect_invalid ~label:"min-int bound" Int64.min_int;
   let first, _ = Seed.bits64 state in
-  expect_hex ~label:"invalid bounds leave the input state reusable"
-    "e220a8397b1dcdaf" first
+  equal ~msg:"invalid bounds leave the input state reusable" string
+    "e220a8397b1dcdaf" (hex_of_int64 first)
 
 (* This oracle computes [2^64 mod bound] and an unsigned word remainder one
    bit at a time. For these small bounds every intermediate is a small signed
@@ -314,9 +312,9 @@ let bounded_draws_are_roughly_uniform () =
     (fun index count ->
       (* Expected 1,000 per bucket, standard deviation ~30; a 200 margin is
          over six sigma, catching gross bias without flakiness. *)
-      checkf
-        (count > 800 && count < 1200)
-        "bucket %d holds %d of %d draws" index count draws)
+      is_true
+        ~msg:(Printf.sprintf "bucket %d holds %d of %d draws" index count draws)
+        (count > 800 && count < 1200))
     buckets
 
 (* Derivation *)
@@ -361,7 +359,8 @@ let derivation_matches_frozen_literals () =
   in
   List.iter
     (fun (label, root, path, index, expected) ->
-      expect_hex ~label expected (Seed.derive ~root ~path ~index))
+      equal ~msg:label string expected
+        (hex_of_int64 (Seed.derive ~root ~path ~index)))
     vectors
 
 let derivation_hashes_raw_path_bytes () =
@@ -385,7 +384,8 @@ let derivation_hashes_raw_path_bytes () =
   in
   List.iter
     (fun (label, root, path, index, expected) ->
-      expect_hex ~label expected (Seed.derive ~root ~path ~index))
+      equal ~msg:label string expected
+        (hex_of_int64 (Seed.derive ~root ~path ~index)))
     vectors;
   (* FNV-1a multiplies after every byte, so a trailing NUL still re-keys. *)
   not_equal ~msg:"a trailing NUL byte re-keys the stream" hex64
@@ -423,9 +423,11 @@ let derivation_is_distinct_across_paths_and_indices () =
     (fun path ->
       for index = 0 to 99 do
         let derived = Seed.derive ~root:0x7be1d2c904aa31f5L ~path ~index in
-        checkf
-          (not (Int64_set.mem derived !seen))
-          "derived seed %s for %S/%d collides" (hex_of_int64 derived) path index;
+        is_true
+          ~msg:
+            (Printf.sprintf "derived seed %s for %S/%d collides"
+               (hex_of_int64 derived) path index)
+          (not (Int64_set.mem derived !seen));
         seen := Int64_set.add derived !seen;
         incr count
       done)
@@ -438,8 +440,10 @@ let split_matches_frozen_literals () =
   let expect_outputs ~label state expected =
     let first, state = Seed.bits64 state in
     let second, _ = Seed.bits64 state in
-    expect_hex ~label:(label ^ " word 1") (List.nth expected 0) first;
-    expect_hex ~label:(label ^ " word 2") (List.nth expected 1) second
+    equal ~msg:(label ^ " word 1") string (List.nth expected 0)
+      (hex_of_int64 first);
+    equal ~msg:(label ^ " word 2") string (List.nth expected 1)
+      (hex_of_int64 second)
   in
   let fresh, continued = Seed.split (Seed.make 0L) in
   expect_outputs ~label:"fresh of zero" fresh
@@ -459,12 +463,16 @@ let split_gamma_regularity_branch_is_frozen () =
   let fresh, continued = Seed.split (Seed.make 0xc3910c8d016b07d6L) in
   let first, state = Seed.bits64 fresh in
   let second, _ = Seed.bits64 state in
-  expect_hex ~label:"regular-gamma fresh word 1" "f9a602a17425332e" first;
-  expect_hex ~label:"regular-gamma fresh word 2" "237d30830cf39d4b" second;
+  equal ~msg:"regular-gamma fresh word 1" string "f9a602a17425332e"
+    (hex_of_int64 first);
+  equal ~msg:"regular-gamma fresh word 2" string "237d30830cf39d4b"
+    (hex_of_int64 second);
   let first, state = Seed.bits64 continued in
   let second, _ = Seed.bits64 state in
-  expect_hex ~label:"regular-gamma continued word 1" "e220a8397b1dcdaf" first;
-  expect_hex ~label:"regular-gamma continued word 2" "6e789e6aa1b965f4" second
+  equal ~msg:"regular-gamma continued word 1" string "e220a8397b1dcdaf"
+    (hex_of_int64 first);
+  equal ~msg:"regular-gamma continued word 2" string "6e789e6aa1b965f4"
+    (hex_of_int64 second)
 
 let split_is_deterministic_and_independent () =
   let state = Seed.make 0xdeadbeefcafebabeL in
@@ -495,9 +503,11 @@ let split_fresh_streams_are_distinct_across_seeds () =
   for seed = 0 to 99 do
     let fresh, _ = Seed.split (Seed.make (Int64.of_int seed)) in
     let word, _ = Seed.bits64 fresh in
-    checkf
-      (not (Int64_set.mem word !seen))
-      "fresh stream for seed %d collides on its first word" seed;
+    is_true
+      ~msg:
+        (Printf.sprintf "fresh stream for seed %d collides on its first word"
+           seed)
+      (not (Int64_set.mem word !seen));
     seen := Int64_set.add word !seen
   done
 

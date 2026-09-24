@@ -10,10 +10,6 @@ open Windtrap
 module F = Windtrap.Private.Failure
 module Loc = Windtrap.Private.Loc
 
-let check name cond = is_true ~msg:name cond
-let check_int name ~expected ~actual = equal ~msg:name int expected actual
-let check_string name ~expected ~actual = equal ~msg:name string expected actual
-
 let has ~needle haystack =
   Windtrap.Private.Text.contains_substring ~pattern:needle haystack
 
@@ -44,7 +40,7 @@ let containment_parts name (f : F.t) k =
   | F.Containment
       { needle; found_at; haystack_length; excerpt; excerpt_offset; _ } ->
       k (excerpt, needle, found_at, haystack_length, excerpt_offset)
-  | _ -> check (name ^ ": Containment kind") false
+  | _ -> is_true ~msg:(name ^ ": Containment kind") false
 
 let big = String.make 200_000 'a'
 
@@ -55,40 +51,40 @@ let tests =
   [
     test "equality constructor: defaults" (fun () ->
         let f = F.equality ~expected:"1" ~actual:"2" () in
-        check "kind payload"
+        is_true ~msg:"kind payload"
           (match f.F.kind with
           | F.Equality { expected = "1"; actual = "2"; not_ = false } -> true
           | _ -> false);
-        check "default phase is Body" (f.F.phase = F.Body);
-        check "default loc is None" (f.F.loc = None);
-        check "default msg is None" (f.F.msg = None);
-        check "default output_tail is None" (f.F.output_tail = None));
+        is_true ~msg:"default phase is Body" (f.F.phase = F.Body);
+        is_true ~msg:"default loc is None" (f.F.loc = None);
+        is_true ~msg:"default msg is None" (f.F.msg = None);
+        is_true ~msg:"default output_tail is None" (f.F.output_tail = None));
     test "equality constructor: loc, msg, not_ stored" (fun () ->
         let loc = loc_of "test/t.ml" 12 in
         let f =
           F.equality ~loc ~msg:"ids" ~not_:true ~expected:"3" ~actual:"3" ()
         in
-        check "not_ recorded"
+        is_true ~msg:"not_ recorded"
           (match f.F.kind with
           | F.Equality { not_ = true; _ } -> true
           | _ -> false);
-        check "loc stored" (f.F.loc = Some loc);
-        check "msg stored" (f.F.msg = Some "ids"));
+        is_true ~msg:"loc stored" (f.F.loc = Some loc);
+        is_true ~msg:"msg stored" (f.F.msg = Some "ids"));
     test "predicate constructor" (fun () ->
         let loc = loc_of "test/t.ml" 7 in
         let f = F.predicate ~loc ~msg:"positive" ~claim:"a match" "None" in
         (* The claim takes the expected side, and [diffable] is what stops a
            renderer refining a description against a value. *)
-        check "claim and value stored"
+        is_true ~msg:"claim and value stored"
           (match f.F.kind with
           | F.Equality
               { expected = "a match"; actual = "None"; diffable = false; _ } ->
               true
           | _ -> false);
-        check "loc stored" (f.F.loc = Some loc);
-        check "msg stored" (f.F.msg = Some "positive");
+        is_true ~msg:"loc stored" (f.F.loc = Some loc);
+        is_true ~msg:"msg stored" (f.F.msg = Some "positive");
         let f = F.predicate ~claim:big big in
-        check "claim and value are bounded"
+        is_true ~msg:"claim and value are bounded"
           (match f.F.kind with
           | F.Equality { expected; actual; diffable = false; _ } ->
               String.length expected < 200_000
@@ -99,14 +95,14 @@ let tests =
         (let f = F.equality ~expected:big ~actual:"2" () in
          match f.F.kind with
          | F.Equality { expected; actual = "2"; _ } ->
-             check "long payload is shorter than the original"
+             is_true ~msg:"long payload is shorter than the original"
                (String.length expected < String.length big);
-             check "marker states the original byte count"
+             is_true ~msg:"marker states the original byte count"
                (has ~needle:"truncated" expected
                && has ~needle:"200000 bytes" expected);
-             check "truncation keeps a prefix of the value"
+             is_true ~msg:"truncation keeps a prefix of the value"
                (String.length expected > 1_000 && expected.[0] = 'a')
-         | _ -> check "kind preserved" false);
+         | _ -> is_true ~msg:"kind preserved" false);
         (* All-2-byte content: any code-point boundary is an even offset, so
            an odd-length kept prefix would mean a split UTF-8 sequence. *)
         (let s = String.concat "" (List.init 100_000 (fun _ -> "\xc3\xa9")) in
@@ -119,13 +115,15 @@ let tests =
                else marker_index (i + 1)
              in
              match marker_index 0 with
-             | None -> check "utf-8 payload has a marker" false
-             | Some i -> check "never splits a UTF-8 sequence" (i mod 2 = 0))
-         | _ -> check "message kind preserved" false);
+             | None -> is_true ~msg:"utf-8 payload has a marker" false
+             | Some i ->
+                 is_true ~msg:"never splits a UTF-8 sequence" (i mod 2 = 0))
+         | _ -> is_true ~msg:"message kind preserved" false);
         (let f = F.equality ~msg:big ~expected:"1" ~actual:"2" () in
          match f.F.msg with
-         | Some msg -> check "msg is bounded too" (String.length msg < 200_000)
-         | None -> check "msg kept" false);
+         | Some msg ->
+             is_true ~msg:"msg is bounded too" (String.length msg < 200_000)
+         | None -> is_true ~msg:"msg kept" false);
         let f =
           F.raised ~expected:big ~actual:big ~backtrace:big
             ~message_diff:
@@ -136,7 +134,7 @@ let tests =
               }
             ()
         in
-        check "raise payloads are bounded"
+        is_true ~msg:"raise payloads are bounded"
           (match f.F.kind with
           | F.Raise
               {
@@ -158,13 +156,13 @@ let tests =
           F.property ~rendered:big ~case_index:0 ~shrink_steps:0 ~root:1L
             ~examples:false ()
         in
-        check "property counterexample is bounded"
+        is_true ~msg:"property counterexample is bounded"
           (match f.F.kind with
           | F.Property { rendered; _ } -> String.length rendered < 200_000
           | _ -> false));
     test "raise constructor" (fun () ->
         let f = F.raised () in
-        check "all payloads default to absent"
+        is_true ~msg:"all payloads default to absent"
           (match f.F.kind with
           | F.Raise
               {
@@ -180,7 +178,7 @@ let tests =
           F.raised ~expected:"Not_found" ~actual:"Invalid_argument \"x\""
             ~backtrace:"Raised at ..." ()
         in
-        check "payloads stored"
+        is_true ~msg:"payloads stored"
           (match f.F.kind with
           | F.Raise
               {
@@ -202,7 +200,7 @@ let tests =
               }
             ()
         in
-        check "message diff stored"
+        is_true ~msg:"message diff stored"
           (match f.F.kind with
           | F.Raise
               {
@@ -223,16 +221,15 @@ let tests =
         in
         containment_parts "small haystack" f
           (fun (excerpt, needle, found_at, haystack_length, excerpt_offset) ->
-            check_string "small haystack stored whole" ~expected:"hello world"
-              ~actual:excerpt;
-            check_string "needle stored" ~expected:"zz" ~actual:needle;
-            check "found_at defaults to None" (found_at = None);
-            check_int "haystack_length"
-              ~expected:(String.length "hello world")
-              ~actual:haystack_length;
-            check_int "whole haystack starts at 0" ~expected:0
-              ~actual:excerpt_offset);
-        check "claim description stored"
+            equal ~msg:"small haystack stored whole" string "hello world"
+              excerpt;
+            equal ~msg:"needle stored" string "zz" needle;
+            is_true ~msg:"found_at defaults to None" (found_at = None);
+            equal ~msg:"haystack_length" int
+              (String.length "hello world")
+              haystack_length;
+            equal ~msg:"whole haystack starts at 0" int 0 excerpt_offset);
+        is_true ~msg:"claim description stored"
           (match f.F.kind with
           | F.Containment { claim = "desc"; _ } -> true
           | _ -> false));
@@ -242,15 +239,15 @@ let tests =
         in
         containment_parts "head window" f
           (fun (excerpt, _, _, haystack_length, excerpt_offset) ->
-            check "head window is bounded" (String.length excerpt <= 8_195);
-            check "head window is a strict prefix"
+            is_true ~msg:"head window is bounded"
+              (String.length excerpt <= 8_195);
+            is_true ~msg:"head window is a strict prefix"
               (String.length excerpt < String.length big_haystack
               && String.sub big_haystack 0 (String.length excerpt) = excerpt);
-            check_int "head window starts at 0" ~expected:0
-              ~actual:excerpt_offset;
-            check_int "full length recorded"
-              ~expected:(String.length big_haystack)
-              ~actual:haystack_length);
+            equal ~msg:"head window starts at 0" int 0 excerpt_offset;
+            equal ~msg:"full length recorded" int
+              (String.length big_haystack)
+              haystack_length);
         let found_at = 20_000 in
         let f =
           F.containment ~claim:"d" ~needle:"0002" ~haystack:big_haystack
@@ -258,14 +255,14 @@ let tests =
         in
         containment_parts "centered window" f
           (fun (excerpt, _, stored_found_at, _, excerpt_offset) ->
-            check "found_at stored" (stored_found_at = Some found_at);
-            check "window is bounded" (String.length excerpt <= 8_195);
-            check "window starts before the match"
+            is_true ~msg:"found_at stored" (stored_found_at = Some found_at);
+            is_true ~msg:"window is bounded" (String.length excerpt <= 8_195);
+            is_true ~msg:"window starts before the match"
               (excerpt_offset > 0 && excerpt_offset <= found_at);
-            check "window is the recorded slice of the haystack"
+            is_true ~msg:"window is the recorded slice of the haystack"
               (String.sub big_haystack excerpt_offset (String.length excerpt)
               = excerpt);
-            check "the match offset falls inside the window"
+            is_true ~msg:"the match offset falls inside the window"
               (found_at - excerpt_offset < String.length excerpt));
         (* A match near the end: the window simply ends at the haystack's
            end. *)
@@ -276,7 +273,7 @@ let tests =
         in
         containment_parts "window near the end" f
           (fun (excerpt, _, _, haystack_length, excerpt_offset) ->
-            check "end window reaches the last byte"
+            is_true ~msg:"end window reaches the last byte"
               (excerpt_offset + String.length excerpt = haystack_length));
         (* All-2-byte content: code-point boundaries are even offsets, so an
            odd window offset or length would mean a split UTF-8 sequence. *)
@@ -287,9 +284,9 @@ let tests =
         in
         containment_parts "utf-8 window" f
           (fun (excerpt, _, _, _, excerpt_offset) ->
-            check "window never starts inside a UTF-8 sequence"
+            is_true ~msg:"window never starts inside a UTF-8 sequence"
               (excerpt_offset mod 2 = 0);
-            check "window never ends inside a UTF-8 sequence"
+            is_true ~msg:"window never ends inside a UTF-8 sequence"
               ((excerpt_offset + String.length excerpt) mod 2 = 0)));
     test "containment constructor: found_at validation and bounding" (fun () ->
         raises_match ~msg:"negative found_at rejected" Exn.invalid_arg
@@ -299,14 +296,14 @@ let tests =
         raises_match ~msg:"found_at past the end rejected" Exn.invalid_arg
           (fun () ->
             F.containment ~claim:"d" ~needle:"n" ~haystack:"abc" ~found_at:4 ());
-        check "found_at at the end accepted (empty-needle case)"
+        is_true ~msg:"found_at at the end accepted (empty-needle case)"
           (match
              F.containment ~claim:"d" ~needle:"" ~haystack:"abc" ~found_at:3 ()
            with
           | _ -> true
           | exception Invalid_argument _ -> false);
         let f = F.containment ~claim:big ~needle:big ~haystack:"abc" () in
-        check "needle and description are bounded"
+        is_true ~msg:"needle and description are bounded"
           (match f.F.kind with
           | F.Containment { claim; needle; _ } ->
               String.length claim < 200_000
@@ -318,7 +315,7 @@ let tests =
           F.baseline (F.File "test/greeting.expected")
             (F.Mismatch { expected = "hi\n"; actual = "ho\n" })
         in
-        check "identity and state stored"
+        is_true ~msg:"identity and state stored"
           (match f.F.kind with
           | F.Baseline
               {
@@ -333,7 +330,7 @@ let tests =
         let f =
           F.baseline (F.File path) (F.Unresolvable { candidate = path })
         in
-        check "path is stored unmodified"
+        is_true ~msg:"path is stored unmodified"
           (match f.F.kind with
           | F.Baseline
               { baseline = F.File p; state = F.Unresolvable { candidate } } ->
@@ -344,13 +341,13 @@ let tests =
             (F.Literal { exact = false })
             (F.Mismatch { expected = big; actual = "a" })
         in
-        check "mismatch contents are bounded"
+        is_true ~msg:"mismatch contents are bounded"
           (match f.F.kind with
           | F.Baseline { state = F.Mismatch { expected; _ }; _ } ->
               String.length expected < 200_000
           | _ -> false);
         let f = F.baseline (F.File "p") (F.Missing { proposed = big }) in
-        check "proposed content is bounded"
+        is_true ~msg:"proposed content is bounded"
           (match f.F.kind with
           | F.Baseline { state = F.Missing { proposed }; _ } ->
               String.length proposed < 200_000
@@ -361,8 +358,8 @@ let tests =
             (F.Literal { exact = true })
             (F.Mismatch { expected = "a"; actual = "b" })
         in
-        check "a literal failure carries its site" (f.F.loc = Some site);
-        check "and the verb that read it"
+        is_true ~msg:"a literal failure carries its site" (f.F.loc = Some site);
+        is_true ~msg:"and the verb that read it"
           (match f.F.kind with
           | F.Baseline { baseline = F.Literal { exact }; _ } -> exact
           | _ -> false));
@@ -372,7 +369,7 @@ let tests =
           F.property ~inner ~rendered:"Rect (2, 0)" ~case_index:12
             ~shrink_steps:4 ~root:0x7be1d2c904aa31f5L ~examples:false ()
         in
-        check "payload stored"
+        is_true ~msg:"payload stored"
           (match f.F.kind with
           | F.Property
               {
@@ -390,19 +387,19 @@ let tests =
           F.property ~rendered:"[]" ~case_index:0 ~shrink_steps:0 ~root:1L
             ~examples:true ()
         in
-        check "inner defaults to None, examples flag stored"
+        is_true ~msg:"inner defaults to None, examples flag stored"
           (match f.F.kind with
           | F.Property { examples = true; inner = None; _ } -> true
           | _ -> false);
-        check "timed_out defaults to None"
+        is_true ~msg:"timed_out defaults to None"
           (match f.F.kind with
           | F.Property { timed_out = None; _ } -> true
           | _ -> false);
-        check "summary defaults to None"
+        is_true ~msg:"summary defaults to None"
           (match f.F.kind with
           | F.Property { summary = None; _ } -> true
           | _ -> false);
-        check "an explicit summary is stored beside the rendering"
+        is_true ~msg:"an explicit summary is stored beside the rendering"
           (match
              (F.property ~summary:"2 calls, last: get" ~rendered:" #  call"
                 ~case_index:0 ~shrink_steps:0 ~root:1L ~examples:false ())
@@ -417,51 +414,53 @@ let tests =
           F.property ~timed_out:0.3 ~rendered:"[]" ~case_index:0 ~shrink_steps:2
             ~root:1L ~examples:false ()
         in
-        check "an explicit timed_out limit is stored"
+        is_true ~msg:"an explicit timed_out limit is stored"
           (match f.F.kind with
           | F.Property { timed_out = Some 0.3; _ } -> true
           | _ -> false));
     test "with_phase and with_output_tail" (fun () ->
         let f = F.message "boom" in
         let g = F.with_phase F.Teardown f in
-        check "with_phase: replaces the phase" (g.F.phase = F.Teardown);
-        check "with_phase: original unchanged" (f.F.phase = F.Body);
-        check "with_phase: kind untouched" (g.F.kind = f.F.kind);
+        is_true ~msg:"with_phase: replaces the phase" (g.F.phase = F.Teardown);
+        is_true ~msg:"with_phase: original unchanged" (f.F.phase = F.Body);
+        is_true ~msg:"with_phase: kind untouched" (g.F.kind = f.F.kind);
         let tl = F.tail "out" in
         let h = F.with_output_tail tl f in
-        check "with_output_tail: attaches the tail" (h.F.output_tail = Some tl);
-        check "with_output_tail: original unchanged" (f.F.output_tail = None));
+        is_true ~msg:"with_output_tail: attaches the tail"
+          (h.F.output_tail = Some tl);
+        is_true ~msg:"with_output_tail: original unchanged"
+          (f.F.output_tail = None));
     test "tails" (fun () ->
         let tl = F.tail "hello\n" in
-        check "short text kept verbatim"
+        is_true ~msg:"short text kept verbatim"
           (tl.F.text = "hello\n" && tl.F.omitted_bytes = 0
          && tl.F.log_path = None);
         let tl =
           F.tail ~log_path:"_build/_tests/t.output" ~omitted_bytes:7 "x"
         in
-        check "log_path and prior omission recorded"
+        is_true ~msg:"log_path and prior omission recorded"
           (tl.F.log_path = Some "_build/_tests/t.output"
           && tl.F.omitted_bytes = 7);
         let line i = Printf.sprintf "[debug] line %05d\n" i in
         let full = String.concat "" (List.init 1_000 line) in
         let tl = F.tail full in
         let kept = String.length tl.F.text in
-        check "long output is bounded" (kept < String.length full);
-        check_int "omitted accounts for every cut byte"
-          ~expected:(String.length full - kept)
-          ~actual:tl.F.omitted_bytes;
-        check_string "retains the final bytes"
-          ~expected:(String.sub full (String.length full - kept) kept)
-          ~actual:tl.F.text;
+        is_true ~msg:"long output is bounded" (kept < String.length full);
+        equal ~msg:"omitted accounts for every cut byte" int
+          (String.length full - kept)
+          tl.F.omitted_bytes;
+        equal ~msg:"retains the final bytes" string
+          (String.sub full (String.length full - kept) kept)
+          tl.F.text;
         let tl' = F.tail ~omitted_bytes:11 full in
-        check_int "prior omission accumulates"
-          ~expected:(String.length full - String.length tl'.F.text + 11)
-          ~actual:tl'.F.omitted_bytes;
+        equal ~msg:"prior omission accumulates" int
+          (String.length full - String.length tl'.F.text + 11)
+          tl'.F.omitted_bytes;
         (* All-3-byte content: a kept suffix must start at an offset
            divisible by 3 or a UTF-8 sequence was split. *)
         let s = String.concat "" (List.init 3_333 (fun _ -> "\xe2\x82\xac")) in
         let tl = F.tail s in
-        check "suffix cut never splits a UTF-8 sequence"
+        is_true ~msg:"suffix cut never splits a UTF-8 sequence"
           (tl.F.omitted_bytes mod 3 = 0
           && Char.code tl.F.text.[0] land 0xC0 <> 0x80);
         raises_match ~msg:"negative omitted_bytes rejected" Exn.invalid_arg
@@ -475,22 +474,20 @@ let tests =
           | F.Skip None -> "skip"
           | F.Skip (Some r) -> "skip:" ^ r
         in
-        check_string "pass" ~expected:"pass" ~actual:(describe F.Pass);
-        check_string "body and teardown failures are two entries"
-          ~expected:"fail:2"
-          ~actual:(describe (F.Fail [ body; teardown ]));
-        check_string "skip with reason" ~expected:"skip:windows only"
-          ~actual:(describe (F.Skip (Some "windows only")));
-        check_string "skip without reason" ~expected:"skip"
-          ~actual:(describe (F.Skip None)));
+        equal ~msg:"pass" string "pass" (describe F.Pass);
+        equal ~msg:"body and teardown failures are two entries" string "fail:2"
+          (describe (F.Fail [ body; teardown ]));
+        equal ~msg:"skip with reason" string "skip:windows only"
+          (describe (F.Skip (Some "windows only")));
+        equal ~msg:"skip without reason" string "skip" (describe (F.Skip None)));
     test "control exceptions carry their payloads" (fun () ->
         let f = F.message "boom" in
-        check "Check_failure: carries the failure"
+        is_true ~msg:"Check_failure: carries the failure"
           (try raise (F.Check_failure f) with F.Check_failure g -> g == f);
-        check "Skip_test: carries the reason"
+        is_true ~msg:"Skip_test: carries the reason"
           (try raise (F.Skip_test (Some "no docker"))
            with F.Skip_test r -> r = Some "no docker");
-        check "Timeout: carries the limit"
+        is_true ~msg:"Timeout: carries the limit"
           (try raise (F.Timeout 2.5) with F.Timeout t -> t = 2.5));
     (* Only a *trailing* run of windtrap frames goes. Here the exception is
        caught in this file, so the deepest frame is the reader's and there
@@ -506,26 +503,27 @@ let tests =
         in
         let whole = Printexc.raw_backtrace_to_string raw in
         let trimmed = F.backtrace_to_string raw in
-        check "premise: the raise passed through the delimiter"
+        is_true ~msg:"premise: the raise passed through the delimiter"
           (has ~needle:"Windtrap__Loc.delimit" whole);
-        check "premise: the deepest frame is the reader's"
+        is_true ~msg:"premise: the deepest frame is the reader's"
           (has ~needle:"Test_failure" (last_line whole));
-        check_string "nothing is trimmed" ~expected:whole ~actual:trimmed;
-        check "the raise site survives"
+        equal ~msg:"nothing is trimmed" string whole trimmed;
+        is_true ~msg:"the raise site survives"
           (has ~needle:"Test_failure.raise_not_found" trimmed);
-        check "the first frame still reads as the raise site"
+        is_true ~msg:"the first frame still reads as the raise site"
           (String.starts_with ~prefix:"Raised at" trimmed);
         (* [recorded_backtrace] reads [None] only from an empty raw
            backtrace — never because trimming emptied a real one. *)
-        check_string "an empty raw backtrace renders empty" ~expected:""
-          ~actual:(F.backtrace_to_string (Printexc.get_callstack 0)));
+        equal ~msg:"an empty raw backtrace renders empty" string ""
+          (F.backtrace_to_string (Printexc.get_callstack 0)));
     test "is_fatal: exactly the never-swallowed exceptions" (fun () ->
-        check "Sys.Break is fatal" (F.is_fatal Sys.Break);
-        check "Out_of_memory is fatal" (F.is_fatal Out_of_memory);
-        check "Stack_overflow is fatal" (F.is_fatal Stack_overflow);
-        check "Check_failure is not fatal"
+        is_true ~msg:"Sys.Break is fatal" (F.is_fatal Sys.Break);
+        is_true ~msg:"Out_of_memory is fatal" (F.is_fatal Out_of_memory);
+        is_true ~msg:"Stack_overflow is fatal" (F.is_fatal Stack_overflow);
+        is_true ~msg:"Check_failure is not fatal"
           (not (F.is_fatal (F.Check_failure (F.message "boom"))));
-        check "an ordinary exception is not fatal" (not (F.is_fatal Not_found)));
+        is_true ~msg:"an ordinary exception is not fatal"
+          (not (F.is_fatal Not_found)));
   ]
 
 let () = exit @@ Windtrap.run "failure" tests

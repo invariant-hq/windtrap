@@ -10,10 +10,6 @@
 open Windtrap
 module Diff = Windtrap.Private.Diff
 
-let check name cond = is_true ~msg:name cond
-let check_int name ~expected ~actual = equal ~msg:name int expected actual
-let check_string name ~expected ~actual = equal ~msg:name string expected actual
-
 (* Rendering helpers (test-side only; Diff itself renders nothing) *)
 
 let show_line = function
@@ -29,8 +25,8 @@ let show_hunk h =
 let show_hunks hs = String.concat "\n" (List.map show_hunk hs)
 
 let check_hunks name ?context ~expected ~actual pinned =
-  check_string name ~expected:pinned
-    ~actual:(show_hunks (Diff.hunks ?context ~expected ~actual ()))
+  equal ~msg:name string pinned
+    (show_hunks (Diff.hunks ?context ~expected ~actual ()))
 
 (* Mirror of the documented line-splitting semantics. *)
 let split_lines s =
@@ -153,8 +149,7 @@ let check_refine name ~expected ~actual pinned =
           (side r.Diff.expected_spans)
           (side r.Diff.actual_spans)
   in
-  check_string name ~expected:pinned
-    ~actual:(show (Diff.refine ~expected ~actual))
+  equal ~msg:name string pinned (show (Diff.refine ~expected ~actual))
 
 (* [s] with the spanned ranges removed. *)
 let remainder s span_list =
@@ -194,11 +189,11 @@ let spans_ok s span_list =
 let hunk_tests =
   [
     test "pinned hunk cases" (fun () ->
-        check "equal texts have no hunks"
+        is_true ~msg:"equal texts have no hunks"
           (Diff.hunks ~expected:"a\nb\n" ~actual:"a\nb\n" () = []);
-        check "empty texts have no hunks"
+        is_true ~msg:"empty texts have no hunks"
           (Diff.hunks ~expected:"" ~actual:"" () = []);
-        check "a single trailing newline is not significant"
+        is_true ~msg:"a single trailing newline is not significant"
           (Diff.hunks ~expected:"a" ~actual:"a\n" () = []);
         check_hunks "single line replaced" ~expected:"a\nb\n" ~actual:"a\nc\n"
           "@@ -1,2 +1,2 @@| a|-b|+c";
@@ -249,7 +244,7 @@ let hunk_tests =
         let expected = text_of_lines (("top" :: mid_e) @ [ "bottom" ]) in
         let actual = text_of_lines (("top" :: mid_a) @ [ "bottom" ]) in
         let hs = Diff.hunks ~expected ~actual () in
-        check "line guard: one hunk" (List.length hs = 1);
+        is_true ~msg:"line guard: one hunk" (List.length hs = 1);
         (match hs with
         | [ h ] ->
             let deletes =
@@ -261,11 +256,11 @@ let hunk_tests =
                 (function Diff.Insert _ -> true | _ -> false)
                 h.Diff.lines
             in
-            check "line guard: every line reported"
+            is_true ~msg:"line guard: every line reported"
               (deletes = 1_200 && inserts = 1_200);
-            check "line guard: deletions precede insertions"
+            is_true ~msg:"line guard: deletions precede insertions"
               (changes_ordered_ok h.Diff.lines);
-            check "line guard: patch still reconstructs the actual text"
+            is_true ~msg:"line guard: patch still reconstructs the actual text"
               (apply_hunks (split_lines expected) hs = split_lines actual)
         | _ -> ());
         (* 1,200 differing middle lines is under the line guard, but the
@@ -278,9 +273,9 @@ let hunk_tests =
           text_of_lines ("s" :: List.init 600 (Printf.sprintf "a%d"))
         in
         let hs = Diff.hunks ~expected ~actual () in
-        check "edit cap: patch reconstructs the actual text"
+        is_true ~msg:"edit cap: patch reconstructs the actual text"
           (apply_hunks (split_lines expected) hs = split_lines actual);
-        check "edit cap: ordering holds"
+        is_true ~msg:"edit cap: ordering holds"
           (List.for_all (fun h -> changes_ordered_ok h.Diff.lines) hs));
     test "randomized hunk laws (300 cases)" (fun () ->
         let alphabet = [ "a"; "b"; "c" ] in
@@ -376,12 +371,12 @@ let refine_tests =
         (* Differing region above the cell guard: refinement declines, even
            though only two characters differ. *)
         let mid = String.make 2_101 'm' in
-        check "oversized differing region declines"
+        is_true ~msg:"oversized differing region declines"
           (Diff.refine ~expected:("A" ^ mid ^ "B") ~actual:("C" ^ mid ^ "D")
           = None);
         (* Common-outer stripping keeps the same-sized inputs refinable when
            the differing region is small. *)
-        check "stripping saves same-sized inputs"
+        is_true ~msg:"stripping saves same-sized inputs"
           (Diff.refine ~expected:(mid ^ "A") ~actual:(mid ^ "B") <> None));
     test "refinement: unmarked characters agree, marks minimal (exhaustive <=4)"
       (fun () ->
@@ -454,7 +449,8 @@ let refine_tests =
                 failf "bad spans\n  expected: %S\n  actual:   %S" expected
                   actual
         done;
-        check "randomized refine exercised the Some path" (!some_count > 50));
+        is_true ~msg:"randomized refine exercised the Some path"
+          (!some_count > 50));
   ]
 
 (* Refinement's allocation per grid cell.
@@ -488,8 +484,9 @@ let alloc_tests =
           sizes;
         let words = Gc.minor_words () -. before in
         let per_cell = words /. float_of_int cells in
-        check
-          (Printf.sprintf "per-cell minor words (%.2f) stays under 2" per_cell)
+        is_true
+          ~msg:
+            (Printf.sprintf "per-cell minor words (%.2f) stays under 2" per_cell)
           (per_cell < 2.));
   ]
 

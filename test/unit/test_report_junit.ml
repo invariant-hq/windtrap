@@ -13,11 +13,6 @@ open Windtrap
 open Windtrap.Private
 module Fixtures = Render_fixtures
 
-let check name cond = is_true ~msg:name cond
-let check_string name ~expected ~actual = equal ~msg:name string expected actual
-let check_contains name ~sub s = Windtrap.contains ~msg:name ~sub s
-let check_absent name ~sub s = not_contains ~msg:name ~sub s
-
 let check_well_formed name doc =
   match Xml_check.check doc with
   | Ok () -> ()
@@ -53,18 +48,18 @@ let full () =
 let test_full_run () =
   let doc = full () in
   check_well_formed "full fixture document is well-formed" doc;
-  check_contains "counts derive from results"
+  contains ~msg:"counts derive from results"
     ~sub:{|tests="11" failures="6" errors="0" skipped="1" time="6.500"|} doc;
-  check_contains "acceptance command inside failure text"
+  contains ~msg:"acceptance command inside failure text"
     ~sub:"accept: dune promote" doc;
-  check_contains "replay line inside failure text"
+  contains ~msg:"replay line inside failure text"
     ~sub:
       "replay: WINDTRAP_SEED=s1:7be1d2c904aa31f5 WINDTRAP_FILTER='geo › area \
        non-negative' dune runtest"
     doc;
-  check_contains "teardown failure is a second element"
+  contains ~msg:"teardown failure is a second element"
     ~sub:{|<failure message="teardown exploded">|} doc;
-  check_contains "headline in message attribute"
+  contains ~msg:"headline in message attribute"
     ~sub:{|message="expect_file &quot;test/help.expected&quot;: no baseline"|}
     doc
 
@@ -94,23 +89,24 @@ let test_message_forms () =
       ()
   in
   check_well_formed "the document is well-formed" doc;
-  check_contains "the user message, a colon, then the sentence"
+  contains ~msg:"the user message, a colon, then the sentence"
     ~sub:{|<failure message="deliberate: expected 1, got 2">|} doc;
-  check_contains "a diff is a sentence counting its lines"
+  contains ~msg:"a diff is a sentence counting its lines"
     ~sub:{|<failure message="expected and actual differ (5 diff lines)">|} doc;
-  check_contains "a baseline is its first fact line"
+  contains ~msg:"a baseline is its first fact line"
     ~sub:{|<failure message="expect: mismatch">|} doc;
-  check_contains "80 code points, then an ellipsis"
+  contains ~msg:"80 code points, then an ellipsis"
     ~sub:({|<failure message="expected |} ^ String.make 71 'x' ^ "\u{2026}\">")
     doc;
-  check_absent "no em dash in the document" ~sub:"\u{2014}" doc;
-  check_absent "no em dash in the full fixture's document" ~sub:"\u{2014}"
+  not_contains ~msg:"no em dash in the document" ~sub:"\u{2014}" doc;
+  not_contains ~msg:"no em dash in the full fixture's document" ~sub:"\u{2014}"
     (full ());
   (* The failure text is the block's lines below the title. *)
-  check_contains "the failure text is the block's lines"
+  contains ~msg:"the failure text is the block's lines"
     ~sub:"\">    deliberate\n    expected  1\n    actual    2\n</failure>" doc;
-  check_absent "no failure text carries a rerun hint" ~sub:"rerun:" doc;
-  check_absent "nor does the full fixture's document" ~sub:"rerun:" (full ())
+  not_contains ~msg:"no failure text carries a rerun hint" ~sub:"rerun:" doc;
+  not_contains ~msg:"nor does the full fixture's document" ~sub:"rerun:"
+    (full ())
 
 (* A withheld correction is the failure's, so the document projects it as
    the terminal block does. *)
@@ -131,8 +127,8 @@ let test_withheld_correction () =
       ()
   in
   check_well_formed "the document is well-formed" doc;
-  check_absent "no acceptance the run could not honour" ~sub:"accept:" doc;
-  check_contains "the reason closes the failure text"
+  not_contains ~msg:"no acceptance the run could not honour" ~sub:"accept:" doc;
+  contains ~msg:"the reason closes the failure text"
     ~sub:
       "    no correction was kept: the test also failed outside its \
        expectations; fix that failure and rerun\n\
@@ -171,19 +167,17 @@ let test_invocation_hints () =
       (String.split_on_char '\n' block)
   in
   let accept = terminal_line ~filter:"cli › cli help" Fixtures.snap_missing in
-  check_contains "accept hint bytes equal the terminal block's" ~sub:accept doc;
-  check_string "accept hint completes the executable, scoped to the test"
-    ~expected:"    accept: dune exec qa/x/t.exe -- -u -f 'cli › cli help'"
-    ~actual:accept;
+  contains ~msg:"accept hint bytes equal the terminal block's" ~sub:accept doc;
+  equal ~msg:"accept hint completes the executable, scoped to the test" string
+    "    accept: dune exec qa/x/t.exe -- -u -f 'cli › cli help'" accept;
   let replay =
     terminal_line ~filter:"geo › area non-negative" Fixtures.prop_failure
   in
-  check_string "replay hint completes the executable"
-    ~expected:
-      "    replay: dune exec qa/x/t.exe -- --seed s1:7be1d2c904aa31f5 -f 'geo \
-       › area non-negative'"
-    ~actual:replay;
-  check_contains "replay hint bytes equal the terminal block's" ~sub:replay doc
+  equal ~msg:"replay hint completes the executable" string
+    "    replay: dune exec qa/x/t.exe -- --seed s1:7be1d2c904aa31f5 -f 'geo › \
+     area non-negative'"
+    replay;
+  contains ~msg:"replay hint bytes equal the terminal block's" ~sub:replay doc
 
 (* Expected failures (amendment B12) *)
 
@@ -197,11 +191,11 @@ let test_excused_as_skipped () =
   in
   let doc = Report_junit.render ~suite:"s" ~results ~duration:0.5 () in
   check_well_formed "excused document is well-formed" doc;
-  check_contains "excused failure maps to skipped-with-message"
+  contains ~msg:"excused failure maps to skipped-with-message"
     ~sub:{|<skipped message="expected failure: issue #42"/>|} doc;
-  check_absent "excused failures emit no failure element"
+  not_contains ~msg:"excused failures emit no failure element"
     ~sub:{|<failure message="expected 1; actual 2"|} doc;
-  check_contains "counts: excused is a skip, not a failure"
+  contains ~msg:"counts: excused is a skip, not a failure"
     ~sub:{|tests="3" failures="1" errors="0" skipped="1"|} doc;
   let no_reason =
     Report_junit.render ~suite:"s"
@@ -214,7 +208,7 @@ let test_excused_as_skipped () =
         ]
       ~duration:0.1 ()
   in
-  check_contains "reasonless excused message"
+  contains ~msg:"reasonless excused message"
     ~sub:{|<skipped message="expected failure"/>|} no_reason;
   (* The record's bit decides: an unexpected pass carries the annotation
      but counted, so it emits a failure element, not a skip. *)
@@ -222,9 +216,9 @@ let test_excused_as_skipped () =
     Report_junit.render ~suite:"s" ~results:[ Fixtures.xpass_result ]
       ~duration:0.1 ()
   in
-  check_contains "an unexpected pass still counts as a failure"
+  contains ~msg:"an unexpected pass still counts as a failure"
     ~sub:{|failures="1"|} xpass;
-  check_absent "an unexpected pass is not a skip" ~sub:"<skipped" xpass
+  not_contains ~msg:"an unexpected pass is not a skip" ~sub:"<skipped" xpass
 
 (* Subtests (amendment B13) *)
 
@@ -238,11 +232,11 @@ let test_subtests_as_testcases () =
   check_well_formed "subtest document is well-formed" doc;
   (* Sibling subtests fail alike: the label is what tells their messages
      apart. *)
-  check_contains "a subtest's message opens with its label"
+  contains ~msg:"a subtest's message opens with its label"
     ~sub:
       {|<failure message="contract › shape [0]: expected [1; 2], got [1; 3]">|}
     doc;
-  check_contains "and its sibling's with its own"
+  contains ~msg:"and its sibling's with its own"
     ~sub:
       {|<failure message="contract › shape [2]: expected [1; 2], got [1; 3]">|}
     doc
@@ -261,8 +255,8 @@ let test_subtests_only () =
       ~duration:0.1 ()
   in
   check_well_formed "subtests-only document is well-formed" doc;
-  check_contains "subtests-only counts" ~sub:{|tests="2" failures="1"|} doc;
-  check_contains "parent testcase closes without failure"
+  contains ~msg:"subtests-only counts" ~sub:{|tests="2" failures="1"|} doc;
+  contains ~msg:"parent testcase closes without failure"
     ~sub:
       {|<testcase name="backend › contract" classname="s.backend" time="0.000">
     </testcase>|}
@@ -285,7 +279,7 @@ let test_subtest_user_msg_name () =
       ~duration:0.1 ()
   in
   check_well_formed "user-msg subtest document is well-formed" doc;
-  check_contains "subtest testcase name is the displayed label"
+  contains ~msg:"subtest testcase name is the displayed label"
     ~sub:
       {|<testcase name="contract › shape [0]: user context" classname="s.backend"|}
     doc
@@ -309,17 +303,17 @@ let test_ansi_impossible () =
     ]
   in
   let doc = Report_junit.render ~suite:ansi ~results ~duration:0.1 () in
-  check_absent "no ESC byte anywhere in the document" ~sub:"\027" doc;
-  check_contains "stripped payload text survives" ~sub:"red tail text" doc;
+  not_contains ~msg:"no ESC byte anywhere in the document" ~sub:"\027" doc;
+  contains ~msg:"stripped payload text survives" ~sub:"red tail text" doc;
   (* Two ways to keep ESC out of XML, and the body uses the one that keeps
      the bytes: [pp_failure] escapes comparison data before this transport
      ever sees it, so a styled expected value arrives readable instead of
      stripped down to its letters. The captured tail keeps the old
      treatment — it is a log excerpt with a full-log path. *)
-  check_contains "the failure body carries the value's own bytes, escaped"
+  contains ~msg:"the failure body carries the value's own bytes, escaped"
     ~sub:{|\x1b[31mred\x1b[0m expected|} doc;
-  check_contains "and the OSC-carrying side too"
-    ~sub:{|\x1b]0;title\x07 actual|} doc;
+  contains ~msg:"and the OSC-carrying side too" ~sub:{|\x1b]0;title\x07 actual|}
+    doc;
   check_well_formed "ANSI-stripped document is well-formed" doc
 
 let test_xml_range () =
@@ -333,10 +327,10 @@ let test_xml_range () =
         ]
       ~duration:0.1 ()
   in
-  check_absent "control byte removed" ~sub:"\x01" doc;
-  check_absent "form feed removed" ~sub:"\x0c" doc;
-  check_absent "malformed UTF-8 byte removed" ~sub:"\xff" doc;
-  check_contains "invalid characters become U+FFFD"
+  not_contains ~msg:"control byte removed" ~sub:"\x01" doc;
+  not_contains ~msg:"form feed removed" ~sub:"\x0c" doc;
+  not_contains ~msg:"malformed UTF-8 byte removed" ~sub:"\xff" doc;
+  contains ~msg:"invalid characters become U+FFFD"
     ~sub:"a\u{FFFD}b\u{FFFD}c\u{FFFD}d" doc;
   check_well_formed "sanitized document is well-formed" doc
 
@@ -347,9 +341,9 @@ let test_escaping () =
       ~results:[ fail_result [ nasty ] (Failure.message ("text " ^ nasty)) ]
       ~duration:0.1 ()
   in
-  check_contains "attribute escaping"
+  contains ~msg:"attribute escaping"
     ~sub:{|name="a&lt;b&gt;&amp;&quot;c&apos;"|} doc;
-  check_contains "text escaping" ~sub:"text a&lt;b&gt;&amp;\"c'" doc;
+  contains ~msg:"text escaping" ~sub:"text a&lt;b&gt;&amp;\"c'" doc;
   check_well_formed "escaped document is well-formed" doc
 
 let test_hostile_tail () =
@@ -363,9 +357,9 @@ let test_hostile_tail () =
         ]
       ~duration:0.1 ()
   in
-  check_absent "tail control byte removed" ~sub:"\x01" doc;
-  check_absent "tail ESC removed" ~sub:"\027" doc;
-  check_absent "tail malformed UTF-8 removed" ~sub:"\xff" doc;
+  not_contains ~msg:"tail control byte removed" ~sub:"\x01" doc;
+  not_contains ~msg:"tail ESC removed" ~sub:"\027" doc;
+  not_contains ~msg:"tail malformed UTF-8 removed" ~sub:"\xff" doc;
   check_well_formed "hostile tail document is well-formed" doc
 
 (* A pass that needed a retry: JUnit has no state for it, so the fact
@@ -381,43 +375,43 @@ let test_flaky_note () =
       ~duration:0.1 ()
   in
   check_well_formed "flaky document is well-formed" doc;
-  check_contains "a flaky pass carries the attempt count in system-out"
+  contains ~msg:"a flaky pass carries the attempt count in system-out"
     ~sub:
       {|<testcase name="flaky › eventually" classname="s.flaky" time="0.000">
       <system-out>passed on attempt 3</system-out>
     </testcase>|}
     doc;
-  check_contains "a first-attempt pass stays a bare testcase"
+  contains ~msg:"a first-attempt pass stays a bare testcase"
     ~sub:{|<testcase name="steady" classname="s" time="0.000"/>|} doc;
-  check_contains "a flaky pass is not a failure"
+  contains ~msg:"a flaky pass is not a failure"
     ~sub:{|tests="2" failures="0" errors="0" skipped="0"|} doc
 
 (* One process per suite is the normal case under `dune runtest`, so a
    single fixed path would have each suite overwrite the last. The [.xml]
    suffix is what tells the two intents apart. *)
 let test_path () =
-  check_string "an .xml target is used verbatim" ~expected:"reports/r.xml"
-    ~actual:(Report_junit.path ~suite:"mylib" "reports/r.xml");
-  check_string "a directory target gets one file per suite"
-    ~expected:(Filename.concat "reports" "mylib.xml")
-    ~actual:(Report_junit.path ~suite:"mylib" "reports");
-  check_string "two suites, one directory, two files"
-    ~expected:(Filename.concat "reports" "parser.xml")
-    ~actual:(Report_junit.path ~suite:"parser" "reports");
+  equal ~msg:"an .xml target is used verbatim" string "reports/r.xml"
+    (Report_junit.path ~suite:"mylib" "reports/r.xml");
+  equal ~msg:"a directory target gets one file per suite" string
+    (Filename.concat "reports" "mylib.xml")
+    (Report_junit.path ~suite:"mylib" "reports");
+  equal ~msg:"two suites, one directory, two files" string
+    (Filename.concat "reports" "parser.xml")
+    (Report_junit.path ~suite:"parser" "reports");
   (* A suite name is not a filename until it is made one: an inline
      partition's [lib/parser.ml] lands in the directory, not under it. *)
   let partition = Report_junit.path ~suite:"lib/parser.ml" "reports" in
-  check "a suite name never escapes its directory"
+  is_true ~msg:"a suite name never escapes its directory"
     (Filename.dirname partition = "reports");
-  check "and never keeps a path separator"
+  is_true ~msg:"and never keeps a path separator"
     (not (String.contains (Filename.basename partition) '/'));
-  check "two partitions of one library get two files"
+  is_true ~msg:"two partitions of one library get two files"
     (partition <> Report_junit.path ~suite:"lib/lexer.ml" "reports")
 
 let test_empty_run () =
   let doc = Report_junit.render ~suite:"empty" ~results:[] ~duration:0.0 () in
   check_well_formed "empty run document is well-formed" doc;
-  check_contains "empty run counts are zero"
+  contains ~msg:"empty run counts are zero"
     ~sub:{|tests="0" failures="0" errors="0" skipped="0"|} doc
 
 (* The checker itself *)
@@ -427,15 +421,15 @@ let test_checker_sanity () =
   let rejected s =
     match Xml_check.check s with Error _ -> true | Ok () -> false
   in
-  check "checker accepts a minimal document" (ok "<a/>");
-  check "checker accepts attributes, text, entities"
+  is_true ~msg:"checker accepts a minimal document" (ok "<a/>");
+  is_true ~msg:"checker accepts attributes, text, entities"
     (ok "<a x='1' y=\"2\">t&amp;u<b/></a>");
-  check "checker rejects mismatched tags" (rejected "<a><b></a>");
-  check "checker rejects unquoted attributes" (rejected "<a x=1/>");
-  check "checker rejects unknown entities" (rejected "<a>&nope;</a>");
-  check "checker rejects raw ampersands" (rejected "<a>t & u</a>");
-  check "checker rejects control bytes" (rejected "<a>\x01</a>");
-  check "checker rejects trailing content" (rejected "<a/><b/>")
+  is_true ~msg:"checker rejects mismatched tags" (rejected "<a><b></a>");
+  is_true ~msg:"checker rejects unquoted attributes" (rejected "<a x=1/>");
+  is_true ~msg:"checker rejects unknown entities" (rejected "<a>&nope;</a>");
+  is_true ~msg:"checker rejects raw ampersands" (rejected "<a>t & u</a>");
+  is_true ~msg:"checker rejects control bytes" (rejected "<a>\x01</a>");
+  is_true ~msg:"checker rejects trailing content" (rejected "<a/><b/>")
 
 let tests =
   [

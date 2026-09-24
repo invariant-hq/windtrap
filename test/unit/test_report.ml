@@ -23,8 +23,6 @@ open Windtrap.Private
 module Fixtures = Render_fixtures
 module Sections = Report_sections
 
-let check name cond = is_true ~msg:name cond
-let check_string name ~expected ~actual = equal ~msg:name string expected actual
 let has ~sub s = Text.contains_substring ~pattern:sub s
 
 let occurrences_of ~sub s =
@@ -35,9 +33,6 @@ let occurrences_of ~sub s =
     else go (i + 1) acc
   in
   go 0 0
-
-let check_contains name ~sub s = Windtrap.contains ~msg:name ~sub s
-let check_absent name ~sub s = not_contains ~msg:name ~sub s
 
 (* A plain block without its [~] lines: what the coloured block, which
    colours the span instead, reads as once its styling is stripped. *)
@@ -133,12 +128,12 @@ let golden_invocation = `Exe golden_exe
 let test_golden_compact () =
   let actual = transcript ~invocation:golden_invocation () in
   golden "compact" actual;
-  check_absent "plain transcript has no escape codes" ~sub:"\027" actual
+  not_contains ~msg:"plain transcript has no escape codes" ~sub:"\027" actual
 
 let test_golden_verbose () =
   let actual = transcript ~mode:`Verbose ~invocation:golden_invocation () in
   golden "verbose" actual;
-  check_absent "plain transcript has no escape codes" ~sub:"\027" actual
+  not_contains ~msg:"plain transcript has no escape codes" ~sub:"\027" actual
 
 (* The coloured transcript, which had no golden at all: [test_ansi] pins
    nine substrings, so every escape run BETWEEN them was unpinned — and a
@@ -150,54 +145,56 @@ let test_golden_ansi () =
     transcript ~ansi:true ~mode:`Verbose ~invocation:golden_invocation ()
   in
   golden "verbose-ansi" actual;
-  check_contains "the ansi golden really is coloured" ~sub:"\027[" actual
+  contains ~msg:"the ansi golden really is coloured" ~sub:"\027[" actual
 
 (* The compact one too: the rules around the failures are its own, and
    dim. *)
 let test_golden_compact_ansi () =
   let actual = transcript ~ansi:true ~invocation:golden_invocation () in
   golden "compact-ansi" actual;
-  check_contains "the opening rule is dim"
+  contains ~msg:"the opening rule is dim"
     ~sub:("\n\027[2m" ^ failures_rule ^ "\027[0m\n  \027[31mFAIL\027[0m")
     actual;
-  check_contains "the closing rule is dim, a blank line after it"
+  contains ~msg:"the closing rule is dim, a blank line after it"
     ~sub:("\n\027[2m" ^ closing_rule ^ "\027[0m\n\n")
     actual
 
 let test_ansi () =
   let t = transcript ~ansi:true ~mode:`Verbose () in
-  check_contains "ansi: FAIL tag is red" ~sub:"\027[31mFAIL\027[0m" t;
-  check_contains "ansi: PASS tag is green" ~sub:"\027[32mPASS\027[0m" t;
-  check_contains
-    "ansi: the inserted span is bold red inside a plain value, and no mark \
-     prints under colour"
+  contains ~msg:"ansi: FAIL tag is red" ~sub:"\027[31mFAIL\027[0m" t;
+  contains ~msg:"ansi: PASS tag is green" ~sub:"\027[32mPASS\027[0m" t;
+  contains
+    ~msg:
+      "ansi: the inserted span is bold red inside a plain value, and no mark \
+       prints under colour"
     ~sub:
       "\027[2mexpected\027[0m  [(\"alice\", [1; 2; 3]); (\"bob\", [4])]\n\
       \    \027[2mactual\027[0m    [(\"alice\", [1; 2; 3]); (\"bob\", \
        [4\027[1;31m; 5]); (\"carol\", [\027[0m])]\n\
       \    \027[2mcaptured output"
     t;
-  check_absent "ansi: no [~] line anywhere in a coloured transcript" ~sub:"~" t;
-  check_contains "ansi: slow entry is caution yellow, one style"
+  not_contains ~msg:"ansi: no [~] line anywhere in a coloured transcript"
+    ~sub:"~" t;
+  contains ~msg:"ansi: slow entry is caution yellow, one style"
     ~sub:"\n\027[33m  2.5s  slow › big sort\027[0m\n" t;
-  check_contains "ansi: slow heading is caution yellow, one style"
+  contains ~msg:"ansi: slow heading is caution yellow, one style"
     ~sub:"\n\027[33mslow tests (2, over 1s):\027[0m\n" t;
-  check_absent "ansi: the slow section carries no advice line"
+  not_contains ~msg:"ansi: the slow section carries no advice line"
     ~sub:"exempt with the" t;
   let c = transcript ~ansi:true () in
   (* The summary counts wear the block palette — one convention for the
      whole transcript, not two for the same run. *)
-  check_contains "ansi: summary skip count is yellow"
+  contains ~msg:"ansi: summary skip count is yellow"
     ~sub:"\027[33m1 skipped\027[0m" c;
-  check_contains "ansi: summary fail count is red"
-    ~sub:"\027[31m6 failed\027[0m" c;
+  contains ~msg:"ansi: summary fail count is red" ~sub:"\027[31m6 failed\027[0m"
+    c;
   (* The transcript fixture carries no excused result, so the faint count
      gets its own run. *)
   let x =
     with_renderer ~ansi:true (fun r ->
         Report.finish r ~results:[ Fixtures.excused_result ] ~duration:0.1 ())
   in
-  check_contains "ansi: summary excused count is faint"
+  contains ~msg:"ansi: summary excused count is faint"
     ~sub:"\027[2m1 expected failure\027[0m" x;
   (* A pair that refines: ["true"]/["false"] marks 80% of a side, which the
      noise rule declines — the styling has to be shown on a real span. *)
@@ -206,23 +203,23 @@ let test_ansi () =
       (Failure.equality ~expected:"the quick brown fox"
          ~actual:"the quick brawn fox" ())
   in
-  check_contains "ansi: the expected side's changed span is bold green"
+  contains ~msg:"ansi: the expected side's changed span is bold green"
     ~sub:"\027[2mexpected\027[0m  the quick br\027[1;32mo\027[0mwn fox\n" b;
-  check_contains "ansi: the actual side's changed span is bold red"
+  contains ~msg:"ansi: the actual side's changed span is bold red"
     ~sub:"\027[2mactual\027[0m    the quick br\027[1;31ma\027[0mwn fox\n" b;
-  check_absent "ansi: a refined pair prints no [~] line under colour" ~sub:"~" b;
+  not_contains ~msg:"ansi: a refined pair prints no [~] line under colour"
+    ~sub:"~" b;
   let plain_refined =
     failure_block
       (Failure.equality ~expected:"the quick brown fox"
          ~actual:"the quick brawn fox" ())
   in
-  check_string "plain: a [~] line under each changed side"
-    ~expected:
-      "    expected  the quick brown fox\n\
-      \                          ~\n\
-      \    actual    the quick brawn fox\n\
-      \                          ~\n"
-    ~actual:plain_refined;
+  equal ~msg:"plain: a [~] line under each changed side" string
+    "    expected  the quick brown fox\n\
+    \                          ~\n\
+    \    actual    the quick brawn fox\n\
+    \                          ~\n"
+    plain_refined;
   (* A span of spaces has no glyph to colour: its [~] line prints under
      colour too, on the side that holds it. *)
   let spaces =
@@ -230,27 +227,26 @@ let test_ansi () =
       (Failure.equality ~expected:"a long enough  value"
          ~actual:"a long enough value" ())
   in
-  check_string "ansi: a changed span of spaces keeps its mark"
-    ~expected:
-      "    \027[2mexpected\027[0m  a long enough \027[1;32m \027[0mvalue\n\
-      \                            \027[1;32m~\027[0m\n\
-      \    \027[2mactual\027[0m    a long enough value\n"
-    ~actual:spaces;
+  equal ~msg:"ansi: a changed span of spaces keeps its mark" string
+    "    \027[2mexpected\027[0m  a long enough \027[1;32m \027[0mvalue\n\
+    \                            \027[1;32m~\027[0m\n\
+    \    \027[2mactual\027[0m    a long enough value\n"
+    spaces;
   (* Refinement declined: each side is colored whole rather than losing its
      color, so an equality failure reads the same way either way. *)
   let d =
     failure_block ~ansi:true
       (Failure.equality ~expected:"true" ~actual:"false" ())
   in
-  check_contains "ansi: a declined pair colors expected whole"
+  contains ~msg:"ansi: a declined pair colors expected whole"
     ~sub:"\027[32mtrue\027[0m" d;
-  check_contains "ansi: a declined pair colors actual whole"
+  contains ~msg:"ansi: a declined pair colors actual whole"
     ~sub:"\027[31mfalse\027[0m" d;
   let plain =
     failure_block (Failure.equality ~expected:"true" ~actual:"false" ())
   in
-  check_absent "plain: a declined pair gets no marker line" ~sub:"~" plain;
-  check_contains "plain: a declined pair still shows both values"
+  not_contains ~msg:"plain: a declined pair gets no marker line" ~sub:"~" plain;
+  contains ~msg:"plain: a declined pair still shows both values"
     ~sub:"expected  true\n    actual    false" plain
 
 let test_live () =
@@ -260,15 +256,15 @@ let test_live () =
         Report.begin_test r ~path:[ "math"; "addition" ];
         Report.result r (List.hd Fixtures.results))
   in
-  check_contains "live: progress line drawn"
-    ~sub:"Running [1/2] math › addition" t;
-  check_contains "live: cursor clear emitted" ~sub:"\r\027[2K" t;
+  contains ~msg:"live: progress line drawn" ~sub:"Running [1/2] math › addition"
+    t;
+  contains ~msg:"live: cursor clear emitted" ~sub:"\r\027[2K" t;
   let plain =
     with_renderer ~ansi:false ~mode:`Verbose ~live:true (fun r ->
         Report.header r ~suite:"mylib" ~tests:2 ~seed:None ();
         Report.begin_test r ~path:[ "math"; "addition" ])
   in
-  check_absent "live: off without ansi" ~sub:"Running" plain
+  not_contains ~msg:"live: off without ansi" ~sub:"Running" plain
 
 let test_live_compact_tail () =
   (* The compact erasable tail is the only thing a green compact run
@@ -283,13 +279,13 @@ let test_live_compact_tail () =
         Report.result r (List.hd Fixtures.results);
         Report.begin_test r ~path:[ "users"; "sessions after login" ])
   in
-  check_contains "compact tail: counter and name drawn"
+  contains ~msg:"compact tail: counter and name drawn"
     ~sub:"[1/2] math › addition" t;
-  check_absent "compact tail: the tail never brings the header out"
+  not_contains ~msg:"compact tail: the tail never brings the header out"
     ~sub:"mylib: 2 tests" t;
-  check_contains "compact tail: the erase re-prints nothing"
+  contains ~msg:"compact tail: the erase re-prints nothing"
     ~sub:"\027[0m\r\027[2K\r\027[2K\027[2m  [2/2]" t;
-  check_contains "compact tail: next tail follows from column zero"
+  contains ~msg:"compact tail: next tail follows from column zero"
     ~sub:"[2/2] users › sessions after login" t;
   (* A failure commits its block when the test finishes: the tail is
      erased before the first committed byte, and the next tail draws from
@@ -303,49 +299,47 @@ let test_live_compact_tail () =
         Report.begin_test r ~path:[ "math"; "addition" ];
         Report.result r (List.hd Fixtures.results))
   in
-  check_string "compact tail: erased before the block, redrawn under it"
-    ~expected:
-      ("\r\027[2K\027[2m  [1/2] bad…\027[0m\r\027[2Kmylib: 2 tests\n\027[2m"
-     ^ failures_rule
-     ^ "\027[0m\n\
-       \  \027[31mFAIL\027[0m  \027[1mbad\027[0m\n\
-       \    b\n\
-        \r\027[2K\027[2m  [2/2] math › addition…\027[0m\r\027[2K")
-    ~actual:after_failure;
+  equal ~msg:"compact tail: erased before the block, redrawn under it" string
+    ("\r\027[2K\027[2m  [1/2] bad…\027[0m\r\027[2Kmylib: 2 tests\n\027[2m"
+   ^ failures_rule
+   ^ "\027[0m\n\
+     \  \027[31mFAIL\027[0m  \027[1mbad\027[0m\n\
+     \    b\n\
+      \r\027[2K\027[2m  [2/2] math › addition…\027[0m\r\027[2K")
+    after_failure;
   let plain =
     with_renderer ~ansi:false ~live:true (fun r ->
         Report.header r ~suite:"mylib" ~tests:2 ~seed:None ();
         Report.begin_test r ~path:[ "math"; "addition" ])
   in
-  check_absent "compact tail: off without ansi" ~sub:"[1/2]" plain
+  not_contains ~msg:"compact tail: off without ansi" ~sub:"[1/2]" plain
 
 let test_header_forms () =
   let one =
     with_renderer ~mode:`Verbose (fun r ->
         Report.header r ~suite:"s" ~tests:1 ~seed:None ())
   in
-  check_string "header: singular, no seed" ~expected:"s: 1 test\n" ~actual:one;
+  equal ~msg:"header: singular, no seed" string "s: 1 test\n" one;
   let zero =
     with_renderer ~mode:`Verbose (fun r ->
         Report.header r ~suite:"s" ~tests:0 ~seed:None ())
   in
-  check_string "header: zero tests" ~expected:"s: 0 tests\n" ~actual:zero;
+  equal ~msg:"header: zero tests" string "s: 0 tests\n" zero;
   (* Compact prints the header before its first block or section, from
      the recorded fields (the golden transcripts pin it). *)
   let compact =
     with_renderer (fun r -> Report.header r ~suite:"s" ~tests:1 ~seed:None ())
   in
-  check_string "header: compact prints nothing at the start" ~expected:""
-    ~actual:compact
+  equal ~msg:"header: compact prints nothing at the start" string "" compact
 
 let test_seed_token_consistency () =
   (* Guarantee 7: the replay line prints exactly the token the header printed. *)
   let token = Seed.to_string Fixtures.root in
   let t = transcript () in
-  check_contains "header carries the root token"
+  contains ~msg:"header carries the root token"
     ~sub:(Printf.sprintf "(seed %s)" token)
     t;
-  check_contains "replay line carries exactly the header token"
+  contains ~msg:"replay line carries exactly the header token"
     ~sub:(Printf.sprintf "replay: WINDTRAP_SEED=%s " token)
     t
 
@@ -365,12 +359,12 @@ let test_duration_forms () =
      is chosen. *)
   List.iter
     (fun (secs, form) ->
-      check_contains
-        (Printf.sprintf "a row prints %gs as %s" secs form)
+      contains
+        ~msg:(Printf.sprintf "a row prints %gs as %s" secs form)
         ~sub:("  " ^ form ^ "\n")
         (line secs);
-      check_contains
-        (Printf.sprintf "the summary prints %gs as %s" secs form)
+      contains
+        ~msg:(Printf.sprintf "the summary prints %gs as %s" secs form)
         ~sub:(" in " ^ form ^ ".\n")
         (summary secs))
     [
@@ -397,8 +391,8 @@ let test_duration_forms () =
         not (has ~sub:" in 10.0ms." line || has ~sub:" in 1000ms." line))
       (List.init (last - first + 1) (fun i -> first + i))
   in
-  check "no 10.0ms around 9.95 ms" (edge 9_900 10_050);
-  check "no 1000ms around 999.5 ms" (edge 999_000 1_000_600)
+  is_true ~msg:"no 10.0ms around 9.95 ms" (edge 9_900 10_050);
+  is_true ~msg:"no 1000ms around 999.5 ms" (edge 999_000 1_000_600)
 
 let test_create_validation () =
   let raises fn =
@@ -407,10 +401,10 @@ let test_create_validation () =
     | exception Invalid_argument _ -> true
   in
   let ppf = Format.formatter_of_buffer (Buffer.create 8) in
-  check "create: negative slow_threshold rejected"
+  is_true ~msg:"create: negative slow_threshold rejected"
     (raises (fun () ->
          Report.create ~out:ppf ~ansi:false (config ~slow_threshold:(-1.0) ())));
-  check "create: non-finite slow_threshold rejected"
+  is_true ~msg:"create: non-finite slow_threshold rejected"
     (raises (fun () ->
          Report.create ~out:ppf ~ansi:false
            (config ~slow_threshold:Float.nan ())))
@@ -445,21 +439,19 @@ let test_stream_shape () =
     Format.pp_print_flush ppf ();
     Buffer.contents buf
   in
-  check_string "no live tail for a streamed test's bytes to land on"
-    ~expected:"" ~actual:tail;
-  check_string "a green streamed run is the one line"
-    ~expected:"s: 1 passed in 500ms.\n" ~actual:(streamed [ pass ]);
-  check_string "a streamed run's failures are the compact section"
-    ~expected:
-      ("s: 2 tests\n" ^ failures_rule ^ "\n  FAIL  bad\n    b\n" ^ closing_rule
-     ^ "\n\n1 passed, 1 failed in 500ms.\n")
-    ~actual:(streamed [ pass; bad ]);
-  check_string "rows are -v's, under --stream too"
-    ~expected:
-      "s: 1 test\n\
-      \  PASS  ok                                         0.2ms\n\
-       1 passed in 500ms.\n"
-    ~actual:(streamed ~verbose:true [ pass ])
+  equal ~msg:"no live tail for a streamed test's bytes to land on" string ""
+    tail;
+  equal ~msg:"a green streamed run is the one line" string
+    "s: 1 passed in 500ms.\n" (streamed [ pass ]);
+  equal ~msg:"a streamed run's failures are the compact section" string
+    ("s: 2 tests\n" ^ failures_rule ^ "\n  FAIL  bad\n    b\n" ^ closing_rule
+   ^ "\n\n1 passed, 1 failed in 500ms.\n")
+    (streamed [ pass; bad ]);
+  equal ~msg:"rows are -v's, under --stream too" string
+    "s: 1 test\n\
+    \  PASS  ok                                         0.2ms\n\
+     1 passed in 500ms.\n"
+    (streamed ~verbose:true [ pass ])
 
 (* A signal ends the transcript on what the run knows: the line on stderr
    (this test's capture holds it), the summary on the renderer. *)
@@ -471,58 +463,53 @@ let test_interrupted () =
         Report.result r pass;
         Report.interrupted r ~running ~results:[ pass ] ~duration:0.5 ())
   in
-  check_string "the summary counts the stopped test among the not run"
-    ~expected:"s: 1 passed, 3 not run in 500ms.\n"
-    ~actual:(transcript (Some [ "g"; "sleeps\n" ]));
-  check_string "stderr names the stopped test, its control byte escaped"
-    ~expected:"windtrap: interrupted in g \u{203a} sleeps\\n\n"
-    ~actual:(output ());
-  check_string "a verbose run keeps its rows above the summary"
-    ~expected:
-      "s: 4 tests\n\
-      \  PASS  g \u{203a} ok                                     0.2ms\n\
-       1 passed, 3 not run in 500ms.\n"
-    ~actual:(transcript ~mode:`Verbose None);
-  check_string "with no test running it says so"
-    ~expected:"windtrap: interrupted between tests\n" ~actual:(output ());
+  equal ~msg:"the summary counts the stopped test among the not run" string
+    "s: 1 passed, 3 not run in 500ms.\n"
+    (transcript (Some [ "g"; "sleeps\n" ]));
+  equal ~msg:"stderr names the stopped test, its control byte escaped" string
+    "windtrap: interrupted in g \u{203a} sleeps\\n\n" (output ());
+  equal ~msg:"a verbose run keeps its rows above the summary" string
+    "s: 4 tests\n\
+    \  PASS  g \u{203a} ok                                     0.2ms\n\
+     1 passed, 3 not run in 500ms.\n"
+    (transcript ~mode:`Verbose None);
+  equal ~msg:"with no test running it says so" string
+    "windtrap: interrupted between tests\n" (output ());
   let stopped_first =
     with_renderer (fun r ->
         Report.header r ~suite:"s" ~tests:4 ~seed:None ();
         Report.interrupted r ~releasing:"fixture (db.ml:3)\027[31m"
           ~running:None ~results:[] ~duration:0.5 ())
   in
-  check_string "a run stopped before its first result is its not-run count"
-    ~expected:"s: 4 not run in 500ms.\n" ~actual:stopped_first;
-  check_string "a stopped release is named, its control byte escaped"
-    ~expected:
-      "windtrap: interrupted while releasing fixture (db.ml:3)\\x1b[31m\n"
-    ~actual:(output ())
+  equal ~msg:"a run stopped before its first result is its not-run count" string
+    "s: 4 not run in 500ms.\n" stopped_first;
+  equal ~msg:"a stopped release is named, its control byte escaped" string
+    "windtrap: interrupted while releasing fixture (db.ml:3)\\x1b[31m\n"
+    (output ())
 
 (* The selection in words that hold whichever layer set it, a flag or a
    mirror: the empty run's sentence is read, and its values retyped. *)
 let test_selection_description () =
   let describe config = Report.selection_description config in
   let base = Run.default_config () in
-  check "nothing narrows a default run" (describe base = None);
-  check_string "every part named, the last joined with and"
-    ~expected:
-      "filter \"pars er\", exclusion \"it's\", tag \"a\", \"b c\", excluded \
-       tag \"d\", --failed and shard 1/3"
-    ~actual:
-      (Option.get
-         (describe
-            {
-              base with
-              Run.filter = Some "pars er";
-              exclude = Some "it's";
-              tags = [ "a"; "b c" ];
-              exclude_tags = [ "d" ];
-              failed_only = true;
-              shard = Some (1, 3);
-            }));
-  check_string "a control byte is escaped, so the line stays one"
-    ~expected:"filter \"a\\nb\""
-    ~actual:(Option.get (describe { base with Run.filter = Some "a\nb" }))
+  is_true ~msg:"nothing narrows a default run" (describe base = None);
+  equal ~msg:"every part named, the last joined with and" string
+    "filter \"pars er\", exclusion \"it's\", tag \"a\", \"b c\", excluded tag \
+     \"d\", --failed and shard 1/3"
+    (Option.get
+       (describe
+          {
+            base with
+            Run.filter = Some "pars er";
+            exclude = Some "it's";
+            tags = [ "a"; "b c" ];
+            exclude_tags = [ "d" ];
+            failed_only = true;
+            shard = Some (1, 3);
+          }));
+  equal ~msg:"a control byte is escaped, so the line stays one" string
+    "filter \"a\\nb\""
+    (Option.get (describe { base with Run.filter = Some "a\nb" }))
 
 let test_no_tests () =
   (* No header, so no selection and no declared count: nothing to say
@@ -530,16 +517,15 @@ let test_no_tests () =
   let t =
     with_renderer (fun r -> Report.finish r ~results:[] ~duration:0.01 ())
   in
-  check_string "finish: empty run" ~expected:"no tests ran.\n" ~actual:t;
+  equal ~msg:"finish: empty run" string "no tests ran.\n" t;
   (* A suite that declares nothing is not a mistyped filter. *)
   let declares_none =
     with_renderer (fun r ->
         Report.header r ~suite:"mylib" ~tests:0 ~declared:0 ~seed:None ();
         Report.finish r ~results:[] ~duration:0.01 ())
   in
-  check_string "empty suite names itself as the cause"
-    ~expected:"mylib: no tests ran: the suite declares none.\n"
-    ~actual:declares_none;
+  equal ~msg:"empty suite names itself as the cause" string
+    "mylib: no tests ran: the suite declares none.\n" declares_none;
   (* A selection that matched nothing names itself and the denominator,
      and points at the way to see what there was: the one line allowed
      after an outcome. A build action has no launcher to restate and names
@@ -550,29 +536,27 @@ let test_no_tests () =
           ~selection:{|filter "parsr"|} ~seed:None ();
         Report.finish r ~results:[] ~duration:0.01 ())
   in
-  check_string "empty selection names the selection, the total and the way out"
-    ~expected:
-      "mylib: no tests ran: filter \"parsr\" matched none of 48 tests.\n\
-       list: ./t.exe -l\n"
-    ~actual:(filtered (`Exe "./t.exe"));
-  check_string "a build action's empty selection names the flag"
-    ~expected:
-      "mylib: no tests ran: filter \"parsr\" matched none of 48 tests.\n\
-       (list the suite's tests with -l)\n"
-    ~actual:(filtered `Mirrors);
-  check_string "nor has a suite that declares nothing"
-    ~expected:"mylib: no tests ran: the suite declares none.\n"
-    ~actual:
-      (with_renderer ~invocation:(`Exe "./t.exe") (fun r ->
-           Report.header r ~suite:"mylib" ~tests:0 ~declared:0 ~seed:None ();
-           Report.finish r ~results:[] ~duration:0.01 ()));
+  equal ~msg:"empty selection names the selection, the total and the way out"
+    string
+    "mylib: no tests ran: filter \"parsr\" matched none of 48 tests.\n\
+     list: ./t.exe -l\n"
+    (filtered (`Exe "./t.exe"));
+  equal ~msg:"a build action's empty selection names the flag" string
+    "mylib: no tests ran: filter \"parsr\" matched none of 48 tests.\n\
+     (list the suite's tests with -l)\n"
+    (filtered `Mirrors);
+  equal ~msg:"nor has a suite that declares nothing" string
+    "mylib: no tests ran: the suite declares none.\n"
+    (with_renderer ~invocation:(`Exe "./t.exe") (fun r ->
+         Report.header r ~suite:"mylib" ~tests:0 ~declared:0 ~seed:None ();
+         Report.finish r ~results:[] ~duration:0.01 ()));
   let singular =
     with_renderer (fun r ->
         Report.header r ~suite:"mylib" ~tests:0 ~declared:1
           ~selection:"tag \"slow\"" ~seed:None ();
         Report.finish r ~results:[] ~duration:0.01 ())
   in
-  check_contains "one declared test is not \"1 tests\""
+  contains ~msg:"one declared test is not \"1 tests\""
     ~sub:"matched none of 1 test." singular
 
 (* What compact commits as the run happens
@@ -589,12 +573,12 @@ let test_compact_is_silent_per_test () =
         Report.header r ~suite:"s" ~tests:(List.length results) ~seed:None ();
         List.iter (Report.result r) results)
   in
-  check_string "compact: a pass prints nothing" ~expected:""
-    ~actual:(silent [ Fixtures.result [ "t" ] Failure.Pass ]);
-  check_string "compact: a skip prints nothing" ~expected:""
-    ~actual:(silent [ Fixtures.result [ "t" ] (Failure.Skip None) ]);
-  check_string "compact: an excused failure prints nothing" ~expected:""
-    ~actual:(silent [ Fixtures.excused_result ])
+  equal ~msg:"compact: a pass prints nothing" string ""
+    (silent [ Fixtures.result [ "t" ] Failure.Pass ]);
+  equal ~msg:"compact: a skip prints nothing" string ""
+    (silent [ Fixtures.result [ "t" ] (Failure.Skip None) ]);
+  equal ~msg:"compact: an excused failure prints nothing" string ""
+    (silent [ Fixtures.excused_result ])
 
 let test_compact_commits_blocks () =
   let buf = Buffer.create 256 in
@@ -613,23 +597,24 @@ let test_compact_commits_blocks () =
        { suite = "s"; total = 4; selected = 4; properties = false });
   observe (Run.Test_started { path = [ "ok" ] });
   observe (Run.Test_finished pass);
-  check_string "the start of the run and a pass commit nothing" ~expected:""
-    ~actual:(committed ());
+  equal ~msg:"the start of the run and a pass commit nothing" string ""
+    (committed ());
   observe (Run.Test_started { path = [ "first" ] });
   observe (Run.Test_finished (bad "first"));
   let first = "s: 4 tests\n" ^ failures_rule ^ "\n" ^ block "first" in
-  check_string
-    "a failure commits the header, the opening rule and its block when its \
-     test finishes, flushed"
-    ~expected:first ~actual:(committed ());
+  equal
+    ~msg:
+      "a failure commits the header, the opening rule and its block when its \
+       test finishes, flushed"
+    string first (committed ());
   observe (Run.Test_finished (bad "second"));
   let second = first ^ "\n" ^ block "second" in
-  check_string
-    "the next block follows one blank line; the opening rule prints once"
-    ~expected:second ~actual:(committed ());
-  check "the opening rule prints once, before the first block"
+  equal
+    ~msg:"the next block follows one blank line; the opening rule prints once"
+    string second (committed ());
+  is_true ~msg:"the opening rule prints once, before the first block"
     (occurrences_of ~sub:failures_rule (committed ()) = 1);
-  check_absent "the closing rule is the end of the run's, not a block's"
+  not_contains ~msg:"the closing rule is the end of the run's, not a block's"
     ~sub:closing_rule (committed ());
   (* The executor records a fixture release that raised after the last
      test, with no event: its block is what [finish] still owes. *)
@@ -650,25 +635,26 @@ let test_compact_commits_blocks () =
   Report.finish r
     ~results:[ pass; bad "first"; bad "second"; release ]
     ~duration:0.0042 ();
-  check_string
-    "finish adds the block it still owes, the closing rule, then the summary: \
-     one test of the four never ran"
-    ~expected:
-      (second
-     ^ "\n\
-       \  FAIL  fixture release\n\
-       \    [release] test/t.ml:4\n\
-       \    db: release raised Exit\n" ^ closing_rule
-     ^ "\n\n1 passed, 3 failed, 1 not run in 4.2ms.\n")
-    ~actual:(committed ());
+  equal
+    ~msg:
+      "finish adds the block it still owes, the closing rule, then the \
+       summary: one test of the four never ran"
+    string
+    (second
+   ^ "\n\
+     \  FAIL  fixture release\n\
+     \    [release] test/t.ml:4\n\
+     \    db: release raised Exit\n" ^ closing_rule
+   ^ "\n\n1 passed, 3 failed, 1 not run in 4.2ms.\n")
+    (committed ());
   let exe =
     with_renderer ~invocation:(`Exe "./t.exe") (fun r ->
         Report.finish r ~results:[ release ] ~duration:0.001 ())
   in
-  check_contains "a release row ends on its facts: no command closes it"
+  contains ~msg:"a release row ends on its facts: no command closes it"
     ~sub:("\n    db: release raised Exit\n" ^ closing_rule ^ "\n")
     exe;
-  check_absent "no block carries a rerun hint" ~sub:"rerun" exe
+  not_contains ~msg:"no block carries a rerun hint" ~sub:"rerun" exe
 
 (* Under [-v] a failed test's row is its block's title: the block's lines
    are committed under it when the test finishes, and no section repeats
@@ -691,22 +677,25 @@ let test_verbose_commits_blocks () =
   observe
     (Run.Run_started
        { suite = "s"; total = 4; selected = 4; properties = false });
-  check_string "the header is committed at the start, flushed"
-    ~expected:"s: 4 tests\n" ~actual:(committed ());
+  equal ~msg:"the header is committed at the start, flushed" string
+    "s: 4 tests\n" (committed ());
   observe (Run.Test_finished pass);
   let passed = "s: 4 tests\n" ^ row "PASS" "ok" in
-  check_string "a pass commits its row" ~expected:passed ~actual:(committed ());
+  equal ~msg:"a pass commits its row" string passed (committed ());
   observe (Run.Test_finished (bad "first"));
   let first = passed ^ block "first" in
-  check_string
-    "a failure commits its row and, under it, its block's lines when its test \
-     finishes, flushed"
-    ~expected:first ~actual:(committed ());
+  equal
+    ~msg:
+      "a failure commits its row and, under it, its block's lines when its \
+       test finishes, flushed"
+    string first (committed ());
   observe (Run.Test_finished (bad "second"));
   let second = first ^ block "second" in
-  check_string
-    "a blank line closes each block; no heading and no rule separates two rows"
-    ~expected:second ~actual:(committed ());
+  equal
+    ~msg:
+      "a blank line closes each block; no heading and no rule separates two \
+       rows"
+    string second (committed ());
   let release =
     {
       (Fixtures.result Run.fixture_release_path
@@ -724,17 +713,18 @@ let test_verbose_commits_blocks () =
   Report.finish r
     ~results:[ pass; bad "first"; bad "second"; release ]
     ~duration:0.0042 ();
-  check_string
-    "finish adds the row it still owes with its block, then the summary: no \
-     failures section repeats the blocks"
-    ~expected:
-      (second
-      ^ row "FAIL" "fixture release"
-      ^ "    [release] test/t.ml:4\n\
-        \    db: release raised Exit\n\n\
-         1 passed, 3 failed, 1 not run in 4.2ms.\n")
-    ~actual:(committed ());
-  check_absent "verbose draws no rule" ~sub:"\u{2500}" (committed ());
+  equal
+    ~msg:
+      "finish adds the row it still owes with its block, then the summary: no \
+       failures section repeats the blocks"
+    string
+    (second
+    ^ row "FAIL" "fixture release"
+    ^ "    [release] test/t.ml:4\n\
+      \    db: release raised Exit\n\n\
+       1 passed, 3 failed, 1 not run in 4.2ms.\n")
+    (committed ());
+  not_contains ~msg:"verbose draws no rule" ~sub:"\u{2500}" (committed ());
   let armed =
     with_renderer ~mode:`Verbose ~ansi:true ~invocation:(`Exe "./t.exe")
       ~armed:"lib/calc.ml:9:12:add" (fun r ->
@@ -742,12 +732,12 @@ let test_verbose_commits_blocks () =
         Report.result r
           (Fixtures.result [ "first" ] (Failure.Fail [ Fixtures.prop_failure ])))
   in
-  check_contains
-    "the row is a title: its path bold, and (mutant armed) in an armed run"
+  contains
+    ~msg:"the row is a title: its path bold, and (mutant armed) in an armed run"
     ~sub:
       "  \027[31mFAIL\027[0m  \027[1mfirst\027[0m \027[2m(mutant armed)\027[0m"
     armed;
-  check_contains "its hints are the block's, and the blank line closes it"
+  contains ~msg:"its hints are the block's, and the blank line closes it"
     ~sub:
       "    replay: ./t.exe --arm lib/calc.ml:9:12:add --seed \
        s1:7be1d2c904aa31f5 -f 'first'\n\n"
@@ -759,10 +749,10 @@ let test_verbose_commits_blocks () =
         Report.result r
           (Fixtures.result [ "help" ] (Failure.Fail [ Fixtures.snap_missing ])))
   in
-  check_contains "a missing baseline qualifies the row, in parentheses"
+  contains ~msg:"a missing baseline qualifies the row, in parentheses"
     ~sub:"  FAIL  help (no baseline)  " (missing ());
-  check_absent "and no dash does" ~sub:"\u{2014}" (missing ());
-  check_contains "the armed qualifier shares the slot"
+  not_contains ~msg:"and no dash does" ~sub:"\u{2014}" (missing ());
+  contains ~msg:"the armed qualifier shares the slot"
     ~sub:"  FAIL  help (no baseline, mutant armed)  "
     (missing ~armed:"lib/calc.ml:9:12:add" ())
 
@@ -785,8 +775,8 @@ let test_note () =
             ]
           ~duration:0.01 ())
   in
-  check_string "note: a green compact run stays one line"
-    ~expected:"s: 2 passed in 10ms.\n" ~actual:green;
+  equal ~msg:"note: a green compact run stays one line" string
+    "s: 2 passed in 10ms.\n" green;
   let noteworthy =
     let results =
       [
@@ -801,17 +791,17 @@ let test_note () =
         Report.result r (List.nth results 1);
         Report.finish r ~results ~duration:0.01 ())
   in
-  check_absent "note: a compact transcript never carries the notice"
+  not_contains ~msg:"note: a compact transcript never carries the notice"
     ~sub:"releasing" noteworthy;
-  check "note: the compact transcript opens with the header"
+  is_true ~msg:"note: the compact transcript opens with the header"
     (String.starts_with
        ~prefix:("s: 2 tests\n" ^ failures_rule ^ "\n  FAIL  b\n")
        noteworthy);
   let verbose =
     with_renderer ~mode:`Verbose (fun r -> Report.note r "releasing db")
   in
-  check_string "note: verbose prints the plain line" ~expected:"releasing db\n"
-    ~actual:verbose;
+  equal ~msg:"note: verbose prints the plain line" string "releasing db\n"
+    verbose;
   let live =
     with_renderer ~ansi:true ~live:true (fun r ->
         Report.header r ~suite:"s" ~tests:2 ~seed:None ();
@@ -822,9 +812,9 @@ let test_note () =
           ~results:[ Fixtures.result [ "a" ] Failure.Pass ]
           ~duration:0.01 ())
   in
-  check_contains "note: the live tail is erased, the notice drawn erasable"
+  contains ~msg:"note: the live tail is erased, the notice drawn erasable"
     ~sub:"\r\027[2K\027[2mreleasing db\027[0m" live;
-  check_contains "note: the erasable notice is erased before the one-liner"
+  contains ~msg:"note: the erasable notice is erased before the one-liner"
     ~sub:"releasing db\027[0m\r\027[2Ks: \027[32m1 passed" live
 
 (* The summary's terms, in their order, zero terms omitted. [not run] is
@@ -838,7 +828,7 @@ let test_summary_terms () =
         Report.result r bad;
         Report.finish r ~results:[ bad ] ~duration:0.0004 ())
   in
-  check "a stopped run counts what it never reached"
+  is_true ~msg:"a stopped run counts what it never reached"
     (String.ends_with ~suffix:"\n\n1 failed, 4 not run in 0.4ms.\n" stopped);
   let complete =
     with_renderer (fun r ->
@@ -846,7 +836,7 @@ let test_summary_terms () =
         Report.result r bad;
         Report.finish r ~results:[ bad ] ~duration:0.0004 ())
   in
-  check_absent "a run that reached every selected test omits the term"
+  not_contains ~msg:"a run that reached every selected test omits the term"
     ~sub:"not run" complete;
   let root = temp_dir () in
   let baselines = Baseline.create ~root ~cwd:root ~mode:Baseline.Corrected () in
@@ -870,7 +860,7 @@ let test_summary_terms () =
         List.iter (Report.result r) results;
         Report.finish r ~results ~duration:6.5 ~baselines ())
   in
-  check "every term, in order, the summary last"
+  is_true ~msg:"every term, in order, the summary last"
     (String.ends_with
        ~suffix:
          "\n\n\
@@ -883,12 +873,11 @@ let test_summary_terms () =
       { Fixtures.excused_result with Run.path = [ "also excused" ] };
     ]
   in
-  check_string "zero terms are omitted, [passed] included; a plural term"
-    ~expected:"s: 2 expected failures in 1.0ms.\n"
-    ~actual:
-      (with_renderer (fun r ->
-           Report.header r ~suite:"s" ~tests:2 ~seed:None ();
-           Report.finish r ~results:excused ~duration:0.001 ()))
+  equal ~msg:"zero terms are omitted, [passed] included; a plural term" string
+    "s: 2 expected failures in 1.0ms.\n"
+    (with_renderer (fun r ->
+         Report.header r ~suite:"s" ~tests:2 ~seed:None ();
+         Report.finish r ~results:excused ~duration:0.001 ()))
 
 (* The noteworthy rule *)
 
@@ -900,17 +889,16 @@ let test_compact_green_one_liner () =
         List.iter (Report.result r) passes;
         Report.finish r ~results:passes ~duration:1.2 ())
   in
-  check_string "green compact run: exactly one named line"
-    ~expected:"mylib: 1 passed in 1.2s.\n" ~actual:named;
+  equal ~msg:"green compact run: exactly one named line" string
+    "mylib: 1 passed in 1.2s.\n" named;
   let seeded =
     with_renderer (fun r ->
         Report.header r ~suite:"mylib" ~tests:1 ~seed:(Some Fixtures.root) ();
         List.iter (Report.result r) passes;
         Report.finish r ~results:passes ~duration:1.2 ())
   in
-  check_string "green compact run: the seed the header carried is appended"
-    ~expected:"mylib: 1 passed in 1.2s (seed s1:7be1d2c904aa31f5).\n"
-    ~actual:seeded;
+  equal ~msg:"green compact run: the seed the header carried is appended" string
+    "mylib: 1 passed in 1.2s (seed s1:7be1d2c904aa31f5).\n" seeded;
   let segments =
     let results =
       [
@@ -926,10 +914,10 @@ let test_compact_green_one_liner () =
         Report.result r (List.nth results 2);
         Report.finish r ~results ~duration:0.2 ())
   in
-  check_string
-    "green compact run: skip and expected-failure segments stay on the line"
-    ~expected:"mylib: 1 passed, 1 skipped, 1 expected failure in 200ms.\n"
-    ~actual:segments;
+  equal
+    ~msg:
+      "green compact run: skip and expected-failure segments stay on the line"
+    string "mylib: 1 passed, 1 skipped, 1 expected failure in 200ms.\n" segments;
   let empty =
     with_renderer (fun r ->
         Report.header r ~suite:"mylib" ~tests:0 ~seed:None ();
@@ -937,8 +925,8 @@ let test_compact_green_one_liner () =
   in
   (* [~declared] defaults to [~tests], which is 0 here: the suite really
      does declare nothing. *)
-  check_string "empty compact selection: one named line, no header"
-    ~expected:"mylib: no tests ran: the suite declares none.\n" ~actual:empty
+  equal ~msg:"empty compact selection: one named line, no header" string
+    "mylib: no tests ran: the suite declares none.\n" empty
 
 let test_compact_slow_trigger () =
   let slow_pass = Fixtures.result [ "t" ] Failure.Pass ~duration:1.2 in
@@ -948,12 +936,12 @@ let test_compact_slow_trigger () =
         Report.result r slow_pass;
         Report.finish r ~results:[ slow_pass ] ~duration:1.2 ())
   in
-  check_string
-    "an untagged over-threshold pass is noteworthy: header, then the section \
-     with its threshold, and no advice line"
-    ~expected:
-      "s: 1 test\nslow tests (1, over 1s):\n  1.2s  t\n\n1 passed in 1.2s.\n"
-    ~actual:t;
+  equal
+    ~msg:
+      "an untagged over-threshold pass is noteworthy: header, then the section \
+       with its threshold, and no advice line"
+    string
+    "s: 1 test\nslow tests (1, over 1s):\n  1.2s  t\n\n1 passed in 1.2s.\n" t;
   let at_threshold =
     let r1 = Fixtures.result [ "t" ] Failure.Pass ~duration:1.0 in
     with_renderer (fun r ->
@@ -961,15 +949,16 @@ let test_compact_slow_trigger () =
         Report.result r r1;
         Report.finish r ~results:[ r1 ] ~duration:1.0 ())
   in
-  check "the threshold is inclusive (duration >= threshold)"
+  is_true ~msg:"the threshold is inclusive (duration >= threshold)"
     (String.starts_with
        ~prefix:"s: 1 test\nslow tests (1, over 1s):\n  1.0s  t\n" at_threshold);
   (* The threshold is configured, not measured: it prints as it was
      written, in seconds, never in the measured format or an exponent. *)
   List.iter
     (fun (slow_threshold, written) ->
-      check_contains
-        (Printf.sprintf "a threshold of %s seconds prints as given" written)
+      contains
+        ~msg:
+          (Printf.sprintf "a threshold of %s seconds prints as given" written)
         ~sub:(Printf.sprintf "slow tests (1, over %ss):\n" written)
         (with_renderer ~slow_threshold (fun r ->
              Report.finish r ~results:[ slow_pass ] ~duration:1.2 ())))
@@ -981,8 +970,8 @@ let test_compact_slow_trigger () =
         Report.result r tagged_pass;
         Report.finish r ~results:[ tagged_pass ] ~duration:1.2 ())
   in
-  check_string "a slow-tagged test is exempt everywhere: one line, no warning"
-    ~expected:"s: 1 passed in 1.2s.\n" ~actual:tagged;
+  equal ~msg:"a slow-tagged test is exempt everywhere: one line, no warning"
+    string "s: 1 passed in 1.2s.\n" tagged;
   let skip = Fixtures.result [ "t" ] (Failure.Skip None) ~duration:2.0 in
   let skipped =
     with_renderer (fun r ->
@@ -990,8 +979,8 @@ let test_compact_slow_trigger () =
         Report.result r skip;
         Report.finish r ~results:[ skip ] ~duration:2.0 ())
   in
-  check_string "a skip never triggers the threshold"
-    ~expected:"s: 1 skipped in 2.0s.\n" ~actual:skipped;
+  equal ~msg:"a skip never triggers the threshold" string
+    "s: 1 skipped in 2.0s.\n" skipped;
   (* An excused expected failure is not a counted failure — but its
      duration still counts against the threshold when untagged. *)
   let excused_fast =
@@ -1000,8 +989,8 @@ let test_compact_slow_trigger () =
         Report.result r Fixtures.excused_result;
         Report.finish r ~results:[ Fixtures.excused_result ] ~duration:0.1 ())
   in
-  check_string "an excused failure alone is not noteworthy"
-    ~expected:"s: 1 expected failure in 100ms.\n" ~actual:excused_fast
+  equal ~msg:"an excused failure alone is not noteworthy" string
+    "s: 1 expected failure in 100ms.\n" excused_fast
 
 let test_slow_duration_semantics () =
   (* The compared duration is [Run.result.duration] — the attempts summed
@@ -1016,9 +1005,9 @@ let test_slow_duration_semantics () =
         Report.result r retried;
         Report.finish r ~results:[ retried ] ~duration:1.2 ())
   in
-  check "a retried test is noteworthy on its summed duration"
+  is_true ~msg:"a retried test is noteworthy on its summed duration"
     (String.starts_with ~prefix:"s: 1 test\n" t);
-  check_contains "the warning shows the summed duration"
+  contains ~msg:"the warning shows the summed duration"
     ~sub:"slow tests (1, over 1s):\n  1.2s  flaky\n" t;
   (* A slow test that also fails: one block and one warning — they report
      different things — and the summary counts the failure once. *)
@@ -1033,16 +1022,18 @@ let test_slow_duration_semantics () =
         Report.result r slow_fail;
         Report.finish r ~results:[ slow_fail ] ~duration:2.0 ())
   in
-  check_contains "a slow failing test keeps its failure block"
+  contains ~msg:"a slow failing test keeps its failure block"
     ~sub:(failures_rule ^ "\n  FAIL  boom\n")
     t;
-  check_contains
-    "the section follows the closing rule and a blank line, before the summary"
+  contains
+    ~msg:
+      "the section follows the closing rule and a blank line, before the \
+       summary"
     ~sub:
       ("    b\n" ^ closing_rule
      ^ "\n\nslow tests (1, over 1s):\n  2.0s  boom\n\n1 failed in 2.0s.\n")
     t;
-  check_contains "the failure is counted once" ~sub:"\n1 failed in 2.0s.\n" t;
+  contains ~msg:"the failure is counted once" ~sub:"\n1 failed in 2.0s.\n" t;
   let occurrences ~sub s =
     let n = String.length sub in
     let rec go i acc =
@@ -1052,7 +1043,7 @@ let test_slow_duration_semantics () =
     in
     go 0 0
   in
-  check "exactly one warning line for the slow failure"
+  is_true ~msg:"exactly one warning line for the slow failure"
     (occurrences ~sub:"  2.0s  boom" t = 1)
 
 let test_slow_threshold_zero () =
@@ -1063,8 +1054,8 @@ let test_slow_threshold_zero () =
         Report.result r slow_pass;
         Report.finish r ~results:[ slow_pass ] ~duration:5.0 ())
   in
-  check_string "threshold 0 disables the trigger and the warnings"
-    ~expected:"s: 1 passed in 5.0s.\n" ~actual:t;
+  equal ~msg:"threshold 0 disables the trigger and the warnings" string
+    "s: 1 passed in 5.0s.\n" t;
   let still_noteworthy =
     let fail = Fixtures.result [ "t" ] (Failure.Fail [ Failure.message "x" ]) in
     with_renderer ~slow_threshold:0.0 (fun r ->
@@ -1072,7 +1063,7 @@ let test_slow_threshold_zero () =
         Report.result r fail;
         Report.finish r ~results:[ fail ] ~duration:0.1 ())
   in
-  check "threshold 0 still makes a counted failure noteworthy"
+  is_true ~msg:"threshold 0 still makes a counted failure noteworthy"
     (String.starts_with
        ~prefix:("s: 1 test\n" ^ failures_rule ^ "\n")
        still_noteworthy)
@@ -1087,11 +1078,11 @@ let test_verbose_slow_warnings () =
         Report.result r slow_pass;
         Report.finish r ~results:[ slow_pass ] ~duration:1.5 ())
   in
-  check_contains "verbose: header and status line stream as always"
+  contains ~msg:"verbose: header and status line stream as always"
     ~sub:"s: 1 test\n  PASS  t" t;
-  check_contains "verbose: the slow section before the summary"
+  contains ~msg:"verbose: the slow section before the summary"
     ~sub:"\nslow tests (1, over 1s):\n  1.5s  t\n\n" t;
-  check "verbose: the summary is the last line"
+  is_true ~msg:"verbose: the summary is the last line"
     (String.ends_with ~suffix:"  1.5s  t\n\n1 passed in 1.5s.\n" t);
   let tagged_pass = { slow_pass with Run.slow_tagged = true } in
   let tagged =
@@ -1099,8 +1090,8 @@ let test_verbose_slow_warnings () =
         Report.result r tagged_pass;
         Report.finish r ~results:[ tagged_pass ] ~duration:1.5 ())
   in
-  check_absent "verbose: slow-tagged tests warn nowhere" ~sub:"slow tests ("
-    tagged
+  not_contains ~msg:"verbose: slow-tagged tests warn nowhere"
+    ~sub:"slow tests (" tagged
 
 (* The flaky block *)
 
@@ -1121,13 +1112,12 @@ let test_flaky_block () =
         Report.result r flaky;
         Report.finish r ~results:[ steady; flaky ] ~duration:0.3 ())
   in
-  check_string "a flaky pass is noteworthy: header, section, summary term"
-    ~expected:
-      "s: 2 tests\n\
-       flaky tests (1):\n\
-      \  passed on attempt 2  network › fetches the manifest\n\n\
-       2 passed (1 flaky) in 300ms.\n"
-    ~actual:t;
+  equal ~msg:"a flaky pass is noteworthy: header, section, summary term" string
+    "s: 2 tests\n\
+     flaky tests (1):\n\
+    \  passed on attempt 2  network › fetches the manifest\n\n\
+     2 passed (1 flaky) in 300ms.\n"
+    t;
   (* Between the slow block and the summary, after the failure section. *)
   let slow = Fixtures.result [ "slow one" ] Failure.Pass ~duration:1.5 in
   let bad = Fixtures.result [ "bad" ] (Failure.Fail [ Failure.message "b" ]) in
@@ -1135,7 +1125,7 @@ let test_flaky_block () =
     with_renderer (fun r ->
         Report.finish r ~results:[ bad; slow; flaky ] ~duration:2.0 ())
   in
-  check_contains "the flaky section follows the slow section"
+  contains ~msg:"the flaky section follows the slow section"
     ~sub:
       "slow tests (1, over 1s):\n\
       \  1.5s  slow one\n\n\
@@ -1143,7 +1133,7 @@ let test_flaky_block () =
       \  passed on attempt 2  network › fetches the manifest\n\n\
        2 passed (1 flaky), 1 failed in 2.0s.\n"
     ordered;
-  check "the failure section precedes it, closed by its rule"
+  is_true ~msg:"the failure section precedes it, closed by its rule"
     (occurrences_of ~sub:(failures_rule ^ "\n") ordered = 1
     && occurrences_of ~sub:(closing_rule ^ "\n\n") ordered = 1
     && Text.first_occurrence ~pattern:(closing_rule ^ "\n") ordered
@@ -1159,8 +1149,9 @@ let test_flaky_block () =
     with_renderer (fun r ->
         Report.finish r ~results:[ hopeless; steady ] ~duration:0.1 ())
   in
-  check_absent "a retried failure is not flaky" ~sub:"flaky tests" not_flaky;
-  check_contains "a retried failure keeps its attempt count in the block"
+  not_contains ~msg:"a retried failure is not flaky" ~sub:"flaky tests"
+    not_flaky;
+  contains ~msg:"a retried failure keeps its attempt count in the block"
     ~sub:"  FAIL  hopeless (3 attempts)" not_flaky;
   (* Verbose keeps the block, and its status line already carried the
      count. *)
@@ -1170,11 +1161,11 @@ let test_flaky_block () =
         Report.result r flaky;
         Report.finish r ~results:[ flaky ] ~duration:0.3 ())
   in
-  check_contains "verbose: the status line carries the count"
+  contains ~msg:"verbose: the status line carries the count"
     ~sub:"  PASS  network › fetches the manifest" verbose;
-  check_contains "verbose: the status line names the attempts"
+  contains ~msg:"verbose: the status line names the attempts"
     ~sub:"(2 attempts)" verbose;
-  check_contains "verbose: the block prints too, one blank line after the rows"
+  contains ~msg:"verbose: the block prints too, one blank line after the rows"
     ~sub:
       "0.2ms (2 attempts)\n\n\
        flaky tests (1):\n\
@@ -1185,89 +1176,91 @@ let test_flaky_block () =
     with_renderer ~ansi:true (fun r ->
         Report.finish r ~results:[ flaky ] ~duration:0.3 ())
   in
-  check_contains "ansi: the flaky section wears the slow section's caution"
+  contains ~msg:"ansi: the flaky section wears the slow section's caution"
     ~sub:"\027[33mflaky tests (1):\027[0m\n" colored;
-  check_contains "ansi: the summary's flaky term is caution, beside the pass"
+  contains ~msg:"ansi: the summary's flaky term is caution, beside the pass"
     ~sub:"\027[32m1 passed\027[0m \027[33m(1 flaky)\027[0m in 300ms." colored
 
 (* Failure projections *)
 
 let test_headline () =
   let h f = Report.headline f in
-  check "headline: equality"
+  is_true ~msg:"headline: equality"
     (h (Failure.equality ~expected:"true" ~actual:"false" ())
     = "expected true, got false");
-  check "headline: negated equality"
+  is_true ~msg:"headline: negated equality"
     (h (Failure.equality ~not_:true ~expected:"3" ~actual:"3" ())
     = "both sides equal: 3");
-  check "headline: raise both sides"
+  is_true ~msg:"headline: raise both sides"
     (h (Failure.raised ~expected:"A" ~actual:"B" ())
     = "expected exception A, raised B");
-  check "headline: raise nothing raised"
+  is_true ~msg:"headline: raise nothing raised"
     (h (Failure.raised ~expected:"A" ()) = "expected exception A, none raised");
-  check "headline: predicate miss"
+  is_true ~msg:"headline: predicate miss"
     (h (Failure.raised ~actual:"B" ~predicate:true ())
     = "exception did not satisfy the predicate: B");
-  check "headline: a predicate that saw nothing raised"
+  is_true ~msg:"headline: a predicate that saw nothing raised"
     (h (Failure.raised ~predicate:true ())
     = "expected an exception, none raised");
-  check "headline: uncaught exception"
+  is_true ~msg:"headline: uncaught exception"
     (h (Failure.raised ~actual:"Not_found" ()) = "uncaught exception: Not_found");
-  check "headline: raise wanted any"
+  is_true ~msg:"headline: raise wanted any"
     (h (Failure.raised ()) = "expected an exception, none raised");
-  check "headline: a predicate's claim is the expected side"
+  is_true ~msg:"headline: a predicate's claim is the expected side"
     (h (Failure.predicate ~claim:"a power of two" "12")
     = "expected a power of two, got 12");
-  check "headline: equal renderings"
+  is_true ~msg:"headline: equal renderings"
     (h (Failure.equality ~expected:"nan" ~actual:"nan" ())
     = "both sides render as: nan");
-  check "headline: a diff is a sentence counting the lines the block prints"
+  is_true
+    ~msg:"headline: a diff is a sentence counting the lines the block prints"
     (h (Failure.equality ~expected:"a\nb\nc" ~actual:"a\nB\nc" ())
     = "expected and actual differ (5 diff lines)");
-  check "headline: a newline-only difference is the block's sentence"
+  is_true ~msg:"headline: a newline-only difference is the block's sentence"
     (h (Failure.equality ~expected:"a\nb" ~actual:"a\nb\n" ())
     = "values differ only by a trailing newline (on the actual side)");
-  check "headline: file baseline missing"
+  is_true ~msg:"headline: file baseline missing"
     (h Fixtures.snap_missing = {|expect_file "test/help.expected": no baseline|});
-  check "headline: literal mismatch"
+  is_true ~msg:"headline: literal mismatch"
     (h Fixtures.snap_mismatch = "expect: mismatch");
-  check "headline: unresolvable"
+  is_true ~msg:"headline: unresolvable"
     (h
        (Failure.baseline (Failure.File "../x")
           (Failure.Unresolvable { candidate = "/tmp/x" }))
     = {|expect_file "../x": cannot resolve the path under the project root|});
-  check "headline: property"
+  is_true ~msg:"headline: property"
     (h Fixtures.prop_failure
    = "property failed (case 12, shrunk 4 steps): Rect (2, 0)");
   let one_step =
     Failure.property ~rendered:"0" ~case_index:0 ~shrink_steps:1
       ~root:Fixtures.root ~examples:false ()
   in
-  check "headline: one shrink step is singular"
+  is_true ~msg:"headline: one shrink step is singular"
     (h one_step = "property failed (case 0, shrunk 1 step): 0");
-  check_contains "and so it is in the block"
+  contains ~msg:"and so it is in the block"
     ~sub:"    counterexample (case 0, shrunk 1 step): 0\n"
     (failure_block one_step);
-  check "headline: a pre-image is marked as the block marks it"
+  is_true ~msg:"headline: a pre-image is marked as the block marks it"
     (h
        (Failure.property ~rendered:"20" ~case_index:0 ~shrink_steps:0
           ~root:Fixtures.root ~examples:false ~rendering:Failure.Pre_image ())
     = "property failed (case 0): computed from 20");
-  check "headline: a summarized counterexample is its summary, not its table"
+  is_true
+    ~msg:"headline: a summarized counterexample is its summary, not its table"
     (h
        (Failure.property ~summary:"2 calls, last: get"
           ~rendered:" #  call\n 1  inc\n 2  get" ~case_index:0 ~shrink_steps:2
           ~root:Fixtures.root ~examples:false ())
     = "property failed (case 0, shrunk 2 steps): 2 calls, last: get");
-  check "headline: message" (h (Failure.message "boom") = "boom");
-  check "headline: the user message leads, then a colon"
+  is_true ~msg:"headline: message" (h (Failure.message "boom") = "boom");
+  is_true ~msg:"headline: the user message leads, then a colon"
     (h
        {
          (Failure.equality ~expected:"1" ~actual:"2" ()) with
          Failure.msg = Some "deliberate";
        }
     = "deliberate: expected 1, got 2");
-  check_contains "headline: msg annotation prefixed" ~sub:"context: boom"
+  contains ~msg:"headline: msg annotation prefixed" ~sub:"context: boom"
     (h { (Failure.message "boom") with Failure.msg = Some "context" });
   (* Two failing subtests of one test must not read the same. *)
   let labelled label =
@@ -1276,31 +1269,31 @@ let test_headline () =
       Failure.subtest = [ "contract"; label ];
     }
   in
-  check "headline: the subtest label leads"
+  is_true ~msg:"headline: the subtest label leads"
     (h (labelled "shape [0]")
     = "contract \u{203a} shape [0]: expected [1; 2], got [1; 3]");
-  check "headline: sibling subtests differ by their label"
+  is_true ~msg:"headline: sibling subtests differ by their label"
     (h (labelled "shape [0]") <> h (labelled "shape [2]"));
-  check "headline: the label, the user message, then the sentence"
+  is_true ~msg:"headline: the label, the user message, then the sentence"
     (h { (labelled "shape [0]") with Failure.msg = Some "deliberate" }
     = "contract \u{203a} shape [0]: deliberate: expected [1; 2], got [1; 3]");
   (* 80 code points, not bytes, then the ellipsis. *)
   let long = String.concat "" (List.init 300 (fun _ -> "\u{00e9}")) in
   let hl = h (Failure.equality ~expected:long ~actual:"y" ()) in
-  check "headline: cut at 80 code points, then an ellipsis"
+  is_true ~msg:"headline: cut at 80 code points, then an ellipsis"
     (hl
     = "expected "
       ^ String.concat "" (List.init 71 (fun _ -> "\u{00e9}"))
       ^ "\u{2026}");
-  check_absent "headline: no em dash" ~sub:"\u{2014}"
+  not_contains ~msg:"headline: no em dash" ~sub:"\u{2014}"
     (h { (Failure.message "boom") with Failure.msg = Some "context" });
   let multi = h (Failure.message "line one\nline two") in
-  check "headline: never multi-line" (not (String.contains multi '\n'));
+  is_true ~msg:"headline: never multi-line" (not (String.contains multi '\n'));
   let esc = h (Failure.message "\027[31mred\027[0m alert") in
-  check "headline: payload escapes stripped" (esc = "red alert");
-  check "headline: empty message named"
+  is_true ~msg:"headline: payload escapes stripped" (esc = "red alert");
+  is_true ~msg:"headline: empty message named"
     (h (Failure.message "") = "(empty failure message)");
-  check_contains "block: empty message named" ~sub:"(empty failure message)"
+  contains ~msg:"block: empty message named" ~sub:"(empty failure message)"
     (failure_block (Failure.message ""))
 
 let test_property_projections () =
@@ -1309,11 +1302,11 @@ let test_property_projections () =
       ~root:Fixtures.root ~examples:true ()
   in
   let b = failure_block example in
-  check_contains "example: numbered from one"
+  contains ~msg:"example: numbered from one"
     ~sub:"counterexample (example 1): Rect (2, 0)" b;
-  check_absent "example: no replay line (examples always replay)" ~sub:"replay:"
-    b;
-  check_absent "example: no seed token" ~sub:"WINDTRAP_SEED" b;
+  not_contains ~msg:"example: no replay line (examples always replay)"
+    ~sub:"replay:" b;
+  not_contains ~msg:"example: no seed token" ~sub:"WINDTRAP_SEED" b;
   (* A pre-image is marked in the slot, [computed from], and explained in
      the aside under it; a printing generator draws no aside at all. *)
   let pre_image =
@@ -1321,14 +1314,15 @@ let test_property_projections () =
       ~shrink_steps:9 ~root:Fixtures.root ~examples:false
       ~rendering:Failure.Pre_image ()
   in
-  check_contains "pre-image: marked in the slot"
+  contains ~msg:"pre-image: marked in the slot"
     ~sub:
       "counterexample (case 19, shrunk 9 steps): computed from [2; 3] -> ([1.; \
        2.], [0.; 0.])"
     (failure_block pre_image);
-  check_contains
-    "pre-image: explained once under the counterexample, the remedy in the \
-     aside, indented two"
+  contains
+    ~msg:
+      "pre-image: explained once under the counterexample, the remedy in the \
+       aside, indented two"
     ~sub:
       "    counterexample (case 19, shrunk 9 steps): computed from [2; 3] -> \
        ([1.; 2.], [0.; 0.])\n\
@@ -1337,7 +1331,7 @@ let test_property_projections () =
        value)\n\
       \    replay: "
     (failure_block pre_image);
-  check_contains "pre-image: the aside is faint, line by line"
+  contains ~msg:"pre-image: the aside is faint, line by line"
     ~sub:
       "\n\
       \      \027[2m(the value has no printer, so this is the input that map \
@@ -1345,18 +1339,18 @@ let test_property_projections () =
       \      \027[2m computed it from; attach a printer with Gen.with_pp to \
        see the value)\027[0m\n"
     (failure_block ~ansi:true pre_image);
-  check_absent "pre-image: no em dash in the explanation" ~sub:"\u{2014}"
+  not_contains ~msg:"pre-image: no em dash in the explanation" ~sub:"\u{2014}"
     (failure_block pre_image);
-  check_absent "a printing generator draws no note" ~sub:"no printer"
+  not_contains ~msg:"a printing generator draws no note" ~sub:"no printer"
     (failure_block Fixtures.prop_failure);
-  check_absent "nor the remedy" ~sub:"Gen.with_pp"
+  not_contains ~msg:"nor the remedy" ~sub:"Gen.with_pp"
     (failure_block Fixtures.prop_failure);
   let multi_pre_image =
     failure_block
       (Failure.property ~rendered:"1 ->\n  [2; 3]" ~case_index:3 ~shrink_steps:0
          ~root:Fixtures.root ~examples:false ~rendering:Failure.Pre_image ())
   in
-  check_contains "multi-line pre-image: marked head, block form"
+  contains ~msg:"multi-line pre-image: marked head, block form"
     ~sub:
       "    counterexample (case 3): computed from\n\
       \      1 ->\n\
@@ -1366,10 +1360,10 @@ let test_property_projections () =
        value)\n"
     multi_pre_image;
   let no_filter = failure_block Fixtures.prop_failure in
-  check_contains "replay without filter: seed only"
+  contains ~msg:"replay without filter: seed only"
     ~sub:"replay: WINDTRAP_SEED=s1:7be1d2c904aa31f5 dune runtest" no_filter;
   let quoted = failure_block ~filter:"it's › tricky" Fixtures.prop_failure in
-  check_contains "replay filter is shell-quoted"
+  contains ~msg:"replay filter is shell-quoted"
     ~sub:{|WINDTRAP_FILTER='it'\''s › tricky'|} quoted;
   (* A config-sourced count rides the payload and the replay line restates
      it — replaying a late case needs at least as many cases as the failing
@@ -1379,12 +1373,12 @@ let test_property_projections () =
     Failure.property ~count:1000 ~rendered:"0" ~case_index:499 ~shrink_steps:1
       ~root:Fixtures.root ~examples:false ()
   in
-  check_contains "config-sourced count: Mirrors replay restates the mirror"
+  contains ~msg:"config-sourced count: Mirrors replay restates the mirror"
     ~sub:
       "replay: WINDTRAP_SEED=s1:7be1d2c904aa31f5 WINDTRAP_PROP_COUNT=1000 dune \
        runtest"
     (failure_block counted);
-  check_contains "config-sourced count: Exe replay restates --prop-count"
+  contains ~msg:"config-sourced count: Exe replay restates --prop-count"
     ~sub:
       "replay: ./t.exe --seed s1:7be1d2c904aa31f5 --prop-count 1000 -f 'late'"
     (failure_block ~invocation:(`Exe "./t.exe") ~filter:"late" counted);
@@ -1395,12 +1389,12 @@ let test_property_projections () =
       ~shrink_steps:10_000 ~shrink_exhausted:true ~root:Fixtures.root
       ~examples:false ()
   in
-  check_contains "a spent budget: the Mirrors replay line ends at the count"
+  contains ~msg:"a spent budget: the Mirrors replay line ends at the count"
     ~sub:
       "replay: WINDTRAP_SEED=s1:7be1d2c904aa31f5 WINDTRAP_PROP_COUNT=1000 dune \
        runtest\n"
     (failure_block spent);
-  check_contains "a spent budget: the Exe replay line ends at the filter"
+  contains ~msg:"a spent budget: the Exe replay line ends at the filter"
     ~sub:
       "replay: ./t.exe --seed s1:7be1d2c904aa31f5 --prop-count 1000 -f 'late'\n"
     (failure_block ~invocation:(`Exe "./t.exe") ~filter:"late" spent);
@@ -1409,7 +1403,7 @@ let test_property_projections () =
       (Failure.property ~rendered:"Rect\n  (2, 0)" ~case_index:3 ~shrink_steps:0
          ~root:Fixtures.root ~examples:false ())
   in
-  check_contains "multi-line counterexample: block form"
+  contains ~msg:"multi-line counterexample: block form"
     ~sub:"counterexample (case 3):\n      Rect\n        (2, 0)" multi;
   (* A summarized counterexample is a table: the summary on the head line,
      the table under it, its header row faint. *)
@@ -1419,7 +1413,7 @@ let test_property_projections () =
         " #  model before  call\n 1  0             inc 3\n 2  3             get"
       ~case_index:0 ~shrink_steps:2 ~root:Fixtures.root ~examples:false ()
   in
-  check_contains "a summarized counterexample: summary on the head, then rows"
+  contains ~msg:"a summarized counterexample: summary on the head, then rows"
     ~sub:
       "    counterexample (case 0, shrunk 2 steps): 2 calls, last: get\n\
       \       #  model before  call\n\
@@ -1427,7 +1421,7 @@ let test_property_projections () =
       \       2  3             get\n\
       \    replay: "
     (failure_block program);
-  check_contains "a summarized counterexample: only the header row is faint"
+  contains ~msg:"a summarized counterexample: only the header row is faint"
     ~sub:
       ": 2 calls, last: get\n\
       \      \027[2m #  model before  call\027[0m\n\
@@ -1439,39 +1433,43 @@ let test_kind_details () =
   let b =
     failure_block (Failure.with_phase Failure.Teardown (Failure.message "x"))
   in
-  check_contains "a phase with nothing located is its tag, alone on the line"
+  contains ~msg:"a phase with nothing located is its tag, alone on the line"
     ~sub:"    [teardown]\n    x\n" b;
   let b =
     failure_block
       (Failure.equality ~msg:"context note" ~expected:"1" ~actual:"2" ())
   in
-  check_contains "msg annotation printed" ~sub:"    context note\n" b;
+  contains ~msg:"msg annotation printed" ~sub:"    context note\n" b;
   let b =
     failure_block
       (Failure.baseline (Failure.File "../n.expected")
          (Failure.Unresolvable { candidate = "some/candidate" }))
   in
-  check_string
-    "unresolvable: the subject and the rule, then the candidate path and the \
-     remedy naming the variable, and no command after it"
-    ~expected:
-      "    expect_file \"../n.expected\": the path cannot be proven to lie \
-       under the project root\n\
-      \    unverified path: some/candidate\n\
-      \    (set WINDTRAP_PROJECT_ROOT to the directory the path is relative to)\n"
-    ~actual:b;
-  check_absent
-    "unresolvable: never a claim about where the path lies, which can be false"
+  equal
+    ~msg:
+      "unresolvable: the subject and the rule, then the candidate path and the \
+       remedy naming the variable, and no command after it"
+    string
+    "    expect_file \"../n.expected\": the path cannot be proven to lie under \
+     the project root\n\
+    \    unverified path: some/candidate\n\
+    \    (set WINDTRAP_PROJECT_ROOT to the directory the path is relative to)\n"
+    b;
+  not_contains
+    ~msg:
+      "unresolvable: never a claim about where the path lies, which can be \
+       false"
     ~sub:"outside the project root" b;
   (* What the block composes on that line fits the width; the path may not. *)
-  check "unresolvable: the composed text of the remedy line fits 80 columns"
+  is_true
+    ~msg:"unresolvable: the composed text of the remedy line fits 80 columns"
     (List.exists
        (fun line ->
          has ~sub:"unverified path:" line
          && String.length line - String.length "some/candidate" <= 80)
        (String.split_on_char '\n' b));
-  check_absent "unresolvable: no acceptance line" ~sub:"accept:" b;
-  check_contains "unresolvable: the remedy is a line of its own"
+  not_contains ~msg:"unresolvable: no acceptance line" ~sub:"accept:" b;
+  contains ~msg:"unresolvable: the remedy is a line of its own"
     ~sub:
       "\n\
       \    (set WINDTRAP_PROJECT_ROOT to the directory the path is relative to)\n"
@@ -1482,7 +1480,7 @@ let test_kind_details () =
          (Failure.Literal { exact = false })
          (Failure.Unresolvable { candidate = "/elsewhere/t.ml" }))
   in
-  check_contains "unresolvable literal: the subject is expect"
+  contains ~msg:"unresolvable literal: the subject is expect"
     ~sub:"    expect: the path cannot be proven to lie under the project root\n"
     b;
   (* The first fact line names the verb that read the literal. *)
@@ -1492,17 +1490,17 @@ let test_kind_details () =
          (Failure.Literal { exact })
          (Failure.Mismatch { expected = "a\n"; actual = "b\n" }))
   in
-  check_contains "expect: the flexible verb, then the hunks with no head"
+  contains ~msg:"expect: the flexible verb, then the hunks with no head"
     ~sub:"    expect: mismatch\n    @@ -1,1 +1,1 @@\n    - a\n    + b\n"
     (verb false);
-  check_contains "expect_exact: the exact verb, then the hunks with no head"
+  contains ~msg:"expect_exact: the exact verb, then the hunks with no head"
     ~sub:"    expect_exact: mismatch\n    @@ -1,1 +1,1 @@\n    - a\n    + b\n"
     (verb true);
-  check_absent "a correction has no ---/+++ head" ~sub:"--- expected"
+  not_contains ~msg:"a correction has no ---/+++ head" ~sub:"--- expected"
     (verb true);
   (* A line diff cannot show a trailing newline, the one difference that
      leaves [expect_exact] no hunk: the block says it in words. *)
-  check_contains "expect_exact: a newline-only difference is said in words"
+  contains ~msg:"expect_exact: a newline-only difference is said in words"
     ~sub:
       "    expect_exact: mismatch\n\
       \    values differ only by a trailing newline (on the actual side)\n\
@@ -1511,7 +1509,7 @@ let test_kind_details () =
        (Failure.baseline
           (Failure.Literal { exact = true })
           (Failure.Mismatch { expected = "exact"; actual = "exact\n" })));
-  check "the headline is that first fact line"
+  is_true ~msg:"the headline is that first fact line"
     (Report.headline
        (Failure.baseline
           (Failure.Literal { exact = true })
@@ -1520,11 +1518,11 @@ let test_kind_details () =
   let b =
     failure_block (Failure.equality ~expected:"a\nb\nc" ~actual:"a\nB\nc" ())
   in
-  check_contains "multi-line equality: unified diff header"
+  contains ~msg:"multi-line equality: unified diff header"
     ~sub:"--- expected\n    +++ actual\n" b;
-  check_contains "multi-line equality: hunk" ~sub:"@@ -1,3 +1,3 @@" b;
-  check_contains "multi-line equality: delete line" ~sub:"- b" b;
-  check_contains "multi-line equality: insert line" ~sub:"+ B" b
+  contains ~msg:"multi-line equality: hunk" ~sub:"@@ -1,3 +1,3 @@" b;
+  contains ~msg:"multi-line equality: delete line" ~sub:"- b" b;
+  contains ~msg:"multi-line equality: insert line" ~sub:"+ B" b
 
 let test_degenerate_equalities () =
   (* Renderings line-equal but byte-different: the only such difference is a
@@ -1533,22 +1531,22 @@ let test_degenerate_equalities () =
   let b =
     failure_block (Failure.equality ~expected:"a\nb" ~actual:"a\nb\n" ())
   in
-  check_contains "trailing-newline-only difference is stated, its side named"
+  contains ~msg:"trailing-newline-only difference is stated, its side named"
     ~sub:"    values differ only by a trailing newline (on the actual side)\n" b;
-  check_contains "the other side is named when it holds the newline"
+  contains ~msg:"the other side is named when it holds the newline"
     ~sub:"    values differ only by a trailing newline (on the expected side)\n"
     (failure_block (Failure.equality ~expected:"a\nb\n" ~actual:"a\nb" ()));
-  check_absent "trailing-newline case prints no empty diff" ~sub:"--- expected"
-    b;
+  not_contains ~msg:"trailing-newline case prints no empty diff"
+    ~sub:"--- expected" b;
   (* Renderings byte-equal while the equality distinguishes (lossy pp, e.g.
      [equal float nan nan]): two identical lines need an explanation. *)
   let b = failure_block (Failure.equality ~expected:"nan" ~actual:"nan" ()) in
-  check_contains "identical renderings print once, then say why"
+  contains ~msg:"identical renderings print once, then say why"
     ~sub:
       "    both sides render as: nan\n\
       \    the printer shows less than the equality compares\n"
     b;
-  check_absent "identical renderings print no expected/actual pair"
+  not_contains ~msg:"identical renderings print no expected/actual pair"
     ~sub:"expected" b;
   (* Identical and multi-line: printed once, in block form — inlining after
      an [expected] label would put continuation lines at column zero. *)
@@ -1556,12 +1554,12 @@ let test_degenerate_equalities () =
     failure_block
       (Failure.equality ~expected:"line a\nline b" ~actual:"line a\nline b" ())
   in
-  check_contains "identical multi-line renderings print once, indented"
+  contains ~msg:"identical multi-line renderings print once, indented"
     ~sub:"    both sides render as:\n      line a\n      line b\n" b;
-  check_contains "identical multi-line explanation retained"
+  contains ~msg:"identical multi-line explanation retained"
     ~sub:"      line b\n    the printer shows less than the equality compares\n"
     b;
-  check_absent "identical multi-line has no column-zero payload line"
+  not_contains ~msg:"identical multi-line has no column-zero payload line"
     ~sub:"\nline b" b
 
 let test_ansi_hygiene () =
@@ -1579,14 +1577,14 @@ let test_ansi_hygiene () =
     Failure.equality ~expected:(esc ^ " one") ~actual:"\027]0;title\007 two" ()
   in
   let plain = failure_block f in
-  check_absent "ansi:false: payload escapes stripped from blocks" ~sub:"\027"
-    plain;
-  check_contains "ansi:false: the payload's own bytes survive, escaped"
+  not_contains ~msg:"ansi:false: payload escapes stripped from blocks"
+    ~sub:"\027" plain;
+  contains ~msg:"ansi:false: the payload's own bytes survive, escaped"
     ~sub:{|\x1b[31mred\x1b[0m one|} plain;
-  check_contains "ansi:false: an OSC payload survives the same way"
+  contains ~msg:"ansi:false: an OSC payload survives the same way"
     ~sub:{|\x1b]0;title\x07 two|} plain;
   let colored = failure_block ~ansi:true (Failure.message (esc ^ " boom")) in
-  check_contains "ansi:true: payload escapes pass through" ~sub:esc colored;
+  contains ~msg:"ansi:true: payload escapes pass through" ~sub:esc colored;
   let hostile_line =
     with_renderer ~mode:`Verbose (fun r ->
         Report.result r
@@ -1594,7 +1592,8 @@ let test_ansi_hygiene () =
              [ "suite"; esc ^ " name" ]
              (Failure.Fail [ Failure.message "boom" ])))
   in
-  check_absent "ansi:false: test-line names stripped" ~sub:"\027" hostile_line;
+  not_contains ~msg:"ansi:false: test-line names stripped" ~sub:"\027"
+    hostile_line;
   let hostile_tail =
     let tail = Failure.tail ~log_path:"log" (esc ^ " captured\n") in
     let result =
@@ -1604,8 +1603,9 @@ let test_ansi_hygiene () =
     with_renderer (fun r ->
         Report.finish r ~results:[ result ] ~duration:0.01 ())
   in
-  check_absent "ansi:false: captured tail stripped" ~sub:"\027" hostile_tail;
-  check_contains "ansi:false: stripped tail text survives" ~sub:" captured"
+  not_contains ~msg:"ansi:false: captured tail stripped" ~sub:"\027"
+    hostile_tail;
+  contains ~msg:"ansi:false: stripped tail text survives" ~sub:" captured"
     hostile_tail
 
 (* Control bytes on comparison surfaces
@@ -1637,13 +1637,14 @@ let test_control_bytes_refined () =
       (Failure.equality ~expected:"\027[31mred\027[0m"
          ~actual:"\027[32mred\027[0m" ())
   in
-  check_absent "refined: no raw ESC reaches a plain block" ~sub:"\027" b;
-  check_contains "refined: both sides are escaped, a mark under each"
+  not_contains ~msg:"refined: no raw ESC reaches a plain block" ~sub:"\027" b;
+  contains ~msg:"refined: both sides are escaped, a mark under each"
     ~sub:
       ("    expected  \\x1b[31mred\\x1b[0m\n" ^ String.make 20 ' '
      ^ "~\n    actual    \\x1b[32mred\\x1b[0m\n" ^ String.make 20 ' ' ^ "~\n")
     b;
-  check "refined: one mark line per changed side" (occurrences_of ~sub:"~" b = 2);
+  is_true ~msg:"refined: one mark line per changed side"
+    (occurrences_of ~sub:"~" b = 2);
   (* A marked region that IS a control byte: the mark covers all four
      columns of the escape, not the one the raw span measured. *)
   let widened =
@@ -1651,11 +1652,11 @@ let test_control_bytes_refined () =
       (Failure.equality ~expected:"plain text here" ~actual:"plain\027text here"
          ())
   in
-  check_contains "refined: a marked control byte widens its mark"
+  contains ~msg:"refined: a marked control byte widens its mark"
     ~sub:("    actual    plain\\x1btext here\n" ^ String.make 19 ' ' ^ "~~~~\n")
     widened;
-  check_contains
-    "refined: the expected side of a replacement carries its own mark"
+  contains
+    ~msg:"refined: the expected side of a replacement carries its own mark"
     ~sub:
       ("    expected  plain text here\n" ^ String.make 19 ' '
      ^ "~\n    actual    plain")
@@ -1667,7 +1668,7 @@ let test_control_bytes_refined () =
       (Failure.equality ~expected:"plain\027text here" ~actual:"plaintext here"
          ())
   in
-  check_contains "refined: a deletion is marked under expected, widened"
+  contains ~msg:"refined: a deletion is marked under expected, widened"
     ~sub:
       ("    expected  plain\\x1btext here\n" ^ String.make 19 ' '
      ^ "~~~~\n    actual    plaintext here\n")
@@ -1679,16 +1680,17 @@ let test_control_bytes_refined () =
       (Failure.equality ~expected:"\027[31mred\027[0m"
          ~actual:"\027[32mred\027[0m" ())
   in
-  check_absent "refined: the payload's own sequence never runs"
+  not_contains ~msg:"refined: the payload's own sequence never runs"
     ~sub:"\027[31mred" colored;
-  check_contains
-    "refined: the changed span is bold in its side's colour, inside the \
-     escaped value"
+  contains
+    ~msg:
+      "refined: the changed span is bold in its side's colour, inside the \
+       escaped value"
     ~sub:
       "\027[2mexpected\027[0m  \\x1b[3\027[1;32m1\027[0mmred\\x1b[0m\n\
       \    \027[2mactual\027[0m    \\x1b[3\027[1;31m2\027[0mmred\\x1b[0m\n"
     colored;
-  check_absent "refined: no mark prints under colour" ~sub:"~" colored
+  not_contains ~msg:"refined: no mark prints under colour" ~sub:"~" colored
 
 (* The mark prints only where it lands under what it marks: one [~] per
    code point, and none at all when a tab or a code point of no fixed width
@@ -1697,63 +1699,61 @@ let test_mark_criterion () =
   let block expected actual =
     failure_block (Failure.equality ~expected ~actual ())
   in
-  check_contains "the mark counts code points, not bytes"
+  contains ~msg:"the mark counts code points, not bytes"
     ~sub:
       ("    actual    the caf\u{00E9} is brawn today\n" ^ String.make 28 ' '
      ^ "~\n")
     (block "the caf\u{00E9} is brown today" "the caf\u{00E9} is brawn today");
   let tabbed = block "the\tquick brown fox" "the\tquick brawn fox" in
-  check_absent "a tab on a side: no mark" ~sub:"~" tabbed;
-  check_contains "a tab on a side: both values still print"
+  not_contains ~msg:"a tab on a side: no mark" ~sub:"~" tabbed;
+  contains ~msg:"a tab on a side: both values still print"
     ~sub:
       "    expected  the\tquick brown fox\n    actual    the\tquick brawn fox\n"
     tabbed;
-  check_absent "a code point past U+024F on a side: no mark" ~sub:"~"
+  not_contains ~msg:"a code point past U+024F on a side: no mark" ~sub:"~"
     (block "\u{65E5}\u{672C} quick brown fox" "\u{65E5}\u{672C} quick brawn fox");
-  check_absent "malformed UTF-8 on a side: no mark" ~sub:"~"
+  not_contains ~msg:"malformed UTF-8 on a side: no mark" ~sub:"~"
     (block "\xff quick brown fox" "\xff quick brawn fox");
-  check_absent "a combining accent on a side: no mark" ~sub:"~"
+  not_contains ~msg:"a combining accent on a side: no mark" ~sub:"~"
     (block "cafe\u{0301} quick brown fox" "cafe\u{0301} quick brawn fox");
-  check_absent "an emoji on a side: no mark" ~sub:"~"
+  not_contains ~msg:"an emoji on a side: no mark" ~sub:"~"
     (block "\u{1F642} quick brown fox" "\u{1F642} quick brawn fox");
-  check_absent "refinement declines on short values: no mark" ~sub:"~"
+  not_contains ~msg:"refinement declines on short values: no mark" ~sub:"~"
     (block "ab" "cd");
   (* A span at either end of the value, and a change that only inserted. *)
-  check_string "a span at the very start, marked under each side"
-    ~expected:
-      "    expected  Xbcdefghij\n\
-      \              ~\n\
-      \    actual    Ybcdefghij\n\
-      \              ~\n"
-    ~actual:(block "Xbcdefghij" "Ybcdefghij");
-  check_string "a span at the very end, marked under each side"
-    ~expected:
-      "    expected  abcdefghiX\n\
-      \                       ~\n\
-      \    actual    abcdefghiY\n\
-      \                       ~\n"
-    ~actual:(block "abcdefghiX" "abcdefghiY");
-  check_string "a pure insertion is marked under actual only"
-    ~expected:
-      "    expected  user:alice\n\
-      \    actual    user:alice:admin\n\
-      \                        ~~~~~~\n"
-    ~actual:(block "user:alice" "user:alice:admin");
-  check_string "a pure deletion is marked under expected only"
-    ~expected:
-      "    expected  user:alice:admin\n\
-      \                        ~~~~~~\n\
-      \    actual    user:alice\n"
-    ~actual:(block "user:alice:admin" "user:alice");
+  equal ~msg:"a span at the very start, marked under each side" string
+    "    expected  Xbcdefghij\n\
+    \              ~\n\
+    \    actual    Ybcdefghij\n\
+    \              ~\n"
+    (block "Xbcdefghij" "Ybcdefghij");
+  equal ~msg:"a span at the very end, marked under each side" string
+    "    expected  abcdefghiX\n\
+    \                       ~\n\
+    \    actual    abcdefghiY\n\
+    \                       ~\n"
+    (block "abcdefghiX" "abcdefghiY");
+  equal ~msg:"a pure insertion is marked under actual only" string
+    "    expected  user:alice\n\
+    \    actual    user:alice:admin\n\
+    \                        ~~~~~~\n"
+    (block "user:alice" "user:alice:admin");
+  equal ~msg:"a pure deletion is marked under expected only" string
+    "    expected  user:alice:admin\n\
+    \                        ~~~~~~\n\
+    \    actual    user:alice\n"
+    (block "user:alice:admin" "user:alice");
   (* Colour replaces the [~] lines and nothing else: stripped of its
      styling, the coloured block is the plain one without them. *)
   List.iter
     (fun (expected, actual) ->
       let f = Failure.equality ~expected ~actual () in
-      check_string
-        "the coloured block, stripped, is the plain block without its marks"
-        ~expected:(without_marks (failure_block f))
-        ~actual:(Text.strip_ansi (failure_block ~ansi:true f)))
+      equal
+        ~msg:
+          "the coloured block, stripped, is the plain block without its marks"
+        string
+        (without_marks (failure_block f))
+        (Text.strip_ansi (failure_block ~ansi:true f)))
     [
       ("Xbcdefghij", "Ybcdefghij");
       ("user:alice", "user:alice:admin");
@@ -1774,18 +1774,18 @@ let test_control_bytes_hunks () =
           "header\n\027[32malert\027[0m\nfooter")
   in
   let b = failure_block f in
-  check_absent "hunks: no raw ESC reaches a plain block" ~sub:"\027" b;
-  check_contains "hunks: both changed lines are escaped"
+  not_contains ~msg:"hunks: no raw ESC reaches a plain block" ~sub:"\027" b;
+  contains ~msg:"hunks: both changed lines are escaped"
     ~sub:"    - \\x1b[31malert\\x1b[0m\n    + \\x1b[32malert\\x1b[0m\n" b;
-  check_contains "hunks: context lines are escaped too" ~sub:"      header\n" b;
+  contains ~msg:"hunks: context lines are escaped too" ~sub:"      header\n" b;
   (* A carriage return no longer eats the line it shares. *)
   let cr =
     failure_block
       (Failure.equality ~expected:"one\ntwo\r\nthree" ~actual:"one\ntwo\nthree"
          ())
   in
-  check_contains "hunks: CR renders as its hex escape" ~sub:"- two\\x0d\n" cr;
-  check_absent "hunks: no raw CR survives" ~sub:"two\r" cr;
+  contains ~msg:"hunks: CR renders as its hex escape" ~sub:"- two\\x0d\n" cr;
+  not_contains ~msg:"hunks: no raw CR survives" ~sub:"two\r" cr;
   (* Baseline mismatches share [pp_hunks] — the single producer. *)
   let snap =
     failure_block
@@ -1794,7 +1794,7 @@ let test_control_bytes_hunks () =
          (Failure.Mismatch
             { expected = "\027[1mbold\027[0m\n"; actual = "bold\n" }))
   in
-  check_contains "hunks: baselines escape as well"
+  contains ~msg:"hunks: baselines escape as well"
     ~sub:"- \\x1b[1mbold\\x1b[0m\n" snap
 
 let test_control_bytes_containment () =
@@ -1805,8 +1805,9 @@ let test_control_bytes_containment () =
         Check.contains ~sub:"NOPE" "\027[31mred\027[0m text")
   in
   let b = failure_block f in
-  check_absent "containment: no raw ESC reaches a plain block" ~sub:"\027" b;
-  check_contains "containment: the excerpt is escaped"
+  not_contains ~msg:"containment: no raw ESC reaches a plain block" ~sub:"\027"
+    b;
+  contains ~msg:"containment: the excerpt is escaped"
     ~sub:"    haystack  \\x1b[31mred\\x1b[0m text\n" b;
   (* not_contains: the needle occurs, and its mark must land under the
      escaped occurrence rather than at its raw offset. *)
@@ -1815,26 +1816,28 @@ let test_control_bytes_containment () =
         Check.not_contains ~sub:"red" "\027[31mred\027[0m text")
   in
   let b = failure_block found in
-  check_contains "containment: the needle keeps its own %S escapes"
+  contains ~msg:"containment: the needle keeps its own %S escapes"
     ~sub:"    needle    \"red\": found at byte 5\n" b;
-  check_contains "containment: the mark sits under the escaped occurrence"
+  contains ~msg:"containment: the mark sits under the escaped occurrence"
     ~sub:
       ("    haystack  \\x1b[31mred\\x1b[0m text\n" ^ String.make 22 ' '
      ^ "~~~\n")
     b;
   let colored = failure_block ~ansi:true found in
-  check_absent "containment: the excerpt's own sequence never runs"
+  not_contains ~msg:"containment: the excerpt's own sequence never runs"
     ~sub:"\027[31mred\027[0m text" colored;
-  check_contains
-    "containment: under colour the occurrence is bold red in the plain \
-     excerpt, and no mark prints"
+  contains
+    ~msg:
+      "containment: under colour the occurrence is bold red in the plain \
+       excerpt, and no mark prints"
     ~sub:
       "    \027[2mhaystack\027[0m  \\x1b[31m\027[1;31mred\027[0m\\x1b[0m text\n"
     colored;
-  check_absent "containment: no mark under colour" ~sub:"~" colored;
-  check
-    "containment: the coloured bytes, stripped, are the plain ones without the \
-     mark"
+  not_contains ~msg:"containment: no mark under colour" ~sub:"~" colored;
+  is_true
+    ~msg:
+      "containment: the coloured bytes, stripped, are the plain ones without \
+       the mark"
     (Text.strip_ansi colored = without_marks b)
 
 let test_control_bytes_alphabet () =
@@ -1844,14 +1847,14 @@ let test_control_bytes_alphabet () =
     failure_block
       (Failure.predicate ~claim:"a clean value" "a\x00b\x07c\rd\x7fe\x1ff")
   in
-  check_contains "alphabet: NUL, BEL, CR, DEL and US all escape"
+  contains ~msg:"alphabet: NUL, BEL, CR, DEL and US all escape"
     ~sub:"    actual    a\\x00b\\x07c\\x0dd\\x7fe\\x1ff\n" b;
   let kept =
     failure_block (Failure.predicate ~claim:"a clean value" "one\ttwo\nthree")
   in
-  check_contains "alphabet: TAB survives inside a line" ~sub:"      one\ttwo\n"
+  contains ~msg:"alphabet: TAB survives inside a line" ~sub:"      one\ttwo\n"
     kept;
-  check_contains "alphabet: LF still breaks the block into lines"
+  contains ~msg:"alphabet: LF still breaks the block into lines"
     ~sub:"      one\ttwo\n      three\n" kept
 
 let test_control_bytes_are_render_only () =
@@ -1864,10 +1867,8 @@ let test_control_bytes_are_render_only () =
   in
   (match f.Failure.kind with
   | Failure.Equality { expected; actual; _ } ->
-      check_string "payloads store the raw bytes" ~expected:{|"\027"|}
-        ~actual:expected;
-      check_string "and the other side's own bytes" ~expected:{|"\\x1b"|}
-        ~actual
+      equal ~msg:"payloads store the raw bytes" string {|"\027"|} expected;
+      equal ~msg:"and the other side's own bytes" string {|"\\x1b"|} actual
   | _ -> fail "expected an Equality payload");
   (* Two values a lossy printer merges are reported as such; two the
      ESCAPING would merge are not, because the test is made on the raw
@@ -1876,7 +1877,7 @@ let test_control_bytes_are_render_only () =
     caught "escaping is not a printer" (fun () ->
         Check.equal Testable.text "\027" "\\x1b")
   in
-  check_absent "an escape collision is never called an identical rendering"
+  not_contains ~msg:"an escape collision is never called an identical rendering"
     ~sub:"render identically" (failure_block merged)
 
 let test_diff_truncation () =
@@ -1886,16 +1887,16 @@ let test_diff_truncation () =
   let b =
     failure_block (Failure.equality ~expected:(text "e") ~actual:(text "a") ())
   in
-  check_contains "huge diffs end in a truncation mark" ~sub:"more diff lines)" b;
-  check_absent "huge diffs are display-bounded" ~sub:"+ a299" b;
+  contains ~msg:"huge diffs end in a truncation mark" ~sub:"more diff lines)" b;
+  not_contains ~msg:"huge diffs are display-bounded" ~sub:"+ a299" b;
   let snap =
     failure_block
       (Failure.baseline (Failure.File "p.expected")
          (Failure.Mismatch
             { expected = text "e" ^ "\n"; actual = text "a" ^ "\n" }))
   in
-  check_contains "baseline diff truncation mark" ~sub:"more diff lines)" snap;
-  check_contains "acceptance survives a truncated diff"
+  contains ~msg:"baseline diff truncation mark" ~sub:"more diff lines)" snap;
+  contains ~msg:"acceptance survives a truncated diff"
     ~sub:"accept: dune promote" snap
 
 let test_proposed_truncation () =
@@ -1909,36 +1910,38 @@ let test_proposed_truncation () =
   in
   (* A missing baseline has no file to diff against: its proposed text
      prints under a heading that counts it, as [+] lines, 20 at most. *)
-  check_contains "a missing file: the fact line, the heading, then + lines"
+  contains ~msg:"a missing file: the fact line, the heading, then + lines"
     ~sub:
       "    expect_file \"p.expected\": no baseline\n\
       \    proposed (25 lines):\n\
       \      + line 0\n\
       \      + line 1\n"
     b;
-  check_contains "proposed content bounded with a mark" ~sub:"(+5 more lines)" b;
-  check_contains
-    "a missing file: 20 lines indented two, the cap line with them, then the \
-     command at the block's column"
+  contains ~msg:"proposed content bounded with a mark" ~sub:"(+5 more lines)" b;
+  contains
+    ~msg:
+      "a missing file: 20 lines indented two, the cap line with them, then the \
+       command at the block's column"
     ~sub:"      + line 19\n      \u{2026} (+5 more lines)\n    accept: " b;
-  check_absent "a missing file: no line over the bound" ~sub:"line 20" b;
-  check_absent "proposed lines over the bound absent" ~sub:"line 24" b;
-  check_absent "a missing file: no hunk header for a file that does not exist"
+  not_contains ~msg:"a missing file: no line over the bound" ~sub:"line 20" b;
+  not_contains ~msg:"proposed lines over the bound absent" ~sub:"line 24" b;
+  not_contains
+    ~msg:"a missing file: no hunk header for a file that does not exist"
     ~sub:"@@" b;
-  check_absent "a missing file: no second gutter" ~sub:"\u{2506}" b;
+  not_contains ~msg:"a missing file: no second gutter" ~sub:"\u{2506}" b;
   let short =
     failure_block
       (Failure.baseline (Failure.File "p.expected")
          (Failure.Missing { proposed = "only\n" }))
   in
-  check_contains "a missing file under the cap prints whole, uncapped"
+  contains ~msg:"a missing file under the cap prints whole, uncapped"
     ~sub:"    proposed (1 line):\n      + only\n    accept: " short;
-  check_contains "the + lines are red under colour, their indentation plain"
+  contains ~msg:"the + lines are red under colour, their indentation plain"
     ~sub:"    proposed (1 line):\n      \027[31m+ only\027[0m\n    accept: "
     (failure_block ~ansi:true
        (Failure.baseline (Failure.File "p.expected")
           (Failure.Missing { proposed = "only\n" })));
-  check_contains "acceptance survives a bounded proposal"
+  contains ~msg:"acceptance survives a bounded proposal"
     ~sub:
       "    accept: touch 'p.expected' && dune runtest; dune promote p.expected\n"
     b
@@ -1954,18 +1957,19 @@ let test_excerpt () =
       ~loc:{ Loc.file; line = 2; column = 0 }
       ~expected:"1" ~actual:"2" ()
   in
-  check_string
-    "excerpt: the located source line sits under the bare location, its \
-     leading whitespace removed, one blank line after it"
-    ~expected:
-      (Printf.sprintf
-         "    %s:2\n      2 │ let two = 2\n\n    expected  1\n    actual    2\n"
-         file)
-    ~actual:(failure_block ~excerpt:true f);
-  check_contains "excerpt: the gutter is faint, the source plain"
+  equal
+    ~msg:
+      "excerpt: the located source line sits under the bare location, its \
+       leading whitespace removed, one blank line after it"
+    string
+    (Printf.sprintf
+       "    %s:2\n      2 │ let two = 2\n\n    expected  1\n    actual    2\n"
+       file)
+    (failure_block ~excerpt:true f);
+  contains ~msg:"excerpt: the gutter is faint, the source plain"
     ~sub:":2\027[0m\n      \027[2m2 │\027[0m let two = 2\n\n"
     (failure_block ~ansi:true ~excerpt:true f);
-  check_absent "excerpt: off by default" ~sub:"let two" (failure_block f);
+  not_contains ~msg:"excerpt: off by default" ~sub:"let two" (failure_block f);
   (* Under every location: a property's own, whose inner assertion keeps
      its line too. *)
   let law =
@@ -1975,15 +1979,16 @@ let test_excerpt () =
          ~inner:f ~rendered:"0" ~case_index:0 ~shrink_steps:0
          ~root:Fixtures.root ~examples:false ())
   in
-  check_contains
-    "excerpt: under a property's own location, one blank line after it"
+  contains
+    ~msg:"excerpt: under a property's own location, one blank line after it"
     ~sub:
       (Printf.sprintf "    %s:1\n      1 │ let one = 1\n\n    counterexample "
          file)
     law;
-  check_contains
-    "excerpt: the inner assertion keeps its source line, indented with its \
-     entry, and no blank line follows an inner one"
+  contains
+    ~msg:
+      "excerpt: the inner assertion keeps its source line, indented with its \
+       entry, and no blank line follows an inner one"
     ~sub:
       (Printf.sprintf
          "    which failed at:\n\
@@ -2006,19 +2011,20 @@ let test_excerpt () =
   in
   List.iter
     (fun ansi ->
-      check_contains
-        (Printf.sprintf
-           "excerpt: a source line's control bytes are escaped (ansi:%b)" ansi)
+      contains
+        ~msg:
+          (Printf.sprintf
+             "excerpt: a source line's control bytes are escaped (ansi:%b)" ansi)
         ~sub:{| let red = "\x1b[31mred\x1b[0m" (* \x0d \x07 *)|}
         (failure_block ~ansi ~excerpt:true (at 1)))
     [ false; true ];
-  check_contains "excerpt: a CRLF file's line ends where its text does"
+  contains ~msg:"excerpt: a CRLF file's line ends where its text does"
     ~sub:"\\x07 *)\n\n"
     (failure_block ~excerpt:true (at 1));
-  check_contains "excerpt: a source line over 800 bytes is elided as a value is"
+  contains ~msg:"excerpt: a source line over 800 bytes is elided as a value is"
     ~sub:"xxxx\u{2026} (100 bytes elided)xxxx"
     (failure_block ~excerpt:true (at 2));
-  check_contains "excerpt: an empty source line is its gutter alone"
+  contains ~msg:"excerpt: an empty source line is its gutter alone"
     ~sub:(Printf.sprintf "    %s:3\n      3 \u{2502}\n\n    expected" wild)
     (failure_block ~excerpt:true (at 3));
   let gone =
@@ -2026,10 +2032,11 @@ let test_excerpt () =
       ~loc:{ Loc.file = "does_not_exist.ml"; line = 2; column = 0 }
       ~expected:"1" ~actual:"2" ()
   in
-  check_string
-    "excerpt: an unreadable file prints neither the line nor the blank line"
-    ~expected:"    does_not_exist.ml:2\n    expected  1\n    actual    2\n"
-    ~actual:(failure_block ~excerpt:true gone)
+  equal
+    ~msg:
+      "excerpt: an unreadable file prints neither the line nor the blank line"
+    string "    does_not_exist.ml:2\n    expected  1\n    actual    2\n"
+    (failure_block ~excerpt:true gone)
 
 (* Captured tail *)
 
@@ -2049,24 +2056,24 @@ let test_tail () =
          (List.init 12 (fun i -> Printf.sprintf "l%d\n" (i + 1))))
   in
   let b = tail_block twelve in
-  check_contains
-    "tail: line-bounded heading, undecorated, its lines indented two more"
+  contains
+    ~msg:"tail: line-bounded heading, undecorated, its lines indented two more"
     ~sub:"    captured output (last 10 of 12 lines):\n      l3\n" b;
-  check_absent "tail: no rule glyph before the heading" ~sub:"\u{2500} captured"
-    b;
-  check_absent "tail: no rule glyph after the heading" ~sub:": \u{2500}" b;
-  check_contains "tail: last lines shown" ~sub:"      l3\n      l4\n" b;
-  check_contains "tail: through the last line, then the closing rule"
+  not_contains ~msg:"tail: no rule glyph before the heading"
+    ~sub:"\u{2500} captured" b;
+  not_contains ~msg:"tail: no rule glyph after the heading" ~sub:": \u{2500}" b;
+  contains ~msg:"tail: last lines shown" ~sub:"      l3\n      l4\n" b;
+  contains ~msg:"tail: through the last line, then the closing rule"
     ~sub:("      l12\n" ^ closing_rule ^ "\n")
     b;
-  check_absent "tail: earlier lines dropped" ~sub:"l2\n" b;
+  not_contains ~msg:"tail: earlier lines dropped" ~sub:"l2\n" b;
   let full = Failure.tail ~log_path:"log.output" "only\n" in
   let b = tail_block full in
-  check_contains
-    "tail: complete output heading, then the log at the heading's column"
+  contains
+    ~msg:"tail: complete output heading, then the log at the heading's column"
     ~sub:"    captured output (1 line):\n      only\n    full log: log.output\n"
     b;
-  check_contains "tail: the heading and the log are faint, the lines plain"
+  contains ~msg:"tail: the heading and the log are faint, the lines plain"
     ~sub:
       "    \027[2mcaptured output (1 line):\027[0m\n\
       \      only\n\
@@ -2080,11 +2087,11 @@ let test_tail () =
                     [ Failure.with_output_tail full (Failure.message "boom") ]);
              ]
            ~duration:0.01 ()));
-  check_contains "tail: a whole tail of several lines counts them"
+  contains ~msg:"tail: a whole tail of several lines counts them"
     ~sub:"    captured output (3 lines):\n      a\n"
     (tail_block (Failure.tail "a\nb\nc\n"));
   let dropped = Failure.tail ~omitted_bytes:512 "kept\n" in
-  check_contains "tail: drop count reported"
+  contains ~msg:"tail: drop count reported"
     ~sub:"    captured output (last 1 line, 512 earlier bytes omitted):\n"
     (tail_block dropped);
   let many =
@@ -2094,7 +2101,7 @@ let test_tail () =
   in
   (* The count is of every byte before the first line shown: the 9000 the
      capture cut and the two kept lines the cap drops, [l1\n] and [l2\n]. *)
-  check_contains "tail: the byte-cut head, at the cap, counts the dropped lines"
+  contains ~msg:"tail: the byte-cut head, at the cap, counts the dropped lines"
     ~sub:
       "    captured output (last 10 lines, 9006 earlier bytes omitted):\n\
       \      l3\n"
@@ -2111,15 +2118,16 @@ let test_backtrace_cap () =
   let block n =
     failure_block (Failure.raised ~actual:"Not_found" ~backtrace:(frames n) ())
   in
-  check "ten frames, then the count of the rest, and the block ends there"
+  is_true
+    ~msg:"ten frames, then the count of the rest, and the block ends there"
     (String.ends_with
        ~suffix:"    frame 9\n    frame 10\n    \u{2026} (+3 more frames)\n"
        (block 13));
-  check_absent "the eleventh frame never prints" ~sub:"frame 11" (block 13);
-  check "ten frames print whole, and the block ends on the tenth"
+  not_contains ~msg:"the eleventh frame never prints" ~sub:"frame 11" (block 13);
+  is_true ~msg:"ten frames print whole, and the block ends on the tenth"
     (String.ends_with ~suffix:"    frame 9\n    frame 10\n" (block 10));
-  check_absent "and draw no cap line" ~sub:"more frames" (block 10);
-  check_contains "the cap line is dim, as the frames are"
+  not_contains ~msg:"and draw no cap line" ~sub:"more frames" (block 10);
+  contains ~msg:"the cap line is dim, as the frames are"
     ~sub:"    \027[2m\u{2026} (+3 more frames)\027[0m\n"
     (failure_block ~ansi:true
        (Failure.raised ~actual:"Not_found" ~backtrace:(frames 13) ()))
@@ -2133,31 +2141,31 @@ let test_value_elision () =
     failure_block
       (Failure.equality ~expected:(e 401 ^ "x") ~actual:(e 401 ^ "y") ())
   in
-  check_string "over 800 bytes: both ends around the count, cut on code points"
-    ~expected:
-      ("    expected  " ^ e 200 ^ "\u{2026} (4 bytes elided)" ^ e 199 ^ "x\n"
-     ^ "    actual    " ^ e 200 ^ "\u{2026} (4 bytes elided)" ^ e 199 ^ "y\n")
-    ~actual:b;
-  check_absent "an elided side draws no mark" ~sub:"~" b;
+  equal ~msg:"over 800 bytes: both ends around the count, cut on code points"
+    string
+    ("    expected  " ^ e 200 ^ "\u{2026} (4 bytes elided)" ^ e 199 ^ "x\n"
+   ^ "    actual    " ^ e 200 ^ "\u{2026} (4 bytes elided)" ^ e 199 ^ "y\n")
+    b;
+  not_contains ~msg:"an elided side draws no mark" ~sub:"~" b;
   (* One side is enough to lose the mark: its columns are gone. *)
-  check_absent "one elided side draws no mark either" ~sub:"~"
+  not_contains ~msg:"one elided side draws no mark either" ~sub:"~"
     (failure_block
        (Failure.equality ~expected:(String.make 900 'a' ^ "x") ~actual:"ax" ()));
   let whole =
     failure_block
       (Failure.equality ~expected:(e 399 ^ "ax") ~actual:(e 399 ^ "ay") ())
   in
-  check_contains "800 bytes print whole"
+  contains ~msg:"800 bytes print whole"
     ~sub:("    expected  " ^ e 399 ^ "ax\n")
     whole;
-  check_contains "and keep their mark"
+  contains ~msg:"and keep their mark"
     ~sub:("\n" ^ String.make (14 + 400) ' ' ^ "~\n")
     whole;
-  check "one under each side"
+  is_true ~msg:"one under each side"
     (occurrences_of ~sub:("\n" ^ String.make (14 + 400) ' ' ^ "~\n") whole = 2);
   (* The count is the carried value's: an escape is four columns of one
      byte. *)
-  check_contains "the count is of the carried bytes, not the escaped ones"
+  contains ~msg:"the count is of the carried bytes, not the escaped ones"
     ~sub:
       ("    both sides equal: \\x01" ^ String.make 399 'a'
      ^ "\u{2026} (101 bytes elided)" ^ String.make 400 'a' ^ "\n")
@@ -2166,7 +2174,7 @@ let test_value_elision () =
           ~expected:("\001" ^ String.make 900 'a')
           ~actual:("\001" ^ String.make 900 'a')
           ()));
-  check_contains "a counterexample is a value too"
+  contains ~msg:"a counterexample is a value too"
     ~sub:
       ("    counterexample (case 0): " ^ String.make 400 'a'
      ^ "\u{2026} (1 bytes elided)" ^ String.make 400 'a' ^ "\n")
@@ -2177,7 +2185,7 @@ let test_value_elision () =
      three-byte characters keep 133 at each end (399 bytes), no escape is
      cut in two, and the count is of bytes, not of escape digits. *)
   let nichi n = String.concat "" (List.init n (fun _ -> "\\230\\151\\165")) in
-  check_contains "a needle is elided in its carried bytes, inside its quotes"
+  contains ~msg:"a needle is elided in its carried bytes, inside its quotes"
     ~sub:
       ("    needle    \"" ^ nichi 133 ^ "\u{2026} (102 bytes elided)"
      ^ nichi 133 ^ "\": not found\n")
@@ -2187,7 +2195,7 @@ let test_value_elision () =
           ~haystack:"hay" ()));
   (* A multi-line value is lines, bounded as lines are. *)
   let lines = String.make 500 'a' ^ "\n" ^ String.make 500 'b' in
-  check_absent "a multi-line value is not elided" ~sub:"bytes elided"
+  not_contains ~msg:"a multi-line value is not elided" ~sub:"bytes elided"
     (failure_block
        (Failure.equality ~not_:true ~expected:lines ~actual:lines ()))
 
@@ -2195,70 +2203,71 @@ let test_value_elision () =
 
 let test_raise_message_diff () =
   let b = failure_block Fixtures.raise_message_failure in
-  check_contains "raise: constructor named once"
+  contains ~msg:"raise: constructor named once"
     ~sub:"    raised Invalid_argument with the wrong message:\n" b;
-  check_contains
-    "raise: messages compared as strings, a mark under each changed one"
+  contains
+    ~msg:"raise: messages compared as strings, a mark under each changed one"
     ~sub:
       ("    raised Invalid_argument with the wrong message:\n\
        \    expected  \"index 3 out of bounds\"\n" ^ String.make 21 ' '
      ^ "~\n    actual    \"index 4 out of bounds\"\n" ^ String.make 21 ' '
      ^ "~\n")
     b;
-  check "raise: one mark line per changed side" (occurrences_of ~sub:"~" b = 2);
-  check_absent "raise: constructor not repeated on both sides"
+  is_true ~msg:"raise: one mark line per changed side"
+    (occurrences_of ~sub:"~" b = 2);
+  not_contains ~msg:"raise: constructor not repeated on both sides"
     ~sub:"expected exception" b;
   let colored = failure_block ~ansi:true Fixtures.raise_message_failure in
-  check_contains
-    "raise: under colour the changed span is bold in its side's colour"
+  contains
+    ~msg:"raise: under colour the changed span is bold in its side's colour"
     ~sub:
       "    \027[2mexpected\027[0m  \"index \027[1;32m3\027[0m out of bounds\"\n\
       \    \027[2mactual\027[0m    \"index \027[1;31m4\027[0m out of bounds\"\n"
     colored;
-  check_absent "raise: and no mark prints" ~sub:"~" colored
+  not_contains ~msg:"raise: and no mark prints" ~sub:"~" colored
 
 let test_raise_message_diff_guards () =
   (* No recorded diff means both exceptions print, whatever their
      constructors: the option is the whole of the renderer's decision. *)
   let b = failure_block Fixtures.raise_failure in
-  check_contains "raise: different constructors unchanged"
+  contains ~msg:"raise: different constructors unchanged"
     ~sub:"expected exception" b;
   let no_diff =
     Failure.raised ~expected:{|Failure("boom")|} ~actual:{|Failure("boom!")|} ()
   in
-  check_contains "raise: same constructor without a diff keeps the plain form"
+  contains ~msg:"raise: same constructor without a diff keeps the plain form"
     ~sub:
       "    expected exception  Failure(\"boom\")\n\
       \    raised              Failure(\"boom!\")\n"
     (failure_block no_diff);
-  check_absent "raise: no mark without a recorded message diff" ~sub:"~"
+  not_contains ~msg:"raise: no mark without a recorded message diff" ~sub:"~"
     (failure_block no_diff);
-  check_absent "raise: no message diff without the payload"
+  not_contains ~msg:"raise: no message diff without the payload"
     ~sub:"with the wrong message" (failure_block no_diff);
   (* raises_match's payload still prints the raised exception, under the
      sentence that says what was wrong with it. *)
   let predicate_miss =
     Failure.raised ~actual:{|Invalid_argument("nope")|} ~predicate:true ()
   in
-  check_contains "raises_match: actually-raised exception printed"
+  contains ~msg:"raises_match: actually-raised exception printed"
     ~sub:
       "    raised exception does not satisfy the predicate:\n\
       \      Invalid_argument(\"nope\")\n"
     (failure_block predicate_miss);
-  check_absent "raises_match: the predicate is no fake exception"
+  not_contains ~msg:"raises_match: the predicate is no fake exception"
     ~sub:"one the predicate accepts"
     (failure_block predicate_miss);
-  check_contains "raises: nothing raised"
+  contains ~msg:"raises: nothing raised"
     ~sub:
       "    expected exception  Failure(\"boom\")\n\
       \    but no exception was raised\n"
     (failure_block (Failure.raised ~expected:{|Failure("boom")|} ()));
-  check_absent "raises: nothing is no exception's name" ~sub:"nothing"
+  not_contains ~msg:"raises: nothing is no exception's name" ~sub:"nothing"
     (failure_block (Failure.raised ~expected:{|Failure("boom")|} ()));
-  check_contains "raises_match: nothing raised"
+  contains ~msg:"raises_match: nothing raised"
     ~sub:"    expected an exception, but none was raised\n"
     (failure_block (Failure.raised ~predicate:true ()));
-  check_contains "raises: a multi-line expectation that nothing met"
+  contains ~msg:"raises: a multi-line expectation that nothing met"
     ~sub:
       "    expected exception:\n\
       \      Parse_error(\n\
@@ -2266,7 +2275,7 @@ let test_raise_message_diff_guards () =
       \    but no exception was raised\n"
     (failure_block (Failure.raised ~expected:"Parse_error(\n  line 3)" ()));
   (* A rendering that spans lines is a block under its anchor. *)
-  check_contains "raise: a multi-line exception is a block under its anchor"
+  contains ~msg:"raise: a multi-line exception is a block under its anchor"
     ~sub:
       "    expected exception  Failure(\"boom\")\n\
       \    raised:\n\
@@ -2283,9 +2292,9 @@ let test_xfail_line () =
     with_renderer ~mode:`Verbose (fun r ->
         Report.result r Fixtures.excused_result)
   in
-  check_contains "xfail line: XFAIL tag and reason"
+  contains ~msg:"xfail line: XFAIL tag and reason"
     ~sub:"  XFAIL  known › broken carry (expected failure: issue #42)" line;
-  check_absent "xfail line: not a FAIL" ~sub:"  FAIL  " line;
+  not_contains ~msg:"xfail line: not a FAIL" ~sub:"  FAIL  " line;
   let no_reason =
     with_renderer ~mode:`Verbose (fun r ->
         Report.result r
@@ -2294,14 +2303,14 @@ let test_xfail_line () =
             Run.xfail = Some { Test_tree.reason = None };
           })
   in
-  check_contains "xfail line: reasonless form" ~sub:"(expected failure)"
+  contains ~msg:"xfail line: reasonless form" ~sub:"(expected failure)"
     no_reason;
   let pass_ignores =
     with_renderer ~mode:`Verbose (fun r ->
         Report.result r
           (Fixtures.result [ "t" ] Failure.Pass ~xfail:Fixtures.xfail_reason))
   in
-  check_contains "an xfail annotation on a pass changes nothing" ~sub:"PASS"
+  contains ~msg:"an xfail annotation on a pass changes nothing" ~sub:"PASS"
     pass_ignores
 
 let test_excused_collision () =
@@ -2318,17 +2327,18 @@ let test_excused_collision () =
   let verbose =
     with_renderer ~mode:`Verbose (fun r -> Report.result r collide)
   in
-  check_contains "collision record renders XFAIL, not FAIL" ~sub:"  XFAIL  "
+  contains ~msg:"collision record renders XFAIL, not FAIL" ~sub:"  XFAIL  "
     verbose;
-  check_absent "collision record: no loud FAIL line" ~sub:"  FAIL  " verbose;
+  not_contains ~msg:"collision record: no loud FAIL line" ~sub:"  FAIL  "
+    verbose;
   let summary =
     with_renderer (fun r ->
         Report.header r ~suite:"s" ~tests:1 ~seed:None ();
         Report.result r collide;
         Report.finish r ~results:[ collide ] ~duration:0.1 ())
   in
-  check_string "collision record: stream, summary, and count agree"
-    ~expected:"s: 1 expected failure in 100ms.\n" ~actual:summary
+  equal ~msg:"collision record: stream, summary, and count agree" string
+    "s: 1 expected failure in 100ms.\n" summary
 
 let test_finish_excused () =
   let results =
@@ -2342,11 +2352,11 @@ let test_finish_excused () =
     with_renderer ~invocation:(`Exe "exe") (fun r ->
         Report.finish r ~results ~duration:0.2 ())
   in
-  check "finish: excused leaves the failure section its one block"
+  is_true ~msg:"finish: excused leaves the failure section its one block"
     (occurrences_of ~sub:(failures_rule ^ "\n") t = 1
     && occurrences_of ~sub:"\n  FAIL  " t = 1);
-  check_absent "finish: excused block absent" ~sub:"broken carry" t;
-  check_contains "finish: summary counts the expected failure"
+  not_contains ~msg:"finish: excused block absent" ~sub:"broken carry" t;
+  contains ~msg:"finish: summary counts the expected failure"
     ~sub:"1 passed, 1 expected failure, 1 failed in 200ms." t;
   let only_excused =
     with_renderer ~invocation:(`Exe "exe") (fun r ->
@@ -2355,12 +2365,12 @@ let test_finish_excused () =
             [ Fixtures.result [ "ok" ] Failure.Pass; Fixtures.excused_result ]
           ~duration:0.2 ())
   in
-  check_absent "finish: no failure section when all failures excused"
+  not_contains ~msg:"finish: no failure section when all failures excused"
     ~sub:"failures \u{2500}" only_excused;
-  check_absent "finish: and no closing rule" ~sub:closing_rule only_excused;
-  check_absent "finish: no rerun hint when all failures excused" ~sub:"--failed"
-    only_excused;
-  check_contains "finish: green summary with excused failures"
+  not_contains ~msg:"finish: and no closing rule" ~sub:closing_rule only_excused;
+  not_contains ~msg:"finish: no rerun hint when all failures excused"
+    ~sub:"--failed" only_excused;
+  contains ~msg:"finish: green summary with excused failures"
     ~sub:"1 passed, 1 expected failure in 200ms." only_excused
 
 let test_xpass_is_loud () =
@@ -2370,21 +2380,21 @@ let test_xpass_is_loud () =
     with_renderer ~mode:`Verbose (fun r ->
         Report.result r Fixtures.xpass_result)
   in
-  check_contains "unexpected pass: loud FAIL line" ~sub:"  FAIL  known › fixed"
+  contains ~msg:"unexpected pass: loud FAIL line" ~sub:"  FAIL  known › fixed"
     line;
   let t =
     with_renderer (fun r ->
         Report.finish r ~results:[ Fixtures.xpass_result ] ~duration:0.1 ())
   in
-  check_contains "unexpected pass: reason in the failure block"
+  contains ~msg:"unexpected pass: reason in the failure block"
     ~sub:"expected to fail (issue #42), but the test passed" t
 
 (* Subtest failures (amendment B13) *)
 
 let test_subtest_projection () =
-  check "subtest entries recognized by their components"
+  is_true ~msg:"subtest entries recognized by their components"
     (Report.is_subtest_failure (Fixtures.subtest_failure "shape [0]"));
-  check "plain failures are not subtest entries"
+  is_true ~msg:"plain failures are not subtest entries"
     (not (Report.is_subtest_failure (Failure.message "boom")));
   (* The collision regression: classification is record-driven, so a user
      [?msg] spelling out the [leaf › name] prefix stays an ordinary
@@ -2395,7 +2405,7 @@ let test_subtest_projection () =
       Failure.msg = Some "contract \u{203a} shape [0]";
     }
   in
-  check "a user msg spelling the label prefix is not a subtest entry"
+  is_true ~msg:"a user msg spelling the label prefix is not a subtest entry"
     (not (Report.is_subtest_failure collision));
   let t =
     with_renderer (fun r ->
@@ -2407,9 +2417,9 @@ let test_subtest_projection () =
             ]
           ~duration:0.1 ())
   in
-  check_contains "the colliding msg renders as an ordinary annotation"
+  contains ~msg:"the colliding msg renders as an ordinary annotation"
     ~sub:"contract \u{203a} shape [0]" t;
-  check "the colliding msg adds no subtest count to the summary"
+  is_true ~msg:"the colliding msg adds no subtest count to the summary"
     (not (has ~sub:"subtest failure" t))
 
 let test_subtest_rendering () =
@@ -2417,21 +2427,21 @@ let test_subtest_rendering () =
     with_renderer (fun r ->
         Report.finish r ~results:[ Fixtures.subtest_result ] ~duration:0.1 ())
   in
-  check_contains "a subtest entry names its subtest under its location"
+  contains ~msg:"a subtest entry names its subtest under its location"
     ~sub:"    test/test_backend.ml:40\n    subtest   shape [0]\n    expected" t;
-  check_contains "the subtest's name sits in the column of the values under it"
+  contains ~msg:"the subtest's name sits in the column of the values under it"
     ~sub:"    subtest   shape [0]\n    expected  [1; 2]\n" t;
-  check_contains "a blank line separates two entries of one test"
+  contains ~msg:"a blank line separates two entries of one test"
     ~sub:
       ("    actual    [1; 3]\n" ^ String.make 18 ' '
      ^ "~\n\n    test/test_backend.ml:40\n    subtest   shape [2]\n")
     t;
-  check_contains "the last entry ends the block on its facts"
+  contains ~msg:"the last entry ends the block on its facts"
     ~sub:("\n\n    test/test_backend.ml:61\n    final check\n" ^ closing_rule)
     t;
-  check_absent "the parent's name is the title's, not repeated per entry"
+  not_contains ~msg:"the parent's name is the title's, not repeated per entry"
     ~sub:"contract › shape" t;
-  check_contains "summary states the subtest count"
+  contains ~msg:"summary states the subtest count"
     ~sub:"1 failed (2 subtest failures) in 100ms." t;
   let one =
     with_renderer (fun r ->
@@ -2443,7 +2453,7 @@ let test_subtest_rendering () =
             ]
           ~duration:0.1 ())
   in
-  check_contains "summary subtest count is singular"
+  contains ~msg:"summary subtest count is singular"
     ~sub:"1 failed (1 subtest failure) in 100ms." one
 
 (* Property stats *)
@@ -2470,15 +2480,15 @@ let test_prop_stats () =
     with_renderer (fun r ->
         Report.finish r ~results:[ result ] ~duration:0.01 ())
   in
-  check_contains "prop stats: label distribution"
+  contains ~msg:"prop stats: label distribution"
     ~sub:"labels (100 passing cases):" b;
-  check_contains "prop stats: percentages" ~sub:"36.0%  empty" b;
-  check_contains "prop stats: uncovered label"
+  contains ~msg:"prop stats: percentages" ~sub:"36.0%  empty" b;
+  contains ~msg:"prop stats: uncovered label"
     ~sub:"      collision  0  never covered\n" b;
   (* The list carries the covered label too — that is what it adds over the
      failure headline, which names only the ones that were not. *)
-  check_contains "prop stats: covered label listed alongside"
-    ~sub:"singleton  9" b;
+  contains ~msg:"prop stats: covered label listed alongside" ~sub:"singleton  9"
+    b;
   (* With a single label the list would only restate the headline, so it
      does not print at all. *)
   let single =
@@ -2495,9 +2505,9 @@ let test_prop_stats () =
             ]
           ~duration:0.01 ())
   in
-  check_absent "prop stats: a lone label is not restated" ~sub:"covered labels:"
-    b1;
-  check_contains "prop stats: its labels still print"
+  not_contains ~msg:"prop stats: a lone label is not restated"
+    ~sub:"covered labels:" b1;
+  contains ~msg:"prop stats: its labels still print"
     ~sub:"labels (100 passing cases):" b1
 
 (* Containment blocks (D5 §2) *)
@@ -2508,27 +2518,28 @@ let not_contains_failure =
 
 let test_containment_block () =
   let b = failure_block not_contains_failure in
-  check_contains "not_contains: needle line carries the byte offset"
+  contains ~msg:"not_contains: needle line carries the byte offset"
     ~sub:"    needle    \"secret\": found at byte 10\n" b;
-  check_absent "not_contains: no em dash" ~sub:"\u{2014}" b;
-  check_contains "not_contains: marker line sits under the occurrence"
+  not_contains ~msg:"not_contains: no em dash" ~sub:"\u{2014}" b;
+  contains ~msg:"not_contains: marker line sits under the occurrence"
     ~sub:
       ("    haystack  0123456789secret-end\n" ^ String.make 24 ' ' ^ "~~~~~~\n")
     b;
-  check_absent "not_contains: the claim description never prints"
+  not_contains ~msg:"not_contains: the claim description never prints"
     ~sub:"string not containing" b;
-  check_absent "not_contains: no fake equality labels" ~sub:"expected" b;
-  check_absent "not_contains: no excerpt line for a complete excerpt"
+  not_contains ~msg:"not_contains: no fake equality labels" ~sub:"expected" b;
+  not_contains ~msg:"not_contains: no excerpt line for a complete excerpt"
     ~sub:"(excerpt:" b;
   (* Under colour the occurrence is coloured in place of the mark. *)
   let colored = failure_block ~ansi:true not_contains_failure in
-  check_contains
-    "not_contains: under colour the haystack prints whole and plain, the \
-     occurrence bold red in it"
+  contains
+    ~msg:
+      "not_contains: under colour the haystack prints whole and plain, the \
+       occurrence bold red in it"
     ~sub:"    \027[2mhaystack\027[0m  0123456789\027[1;31msecret\027[0m-end\n"
     colored;
-  check_absent "not_contains: no mark under colour" ~sub:"~" colored;
-  check "not_contains: colour replaces the mark and nothing else"
+  not_contains ~msg:"not_contains: no mark under colour" ~sub:"~" colored;
+  is_true ~msg:"not_contains: colour replaces the mark and nothing else"
     (Text.strip_ansi colored = without_marks b);
   (* contains: needle absent, display-capped head excerpt of a huge
      haystack. *)
@@ -2538,14 +2549,14 @@ let test_containment_block () =
       ~haystack ()
   in
   let b = failure_block contains_failure in
-  check_contains "contains: needle line with the not-found verdict"
+  contains ~msg:"contains: needle line with the not-found verdict"
     ~sub:"    needle    \"NOPE\": not found\n" b;
-  check_contains "contains: elision line states the capped display window"
+  contains ~msg:"contains: elision line states the capped display window"
     ~sub:"    (excerpt: bytes 0-1023 of a 20006-byte haystack)\n" b;
-  check_contains "contains: the capped excerpt prints verbatim"
+  contains ~msg:"contains: the capped excerpt prints verbatim"
     ~sub:("haystack  " ^ String.make 100 'a')
     b;
-  check_absent "contains: no diff against the claim sentence" ~sub:"~~~" b
+  not_contains ~msg:"contains: no diff against the claim sentence" ~sub:"~~~" b
 
 let test_containment_multiline () =
   let f =
@@ -2554,7 +2565,7 @@ let test_containment_multiline () =
       ()
   in
   let b = failure_block f in
-  check_contains "multi-line haystack: block form"
+  contains ~msg:"multi-line haystack: block form"
     ~sub:
       "    needle    \"user=bob\": not found\n\
       \    haystack:\n\
@@ -2562,7 +2573,7 @@ let test_containment_multiline () =
       \      line two user=alice\n\
       \      line three\n"
     b;
-  check_absent "multi-line haystack: no unified diff" ~sub:"--- expected" b;
+  not_contains ~msg:"multi-line haystack: no unified diff" ~sub:"--- expected" b;
   (* A found occurrence in a multi-line excerpt is marked under its line
      without colour, and coloured on it with. *)
   let found =
@@ -2570,7 +2581,7 @@ let test_containment_multiline () =
       ~needle:"secret" ~haystack:"line one\nthe1 secret here\nline three" ()
   in
   let plain = failure_block found in
-  check_contains "multi-line occurrence marked under its line"
+  contains ~msg:"multi-line occurrence marked under its line"
     ~sub:
       "    haystack:\n\
       \      line one\n\
@@ -2579,14 +2590,16 @@ let test_containment_multiline () =
       \      line three\n"
     plain;
   let colored = failure_block ~ansi:true found in
-  check_contains
-    "multi-line occurrence: under colour it is bold red on its line, unmarked"
+  contains
+    ~msg:
+      "multi-line occurrence: under colour it is bold red on its line, unmarked"
     ~sub:
       "      line one\n\
       \      the1 \027[1;31msecret\027[0m here\n\
       \      line three\n"
     colored;
-  check "multi-line occurrence: colour replaces the mark and nothing else"
+  is_true
+    ~msg:"multi-line occurrence: colour replaces the mark and nothing else"
     (Text.strip_ansi colored = without_marks plain)
 
 (* The not-found display cap: with no occurrence to mark, the haystack is
@@ -2604,13 +2617,13 @@ let test_containment_not_found_cap () =
       ~haystack ()
   in
   let b = failure_block f in
-  check_contains "cap: the verdict line is adjacent to the excerpt"
+  contains ~msg:"cap: the verdict line is adjacent to the excerpt"
     ~sub:
       ("    needle    \"NOPE\": not found\n    haystack  " ^ String.make 64 'a')
     b;
-  check_absent "cap: nothing beyond the display window prints"
+  not_contains ~msg:"cap: nothing beyond the display window prints"
     ~sub:(String.make 1025 'a') b;
-  check_contains "cap: the elision line states the shown range"
+  contains ~msg:"cap: the elision line states the shown range"
     ~sub:"    (excerpt: bytes 0-1023 of a 20006-byte haystack)\n" b;
   (* Line-structured content cuts after ten complete lines, well under the
      byte bound. 40 lines of 21 bytes: the cut lands after "line 09"'s
@@ -2622,10 +2635,10 @@ let test_containment_not_found_cap () =
       ~haystack ()
   in
   let b = failure_block f in
-  check_contains "cap: the tenth line still prints"
+  contains ~msg:"cap: the tenth line still prints"
     ~sub:"      line 09 filler filler\n" b;
-  check_absent "cap: the eleventh line does not" ~sub:"line 10" b;
-  check_contains "cap: the multi-line elision line states the shown range"
+  not_contains ~msg:"cap: the eleventh line does not" ~sub:"line 10" b;
+  contains ~msg:"cap: the multi-line elision line states the shown range"
     ~sub:"    (excerpt: bytes 0-219 of a 879-byte haystack)\n" b;
   (* A found occurrence keeps the stored window whole: not_contains on a
      3 KiB haystack shows all of it, uncapped and unelided. *)
@@ -2635,8 +2648,8 @@ let test_containment_not_found_cap () =
       ~claim:{|string not containing "secret"|} ~needle:"secret" ~haystack ()
   in
   let b = failure_block f in
-  check_contains "found-at: the full stored window prints" ~sub:haystack b;
-  check_absent "found-at: no elision line for a complete excerpt"
+  contains ~msg:"found-at: the full stored window prints" ~sub:haystack b;
+  not_contains ~msg:"found-at: no elision line for a complete excerpt"
     ~sub:"(excerpt:" b;
   (* An in_order chain break keeps its window even with nothing found: the
      cursor-anchored excerpt is the region still to be matched, which is
@@ -2647,18 +2660,18 @@ let test_containment_not_found_cap () =
       ~claim:{|string containing "NOPE" at or after byte 9000|} ~needle:"NOPE"
       ~haystack:(String.make 10_000 'a') ()
   in
-  check_contains "in_order: the cursor-anchored window is not capped"
+  contains ~msg:"in_order: the cursor-anchored window is not capped"
     ~sub:"    (excerpt: bytes 4904-9999 of a 10000-byte haystack)\n"
     (failure_block f)
 
 let test_containment_headlines () =
-  check "headline: not_contains names the offset"
+  is_true ~msg:"headline: not_contains names the offset"
     (Report.headline not_contains_failure = {|needle "secret" found at byte 10|});
   let contains_failure =
     Failure.containment ~claim:{|string containing "NOPE"|} ~needle:"NOPE"
       ~haystack:(String.make 20_006 'a') ()
   in
-  check "headline: contains names the haystack size"
+  is_true ~msg:"headline: contains names the haystack size"
     (Report.headline contains_failure
     = {|needle "NOPE" not found (20006-byte haystack)|})
 
@@ -2692,46 +2705,48 @@ let test_in_order_block () =
   (* Which element broke the chain is its own line, on the label gutter;
      the verdict slot carries where the search stood and where the element
      actually is — "there, but too early" rather than "not there". *)
-  check_contains "in_order: the element index is a line of its own"
+  contains ~msg:"in_order: the element index is a line of its own"
     ~sub:"    element   2\n" b;
-  check_contains "in_order: the verdict names both offsets"
+  contains ~msg:"in_order: the verdict names both offsets"
     ~sub:
       "    needle    \"disconnect\": found at byte 13, before the search \
        resumed at byte 36\n"
     b;
-  check_contains "in_order: the early occurrence is marked in the haystack"
+  contains ~msg:"in_order: the early occurrence is marked in the haystack"
     ~sub:
       ("    haystack  " ^ chain_haystack ^ "\n" ^ String.make 27 ' '
      ^ "~~~~~~~~~~\n")
     b;
-  check_absent "in_order: the claim description never prints"
+  not_contains ~msg:"in_order: the claim description never prints"
     ~sub:"at or after byte 36\n" b;
   let colored = failure_block ~ansi:true out_of_order_failure in
-  check_contains "in_order: under colour the early occurrence is bold red"
+  contains ~msg:"in_order: under colour the early occurrence is bold red"
     ~sub:
       "    \027[2mhaystack\027[0m  connect send \027[1;31mdisconnect\027[0m \
        authenticate\n"
     colored;
-  check "in_order: colour replaces the mark and nothing else"
+  is_true ~msg:"in_order: colour replaces the mark and nothing else"
     (Text.strip_ansi colored = without_marks b);
   (* No occurrence anywhere: the verdict is the cursor alone and there is
      nothing to mark. *)
   let b = failure_block missing_element_failure in
-  check_contains "in_order: a missing element names only the cursor"
+  contains ~msg:"in_order: a missing element names only the cursor"
     ~sub:
       "    element   2\n\
       \    needle    \"teardown\": not found at or after byte 36\n"
     b;
-  check_absent "in_order: nothing is marked when nothing occurs" ~sub:"~~~" b
+  not_contains ~msg:"in_order: nothing is marked when nothing occurs" ~sub:"~~~"
+    b
 
 let test_demand_headlines () =
-  check "headline: in_order names the element, its offset and the cursor"
+  is_true ~msg:"headline: in_order names the element, its offset and the cursor"
     (Report.headline out_of_order_failure
     = {|element 2 "disconnect" out of order: at byte 13, before byte 36|});
   let missing =
     {|element 2 "teardown" not found at or after byte 36 (36-byte haystack)|}
   in
-  check "headline: a missing element names the cursor and the haystack size"
+  is_true
+    ~msg:"headline: a missing element names the cursor and the haystack size"
     (Report.headline missing_element_failure = missing)
 
 let test_satisfies_no_refinement () =
@@ -2739,23 +2754,23 @@ let test_satisfies_no_refinement () =
      refine the two (D5 §2). *)
   let f = Failure.predicate ~claim:"value satisfying the predicate" "-3" in
   let b = failure_block f in
-  check_contains "satisfies: two label lines"
+  contains ~msg:"satisfies: two label lines"
     ~sub:"    expected  value satisfying the predicate\n    actual    -3\n" b;
-  check_absent "satisfies: no marker line against the claim" ~sub:"~" b;
+  not_contains ~msg:"satisfies: no marker line against the claim" ~sub:"~" b;
   let multi =
     failure_block
       (Failure.predicate ~claim:"value satisfying the predicate" "[0; 1;\n 2]")
   in
-  check_contains "satisfies: multi-line value prints in block form"
+  contains ~msg:"satisfies: multi-line value prints in block form"
     ~sub:
       "    expected  value satisfying the predicate\n\
       \    actual:\n\
       \      [0; 1;\n\
       \       2]\n"
     multi;
-  check_absent "satisfies: no unified diff against the claim"
+  not_contains ~msg:"satisfies: no unified diff against the claim"
     ~sub:"--- expected" multi;
-  check_contains "satisfies: each line of the block is red, no style spans two"
+  contains ~msg:"satisfies: each line of the block is red, no style spans two"
     ~sub:
       "    \027[2mactual:\027[0m\n\
       \      \027[31m[0; 1;\027[0m\n\
@@ -2765,7 +2780,7 @@ let test_satisfies_no_refinement () =
   let matches =
     failure_block (Failure.predicate ~claim:"a match" "Error \"boom\"")
   in
-  check_absent "matches: no refinement either" ~sub:"~" matches
+  not_contains ~msg:"matches: no refinement either" ~sub:"~" matches
 
 (* An invisible difference in hunks: the [~] line under the [-] line *)
 
@@ -2775,9 +2790,10 @@ let test_trailing_whitespace_hunks () =
       (Failure.equality ~expected:"line one \nline two"
          ~actual:"line one\nline two" ())
   in
-  check_contains
-    "a one-to-one pair differing in trailing space: the line keeps its space \
-     and a ~ sits under it"
+  contains
+    ~msg:
+      "a one-to-one pair differing in trailing space: the line keeps its space \
+       and a ~ sits under it"
     ~sub:
       "    @@ -1,2 +1,2 @@\n\
       \    - line one \n\
@@ -2785,13 +2801,13 @@ let test_trailing_whitespace_hunks () =
       \    + line one\n\
       \      line two\n"
     b;
-  check_absent "no middle dot" ~sub:"\u{00B7}" b;
+  not_contains ~msg:"no middle dot" ~sub:"\u{00B7}" b;
   (* The space is the [+] line's: the mark stands where it will be. *)
   let b =
     failure_block
       (Failure.equality ~expected:"ab\nline two" ~actual:"ab  \nline two" ())
   in
-  check_contains "an inserted trailing run is marked at its columns"
+  contains ~msg:"an inserted trailing run is marked at its columns"
     ~sub:"    - ab\n        ~~\n    + ab  \n" b;
   (* A tab has no fixed width: the mark line repeats the line's tabs, so
      it aligns on any tab stops. Context lines keep their bytes. *)
@@ -2800,23 +2816,23 @@ let test_trailing_whitespace_hunks () =
       (Failure.equality ~expected:"a\tx\t\ncommon \ny"
          ~actual:"a\tx\ncommon \ny" ())
   in
-  check_contains "a trailing tab is marked, the mark line repeating the tabs"
+  contains ~msg:"a trailing tab is marked, the mark line repeating the tabs"
     ~sub:"    - a\tx\t\n       \t ~\n    + a\tx\n" b;
-  check_absent "no arrow glyph" ~sub:"\u{2192}" b;
-  check_contains "context lines keep raw trailing whitespace"
+  not_contains ~msg:"no arrow glyph" ~sub:"\u{2192}" b;
+  contains ~msg:"context lines keep raw trailing whitespace"
     ~sub:"      common \n" b;
-  check "context lines draw no mark" (occurrences_of ~sub:"~" b = 1);
+  is_true ~msg:"context lines draw no mark" (occurrences_of ~sub:"~" b = 1);
   (* A visible difference needs no mark, whatever its trailing spaces; nor
      does a run of changes, whose lines answer each other in no order. *)
   let b =
     failure_block
       (Failure.equality ~expected:"foo \nline two" ~actual:"bar\nline two" ())
   in
-  check_absent "a visible difference draws no mark" ~sub:"~" b;
+  not_contains ~msg:"a visible difference draws no mark" ~sub:"~" b;
   let b =
     failure_block (Failure.equality ~expected:"a \nb \nz" ~actual:"a\nb\nz" ())
   in
-  check_absent "a run of changes is no one-to-one pair" ~sub:"~" b;
+  not_contains ~msg:"a run of changes is no one-to-one pair" ~sub:"~" b;
   (* The mark is in its role under colour, outside the line's own span,
      and the two settings print the same bytes. *)
   let plain =
@@ -2829,12 +2845,12 @@ let test_trailing_whitespace_hunks () =
       (Failure.equality ~expected:"line one \nline two"
          ~actual:"line one\nline two" ())
   in
-  check_contains "ansi path: the expected line whole, then the mark in its role"
+  contains ~msg:"ansi path: the expected line whole, then the mark in its role"
     ~sub:
       ("\027[32m- line one \027[0m\n" ^ String.make 14 ' '
      ^ "\027[31m~\027[0m\n")
     colored;
-  check "ansi path: the same bytes once the escapes are stripped"
+  is_true ~msg:"ansi path: the same bytes once the escapes are stripped"
     (Text.strip_ansi colored = plain);
   (* One meaning for green, across both diff paths.
 
@@ -2849,19 +2865,19 @@ let test_trailing_whitespace_hunks () =
       (Failure.equality ~expected:"the quick brown fox"
          ~actual:"the quick brawn fox" ())
   in
-  check_contains "span path: expected side is green"
+  contains ~msg:"span path: expected side is green"
     ~sub:"the quick br\027[1;32mo\027[0mwn fox" spans;
-  check_contains "span path: actual side is red"
+  contains ~msg:"span path: actual side is red"
     ~sub:"the quick br\027[1;31ma\027[0mwn fox" spans;
   let hunks =
     failure_block ~ansi:true
       (Failure.equality ~expected:"keep\nexpected\n" ~actual:"keep\nactual\n" ())
   in
-  check_contains "hunk path: expected side is green too"
+  contains ~msg:"hunk path: expected side is green too"
     ~sub:"\027[32m- expected\027[0m" hunks;
-  check_contains "hunk path: actual side is red too"
+  contains ~msg:"hunk path: actual side is red too"
     ~sub:"\027[31m+ actual\027[0m" hunks;
-  check_absent "hunk path: no diff-tool colouring survives"
+  not_contains ~msg:"hunk path: no diff-tool colouring survives"
     ~sub:"\027[31m- expected" hunks;
   (* Baseline mismatch diffs share pp_hunks — the single producer. *)
   let snap =
@@ -2870,7 +2886,7 @@ let test_trailing_whitespace_hunks () =
          (Failure.Literal { exact = true })
          (Failure.Mismatch { expected = "a \nb\n"; actual = "a\nb\n" }))
   in
-  check_contains "baseline diffs mark a trailing space too"
+  contains ~msg:"baseline diffs mark a trailing space too"
     ~sub:
       "    expect_exact: mismatch\n\
       \    @@ -1,2 +1,2 @@\n\
@@ -2883,13 +2899,13 @@ let test_trailing_whitespace_hunks () =
 
 let test_uncaught_wording () =
   let b = failure_block (Failure.raised ~actual:"Not_found" ()) in
-  check_contains "uncaught: the sentence, the exception indented under it"
+  contains ~msg:"uncaught: the sentence, the exception indented under it"
     ~sub:"    uncaught exception:\n      Not_found\n" b;
-  check_absent "uncaught: never the bare anchor of a raises assertion"
+  not_contains ~msg:"uncaught: never the bare anchor of a raises assertion"
     ~sub:"    raised  " b;
-  check_absent "uncaught: no expected side" ~sub:"expected exception" b;
-  check_absent "uncaught: never borrows the predicate wording" ~sub:"predicate"
-    b;
+  not_contains ~msg:"uncaught: no expected side" ~sub:"expected exception" b;
+  not_contains ~msg:"uncaught: never borrows the predicate wording"
+    ~sub:"predicate" b;
   (* Inside a property block, recursively. *)
   let prop =
     failure_block
@@ -2898,19 +2914,18 @@ let test_uncaught_wording () =
          ~rendered:"50" ~case_index:3 ~shrink_steps:2 ~root:Fixtures.root
          ~examples:false ())
   in
-  check_contains "uncaught inside a property inner"
+  contains ~msg:"uncaught inside a property inner"
     ~sub:
       "    which failed with:\n\
       \      uncaught exception:\n\
       \        Dune__exe__V.Boom(50)\n"
     prop;
-  check_contains
-    "uncaught: a multi-line exception is a block under the sentence"
+  contains ~msg:"uncaught: a multi-line exception is a block under the sentence"
     ~sub:"    uncaught exception:\n      Parse_error(\n        line 3)\n"
     (failure_block (Failure.raised ~actual:"Parse_error(\n  line 3)" ()));
   (* raises_match keeps its wording — pinned above in
      [test_raise_message_diff_guards]; the (None, None) arm serves both. *)
-  check_contains "wanted-any arm unchanged"
+  contains ~msg:"wanted-any arm unchanged"
     ~sub:"    expected an exception, but none was raised\n"
     (failure_block (Failure.raised ()))
 
@@ -2922,21 +2937,22 @@ let test_timed_out_marker () =
       ~root:Fixtures.root ~examples:false ()
   in
   let b = failure_block f in
-  check_contains "timed-out: marker line follows the counterexample"
+  contains ~msg:"timed-out: marker line follows the counterexample"
     ~sub:
       "    counterexample (case 4, shrunk 2 steps): 9\n\
       \    timed out after 0.3s while shrinking; counterexample may not be \
        minimal\n\
       \    replay: "
     b;
-  check_absent "timed-out: the block says it once, in the line under the head"
+  not_contains
+    ~msg:"timed-out: the block says it once, in the line under the head"
     ~sub:"shrinking timed out" b;
-  check "timed-out: headline carries the clause"
+  is_true ~msg:"timed-out: headline carries the clause"
     (Report.headline f
    = "property failed (case 4, shrunk 2 steps, shrinking timed out): 9");
   let plain = failure_block Fixtures.prop_failure in
-  check_absent "no marker without a timeout" ~sub:"timed out" plain;
-  check_absent "no headline mark without a timeout" ~sub:"timed out"
+  not_contains ~msg:"no marker without a timeout" ~sub:"timed out" plain;
+  not_contains ~msg:"no headline mark without a timeout" ~sub:"timed out"
     (Report.headline Fixtures.prop_failure)
 
 (* Spent shrink budgets (D2's other stopping condition)
@@ -2953,31 +2969,32 @@ let test_budget_spent_marker () =
       ~shrink_steps:50 ~root:Fixtures.root ~examples:false ()
   in
   let b = failure_block f in
-  check_contains "budget spent: detail line follows the counterexample"
+  contains ~msg:"budget spent: detail line follows the counterexample"
     ~sub:
       "    counterexample (case 4, shrunk 50 steps): 9\n\
       \    shrinking stopped after 50 steps; counterexample may not be minimal\n\
       \    replay: "
     b;
-  check_absent
-    "budget spent: the block says it once, in the line under the head"
+  not_contains
+    ~msg:"budget spent: the block says it once, in the line under the head"
     ~sub:"shrink limit reached" b;
-  check "budget spent: headline carries the clause"
+  is_true ~msg:"budget spent: headline carries the clause"
     (Report.headline f
    = "property failed (case 4, shrunk 50 steps, shrink limit reached): 9");
   let plain = failure_block Fixtures.prop_failure in
-  check_absent "no detail line without a spent budget" ~sub:"shrinking stopped"
+  not_contains ~msg:"no detail line without a spent budget"
+    ~sub:"shrinking stopped" plain;
+  not_contains ~msg:"no clause without a spent budget" ~sub:"may not be minimal"
     plain;
-  check_absent "no clause without a spent budget" ~sub:"may not be minimal"
-    plain;
-  check_absent "no headline clause without a spent budget" ~sub:"shrink limit"
+  not_contains ~msg:"no headline clause without a spent budget"
+    ~sub:"shrink limit"
     (Report.headline Fixtures.prop_failure);
   (* An example never shrinks, so neither mark applies to one. *)
   let example =
     Failure.property ~shrink_exhausted:true ~rendered:"9" ~case_index:0
       ~shrink_steps:0 ~root:Fixtures.root ~examples:true ()
   in
-  check "an example carries no clause"
+  is_true ~msg:"an example carries no clause"
     (Report.headline example = "property failed (example 1): 9")
 
 (* Inner failures without a location (D4) *)
@@ -2989,17 +3006,17 @@ let test_inner_label_without_location () =
       (Failure.property ~inner:inner_no_loc ~rendered:"7" ~case_index:0
          ~shrink_steps:0 ~root:Fixtures.root ~examples:false ())
   in
-  check_contains
-    "a location-less inner failure: [which failed with:], then the facts"
+  contains
+    ~msg:"a location-less inner failure: [which failed with:], then the facts"
     ~sub:"    which failed with:\n      expected  true\n" b;
-  check_absent "and no dangling [at:]" ~sub:"which failed at:" b;
+  not_contains ~msg:"and no dangling [at:]" ~sub:"which failed at:" b;
   let located = failure_block Fixtures.prop_failure in
-  check_contains
-    "a located inner failure: [which failed at:] over its bare location"
+  contains
+    ~msg:"a located inner failure: [which failed at:] over its bare location"
     ~sub:
       "    which failed at:\n      test/test_geo.ml:18\n      expected  true\n"
     located;
-  check_absent "and no [with:]" ~sub:"which failed with:" located
+  not_contains ~msg:"and no [with:]" ~sub:"which failed with:" located
 
 (* Command hints per invocation (D5 §1) *)
 
@@ -3008,31 +3025,32 @@ let test_hints_per_invocation () =
   let accept =
     failure_block ~invocation:exe ~filter:"cli › cli help" Fixtures.snap_missing
   in
-  check_contains "accept completes the executable, scoped to the block's test"
+  contains ~msg:"accept completes the executable, scoped to the block's test"
     ~sub:"    accept: ./_build/default/qa/x/t.exe -u -f 'cli › cli help'\n"
     accept;
-  check_absent "accept carries no trailing advice" ~sub:"then review" accept;
-  check_absent "accept under Exe never spells dune promote" ~sub:"dune promote"
+  not_contains ~msg:"accept carries no trailing advice" ~sub:"then review"
     accept;
+  not_contains ~msg:"accept under Exe never spells dune promote"
+    ~sub:"dune promote" accept;
   let replay =
     failure_block ~invocation:exe ~filter:"mod7" Fixtures.prop_failure
   in
-  check_contains "replay hint completes the executable with the flags"
+  contains ~msg:"replay hint completes the executable with the flags"
     ~sub:
       "    replay: ./_build/default/qa/x/t.exe --seed s1:7be1d2c904aa31f5 -f \
        'mod7'\n"
     replay;
   let bare = failure_block ~invocation:exe Fixtures.prop_failure in
-  check_contains "replay hint without a filter carries the seed alone"
+  contains ~msg:"replay hint without a filter carries the seed alone"
     ~sub:"    replay: ./_build/default/qa/x/t.exe --seed s1:7be1d2c904aa31f5\n"
     bare;
   (* Under a build action acceptance is dune's, given this block's file:
      a literal's source file, a file baseline's path. *)
   let mirrors = failure_block Fixtures.snap_mismatch in
-  check_contains "Mirrors accept promotes the literal's source file"
+  contains ~msg:"Mirrors accept promotes the literal's source file"
     ~sub:"    accept: dune promote test/test_cli.ml\n" mirrors;
-  check_absent "Mirrors accept spelling names no flag" ~sub:" -u" mirrors;
-  check_contains "Mirrors accept promotes a file baseline by its path"
+  not_contains ~msg:"Mirrors accept spelling names no flag" ~sub:" -u" mirrors;
+  contains ~msg:"Mirrors accept promotes a file baseline by its path"
     ~sub:"    accept: dune promote test/help.expected\n"
     (failure_block
        (Failure.baseline (Failure.File "test/help.expected")
@@ -3040,12 +3058,12 @@ let test_hints_per_invocation () =
   (* Promotion never creates a file: a missing file baseline under dune
      is accepted by creating it first, and the hint says so. *)
   let missing = failure_block Fixtures.snap_missing in
-  check_contains "Mirrors accept spelling for a missing file creates it first"
+  contains ~msg:"Mirrors accept spelling for a missing file creates it first"
     ~sub:
       "    accept: touch 'test/help.expected' && dune runtest; dune promote \
        test/help.expected\n"
     missing;
-  check_absent "and never spells a bare dune promote"
+  not_contains ~msg:"and never spells a bare dune promote"
     ~sub:"    accept: dune promote\n" missing
 
 (* A block ends on a command only when the command says what the block
@@ -3053,64 +3071,63 @@ let test_hints_per_invocation () =
    replay, and none at all otherwise. No block prints a [rerun:]. *)
 let test_hint_lines () =
   let plain = Failure.message "b" in
-  check_string "a block with nothing to accept or replay ends on its facts"
-    ~expected:"    b\n"
-    ~actual:
-      (failure_block ~invocation:(`Exe "./t.exe") ~filter:"math › adds" plain);
-  check_string "under a build action too" ~expected:"    b\n"
-    ~actual:(failure_block ~filter:"math › adds" plain);
-  check_contains "a path's quote is closed around"
+  equal ~msg:"a block with nothing to accept or replay ends on its facts" string
+    "    b\n"
+    (failure_block ~invocation:(`Exe "./t.exe") ~filter:"math › adds" plain);
+  equal ~msg:"under a build action too" string "    b\n"
+    (failure_block ~filter:"math › adds" plain);
+  contains ~msg:"a path's quote is closed around"
     ~sub:"    accept: ./t.exe -u -f 'it'\\''s'\n"
     (failure_block ~invocation:(`Exe "./t.exe") ~filter:"it's"
        Fixtures.snap_mismatch);
   (* An armed run's failures are the mutant's: a replay keeps it armed,
      and an armed run accepts nothing. *)
   let armed = "lib/calc.ml:9:12:add" in
-  check_string "an armed run's block with nothing to replay ends on its facts"
-    ~expected:"    b\n"
-    ~actual:
-      (failure_block ~invocation:(`Exe "./t.exe") ~armed ~filter:"math › adds"
-         plain);
-  check_contains "an identifier a shell would split is quoted"
+  equal ~msg:"an armed run's block with nothing to replay ends on its facts"
+    string "    b\n"
+    (failure_block ~invocation:(`Exe "./t.exe") ~armed ~filter:"math › adds"
+       plain);
+  contains ~msg:"an identifier a shell would split is quoted"
     ~sub:
       "    replay: ./t.exe --arm 'my lib/calc.ml:9:12:add' --seed \
        s1:7be1d2c904aa31f5\n"
     (failure_block ~invocation:(`Exe "./t.exe") ~armed:"my lib/calc.ml:9:12:add"
        Fixtures.prop_failure);
-  check_contains "an armed run's replay carries --arm"
+  contains ~msg:"an armed run's replay carries --arm"
     ~sub:
       "    replay: ./t.exe --arm lib/calc.ml:9:12:add --seed \
        s1:7be1d2c904aa31f5 -f 'mod7'\n"
     (failure_block ~invocation:(`Exe "./t.exe") ~armed ~filter:"mod7"
        Fixtures.prop_failure);
-  check_contains "an armed run's replay carries the mirror under a build action"
+  contains ~msg:"an armed run's replay carries the mirror under a build action"
     ~sub:
       "    replay: WINDTRAP_MUTATE_ARM=lib/calc.ml:9:12:add \
        WINDTRAP_SEED=s1:7be1d2c904aa31f5 WINDTRAP_FILTER='mod7' dune runtest\n"
     (failure_block ~armed ~filter:"mod7" Fixtures.prop_failure);
-  check "an armed run's baseline failure is never accepted: no hint at all"
+  is_true
+    ~msg:"an armed run's baseline failure is never accepted: no hint at all"
     (Sections.hints ~armed ~invocation:(`Exe "./t.exe") ~filter:(Some "t")
        [ Fixtures.snap_mismatch; Fixtures.snap_missing ]
     = []);
-  check_contains "a control byte in a path never breaks the hint's line"
+  contains ~msg:"a control byte in a path never breaks the hint's line"
     ~sub:
       "    replay: ./t.exe --seed s1:7be1d2c904aa31f5 -f \
        $'it\\'s\\ttwo\\nlines\\x1b[0m'\n"
     (failure_block ~invocation:(`Exe "./t.exe")
        ~filter:"it's\ttwo\nlines\027[0m" Fixtures.prop_failure);
   let hints = Sections.hints ~invocation:(`Exe "./t.exe") ~filter:(Some "t") in
-  check "a failure with no command of its own adds none"
+  is_true ~msg:"a failure with no command of its own adds none"
     (hints [ plain ] = []
     && hints [ plain; Fixtures.snap_mismatch ] = [ "accept: ./t.exe -u -f 't'" ]
     );
-  check "one line per distinct command line, accept before replay"
+  is_true ~msg:"one line per distinct command line, accept before replay"
     (hints
        [ Fixtures.prop_failure; Fixtures.snap_mismatch; Fixtures.snap_missing ]
     = [
         "accept: ./t.exe -u -f 't'";
         "replay: ./t.exe --seed s1:7be1d2c904aa31f5 -f 't'";
       ]);
-  check "two files under a build action are two acceptances"
+  is_true ~msg:"two files under a build action are two acceptances"
     (Sections.hints ~filter:(Some "t")
        [ Fixtures.snap_mismatch; Fixtures.snap_missing ]
     = [
@@ -3134,14 +3151,15 @@ let test_hint_lines () =
     with_renderer ~invocation:(`Exe "./t.exe") (fun r ->
         Report.finish r ~results:[ two ] ~duration:0.1 ())
   in
-  check_contains "the block's hints follow the tail, accept then replay"
+  contains ~msg:"the block's hints follow the tail, accept then replay"
     ~sub:
       ("      log line\n\
        \    accept: ./t.exe -u -f 'cli › both'\n\
        \    replay: ./t.exe --seed s1:7be1d2c904aa31f5 -f 'cli › both'\n"
      ^ closing_rule ^ "\n\n1 failed in 100ms.\n")
     t;
-  check "a hint prints once per block" (occurrences_of ~sub:"accept:" t = 1)
+  is_true ~msg:"a hint prints once per block"
+    (occurrences_of ~sub:"accept:" t = 1)
 
 (* A withheld correction (Run, Corrections): the run kept none of the
    attempt's corrections, so no command accepts the block's baselines. The
@@ -3162,57 +3180,60 @@ let test_withheld_correction () =
   and missing = outside Fixtures.snap_missing in
   (* Run by hand, whatever the mode: [-u] would rewrite nothing. *)
   let exe = failure_block ~invocation:(`Exe "./t.exe") ~filter:"t" in
-  check "a literal by hand: the reason, and nothing after it"
+  is_true ~msg:"a literal by hand: the reason, and nothing after it"
     (String.ends_with
        ~suffix:("    + line 2\n      line three\n    " ^ kept_none ^ "\n")
        (exe literal));
-  check_absent "a literal by hand: no -u to type" ~sub:"accept:" (exe literal);
-  check "a file by hand: the reason, and nothing after it"
+  not_contains ~msg:"a literal by hand: no -u to type" ~sub:"accept:"
+    (exe literal);
+  is_true ~msg:"a file by hand: the reason, and nothing after it"
     (String.ends_with ~suffix:("    + b\n    " ^ kept_none ^ "\n") (exe file));
-  check_absent "a file by hand: no -u to type" ~sub:"accept:" (exe file);
+  not_contains ~msg:"a file by hand: no -u to type" ~sub:"accept:" (exe file);
   (* Under a build action ([--corrected], an inline runner): nothing was
      written beside the file, so [dune promote] has nothing to promote. *)
   let action = failure_block ~filter:"t" in
-  check "a literal under a build action: the reason, and nothing after it"
+  is_true
+    ~msg:"a literal under a build action: the reason, and nothing after it"
     (String.ends_with
        ~suffix:("      line three\n    " ^ kept_none ^ "\n")
        (action literal));
-  check_absent "a literal under a build action: nothing to promote"
+  not_contains ~msg:"a literal under a build action: nothing to promote"
     ~sub:"dune promote" (action literal);
-  check "a file under a build action: the reason, and nothing after it"
+  is_true ~msg:"a file under a build action: the reason, and nothing after it"
     (String.ends_with
        ~suffix:("    + b\n    " ^ kept_none ^ "\n")
        (action file));
-  check_absent "a file under a build action: nothing to promote"
+  not_contains ~msg:"a file under a build action: nothing to promote"
     ~sub:"dune promote" (action file);
-  check_absent "a missing file under a build action: no file to touch either"
+  not_contains
+    ~msg:"a missing file under a build action: no file to touch either"
     ~sub:"touch" (action missing);
-  check_contains "a missing file: the proposed text still prints"
+  contains ~msg:"a missing file: the proposed text still prints"
     ~sub:"    proposed (3 lines):\n" (action missing);
   (* The reason is a fact line: it opens the block's closing lines, once,
      before a replay when the block has one. *)
   let plain = Failure.message "boom" in
   let hints = Sections.hints ~invocation:(`Exe "./t.exe") ~filter:(Some "t") in
-  check "a block's closing lines: the reason once, and nothing after it"
+  is_true ~msg:"a block's closing lines: the reason once, and nothing after it"
     (hints [ plain; literal; missing ] = [ kept_none ]);
-  check "a property beside it keeps its replay"
+  is_true ~msg:"a property beside it keeps its replay"
     (hints [ Fixtures.prop_failure; literal ]
     = [ kept_none; "replay: ./t.exe --seed s1:7be1d2c904aa31f5 -f 't'" ]);
-  check "a kept correction beside nothing else is accepted as before"
+  is_true ~msg:"a kept correction beside nothing else is accepted as before"
     (hints [ Fixtures.snap_mismatch ] = [ "accept: ./t.exe -u -f 't'" ]);
-  check_absent "and draws no reason" ~sub:"no correction was kept"
+  not_contains ~msg:"and draws no reason" ~sub:"no correction was kept"
     (exe Fixtures.snap_mismatch);
   (* A test that failed an expectation and skipped keeps none either, and
      did not fail anywhere else. *)
   let skipped = Failure.with_withheld Failure.Skipped Fixtures.snap_mismatch in
-  check "a skip beside the expectation: its own reason"
+  is_true ~msg:"a skip beside the expectation: its own reason"
     (hints [ skipped ]
     = [
         "no correction was kept: the test also skipped; skip before the \
          expectation or not at all, and rerun";
       ]);
   (* An unresolvable path never had a correction to keep. *)
-  check "an unresolvable path draws no reason"
+  is_true ~msg:"an unresolvable path draws no reason"
     (hints
        [
          outside
@@ -3223,7 +3244,7 @@ let test_withheld_correction () =
   (* An armed run accepts nothing in the first place and says nothing
      about corrections: the difference is the mutant's. *)
   let armed = "lib/calc.ml:9:12:add" in
-  check "an armed run: no line at all"
+  is_true ~msg:"an armed run: no line at all"
     (Sections.hints ~armed ~invocation:(`Exe "./t.exe") ~filter:(Some "t")
        [ plain; literal ]
     = []);
@@ -3238,16 +3259,17 @@ let test_withheld_correction () =
     with_renderer ~invocation:(`Exe "./t.exe") (fun r ->
         Report.finish r ~results:[ both ] ~duration:0.1 ())
   in
-  check_contains "the transcript: tail, reason, closing rule, summary"
+  contains ~msg:"the transcript: tail, reason, closing rule, summary"
     ~sub:
       ("      log line\n    " ^ kept_none ^ "\n" ^ closing_rule
      ^ "\n\n1 failed in 100ms.\n")
     t;
-  check_absent "the transcript offers no acceptance" ~sub:"accept:" t;
+  not_contains ~msg:"the transcript offers no acceptance" ~sub:"accept:" t;
   (* Every transport projects the same failure. *)
   let annotated = Report.annotations [ both ] in
-  check_absent "the annotations offer no acceptance" ~sub:"accept:" annotated;
-  check "the baseline's annotation ends on the reason"
+  not_contains ~msg:"the annotations offer no acceptance" ~sub:"accept:"
+    annotated;
+  is_true ~msg:"the baseline's annotation ends on the reason"
     (String.ends_with ~suffix:("%0A    " ^ kept_none ^ "\n") annotated)
 
 let test_armed_titles () =
@@ -3264,19 +3286,19 @@ let test_armed_titles () =
     with_renderer ~invocation:(`Exe "./t.exe") ~armed:"lib/calc.ml:9:12:add"
       (fun r -> Report.finish r ~results:failing ~duration:0.1 ())
   in
-  check_contains "an armed run's FAIL title says so"
+  contains ~msg:"an armed run's FAIL title says so"
     ~sub:
       "  FAIL  sub › subtracts (mutant armed)\n\
       \    b\n\n\
       \  FAIL  sub › retried (2 attempts, mutant armed)\n"
     t;
-  check_contains "the qualifier shares its parenthesis with the attempts"
+  contains ~msg:"the qualifier shares its parenthesis with the attempts"
     ~sub:"  FAIL  sub › retried (2 attempts, mutant armed)\n" t;
   let unarmed =
     with_renderer (fun r -> Report.finish r ~results:failing ~duration:0.1 ())
   in
-  check_absent "an ordinary run's titles carry no qualifier" ~sub:"mutant armed"
-    unarmed
+  not_contains ~msg:"an ordinary run's titles carry no qualifier"
+    ~sub:"mutant armed" unarmed
 
 (* [--failed] is an optimization, not a step, so no run advertises it. The
    acceptance commands are the opposite case — they name a verb nobody can
@@ -3289,18 +3311,19 @@ let test_no_rerun_hint () =
     with_renderer ~invocation:(`Exe "dune exec qa/x/t.exe --") (fun r ->
         Report.finish r ~results:failing ~duration:0.1 ())
   in
-  check_absent "a failing run does not advertise --failed" ~sub:"--failed" exe;
-  check_absent "and its blocks print no rerun hint" ~sub:"rerun:" exe;
-  check "the summary is the last line"
+  not_contains ~msg:"a failing run does not advertise --failed" ~sub:"--failed"
+    exe;
+  not_contains ~msg:"and its blocks print no rerun hint" ~sub:"rerun:" exe;
+  is_true ~msg:"the summary is the last line"
     (String.ends_with ~suffix:"\n\n1 failed in 100ms.\n" exe);
   let mirrors =
     with_renderer (fun r -> Report.finish r ~results:failing ~duration:0.1 ())
   in
-  check_absent "nor under Mirrors" ~sub:"--failed" mirrors;
-  check_absent "no rerun hint under Mirrors either" ~sub:"rerun:" mirrors;
+  not_contains ~msg:"nor under Mirrors" ~sub:"--failed" mirrors;
+  not_contains ~msg:"no rerun hint under Mirrors either" ~sub:"rerun:" mirrors;
   List.iter
     (fun mode ->
-      check_absent "no rerun hint anywhere in a transcript of every kind"
+      not_contains ~msg:"no rerun hint anywhere in a transcript of every kind"
         ~sub:"rerun:"
         (transcript ~mode ~invocation:golden_invocation ()))
     [ `Compact; `Verbose ]
@@ -3318,7 +3341,7 @@ let test_property_replay_line () =
     with_renderer (fun r ->
         Report.finish r ~results:[ prop_result ] ~duration:0.1 ())
   in
-  check "a property failure prints exactly one replay line"
+  is_true ~msg:"a property failure prints exactly one replay line"
     (occurrences_of ~sub:"replay:" t = 1);
   let plain =
     with_renderer (fun r ->
@@ -3327,7 +3350,7 @@ let test_property_replay_line () =
             [ Fixtures.result [ "t" ] (Failure.Fail [ Failure.message "b" ]) ]
           ~duration:0.1 ())
   in
-  check_absent "an ordinary failure prints none" ~sub:"replay:" plain
+  not_contains ~msg:"an ordinary failure prints none" ~sub:"replay:" plain
 
 (* Verbose label distributions (D5 §7) *)
 
@@ -3347,12 +3370,12 @@ let test_verbose_pass_labels () =
   let verbose =
     with_renderer ~mode:`Verbose (fun r -> Report.result r passing)
   in
-  check_contains "verbose: a passing property prints its label table"
+  contains ~msg:"verbose: a passing property prints its label table"
     ~sub:"    labels (100 passing cases):\n       46.0%  even\n" verbose;
-  check "verbose: the table follows the PASS line"
+  is_true ~msg:"verbose: the table follows the PASS line"
     (String.starts_with ~prefix:"  PASS  labels visible" verbose);
   let compact = with_renderer (fun r -> Report.result r passing) in
-  check_absent "compact: no label table" ~sub:"labels (" compact;
+  not_contains ~msg:"compact: no label table" ~sub:"labels (" compact;
   let unlabeled =
     with_renderer ~mode:`Verbose (fun r ->
         Report.result r
@@ -3366,14 +3389,15 @@ let test_verbose_pass_labels () =
                }
              [ "no labels" ] Failure.Pass))
   in
-  check_absent "verbose: no table without collected labels" ~sub:"labels ("
+  not_contains ~msg:"verbose: no table without collected labels" ~sub:"labels ("
     unlabeled;
   let excused =
     with_renderer ~mode:`Verbose (fun r ->
         Report.result r
           { Fixtures.excused_result with Run.prop_stats = Some stats })
   in
-  check_absent "verbose: XFAIL lines print no table" ~sub:"labels (" excused
+  not_contains ~msg:"verbose: XFAIL lines print no table" ~sub:"labels ("
+    excused
 
 (* Name sanitization on terminal surfaces (render/F-2) *)
 
@@ -3385,13 +3409,12 @@ let test_name_sanitization () =
   let verbose =
     with_renderer ~mode:`Verbose (fun r -> Report.result r failing)
   in
-  check_contains "verbose line escapes the newline" ~sub:{|FAIL  first\nhalf|}
+  contains ~msg:"verbose line escapes the newline" ~sub:{|FAIL  first\nhalf|}
     verbose;
-  check_string "the row and the message stay one line each"
-    ~expected:
-      "  FAIL  first\\nhalf                                0.2ms\n    b\n\n"
-    ~actual:verbose;
-  check_contains "and so does a hint that spells the path"
+  equal ~msg:"the row and the message stay one line each" string
+    "  FAIL  first\\nhalf                                0.2ms\n    b\n\n"
+    verbose;
+  contains ~msg:"and so does a hint that spells the path"
     ~sub:
       "      actual    false\n\
       \    replay: WINDTRAP_SEED=s1:7be1d2c904aa31f5 \
@@ -3403,15 +3426,15 @@ let test_name_sanitization () =
     with_renderer (fun r ->
         Report.finish r ~results:[ failing ] ~duration:0.1 ())
   in
-  check_contains "FAIL header escapes the newline" ~sub:{|  FAIL  first\nhalf|}
+  contains ~msg:"FAIL header escapes the newline" ~sub:{|  FAIL  first\nhalf|}
     block;
   let live =
     with_renderer ~ansi:true ~live:true (fun r ->
         Report.header r ~suite:"vnames" ~tests:2 ~seed:None ();
         Report.begin_test r ~path:hostile)
   in
-  check_contains "live tail escapes the newline" ~sub:{|first\nhalf|} live;
-  check_absent "live tail carries no raw newline" ~sub:"first\nhalf" live;
+  contains ~msg:"live tail escapes the newline" ~sub:{|first\nhalf|} live;
+  not_contains ~msg:"live tail carries no raw newline" ~sub:"first\nhalf" live;
   (* Suite names: header, and the one-liner's prefix. *)
   let named =
     with_renderer (fun r ->
@@ -3421,13 +3444,13 @@ let test_name_sanitization () =
           ~results:[ Fixtures.result [ "t" ] Failure.Pass ]
           ~duration:0.1 ())
   in
-  check_contains "summary prefix escapes the tab" ~sub:{|my\tsuite: 1 passed|}
+  contains ~msg:"summary prefix escapes the tab" ~sub:{|my\tsuite: 1 passed|}
     named;
   let header =
     with_renderer ~mode:`Verbose (fun r ->
         Report.header r ~suite:"a\x07b" ~tests:1 ~seed:None ())
   in
-  check_contains "header escapes control bytes" ~sub:{|a\x07b: 1 test|} header;
+  contains ~msg:"header escapes control bytes" ~sub:{|a\x07b: 1 test|} header;
   (* The slow section's rows share the treatment. *)
   let slow = Fixtures.result [ "sl\now" ] Failure.Pass ~duration:1.5 in
   let warned =
@@ -3436,14 +3459,13 @@ let test_name_sanitization () =
         Report.result r slow;
         Report.finish r ~results:[ slow ] ~duration:1.5 ())
   in
-  check_contains "slow row escapes the newline" ~sub:{|  1.5s  sl\now|} warned;
+  contains ~msg:"slow row escapes the newline" ~sub:{|  1.5s  sl\now|} warned;
   (* ESC is left to the ansi policy (stripped under ansi:false) — pinned in
      [test_ansi_hygiene]. *)
   let note =
     with_renderer ~mode:`Verbose (fun r -> Report.note r "releasing d\nb")
   in
-  check_string "notes escape their fixture name" ~expected:"releasing d\\nb\n"
-    ~actual:note;
+  equal ~msg:"notes escape their fixture name" string "releasing d\\nb\n" note;
   (* The author's own words sit among the report's: a [?msg] prints its
      lines at the block's indentation, a skip reason and an
      expected-failure reason stay in their row, and the control bytes of
@@ -3461,8 +3483,8 @@ let test_name_sanitization () =
         Report.header r ~suite:"s" ~tests:1 ~seed:None ();
         Report.result r annotated)
   in
-  check_contains
-    "a ?msg keeps its lines, each inside the block, control bytes escaped"
+  contains
+    ~msg:"a ?msg keeps its lines, each inside the block, control bytes escaped"
     ~sub:"\n    first\n    second\\x07\n    expected  1\n" block;
   let rows =
     with_renderer ~mode:`Verbose (fun r ->
@@ -3474,9 +3496,9 @@ let test_name_sanitization () =
              ~xfail:{ Test_tree.reason = Some "issue\t42" }
              (Failure.Fail [ Fixtures.eq_failure ])))
   in
-  check_contains "a skip reason stays in its row"
+  contains ~msg:"a skip reason stays in its row"
     ~sub:{|  SKIP  skipped (no\ndb)|} rows;
-  check_contains "and so does an expected failure's"
+  contains ~msg:"and so does an expected failure's"
     ~sub:{|  XFAIL  excused (expected failure: issue\t42)|} rows
 
 (* Source excerpts resolve against the project root (render/F-1) *)
@@ -3488,10 +3510,10 @@ let test_location_forms () =
   let declared = Fixtures.loc "test/test_users.ml" 88 in
   let located f = { f with Failure.loc = Some declared } in
   let tail = located (Failure.equality ~expected:"1" ~actual:"2" ()) in
-  check_string "declaration: the bare location opens the entry"
-    ~expected:"    test/test_users.ml:88\n    expected  1\n    actual    2\n"
-    ~actual:(failure_block tail);
-  check_contains "declaration: ansi renders the whole line dim"
+  equal ~msg:"declaration: the bare location opens the entry" string
+    "    test/test_users.ml:88\n    expected  1\n    actual    2\n"
+    (failure_block tail);
+  contains ~msg:"declaration: ansi renders the whole line dim"
     ~sub:"    \027[2mtest/test_users.ml:88\027[0m\n"
     (failure_block ~ansi:true tail);
   (* An uncaught exception was raised by no verb, and its backtrace names
@@ -3504,12 +3526,12 @@ let test_location_forms () =
   List.iter
     (fun (kind, f) ->
       let b = failure_block (located f) in
-      check
-        (kind ^ ": the bare location opens the entry")
+      is_true
+        ~msg:(kind ^ ": the bare location opens the entry")
         (String.starts_with ~prefix:"    test/test_users.ml:88\n" b);
-      check_absent (kind ^ ": nothing about ~__POS__") ~sub:"__POS__" b;
-      check_absent (kind ^ ": no [test declared at]") ~sub:"declared" b;
-      check_absent (kind ^ ": no [at] anchor") ~sub:" at test/" b)
+      not_contains ~msg:(kind ^ ": nothing about ~__POS__") ~sub:"__POS__" b;
+      not_contains ~msg:(kind ^ ": no [test declared at]") ~sub:"declared" b;
+      not_contains ~msg:(kind ^ ": no [at] anchor") ~sub:" at test/" b)
     [
       ("a file baseline", Fixtures.snap_missing);
       ("a literal baseline", Fixtures.snap_mismatch);
@@ -3518,52 +3540,53 @@ let test_location_forms () =
       ("a property", Fixtures.prop_failure);
       ("an uncaught exception", uncaught);
     ];
-  check_contains "declaration: a property's counterexample follows its location"
+  contains ~msg:"declaration: a property's counterexample follows its location"
     ~sub:"    test/test_users.ml:88\n    counterexample"
     (failure_block (located Fixtures.prop_failure));
-  check_contains "declaration: an uncaught exception follows its location"
+  contains ~msg:"declaration: an uncaught exception follows its location"
     ~sub:"    test/test_users.ml:88\n    uncaught exception:\n      Not_found\n"
     (failure_block (located uncaught));
   let recorded = failure_block Fixtures.eq_failure in
-  check "recorded: <file:line> opens the entry"
+  is_true ~msg:"recorded: <file:line> opens the entry"
     (String.starts_with ~prefix:"    test/test_users.ml:31\n    expected  "
        recorded);
-  check_absent "recorded: nothing about a declaration" ~sub:"declared" recorded;
-  check_string "runner: <file:line>, then the fact"
-    ~expected:"    test/test_users.ml:88\n    timed out after 0.2s\n"
-    ~actual:(failure_block (located (Failure.message "timed out after 0.2s")));
-  check "no location: the entry opens on its facts"
+  not_contains ~msg:"recorded: nothing about a declaration" ~sub:"declared"
+    recorded;
+  equal ~msg:"runner: <file:line>, then the fact" string
+    "    test/test_users.ml:88\n    timed out after 0.2s\n"
+    (failure_block (located (Failure.message "timed out after 0.2s")));
+  is_true ~msg:"no location: the entry opens on its facts"
     (String.starts_with ~prefix:"    expected  1\n"
        (failure_block (Failure.equality ~expected:"1" ~actual:"2" ())));
   (* A phase is its bracketed tag before the location. *)
   let teardown = Failure.with_phase Failure.Teardown in
-  check_contains "phase: the tag before a runner-made failure's location"
+  contains ~msg:"phase: the tag before a runner-made failure's location"
     ~sub:
       "    [teardown] test/test_users.ml:88\n\
       \    uncaught exception:\n\
       \      Not_found\n"
     (failure_block (teardown (located uncaught)));
-  check_contains "phase: the tag before a tail-position failure's location"
+  contains ~msg:"phase: the tag before a tail-position failure's location"
     ~sub:"    [setup] test/test_users.ml:88\n    expected  1\n"
     (failure_block (Failure.with_phase Failure.Setup tail));
-  check_contains "phase: the tag before a recorded line"
+  contains ~msg:"phase: the tag before a recorded line"
     ~sub:"    [teardown] test/test_users.ml:88\n    could not restore\n"
     (failure_block
        (teardown (Failure.message ~loc:declared "could not restore")));
-  check_contains "phase: a fixture release names the fixture's site"
+  contains ~msg:"phase: a fixture release names the fixture's site"
     ~sub:"    [release] test/test_users.ml:88\n"
     (failure_block
        (Failure.with_phase Failure.Release
           (Failure.message ~loc:declared "db: release raised Exit")));
-  check_contains "phase: the tag is yellow, the location dim"
+  contains ~msg:"phase: the tag is yellow, the location dim"
     ~sub:"\027[33m[teardown]\027[0m \027[2mtest/test_users.ml:88\027[0m\n"
     (failure_block ~ansi:true
        (teardown (Failure.message ~loc:declared "could not restore")));
   List.iter
     (fun anchored ->
-      check "the tag opens the location line, never the bare word"
+      is_true ~msg:"the tag opens the location line, never the bare word"
         (String.starts_with ~prefix:"    [teardown] " anchored);
-      check_absent "the comma form is gone" ~sub:"teardown," anchored)
+      not_contains ~msg:"the comma form is gone" ~sub:"teardown," anchored)
     [
       failure_block (teardown (located uncaught));
       failure_block (teardown (Failure.message ~loc:declared "x"));
@@ -3580,7 +3603,7 @@ let test_excerpt_project_root () =
       ~loc:{ Loc.file = "test/unit/test_report.ml"; line = 1; column = 0 }
       ~expected:"1" ~actual:"2" ()
   in
-  check_contains "relative recorded paths resolve under dune runtest"
+  contains ~msg:"relative recorded paths resolve under dune runtest"
     ~sub:"1 \u{2502} (*---"
     (failure_block ~excerpt:true f)
 
@@ -3626,11 +3649,10 @@ let roles marked =
 (* Checks [render] against [marked] twice: the escapes under colour, and
    the same text without one under none. *)
 let check_report name ~marked render =
-  check_string (name ^ ": with colour") ~expected:(roles marked)
-    ~actual:(render ~ansi:true);
-  check_string (name ^ ": without")
-    ~expected:(Text.strip_ansi (roles marked))
-    ~actual:(render ~ansi:false)
+  equal ~msg:(name ^ ": with colour") string (roles marked) (render ~ansi:true);
+  equal ~msg:(name ^ ": without") string
+    (Text.strip_ansi (roles marked))
+    (render ~ansi:false)
 
 let lines_of ranges =
   List.concat_map (fun (s, e) -> List.init (e - s + 1) (fun i -> s + i)) ranges
@@ -3789,9 +3811,9 @@ let test_coverage_source () =
   check_report "the source view" ~marked:source_view
     (coverage ~mode:`Full ~min:80. source_data);
   let colored = coverage ~mode:`Full ~min:80. source_data ~ansi:true in
-  check_contains "the marker's escape opens at column zero"
+  contains ~msg:"the marker's escape opens at column zero"
     ~sub:"\n\027[31m  \u{258c}\027[0m  88 \u{2502}" colored;
-  check_absent "the marker is not styled past the margin"
+  not_contains ~msg:"the marker is not styled past the margin"
     ~sub:"  \027[31m\u{258c}" colored;
   (* A region at the top of a file has no line above it to show. *)
   let top =
@@ -3805,7 +3827,7 @@ let test_coverage_source () =
         ];
     }
   in
-  check_contains "a region is clipped against the top of the file"
+  contains ~msg:"a region is clipped against the top of the file"
     ~sub:"\n\n  \u{258c}   1 \u{2502} let a = 1\n      2 \u{2502} let b = 2\n\n"
     (coverage ~mode:`Full top ~ansi:false)
 
@@ -3819,24 +3841,25 @@ let last_line out =
 
 let test_coverage_outcome_last () =
   let last ?mode ?min data = last_line (coverage ?mode ?min data ~ansi:false) in
-  check_string "the table, no gate" ~expected:"coverage: 71.4% (312/437 points)"
-    ~actual:(last table_data);
-  check_string "the source view, no gate"
-    ~expected:"coverage: 69.6% (119/171 points)"
-    ~actual:(last ~mode:`Full source_data);
-  check_string "the source view, a gate missed"
-    ~expected:"coverage: 69.6% (119/171 points), minimum 80%: FAILED"
-    ~actual:(last ~mode:`Full ~min:80. source_data);
-  check_string "the source view, a gate met"
-    ~expected:"coverage: 69.6% (119/171 points), minimum 69.5%: ok"
-    ~actual:(last ~mode:`Full ~min:69.5 source_data);
+  equal ~msg:"the table, no gate" string "coverage: 71.4% (312/437 points)"
+    (last table_data);
+  equal ~msg:"the source view, no gate" string
+    "coverage: 69.6% (119/171 points)"
+    (last ~mode:`Full source_data);
+  equal ~msg:"the source view, a gate missed" string
+    "coverage: 69.6% (119/171 points), minimum 80%: FAILED"
+    (last ~mode:`Full ~min:80. source_data);
+  equal ~msg:"the source view, a gate met" string
+    "coverage: 69.6% (119/171 points), minimum 69.5%: ok"
+    (last ~mode:`Full ~min:69.5 source_data);
   let plain = coverage ~min:80. table_data ~ansi:false in
-  check "the outcome prints once" (occurrences_of ~sub:"coverage: " plain = 1);
-  check "and the gate with it" (occurrences_of ~sub:"minimum" plain = 1)
+  is_true ~msg:"the outcome prints once"
+    (occurrences_of ~sub:"coverage: " plain = 1);
+  is_true ~msg:"and the gate with it" (occurrences_of ~sub:"minimum" plain = 1)
 
 let test_coverage_header () =
   let first out = List.hd (String.split_on_char '\n' out) in
-  check_absent "no row repeats the column's name" ~sub:"uncovered:"
+  not_contains ~msg:"no row repeats the column's name" ~sub:"uncovered:"
     (coverage table_data ~ansi:false);
   let long =
     {
@@ -3846,13 +3869,14 @@ let test_coverage_header () =
         [ coverage_file "examples/07-coverage/a_long_module.ml" 1 2 [ (9, 9) ] ];
     }
   in
-  check_string
-    "long paths do not cost the header its hint: it is what says how to see a \
-     cut row's other ranges"
-    ~expected:
-      "   cover    points   file                                    uncovered \
-       lines (-u shows the source)"
-    ~actual:(first (coverage long ~ansi:false));
+  equal
+    ~msg:
+      "long paths do not cost the header its hint: it is what says how to see \
+       a cut row's other ranges"
+    string
+    "   cover    points   file                                    uncovered \
+     lines (-u shows the source)"
+    (first (coverage long ~ansi:false));
   (* Narrow cells do not pull a label off its column. *)
   let narrow =
     {
@@ -3861,12 +3885,11 @@ let test_coverage_header () =
       files = [ coverage_file "a.ml" 4 8 [ (3, 3) ] ];
     }
   in
-  check_string "a label is a floor on its column's width"
-    ~expected:
-      "   cover    points   file   uncovered lines (-u shows the source)\n\
-      \   50.0%    4/8      a.ml   3\n\
-       coverage: 50.0% (4/8 points)\n"
-    ~actual:(coverage narrow ~ansi:false);
+  equal ~msg:"a label is a floor on its column's width" string
+    "   cover    points   file   uncovered lines (-u shows the source)\n\
+    \   50.0%    4/8      a.ml   3\n\
+     coverage: 50.0% (4/8 points)\n"
+    (coverage narrow ~ansi:false);
   (* The two notes, at the width a real path gives them: a stale row is
      a sentence, and passes 80 columns. *)
   let notes =
@@ -3883,17 +3906,18 @@ let test_coverage_header () =
         ];
     }
   in
-  check_string
-    "unvisited points without a line say why; a stale file says so, and what \
-     to do"
-    ~expected:
-      "   cover    points   file                             uncovered lines \
-       (-u shows the source)\n\
-      \   50.0%    1/2      examples/07-coverage/half_a.ml   (source not found)\n\
-      \   50.0%    1/2      examples/07-coverage/half_b.ml   stale: the source \
-       changed; re-run the instrumented tests\n\
-       coverage: 50.0% (2/4 points)\n"
-    ~actual:(coverage notes ~ansi:false)
+  equal
+    ~msg:
+      "unvisited points without a line say why; a stale file says so, and what \
+       to do"
+    string
+    "   cover    points   file                             uncovered lines (-u \
+     shows the source)\n\
+    \   50.0%    1/2      examples/07-coverage/half_a.ml   (source not found)\n\
+    \   50.0%    1/2      examples/07-coverage/half_b.ml   stale: the source \
+     changed; re-run the instrumented tests\n\
+     coverage: 50.0% (2/4 points)\n"
+    (coverage notes ~ansi:false)
 
 (* A barely tested file has hundreds of uncovered ranges. A row prints its
    first eight and counts the rest, whatever the width of its path. *)
@@ -3914,16 +3938,15 @@ let test_coverage_cap () =
   let long_path =
     "a/very/long/path/to/a/barely/tested/module/in/a/deep/tree/wide.ml"
   in
-  check_string "eight ranges, then the count of the rest"
-    ~expected:("    0.0%    0/60     lib/wide.ml   " ^ eight ^ " (+22 more)")
-    ~actual:(row (ranges 30 "lib/wide.ml"));
-  check_string "eight ranges print whole, with no count"
-    ~expected:("    0.0%    0/60     lib/wide.ml   " ^ eight)
-    ~actual:(row (ranges 8 "lib/wide.ml"));
-  check_string "a long path does not cut the ranges"
-    ~expected:
-      ("    0.0%    0/60     " ^ long_path ^ "   " ^ eight ^ " (+1 more)")
-    ~actual:(row (ranges 9 long_path))
+  equal ~msg:"eight ranges, then the count of the rest" string
+    ("    0.0%    0/60     lib/wide.ml   " ^ eight ^ " (+22 more)")
+    (row (ranges 30 "lib/wide.ml"));
+  equal ~msg:"eight ranges print whole, with no count" string
+    ("    0.0%    0/60     lib/wide.ml   " ^ eight)
+    (row (ranges 8 "lib/wide.ml"));
+  equal ~msg:"a long path does not cut the ranges" string
+    ("    0.0%    0/60     " ^ long_path ^ "   " ^ eight ^ " (+1 more)")
+    (row (ranges 9 long_path))
 
 (* A percentage is red below the gate, or below 80 when there is none,
    and plain otherwise: on a row, on a heading and on the outcome line. *)
@@ -3932,34 +3955,30 @@ let test_coverage_colour () =
   let outcome ?min ~visited ~total () =
     coverage ?min { Sections.visited; total; files = [] } ~ansi:true
   in
-  check_string "no gate: 80 percent is plain"
-    ~expected:"coverage: 80.0% (80/100 points)\n"
-    ~actual:(outcome ~visited:80 ~total:100 ());
-  check_string "no gate: below 80 is red"
-    ~expected:"coverage: \027[31m79.9%\027[0m (799/1000 points)\n"
-    ~actual:(outcome ~visited:799 ~total:1000 ());
-  check_string "a gate met at its boundary: plain, and ok green"
-    ~expected:
-      "coverage: 70.0% (70/100 points), minimum 70%: \027[32mok\027[0m\n"
-    ~actual:(outcome ~min:70. ~visited:70 ~total:100 ());
-  check_string "a gate missed: red, and FAILED red"
-    ~expected:
-      "coverage: \027[31m69.9%\027[0m (699/1000 points), minimum 70%: \
-       \027[31mFAILED\027[0m\n"
-    ~actual:(outcome ~min:70. ~visited:699 ~total:1000 ());
-  check_string "a gate above 80 reddens what the default would not"
-    ~expected:
-      "coverage: \027[31m85.0%\027[0m (85/100 points), minimum 90%: \
-       \027[31mFAILED\027[0m\n"
-    ~actual:(outcome ~min:90. ~visited:85 ~total:100 ());
-  check_string "the gate compares the measurement, not its rounding"
-    ~expected:
-      "coverage: \027[31m66.7%\027[0m (2/3 points), minimum 66.7%: \
-       \027[31mFAILED\027[0m\n"
-    ~actual:(outcome ~min:66.7 ~visited:2 ~total:3 ());
-  check_string "no file to tabulate: the outcome alone, 100% and plain"
-    ~expected:"coverage: 100.0% (0/0 points)\n"
-    ~actual:(outcome ~visited:0 ~total:0 ());
+  equal ~msg:"no gate: 80 percent is plain" string
+    "coverage: 80.0% (80/100 points)\n"
+    (outcome ~visited:80 ~total:100 ());
+  equal ~msg:"no gate: below 80 is red" string
+    "coverage: \027[31m79.9%\027[0m (799/1000 points)\n"
+    (outcome ~visited:799 ~total:1000 ());
+  equal ~msg:"a gate met at its boundary: plain, and ok green" string
+    "coverage: 70.0% (70/100 points), minimum 70%: \027[32mok\027[0m\n"
+    (outcome ~min:70. ~visited:70 ~total:100 ());
+  equal ~msg:"a gate missed: red, and FAILED red" string
+    "coverage: \027[31m69.9%\027[0m (699/1000 points), minimum 70%: \
+     \027[31mFAILED\027[0m\n"
+    (outcome ~min:70. ~visited:699 ~total:1000 ());
+  equal ~msg:"a gate above 80 reddens what the default would not" string
+    "coverage: \027[31m85.0%\027[0m (85/100 points), minimum 90%: \
+     \027[31mFAILED\027[0m\n"
+    (outcome ~min:90. ~visited:85 ~total:100 ());
+  equal ~msg:"the gate compares the measurement, not its rounding" string
+    "coverage: \027[31m66.7%\027[0m (2/3 points), minimum 66.7%: \
+     \027[31mFAILED\027[0m\n"
+    (outcome ~min:66.7 ~visited:2 ~total:3 ());
+  equal ~msg:"no file to tabulate: the outcome alone, 100% and plain" string
+    "coverage: 100.0% (0/0 points)\n"
+    (outcome ~visited:0 ~total:0 ());
   let rows =
     coverage ~min:50.
       {
@@ -3970,8 +3989,8 @@ let test_coverage_colour () =
       }
       ~ansi:true
   in
-  check_contains "a row at the gate is plain" ~sub:"\n   50.0%    5/10 " rows;
-  check_contains "a row under it is red, its pad inside the colour"
+  contains ~msg:"a row at the gate is plain" ~sub:"\n   50.0%    5/10 " rows;
+  contains ~msg:"a row under it is red, its pad inside the colour"
     ~sub:"\n  \027[31m 40.0%\027[0m    4/10 " rows;
   let ungated =
     coverage
@@ -3987,10 +4006,10 @@ let test_coverage_colour () =
       }
       ~ansi:true
   in
-  check_contains "below 80 without a gate is red on a row too"
+  contains ~msg:"below 80 without a gate is red on a row too"
     ~sub:"\n  \027[31m 60.0%\027[0m     6/10 " ungated;
-  check_absent "no percentage is green" ~sub:"\027[32m" ungated;
-  check_absent "nor yellow" ~sub:"\027[33m" ungated
+  not_contains ~msg:"no percentage is green" ~sub:"\027[32m" ungated;
+  not_contains ~msg:"nor yellow" ~sub:"\027[33m" ungated
 
 (* A source file's bytes are not the report's: a control byte in one
    prints as a failure block's source line prints it, under both colour
@@ -4013,10 +4032,10 @@ let test_coverage_escapes () =
   List.iter
     (fun ansi ->
       let out = coverage ~mode:`Full data ~ansi in
-      check_contains "the bytes print as text"
+      contains ~msg:"the bytes print as text"
         ~sub:"   2 \u{2502} let red = \"\\x1b[31mred\\x0d\"\n" out;
-      check_absent "and never raw" ~sub:"\027[31mred" out;
-      check_absent "a carriage return neither" ~sub:"\r" out)
+      not_contains ~msg:"and never raw" ~sub:"\027[31mred" out;
+      not_contains ~msg:"a carriage return neither" ~sub:"\r" out)
     [ true; false ]
 
 (* The mutation report
@@ -4128,21 +4147,20 @@ let loop_text =
 
 let test_mutation_loop () =
   check_report "the loop's report" ~marked:loop_text (loop loop_report);
-  check_string "every mutant killed and none unreached: the outcome alone"
-    ~expected:"mutants: 3 reached by this suite, \027[32m3 killed\027[0m\n"
-    ~actual:
-      (loop
-         { loop_report with Sections.survivors = []; unreached = [] }
-         ~ansi:true);
-  check_absent "no survivor: no rule" ~sub:"\u{2500}"
+  equal ~msg:"every mutant killed and none unreached: the outcome alone" string
+    "mutants: 3 reached by this suite, \027[32m3 killed\027[0m\n"
+    (loop
+       { loop_report with Sections.survivors = []; unreached = [] }
+       ~ansi:true);
+  not_contains ~msg:"no survivor: no rule" ~sub:"\u{2500}"
     (loop
        { loop_report with Sections.survivors = []; unreached = [] }
        ~ansi:false);
   (* The block is the finding and the command the remedy. *)
   let out = loop loop_report ~ansi:false in
-  check_absent "no arm line in a block" ~sub:"    arm " out;
-  check_absent "no [@mutate off] to paste" ~sub:"[@mutate off" out;
-  check_absent "the loop's rule carries no count" ~sub:"survivors (" out
+  not_contains ~msg:"no arm line in a block" ~sub:"    arm " out;
+  not_contains ~msg:"no [@mutate off] to paste" ~sub:"[@mutate off" out;
+  not_contains ~msg:"the loop's rule carries no count" ~sub:"survivors (" out
 
 (* What a loop commits as it runs. Read off the sink without flushing it
    here, so the order of the bytes and the flush are both pinned. *)
@@ -4158,28 +4176,28 @@ let test_mutation_streams () =
   let committed () = Buffer.contents buf in
   let plain marked = Text.strip_ansi (roles marked) in
   Report.mutation_testing r ~index:1 ~total:5 ~id:"lib/calc.ml:9:3:sub";
-  check_string "trying a mutant commits nothing" ~expected:""
-    ~actual:(committed ());
+  equal ~msg:"trying a mutant commits nothing" string "" (committed ());
   Report.mutation_testing r ~index:2 ~total:5 ~id:"lib/calc.ml:13:11:add";
   Report.mutation_survivor r add_survivor;
   let first = plain ("\n" ^ survivors_rule ^ add_block) in
-  check_string
-    "a survivor commits the blank line, the opening rule and its block when \
-     its child ends, flushed"
-    ~expected:first ~actual:(committed ());
+  equal
+    ~msg:
+      "a survivor commits the blank line, the opening rule and its block when \
+       its child ends, flushed"
+    string first (committed ());
   Report.mutation_testing r ~index:3 ~total:5 ~id:"lib/calc.ml:21:16:ge";
   Report.mutation_survivor r ge_survivor;
   let second = first ^ plain ("\n" ^ ge_block) in
-  check_string "the next block follows one blank line" ~expected:second
-    ~actual:(committed ());
-  check "the opening rule prints once, before the first block"
+  equal ~msg:"the next block follows one blank line" string second
+    (committed ());
+  is_true ~msg:"the opening rule prints once, before the first block"
     (occurrences_of ~sub:" survivors " (committed ()) = 1);
-  check_absent "the closing rule is the end of the loop's, not a block's"
+  not_contains ~msg:"the closing rule is the end of the loop's, not a block's"
     ~sub:closing_rule (committed ());
-  check_absent "and so is the outcome" ~sub:"mutants:" (committed ());
+  not_contains ~msg:"and so is the outcome" ~sub:"mutants:" (committed ());
   Report.mutation_finish r loop_report;
-  check_string "the last child's end commits the rest"
-    ~expected:(plain loop_text) ~actual:(committed ())
+  equal ~msg:"the last child's end commits the rest" string (plain loop_text)
+    (committed ())
 
 let test_mutation_live () =
   let tail =
@@ -4187,34 +4205,32 @@ let test_mutation_live () =
       { loop_report with Sections.survivors = [ add_survivor ]; unreached = [] }
       ~ansi:true
   in
-  check "the live line is erased before the first committed byte"
+  is_true ~msg:"the live line is erased before the first committed byte"
     (String.starts_with
        ~prefix:
          ("\r\027[2K\027[2m  [1/4] \
            lib/calc.ml:13:11:add\u{2026}\027[0m\r\027[2K"
          ^ roles ("\n" ^ survivors_rule))
        tail);
-  check "and none is drawn or erased after it"
+  is_true ~msg:"and none is drawn or erased after it"
     (occurrences_of ~sub:"\r\027[2K" tail = 2);
   let killed =
     with_renderer ~ansi:true ~live:true (fun r ->
         Report.mutation_testing r ~index:1 ~total:2 ~id:"lib/calc.ml:9:3:sub";
         Report.mutation_testing r ~index:2 ~total:2 ~id:"lib/calc.ml:13:11:add")
   in
-  check_string "a killed mutant leaves nothing: the next line draws over it"
-    ~expected:
-      "\r\027[2K\027[2m  [1/2] \
-       lib/calc.ml:9:3:sub\u{2026}\027[0m\r\027[2K\r\027[2K\027[2m  [2/2] \
-       lib/calc.ml:13:11:add\u{2026}\027[0m"
-    ~actual:killed;
-  check_string "off without a terminal" ~expected:""
-    ~actual:
-      (with_renderer ~ansi:true (fun r ->
-           Report.mutation_testing r ~index:1 ~total:2 ~id:"lib/calc.ml:9:3:sub"));
-  check_string "off without colour" ~expected:""
-    ~actual:
-      (with_renderer ~ansi:false ~live:true (fun r ->
-           Report.mutation_testing r ~index:1 ~total:2 ~id:"lib/calc.ml:9:3:sub"))
+  equal ~msg:"a killed mutant leaves nothing: the next line draws over it"
+    string
+    "\r\027[2K\027[2m  [1/2] \
+     lib/calc.ml:9:3:sub\u{2026}\027[0m\r\027[2K\r\027[2K\027[2m  [2/2] \
+     lib/calc.ml:13:11:add\u{2026}\027[0m"
+    killed;
+  equal ~msg:"off without a terminal" string ""
+    (with_renderer ~ansi:true (fun r ->
+         Report.mutation_testing r ~index:1 ~total:2 ~id:"lib/calc.ml:9:3:sub"));
+  equal ~msg:"off without colour" string ""
+    (with_renderer ~ansi:false ~live:true (fun r ->
+         Report.mutation_testing r ~index:1 ~total:2 ~id:"lib/calc.ml:9:3:sub"))
 
 (* An interrupted loop closes as a complete one does, over the children
    that ended: the reached mutants left without a verdict are counted
@@ -4230,32 +4246,29 @@ let test_mutation_interrupted () =
       not_tested = 2;
     }
   in
-  check_string "the closing sections, and what was not tested"
-    ~expected:
-      (Text.strip_ansi (roles closing)
-      ^ "\n\
-         ─────────────────── never reached (2) ────────────────────\n\
-        \  2  lib/calc.ml   lines 40-41\n" ^ closing_rule
-      ^ "\n\n\
-         reproduce: dune exec --instrument-with ppx_windtrap.mutate \
-         test/test_calc.exe -- --arm lib/calc.ml:13:11:add\n\
-         mutants: 1 survived of 3 reached by this suite, 2 never reached, 2 \
-         not tested\n")
-    ~actual:
-      (with_renderer ~invocation:exe_invocation (fun r ->
-           Report.mutation_finish r stopped));
-  check_string "stopped before a child ended"
-    ~expected:"mutants: 5 reached by this suite, 5 not tested\n"
-    ~actual:
-      (with_renderer (fun r ->
-           Report.mutation_finish r
-             {
-               loop_report with
-               Sections.survivors = [];
-               unreached = [];
-               killed = 0;
-               not_tested = 5;
-             }))
+  equal ~msg:"the closing sections, and what was not tested" string
+    (Text.strip_ansi (roles closing)
+    ^ "\n\
+       ─────────────────── never reached (2) ────────────────────\n\
+      \  2  lib/calc.ml   lines 40-41\n" ^ closing_rule
+    ^ "\n\n\
+       reproduce: dune exec --instrument-with ppx_windtrap.mutate \
+       test/test_calc.exe -- --arm lib/calc.ml:13:11:add\n\
+       mutants: 1 survived of 3 reached by this suite, 2 never reached, 2 not \
+       tested\n")
+    (with_renderer ~invocation:exe_invocation (fun r ->
+         Report.mutation_finish r stopped));
+  equal ~msg:"stopped before a child ended" string
+    "mutants: 5 reached by this suite, 5 not tested\n"
+    (with_renderer (fun r ->
+         Report.mutation_finish r
+           {
+             loop_report with
+             Sections.survivors = [];
+             unreached = [];
+             killed = 0;
+             not_tested = 5;
+           }))
 
 (* [windtrap mutants]: the same sections at rest, the survivors counted,
    the executables one column for the report. *)
@@ -4336,28 +4349,27 @@ let test_mutation_at_rest () =
   check_report "the merge's report" ~marked:merge_text
     (at_rest ~invocation:merge_invocation merge_report);
   let out = at_rest ~invocation:merge_invocation merge_report ~ansi:false in
-  check_absent "no blank line just inside a rule: after one"
+  not_contains ~msg:"no blank line just inside a rule: after one"
     ~sub:"\u{2500}\n\n  SURVIVED" out;
-  check_absent "nor before one" ~sub:("\n\n" ^ closing_rule) out;
-  check "nothing precedes the report"
+  not_contains ~msg:"nor before one" ~sub:("\n\n" ^ closing_rule) out;
+  is_true ~msg:"nothing precedes the report"
     (String.starts_with ~prefix:"\u{2500}" out);
   (* Each finding stands alone. *)
-  check_string "never reached alone: its rule, its rows, the outcome"
-    ~expected:
-      ("─────────────────── never reached (7) ────────────────────\n\
-       \  1  lib/report.ml   lines 61\n\
-       \  2  lib/run.ml      lines 40\n\
-       \  4  lib/text.ml     lines 12-14, 32\n" ^ closing_rule
-     ^ "\n\nmutants: 16 reached, 16 killed, 7 never reached, 3 executables\n")
-    ~actual:(at_rest { merge_report with Sections.survivors = [] } ~ansi:false);
-  check_absent "survivors alone: no never-reached section" ~sub:"never reached"
+  equal ~msg:"never reached alone: its rule, its rows, the outcome" string
+    ("─────────────────── never reached (7) ────────────────────\n\
+     \  1  lib/report.ml   lines 61\n\
+     \  2  lib/run.ml      lines 40\n\
+     \  4  lib/text.ml     lines 12-14, 32\n" ^ closing_rule
+   ^ "\n\nmutants: 16 reached, 16 killed, 7 never reached, 3 executables\n")
+    (at_rest { merge_report with Sections.survivors = [] } ~ansi:false);
+  not_contains ~msg:"survivors alone: no never-reached section"
+    ~sub:"never reached"
     (at_rest { merge_report with Sections.unreached = [] } ~ansi:false);
-  check_string "neither: the outcome alone"
-    ~expected:"mutants: 16 reached, 16 killed, 3 executables\n"
-    ~actual:
-      (at_rest
-         { merge_report with Sections.survivors = []; unreached = [] }
-         ~ansi:false);
+  equal ~msg:"neither: the outcome alone" string
+    "mutants: 16 reached, 16 killed, 3 executables\n"
+    (at_rest
+       { merge_report with Sections.survivors = []; unreached = [] }
+       ~ansi:false);
   (* An unreadable source drops the source line and nothing else. *)
   let sourceless =
     {
@@ -4373,14 +4385,14 @@ let test_mutation_at_rest () =
           merge_report.Sections.survivors;
     }
   in
-  check_absent "an unreadable source drops the source line" ~sub:"\u{2502}"
+  not_contains ~msg:"an unreadable source drops the source line" ~sub:"\u{2502}"
     (at_rest sourceless ~ansi:false);
-  check_contains "and keeps the title, the sentence one blank line under it"
+  contains ~msg:"and keeps the title, the sentence one blank line under it"
     ~sub:
       "  SURVIVED  lib/parser.ml:102:9:not  at_end p \u{2192} not (at_end p)\n\n\
       \    1 test ran this line and did not fail:\n"
     (at_rest sourceless ~ansi:false);
-  check_absent "a line past the end of the source prints no source line"
+  not_contains ~msg:"a line past the end of the source prints no source line"
     ~sub:"\u{2502}"
     (at_rest
        {
@@ -4410,11 +4422,11 @@ let test_mutation_sentence () =
   in
   let one = witness ~file:"test/test_calc.ml" "calc \u{203a} sub to zero" 19 in
   let other = witness ~file:"test/test_eval.ml" "eval \u{203a} Sub node" 31 in
-  check_contains "singular"
-    ~sub:"\n    1 test ran this line and did not fail:\n" (block [ one ]);
-  check_contains "plural" ~sub:"\n    2 tests ran this line and none failed:\n"
+  contains ~msg:"singular" ~sub:"\n    1 test ran this line and did not fail:\n"
+    (block [ one ]);
+  contains ~msg:"plural" ~sub:"\n    2 tests ran this line and none failed:\n"
     (block [ one; other ]);
-  check_contains "names are padded to the widest of the block"
+  contains ~msg:"names are padded to the widest of the block"
     ~sub:
       "\n\
       \      calc \u{203a} sub to zero  test/test_calc.ml:19\n\
@@ -4424,18 +4436,19 @@ let test_mutation_sentence () =
      it is one column for the report: a row without an executable still
      leaves the column. *)
   let named = { one with Sections.exe = Some "test_calc.exe" } in
-  check_absent "no executable column without an executable" ~sub:"test_calc.exe"
+  not_contains ~msg:"no executable column without an executable"
+    ~sub:"test_calc.exe"
     (block [ one; other ]);
-  check_contains "the column appears when one witness names an executable"
+  contains ~msg:"the column appears when one witness names an executable"
     ~sub:
       "\n\
       \      test_calc.exe  calc \u{203a} sub to zero  test/test_calc.ml:19\n\
       \                     eval \u{203a} Sub node     test/test_eval.ml:31\n"
     (block [ named; other ]);
-  check_contains "one executable is just tests"
+  contains ~msg:"one executable is just tests"
     ~sub:"\n    2 tests ran this line and none failed:\n"
     (block [ named; { other with Sections.exe = Some "test_calc.exe" } ]);
-  check_contains "several executables are counted"
+  contains ~msg:"several executables are counted"
     ~sub:"\n    2 tests in 2 executables ran this line and none failed:\n"
     (block [ named; { other with Sections.exe = Some "test_eval.exe" } ])
 
@@ -4449,55 +4462,48 @@ let test_mutation_summary_forms () =
   in
   let unreached = [ ("lib/calc.ml", 22); ("lib/calc.ml", 31) ] in
   (* The clean form is the absence of a survived term, not a zero. *)
-  check_string "suite, clean"
-    ~expected:"mutants: 5 reached by this suite, 5 killed"
-    ~actual:(summary ~killed:5 Sections.Suite);
-  check_string "selected, clean"
-    ~expected:"mutants: 2 reached by the 2 selected tests, 2 killed"
-    ~actual:(summary ~killed:2 (Sections.Selected 2));
-  check_string "one selected test"
-    ~expected:"mutants: 1 reached by the 1 selected test, 1 killed"
-    ~actual:(summary ~killed:1 (Sections.Selected 1));
-  check_string "executables, clean"
-    ~expected:"mutants: 14 reached, 14 killed, 3 executables"
-    ~actual:(summary ~killed:14 (Sections.Executables 3));
-  check_string "one executable"
-    ~expected:"mutants: 3 reached, 3 killed, 1 executable"
-    ~actual:(summary ~killed:3 (Sections.Executables 1));
+  equal ~msg:"suite, clean" string "mutants: 5 reached by this suite, 5 killed"
+    (summary ~killed:5 Sections.Suite);
+  equal ~msg:"selected, clean" string
+    "mutants: 2 reached by the 2 selected tests, 2 killed"
+    (summary ~killed:2 (Sections.Selected 2));
+  equal ~msg:"one selected test" string
+    "mutants: 1 reached by the 1 selected test, 1 killed"
+    (summary ~killed:1 (Sections.Selected 1));
+  equal ~msg:"executables, clean" string
+    "mutants: 14 reached, 14 killed, 3 executables"
+    (summary ~killed:14 (Sections.Executables 3));
+  equal ~msg:"one executable" string
+    "mutants: 3 reached, 3 killed, 1 executable"
+    (summary ~killed:3 (Sections.Executables 1));
   (* Zero terms are omitted: nothing killed and nothing reached. *)
-  check_string "nothing reached, nothing killed"
-    ~expected:"mutants: 0 reached by this suite"
-    ~actual:(summary ~killed:0 Sections.Suite);
-  check_string "nothing reached in the aggregate is all never reached"
-    ~expected:"mutants: 0 reached, 2 never reached, 1 executable"
-    ~actual:(summary ~unreached ~killed:0 (Sections.Executables 1));
+  equal ~msg:"nothing reached, nothing killed" string
+    "mutants: 0 reached by this suite"
+    (summary ~killed:0 Sections.Suite);
+  equal ~msg:"nothing reached in the aggregate is all never reached" string
+    "mutants: 0 reached, 2 never reached, 1 executable"
+    (summary ~unreached ~killed:0 (Sections.Executables 1));
   (* With survivors the reached count is the sum of the lists. *)
-  check_string "suite, survivors"
-    ~expected:"mutants: 1 survived of 5 reached by this suite, 4 killed"
-    ~actual:(summary ~survivors:[ add_survivor ] ~killed:4 Sections.Suite);
-  check_string "selected, survivors"
-    ~expected:
-      "mutants: 1 survived of 2 reached by the 3 selected tests, 1 killed"
-    ~actual:
-      (summary ~survivors:[ add_survivor ] ~killed:1 (Sections.Selected 3));
-  check_string "executables, survivors and never reached"
-    ~expected:
-      "mutants: 1 survived of 12 reached, 11 killed, 2 never reached, 3 \
-       executables"
-    ~actual:
-      (summary ~survivors:[ add_survivor ] ~unreached ~killed:11
-         (Sections.Executables 3));
-  check_string "every kill a survivor: no killed term"
-    ~expected:"mutants: 1 survived of 1 reached by this suite"
-    ~actual:(summary ~survivors:[ add_survivor ] ~killed:0 Sections.Suite);
-  check_string "what an interrupted loop did not test is reached, and last"
-    ~expected:
-      "mutants: 1 survived of 6 reached by this suite, 2 killed, 2 never \
-       reached, 3 not tested"
-    ~actual:
-      (summary ~survivors:[ add_survivor ] ~unreached ~not_tested:3 ~killed:2
-         Sections.Suite);
-  check_absent "no middle dot joins the terms" ~sub:"\u{00b7}"
+  equal ~msg:"suite, survivors" string
+    "mutants: 1 survived of 5 reached by this suite, 4 killed"
+    (summary ~survivors:[ add_survivor ] ~killed:4 Sections.Suite);
+  equal ~msg:"selected, survivors" string
+    "mutants: 1 survived of 2 reached by the 3 selected tests, 1 killed"
+    (summary ~survivors:[ add_survivor ] ~killed:1 (Sections.Selected 3));
+  equal ~msg:"executables, survivors and never reached" string
+    "mutants: 1 survived of 12 reached, 11 killed, 2 never reached, 3 \
+     executables"
+    (summary ~survivors:[ add_survivor ] ~unreached ~killed:11
+       (Sections.Executables 3));
+  equal ~msg:"every kill a survivor: no killed term" string
+    "mutants: 1 survived of 1 reached by this suite"
+    (summary ~survivors:[ add_survivor ] ~killed:0 Sections.Suite);
+  equal ~msg:"what an interrupted loop did not test is reached, and last" string
+    "mutants: 1 survived of 6 reached by this suite, 2 killed, 2 never \
+     reached, 3 not tested"
+    (summary ~survivors:[ add_survivor ] ~unreached ~not_tested:3 ~killed:2
+       Sections.Suite);
+  not_contains ~msg:"no middle dot joins the terms" ~sub:"\u{00b7}"
     (summary ~survivors:[ add_survivor ] ~unreached ~killed:11
        (Sections.Executables 3))
 
@@ -4515,43 +4521,39 @@ let test_mutation_reproduce () =
     | [] -> "\u{ab}no reproduce line\u{bb}"
     | _ -> "\u{ab}several reproduce lines\u{bb}"
   in
-  check_string "under dune: dune exec, the backend before the target"
-    ~expected:
-      "reproduce: dune exec --instrument-with ppx_windtrap.mutate \
-       test/test_calc.exe -- --arm lib/calc.ml:13:11:add"
-    ~actual:(line loop_report);
-  check_string "by hand: the bare executable"
-    ~expected:"reproduce: ./test_calc.exe --arm lib/calc.ml:13:11:add"
-    ~actual:(line ~invocation:(`Exe "./test_calc.exe") loop_report);
-  check_string
-    "under a build action: the mirror, and a run dune does not replay"
-    ~expected:
-      "reproduce: WINDTRAP_MUTATE_ARM=lib/calc.ml:13:11:add dune runtest \
-       --force --instrument-with ppx_windtrap.mutate"
-    ~actual:(line ~invocation:`Mirrors loop_report);
-  check_string "the first survivor printed is the one it arms"
-    ~expected:"reproduce: ./t.exe --arm lib/calc.ml:21:16:ge"
-    ~actual:
-      (line ~invocation:(`Exe "./t.exe")
-         { loop_report with Sections.survivors = [ ge_survivor; add_survivor ] });
-  check_string "an identifier a shell would split is quoted"
-    ~expected:"reproduce: ./t.exe --arm 'lib/my calc.ml:13:11:add'"
-    ~actual:
-      (line ~invocation:(`Exe "./t.exe")
-         {
-           loop_report with
-           Sections.survivors =
-             [
-               {
-                 add_survivor with
-                 Sections.mutant =
-                   {
-                     add_survivor.Sections.mutant with
-                     Sections.id = "lib/my calc.ml:13:11:add";
-                   };
-               };
-             ];
-         });
+  equal ~msg:"under dune: dune exec, the backend before the target" string
+    "reproduce: dune exec --instrument-with ppx_windtrap.mutate \
+     test/test_calc.exe -- --arm lib/calc.ml:13:11:add"
+    (line loop_report);
+  equal ~msg:"by hand: the bare executable" string
+    "reproduce: ./test_calc.exe --arm lib/calc.ml:13:11:add"
+    (line ~invocation:(`Exe "./test_calc.exe") loop_report);
+  equal ~msg:"under a build action: the mirror, and a run dune does not replay"
+    string
+    "reproduce: WINDTRAP_MUTATE_ARM=lib/calc.ml:13:11:add dune runtest --force \
+     --instrument-with ppx_windtrap.mutate"
+    (line ~invocation:`Mirrors loop_report);
+  equal ~msg:"the first survivor printed is the one it arms" string
+    "reproduce: ./t.exe --arm lib/calc.ml:21:16:ge"
+    (line ~invocation:(`Exe "./t.exe")
+       { loop_report with Sections.survivors = [ ge_survivor; add_survivor ] });
+  equal ~msg:"an identifier a shell would split is quoted" string
+    "reproduce: ./t.exe --arm 'lib/my calc.ml:13:11:add'"
+    (line ~invocation:(`Exe "./t.exe")
+       {
+         loop_report with
+         Sections.survivors =
+           [
+             {
+               add_survivor with
+               Sections.mutant =
+                 {
+                   add_survivor.Sections.mutant with
+                   Sections.id = "lib/my calc.ml:13:11:add";
+                 };
+             };
+           ];
+       });
   let narrowed invocation =
     let config =
       {
@@ -4569,26 +4571,24 @@ let test_mutation_reproduce () =
       (String.split_on_char '\n'
          (sections (Sections.mutation_closing ~config loop_report)))
   in
-  check_string "a narrowed run: each selection flag, restated"
-    ~expected:
-      "reproduce: ./t.exe --arm lib/calc.ml:13:11:add -f 'stays positive' -e \
-       'slow' --tag unit --tag fast --exclude-tag flaky --shard 2/4 --failed"
-    ~actual:(narrowed (`Exe "./t.exe"));
-  check_string "under a build action: their mirrors, and --failed has none"
-    ~expected:
-      "reproduce: WINDTRAP_MUTATE_ARM=lib/calc.ml:13:11:add \
-       WINDTRAP_FILTER='stays positive' WINDTRAP_EXCLUDE='slow' \
-       WINDTRAP_TAG=unit,fast WINDTRAP_EXCLUDE_TAG=flaky WINDTRAP_SHARD=2/4 \
-       dune runtest --force --instrument-with ppx_windtrap.mutate"
-    ~actual:(narrowed `Mirrors);
-  check_string "no survivor, nothing to arm: never reached alone has none"
-    ~expected:"\u{ab}no reproduce line\u{bb}"
-    ~actual:(line { loop_report with Sections.survivors = [] });
+  equal ~msg:"a narrowed run: each selection flag, restated" string
+    "reproduce: ./t.exe --arm lib/calc.ml:13:11:add -f 'stays positive' -e \
+     'slow' --tag unit --tag fast --exclude-tag flaky --shard 2/4 --failed"
+    (narrowed (`Exe "./t.exe"));
+  equal ~msg:"under a build action: their mirrors, and --failed has none" string
+    "reproduce: WINDTRAP_MUTATE_ARM=lib/calc.ml:13:11:add \
+     WINDTRAP_FILTER='stays positive' WINDTRAP_EXCLUDE='slow' \
+     WINDTRAP_TAG=unit,fast WINDTRAP_EXCLUDE_TAG=flaky WINDTRAP_SHARD=2/4 dune \
+     runtest --force --instrument-with ppx_windtrap.mutate"
+    (narrowed `Mirrors);
+  equal ~msg:"no survivor, nothing to arm: never reached alone has none" string
+    "\u{ab}no reproduce line\u{bb}"
+    (line { loop_report with Sections.survivors = [] });
   let out = loop loop_report ~ansi:false in
-  check_contains "above the outcome, which stays last"
+  contains ~msg:"above the outcome, which stays last"
     ~sub:"--arm lib/calc.ml:13:11:add\nmutants: 2 survived" out;
-  check_absent "no placeholder to fill" ~sub:"<id>" out;
-  check_absent "and no selection restated" ~sub:" -f " out
+  not_contains ~msg:"no placeholder to fill" ~sub:"<id>" out;
+  not_contains ~msg:"and no selection restated" ~sub:" -f " out
 
 (* Never-reached mutants are one row per file, in path order, their
    distinct lines fitted as a coverage row's are. *)
@@ -4610,21 +4610,19 @@ let test_mutation_unreached () =
       }
       ~ansi:true
   in
-  check_string "one row per file; the count right-aligned in yellow"
-    ~expected:
-      (roles
-         "\u{ab}d|────────────────── never reached (124) \
-          ───────────────────\u{bb}\n\
-         \  \u{ab}y|  3\u{bb}  lib/a.ml        lines 7-8\n\
-         \  \u{ab}y|  1\u{bb}  lib/b.ml        lines 1\n\
-         \  \u{ab}y|120\u{bb}  lib/report.ml   lines 10, 13, 16, 19, 22, 25, \
-          28, 31 (+52 more)\n"
-      ^ roles closing
-      ^ "\n\
-         mutants: 1 reached, \027[32m1 killed\027[0m, \027[33m124 never \
-         reached\027[0m, 1 executable\n")
-    ~actual:out;
-  check_absent "no block per mutant" ~sub:"UNREACHED" out
+  equal ~msg:"one row per file; the count right-aligned in yellow" string
+    (roles
+       "\u{ab}d|────────────────── never reached (124) ───────────────────\u{bb}\n\
+       \  \u{ab}y|  3\u{bb}  lib/a.ml        lines 7-8\n\
+       \  \u{ab}y|  1\u{bb}  lib/b.ml        lines 1\n\
+       \  \u{ab}y|120\u{bb}  lib/report.ml   lines 10, 13, 16, 19, 22, 25, 28, \
+        31 (+52 more)\n"
+    ^ roles closing
+    ^ "\n\
+       mutants: 1 reached, \027[32m1 killed\027[0m, \027[33m124 never \
+       reached\027[0m, 1 executable\n")
+    out;
+  not_contains ~msg:"no block per mutant" ~sub:"UNREACHED" out
 
 let test_mutation_escapes () =
   let out =
@@ -4646,22 +4644,20 @@ let test_mutation_escapes () =
       }
       ~ansi:true
   in
-  check_contains "a survivor's source line prints its control bytes as text"
+  contains ~msg:"a survivor's source line prints its control bytes as text"
     ~sub:"\027[2m13 \u{2502}\027[0m | Sub -> \\x1b[31ma\\x0d - b\n" out;
-  check_absent "never raw" ~sub:"\027[31ma" out
+  not_contains ~msg:"never raw" ~sub:"\027[31ma" out
 
 let test_mutation_armed_verdict () =
   let survived hits =
     with_renderer (fun r -> Report.mutation_survived r ~hits)
   in
-  check_string "evaluated once"
-    ~expected:
-      "mutant survived: the armed site was evaluated 1 time and no test failed.\n"
-    ~actual:(survived 1);
-  check_string "evaluated twice"
-    ~expected:
-      "mutant survived: the armed site was evaluated 2 times and no test failed.\n"
-    ~actual:(survived 2)
+  equal ~msg:"evaluated once" string
+    "mutant survived: the armed site was evaluated 1 time and no test failed.\n"
+    (survived 1);
+  equal ~msg:"evaluated twice" string
+    "mutant survived: the armed site was evaluated 2 times and no test failed.\n"
+    (survived 2)
 
 (* The GitHub Actions envelope: golden ::error annotation, %0A/%0D/%25
    data encoding, %3A/%2C property encoding, ANSI stripping, group folding
@@ -4678,10 +4674,9 @@ let test_github_golden () =
 let test_github_data_encoding () =
   let f = Failure.message "50% done\r\nnext: a,b" in
   let a = Report.annotation ~path:[ "t" ] f in
-  check_contains "percent encoded first" ~sub:"50%25 done%0D%0A    next" a;
-  check_contains "colons and commas untouched in message data" ~sub:"next: a,b"
-    a;
-  check "annotation is one command line"
+  contains ~msg:"percent encoded first" ~sub:"50%25 done%0D%0A    next" a;
+  contains ~msg:"colons and commas untouched in message data" ~sub:"next: a,b" a;
+  is_true ~msg:"annotation is one command line"
     (String.length a > 0
     && a.[String.length a - 1] = '\n'
     && occurrences_of ~sub:"\n" a = 1)
@@ -4693,20 +4688,20 @@ let test_github_property_encoding () =
       "boom"
   in
   let a = Report.annotation ~path:[ "suite: a,b"; "case" ] f in
-  check_contains "file property encodes delimiters"
+  contains ~msg:"file property encodes delimiters"
     ~sub:"file=dir%2Cx%3Ay/test.ml,line=7," a;
-  check_contains "title encodes delimiters"
+  contains ~msg:"title encodes delimiters"
     ~sub:"title=Test failure%3A suite%3A a%2Cb › case::" a;
   (* The title is the block's title: a control byte in a test name is
      spelled out, never sent raw. *)
-  check_contains "title spells control bytes as the block's title does"
+  contains ~msg:"title spells control bytes as the block's title does"
     ~sub:"title=Test failure%3A a\\x01b\\nc::"
     (Report.annotation ~path:[ "a\001b\nc" ] f)
 
 let test_github_no_location () =
   let a = Report.annotation ~path:[ "t" ] (Failure.message "boom") in
-  check_contains "no location: title only" ~sub:"::error title=" a;
-  check_absent "no location: no file property" ~sub:"file=" a
+  contains ~msg:"no location: title only" ~sub:"::error title=" a;
+  not_contains ~msg:"no location: no file property" ~sub:"file=" a
 
 let test_github_declaration_location () =
   (* A failure located at the declaration annotates that line, and its
@@ -4720,24 +4715,24 @@ let test_github_declaration_location () =
     }
   in
   let a = Report.annotation ~path:[ "t" ] f in
-  check_contains "declaration: annotates the recorded line"
+  contains ~msg:"declaration: annotates the recorded line"
     ~sub:"file=test/test_users.ml,line=88," a;
-  check_contains "declaration: the message opens on the bare location"
+  contains ~msg:"declaration: the message opens on the bare location"
     ~sub:"::    test/test_users.ml:88%0A    expected  [(\"alice\"" a;
-  check "declaration: nothing about ~__POS__ in an annotation"
+  is_true ~msg:"declaration: nothing about ~__POS__ in an annotation"
     (occurrences_of ~sub:"__POS__" a = 0);
-  check_absent "declaration: no anchor word" ~sub:"declared" a
+  not_contains ~msg:"declaration: no anchor word" ~sub:"declared" a
 
 let test_github_replay_info () =
   let a =
     Report.annotation ~path:[ "geo"; "area non-negative" ] Fixtures.prop_failure
   in
-  check_contains "property annotation carries the replay line"
+  contains ~msg:"property annotation carries the replay line"
     ~sub:
       "replay: WINDTRAP_SEED=s1:7be1d2c904aa31f5 WINDTRAP_FILTER='geo › area \
        non-negative' dune runtest"
     a;
-  check_contains "counterexample in the message"
+  contains ~msg:"counterexample in the message"
     ~sub:"counterexample (case 12, shrunk 4 steps): Rect (2, 0)" a
 
 let test_github_invocation_hints () =
@@ -4749,12 +4744,12 @@ let test_github_invocation_hints () =
       ~path:[ "geo"; "area non-negative" ]
       Fixtures.prop_failure
   in
-  check_contains "replay hint spelled from the invocation, %0A-encoded"
+  contains ~msg:"replay hint spelled from the invocation, %0A-encoded"
     ~sub:
       "%0A    replay: dune exec qa/x/t.exe -- --seed s1:7be1d2c904aa31f5 -f \
        'geo › area non-negative'"
     a;
-  check_absent "no Mirrors spelling under Exe" ~sub:"WINDTRAP_SEED" a;
+  not_contains ~msg:"no Mirrors spelling under Exe" ~sub:"WINDTRAP_SEED" a;
   let block =
     Report.annotations ~invocation
       [
@@ -4762,40 +4757,39 @@ let test_github_invocation_hints () =
           (Failure.Fail [ Fixtures.snap_missing ]);
       ]
   in
-  check_contains "annotations thread the invocation to accept hints"
+  contains ~msg:"annotations thread the invocation to accept hints"
     ~sub:"%0A    accept: dune exec qa/x/t.exe -- -u -f 'cli › cli help'\n" block;
   (* A replay is armed when the run was; a failure with no command of its
      own ends on its facts. *)
-  check_contains "annotations thread the armed mutant to replay hints"
+  contains ~msg:"annotations thread the armed mutant to replay hints"
     ~sub:
       "%0A    replay: dune exec qa/x/t.exe -- --arm lib/calc.ml:9:12:add \
        --seed s1:7be1d2c904aa31f5 -f 'geo'\n"
     (Report.annotations ~invocation ~armed:"lib/calc.ml:9:12:add"
        [ Fixtures.result [ "geo" ] (Failure.Fail [ Fixtures.prop_failure ]) ]);
-  check_string "an annotation with no command ends on its facts"
-    ~expected:"::error title=Test failure%3A bad::    boom\n"
-    ~actual:
-      (Report.annotations ~invocation ~armed:"lib/calc.ml:9:12:add"
-         [ Fixtures.result [ "bad" ] (Failure.Fail [ Failure.message "boom" ]) ])
+  equal ~msg:"an annotation with no command ends on its facts" string
+    "::error title=Test failure%3A bad::    boom\n"
+    (Report.annotations ~invocation ~armed:"lib/calc.ml:9:12:add"
+       [ Fixtures.result [ "bad" ] (Failure.Fail [ Failure.message "boom" ]) ])
 
 let test_github_ansi_stripped () =
   let f =
     Failure.equality ~expected:"\027[32mgreen\027[0m" ~actual:"plain" ()
   in
   let a = Report.annotation ~path:[ "t" ] f in
-  check_absent "ANSI stripped from annotations" ~sub:"\027" a;
+  not_contains ~msg:"ANSI stripped from annotations" ~sub:"\027" a;
   (* The annotation shares [pp_failure] at [ansi:false], so a comparison
      value reaches it escaped rather than stripped: the bytes survive the
      workflow-command encoding as ordinary text. *)
-  check_contains "the compared value keeps its own bytes"
+  contains ~msg:"the compared value keeps its own bytes"
     ~sub:{|\x1b[32mgreen\x1b[0m|} a
 
 let test_github_groups () =
-  check_string "group start" ~expected:"::group::mylib\n"
-    ~actual:(Report.group_start "mylib");
-  check_string "group end" ~expected:"::endgroup::\n" ~actual:Report.group_end;
-  check_string "group name newline encoded" ~expected:"::group::a%0Ab\n"
-    ~actual:(Report.group_start "a\nb")
+  equal ~msg:"group start" string "::group::mylib\n"
+    (Report.group_start "mylib");
+  equal ~msg:"group end" string "::endgroup::\n" Report.group_end;
+  equal ~msg:"group name newline encoded" string "::group::a%0Ab\n"
+    (Report.group_start "a\nb")
 
 let test_github_excused_filtered () =
   (* Classification is record-driven: an excused expected failure — a
@@ -4808,44 +4802,44 @@ let test_github_excused_filtered () =
     ]
   in
   let block = Report.annotations results in
-  check "excused failures produce no annotation"
+  is_true ~msg:"excused failures produce no annotation"
     (occurrences_of ~sub:"::error " block = 1);
-  check_absent "excused test absent from the block" ~sub:"broken carry" block;
-  check_contains "counted failures still annotate"
+  not_contains ~msg:"excused test absent from the block" ~sub:"broken carry"
+    block;
+  contains ~msg:"counted failures still annotate"
     ~sub:"title=Test failure%3A bad::" block;
-  check_string "all failures excused, no output" ~expected:""
-    ~actual:(Report.annotations [ Fixtures.excused_result ]);
-  check_contains "an unexpected pass still annotates"
+  equal ~msg:"all failures excused, no output" string ""
+    (Report.annotations [ Fixtures.excused_result ]);
+  contains ~msg:"an unexpected pass still annotates"
     ~sub:"title=Test failure%3A known › fixed already::"
     (Report.annotations [ Fixtures.xpass_result ])
 
 let test_github_subtest_annotations () =
   let block = Report.annotations [ Fixtures.subtest_result ] in
-  check "one annotation per failure entry, subtests included"
+  is_true ~msg:"one annotation per failure entry, subtests included"
     (occurrences_of ~sub:"::error " block = 3);
-  check_contains "subtest annotations are titled by the parent test"
+  contains ~msg:"subtest annotations are titled by the parent test"
     ~sub:"title=Test failure%3A backend › contract::" block;
-  check_contains "subtest annotations point into the parent's body"
+  contains ~msg:"subtest annotations point into the parent's body"
     ~sub:"file=test/test_backend.ml,line=40," block;
-  check_contains "the subtest line follows the entry's location"
+  contains ~msg:"the subtest line follows the entry's location"
     ~sub:"::    test/test_backend.ml:40%0A    subtest   shape [0]%0A" block
 
 let test_github_annotations () =
   let block = Report.annotations Fixtures.results in
-  check "one command per failure entry (teardown pair gives two)"
+  is_true ~msg:"one command per failure entry (teardown pair gives two)"
     (occurrences_of ~sub:"::error " block = 7);
-  check "every command on its own line" (occurrences_of ~sub:"\n" block = 7);
-  check_contains "paths name the failing tests"
+  is_true ~msg:"every command on its own line"
+    (occurrences_of ~sub:"\n" block = 7);
+  contains ~msg:"paths name the failing tests"
     ~sub:"title=Test failure%3A db › insert::" block;
-  check_string "no failures, no output" ~expected:""
-    ~actual:
-      (Report.annotations
-         [
-           Fixtures.result [ "ok" ] Failure.Pass;
-           Fixtures.result [ "s" ] (Failure.Skip None);
-         ]);
-  check_string "empty run, no output" ~expected:""
-    ~actual:(Report.annotations [])
+  equal ~msg:"no failures, no output" string ""
+    (Report.annotations
+       [
+         Fixtures.result [ "ok" ] Failure.Pass;
+         Fixtures.result [ "s" ] (Failure.Skip None);
+       ]);
+  equal ~msg:"empty run, no output" string "" (Report.annotations [])
 
 (* The composed envelope, as [Report.run] assembles it: the fold opens,
    the transcript streams inside it, the fold closes against the last
@@ -4873,17 +4867,18 @@ let test_github_envelope_composed () =
       print_string Report.group_end;
       print_string (Report.annotations ~invocation:`Mirrors [ bad ]))
     ();
-  check_string
-    "the failures and their closing rule, the close, the annotations, then the \
-     summary"
-    ~expected:
-      ("::group::mylib\nmylib: 1 test\n" ^ failures_rule
-     ^ "\n  FAIL  bad\n    boom\n" ^ closing_rule
-     ^ "\n\
-        ::endgroup::\n\
-        ::error title=Test failure%3A bad::    boom\n\n\
-        1 failed in 10ms.\n")
-    ~actual:(output ());
+  equal
+    ~msg:
+      "the failures and their closing rule, the close, the annotations, then \
+       the summary"
+    string
+    ("::group::mylib\nmylib: 1 test\n" ^ failures_rule
+   ^ "\n  FAIL  bad\n    boom\n" ^ closing_rule
+   ^ "\n\
+      ::endgroup::\n\
+      ::error title=Test failure%3A bad::    boom\n\n\
+      1 failed in 10ms.\n")
+    (output ());
   (* A later section sits inside the fold too, and a green run is the
      fold's two lines over its summary. *)
   let slow = Fixtures.result [ "slow one" ] Failure.Pass ~duration:1.5 in
@@ -4901,19 +4896,19 @@ let test_github_envelope_composed () =
     Format.pp_print_flush ppf ();
     Buffer.contents buf
   in
-  check_string "the close follows the last section, the blank line the close"
-    ~expected:
-      ("mylib: 2 tests\n" ^ failures_rule ^ "\n  FAIL  bad\n    boom\n"
-     ^ closing_rule
-     ^ "\n\n\
-        slow tests (1, over 1s):\n\
-       \  1.5s  slow one\n\
-        ::endgroup::\n\n\
-        1 passed, 1 failed in 2.0s.\n")
-    ~actual:(folded [ bad; slow ]);
-  check_string "a green run: the close, then the one line"
-    ~expected:"::endgroup::\nmylib: 1 passed in 2.0s.\n"
-    ~actual:(folded [ Fixtures.result [ "ok" ] Failure.Pass ])
+  equal ~msg:"the close follows the last section, the blank line the close"
+    string
+    ("mylib: 2 tests\n" ^ failures_rule ^ "\n  FAIL  bad\n    boom\n"
+   ^ closing_rule
+   ^ "\n\n\
+      slow tests (1, over 1s):\n\
+     \  1.5s  slow one\n\
+      ::endgroup::\n\n\
+      1 passed, 1 failed in 2.0s.\n")
+    (folded [ bad; slow ]);
+  equal ~msg:"a green run: the close, then the one line" string
+    "::endgroup::\nmylib: 1 passed in 2.0s.\n"
+    (folded [ Fixtures.result [ "ok" ] Failure.Pass ])
 
 (* The observer: the seed prints iff the selection holds a property, which
    the executor decides before the first result. *)
@@ -4926,11 +4921,10 @@ let test_observe_seed_policy () =
   let header ~properties =
     with_renderer ~mode:`Verbose (fun r -> observe r (started ~properties))
   in
-  check_string "a selection holding a property prints the root token"
-    ~expected:"s: 2 tests (seed s1:7be1d2c904aa31f5)\n"
-    ~actual:(header ~properties:true);
-  check_string "a selection holding none prints no seed"
-    ~expected:"s: 2 tests\n" ~actual:(header ~properties:false);
+  equal ~msg:"a selection holding a property prints the root token" string
+    "s: 2 tests (seed s1:7be1d2c904aa31f5)\n" (header ~properties:true);
+  equal ~msg:"a selection holding none prints no seed" string "s: 2 tests\n"
+    (header ~properties:false);
   (* A compact green run is one line, and it is where the seed goes. *)
   let green ~properties =
     with_renderer (fun r ->
@@ -4944,11 +4938,10 @@ let test_observe_seed_policy () =
         List.iter (fun res -> observe r (Run.Test_finished res)) results;
         Report.finish r ~results ~duration:0.06 ())
   in
-  check_string "a green property run ends on its seed"
-    ~expected:"s: 2 passed in 60ms (seed s1:7be1d2c904aa31f5).\n"
-    ~actual:(green ~properties:true);
-  check_string "a green run without a property carries no seed"
-    ~expected:"s: 2 passed in 60ms.\n" ~actual:(green ~properties:false);
+  equal ~msg:"a green property run ends on its seed" string
+    "s: 2 passed in 60ms (seed s1:7be1d2c904aa31f5).\n" (green ~properties:true);
+  equal ~msg:"a green run without a property carries no seed" string
+    "s: 2 passed in 60ms.\n" (green ~properties:false);
   let streamed =
     with_renderer ~mode:`Verbose (fun r ->
         observe r
@@ -4958,12 +4951,11 @@ let test_observe_seed_policy () =
         observe r (Run.Test_finished (Fixtures.result [ "t" ] Failure.Pass));
         observe r (Run.Fixture_release { name = "db" }))
   in
-  check_string "every event has its line under verbose"
-    ~expected:
-      "s: 1 test\n\
-      \  PASS  t                                          0.2ms\n\
-       releasing db\n"
-    ~actual:streamed
+  equal ~msg:"every event has its line under verbose" string
+    "s: 1 test\n\
+    \  PASS  t                                          0.2ms\n\
+     releasing db\n"
+    streamed
 
 (* Tree-wide summary dialect
 
@@ -5004,13 +4996,12 @@ let test_summary_dialect () =
   let pass = Fixtures.result [ "t" ] Failure.Pass in
   (* Green: a compact run with nothing to show is exactly the one named line. *)
   let green = chomp (transcript ~results:[ pass; pass ] ~duration:0.5) in
-  check_string "renderer green one-liner styles the passed segment"
-    ~expected:"mylib: \027[32m2 passed\027[0m in 500ms." ~actual:green;
-  check_string "harness green one-liner is the renderer's bytes plus \"checks\""
-    ~expected:(insert_checks green)
-    ~actual:
-      (Harness.summary_line ~ansi:true ~suite:"mylib" ~failures:0 ~count:2
-         ~duration:0.5);
+  equal ~msg:"renderer green one-liner styles the passed segment" string
+    "mylib: \027[32m2 passed\027[0m in 500ms." green;
+  equal ~msg:"harness green one-liner is the renderer's bytes plus \"checks\""
+    string (insert_checks green)
+    (Harness.summary_line ~ansi:true ~suite:"mylib" ~failures:0 ~count:2
+       ~duration:0.5);
   (* Failing: the summary ends the transcript; the harness line is the
      same bytes with the suite prefix (the renderer's header already
      named the suite) and "checks". *)
@@ -5024,14 +5015,12 @@ let test_summary_dialect () =
   let failing_summary =
     match List.rev failing_lines with last :: _ -> last | [] -> ""
   in
-  check_string "renderer failing summary styles the failed segment"
-    ~expected:"1 passed, \027[31m1 failed\027[0m in 500ms."
-    ~actual:failing_summary;
-  check_string "harness failing line matches the renderer's styling bytes"
-    ~expected:("mylib: " ^ insert_checks failing_summary)
-    ~actual:
-      (Harness.summary_line ~ansi:true ~suite:"mylib" ~failures:1 ~count:2
-         ~duration:0.5);
+  equal ~msg:"renderer failing summary styles the failed segment" string
+    "1 passed, \027[31m1 failed\027[0m in 500ms." failing_summary;
+  equal ~msg:"harness failing line matches the renderer's styling bytes" string
+    ("mylib: " ^ insert_checks failing_summary)
+    (Harness.summary_line ~ansi:true ~suite:"mylib" ~failures:1 ~count:2
+       ~duration:0.5);
   (* The harness check lines' FAIL tag: the renderer's own FAIL header
      bytes, derived from the rendered block ("  FAIL  <name>"), not
      hardcoded — restyle the renderer's tag and this fails until the
@@ -5055,18 +5044,18 @@ let test_summary_dialect () =
         in
         String.sub l 2 (find 2 - 2)
   in
-  check_string "harness FAIL tag carries the renderer's styling bytes"
-    ~expected:renderer_fail_tag
-    ~actual:(Harness.fail_tag ~ansi:true);
+  equal ~msg:"harness FAIL tag carries the renderer's styling bytes" string
+    renderer_fail_tag
+    (Harness.fail_tag ~ansi:true);
   (* Monochrome: identical wording, zero escape bytes on both sides. *)
   let plain =
     Harness.summary_line ~ansi:false ~suite:"mylib" ~failures:0 ~count:2
       ~duration:0.5
   in
-  check_string "harness monochrome line carries no styling bytes"
-    ~expected:"mylib: 2 checks passed in 500ms." ~actual:plain;
-  check_string "harness monochrome FAIL tag is bare" ~expected:"FAIL"
-    ~actual:(Harness.fail_tag ~ansi:false)
+  equal ~msg:"harness monochrome line carries no styling bytes" string
+    "mylib: 2 checks passed in 500ms." plain;
+  equal ~msg:"harness monochrome FAIL tag is bare" string "FAIL"
+    (Harness.fail_tag ~ansi:false)
 
 (* The corrections section
 
@@ -5097,15 +5086,14 @@ let test_corrections_section () =
   Baseline.check baselines (Baseline.File "help.expected") "hello\n";
   ignore (Baseline.settle baselines ~keep:true);
   Baseline.write baselines;
-  check_string "update: an accepted row per file, above the summary"
-    ~expected:
-      (Printf.sprintf
-         "s: 1 test\n\
-          corrections (1):\n\
-         \  accepted %s\n\n\
-          1 passed, 1 correction accepted in 2.0ms.\n"
-         (Os.display_path (Filename.concat root "help.expected")))
-    ~actual:(corrections_transcript baselines);
+  equal ~msg:"update: an accepted row per file, above the summary" string
+    (Printf.sprintf
+       "s: 1 test\n\
+        corrections (1):\n\
+       \  accepted %s\n\n\
+        1 passed, 1 correction accepted in 2.0ms.\n"
+       (Os.display_path (Filename.concat root "help.expected")))
+    (corrections_transcript baselines);
   let root = temp_dir () in
   let source = write_source root in
   let baselines = Baseline.create ~root ~cwd:root ~mode:Baseline.Corrected () in
@@ -5119,27 +5107,28 @@ let test_corrections_section () =
    with Failure.Check_failure _ -> ());
   ignore (Baseline.settle baselines ~keep:true);
   Baseline.write baselines;
-  check_string
-    "corrected: a wrote row per .corrected, sorted, expectations counted on \
-     the source file only, files counted in the summary"
-    ~expected:
-      (Printf.sprintf
-         "s: 1 test\n\
-          corrections (2):\n\
-         \  wrote %s\n\
-         \  wrote %s (1 expectation)\n\n\
-          1 passed, 2 corrections written in 2.0ms.\n"
-         (Os.display_path (Filename.concat root "help.expected.corrected"))
-         (Os.display_path (source ^ ".corrected")))
-    ~actual:(corrections_transcript baselines);
-  check_string "the section does not depend on the invocation"
-    ~expected:(corrections_transcript ~invocation:`Mirrors baselines)
-    ~actual:(corrections_transcript ~invocation:(`Exe "./t.exe") baselines)
+  equal
+    ~msg:
+      "corrected: a wrote row per .corrected, sorted, expectations counted on \
+       the source file only, files counted in the summary"
+    string
+    (Printf.sprintf
+       "s: 1 test\n\
+        corrections (2):\n\
+       \  wrote %s\n\
+       \  wrote %s (1 expectation)\n\n\
+        1 passed, 2 corrections written in 2.0ms.\n"
+       (Os.display_path (Filename.concat root "help.expected.corrected"))
+       (Os.display_path (source ^ ".corrected")))
+    (corrections_transcript baselines);
+  equal ~msg:"the section does not depend on the invocation" string
+    (corrections_transcript ~invocation:`Mirrors baselines)
+    (corrections_transcript ~invocation:(`Exe "./t.exe") baselines)
 
 let test_corrections_quiet () =
-  check_string "nothing written: the green run stays one line"
-    ~expected:"s: 1 passed in 2.0ms.\n"
-    ~actual:(corrections_transcript (Baseline.create ~mode:Baseline.Check ()));
+  equal ~msg:"nothing written: the green run stays one line" string
+    "s: 1 passed in 2.0ms.\n"
+    (corrections_transcript (Baseline.create ~mode:Baseline.Check ()));
   (* A refusal is named with its reason: the correction reached nothing. *)
   let root = temp_dir () in
   let baselines = Baseline.create ~root ~cwd:root ~mode:Baseline.Update () in
@@ -5155,10 +5144,12 @@ let test_corrections_quiet () =
         Printf.sprintf "could not write %s: "
           (Os.display_path (Filename.concat root "missing.ml"))
       in
-      check "a refusal is a sentence naming the file, then why, for Os.say"
+      is_true
+        ~msg:"a refusal is a sentence naming the file, then why, for Os.say"
         (String.starts_with ~prefix:head line)
   | lines -> failf "expected one refusal line, got %d" (List.length lines));
-  check_absent "a refusal never prints in the transcript" ~sub:"could not write"
+  not_contains ~msg:"a refusal never prints in the transcript"
+    ~sub:"could not write"
     (corrections_transcript baselines)
 
 let tests =

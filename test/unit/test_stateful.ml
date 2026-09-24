@@ -11,16 +11,6 @@ open Windtrap.Private
 module Tag = Test_tree.Tag
 module Shrink_tree = Gen_engine.Shrink_tree
 
-(* Printf-style shims over windtrap's [fail]. [Check.*] calls inside command
-   bodies are the probes the engine and the executor catch; only these shims
-   escape to the runner. *)
-let failf format = Printf.ksprintf (fun message -> Windtrap.fail message) format
-
-let check condition format =
-  Printf.ksprintf
-    (fun message -> if not condition then Windtrap.fail message)
-    format
-
 let contains needle haystack = Text.contains_substring ~pattern:needle haystack
 let show_names names = "[" ^ String.concat "; " names ^ "]"
 let show_ints values = show_names (List.map string_of_int values)
@@ -265,21 +255,29 @@ let repair_keeps_exactly_the_fold_s_calls () =
   let dropped = ref 0 in
   for index = 0 to 29 do
     let drawn = names_at drawn index in
-    check
-      (List.length drawn = 20)
-      "the unconditioned program made %d of 20 calls" (List.length drawn);
+    is_true
+      ~msg:
+        (Printf.sprintf "the unconditioned program made %d of 20 calls"
+           (List.length drawn))
+      (List.length drawn = 20);
     let expected = counter_repair drawn in
     let kept = names_at repaired index in
-    check (kept = expected) "repair of %s kept %s, not %s" (show_names drawn)
-      (show_names kept) (show_names expected);
+    is_true
+      ~msg:
+        (Printf.sprintf "repair of %s kept %s, not %s" (show_names drawn)
+           (show_names kept) (show_names expected))
+      (kept = expected);
     dropped := !dropped + (20 - List.length kept)
   done;
-  check (!dropped > 0) "the precondition dropped nothing in 30 draws — vacuous";
+  is_true ~msg:"the precondition dropped nothing in 30 draws — vacuous"
+    (!dropped > 0);
   (* [?steps] is a work budget with a documented default. *)
   let default = names_at (Stateful.program ~model:0 counter_draws) 0 in
-  check
+  is_true
+    ~msg:
+      (Printf.sprintf "the default ?steps drew %d calls, not 20"
+         (List.length default))
     (List.length default = 20)
-    "the default ?steps drew %d calls, not 20" (List.length default)
 
 (* A state-dependent [~pre] really filters: the trajectory it admits stays
    inside the model's bounds, and a precondition no state satisfies deletes
@@ -294,19 +292,20 @@ let a_state_dependent_precondition_filters () =
       (List.fold_left
          (fun model name ->
            let model = counter_step model name in
-           check
-             (model >= 0 && model <= counter_cap)
-             "the kept calls %s left the model at %d" (show_names kept) model;
+           is_true
+             ~msg:
+               (Printf.sprintf "the kept calls %s left the model at %d"
+                  (show_names kept) model)
+             (model >= 0 && model <= counter_cap);
            model)
          0 kept
         : int)
   done;
-  check (!shortened > 0) "no program was shortened in 20 draws — vacuous";
+  is_true ~msg:"no program was shortened in 20 draws — vacuous" (!shortened > 0);
   let never = Stateful.program ~steps:8 ~model:0 never_commands in
   for index = 0 to 4 do
-    check
+    is_true ~msg:"an unsatisfiable ~pre left calls in the program"
       (names_at never index = [])
-      "an unsatisfiable ~pre left calls in the program"
   done
 
 (* Every forced node of the shrink tree contains only legal calls. The check
@@ -334,10 +333,15 @@ let every_forced_node_holds_only_legal_calls () =
        if !index > 40 then raise_notrace Exit
      done
    with Exit -> ());
-  check (!nodes >= budget) "only %d nodes were forced" !nodes;
-  check (!illegal = []) "%d illegal calls survived repair over %d nodes: %s"
-    (List.length !illegal) !nodes
-    (show_names (List.filteri (fun i _ -> i < 5) !illegal))
+  is_true
+    ~msg:(Printf.sprintf "only %d nodes were forced" !nodes)
+    (!nodes >= budget);
+  is_true
+    ~msg:
+      (Printf.sprintf "%d illegal calls survived repair over %d nodes: %s"
+         (List.length !illegal) !nodes
+         (show_names (List.filteri (fun i _ -> i < 5) !illegal)))
+    (!illegal = [])
 
 (* Root masking *)
 
@@ -357,16 +361,21 @@ let root_candidates_are_strictly_monotone () =
       Seq.iter
         (fun child ->
           let child = names gen (root_value child) in
-          check (child <> parent) "a candidate of %s equals its parent"
-            (show_names parent);
-          check
-            (List.length child <= List.length parent)
-            "a candidate of %s is longer: %s" (show_names parent)
-            (show_names child))
+          is_true
+            ~msg:
+              (Printf.sprintf "a candidate of %s equals its parent"
+                 (show_names parent))
+            (child <> parent);
+          is_true
+            ~msg:
+              (Printf.sprintf "a candidate of %s is longer: %s"
+                 (show_names parent) (show_names child))
+            (List.length child <= List.length parent))
         (Shrink_tree.children tree)
     end
   done;
-  check (!checked > 0) "no repaired-and-shortened program in 20 draws — vacuous"
+  is_true ~msg:"no repaired-and-shortened program in 20 draws — vacuous"
+    (!checked > 0)
 
 (* And with generated arguments in play: a dropped call contributes no
    subtree, so no reduction anywhere can restore it and no candidate of the
@@ -384,11 +393,14 @@ let root_candidates_of_an_argument_spec_are_no_longer () =
     Seq.iter
       (fun child ->
         let child = List.length (names gen (root_value child)) in
-        check (child <= parent) "a candidate of a %d-call program made %d calls"
-          parent child)
+        is_true
+          ~msg:
+            (Printf.sprintf "a candidate of a %d-call program made %d calls"
+               parent child)
+          (child <= parent))
       (Shrink_tree.children tree)
   done;
-  check (!checked > 0) "the mask dropped nothing in 20 draws — vacuous"
+  is_true ~msg:"the mask dropped nothing in 20 draws — vacuous" (!checked > 0)
 
 let rec is_subsequence sub whole =
   match (sub, whole) with
@@ -415,15 +427,19 @@ let no_node_invents_or_substitutes_a_call () =
       if !nodes >= budget then raise_notrace Exit;
       incr nodes;
       let kept = names repaired (root_value tree) in
-      check
-        (is_subsequence kept drawn)
-        "a node's calls %s are not a subsequence of the drawn %s"
-        (show_names kept) (show_names drawn);
+      is_true
+        ~msg:
+          (Printf.sprintf
+             "a node's calls %s are not a subsequence of the drawn %s"
+             (show_names kept) (show_names drawn))
+        (is_subsequence kept drawn);
       Seq.iter go (Shrink_tree.children tree)
     in
     try go (Gen_engine.sample repaired (state index)) with Exit -> ()
   done;
-  check (!nodes >= 2_000) "only %d nodes were forced" !nodes
+  is_true
+    ~msg:(Printf.sprintf "only %d nodes were forced" !nodes)
+    (!nodes >= 2_000)
 
 (* One weight-1 branch per command: the command list is a list, not a
    priority, so no command is starved and none crowds the others out. *)
@@ -440,15 +456,19 @@ let every_command_is_drawn_about_equally_often () =
         | None -> failf "the program made an undeclared call %S" name)
       (names_at gen index)
   done;
-  check (!total = 400) "20 unconditioned draws of 20 made %d calls" !total;
+  is_true
+    ~msg:(Printf.sprintf "20 unconditioned draws of 20 made %d calls" !total)
+    (!total = 400);
   let uniform = float_of_int !total /. float_of_int (List.length wide_names) in
   List.iter
     (fun (name, count) ->
       let drawn = float_of_int !count in
-      check
-        (drawn >= uniform /. 2. && drawn <= uniform *. 2.)
-        "%s was drawn %.0f times of %d, nowhere near the uniform %.0f" name
-        drawn !total uniform)
+      is_true
+        ~msg:
+          (Printf.sprintf
+             "%s was drawn %.0f times of %d, nowhere near the uniform %.0f" name
+             drawn !total uniform)
+        (drawn >= uniform /. 2. && drawn <= uniform *. 2.))
     counts
 
 let control_spec exn phase =
@@ -494,8 +514,10 @@ let a_raising_pre_or_next_is_a_specification_bug () =
       let message = first_raise 0 in
       List.iter
         (fun part ->
-          check (contains part message) "%s's message %S lacks %S" spelling
-            message part)
+          is_true
+            ~msg:
+              (Printf.sprintf "%s's message %S lacks %S" spelling message part)
+            (contains part message))
         [ "call "; "boom, " ^ spelling ^ " raised"; needle ];
       (* Through the engine: the failing case is the drawn one, unshrunk,
          and the inner failure is the wrapped exception. *)
@@ -505,24 +527,28 @@ let a_raising_pre_or_next_is_a_specification_bug () =
       in
       let failure, _ = expect_fail outcome in
       let rendered, _, shrink_steps, _, inner = property_payload failure in
-      check
-        (rendered = "<generator raised before producing a value>")
-        "%s rendered %S" spelling rendered;
-      check (shrink_steps = 0) "%s was shrunk %d steps" spelling shrink_steps;
+      is_true
+        ~msg:(Printf.sprintf "%s rendered %S" spelling rendered)
+        (rendered = "<generator raised before producing a value>");
+      is_true
+        ~msg:(Printf.sprintf "%s was shrunk %d steps" spelling shrink_steps)
+        (shrink_steps = 0);
       match inner with
       | Some inner -> (
           let actual = raised_actual inner in
-          check
-            (contains needle actual && contains (spelling ^ " raised") actual)
-            "%s's inner failure read %S" spelling actual;
+          is_true
+            ~msg:(Printf.sprintf "%s's inner failure read %S" spelling actual)
+            (contains needle actual && contains (spelling ^ " raised") actual);
           (* The wrapper carries the raise's own backtrace: the frame that
              raised is this file's, not the engine's. *)
           match inner.Failure.kind with
           | Failure.Raise { backtrace = Some backtrace; _ } ->
-              check
+              is_true
+                ~msg:
+                  (Printf.sprintf
+                     "%s's backtrace does not name the raising frame:\n%s"
+                     spelling backtrace)
                 (contains "test_stateful.ml" backtrace)
-                "%s's backtrace does not name the raising frame:\n%s" spelling
-                backtrace
           | _ -> failf "%s's inner failure carries no backtrace" spelling)
       | None -> failf "%s reported no inner failure" spelling)
     [ (`Pre, "~pre", "Pre_boom"); (`Next, "~next", "Next_boom") ]
@@ -566,10 +592,12 @@ let a_specification_bug_met_while_shrinking_stops_the_search () =
   let failure, _ = expect_fail outcome in
   match failure.Failure.kind with
   | Failure.Property { rendered; shrink_exhausted; inner; _ } -> (
-      check shrink_exhausted "the search did not say it stopped";
-      check
-        (contains "check" rendered)
-        "the drawn program's failure was replaced: %S" rendered;
+      is_true ~msg:"the search did not say it stopped" shrink_exhausted;
+      is_true
+        ~msg:
+          (Printf.sprintf "the drawn program's failure was replaced: %S"
+             rendered)
+        (contains "check" rendered);
       match inner with
       | Some { Failure.kind = Failure.Message "the body"; _ } -> ()
       | _ -> failf "the inner failure is not the body's")
@@ -594,8 +622,11 @@ let control_exceptions_escape_pre_and_next_unconverted () =
           in
           match Gen_engine.sample gen (state 0) with
           | exception raised ->
-              check (raised = exn) "%s from %s came back as %s" label spelling
-                (Printexc.to_string raised)
+              is_true
+                ~msg:
+                  (Printf.sprintf "%s from %s came back as %s" label spelling
+                     (Printexc.to_string raised))
+                (raised = exn)
           | _ -> failf "%s from %s was swallowed" label spelling)
         [ (`Pre, "~pre"); (`Next, "~next") ])
     cases
@@ -627,15 +658,18 @@ let a_failing_step_points_at_its_command () =
   in
   (match (executed ()).Failure.loc with
   | Some loc ->
-      check
+      is_true
+        ~msg:(Printf.sprintf "the step was located at %s" (Loc.to_string loc))
         (loc.Loc.file = "declared.ml" && loc.Loc.line = 42)
-        "the step was located at %s" (Loc.to_string loc)
   | None -> failf "a locationless step reported no location");
   let own = Loc.of_pos ("body.ml", 9, 0, 4) in
   match (executed ~loc:own ()).Failure.loc with
   | Some loc ->
-      check (loc.Loc.file = "body.ml")
-        "the body's own site was overwritten by %s" (Loc.to_string loc)
+      is_true
+        ~msg:
+          (Printf.sprintf "the body's own site was overwritten by %s"
+             (Loc.to_string loc))
+        (loc.Loc.file = "body.ml")
   | None -> failf "the body-located step reported no location"
 
 (* The three exceptions a body treats as control, which repair does not: at
@@ -658,13 +692,16 @@ let assertions_skips_and_discards_from_pre_are_specification_bugs () =
       match Gen_engine.sample gen (state 0) with
       | exception raised ->
           let message = Printexc.to_string raised in
-          check
-            (message <> Printexc.to_string exn)
-            "%s escaped ~pre as itself" label;
+          is_true
+            ~msg:(Printf.sprintf "%s escaped ~pre as itself" label)
+            (message <> Printexc.to_string exn);
           List.iter
             (fun part ->
-              check (contains part message) "%s from ~pre read %S, lacking %S"
-                label message part)
+              is_true
+                ~msg:
+                  (Printf.sprintf "%s from ~pre read %S, lacking %S" label
+                     message part)
+                (contains part message))
             [ "call 1: raiser, ~pre raised"; needle ]
       | _ -> failf "%s from ~pre was swallowed" label)
     cases
@@ -689,8 +726,11 @@ let control_exceptions_escape_a_body_unconverted () =
     (fun (label, exn) ->
       match Stateful.execute ~scope:unit_scope (program_of exn) with
       | exception raised ->
-          check (raised = exn) "%s from a body came back as %s" label
-            (Printexc.to_string raised)
+          is_true
+            ~msg:
+              (Printf.sprintf "%s from a body came back as %s" label
+                 (Printexc.to_string raised))
+            (raised = exn)
       | () -> failf "%s from a body was swallowed" label)
     [
       ("Skip_test", Failure.Skip_test (Some "why"));
@@ -712,23 +752,28 @@ let control_exceptions_escape_a_body_unconverted () =
                   Failure.msg = Some "note\nand more";
                 })))
   in
-  check
-    (failure_msg asserted = "call 1 of 1: boom; note and more")
-    "an assertion failure was labelled %S" (failure_msg asserted);
-  check
-    (asserted.Failure.kind = Failure.Message "nope")
-    "an assertion failure lost its payload";
+  is_true
+    ~msg:
+      (Printf.sprintf "an assertion failure was labelled %S"
+         (failure_msg asserted))
+    (failure_msg asserted = "call 1 of 1: boom; note and more");
+  is_true ~msg:"an assertion failure lost its payload"
+    (asserted.Failure.kind = Failure.Message "nope");
   (* And anything else is narrowed, under the same label. *)
   let narrowed =
     expect_check_failure "a raising body" (fun () ->
         Stateful.execute ~scope:unit_scope (program_of Not_found))
   in
-  check
-    (failure_msg narrowed = "call 1 of 1: boom")
-    "a narrowed exception was labelled %S" (failure_msg narrowed);
-  check
+  is_true
+    ~msg:
+      (Printf.sprintf "a narrowed exception was labelled %S"
+         (failure_msg narrowed))
+    (failure_msg narrowed = "call 1 of 1: boom");
+  is_true
+    ~msg:
+      (Printf.sprintf "a narrowed exception rendered %S"
+         (raised_actual narrowed))
     (raised_actual narrowed = "Not_found")
-    "a narrowed exception rendered %S" (raised_actual narrowed)
 
 (* The executor *)
 
@@ -773,7 +818,9 @@ let a_scope_releases_on_every_path () =
              Fun.protect ~finally:(fun () -> incr released) (fun () -> run ()))
            program
        with _ -> ());
-      check (!released = 1) "the %s path released %d times" label !released)
+      is_true
+        ~msg:(Printf.sprintf "the %s path released %d times" label !released)
+        (!released = 1))
     paths;
   let released = ref 0 in
   let failing_acquisition run =
@@ -786,8 +833,11 @@ let a_scope_releases_on_every_path () =
       failf "a scope that raised while acquiring came back as %s"
         (Printexc.to_string exn)
   | () -> failf "a scope that raised while acquiring was swallowed");
-  check (!released = 0) "a scope that acquired nothing released %d times"
-    !released
+  is_true
+    ~msg:
+      (Printf.sprintf "a scope that acquired nothing released %d times"
+         !released)
+    (!released = 0)
 
 (* What the scope raises after the program returns is a release that
    failed. On the failing path it is dropped: the reported failure is the
@@ -808,9 +858,8 @@ let a_release_failure_never_replaces_the_program_s () =
     expect_check_failure "a program failure under a raising release" (fun () ->
         Stateful.execute ~scope:(releasing Not_found) failing)
   in
-  check
-    (failure.Failure.kind = Failure.Message "the body")
-    "the release's exception replaced the program's failure";
+  is_true ~msg:"the release's exception replaced the program's failure"
+    (failure.Failure.kind = Failure.Message "the body");
   (* Passing path: the release's exception is the only one there is, and it
      propagates as itself — [execute] converts nothing outside a step. *)
   (match Stateful.execute ~scope:(releasing Not_found) (counter_program 0) with
@@ -841,13 +890,14 @@ let a_scope_that_never_runs_the_program_fails_the_case () =
     expect_check_failure "a scope that never called back" (fun () ->
         Stateful.execute ~scope:(fun _ -> ()) (counter_program 0))
   in
-  check
+  is_true
+    ~msg:
+      (Printf.sprintf "a scope that never called back failed with %S"
+         (Printexc.to_string (Failure.Check_failure failure)))
     (failure.Failure.kind
    = Failure.Message
        "the scope returned without running the program; a scope must call its \
-        callback exactly once")
-    "a scope that never called back failed with %S"
-    (Printexc.to_string (Failure.Check_failure failure));
+        callback exactly once");
   (* It carries the declaration site: it is the one failure with no
      assertion of its own to be located by. *)
   let loc = { Loc.file = "spec.ml"; line = 42; column = 7 } in
@@ -855,9 +905,8 @@ let a_scope_that_never_runs_the_program_fails_the_case () =
     expect_check_failure "a located missing body" (fun () ->
         Stateful.execute ~loc ~scope:(fun _ -> ()) (counter_program 0))
   in
-  check
-    (located.Failure.loc = Some loc)
-    "the missing-program failure lost the declaration site";
+  is_true ~msg:"the missing-program failure lost the declaration site"
+    (located.Failure.loc = Some loc);
   (* A scope that raises or skips instead of calling back has already said
      what happened, and says it rather than this. *)
   (match
@@ -877,17 +926,18 @@ let a_scope_that_never_runs_the_program_fails_the_case () =
   in
   let reported, _ = expect_fail outcome in
   let rendered, _, _, _, inner = property_payload reported in
-  check
-    (rendered = "(no commands)")
-    "a scope that never called back converged on %S" rendered;
-  check
+  is_true
+    ~msg:
+      (Printf.sprintf "a scope that never called back converged on %S" rendered)
+    (rendered = "(no commands)");
+  is_true
+    ~msg:"the counterexample's inner failure is not the missing-program one"
     (Option.map (fun (inner : Failure.t) -> inner.Failure.kind) inner
-    = Some failure.Failure.kind)
-    "the counterexample's inner failure is not the missing-program one";
+    = Some failure.Failure.kind);
   let block = failure_block reported in
-  check
+  is_true
+    ~msg:(Printf.sprintf "the reader is not told what went wrong:\n%s" block)
     (contains "must call its callback exactly once" block)
-    "the reader is not told what went wrong:\n%s" block
 
 (* A second call is the harness itself being wrong, not a counterexample:
    [Invalid_argument] at the call, and it outranks whatever else the case
@@ -903,13 +953,15 @@ let a_scope_that_runs_the_program_twice_is_invalid () =
   in
   (match Stateful.execute ~scope:twice (counter_program 0) with
   | exception Invalid_argument message ->
-      check
+      is_true
+        ~msg:(Printf.sprintf "the double-call error said %S" message)
         (contains "exactly once" message && contains "stateful" message)
-        "the double-call error said %S" message
   | exception exn ->
       failf "a scope that called back twice raised %s" (Printexc.to_string exn)
   | () -> failf "a scope that called back twice was accepted");
-  check (!runs = 1) "the program ran under %d of the two calls" !runs;
+  is_true
+    ~msg:(Printf.sprintf "the program ran under %d of the two calls" !runs)
+    (!runs = 1);
   (* Swallowed by the scope, and still fatal to the case. *)
   (match
      Stateful.execute
@@ -952,14 +1004,17 @@ let a_scope_that_runs_the_program_twice_is_invalid () =
   in
   let reported, _ = expect_fail outcome in
   let rendered, _, _, _, _ = property_payload reported in
-  check
-    (rendered = "(no commands)")
-    "a double-calling scope converged on %S instead of the empty program"
-    rendered;
+  is_true
+    ~msg:
+      (Printf.sprintf
+         "a double-calling scope converged on %S instead of the empty program"
+         rendered)
+    (rendered = "(no commands)");
   let block = failure_block reported in
-  check
+  is_true
+    ~msg:
+      (Printf.sprintf "the reader is not told the harness is wrong:\n%s" block)
     (contains "called its callback twice" block)
-    "the reader is not told the harness is wrong:\n%s" block
 
 (* Before the callback the scope is acquiring, and what it raises there
    propagates as itself — unconverted and unlabelled — so an assertion is
@@ -972,9 +1027,11 @@ let a_scope_that_raises_before_the_callback_propagates_unconverted () =
         Stateful.execute ~scope:(fun _ -> raise exn) (counter_program 0)
       with
       | exception raised ->
-          check (raised = exn) "%s from an acquiring scope came back as %s"
-            label
-            (Printexc.to_string raised)
+          is_true
+            ~msg:
+              (Printf.sprintf "%s from an acquiring scope came back as %s" label
+                 (Printexc.to_string raised))
+            (raised = exn)
       | () -> failf "%s from an acquiring scope was swallowed" label)
     [
       ("Not_found", Not_found);
@@ -1011,13 +1068,14 @@ let a_failing_program_keeps_its_identity_through_the_scope () =
     let failure =
       expect_check_failure what (fun () -> Stateful.execute ~scope failing)
     in
-    check
-      (failure.Failure.kind = Failure.Message "the body")
-      "%s reported %S" what
-      (Printexc.to_string (Failure.Check_failure failure));
-    check
+    is_true
+      ~msg:
+        (Printf.sprintf "%s reported %S" what
+           (Printexc.to_string (Failure.Check_failure failure)))
+      (failure.Failure.kind = Failure.Message "the body");
+    is_true
+      ~msg:(Printf.sprintf "%s was labelled %S" what (failure_msg failure))
       (failure_msg failure = "call 1 of 1: boom")
-      "%s was labelled %S" what (failure_msg failure)
   in
   expect "a transparent scope" unit_scope;
   expect "a scope that cleans up and re-raises" (fun run ->
@@ -1047,14 +1105,20 @@ let the_scope_runs_once_per_case_and_per_shrink_candidate () =
   in
   let failure, _ = expect_fail outcome in
   let _, case_index, shrink_steps, _, _ = property_payload failure in
-  check (!scopes = !executions) "%d scopes for %d executions" !scopes
-    !executions;
-  check (!releases = !scopes) "%d releases for %d scopes" !releases !scopes;
-  check (shrink_steps > 0) "the search took no shrink step";
-  check
+  is_true
+    ~msg:(Printf.sprintf "%d scopes for %d executions" !scopes !executions)
+    (!scopes = !executions);
+  is_true
+    ~msg:(Printf.sprintf "%d releases for %d scopes" !releases !scopes)
+    (!releases = !scopes);
+  is_true ~msg:"the search took no shrink step" (shrink_steps > 0);
+  is_true
+    ~msg:
+      (Printf.sprintf
+         "%d executions for a failure at case %d — no candidate got its own \
+          system"
+         !executions case_index)
     (!executions > case_index + 1)
-    "%d executions for a failure at case %d — no candidate got its own system"
-    !executions case_index
 
 (* The invariant runs on the fresh system before step 1 — which is what
    makes the empty program a real test — and after every step, under labels
@@ -1063,7 +1127,9 @@ let the_invariant_runs_before_step_one_and_after_every_step () =
   let program = counter_program 0 in
   let drawn = counter_names program in
   let total = List.length drawn in
-  check (total = 4) "the unconditioned program made %d of 4 calls" total;
+  is_true
+    ~msg:(Printf.sprintf "the unconditioned program made %d of 4 calls" total)
+    (total = 4);
   let seen = ref [] in
   Stateful.execute
     ~invariant:(fun model () -> seen := model :: !seen)
@@ -1074,18 +1140,21 @@ let the_invariant_runs_before_step_one_and_after_every_step () =
          (fun acc name -> counter_step (List.hd acc) name :: acc)
          [ 0 ] drawn)
   in
-  check
-    (List.rev !seen = expected)
-    "the invariant saw %s, not %s"
-    (show_ints (List.rev !seen))
-    (show_ints expected);
+  is_true
+    ~msg:
+      (Printf.sprintf "the invariant saw %s, not %s"
+         (show_ints (List.rev !seen))
+         (show_ints expected))
+    (List.rev !seen = expected);
   (* The empty program is a real test: the fresh-system check still runs. *)
   let empty =
     program_at (Stateful.program ~steps:5 ~model:0 never_commands) 0
   in
   let ran = ref 0 in
   Stateful.execute ~invariant:(fun _ () -> incr ran) ~scope:unit_scope empty;
-  check (!ran = 1) "the empty program ran the invariant %d times" !ran;
+  is_true
+    ~msg:(Printf.sprintf "the empty program ran the invariant %d times" !ran)
+    (!ran = 1);
   (* Distinct labels, and a user ~msg joined onto them. *)
   let fresh =
     expect_check_failure "the fresh-system invariant" (fun () ->
@@ -1093,9 +1162,11 @@ let the_invariant_runs_before_step_one_and_after_every_step () =
           ~invariant:(fun _ () -> Check.is_true ~msg:"note" false)
           ~scope:unit_scope program)
   in
-  check
-    (failure_msg fresh = "invariant on the fresh system; note")
-    "the fresh-system invariant failure was labelled %S" (failure_msg fresh);
+  is_true
+    ~msg:
+      (Printf.sprintf "the fresh-system invariant failure was labelled %S"
+         (failure_msg fresh))
+    (failure_msg fresh = "invariant on the fresh system; note");
   let visits = ref 0 in
   let after =
     expect_check_failure "the post-step invariant" (fun () ->
@@ -1105,10 +1176,12 @@ let the_invariant_runs_before_step_one_and_after_every_step () =
             if !visits = 2 then Check.fail "nope")
           ~scope:unit_scope program)
   in
-  check
+  is_true
+    ~msg:
+      (Printf.sprintf "the post-step invariant failure was labelled %S"
+         (failure_msg after))
     (failure_msg after
     = Pp.str "invariant after call 1 of %d: %s" total (List.hd drawn))
-    "the post-step invariant failure was labelled %S" (failure_msg after)
 
 (* The narrowing and the propagating set are the executor's, not the body's:
    an invariant is held to exactly the same partition, at both of the sites
@@ -1117,7 +1190,9 @@ let an_invariant_is_narrowed_and_propagates_like_a_body () =
   let program = counter_program 0 in
   let drawn = counter_names program in
   let total = List.length drawn in
-  check (total = 4) "the unconditioned program made %d of 4 calls" total;
+  is_true
+    ~msg:(Printf.sprintf "the unconditioned program made %d of 4 calls" total)
+    (total = 4);
   (* Narrowed into the assertion class, under each site's own label. *)
   let fresh =
     expect_check_failure "a raising fresh-system invariant" (fun () ->
@@ -1125,12 +1200,16 @@ let an_invariant_is_narrowed_and_propagates_like_a_body () =
           ~invariant:(fun _ () -> raise Not_found)
           ~scope:unit_scope program)
   in
-  check
-    (failure_msg fresh = "invariant on the fresh system")
-    "a raising fresh-system invariant was labelled %S" (failure_msg fresh);
-  check
-    (raised_actual fresh = "Not_found")
-    "a raising fresh-system invariant rendered %S" (raised_actual fresh);
+  is_true
+    ~msg:
+      (Printf.sprintf "a raising fresh-system invariant was labelled %S"
+         (failure_msg fresh))
+    (failure_msg fresh = "invariant on the fresh system");
+  is_true
+    ~msg:
+      (Printf.sprintf "a raising fresh-system invariant rendered %S"
+         (raised_actual fresh))
+    (raised_actual fresh = "Not_found");
   let visits = ref 0 in
   let after =
     expect_check_failure "a raising post-step invariant" (fun () ->
@@ -1140,13 +1219,17 @@ let an_invariant_is_narrowed_and_propagates_like_a_body () =
             if !visits = 2 then raise Not_found)
           ~scope:unit_scope program)
   in
-  check
+  is_true
+    ~msg:
+      (Printf.sprintf "a raising post-step invariant was labelled %S"
+         (failure_msg after))
     (failure_msg after
-    = Pp.str "invariant after call 1 of %d: %s" total (List.hd drawn))
-    "a raising post-step invariant was labelled %S" (failure_msg after);
-  check
-    (raised_actual after = "Not_found")
-    "a raising post-step invariant rendered %S" (raised_actual after);
+    = Pp.str "invariant after call 1 of %d: %s" total (List.hd drawn));
+  is_true
+    ~msg:
+      (Printf.sprintf "a raising post-step invariant rendered %S"
+         (raised_actual after))
+    (raised_actual after = "Not_found");
   (* And the propagating set escapes an invariant unconverted, from both. *)
   List.iter
     (fun (label, exn) ->
@@ -1156,9 +1239,12 @@ let an_invariant_is_narrowed_and_propagates_like_a_body () =
            ~scope:unit_scope program
        with
       | exception raised ->
-          check (raised = exn)
-            "%s from the fresh-system invariant came back as %s" label
-            (Printexc.to_string raised)
+          is_true
+            ~msg:
+              (Printf.sprintf
+                 "%s from the fresh-system invariant came back as %s" label
+                 (Printexc.to_string raised))
+            (raised = exn)
       | () -> failf "%s from the fresh-system invariant was swallowed" label);
       let visits = ref 0 in
       match
@@ -1169,9 +1255,12 @@ let an_invariant_is_narrowed_and_propagates_like_a_body () =
           ~scope:unit_scope program
       with
       | exception raised ->
-          check (raised = exn) "%s from a post-step invariant came back as %s"
-            label
-            (Printexc.to_string raised)
+          is_true
+            ~msg:
+              (Printf.sprintf "%s from a post-step invariant came back as %s"
+                 label
+                 (Printexc.to_string raised))
+            (raised = exn)
       | () -> failf "%s from a post-step invariant was swallowed" label)
     [
       ("Skip_test", Failure.Skip_test (Some "why"));
@@ -1186,13 +1275,12 @@ let an_invariant_is_narrowed_and_propagates_like_a_body () =
 let empty_program_prints_no_commands () =
   let gen = Stateful.program ~steps:5 ~model:0 never_commands in
   let program = program_at gen 0 in
-  check (names gen program = []) "the program was not empty";
-  check
-    (render gen program = "(no commands)")
-    "the empty program rendered %S" (render gen program);
-  check
+  is_true ~msg:"the program was not empty" (names gen program = []);
+  is_true
+    ~msg:(Printf.sprintf "the empty program rendered %S" (render gen program))
+    (render gen program = "(no commands)");
+  is_true ~msg:"the empty program, which prints no table, has a summary"
     (Stateful.summary program = None)
-    "the empty program, which prints no table, has a summary"
 
 (* The table is a header row over the calls, with no model column when the
    model has no printer; a step whose argument renders as ["()"] — every
@@ -1206,21 +1294,26 @@ let unit_arguments_are_suppressed_under_a_summary_line () =
     " #  call"
     :: List.mapi (fun index name -> Pp.str " %d  %s" (index + 1) name) drawn
   in
-  check
-    (lines_of gen program = expected)
-    "a nullary program rendered %S" (render gen program);
-  check
-    (not (contains "model" (render gen program)))
-    "a model without a printer drew a model column: %S" (render gen program);
-  check
-    (summary_of program = Pp.str "3 calls, last: %s" (List.nth drawn 2))
-    "a three-call program's summary was %S" (summary_of program);
+  is_true
+    ~msg:(Printf.sprintf "a nullary program rendered %S" (render gen program))
+    (lines_of gen program = expected);
+  is_true
+    ~msg:
+      (Printf.sprintf "a model without a printer drew a model column: %S"
+         (render gen program))
+    (not (contains "model" (render gen program)));
+  is_true
+    ~msg:
+      (Printf.sprintf "a three-call program's summary was %S"
+         (summary_of program))
+    (summary_of program = Pp.str "3 calls, last: %s" (List.nth drawn 2));
   let one = Stateful.program ~steps:1 ~model:0 counter_draws in
   let program = program_at one 0 in
-  check
+  is_true
+    ~msg:
+      (Printf.sprintf "a one-call program's summary was %S" (summary_of program))
     (summary_of program
     = Pp.str "1 call, last: %s" (List.hd (names one program)))
-    "a one-call program's summary was %S" (summary_of program)
 
 (* The model cell is the state each call was made {e in}: a fold of
    [~next] that stops one transition short, so the initial model is visible
@@ -1234,7 +1327,9 @@ let the_model_column_shows_the_pre_state () =
   let program = program_at gen 0 in
   let drawn = names gen program in
   let total = List.length drawn in
-  check (total = 12) "the unconditioned program made %d of 12 calls" total;
+  is_true
+    ~msg:(Printf.sprintf "the unconditioned program made %d of 12 calls" total)
+    (total = 12);
   let cells =
     List.rev
       (snd
@@ -1243,10 +1338,12 @@ let the_model_column_shows_the_pre_state () =
               (counter_step model name, string_of_int model :: acc))
             (0, []) drawn))
   in
-  check
-    (List.exists (fun cell -> String.length cell = 2) cells)
-    "the model never left one digit — a wide cell is untested: %s"
-    (show_names cells);
+  is_true
+    ~msg:
+      (Printf.sprintf
+         "the model never left one digit — a wide cell is untested: %s"
+         (show_names cells))
+    (List.exists (fun cell -> String.length cell = 2) cells);
   let expected =
     " #  model before  call"
     :: List.mapi
@@ -1254,10 +1351,12 @@ let the_model_column_shows_the_pre_state () =
            Pp.str "%2d  %-12s  %s" (index + 1) cell name)
          (List.combine cells drawn)
   in
-  check
+  is_true
+    ~msg:
+      (Printf.sprintf "the model column rendered as:\n%s\nnot:\n%s"
+         (render gen program)
+         (String.concat "\n" expected))
     (lines_of gen program = expected)
-    "the model column rendered as:\n%s\nnot:\n%s" (render gen program)
-    (String.concat "\n" expected)
 
 (* A [pp_model] that raises costs its own cell and no more: left to
    [Gen_engine.render], it would collapse the whole program to one
@@ -1268,7 +1367,8 @@ let a_raising_pp_model_costs_one_cell () =
   in
   let gen = Stateful.program ~steps:6 ~model:0 ~pp_model tick_commands in
   let program = program_at gen 0 in
-  check (List.length (names gen program) = 6) "the tick program lost calls";
+  is_true ~msg:"the tick program lost calls"
+    (List.length (names gen program) = 6);
   let marker = "<pp_model raised Not_found>" in
   let cells = [ "0"; "1"; marker; "3"; "4"; "5" ] in
   (* The marker is the widest cell, 27 columns, and sets the column. *)
@@ -1278,10 +1378,12 @@ let a_raising_pp_model_costs_one_cell () =
          (fun index cell -> Pp.str " %d  %-27s  tick" (index + 1) cell)
          cells
   in
-  check
+  is_true
+    ~msg:
+      (Printf.sprintf "a raising pp_model rendered:\n%s\nnot:\n%s"
+         (render gen program)
+         (String.concat "\n" expected))
     (lines_of gen program = expected)
-    "a raising pp_model rendered:\n%s\nnot:\n%s" (render gen program)
-    (String.concat "\n" expected)
 
 (* A model cell is one cell of a row, so it is bounded in code points. *)
 let a_long_model_cell_truncates () =
@@ -1289,14 +1391,14 @@ let a_long_model_cell_truncates () =
   let gen = Stateful.program ~steps:2 ~model:0 ~pp_model tick_commands in
   let program = program_at gen 0 in
   let expected = String.make 57 'm' ^ "..." in
-  check
+  is_true
+    ~msg:(Printf.sprintf "a long model cell rendered %S" (render gen program))
     (lines_of gen program
     = [
         " #  model before" ^ String.make 48 ' ' ^ "  call";
         " 1  " ^ expected ^ "  tick";
         " 2  " ^ expected ^ "  tick";
       ])
-    "a long model cell rendered %S" (render gen program)
 
 (* An argument whose own generator has no printer renders as the one
    placeholder, remedy included; the call names and the program shape
@@ -1311,10 +1413,11 @@ let a_printerless_argument_degrades_to_a_placeholder () =
   in
   let gen = Stateful.program ~steps:2 ~model:0 commands in
   let program = program_at gen 0 in
-  check
+  is_true
+    ~msg:
+      (Printf.sprintf "a printerless argument rendered %S" (render gen program))
     (lines_of gen program
     = [ " #  call"; " 1  opaque " ^ placeholder; " 2  opaque " ^ placeholder ])
-    "a printerless argument rendered %S" (render gen program)
 
 (* An argument rides the failure payload, so it is bounded in bytes, with a
    marker stating the original size. *)
@@ -1331,10 +1434,10 @@ let a_long_argument_truncates () =
   let gen = Stateful.program ~steps:2 ~model:0 commands in
   let program = program_at gen 0 in
   let expected = String.make 200 'x' ^ "... (truncated; 300 bytes total)" in
-  check
+  is_true
+    ~msg:(Printf.sprintf "a long argument rendered %S" (render gen program))
     (lines_of gen program
     = [ " #  call"; " 1  write " ^ expected; " 2  write " ^ expected ])
-    "a long argument rendered %S" (render gen program)
 
 (* Hard newlines only: a name and a model cell are each flattened to one
    line, so a step stays one row. *)
@@ -1343,17 +1446,19 @@ let newlines_in_names_and_cells_are_flattened () =
   let pp_model ppf model = Format.fprintf ppf "a\nb%d" model in
   let gen = Stateful.program ~steps:2 ~model:0 ~pp_model commands in
   let program = program_at gen 0 in
-  check
+  is_true
+    ~msg:
+      (Printf.sprintf "newlines survived the printer: %S" (render gen program))
     (lines_of gen program
     = [
         " #  model before  call";
         " 1  a b0          two lines";
         " 2  a b0          two lines";
-      ])
-    "newlines survived the printer: %S" (render gen program);
-  check
+      ]);
+  is_true
+    ~msg:
+      (Printf.sprintf "newlines survived the summary: %S" (summary_of program))
     (summary_of program = "2 calls, last: two lines")
-    "newlines survived the summary: %S" (summary_of program)
 
 (* A program longer than 40 calls prints its first and last 20 with a
    calls-omitted line between; the number column is as wide as the last
@@ -1375,23 +1480,29 @@ let long_programs_truncate_with_a_step_omitted_line () =
     in
     step (List.rev !seen)
   in
-  check
-    (List.length drawn = 50)
-    "the unconditioned program made %d of 50 calls" (List.length drawn);
+  is_true
+    ~msg:
+      (Printf.sprintf "the unconditioned program made %d of 50 calls"
+         (List.length drawn))
+    (List.length drawn = 50);
   let row index = Pp.str "%2d  %s" (index + 1) (List.nth drawn index) in
   let expected =
     (" #  call" :: List.init 20 row)
     @ [ "\u{2026} (10 calls omitted)" ]
     @ List.init 20 (fun index -> row (30 + index))
   in
-  check
-    (lines_of gen program = expected)
-    "a 50-step program rendered:\n%s\nnot:\n%s" (render gen program)
-    (String.concat "\n" expected);
-  check
+  is_true
+    ~msg:
+      (Printf.sprintf "a 50-step program rendered:\n%s\nnot:\n%s"
+         (render gen program)
+         (String.concat "\n" expected))
+    (lines_of gen program = expected);
+  is_true
+    ~msg:
+      (Printf.sprintf
+         "the summary counts the rows that print, not the calls: %S"
+         (summary_of program))
     (summary_of program = Pp.str "50 calls, last: %s" (List.nth drawn 49))
-    "the summary counts the rows that print, not the calls: %S"
-    (summary_of program)
 
 (* The model column is as wide as the cells that print, so a wide one
    inside the omitted middle costs the rows that print nothing. *)
@@ -1404,7 +1515,9 @@ let an_omitted_model_cell_never_prints () =
   let gen = Stateful.program ~steps:50 ~model:0 ~pp_model tick_commands in
   let program = program_at gen 0 in
   let total = call_count program in
-  check (total = 50) "the tick program made %d of 50 calls" total;
+  is_true
+    ~msg:(Printf.sprintf "the tick program made %d of 50 calls" total)
+    (total = 50);
   (* The cell that never prints is the widest one there is: rows 21 to 30
      are omitted, and the model before row 26 is 25. *)
   let row index = Pp.str "%2d  %-12d  tick" (index + 1) index in
@@ -1413,14 +1526,15 @@ let an_omitted_model_cell_never_prints () =
     @ [ "\u{2026} (10 calls omitted)" ]
     @ List.init 20 (fun index -> row (30 + index))
   in
-  check
-    (contains wide (render gen program) = false)
-    "the omitted middle's model cell printed after all";
-  check
+  is_true ~msg:"the omitted middle's model cell printed after all"
+    (contains wide (render gen program) = false);
+  is_true
+    ~msg:
+      (Printf.sprintf
+         "a truncated program's model cells rendered:\n%s\nnot:\n%s"
+         (render gen program)
+         (String.concat "\n" expected))
     (lines_of gen program = expected)
-    "a truncated program's model cells rendered:\n%s\nnot:\n%s"
-    (render gen program)
-    (String.concat "\n" expected)
 
 (* Malformed arguments are reported at sample time, inside the running
    test's exception boundary. *)
@@ -1429,9 +1543,9 @@ let a_malformed_declaration_raises_at_sample_time () =
      Gen_engine.sample (Stateful.program ~steps:4 ~model:0 []) (state 0)
    with
   | exception Invalid_argument message ->
-      check
+      is_true
+        ~msg:(Printf.sprintf "the empty-command error said %S" message)
         (contains "stateful" message)
-        "the empty-command error said %S" message
   | _ -> failf "an empty command list sampled successfully");
   (* At [?steps:0] no element is drawn, so the branch-level report never
      fires — a test declaring no commands must not pass vacuously. *)
@@ -1439,9 +1553,10 @@ let a_malformed_declaration_raises_at_sample_time () =
      Gen_engine.sample (Stateful.program ~steps:0 ~model:0 []) (state 0)
    with
   | exception Invalid_argument message ->
-      check
+      is_true
+        ~msg:
+          (Printf.sprintf "the empty-command error at ?steps:0 said %S" message)
         (contains "stateful" message)
-        "the empty-command error at ?steps:0 said %S" message
   | _ -> failf "an empty command list at ?steps:0 sampled successfully");
   match
     Gen_engine.sample
@@ -1473,20 +1588,19 @@ let stateful_declares_a_prop_node_with_its_tags_timeout_and_site () =
          ~model:0 ~scope:unit_scope tick_facade)
   in
   let selects tag = Tag.accepts (Tag.require tag Tag.any) case.Test_tree.tags in
-  check (selects "prop") "--tag prop did not select a stateful test";
-  check (selects "stateful") "--tag stateful did not select a stateful test";
-  check (selects "custom") "the declared tags were dropped";
-  check (not (selects "absent")) "an undeclared tag selected the test";
-  check
-    (case.Test_tree.path = [ "spec" ])
-    "the case was named %s"
-    (show_names case.Test_tree.path);
-  check
-    (case.Test_tree.timeout = Some 2.5)
-    "the declared ?timeout did not reach the test node";
-  check
+  is_true ~msg:"--tag prop did not select a stateful test" (selects "prop");
+  is_true ~msg:"--tag stateful did not select a stateful test"
+    (selects "stateful");
+  is_true ~msg:"the declared tags were dropped" (selects "custom");
+  is_true ~msg:"an undeclared tag selected the test" (not (selects "absent"));
+  is_true
+    ~msg:
+      (Printf.sprintf "the case was named %s" (show_names case.Test_tree.path))
+    (case.Test_tree.path = [ "spec" ]);
+  is_true ~msg:"the declared ?timeout did not reach the test node"
+    (case.Test_tree.timeout = Some 2.5);
+  is_true ~msg:"the declared ?__POS__ did not reach the test node"
     (case.Test_tree.loc = Some (Loc.of_pos pos))
-    "the declared ?__POS__ did not reach the test node"
 
 (* [stateful] is [Run.prop] over [program] with [execute] as its law, and
    the only way to see that wiring is to run the node it declares. The body
@@ -1521,21 +1635,28 @@ let stateful_runs_one_fresh_system_per_case_over_steps_calls () =
          incr scopes;
          Fun.protect ~finally:(fun () -> incr releases) (fun () -> run ()))
        commands);
-  check (!scopes > 0) "the declared body ran no case at all";
+  is_true ~msg:"the declared body ran no case at all" (!scopes > 0);
   (* The declared ?count is an upper bound here rather than an equality:
      nothing may raise it, and the engine default of 100 would. *)
-  check (!scopes <= 3) "the declared ?count of 3 ran %d cases" !scopes;
-  check (!releases = !scopes) "%d releases for %d systems" !releases !scopes;
+  is_true
+    ~msg:(Printf.sprintf "the declared ?count of 3 ran %d cases" !scopes)
+    (!scopes <= 3);
+  is_true
+    ~msg:(Printf.sprintf "%d releases for %d systems" !releases !scopes)
+    (!releases = !scopes);
   (* Every call of every case is legal, so ?steps is the program's length:
      three bodies and four invariant checks per system. *)
-  check
-    (!bodies = 3 * !scopes)
-    "%d bodies over %d systems — ?steps:3 did not reach the generator" !bodies
-    !scopes;
-  check
+  is_true
+    ~msg:
+      (Printf.sprintf
+         "%d bodies over %d systems — ?steps:3 did not reach the generator"
+         !bodies !scopes)
+    (!bodies = 3 * !scopes);
+  is_true
+    ~msg:
+      (Printf.sprintf "%d invariant checks over %d systems, not %d" !invariants
+         !scopes (4 * !scopes))
     (!invariants = 4 * !scopes)
-    "%d invariant checks over %d systems, not %d" !invariants !scopes
-    (4 * !scopes)
 
 (* A resource that exists only inside a callback and is never returned —
    [Eio_main.run], [In_channel.with_open_text], any [with_]-style API. No
@@ -1564,9 +1685,13 @@ let a_callback_only_resource_runs_end_to_end () =
   run_declared_body
     (Windtrap.stateful ~count:5 ~steps:6 "sink" ~model:[] ~scope:with_sink
        commands);
-  check (!opened > 0) "the declared body ran no case at all";
-  check (!opened <= 5) "the declared ?count of 5 ran %d cases" !opened;
-  check (!closed = !opened) "%d sinks closed for %d opened" !closed !opened
+  is_true ~msg:"the declared body ran no case at all" (!opened > 0);
+  is_true
+    ~msg:(Printf.sprintf "the declared ?count of 5 ran %d cases" !opened)
+    (!opened <= 5);
+  is_true
+    ~msg:(Printf.sprintf "%d sinks closed for %d opened" !closed !opened)
+    (!closed = !opened)
 
 (* [?pp_model] reaches the printer the engine renders a counterexample
    with, and reaches it with the pre-states. *)
@@ -1589,12 +1714,15 @@ let stateful_threads_pp_model_into_the_counterexample () =
   run_declared_body
     (Windtrap.stateful ~count:3 ~steps:3 ~pp_model "failing" ~model:0
        ~scope:unit_scope commands);
-  check (!seen <> []) "~pp_model never reached the counterexample printer";
-  check
-    (List.for_all (fun model -> model >= 0 && model <= 2) !seen)
-    "the model column printed %s, not the pre-states of a 3-call program"
-    (show_ints (List.sort_uniq compare !seen));
-  check (List.mem 2 !seen) "the model column stopped short of the last step"
+  is_true ~msg:"~pp_model never reached the counterexample printer" (!seen <> []);
+  is_true
+    ~msg:
+      (Printf.sprintf
+         "the model column printed %s, not the pre-states of a 3-call program"
+         (show_ints (List.sort_uniq compare !seen)))
+    (List.for_all (fun model -> model >= 0 && model <= 2) !seen);
+  is_true ~msg:"the model column stopped short of the last step"
+    (List.mem 2 !seen)
 
 let the_same_seed_reproduces_the_same_counterexample () =
   let once () =
@@ -1616,23 +1744,37 @@ let the_same_seed_reproduces_the_same_counterexample () =
      stack-derived, so distinct call sites would differ there. *)
   let trace, rendered, case, steps = once () in
   let trace', rendered', case', steps' = once () in
-  check
-    (List.length trace > 20)
-    "the run executed %d programs — the trace is too short to be evidence"
-    (List.length trace);
-  check (trace = trace')
-    "the two runs executed %d and %d programs, differing first at %d"
-    (List.length trace) (List.length trace')
-    (let rec first index = function
-       | a :: al, b :: bl -> if a = b then first (index + 1) (al, bl) else index
-       | _ -> min (List.length trace) (List.length trace')
-     in
-     first 0 (trace, trace'));
-  check (rendered = rendered') "the counterexample differed:\n%s\nand\n%s"
-    rendered rendered';
-  check (case = case') "the failing case index differed: %d and %d" case case';
-  check (steps = steps') "the shrink step count differed: %d and %d" steps
-    steps'
+  is_true
+    ~msg:
+      (Printf.sprintf
+         "the run executed %d programs — the trace is too short to be evidence"
+         (List.length trace))
+    (List.length trace > 20);
+  is_true
+    ~msg:
+      (Printf.sprintf
+         "the two runs executed %d and %d programs, differing first at %d"
+         (List.length trace) (List.length trace')
+         (let rec first index = function
+            | a :: al, b :: bl ->
+                if a = b then first (index + 1) (al, bl) else index
+            | _ -> min (List.length trace) (List.length trace')
+          in
+          first 0 (trace, trace')))
+    (trace = trace');
+  is_true
+    ~msg:
+      (Printf.sprintf "the counterexample differed:\n%s\nand\n%s" rendered
+         rendered')
+    (rendered = rendered');
+  is_true
+    ~msg:
+      (Printf.sprintf "the failing case index differed: %d and %d" case case')
+    (case = case');
+  is_true
+    ~msg:
+      (Printf.sprintf "the shrink step count differed: %d and %d" steps steps')
+    (steps = steps')
 
 let collect_and_cover_work_inside_command_bodies () =
   let frame = Run.current_frame () in
@@ -1655,19 +1797,20 @@ let collect_and_cover_work_inside_command_bodies () =
             Stateful.execute ~scope:unit_scope program))
   in
   let stats = expect_pass (run ~unreachable:false "labels") in
-  check
-    (List.assoc_opt "ticked" stats.Property.collected = Some 10)
-    "collect from a command body reported %s"
-    (show_names (List.map fst stats.Property.collected));
-  check
-    (List.assoc_opt "past three" stats.Property.collected = Some 10)
-    "classify from a command body did not mark every case";
+  is_true
+    ~msg:
+      (Printf.sprintf "collect from a command body reported %s"
+         (show_names (List.map fst stats.Property.collected)))
+    (List.assoc_opt "ticked" stats.Property.collected = Some 10);
+  is_true ~msg:"classify from a command body did not mark every case"
+    (List.assoc_opt "past three" stats.Property.collected = Some 10);
   (match stats.Property.coverage with
   | [ status ] ->
-      check
+      is_true
+        ~msg:
+          (Printf.sprintf "the coverage demand %s went unmarked over %d cases"
+             status.Property.label stats.Property.cases)
         (status.Property.label = "reached five" && status.Property.satisfied)
-        "the coverage demand %s went unmarked over %d cases"
-        status.Property.label stats.Property.cases
   | statuses ->
       failf "expected one coverage entry, got %d" (List.length statuses));
   (* And a requirement registered from a command body can fail the run. *)
@@ -1675,9 +1818,8 @@ let collect_and_cover_work_inside_command_bodies () =
   | Property.Coverage_failed stats -> (
       match stats.Property.coverage with
       | [ status ] ->
-          check
+          is_true ~msg:"an unreachable requirement reported satisfied"
             (not status.Property.satisfied)
-            "an unreachable requirement reported satisfied"
       | statuses ->
           failf "expected one coverage entry, got %d" (List.length statuses))
   | _ -> failf "an unreachable cover requirement did not fail the run"
@@ -1693,13 +1835,11 @@ let the_program_generator_always_prints () =
         (fun _ _ () -> ());
     ]
   in
-  check
-    (Gen_engine.render_value (Gen.constant 5) 5 = placeholder)
-    "Gen.constant grew a printer — the test is vacuous";
+  is_true ~msg:"Gen.constant grew a printer — the test is vacuous"
+    (Gen_engine.render_value (Gen.constant 5) 5 = placeholder);
   let gen = Stateful.program ~steps:4 ~model:0 opaque in
-  check
-    (render gen (program_at gen 0) <> placeholder)
-    "a program over a printerless command carries no printer";
+  is_true ~msg:"a program over a printerless command carries no printer"
+    (render gen (program_at gen 0) <> placeholder);
   let outcome =
     Property.run ~count:(`Declared 5) ~root ~path:"printerless"
       (Stateful.program ~steps:4 ~model:0 opaque) (fun _ _ ->
@@ -1707,12 +1847,11 @@ let the_program_generator_always_prints () =
   in
   let failure, _ = expect_fail outcome in
   let _, _, _, rendering, _ = property_payload failure in
-  check
-    (rendering = Failure.Value)
-    "a stateful counterexample reported as something other than the value";
-  check
+  is_true
+    ~msg:"a stateful counterexample reported as something other than the value"
+    (rendering = Failure.Value);
+  is_true ~msg:"the printerless remedy line fired on a stateful counterexample"
     (not (contains "Gen.with_pp" (failure_block failure)))
-    "the printerless remedy line fired on a stateful counterexample"
 
 (* End to end *)
 
@@ -1729,37 +1868,43 @@ let a_buggy_system_renders_a_diagnosable_failure () =
   let failure, _ = expect_fail outcome in
   let rendered, _, shrink_steps, _, inner = property_payload failure in
   let block = failure_block failure in
-  check (shrink_steps > 0) "the search took no shrink step";
+  is_true ~msg:"the search took no shrink step" (shrink_steps > 0);
   (* The search converges on the shortest disagreement the bug admits: one
      element pops correctly, two do not, and the arguments have to differ or
      the wrong element is the right one. *)
   let expected =
     String.concat "\n" [ " #  call"; " 1  push 0"; " 2  push 1"; " 3  pop" ]
   in
-  check (rendered = expected) "the counterexample rendered:\n%s\nnot:\n%s"
-    rendered expected;
+  is_true
+    ~msg:
+      (Printf.sprintf "the counterexample rendered:\n%s\nnot:\n%s" rendered
+         expected)
+    (rendered = expected);
   (match failure.Failure.kind with
   | Failure.Property { summary; _ } ->
-      check
+      is_true
+        ~msg:
+          (Printf.sprintf "the failure's summary is %s"
+             (Option.value summary ~default:"absent"))
         (summary = Some "3 calls, last: pop")
-        "the failure's summary is %s"
-        (Option.value summary ~default:"absent")
   | _ -> failf "expected a Property failure kind");
   (match inner with
   | Some inner ->
-      check
-        (failure_msg inner = "call 3 of 3: pop")
-        "the inner failure was labelled %S" (failure_msg inner);
-      check
+      is_true
+        ~msg:
+          (Printf.sprintf "the inner failure was labelled %S"
+             (failure_msg inner))
+        (failure_msg inner = "call 3 of 3: pop");
+      is_true ~msg:"the inner failure is not the body's own equality"
         (inner.Failure.kind
         = Failure.Equality
             { expected = "0"; actual = "1"; not_ = false; diffable = true })
-        "the inner failure is not the body's own equality"
   | None -> failf "the counterexample reported no inner failure");
   List.iter
     (fun needle ->
-      check (contains needle block) "the rendered failure lacks %S:\n%s" needle
-        block)
+      is_true
+        ~msg:(Printf.sprintf "the rendered failure lacks %S:\n%s" needle block)
+        (contains needle block))
     [
       "): 3 calls, last: pop\n\
       \       #  call\n\

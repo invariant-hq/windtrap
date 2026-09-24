@@ -12,16 +12,6 @@ open Windtrap
 open Windtrap.Private
 module Shrink_tree = Gen_engine.Shrink_tree
 
-(* Printf-style shims over windtrap's [fail]. [Check.*] calls inside
-   property bodies are the probes the engine catches; only these shims
-   escape to the runner. *)
-let failf format = Printf.ksprintf (fun message -> Windtrap.fail message) format
-
-let check condition format =
-  Printf.ksprintf
-    (fun message -> if not condition then Windtrap.fail message)
-    format
-
 let contains needle haystack = Text.contains_substring ~pattern:needle haystack
 
 (* One fixed root for most tests: outcomes are deterministic across runs and
@@ -119,29 +109,37 @@ let same_inputs_same_outcome () =
   let first, second =
     match outcomes with [ a; b ] -> (a, b) | _ -> assert false
   in
-  check (first = second) "same root, path, and count must reproduce the outcome";
+  is_true ~msg:"same root, path, and count must reproduce the outcome"
+    (first = second);
   let failure, _ = expect_fail first in
   let rendered, case_index, _, timed_out, recorded_root, examples, _ =
     property_payload failure
   in
-  check (recorded_root = root) "failure must record the run's root seed";
-  check (timed_out = None) "an ordinary failure carries no timed_out mark";
-  check (not examples) "a generated case must not be flagged as an example";
-  check (int_of_string rendered >= 800) "counterexample must fail the body";
+  is_true ~msg:"failure must record the run's root seed" (recorded_root = root);
+  is_true ~msg:"an ordinary failure carries no timed_out mark" (timed_out = None);
+  is_true ~msg:"a generated case must not be flagged as an example"
+    (not examples);
+  is_true ~msg:"counterexample must fail the body"
+    (int_of_string rendered >= 800);
   (* Replay contract: the recorded case index re-derives a failing value. *)
   let replayed =
     value_at (Gen.int_range 0 1000) ~root ~path ~index:case_index
   in
-  check (replayed >= 800) "case %d must re-derive a failing value, got %d"
-    case_index replayed
+  is_true
+    ~msg:
+      (Printf.sprintf "case %d must re-derive a failing value, got %d"
+         case_index replayed)
+    (replayed >= 800)
 
 let different_path_different_stream () =
   let gen = Gen.int64 in
   let first = value_at gen ~root ~path:"stream one" ~index:0 in
   let second = value_at gen ~root ~path:"stream two" ~index:0 in
-  check (first <> second)
-    "distinct paths must not share a stream (adding a property never perturbs \
-     another)"
+  is_true
+    ~msg:
+      "distinct paths must not share a stream (adding a property never \
+       perturbs another)"
+    (first <> second)
 
 (* Examples *)
 
@@ -154,16 +152,15 @@ let examples_run_first_in_order () =
          ~examples:[ 1000; 2000 ] (Gen.int_range 0 5) body)
   in
   let order = List.rev !seen in
-  check (List.length order = 5) "expected 2 examples + 3 generated bodies";
-  check
-    (match order with 1000 :: 2000 :: _ -> true | _ -> false)
-    "examples must run first, in list order";
+  is_true ~msg:"expected 2 examples + 3 generated bodies" (List.length order = 5);
+  is_true ~msg:"examples must run first, in list order"
+    (match order with 1000 :: 2000 :: _ -> true | _ -> false);
   List.iteri
     (fun position value ->
       if position >= 2 then
-        check (value <= 5) "generated cases must follow the examples")
+        is_true ~msg:"generated cases must follow the examples" (value <= 5))
     order;
-  check (stats.Property.cases = 5) "examples must count as passing cases"
+  is_true ~msg:"examples must count as passing cases" (stats.Property.cases = 5)
 
 let failing_example_fails_fast_with_printer () =
   let generated = ref 0 in
@@ -178,11 +175,13 @@ let failing_example_fails_fast_with_printer () =
   let rendered, case_index, shrink_steps, _, _, examples, inner =
     property_payload failure
   in
-  check examples "the failure must be flagged as an example";
-  check (case_index = 1) "example case_index must be its zero-based position";
-  check (shrink_steps = 0) "examples are never shrunk";
-  check (rendered = "7") "a failing example prints via the generator's printer";
-  check (!generated = 2) "a failing example must stop the run";
+  is_true ~msg:"the failure must be flagged as an example" examples;
+  is_true ~msg:"example case_index must be its zero-based position"
+    (case_index = 1);
+  is_true ~msg:"examples are never shrunk" (shrink_steps = 0);
+  is_true ~msg:"a failing example prints via the generator's printer"
+    (rendered = "7");
+  is_true ~msg:"a failing example must stop the run" (!generated = 2);
   match inner with
   | Some { Failure.kind = Failure.Equality _; _ } -> ()
   | _ -> failf "expected the inner assertion failure of the example"
@@ -198,11 +197,13 @@ let failing_example_without_printer_renders_placeholder () =
   in
   let failure, _ = expect_fail outcome in
   let rendered, case_index, _, _, _, examples, _ = property_payload failure in
-  check examples "the failure must be flagged as an example";
-  check (case_index = 1) "case_index must be the example's position";
-  check
-    (rendered = "<no printer: attach one with Gen.with_pp>")
-    "a printerless example renders the placeholder, got %S" rendered;
+  is_true ~msg:"the failure must be flagged as an example" examples;
+  is_true ~msg:"case_index must be the example's position" (case_index = 1);
+  is_true
+    ~msg:
+      (Printf.sprintf "a printerless example renders the placeholder, got %S"
+         rendered)
+    (rendered = "<no printer: attach one with Gen.with_pp>");
   match failure.Failure.kind with
   | Failure.Property { rendering = Failure.Value; _ } -> ()
   | _ -> failf "the placeholder is the rendered text, not a payload flag"
@@ -214,8 +215,10 @@ let discarding_example_is_counted_and_skipped () =
          ~examples:[ 1; 2; 3 ] (Gen.int_range 0 9) (fun _ x ->
            Property.assume (x <> 2)))
   in
-  check (stats.Property.cases >= 4) "examples 1 and 3 plus 2 generated pass";
-  check (stats.Property.discards >= 1) "the discarded example must be counted"
+  is_true ~msg:"examples 1 and 3 plus 2 generated pass"
+    (stats.Property.cases >= 4);
+  is_true ~msg:"the discarded example must be counted"
+    (stats.Property.discards >= 1)
 
 let examples_count_in_coverage_denominator () =
   let body ctx x = Property.cover ctx "zero" (x = 0) in
@@ -224,7 +227,7 @@ let examples_count_in_coverage_denominator () =
       (Property.run ~root ~path:"examples cover" ~count:(`Declared 2)
          ~examples:[ 0; 0; 0; 0 ] (Gen.constant 1) body)
   in
-  check (stats.Property.cases = 6) "4 examples + 2 generated cases";
+  is_true ~msg:"4 examples + 2 generated cases" (stats.Property.cases = 6);
   match stats.Property.coverage with
   | [ { Property.label = "zero"; hits = 4; satisfied = true; _ } ] -> ()
   | _ -> failf "expected zero covered by the 4 examples out of 6 cases"
@@ -237,11 +240,14 @@ let assume_exhaustion_gives_up () =
       (Property.run ~root ~path:"give up" ~count:(`Declared 10) Gen.int
          (fun _ _ -> Property.reject ()))
   in
-  check (stats.Property.cases = 0) "no case can pass";
-  check
+  is_true ~msg:"no case can pass" (stats.Property.cases = 0);
+  is_true
+    ~msg:
+      (Printf.sprintf
+         "the default budget allows 2 * count discards, the 21st gives up, got \
+          %d"
+         stats.Property.discards)
     (stats.Property.discards = 21)
-    "the default budget allows 2 * count discards, the 21st gives up, got %d"
-    stats.Property.discards
 
 let generation_rejection_gives_up () =
   let ran = ref 0 in
@@ -251,11 +257,13 @@ let generation_rejection_gives_up () =
       (Property.run ~root ~path:"gen give up" ~count:(`Declared 3) gen
          (fun _ _ -> incr ran))
   in
-  check (!ran = 0) "the body must never run when generation rejects";
-  check
+  is_true ~msg:"the body must never run when generation rejects" (!ran = 0);
+  is_true
+    ~msg:
+      (Printf.sprintf
+         "every rejection must count as a discard up to the budget, got %d"
+         stats.Property.discards)
     (stats.Property.discards = 7)
-    "every rejection must count as a discard up to the budget, got %d"
-    stats.Property.discards
 
 let explicit_max_discard_bounds_discards () =
   let attempts = ref 0 in
@@ -268,9 +276,12 @@ let explicit_max_discard_bounds_discards () =
       (Property.run ~root ~path:"max discard" ~count:(`Declared 5)
          ~max_discard:7 (Gen.int_range 0 9) body)
   in
-  check (!attempts = 8) "the discard exceeding the budget gives up, got %d"
-    !attempts;
-  check (stats.Property.discards = 8) "all attempts discarded"
+  is_true
+    ~msg:
+      (Printf.sprintf "the discard exceeding the budget gives up, got %d"
+         !attempts)
+    (!attempts = 8);
+  is_true ~msg:"all attempts discarded" (stats.Property.discards = 8)
 
 let max_discard_zero_gives_up_on_first_discard () =
   let stats =
@@ -278,17 +289,20 @@ let max_discard_zero_gives_up_on_first_discard () =
       (Property.run ~root ~path:"no discards" ~count:(`Declared 5)
          ~max_discard:0 Gen.int (fun _ _ -> Property.reject ()))
   in
-  check (stats.Property.cases = 0) "no case can pass";
-  check
-    (stats.Property.discards = 1)
-    "the first discard must give up, got %d" stats.Property.discards;
+  is_true ~msg:"no case can pass" (stats.Property.cases = 0);
+  is_true
+    ~msg:
+      (Printf.sprintf "the first discard must give up, got %d"
+         stats.Property.discards)
+    (stats.Property.discards = 1);
   (* A property that never discards is unaffected by a zero budget. *)
   let stats =
     expect_pass
       (Property.run ~root ~path:"no discards pass" ~count:(`Declared 5)
          ~max_discard:0 Gen.int (fun _ _ -> ()))
   in
-  check (stats.Property.cases = 5) "all cases must pass under a zero budget"
+  is_true ~msg:"all cases must pass under a zero budget"
+    (stats.Property.cases = 5)
 
 let discarding_examples_consume_the_budget () =
   let stats =
@@ -297,11 +311,12 @@ let discarding_examples_consume_the_budget () =
          ~max_discard:2 ~examples:[ 1; 1; 1 ] (Gen.constant 0) (fun _ x ->
            Property.assume (x <> 1)))
   in
-  check (stats.Property.cases = 0) "every example must discard";
-  check
+  is_true ~msg:"every example must discard" (stats.Property.cases = 0);
+  is_true
+    ~msg:
+      (Printf.sprintf "example discards must count toward the budget, got %d"
+         stats.Property.discards)
     (stats.Property.discards = 3)
-    "example discards must count toward the budget, got %d"
-    stats.Property.discards
 
 let budget_is_checked_before_the_count_goal () =
   (* Even a vacuous count cannot mask a blown budget: with [count = 0] the
@@ -313,10 +328,12 @@ let budget_is_checked_before_the_count_goal () =
          ~max_discard:0 ~examples:[ 1 ] (Gen.constant 0) (fun _ _ ->
            Property.reject ()))
   in
-  check
+  is_true
+    ~msg:
+      (Printf.sprintf
+         "the discarding example must give up the run, got %d discards"
+         stats.Property.discards)
     (stats.Property.discards = 1)
-    "the discarding example must give up the run, got %d discards"
-    stats.Property.discards
 
 let passing_examples_do_not_consume_the_budget () =
   let stats =
@@ -324,8 +341,9 @@ let passing_examples_do_not_consume_the_budget () =
       (Property.run ~root ~path:"pass no budget" ~count:(`Declared 3)
          ~max_discard:0 ~examples:[ 1; 2; 3 ] (Gen.constant 0) (fun _ _ -> ()))
   in
-  check (stats.Property.cases = 6) "3 examples + 3 generated cases must pass";
-  check (stats.Property.discards = 0) "nothing discards"
+  is_true ~msg:"3 examples + 3 generated cases must pass"
+    (stats.Property.cases = 6);
+  is_true ~msg:"nothing discards" (stats.Property.discards = 0)
 
 let mixed_discards_still_pass () =
   (* Half the space discards; the budget of 2 * count absorbs it. *)
@@ -334,8 +352,8 @@ let mixed_discards_still_pass () =
       (Property.run ~root ~path:"mixed discards" ~count:(`Declared 20)
          (Gen.int_range 0 9) (fun _ x -> Property.assume (x mod 2 = 0)))
   in
-  check (stats.Property.cases = 20) "count cases must pass";
-  check (stats.Property.discards > 0) "odd draws must discard"
+  is_true ~msg:"count cases must pass" (stats.Property.cases = 20);
+  is_true ~msg:"odd draws must discard" (stats.Property.discards > 0)
 
 (* Labelling *)
 
@@ -348,13 +366,14 @@ let classify_partitions_cases () =
     expect_pass
       (Property.run ~root ~path:"classify" ~count:(`Declared 50) Gen.int body)
   in
-  check (stats.Property.cases = 50) "all cases pass";
+  is_true ~msg:"all cases pass" (stats.Property.cases = 50);
   let total = List.fold_left (fun acc (_, n) -> acc + n) 0 stats.collected in
-  check (total = 50) "each case must carry exactly one label, got %d" total;
-  check
+  is_true
+    ~msg:(Printf.sprintf "each case must carry exactly one label, got %d" total)
+    (total = 50);
+  is_true ~msg:"collected labels must be sorted"
     (List.map fst stats.Property.collected
     = List.sort compare (List.map fst stats.Property.collected))
-    "collected labels must be sorted"
 
 let collect_counts_each_case_once () =
   let body ctx _ =
@@ -382,7 +401,7 @@ let discarded_cases_do_not_commit_labels () =
   in
   match stats.Property.collected with
   | [ ("attempt", 10) ] ->
-      check (stats.Property.discards > 0) "some cases must have discarded"
+      is_true ~msg:"some cases must have discarded" (stats.Property.discards > 0)
   | _ -> failf "discarded cases must not commit their labels"
 
 let shrink_runs_do_not_pollute_tables () =
@@ -394,9 +413,8 @@ let shrink_runs_do_not_pollute_tables () =
     Property.run ~root ~path:"shrink labels" (Gen.int_range 0 100) body
   in
   let _, stats = expect_fail outcome in
-  check
+  is_true ~msg:"shrink re-runs must accumulate into a scratch context only"
     (stats.Property.collected = [ ("ran", stats.Property.cases) ])
-    "shrink re-runs must accumulate into a scratch context only"
 
 (* Coverage *)
 
@@ -421,7 +439,7 @@ let cover_unsatisfied_fails_at_end () =
       (Property.run ~root ~path:"cover fail" ~count:(`Declared 10)
          (Gen.constant 1) body)
   in
-  check (stats.Property.cases = 10) "the full case count must still pass";
+  is_true ~msg:"the full case count must still pass" (stats.Property.cases = 10);
   match stats.Property.coverage with
   | [ { Property.label = "zero"; hits = 0; satisfied = false } ] -> ()
   | _ -> failf "expected one unsatisfied coverage entry"
@@ -445,15 +463,16 @@ let shrinks_to_minimal_counterexample () =
     expect_fail (Property.run ~root ~path:"shrink minimal" Gen.int body)
   in
   let rendered, _, shrink_steps, _, _, _, inner = property_payload failure in
-  check
-    (rendered = "1" || rendered = "-1")
-    "int must shrink to a unit magnitude, got %S" rendered;
-  check (shrink_steps > 0) "shrinking must have taken steps";
+  is_true
+    ~msg:(Printf.sprintf "int must shrink to a unit magnitude, got %S" rendered)
+    (rendered = "1" || rendered = "-1");
+  is_true ~msg:"shrinking must have taken steps" (shrink_steps > 0);
   match inner with
   | Some { Failure.kind = Failure.Equality { expected; actual; not_ }; _ } ->
-      check (expected = "0") "inner expected side is the assertion's";
-      check (actual = rendered) "inner failure must describe the shrunk case";
-      check (not not_) "equal is not negated"
+      is_true ~msg:"inner expected side is the assertion's" (expected = "0");
+      is_true ~msg:"inner failure must describe the shrunk case"
+        (actual = rendered);
+      is_true ~msg:"equal is not negated" (not not_)
   | _ -> failf "expected the inner Equality failure at the shrunk case"
 
 (* The budget is fixed and sized against the primitives' descent: a quad
@@ -468,12 +487,15 @@ let shrink_budget_covers_a_quad_of_int64 () =
   in
   let failure, _ = expect_fail (Property.run ~root ~path:"quad" gen law) in
   let _, _, shrink_steps, _, _, _, _ = property_payload failure in
-  check (shrink_steps > 0) "the search must have taken steps";
-  check (shrink_steps <= 256)
-    "a quad of int64 converges within one step per bit, took %d" shrink_steps;
-  check
+  is_true ~msg:"the search must have taken steps" (shrink_steps > 0);
+  is_true
+    ~msg:
+      (Printf.sprintf
+         "a quad of int64 converges within one step per bit, took %d"
+         shrink_steps)
+    (shrink_steps <= 256);
+  is_true ~msg:"a converged search is not reported as stopped"
     (not (shrink_exhausted failure))
-    "a converged search is not reported as stopped"
 
 let assertion_shrink_skips_exception_candidates () =
   let path = "same-kind assertion" in
@@ -485,8 +507,11 @@ let assertion_shrink_skips_exception_candidates () =
   in
   let failure, _ = expect_fail (Property.run ~root ~path gen body) in
   let rendered, _, _, _, _, _, inner = property_payload failure in
-  check (rendered = "2")
-    "the assertion goal must skip the exception trap at 1, got %S" rendered;
+  is_true
+    ~msg:
+      (Printf.sprintf
+         "the assertion goal must skip the exception trap at 1, got %S" rendered)
+    (rendered = "2");
   match inner with
   | Some { Failure.kind = Failure.Message "wanted"; _ } -> ()
   | _ -> failf "expected the inner Message failure at the shrunk case"
@@ -503,11 +528,14 @@ let exception_shrink_skips_assertion_candidates () =
   in
   let failure, _ = expect_fail (Property.run ~root ~path gen body) in
   let rendered, _, _, _, _, _, inner = property_payload failure in
-  check (rendered = "2")
-    "the exception goal must skip the assertion trap at 1, got %S" rendered;
+  is_true
+    ~msg:
+      (Printf.sprintf
+         "the exception goal must skip the assertion trap at 1, got %S" rendered)
+    (rendered = "2");
   match inner with
   | Some { Failure.kind = Failure.Raise { actual = Some text; _ }; _ } ->
-      check (contains "Exit" text) "the inner failure must render Exit"
+      is_true ~msg:"the inner failure must render Exit" (contains "Exit" text)
   | _ -> failf "expected the inner Raise failure at the shrunk case"
 
 let shrink_rejects_discarding_candidates () =
@@ -529,17 +557,23 @@ let shrink_rejects_discarding_candidates () =
   let first, second =
     match outcomes with [ a; b ] -> (a, b) | _ -> assert false
   in
-  check (first = second)
-    "a run with interleaved discards and shrinking must be deterministic";
+  is_true
+    ~msg:"a run with interleaved discards and shrinking must be deterministic"
+    (first = second);
   let failure, stats = expect_fail first in
   let rendered, case_index, shrink_steps, _, _, _, _ =
     property_payload failure
   in
   let final = int_of_string rendered in
   let original = value_at gen ~root ~path ~index:case_index in
-  check (final >= 10) "shrinking must not cross the discard band, got %d" final;
-  check (final < original) "the counterexample must shrink below %d" original;
-  check (shrink_steps > 0) "shrinking must have taken steps";
+  is_true
+    ~msg:
+      (Printf.sprintf "shrinking must not cross the discard band, got %d" final)
+    (final >= 10);
+  is_true
+    ~msg:(Printf.sprintf "the counterexample must shrink below %d" original)
+    (final < original);
+  is_true ~msg:"shrinking must have taken steps" (shrink_steps > 0);
   (* The descent tries discarding candidates (the band sits between the
      counterexample and 0); those scratch runs must stay out of the run's
      discard count, which covers exactly the main-loop draws in [1;9]. *)
@@ -552,10 +586,13 @@ let shrink_rejects_discarding_candidates () =
     in
     scan 0 0
   in
-  check
+  is_true
+    ~msg:
+      (Printf.sprintf
+         "shrink-time discards must not count in stats.discards: expected %d, \
+          got %d"
+         expected_discards stats.Property.discards)
     (stats.Property.discards = expected_discards)
-    "shrink-time discards must not count in stats.discards: expected %d, got %d"
-    expected_discards stats.Property.discards
 
 let skip_candidate_is_rejected_during_shrink () =
   let path = "skip candidate" in
@@ -572,10 +609,15 @@ let skip_candidate_is_rejected_during_shrink () =
   | outcome ->
       let failure, _ = expect_fail outcome in
       let rendered, _, _, timed_out, _, _, _ = property_payload failure in
-      check (rendered = "2")
-        "the skip trap at 1 must be rejected during shrinking, got %S" rendered;
-      check (timed_out = None)
-        "a rejected skipping candidate must not mark the failure timed out"
+      is_true
+        ~msg:
+          (Printf.sprintf
+             "the skip trap at 1 must be rejected during shrinking, got %S"
+             rendered)
+        (rendered = "2");
+      is_true
+        ~msg:"a rejected skipping candidate must not mark the failure timed out"
+        (timed_out = None)
 
 let rendering_of (failure : Failure.t) =
   match failure.Failure.kind with
@@ -593,12 +635,13 @@ let printerless_counterexample_renders_placeholder () =
            Check.is_true (x < 10)))
   in
   let rendered, _, _, _, _, _, _ = property_payload failure in
-  check
-    (rendered = "<no printer: attach one with Gen.with_pp>")
-    "a printerless counterexample renders the placeholder, got %S" rendered;
-  check
+  is_true
+    ~msg:
+      (Printf.sprintf
+         "a printerless counterexample renders the placeholder, got %S" rendered)
+    (rendered = "<no printer: attach one with Gen.with_pp>");
+  is_true ~msg:"a printerless counterexample must be flagged as the value"
     (rendering_of failure = Failure.Value)
-    "a printerless counterexample must be flagged as the value"
 
 (* The pre-image reported is the pre-image of the shrunk value: the search
    walks one tree, so the two cannot drift apart. *)
@@ -610,11 +653,13 @@ let mapped_counterexample_renders_its_shrunk_pre_image () =
            Check.is_true (x < 10)))
   in
   let rendered, _, _, _, _, _, _ = property_payload failure in
-  check (rendered = "5")
-    "the pre-image of the minimal counterexample 10 is 5, got %S" rendered;
-  check
-    (rendering_of failure = Failure.Pre_image)
-    "a mapped counterexample must be flagged as a pre-image";
+  is_true
+    ~msg:
+      (Printf.sprintf
+         "the pre-image of the minimal counterexample 10 is 5, got %S" rendered)
+    (rendered = "5");
+  is_true ~msg:"a mapped counterexample must be flagged as a pre-image"
+    (rendering_of failure = Failure.Pre_image);
   (* An explicit printer on the image wins, and the flag says value. *)
   let printed = Gen.with_pp Format.pp_print_int mapped in
   let failure, _ =
@@ -623,10 +668,11 @@ let mapped_counterexample_renders_its_shrunk_pre_image () =
            Check.is_true (x < 10)))
   in
   let rendered, _, _, _, _, _, _ = property_payload failure in
-  check (rendered = "10") "with_pp on the image rendered %S, not 10" rendered;
-  check
+  is_true
+    ~msg:(Printf.sprintf "with_pp on the image rendered %S, not 10" rendered)
+    (rendered = "10");
+  is_true ~msg:"a with_pp counterexample must be flagged as a value"
     (rendering_of failure = Failure.Value)
-    "a with_pp counterexample must be flagged as a value"
 
 (* Timeout vs the shrink search (D2) *)
 
@@ -646,13 +692,16 @@ let timeout_during_first_candidate_keeps_unshrunk () =
   let rendered, case_index, shrink_steps, timed_out, _, examples, _ =
     property_payload failure
   in
-  check (timed_out = Some 0.25) "the failure must carry the timeout limit";
-  check (shrink_steps = 0) "no candidate was accepted, got %d" shrink_steps;
-  check (not examples) "the case is generated, not an example";
+  is_true ~msg:"the failure must carry the timeout limit" (timed_out = Some 0.25);
+  is_true
+    ~msg:(Printf.sprintf "no candidate was accepted, got %d" shrink_steps)
+    (shrink_steps = 0);
+  is_true ~msg:"the case is generated, not an example" (not examples);
   let original = value_at Gen.int ~root ~path ~index:case_index in
-  check
+  is_true
+    ~msg:
+      (Printf.sprintf "the unshrunk original must be reported, got %S" rendered)
     (rendered = string_of_int original)
-    "the unshrunk original must be reported, got %S" rendered
 
 let timeout_after_accepted_steps_keeps_best_so_far () =
   (* Cases and candidates fail above a threshold — the greedy descent must
@@ -670,11 +719,15 @@ let timeout_after_accepted_steps_keeps_best_so_far () =
   let rendered, _, shrink_steps, timed_out, _, _, inner =
     property_payload failure
   in
-  check (timed_out = Some 0.1) "the failure must carry the timeout limit";
-  check (shrink_steps >= 1) "accepted steps must be kept, got %d" shrink_steps;
-  check
-    (abs (int_of_string rendered) >= 10)
-    "the best-so-far node must still fail the body, got %S" rendered;
+  is_true ~msg:"the failure must carry the timeout limit" (timed_out = Some 0.1);
+  is_true
+    ~msg:(Printf.sprintf "accepted steps must be kept, got %d" shrink_steps)
+    (shrink_steps >= 1);
+  is_true
+    ~msg:
+      (Printf.sprintf "the best-so-far node must still fail the body, got %S"
+         rendered)
+    (abs (int_of_string rendered) >= 10);
   match inner with
   | Some { Failure.kind = Failure.Message "big"; _ } -> ()
   | _ -> failf "the inner failure must describe the last accepted node"
@@ -683,7 +736,9 @@ let timeout_during_generation_escapes_unchanged () =
   let gen = Gen.map (fun _ -> raise (Failure.Timeout 0.5)) Gen.int in
   match Property.run ~root ~path:"gen timeout" gen (fun _ _ -> ()) with
   | exception Failure.Timeout limit ->
-      check (limit = 0.5) "Timeout must keep its limit, got %g" limit
+      is_true
+        ~msg:(Printf.sprintf "Timeout must keep its limit, got %g" limit)
+        (limit = 0.5)
   | _ -> failf "a Timeout raised at sample time must escape the engine"
   | exception other ->
       failf "expected Timeout, got %s" (Printexc.to_string other)
@@ -706,9 +761,8 @@ let msg_and_loc_are_preserved () =
   let failure, _ =
     expect_fail (Property.run ~loc ~root ~path:"payload" Gen.int body)
   in
-  check
-    (failure.Failure.loc = Some loc)
-    "the engine must stamp the declaration loc on the failure";
+  is_true ~msg:"the engine must stamp the declaration loc on the failure"
+    (failure.Failure.loc = Some loc);
   let _, _, _, _, _, _, inner = property_payload failure in
   match inner with
   | Some { Failure.msg = Some "labelled"; _ } -> ()
@@ -722,15 +776,18 @@ let generator_crash_is_a_failure () =
   let rendered, case_index, shrink_steps, _, _, examples, inner =
     property_payload failure
   in
-  check
-    (rendered = "<generator raised before producing a value>")
-    "a crashing generator renders the placeholder, got %S" rendered;
-  check (case_index = 0) "the crash happens on the first attempt";
-  check (shrink_steps = 0) "nothing can shrink without a sample";
-  check (not examples) "the crash is a generated case";
+  is_true
+    ~msg:
+      (Printf.sprintf "a crashing generator renders the placeholder, got %S"
+         rendered)
+    (rendered = "<generator raised before producing a value>");
+  is_true ~msg:"the crash happens on the first attempt" (case_index = 0);
+  is_true ~msg:"nothing can shrink without a sample" (shrink_steps = 0);
+  is_true ~msg:"the crash is a generated case" (not examples);
   match inner with
   | Some { Failure.kind = Failure.Raise { actual = Some text; _ }; _ } ->
-      check (contains "Invalid_argument" text) "the crash must be rendered"
+      is_true ~msg:"the crash must be rendered"
+        (contains "Invalid_argument" text)
   | _ -> failf "expected an inner Raise failure for the generator crash"
 
 let control_exceptions_propagate () =
@@ -747,7 +804,9 @@ let control_exceptions_propagate () =
         raise (Failure.Timeout 0.5))
   with
   | exception Failure.Timeout limit ->
-      check (limit = 0.5) "Timeout must keep its limit, got %g" limit
+      is_true
+        ~msg:(Printf.sprintf "Timeout must keep its limit, got %g" limit)
+        (limit = 0.5)
   | _ -> failf "Timeout must escape the engine unchanged"
   | exception other ->
       failf "expected Timeout, got %s" (Printexc.to_string other)
@@ -764,7 +823,7 @@ let huge_count_does_not_overflow_the_budget () =
       (fun _ _ -> Check.fail "stop at the first case")
   in
   let _, stats = expect_fail outcome in
-  check (stats.Property.cases = 0) "the first case must fail immediately"
+  is_true ~msg:"the first case must fail immediately" (stats.Property.cases = 0)
 
 let count_zero_passes_vacuously () =
   let ran = ref 0 in
@@ -773,9 +832,9 @@ let count_zero_passes_vacuously () =
       (Property.run ~root ~path:"count zero" ~count:(`Declared 0) Gen.int
          (fun _ _ -> incr ran))
   in
-  check (!ran = 0) "no generated case may run";
-  check (stats.Property.cases = 0) "no case passed";
-  check (stats.Property.coverage = []) "no coverage was requested"
+  is_true ~msg:"no generated case may run" (!ran = 0);
+  is_true ~msg:"no case passed" (stats.Property.cases = 0);
+  is_true ~msg:"no coverage was requested" (stats.Property.coverage = [])
 
 let negative_configuration_is_invalid () =
   let invalid configure =
@@ -816,22 +875,32 @@ let spent_shrink_budget_is_marked () =
   in
   let law _ (_ : int) = raise Exit in
   let budget = Property.shrink_budget in
-  check (budget = 10_000) "the budget is the documented number, got %d" budget;
+  is_true
+    ~msg:(Printf.sprintf "the budget is the documented number, got %d" budget)
+    (budget = 10_000);
   let failure, _ =
     expect_fail (Property.run ~root ~path:"budget" (chain (budget + 1)) law)
   in
   let rendered, _, shrink_steps, _, _, _, _ = property_payload failure in
-  check (shrink_exhausted failure) "a truncated search is marked";
-  check (shrink_steps = budget) "it stopped at the budget, took %d" shrink_steps;
-  check (rendered = "1") "and reports the best node reached, got %s" rendered;
+  is_true ~msg:"a truncated search is marked" (shrink_exhausted failure);
+  is_true
+    ~msg:(Printf.sprintf "it stopped at the budget, took %d" shrink_steps)
+    (shrink_steps = budget);
+  is_true
+    ~msg:(Printf.sprintf "and reports the best node reached, got %s" rendered)
+    (rendered = "1");
   let failure, _ =
     expect_fail (Property.run ~root ~path:"budget" (chain budget) law)
   in
   let rendered, _, shrink_steps, _, _, _, _ = property_payload failure in
-  check (not (shrink_exhausted failure)) "a converged search is not marked";
-  check (shrink_steps = budget) "even one that spent every step, took %d"
-    shrink_steps;
-  check (rendered = "0") "and reports the minimal node, got %s" rendered
+  is_true ~msg:"a converged search is not marked"
+    (not (shrink_exhausted failure));
+  is_true
+    ~msg:(Printf.sprintf "even one that spent every step, took %d" shrink_steps)
+    (shrink_steps = budget);
+  is_true
+    ~msg:(Printf.sprintf "and reports the minimal node, got %s" rendered)
+    (rendered = "0")
 
 (* Forcing a candidate can raise — here a [map] whose function divides by
    the drawn value. The memoized cell caches the exception, so the siblings
@@ -853,14 +922,14 @@ let a_raising_candidate_stops_the_search_visibly () =
          (Gen_engine.sample gen
             (Seed.make (Seed.derive ~root ~path:"raising-candidate" ~index:0))))
   in
-  check (root_value > 10) "the fixture's root is the raising value itself";
+  is_true ~msg:"the fixture's root is the raising value itself" (root_value > 10);
   let failure, _ =
     expect_fail
       (Property.run ~root ~path:"raising-candidate" gen (fun _ _ ->
            Check.fail "always"))
   in
-  check (shrink_exhausted failure)
-    "a descent stopped by a raising candidate reads as converged"
+  is_true ~msg:"a descent stopped by a raising candidate reads as converged"
+    (shrink_exhausted failure)
 
 (* The count and its provenance are one argument, so the engine can never be
    handed a number without being told whether a replay needs the flag. *)
@@ -873,15 +942,18 @@ let count_provenance_decides_the_payload () =
     in
     payload_count failure
   in
-  check
-    (run_with (Some (`Config 7)) = Some 7)
-    "a config-sourced count rides the payload: the hint must restate the flag";
-  check
-    (run_with (Some (`Declared 7)) = None)
-    "a declared count rides nothing: the declaration site replays by itself";
-  check
+  is_true
+    ~msg:
+      "a config-sourced count rides the payload: the hint must restate the flag"
+    (run_with (Some (`Config 7)) = Some 7);
+  is_true
+    ~msg:
+      "a declared count rides nothing: the declaration site replays by itself"
+    (run_with (Some (`Declared 7)) = None);
+  is_true
+    ~msg:
+      "the engine default rides nothing: a replay needs no flag to reproduce it"
     (run_with None = None)
-    "the engine default rides nothing: a replay needs no flag to reproduce it"
 
 (* The summary is the declarer's, applied to the value the failure reports:
    the shrunk counterexample, or the failing example. *)
@@ -897,31 +969,33 @@ let the_summary_is_of_the_reported_counterexample () =
     expect_fail
       (Property.run ~summary ~root ~path:"summary" (Gen.int_range 0 1000) body)
   in
-  check
-    (summary_of failure = Some "n=10")
-    "the summary is not the shrunk counterexample's: %s"
-    (Option.value (summary_of failure) ~default:"absent");
+  is_true
+    ~msg:
+      (Printf.sprintf "the summary is not the shrunk counterexample's: %s"
+         (Option.value (summary_of failure) ~default:"absent"))
+    (summary_of failure = Some "n=10");
   let failure, _ =
     expect_fail
       (Property.run ~summary ~examples:[ 50 ] ~root ~path:"summary"
          (Gen.int_range 0 1000) body)
   in
-  check
-    (summary_of failure = Some "n=50")
-    "a failing example's summary is %s"
-    (Option.value (summary_of failure) ~default:"absent");
+  is_true
+    ~msg:
+      (Printf.sprintf "a failing example's summary is %s"
+         (Option.value (summary_of failure) ~default:"absent"))
+    (summary_of failure = Some "n=50");
   let failure, _ =
     expect_fail
       (Property.run ~summary ~root ~path:"summary" (Gen.int_range 0 1000)
          (fun _ _ -> failf "always"))
   in
-  check
-    (summary_of failure = None)
-    "a value its declarer does not summarize carries a summary";
+  is_true ~msg:"a value its declarer does not summarize carries a summary"
+    (summary_of failure = None);
   let failure, _ =
     expect_fail (Property.run ~root ~path:"summary" (Gen.int_range 0 1000) body)
   in
-  check (summary_of failure = None) "a property declared without one has one"
+  is_true ~msg:"a property declared without one has one"
+    (summary_of failure = None)
 
 let suite =
   [

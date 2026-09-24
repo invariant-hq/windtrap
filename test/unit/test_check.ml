@@ -17,9 +17,6 @@ module Check = Windtrap.Private.Check
 module F = Windtrap.Private.Failure
 module Loc = Windtrap.Private.Loc
 
-let check name cond = is_true ~msg:name cond
-let check_string name ~expected ~actual = equal ~msg:name string expected actual
-
 (* The three ways a verb can come back. *)
 type outcome_ = Returned | Failed of F.t | Raised of exn
 
@@ -150,36 +147,35 @@ let tests =
         equality_payload "equal: fail payload, expected before actual"
           (fun () -> Check.equal Testable.int 3 4)
           (fun (expected, actual, not_) ->
-            check_string "equal: expected is the first argument" ~expected:"3"
-              ~actual:expected;
-            check_string "equal: actual is the second argument" ~expected:"4"
-              ~actual;
-            check "equal: not_ is false" (not not_));
+            equal ~msg:"equal: expected is the first argument" string "3"
+              expected;
+            equal ~msg:"equal: actual is the second argument" string "4" actual;
+            is_true ~msg:"equal: not_ is false" (not not_));
         equality_payload "equal: renders with the witness printer"
           (fun () -> Check.equal Testable.string "a" "b")
           (fun (expected, actual, _) ->
-            check_string "equal: string renders with %S" ~expected:{|"a"|}
-              ~actual:expected;
-            check_string "equal: actual string renders with %S"
-              ~expected:{|"b"|} ~actual));
+            equal ~msg:"equal: string renders with %S" string {|"a"|} expected;
+            equal ~msg:"equal: actual string renders with %S" string {|"b"|}
+              actual));
     test "equal: defaults, rendering discipline, bounding" (fun () ->
         let fl =
           caught "equal: defaults" (fun () -> Check.equal Testable.int 1 2)
         in
-        check "equal: default phase is Body" (fl.F.phase = F.Body);
-        check "equal: default msg is None" (fl.F.msg = None);
-        check "equal: no output tail at the site" (fl.F.output_tail = None);
-        check "equal: kind is a plain, un-negated equality"
+        is_true ~msg:"equal: default phase is Body" (fl.F.phase = F.Body);
+        is_true ~msg:"equal: default msg is None" (fl.F.msg = None);
+        is_true ~msg:"equal: no output tail at the site"
+          (fl.F.output_tail = None);
+        is_true ~msg:"equal: kind is a plain, un-negated equality"
           (match fl.F.kind with
           | F.Equality { not_ = false; _ } -> true
           | _ -> false);
         let calls = ref 0 in
         passes "equal: pass path returns" (fun () ->
             Check.equal (counting_int calls) 5 5);
-        check "equal: pass path never renders" (!calls = 0);
+        is_true ~msg:"equal: pass path never renders" (!calls = 0);
         let calls = ref 0 in
         ignore (outcome (fun () -> Check.equal (counting_int calls) 5 6));
-        check "equal: fail path renders each side once" (!calls = 2);
+        is_true ~msg:"equal: fail path renders each side once" (!calls = 2);
         (* Payload strings are bounded at construction: Check routes through
            the Failure constructors instead of building records directly.
            The exact bound and marker are Failure's contract; here only
@@ -187,46 +183,46 @@ let tests =
         equality_payload "equal: oversized payloads are bounded"
           (fun () -> Check.equal Testable.string (String.make 100_000 'a') "b")
           (fun (expected, _, _) ->
-            check "equal: oversized rendering is cut"
+            is_true ~msg:"equal: oversized rendering is cut"
               (String.length expected < 70_000)));
     test "not_equal" (fun () ->
         let calls = ref 0 in
         passes "not_equal: pass" (fun () ->
             Check.not_equal (counting_int calls) 1 2);
-        check "not_equal: pass path never renders" (!calls = 0);
+        is_true ~msg:"not_equal: pass path never renders" (!calls = 0);
         equality_payload "not_equal: fail payload"
           (fun () -> Check.not_equal Testable.int 3 3)
           (fun (expected, actual, not_) ->
-            check "not_equal: not_ is true" not_;
-            check_string "not_equal: value stored once, expected side"
-              ~expected:"3" ~actual:expected;
-            check_string "not_equal: value stored once, actual side"
-              ~expected:"3" ~actual);
+            is_true ~msg:"not_equal: not_ is true" not_;
+            equal ~msg:"not_equal: value stored once, expected side" string "3"
+              expected;
+            equal ~msg:"not_equal: value stored once, actual side" string "3"
+              actual);
         (* Witness equality can be coarser than printing: under tolerance
            the two floats are equal but would print differently. The payload
            must still carry a single rendering — the first argument's. *)
         equality_payload "not_equal: tolerance-equal floats render once"
           (fun () -> Check.not_equal (Testable.float 0.5) 1.0 1.2)
           (fun (expected, actual, _) ->
-            check_string "not_equal: rendering is the first argument's"
-              ~expected:"1" ~actual:expected;
-            check "not_equal: both sides carry the same string"
+            equal ~msg:"not_equal: rendering is the first argument's" string "1"
+              expected;
+            is_true ~msg:"not_equal: both sides carry the same string"
               (String.equal expected actual));
         let calls = ref 0 in
         ignore (outcome (fun () -> Check.not_equal (counting_int calls) 7 7));
-        check "not_equal: renders the value exactly once" (!calls = 1));
+        is_true ~msg:"not_equal: renders the value exactly once" (!calls = 1));
     test "is_true and is_false" (fun () ->
         passes "is_true: pass" (fun () -> Check.is_true true);
         equality_payload "is_true: fail payload"
           (fun () -> Check.is_true false)
           (fun (expected, actual, not_) ->
-            check "is_true: payload is true vs false"
+            is_true ~msg:"is_true: payload is true vs false"
               (expected = "true" && actual = "false" && not not_));
         passes "is_false: pass" (fun () -> Check.is_false false);
         equality_payload "is_false: fail payload"
           (fun () -> Check.is_false true)
           (fun (expected, actual, _) ->
-            check "is_false: payload is false vs true"
+            is_true ~msg:"is_false: payload is false vs true"
               (expected = "false" && actual = "true")));
     test "contains" (fun () ->
         passes "contains: pass on a present needle" (fun () ->
@@ -244,17 +240,17 @@ let tests =
                  haystack_length,
                  excerpt_offset )
              ->
-            check_string "contains: claim describes the assertion"
-              ~expected:{|string containing "zz"|} ~actual:claim;
-            check_string "contains: small haystack stored whole"
-              ~expected:"hello world" ~actual:excerpt;
-            check_string "contains: needle stored verbatim" ~expected:"zz"
-              ~actual:needle;
-            check "contains: found_at is None when the needle is absent"
+            equal ~msg:"contains: claim describes the assertion" string
+              {|string containing "zz"|} claim;
+            equal ~msg:"contains: small haystack stored whole" string
+              "hello world" excerpt;
+            equal ~msg:"contains: needle stored verbatim" string "zz" needle;
+            is_true ~msg:"contains: found_at is None when the needle is absent"
               (found_at = None);
-            check "contains: haystack_length is the full byte length"
+            is_true ~msg:"contains: haystack_length is the full byte length"
               (haystack_length = String.length "hello world");
-            check "contains: excerpt starts at the head" (excerpt_offset = 0));
+            is_true ~msg:"contains: excerpt starts at the head"
+              (excerpt_offset = 0));
         (* A huge haystack: the payload stores a bounded head excerpt, not
            the whole string, and records what the excerpt covers. *)
         let haystack =
@@ -264,14 +260,14 @@ let tests =
         containment_payload "contains: huge haystack excerpts the head"
           (fun () -> Check.contains ~sub:"needle" haystack)
           (fun (_, excerpt, _, found_at, haystack_length, excerpt_offset) ->
-            check "contains: excerpt is bounded"
+            is_true ~msg:"contains: excerpt is bounded"
               (String.length excerpt < String.length haystack
               && String.length excerpt <= 8_195);
-            check "contains: excerpt is a prefix of the haystack"
+            is_true ~msg:"contains: excerpt is a prefix of the haystack"
               (String.sub haystack 0 (String.length excerpt) = excerpt);
-            check "contains: a head excerpt is not a window"
+            is_true ~msg:"contains: a head excerpt is not a window"
               (found_at = None && excerpt_offset = 0);
-            check "contains: haystack_length survives excerpting"
+            is_true ~msg:"contains: haystack_length survives excerpting"
               (haystack_length = String.length haystack)));
     test "not_contains" (fun () ->
         passes "not_contains: pass on an absent needle" (fun () ->
@@ -279,17 +275,16 @@ let tests =
         containment_payload "not_contains: fail payload"
           (fun () -> Check.not_contains ~sub:"NEEDLE" "abcNEEDLEdef")
           (fun (claim, excerpt, _, found_at, _, _) ->
-            check_string "not_contains: claim describes the assertion"
-              ~expected:{|string not containing "NEEDLE"|} ~actual:claim;
-            check_string "not_contains: small haystack stored whole"
-              ~expected:"abcNEEDLEdef" ~actual:excerpt;
-            check_string "not_contains: found_at is the occurrence offset"
-              ~expected:"Some 3"
-              ~actual:
-                (match found_at with
-                | Some i -> Printf.sprintf "Some %d" i
-                | None -> "None"));
-        check "not_contains: empty needle always fails"
+            equal ~msg:"not_contains: claim describes the assertion" string
+              {|string not containing "NEEDLE"|} claim;
+            equal ~msg:"not_contains: small haystack stored whole" string
+              "abcNEEDLEdef" excerpt;
+            equal ~msg:"not_contains: found_at is the occurrence offset" string
+              "Some 3"
+              (match found_at with
+              | Some i -> Printf.sprintf "Some %d" i
+              | None -> "None"));
+        is_true ~msg:"not_contains: empty needle always fails"
           (match outcome (fun () -> Check.not_contains ~sub:"" "anything") with
           | Failed { F.kind = F.Containment { found_at = Some 0; _ }; _ } ->
               true
@@ -305,25 +300,28 @@ let tests =
         containment_payload "not_contains: deep match windows the excerpt"
           (fun () -> Check.not_contains ~sub:"NEEDLE" haystack)
           (fun (_, excerpt, _, found_at, haystack_length, excerpt_offset) ->
-            check "not_contains: excerpt is bounded"
+            is_true ~msg:"not_contains: excerpt is bounded"
               (String.length excerpt <= 8_195);
             match found_at with
             | Some i ->
-                check "not_contains: found_at is the real offset"
+                is_true ~msg:"not_contains: found_at is the real offset"
                   (i = String.length filler);
-                check "not_contains: excerpt is cut from around the match"
+                is_true
+                  ~msg:"not_contains: excerpt is cut from around the match"
                   (excerpt_offset > 0 && excerpt_offset <= i);
-                check "not_contains: excerpt is the recorded window"
+                is_true ~msg:"not_contains: excerpt is the recorded window"
                   (String.sub haystack excerpt_offset (String.length excerpt)
                   = excerpt);
-                check "not_contains: the match is inside the window"
+                is_true ~msg:"not_contains: the match is inside the window"
                   (let rel = i - excerpt_offset in
                    rel >= 0
                    && rel + String.length "NEEDLE" <= String.length excerpt
                    && String.sub excerpt rel (String.length "NEEDLE") = "NEEDLE");
-                check "not_contains: haystack_length is the full byte length"
+                is_true
+                  ~msg:"not_contains: haystack_length is the full byte length"
                   (haystack_length = String.length haystack)
-            | None -> check "not_contains: the occurrence is recorded" false));
+            | None ->
+                is_true ~msg:"not_contains: the occurrence is recorded" false));
     test "contains: presence, and nothing beyond it" (fun () ->
         let log = "ab-ab-ab" in
         passes "contains: one occurrence is enough" (fun () ->
@@ -331,8 +329,8 @@ let tests =
         containment_demand "contains: the demand stays plain"
           (fun () -> Check.contains ~sub:"zz" log)
           (fun (demand, _, _, _) ->
-            check_string "contains: a failure demands nothing more"
-              ~expected:"anywhere" ~actual:(describe_demand demand)));
+            equal ~msg:"contains: a failure demands nothing more" string
+              "anywhere" (describe_demand demand)));
     test "in_order" (fun () ->
         (* Byte offsets: start 0, connect 6, send 14, receive 19, stop 27. *)
         let log = "start connect send receive stop" in
@@ -353,7 +351,7 @@ let tests =
            inherits that: it matches at the cursor without advancing it. *)
         passes "in_order: an empty element matches trivially" (fun () ->
             Check.in_order ~subs:[ ""; "a"; "" ] "a");
-        check "in_order: an empty chain is a programmer error"
+        is_true ~msg:"in_order: an empty chain is a programmer error"
           (match outcome (fun () -> Check.in_order ~subs:[] log) with
           | Raised (Invalid_argument _) -> true
           | _ -> false);
@@ -362,40 +360,39 @@ let tests =
         containment_demand "in_order: an element missing entirely"
           (fun () -> Check.in_order ~subs:[ "start"; "abort" ] log)
           (fun (demand, found_at, _, _) ->
-            check_string "in_order: the break names its index and cursor"
-              ~expected:"ordered 1 from 5" ~actual:(describe_demand demand);
-            check_string "in_order: a missing element records no occurrence"
-              ~expected:"None" ~actual:(describe_offset found_at));
+            equal ~msg:"in_order: the break names its index and cursor" string
+              "ordered 1 from 5" (describe_demand demand);
+            equal ~msg:"in_order: a missing element records no occurrence"
+              string "None" (describe_offset found_at));
         (* The out-of-order bug: the element IS in the string, before the
            cursor. [found_at] carries that occurrence — [starts_with]'s rule
            — so the report says "there, but too early", not "not there". *)
         containment_demand "in_order: an element present only before the cursor"
           (fun () -> Check.in_order ~subs:[ "send"; "connect" ] log)
           (fun (demand, found_at, _, _) ->
-            check_string "in_order: the out-of-order break names its cursor"
-              ~expected:"ordered 1 from 18" ~actual:(describe_demand demand);
-            check_string "in_order: the earlier occurrence is recorded"
-              ~expected:"Some 6" ~actual:(describe_offset found_at));
+            equal ~msg:"in_order: the out-of-order break names its cursor"
+              string "ordered 1 from 18" (describe_demand demand);
+            equal ~msg:"in_order: the earlier occurrence is recorded" string
+              "Some 6" (describe_offset found_at));
         (* Chain matches do not overlap: the first "aa" consumes bytes 0-1,
            so the second must start at 2 and "aaa" has no room for it. *)
         containment_demand "in_order: chain matches do not overlap"
           (fun () -> Check.in_order ~subs:[ "aa"; "aa" ] "aaa")
           (fun (demand, found_at, _, _) ->
-            check_string "in_order: the second element resumes past the first"
-              ~expected:"ordered 1 from 2" ~actual:(describe_demand demand);
-            check_string "in_order: the overlapping occurrence is reported"
-              ~expected:"Some 0" ~actual:(describe_offset found_at));
+            equal ~msg:"in_order: the second element resumes past the first"
+              string "ordered 1 from 2" (describe_demand demand);
+            equal ~msg:"in_order: the overlapping occurrence is reported" string
+              "Some 0" (describe_offset found_at));
         containment_payload "in_order: fail payload"
           (fun () -> Check.in_order ~subs:[ "start"; "abort" ] log)
           (fun (claim, excerpt, needle, _, haystack_length, _) ->
-            check_string "in_order: claim names the element and the cursor"
-              ~expected:{|string containing "abort" at or after byte 5|}
-              ~actual:claim;
-            check_string "in_order: the needle is the element that broke"
-              ~expected:"abort" ~actual:needle;
-            check_string "in_order: small haystack stored whole" ~expected:log
-              ~actual:excerpt;
-            check "in_order: haystack_length is the whole string"
+            equal ~msg:"in_order: claim names the element and the cursor" string
+              {|string containing "abort" at or after byte 5|} claim;
+            equal ~msg:"in_order: the needle is the element that broke" string
+              "abort" needle;
+            equal ~msg:"in_order: small haystack stored whole" string log
+              excerpt;
+            is_true ~msg:"in_order: haystack_length is the whole string"
               (haystack_length = String.length log));
         (* On a haystack too big to store whole the excerpt shows where the
            search stood — the region still to be matched — not the head the
@@ -409,19 +406,22 @@ let tests =
           (fun () -> Check.in_order ~subs:[ "OPEN"; "MIDDLE" ] haystack)
           (fun (demand, found_at, excerpt, excerpt_offset) ->
             let cursor = String.length filler + String.length "OPEN" in
-            check_string "in_order: the cursor is the end of the first match"
-              ~expected:(Printf.sprintf "ordered 1 from %d" cursor)
-              ~actual:(describe_demand demand);
-            check "in_order: excerpt is bounded" (String.length excerpt <= 8_195);
-            check "in_order: the window is cut around the cursor, not the head"
+            equal ~msg:"in_order: the cursor is the end of the first match"
+              string
+              (Printf.sprintf "ordered 1 from %d" cursor)
+              (describe_demand demand);
+            is_true ~msg:"in_order: excerpt is bounded"
+              (String.length excerpt <= 8_195);
+            is_true
+              ~msg:"in_order: the window is cut around the cursor, not the head"
               (excerpt_offset > 0 && excerpt_offset <= cursor);
-            check "in_order: the excerpt is the recorded window"
+            is_true ~msg:"in_order: the excerpt is the recorded window"
               (String.sub haystack excerpt_offset (String.length excerpt)
               = excerpt);
-            check "in_order: the cursor is inside the window"
+            is_true ~msg:"in_order: the cursor is inside the window"
               (cursor - excerpt_offset <= String.length excerpt);
-            check_string "in_order: no occurrence to record" ~expected:"None"
-              ~actual:(describe_offset found_at)));
+            equal ~msg:"in_order: no occurrence to record" string "None"
+              (describe_offset found_at)));
     test "starts_with and ends_with" (fun () ->
         let path = "sessions/ghost/session.json" in
         passes "starts_with: pass" (fun () ->
@@ -439,48 +439,47 @@ let tests =
         containment_payload "starts_with: affix absent"
           (fun () -> Check.starts_with ~affix:"users/" path)
           (fun (claim, _, needle, found_at, _, _) ->
-            check_string "claim names the relation"
-              ~expected:{|string starting with "users/"|} ~actual:claim;
-            check_string "needle is the affix" ~expected:"users/" ~actual:needle;
-            check "no occurrence to report" (found_at = None));
+            equal ~msg:"claim names the relation" string
+              {|string starting with "users/"|} claim;
+            equal ~msg:"needle is the affix" string "users/" needle;
+            is_true ~msg:"no occurrence to report" (found_at = None));
         (* Present but misplaced: the offset is the whole point, and it is
            a report only these verbs can produce — [contains] passes here. *)
         containment_payload "starts_with: affix present elsewhere"
           (fun () -> Check.starts_with ~affix:"ghost" path)
           (fun (_, _, _, found_at, _, _) ->
-            check "the misplaced occurrence is located" (found_at = Some 9));
+            is_true ~msg:"the misplaced occurrence is located"
+              (found_at = Some 9));
         containment_payload "ends_with: affix present elsewhere"
           (fun () -> Check.ends_with ~affix:"session" path)
           (fun (claim, _, _, found_at, _, _) ->
-            check_string "claim names the relation"
-              ~expected:{|string ending with "session"|} ~actual:claim;
-            check "located at its first occurrence" (found_at = Some 0));
+            equal ~msg:"claim names the relation" string
+              {|string ending with "session"|} claim;
+            is_true ~msg:"located at its first occurrence" (found_at = Some 0));
         (* A suffix that overruns the string is absent, not a crash. *)
         containment_payload "ends_with: affix longer than the haystack"
           (fun () ->
             Check.ends_with ~affix:"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxx" "ab")
           (fun (_, _, _, found_at, _, _) ->
-            check "nothing located" (found_at = None)));
+            is_true ~msg:"nothing located" (found_at = None)));
     test "mem" (fun () ->
         let calls = ref 0 in
         passes "mem: pass" (fun () -> Check.mem (counting_int calls) 2 [ 1; 2 ]);
-        check "mem: pass path never renders" (!calls = 0);
+        is_true ~msg:"mem: pass path never renders" (!calls = 0);
         passes "mem: the witness equality decides, not (=)" (fun () ->
             Check.mem (Testable.float 0.5) 1.0 [ 9.0; 1.2 ]);
         predicate_payload "mem: fail payload"
           (fun () -> Check.mem Testable.int 42 [ 2; 3; 5 ])
           (fun (claim, value) ->
-            check_string "mem: claim names the element"
-              ~expected:"a list containing 42" ~actual:claim;
-            check_string "mem: value is the whole list" ~expected:"[2; 3; 5]"
-              ~actual:value);
+            equal ~msg:"mem: claim names the element" string
+              "a list containing 42" claim;
+            equal ~msg:"mem: value is the whole list" string "[2; 3; 5]" value);
         predicate_payload "mem: empty list still shows both sides"
           (fun () -> Check.mem Testable.string "a" [])
           (fun (claim, value) ->
-            check_string "mem: claim renders the element with the witness"
-              ~expected:{|a list containing "a"|} ~actual:claim;
-            check_string "mem: empty list renders as []" ~expected:"[]"
-              ~actual:value));
+            equal ~msg:"mem: claim renders the element with the witness" string
+              {|a list containing "a"|} claim;
+            equal ~msg:"mem: empty list renders as []" string "[]" value));
     test "is_none and is_some" (fun () ->
         passes "is_none: pass" (fun () -> Check.is_none None);
         passes "is_some: pass" (fun () -> Check.is_some (Some 1));
@@ -489,16 +488,15 @@ let tests =
         equality_payload "is_none: fail renders Some v with ?pp"
           (fun () -> Check.is_none ~pp:Format.pp_print_int (Some 7))
           (fun (expected, actual, not_) ->
-            check_string "is_none: expected side" ~expected:"None"
-              ~actual:expected;
-            check_string "is_none: actual side names the constructor"
-              ~expected:"Some 7" ~actual;
-            check "is_none: not a negated equality" (not not_));
+            equal ~msg:"is_none: expected side" string "None" expected;
+            equal ~msg:"is_none: actual side names the constructor" string
+              "Some 7" actual;
+            is_true ~msg:"is_none: not a negated equality" (not not_));
         equality_payload "is_none: fail without ?pp"
           (fun () -> Check.is_none (Some 7))
           (fun (_, actual, _) ->
-            check_string "is_none: rejected value is <abstract>"
-              ~expected:"Some <abstract>" ~actual);
+            equal ~msg:"is_none: rejected value is <abstract>" string
+              "Some <abstract>" actual);
         let calls = ref 0 in
         let counting ppf n =
           incr calls;
@@ -506,37 +504,36 @@ let tests =
         in
         passes "is_none: pass path never renders" (fun () ->
             Check.is_none ~pp:counting None);
-        check "is_none: printer stayed unused" (!calls = 0);
+        is_true ~msg:"is_none: printer stayed unused" (!calls = 0);
         equality_payload "is_some: fail payload"
           (fun () -> Check.is_some (None : int option))
           (fun (expected, actual, _) ->
             (* Same payload as [require_some]'s: one wording for one claim. *)
-            check_string "is_some: expected side" ~expected:"Some _"
-              ~actual:expected;
-            check_string "is_some: actual side" ~expected:"None" ~actual));
+            equal ~msg:"is_some: expected side" string "Some _" expected;
+            equal ~msg:"is_some: actual side" string "None" actual));
     test "satisfies" (fun () ->
         let calls = ref 0 in
         passes "satisfies: pass" (fun () ->
             Check.satisfies (counting_int calls) (fun n -> n > 0) 3);
-        check "satisfies: pass path never renders" (!calls = 0);
+        is_true ~msg:"satisfies: pass path never renders" (!calls = 0);
         predicate_payload "satisfies: fail payload"
           (fun () -> Check.satisfies Testable.int (fun n -> n > 0) (-4))
           (fun (claim, value) ->
             (* The claim sentence is what tells the predicate verbs apart. *)
-            check_string "satisfies: claim describes the assertion"
-              ~expected:"value satisfying the predicate" ~actual:claim;
-            check_string "satisfies: rejected value rendered by the witness"
-              ~expected:"-4" ~actual:value);
+            equal ~msg:"satisfies: claim describes the assertion" string
+              "value satisfying the predicate" claim;
+            equal ~msg:"satisfies: rejected value rendered by the witness"
+              string "-4" value);
         let calls = ref 0 in
         ignore
           (outcome (fun () ->
                Check.satisfies (counting_int calls) (fun _ -> false) 9));
-        check "satisfies: fail path renders the value once" (!calls = 1);
+        is_true ~msg:"satisfies: fail path renders the value once" (!calls = 1);
         predicate_payload "satisfies: renders with the witness printer"
           (fun () -> Check.satisfies Testable.string (fun _ -> false) "a b")
           (fun (_, value) ->
-            check_string "satisfies: string renders with %S" ~expected:{|"a b"|}
-              ~actual:value);
+            equal ~msg:"satisfies: string renders with %S" string {|"a b"|}
+              value);
         (* [?claim] is what makes this the comparison assertion: the bound
            stays the claim and the value stays the value, where
            [is_true (n > 0)] could only report true against false. *)
@@ -546,10 +543,9 @@ let tests =
               (fun n -> n > 0)
               0)
           (fun (claim, value) ->
-            check_string "satisfies: claim is the caller's"
-              ~expected:"greater than 0" ~actual:claim;
-            check_string "satisfies: value is the value" ~expected:"0"
-              ~actual:value);
+            equal ~msg:"satisfies: claim is the caller's" string
+              "greater than 0" claim;
+            equal ~msg:"satisfies: value is the value" string "0" value);
         (* Renderings come from the witness, so a bound the caller builds
            with it speaks the reader's type. *)
         predicate_payload "satisfies: ~claim renders through the witness"
@@ -563,10 +559,9 @@ let tests =
               (fun s -> s > bound)
               "a")
           (fun (claim, value) ->
-            check_string "string bound is quoted" ~expected:{|greater than "m"|}
-              ~actual:claim;
-            check_string "string value is quoted" ~expected:{|"a"|}
-              ~actual:value);
+            equal ~msg:"string bound is quoted" string {|greater than "m"|}
+              claim;
+            equal ~msg:"string value is quoted" string {|"a"|} value);
         (* The witness's equality plays no part: an always-raising equality
            is never consulted. *)
         let explosive =
@@ -586,8 +581,8 @@ let tests =
               (fun (a, b) -> a / b >= 0)
               (-7, 2))
           (fun (_, value) ->
-            check_string "satisfies: rendered by the caller's printer"
-              ~expected:"-7 / 2" ~actual:value));
+            equal ~msg:"satisfies: rendered by the caller's printer" string
+              "-7 / 2" value));
     test "less, at_most, greater, at_least" (fun () ->
         (* Bound first, value last: [less int ~than:3 v] is "v < 3". Each
            pair's boundary case is the whole difference between the strict
@@ -607,12 +602,12 @@ let tests =
            caller to keep in step. *)
         let order_payload name f ~claim ~value =
           predicate_payload name f (fun (actual_claim, actual_value) ->
-              check_string
-                (name ^ ": claim is the relation and the bound")
-                ~expected:claim ~actual:actual_claim;
-              check_string
-                (name ^ ": value is the value")
-                ~expected:value ~actual:actual_value)
+              equal
+                ~msg:(name ^ ": claim is the relation and the bound")
+                string claim actual_claim;
+              equal
+                ~msg:(name ^ ": value is the value")
+                string value actual_value)
         in
         order_payload "less: fail at the bound"
           (fun () -> Check.less Testable.int ~than:3 3)
@@ -667,8 +662,8 @@ let tests =
            whether or not the assertion would have held — on the first run,
            not the first failure. *)
         let no_order verb f =
-          check
-            (verb ^ ": no order raises Invalid_argument naming the fix")
+          is_true
+            ~msg:(verb ^ ": no order raises Invalid_argument naming the fix")
             (match outcome f with
             | Raised (Invalid_argument m) ->
                 String.starts_with ~prefix:("Check." ^ verb ^ ":") m
@@ -693,56 +688,54 @@ let tests =
             Check.less
               (counting_int calls |> Testable.with_compare Int.compare)
               ~than:3 2);
-        check "less: printer stayed unused" (!calls = 0);
+        is_true ~msg:"less: printer stayed unused" (!calls = 0);
         ignore
           (outcome (fun () ->
                Check.less
                  (counting_int calls |> Testable.with_compare Int.compare)
                  ~than:3 3));
-        check "less: fail path renders each side once" (!calls = 2));
+        is_true ~msg:"less: fail path renders each side once" (!calls = 2));
     test "require_some, require_ok, require_error" (fun () ->
-        check "require_some: unwraps the payload"
+        is_true ~msg:"require_some: unwraps the payload"
           (Check.require_some (Some 42) = 42);
         equality_payload "require_some: fail payload"
           (fun () -> ignore (Check.require_some None))
           (fun (expected, actual, _) ->
-            check "require_some: payload is Some _ vs None"
+            is_true ~msg:"require_some: payload is Some _ vs None"
               (expected = "Some _" && actual = "None"));
-        check "require_ok: unwraps the payload" (Check.require_ok (Ok 7) = 7);
+        is_true ~msg:"require_ok: unwraps the payload"
+          (Check.require_ok (Ok 7) = 7);
         equality_payload "require_ok: fail payload without pp"
           (fun () -> ignore (Check.require_ok (Error 3)))
           (fun (expected, actual, _) ->
-            check_string "require_ok: expected side" ~expected:"Ok _"
-              ~actual:expected;
-            check_string "require_ok: rejected side prints <abstract>"
-              ~expected:"Error <abstract>" ~actual);
+            equal ~msg:"require_ok: expected side" string "Ok _" expected;
+            equal ~msg:"require_ok: rejected side prints <abstract>" string
+              "Error <abstract>" actual);
         equality_payload "require_ok: pp renders the rejected side"
           (fun () ->
             ignore (Check.require_ok ~pp:Format.pp_print_int (Error 3)))
           (fun (_, actual, _) ->
-            check_string "require_ok: rendered error" ~expected:"Error 3"
-              ~actual);
+            equal ~msg:"require_ok: rendered error" string "Error 3" actual);
         let calls = ref 0 in
         let pp ppf n =
           incr calls;
           Format.pp_print_int ppf n
         in
-        check "require_ok: pp not called on Ok"
+        is_true ~msg:"require_ok: pp not called on Ok"
           (Check.require_ok ~pp (Ok 1) = 1 && !calls = 0);
-        check "require_error: unwraps the payload"
+        is_true ~msg:"require_error: unwraps the payload"
           (Check.require_error (Error "e") = "e");
         equality_payload "require_error: fail payload without pp"
           (fun () -> ignore (Check.require_error (Ok 9)))
           (fun (expected, actual, _) ->
-            check_string "require_error: expected side" ~expected:"Error _"
-              ~actual:expected;
-            check_string "require_error: rejected side prints <abstract>"
-              ~expected:"Ok <abstract>" ~actual);
+            equal ~msg:"require_error: expected side" string "Error _" expected;
+            equal ~msg:"require_error: rejected side prints <abstract>" string
+              "Ok <abstract>" actual);
         equality_payload "require_error: pp renders the rejected side"
           (fun () ->
             ignore (Check.require_error ~pp:Format.pp_print_int (Ok 9)))
           (fun (_, actual, _) ->
-            check_string "require_error: rendered ok" ~expected:"Ok 9" ~actual));
+            equal ~msg:"require_error: rendered ok" string "Ok 9" actual));
     test "is_ok, is_error" (fun () ->
         (* The assert-only twins: the unwrapping verbs' payloads, exactly. *)
         Check.is_ok (Ok 7);
@@ -750,25 +743,23 @@ let tests =
         equality_payload "is_ok: fail payload without pp"
           (fun () -> Check.is_ok (Error 3))
           (fun (expected, actual, _) ->
-            check_string "is_ok: expected side" ~expected:"Ok _"
-              ~actual:expected;
-            check_string "is_ok: rejected side prints <abstract>"
-              ~expected:"Error <abstract>" ~actual);
+            equal ~msg:"is_ok: expected side" string "Ok _" expected;
+            equal ~msg:"is_ok: rejected side prints <abstract>" string
+              "Error <abstract>" actual);
         equality_payload "is_ok: pp renders the rejected side"
           (fun () -> Check.is_ok ~pp:Format.pp_print_int (Error 3))
           (fun (_, actual, _) ->
-            check_string "is_ok: rendered error" ~expected:"Error 3" ~actual);
+            equal ~msg:"is_ok: rendered error" string "Error 3" actual);
         equality_payload "is_error: fail payload without pp"
           (fun () -> Check.is_error (Ok 9))
           (fun (expected, actual, _) ->
-            check_string "is_error: expected side" ~expected:"Error _"
-              ~actual:expected;
-            check_string "is_error: rejected side prints <abstract>"
-              ~expected:"Ok <abstract>" ~actual);
+            equal ~msg:"is_error: expected side" string "Error _" expected;
+            equal ~msg:"is_error: rejected side prints <abstract>" string
+              "Ok <abstract>" actual);
         equality_payload "is_error: pp renders the rejected side"
           (fun () -> Check.is_error ~pp:Format.pp_print_int (Ok 9))
           (fun (_, actual, _) ->
-            check_string "is_error: rendered ok" ~expected:"Ok 9" ~actual);
+            equal ~msg:"is_error: rendered ok" string "Ok 9" actual);
         let calls = ref 0 in
         let pp ppf n =
           incr calls;
@@ -776,18 +767,19 @@ let tests =
         in
         Check.is_ok ~pp (Ok 1);
         Check.is_error ~pp (Error 1);
-        check "is_ok/is_error: pp not called on the wanted branch" (!calls = 0));
+        is_true ~msg:"is_ok/is_error: pp not called on the wanted branch"
+          (!calls = 0));
     test "require_match" (fun () ->
-        check "require_match: unwraps the matched payload"
+        is_true ~msg:"require_match: unwraps the matched payload"
           (Check.require_match tcp (`Tcp 8080) = 8080);
         predicate_payload "require_match: fail payload without pp"
           (fun () -> ignore (Check.require_match tcp (`Unix "/tmp/sock")))
           (fun (claim, value) ->
             (* The claim sentence is what tells the predicate verbs apart. *)
-            check_string "require_match: claim describes the assertion"
-              ~expected:"a match" ~actual:claim;
-            check_string "require_match: scrutinee prints <abstract> without pp"
-              ~expected:"<abstract>" ~actual:value);
+            equal ~msg:"require_match: claim describes the assertion" string
+              "a match" claim;
+            equal ~msg:"require_match: scrutinee prints <abstract> without pp"
+              string "<abstract>" value);
         let pp ppf = function
           | `Tcp p -> Format.fprintf ppf "tcp:%d" p
           | `Unix path -> Format.fprintf ppf "unix:%s" path
@@ -795,20 +787,21 @@ let tests =
         predicate_payload "require_match: pp renders the scrutinee"
           (fun () -> ignore (Check.require_match ~pp tcp (`Unix "/tmp/sock")))
           (fun (_, value) ->
-            check_string "require_match: rendered scrutinee"
-              ~expected:"unix:/tmp/sock" ~actual:value);
+            equal ~msg:"require_match: rendered scrutinee" string
+              "unix:/tmp/sock" value);
         let calls = ref 0 in
         let pp ppf n =
           incr calls;
           Format.pp_print_int ppf n
         in
-        check "require_match: pp not called on a match"
+        is_true ~msg:"require_match: pp not called on a match"
           (Check.require_match ~pp (fun n -> if n > 0 then Some n else None) 7
            = 7
           && !calls = 0);
         (* The extractor runs under no guard: its exceptions are the test's
            own bug, not a failed match. *)
-        check "require_match: an exception from the extractor propagates raw"
+        is_true
+          ~msg:"require_match: an exception from the extractor propagates raw"
           (match
              outcome (fun () ->
                  ignore (Check.require_match (fun _ -> raise Extractor_bug) 1))
@@ -819,7 +812,7 @@ let tests =
            application error arrives as [Error `Variant] and the test wants
            the payload. [require_error] unwraps the result half,
            [require_match] the poly-variant half. *)
-        check "require_match composes with require_error (oauth2 shape)"
+        is_true ~msg:"require_match composes with require_error (oauth2 shape)"
           (Check.require_match reserved
              (Check.require_error (Error (`Reserved "state")))
           = "state");
@@ -830,11 +823,11 @@ let tests =
               (Check.require_match reserved
                  (Check.require_error (Error (`Redirect "https://cb")))))
           (fun (claim, value) ->
-            check_string "require_match: composed failure keeps the match claim"
-              ~expected:"a match" ~actual:claim;
-            check_string
-              "require_match: composed scrutinee is abstract without pp"
-              ~expected:"<abstract>" ~actual:value));
+            equal ~msg:"require_match: composed failure keeps the match claim"
+              string "a match" claim;
+            equal
+              ~msg:"require_match: composed scrutinee is abstract without pp"
+              string "<abstract>" value));
     test "raises: structural equality and payload shapes" (fun () ->
         passes "raises: pass on the exact exception" (fun () ->
             Check.raises Not_found (fun () -> raise Not_found));
@@ -846,13 +839,13 @@ let tests =
           (fun () ->
             Check.raises (Payload (1, "x")) (fun () -> raise (Payload (1, "y"))))
           (fun (expected, actual, _) ->
-            check "raises: both exceptions rendered"
+            is_true ~msg:"raises: both exceptions rendered"
               (expected <> None && actual <> None));
         (* Structural comparison cannot see through functional payloads: the
            compare raises and propagates raw — never a silent pass, never a
            "wrong exception" misreport. The .mli points such cases at
            [raises_match]. *)
-        check "raises: non-comparable payload raises Invalid_argument"
+        is_true ~msg:"raises: non-comparable payload raises Invalid_argument"
           (match
              outcome (fun () ->
                  Check.raises
@@ -864,16 +857,19 @@ let tests =
         raise_payload "raises: nothing raised"
           (fun () -> Check.raises Not_found (fun () -> 42))
           (fun (expected, actual, backtrace) ->
-            check "raises: expected exception recorded"
+            is_true ~msg:"raises: expected exception recorded"
               (expected = Some "Not_found");
-            check "raises: actual absent when nothing raised" (actual = None);
-            check "raises: no backtrace when nothing raised" (backtrace = None));
+            is_true ~msg:"raises: actual absent when nothing raised"
+              (actual = None);
+            is_true ~msg:"raises: no backtrace when nothing raised"
+              (backtrace = None));
         raise_payload "raises: wrong exception"
           (fun () ->
             Check.raises Not_found (fun () -> raise (Payload (0, "z"))))
           (fun (expected, actual, _) ->
-            check "raises: expected rendered" (expected = Some "Not_found");
-            check "raises: raised exception rendered"
+            is_true ~msg:"raises: expected rendered"
+              (expected = Some "Not_found");
+            is_true ~msg:"raises: raised exception rendered"
               (match actual with
               | Some s ->
                   (* Printexc renders constructor and payload. *)
@@ -890,14 +886,14 @@ let tests =
               (fun () ->
                 Check.raises Not_found (fun () -> raise (Payload (2, "b"))))
               (fun (_, _, backtrace) ->
-                check "raises: backtrace absent with recording off"
+                is_true ~msg:"raises: backtrace absent with recording off"
                   (backtrace = None));
             Printexc.record_backtrace true;
             raise_payload "raises: backtrace captured when recording is on"
               (fun () ->
                 Check.raises Not_found (fun () -> raise (Payload (2, "b"))))
               (fun (_, _, backtrace) ->
-                check "raises: backtrace present with recording on"
+                is_true ~msg:"raises: backtrace present with recording on"
                   (match backtrace with
                   | Some s -> String.length s > 0
                   | None -> false));
@@ -918,8 +914,8 @@ let tests =
                         (Windtrap.Private.Text.split_lines s)
                   | None -> []
                 in
-                check "raises: backtrace is non-empty" (lines <> []);
-                check "raises: no windtrap frame survives"
+                is_true ~msg:"raises: backtrace is non-empty" (lines <> []);
+                is_true ~msg:"raises: no windtrap frame survives"
                   (not
                      (List.exists
                         (fun l ->
@@ -937,21 +933,21 @@ let tests =
          with
         | { F.kind = F.Equality { expected = "1"; actual = "2"; _ }; _ } -> ()
         | _ -> fail "raises: inner assertion failure survives unchanged");
-        check "raises: inner Skip_test propagates"
+        is_true ~msg:"raises: inner Skip_test propagates"
           (match
              Check.raises Not_found (fun () -> Check.skip ~reason:"r" ())
            with
           | () -> false
           | exception F.Skip_test (Some "r") -> true
           | exception _ -> false);
-        check "raises: inner Timeout propagates"
+        is_true ~msg:"raises: inner Timeout propagates"
           (match Check.raises Not_found (fun () -> raise (F.Timeout 2.5)) with
           | () -> false
           | exception F.Timeout 2.5 -> true
           | exception _ -> false);
         (* Same guard, same order, in raises_match: the accept-all predicate
            never sees the control exceptions. *)
-        check "raises_match: inner Skip_test propagates"
+        is_true ~msg:"raises_match: inner Skip_test propagates"
           (match
              Check.raises_match
                (fun _ -> true)
@@ -960,7 +956,7 @@ let tests =
           | () -> false
           | exception F.Skip_test (Some "r") -> true
           | exception _ -> false);
-        check "raises_match: inner Timeout propagates"
+        is_true ~msg:"raises_match: inner Timeout propagates"
           (match
              Check.raises_match
                (fun _ -> true)
@@ -985,11 +981,11 @@ let tests =
         raise_payload "raises_match: nothing raised"
           (fun () -> Check.raises_match (fun _ -> true) (fun () -> ()))
           (fun (expected, actual, backtrace) ->
-            check "raises_match: no expected rendering for a predicate"
+            is_true ~msg:"raises_match: no expected rendering for a predicate"
               (expected = None);
-            check "raises_match: actual absent when nothing raised"
+            is_true ~msg:"raises_match: actual absent when nothing raised"
               (actual = None);
-            check "raises_match: no backtrace when nothing raised"
+            is_true ~msg:"raises_match: no backtrace when nothing raised"
               (backtrace = None));
         raise_payload "raises_match: predicate rejects"
           (fun () ->
@@ -997,8 +993,9 @@ let tests =
               (function Payload (9, _) -> true | _ -> false)
               (fun () -> raise (Payload (1, "no"))))
           (fun (expected, actual, _) ->
-            check "raises_match: expected side stays absent" (expected = None);
-            check "raises_match: rejected exception rendered"
+            is_true ~msg:"raises_match: expected side stays absent"
+              (expected = None);
+            is_true ~msg:"raises_match: rejected exception rendered"
               (match actual with Some _ -> true | None -> false)));
     test "raises: the message diff" (fun () ->
         raise_message_diff "raises: same constructor, different message"
@@ -1006,66 +1003,66 @@ let tests =
             Check.raises (Invalid_argument "index 3") (fun () ->
                 invalid_arg "index 4"))
           (fun diff ->
-            check_string "raises: the diff names the shared constructor"
-              ~expected:{|Invalid_argument: "index 3" -> "index 4"|}
-              ~actual:(describe_message_diff diff));
+            equal ~msg:"raises: the diff names the shared constructor" string
+              {|Invalid_argument: "index 3" -> "index 4"|}
+              (describe_message_diff diff));
         raise_message_diff "raises: different constructors"
           (fun () -> Check.raises Not_found (fun () -> failwith "boom"))
           (fun diff ->
-            check_string "raises: constructors that differ have no message diff"
-              ~expected:"none"
-              ~actual:(describe_message_diff diff));
+            equal ~msg:"raises: constructors that differ have no message diff"
+              string "none"
+              (describe_message_diff diff));
         raise_message_diff "raises: same user constructor, non-string payload"
           (fun () ->
             Check.raises (Payload (1, "x")) (fun () -> raise (Payload (1, "y"))))
           (fun diff ->
-            check_string "raises: no diff without extractable messages"
-              ~expected:"none"
-              ~actual:(describe_message_diff diff));
+            equal ~msg:"raises: no diff without extractable messages" string
+              "none"
+              (describe_message_diff diff));
         raise_message_diff "raises: nothing raised"
           (fun () -> Check.raises (Stdlib.Failure "boom") (fun () -> 1))
           (fun diff ->
-            check_string "raises: nothing raised leaves nothing to diff"
-              ~expected:"none"
-              ~actual:(describe_message_diff diff));
+            equal ~msg:"raises: nothing raised leaves nothing to diff" string
+              "none"
+              (describe_message_diff diff));
         raise_message_diff "raises_match: rejected exception"
           (fun () ->
             Check.raises_match
               (fun _ -> false)
               (fun () -> raise (Sys_error "no such file")))
           (fun diff ->
-            check_string
-              "raises_match: a predicate has no expected side to diff"
-              ~expected:"none"
-              ~actual:(describe_message_diff diff)));
+            equal ~msg:"raises_match: a predicate has no expected side to diff"
+              string "none"
+              (describe_message_diff diff)));
     test "Exn predicates" (fun () ->
-        check "Exn.invalid_arg: matches the constructor"
+        is_true ~msg:"Exn.invalid_arg: matches the constructor"
           (Check.Exn.invalid_arg (Invalid_argument "x"));
-        check "Exn.invalid_arg: rejects other exceptions"
+        is_true ~msg:"Exn.invalid_arg: rejects other exceptions"
           (not (Check.Exn.invalid_arg (Stdlib.Failure "x")));
-        check "Exn.invalid_arg: rejects payloadless exceptions"
+        is_true ~msg:"Exn.invalid_arg: rejects payloadless exceptions"
           (not (Check.Exn.invalid_arg Not_found));
-        check "Exn.failure: matches the constructor"
+        is_true ~msg:"Exn.failure: matches the constructor"
           (Check.Exn.failure (Stdlib.Failure "x"));
-        check
-          "Exn.failure: rejects Invalid_argument even with a matching message"
+        is_true
+          ~msg:
+            "Exn.failure: rejects Invalid_argument even with a matching message"
           (not (Check.Exn.failure (Invalid_argument "x")));
         (* The third message-carrying exception [raises] diffs by message:
            [Exn] covering only two of the three was arbitrary. *)
-        check "Exn.sys_error: matches the constructor"
+        is_true ~msg:"Exn.sys_error: matches the constructor"
           (Check.Exn.sys_error (Sys_error "x"));
-        check "Exn.sys_error: rejects other exceptions"
+        is_true ~msg:"Exn.sys_error: rejects other exceptions"
           (not (Check.Exn.sys_error (Stdlib.Failure "x")));
-        check "Exn.sys_error: ~substring matches inside the message"
+        is_true ~msg:"Exn.sys_error: ~substring matches inside the message"
           (Check.Exn.sys_error ~substring:"No such file"
              (Sys_error "nope.txt: No such file or directory"));
-        check "Exn.invalid_arg: ~substring matches inside the message"
+        is_true ~msg:"Exn.invalid_arg: ~substring matches inside the message"
           (Check.Exn.invalid_arg ~substring:"unhandled op"
              (Invalid_argument "step: unhandled op HALT"));
-        check "Exn.invalid_arg: ~substring rejects a missing needle"
+        is_true ~msg:"Exn.invalid_arg: ~substring rejects a missing needle"
           (not
              (Check.Exn.invalid_arg ~substring:"overflow" (Invalid_argument "x")));
-        check "Exn.invalid_arg: empty ~substring matches any message"
+        is_true ~msg:"Exn.invalid_arg: empty ~substring matches any message"
           (Check.Exn.invalid_arg ~substring:"" (Invalid_argument ""));
         (* The composition the predicates exist for. *)
         passes "raises_match composes with Exn.invalid_arg" (fun () ->
@@ -1076,7 +1073,7 @@ let tests =
             Check.raises_match (Check.Exn.failure ~substring:"underflow")
               (fun () -> failwith "overflow"))
           (fun (_, actual, _) ->
-            check "raises_match + Exn: rejected exception rendered"
+            is_true ~msg:"raises_match + Exn: rejected exception rendered"
               (actual <> None)));
     test "fail, failf, skip" (fun () ->
         (match
@@ -1084,7 +1081,7 @@ let tests =
          with
         | { F.kind = F.Message "boom"; msg = None; _ } -> ()
         | _ -> fail "fail: message stored, no msg annotation");
-        check "fail: usable in expression position"
+        is_true ~msg:"fail: usable in expression position"
           (match
              outcome (fun () ->
                  let n : int = if true then Check.fail "nope" else 3 in
@@ -1097,10 +1094,9 @@ let tests =
                Check.failf "bad %s %d" "value" 42)
          with
         | { F.kind = F.Message m; _ } ->
-            check_string "failf: formatted payload" ~expected:"bad value 42"
-              ~actual:m
+            equal ~msg:"failf: formatted payload" string "bad value 42" m
         | _ -> fail "failf: kind is Message");
-        check "failf: usable in expression position"
+        is_true ~msg:"failf: usable in expression position"
           (match
              outcome (fun () ->
                  let n : int = if true then Check.failf "no %d" 7 else 3 in
@@ -1108,12 +1104,12 @@ let tests =
            with
           | Failed { F.kind = F.Message "no 7"; _ } -> true
           | _ -> false);
-        check "skip: raises Skip_test with the reason"
+        is_true ~msg:"skip: raises Skip_test with the reason"
           (match Check.skip ~reason:"needs docker" () with
           | _ -> false
           | exception F.Skip_test (Some "needs docker") -> true
           | exception _ -> false);
-        check "skip: reason defaults to None"
+        is_true ~msg:"skip: reason defaults to None"
           (match Check.skip () with
           | _ -> false
           | exception F.Skip_test None -> true
@@ -1121,7 +1117,7 @@ let tests =
     test "?__POS__ wins over the captured location on every verb" (fun () ->
         let with_pos name f =
           let fl = caught name f in
-          check (name ^ ": ?__POS__ wins") (fl.F.loc = Some fake_loc)
+          is_true ~msg:(name ^ ": ?__POS__ wins") (fl.F.loc = Some fake_loc)
         in
         with_pos "equal: ?__POS__" (fun () ->
             Check.equal ~__POS__:fake_pos Testable.int 1 2);
@@ -1170,9 +1166,9 @@ let tests =
                Check.equal Testable.int 1 2)
          with
         | { F.loc = Some loc; _ } ->
-            check_string "equal: captured location is the caller's file"
-              ~expected:"test_check.ml"
-              ~actual:(Filename.basename loc.Loc.file)
+            equal ~msg:"equal: captured location is the caller's file" string
+              "test_check.ml"
+              (Filename.basename loc.Loc.file)
         | _ -> fail "equal: default location captured");
         (* The deepest indirection: failf raises from a kasprintf
            continuation, with Format machinery between the call site and the
@@ -1181,64 +1177,64 @@ let tests =
           caught "failf: default location" (fun () -> Check.failf "boom %d" 1)
         with
         | { F.loc = Some loc; _ } ->
-            check_string "failf: captured location is the caller's file"
-              ~expected:"test_check.ml"
-              ~actual:(Filename.basename loc.Loc.file)
+            equal ~msg:"failf: captured location is the caller's file" string
+              "test_check.ml"
+              (Filename.basename loc.Loc.file)
         | _ -> fail "failf: default location captured");
     test "?msg propagates on every verb" (fun () ->
         let msg_of name f = (caught name f).F.msg in
-        check "equal: ?msg stored"
+        is_true ~msg:"equal: ?msg stored"
           (msg_of "equal: ?msg" (fun () ->
                Check.equal ~msg:"ids" Testable.int 1 2)
           = Some "ids");
-        check "not_equal: ?msg stored"
+        is_true ~msg:"not_equal: ?msg stored"
           (msg_of "not_equal: ?msg" (fun () ->
                Check.not_equal ~msg:"ids" Testable.int 1 1)
           = Some "ids");
-        check "is_false: ?msg stored"
+        is_true ~msg:"is_false: ?msg stored"
           (msg_of "is_false: ?msg" (fun () -> Check.is_false ~msg:"flag" true)
           = Some "flag");
-        check "require_ok: ?msg stored"
+        is_true ~msg:"require_ok: ?msg stored"
           (msg_of "require_ok: ?msg" (fun () ->
                ignore (Check.require_ok ~msg:"cfg" (Error ())))
           = Some "cfg");
-        check "raises: ?msg stored"
+        is_true ~msg:"raises: ?msg stored"
           (msg_of "raises: ?msg" (fun () ->
                Check.raises ~msg:"boom" Not_found (fun () -> ()))
           = Some "boom");
-        check "contains: ?msg stored"
+        is_true ~msg:"contains: ?msg stored"
           (msg_of "contains: ?msg" (fun () ->
                Check.contains ~msg:"log" ~sub:"z" "abc")
           = Some "log");
-        check "not_contains: ?msg stored"
+        is_true ~msg:"not_contains: ?msg stored"
           (msg_of "not_contains: ?msg" (fun () ->
                Check.not_contains ~msg:"log" ~sub:"a" "abc")
           = Some "log");
-        check "in_order: ?msg stored"
+        is_true ~msg:"in_order: ?msg stored"
           (msg_of "in_order: ?msg" (fun () ->
                Check.in_order ~msg:"trace" ~subs:[ "b"; "a" ] "abc")
           = Some "trace");
-        check "satisfies: ?msg stored"
+        is_true ~msg:"satisfies: ?msg stored"
           (msg_of "satisfies: ?msg" (fun () ->
                Check.satisfies ~msg:"positive" Testable.int (fun _ -> false) 1)
           = Some "positive");
-        check "less: ?msg stored"
+        is_true ~msg:"less: ?msg stored"
           (msg_of "less: ?msg" (fun () ->
                Check.less ~msg:"retries" Testable.int ~than:1 1)
           = Some "retries");
-        check "at_most: ?msg stored"
+        is_true ~msg:"at_most: ?msg stored"
           (msg_of "at_most: ?msg" (fun () ->
                Check.at_most ~msg:"retries" Testable.int ~than:1 2)
           = Some "retries");
-        check "greater: ?msg stored"
+        is_true ~msg:"greater: ?msg stored"
           (msg_of "greater: ?msg" (fun () ->
                Check.greater ~msg:"rate" Testable.int ~than:1 1)
           = Some "rate");
-        check "at_least: ?msg stored"
+        is_true ~msg:"at_least: ?msg stored"
           (msg_of "at_least: ?msg" (fun () ->
                Check.at_least ~msg:"rate" Testable.int ~than:1 0)
           = Some "rate");
-        check "require_match: ?msg stored"
+        is_true ~msg:"require_match: ?msg stored"
           (msg_of "require_match: ?msg" (fun () ->
                ignore (Check.require_match ~msg:"tcp" (fun _ -> None) 1))
           = Some "tcp"));
