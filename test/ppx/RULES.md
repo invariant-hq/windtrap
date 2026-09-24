@@ -31,7 +31,7 @@ A fixture names each rule it pins by its id and interface line, as in
 | C4 | The default of an optional argument of a function is an entry point, its inner calls traversed. | cov:36-37 | `coverage/fixture_fun` |
 | C5 | The default of an optional argument of a class is an entry point. | cov:36-37 | `coverage/fixture_class` |
 | C6 | Each arm of a `match`, `try` and `function` is an entry point, its extent from the pattern's start to the body's end. | cov:38, cov:100-102 | `coverage/fixture_match`, `coverage/fixture_fun` |
-| C7 | An arm's extent is the body alone when the pattern is ghost or starts after the body. | cov:102-103 | unpinned |
+| C7 | An arm's extent is the body alone when the pattern is ghost or starts after the body. | cov:102-103 | `coverage/generated/fixture_generated` |
 | C8 | The guard of an arm is an entry point. | cov:38-39 | `coverage/fixture_match` |
 | C9 | An arm whose body is `assert false` has no point. | cov:55 | `coverage/fixture_match` |
 | C10 | A refutation arm has no point. | cov:55-56 | `coverage/fixture_entries` |
@@ -86,16 +86,16 @@ A fixture names each rule it pins by its id and interface line, as in
 | --- | --- | --- | --- |
 | C50 | An entry point is keyed at its block's start; an operand of `\|\|` at its last byte. | cov:109-110 | `coverage/fixture_and_or` |
 | C51 | An out-edge with a known successor is keyed at the successor's start: a one-binding `let`'s body, a sequence's second expression, a pipeline's right operand. | cov:111-114 | `coverage/fixture_apply`, `coverage/fixture_pipeline` |
-| C52 | A `let` with several bindings gives no successor. | cov:112-113 | unpinned |
+| C52 | A `let` with several bindings gives no successor. | cov:112-113 | `coverage/fixture_keys` |
 | C53 | Any other out-edge of an application is keyed at its callee's last byte. | cov:115 | `coverage/fixture_apply` |
-| C54 | ... at `l`'s last byte for `l @@ x`. | cov:116 | unpinned |
-| C55 | ... at the last byte of the head function of a successor-less pipeline's last stage. | cov:116-117 | unpinned |
-| C56 | A method call or `new` without successor is keyed at the expression's last byte. | cov:118-119 | unpinned |
+| C54 | ... at `l`'s last byte for `l @@ x`. | cov:116 | `coverage/fixture_keys` |
+| C55 | ... at the last byte of the head function of a successor-less pipeline's last stage. | cov:116-117 | `coverage/fixture_keys` |
+| C56 | A method call or `new` without successor is keyed at the expression's last byte. | cov:118-119 | `coverage/fixture_keys` (a method call); `new`: CUT (L9 e), a key shows only when another mark shares it, and no well-typed program puts one at the last byte of a `new` |
 | C57 | Two marks at one offset are one point, keeping the extent recorded first. | cov:106-107, cov:121-127 | `coverage/fixture_and_or` |
 | C58 | Points are numbered by first allocation, a node's sub-expressions before its own blocks. | cov:129-132 | every coverage golden (`coverage/fixture_match`) |
-| C59 | A mark at a ghost location is not inserted. | cov:134-135 | unpinned |
-| C60 | The payloads of extension nodes and attributes are never traversed. | cov:135-136 | unpinned |
-| C61 | The four effects on a file the mutation rewriter ran on first. | cov:138-151 | unpinned |
+| C59 | A mark at a ghost location is not inserted. | cov:134-135 | `coverage/generated/fixture_generated` |
+| C60 | The payloads of extension nodes and attributes are never traversed. | cov:135-136 | `coverage/fixture_keys` |
+| C61 | The four effects on a file the mutation rewriter ran on first. | cov:138-151 | `coverage/after_mutate/fixture_guards` |
 
 ### Exclusion attributes
 

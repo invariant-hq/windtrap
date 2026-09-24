@@ -1,0 +1,46 @@
+[@@@ocaml.text "/*"]
+module Windtrap_cov_________fixture_generated___ml =
+  struct
+    let ___windtrap_visit___ =
+      let counts = Array.make 7 0 in
+      Windtrap_runtime.Coverage.register ~file:"./fixture_generated.ml"
+        ~points:[|{
+                    Windtrap_runtime.Coverage.start_ofs = 461;
+                    Windtrap_runtime.Coverage.end_ofs = 491
+                  };{
+                      Windtrap_runtime.Coverage.start_ofs = 515;
+                      Windtrap_runtime.Coverage.end_ofs = 523
+                    };{
+                        Windtrap_runtime.Coverage.start_ofs = 508;
+                        Windtrap_runtime.Coverage.end_ofs = 523
+                      };{
+                          Windtrap_runtime.Coverage.start_ofs = 782;
+                          Windtrap_runtime.Coverage.end_ofs = 783
+                        };{
+                            Windtrap_runtime.Coverage.start_ofs = 810;
+                            Windtrap_runtime.Coverage.end_ofs = 811
+                          };{
+                              Windtrap_runtime.Coverage.start_ofs = 840;
+                              Windtrap_runtime.Coverage.end_ofs = 855
+                            };{
+                                Windtrap_runtime.Coverage.start_ofs = 858;
+                                Windtrap_runtime.Coverage.end_ofs = 867
+                              }|] ~counts;
+      (fun index -> Windtrap_runtime.Coverage.visit counts index)
+    let ___windtrap_post_visit___ point_index result =
+      ___windtrap_visit___ point_index; result
+  end
+open Windtrap_cov_________fixture_generated___ml
+[@@@ocaml.text "/*"]
+let entry x = ((print_int x)[@generated ])
+let edge x = ___windtrap_visit___ 0; ignore (((succ)[@generated ]) x)
+let written x =
+  ___windtrap_visit___ 2; ignore (___windtrap_post_visit___ 1 (succ x))
+let arms =
+  function
+  | ((Some x)[@generated ]) -> (___windtrap_visit___ 3; x)
+  | ((None)[@after_body ]) -> (___windtrap_visit___ 4; 0)
+let written_arms =
+  function
+  | Some n -> (___windtrap_visit___ 5; n + 1)
+  | None -> (___windtrap_visit___ 6; 0)

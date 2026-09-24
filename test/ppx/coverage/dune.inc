@@ -84,6 +84,16 @@
 
 (rule
  (with-stdout-to
+  fixture_keys.actual
+  (run ./coverage_pp.exe --impl %{dep:fixture_keys.ml})))
+
+(rule
+ (alias runtest)
+ (action
+  (diff fixture_keys.expected fixture_keys.actual)))
+
+(rule
+ (with-stdout-to
   fixture_lazy.actual
   (run ./coverage_pp.exe --impl %{dep:fixture_lazy.ml})))
 
