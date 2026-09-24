@@ -166,21 +166,24 @@ let abandon = function
 
 let with_file_in path f =
   match open_in_bin path with
-  | exception Sys_error _ -> None
+  | exception Sys_error reason -> Error reason
   | ic ->
-      Fun.protect ~finally:(fun () -> close_in_noerr ic) (fun () -> Some (f ic))
+      Fun.protect ~finally:(fun () -> close_in_noerr ic) (fun () -> Ok (f ic))
 
-(* Under [--stream] no captured bytes exist. A silent [""] would make an
+(* Under [--stream] no captured bytes exist, and a log that can no longer
+   be opened holds none this call can read. A silent [""] would make an
    expectation on [output ()] pass against nothing, so the call fails the
    test. *)
 let stream_error = "this test requires capture; rerun without --stream"
 
+let no_bytes ?__POS__ message =
+  raise
+    (Failure.Check_failure
+       (Failure.message ?loc:(Loc.resolve ?__POS__ ()) message))
+
 let output ?__POS__ t =
   match t with
-  | Disabled ->
-      raise
-        (Failure.Check_failure
-           (Failure.message ?loc:(Loc.resolve ?__POS__ ()) stream_error))
+  | Disabled -> no_bytes ?__POS__ stream_error
   | Enabled e -> (
       drain ();
       match e.current with
@@ -195,8 +198,10 @@ let output ?__POS__ t =
             end
           in
           match with_file_in path read with
-          | None -> ""
-          | Some s ->
+          | Error reason ->
+              no_bytes ?__POS__
+                ("this test's captured output cannot be read: " ^ reason)
+          | Ok s ->
               e.consumed <- e.consumed + String.length s;
               s))
 
@@ -235,4 +240,4 @@ let output_tail t =
             in
             Failure.tail ~log_path:path ~omitted_bytes:(start + skip) s
           in
-          with_file_in path read)
+          Result.to_option (with_file_in path read))

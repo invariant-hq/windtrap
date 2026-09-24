@@ -326,19 +326,34 @@ let test_unopenable_log () =
   let root = temp_dir () in
   let cap = Capture.create ~log_dir:root ~suite:"s" () in
   let log = concat_all root [ "s"; "t.output" ] in
-  let first = ref "?" and away = ref "?" in
+  let first = ref "?" and away = ref None in
   let tail_away = ref None and back = ref "?" in
   Capture.with_capture cap ~groups:[] ~test_name:"t" (fun () ->
       print_string "abc";
       first := Capture.output cap;
       print_string "def";
       Sys.rename log (log ^ ".away");
-      away := Capture.output cap;
+      (away :=
+         match Capture.output ~__POS__:("test_capture.ml", 7, 0, 5) cap with
+         | s -> Some (Error s)
+         | exception Failure.Check_failure f -> Some (Ok f));
       tail_away := Capture.output_tail cap;
       Sys.rename (log ^ ".away") log;
       back := Capture.output cap);
   equal ~msg:"the first window" string "abc" !first;
-  equal ~msg:"output is empty while the log cannot be opened" string "" !away;
+  (match !away with
+  | Some (Ok f) ->
+      (match f.Failure.kind with
+      | Failure.Message m ->
+          equal ~msg:"the message names the log and why" string
+            ("this test's captured output cannot be read: " ^ log
+           ^ ": No such file or directory")
+            m
+      | _ -> fail "the failure is a Message");
+      is_true ~msg:"located at ?__POS__"
+        (Option.map (fun l -> l.Loc.line) f.Failure.loc = Some 7)
+  | Some (Error s) -> failf "output returned %S while the log was away" s
+  | None -> fail "output was not called");
   is_true ~msg:"output_tail is None then" (!tail_away = None);
   equal ~msg:"the cursor stayed, so the unread bytes come back" string "def"
     !back
@@ -728,7 +743,8 @@ let tests =
     test "one text in arrival order" test_one_text_in_arrival_order;
     test "create creates nothing" test_create_creates_nothing;
     test "abandon ignores a failed drain" test_abandon_ignores_drain_failure;
-    test "a log that cannot be opened reads as nothing" test_unopenable_log;
+    test "a log that cannot be opened fails the test, naming it"
+      test_unopenable_log;
     test "abandon restores the descriptors from inside an attempt" test_abandon;
     test "Disabled (--stream) behavior" test_disabled;
     test "bounded tails with drop counts" test_bounded_tail;

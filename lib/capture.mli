@@ -104,13 +104,17 @@ val output : ?__POS__:Loc.pos -> t -> string
     it returns.
 
     It is [""] when everything was read already and when [t] has no current log.
-    It is also [""], and the cursor stays, when the log can no longer be opened.
 
-    Raises [Failure.Check_failure] when [t] is {!disabled}, since no bytes exist
-    to return. The failure is a {!Failure.Message} that reads
-    [this test requires capture; rerun without --stream], located at
-    [Loc.resolve ?__POS__ ()]. [__POS__] is read in that case only. Raises
-    [Sys_error] as {!drain} does. *)
+    Raises [Failure.Check_failure] when no bytes can be returned, with a
+    {!Failure.Message} located at [Loc.resolve ?__POS__ ()]:
+    - when [t] is {!disabled}, the message reads
+      [this test requires capture; rerun without --stream];
+    - when the log can no longer be opened, the message reads
+      [this test's captured output cannot be read: <reason>], where [<reason>]
+      is the [Sys_error] of the open, which names the log. The cursor stays.
+
+    [__POS__] is read in these cases only. Raises [Sys_error] as {!drain} does.
+*)
 
 val output_tail : t -> Failure.tail option
 (** [output_tail t] is the end of what the current attempt wrote, as the

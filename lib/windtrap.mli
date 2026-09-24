@@ -1475,8 +1475,9 @@ val output : unit -> string
     {!expect} takes [output ()] as its produced text. What [output ()] returned
     still shows in a failure's block, which reads the whole log. Under
     [--stream] the call fails the test with
-    [this test requires capture; rerun without --stream]. Raises
-    [Invalid_argument] if no test is running. *)
+    [this test requires capture; rerun without --stream]. When the test's log
+    can no longer be opened, the call fails the test with a message that names
+    the log. Raises [Invalid_argument] if no test is running. *)
 
 (** {1:body The running test}
 

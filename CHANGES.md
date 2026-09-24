@@ -464,7 +464,8 @@ Coverage and packaging:
 - **`output ()`** consumes what the test printed since it started or the
   previous call, standard error and subprocess output included; under
   `--stream` it fails the test with "rerun without --stream" rather than
-  comparing against silence (0.1 compared against the empty string). The
+  comparing against silence (0.1 compared against the empty string), and
+  so does a capture log that can no longer be opened, naming it. The
   0.1 `expect`/`expect_exact`/`capture`/`capture_exact` string-comparison
   family is gone; `expect (output ()) @@ __POS_OF__ {|…|}` is its spelling.
 
