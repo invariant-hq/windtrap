@@ -147,20 +147,11 @@ let int_renders_decimal () =
     ~msg:(Printf.sprintf "int rendered %S for %d" rendered (root_value tree))
     (rendered = string_of_int (root_value tree))
 
-let nat_distribution_is_stratified () =
-  let values = samples Gen.nat 1_000 in
+let nat_stays_below_10_000 () =
   List.iter
     (fun v ->
       is_true ~msg:(Printf.sprintf "nat produced %d" v) (v >= 0 && v < 10_000))
-    values;
-  let below_ten = List.length (List.filter (fun v -> v < 10) values) in
-  let above_thousand = List.length (List.filter (fun v -> v >= 1_000) values) in
-  is_true
-    ~msg:(Printf.sprintf "only %d of 1000 nats below 10" below_ten)
-    (below_ten >= 300);
-  is_true
-    ~msg:(Printf.sprintf "no nat above 1000 in 1000 draws (%d)" above_thousand)
-    (above_thousand >= 1)
+    (samples Gen.nat 1_000)
 
 let nat_shrinks_to_zero () =
   equal ~msg:"nat shrinks to 0" string "0"
@@ -524,12 +515,6 @@ let either_generates_both_constructors () =
   let values = samples gen 500 in
   is_true ~msg:"no Left in 500 eithers" (List.exists Either.is_left values);
   is_true ~msg:"no Right in 500 eithers" (List.exists Either.is_right values);
-  (* Equal probability, unlike [result]'s 3:1 — pinned loosely enough to
-     hold for any seed. *)
-  let lefts = List.length (List.filter Either.is_left values) in
-  is_true
-    ~msg:(Printf.sprintf "%d of 500 eithers were Left, not about half" lefts)
-    (lefts >= 175 && lefts <= 325);
   let tree = find_sample gen Either.is_right in
   explore ~limit:50 tree (fun v ->
       is_true ~msg:"Right candidate crossed to Left" (Either.is_right v));
@@ -1287,12 +1272,482 @@ let evidence_shaped_identifier_generator_composes () =
          minimum)
     (minimum = {|"a"|} || minimum = {|"-"|})
 
+(* Contract details: each test below reads one sentence of gen.mli. *)
+
+(* Two states are the same stream when their next two words agree;
+   [Seed.state] has no equality of its own. *)
+let same_stream a b =
+  let word state = fst (Seed.bits64 state) in
+  let next state = snd (Seed.bits64 state) in
+  Int64.equal (word a) (word b) && Int64.equal (word (next a)) (word (next b))
+
+let successor gen state = snd (Gen_engine.run gen state)
+
+let raises_invalid_arg ~message f =
+  match f () with
+  | _ -> failf "expected Invalid_argument %S" message
+  | exception Invalid_argument m -> equal ~msg:"the message" string message m
+
+let child_values tree =
+  List.map
+    (fun t -> Gen_engine.value (Shrink_tree.root t))
+    (List.of_seq (Shrink_tree.children tree))
+
+(* A size generator whose tree is given by hand: a root length and its
+   candidate lengths. *)
+let sized root candidates =
+  Gen_engine.make (fun state ->
+      ( Shrink_tree.make ~root
+          ~children:(List.to_seq (List.map Shrink_tree.leaf candidates)),
+        state ))
+
+(* The values a recorded seed replays today, at this suite's states. A
+   change to the words a generator draws, or to their order, changes them:
+   that is a change to every recorded seed, and this is where it shows. *)
+let a_recorded_seed_replays_these_values () =
+  let replay gen index = render (Gen_engine.sample gen (state index)) in
+  equal ~msg:"int" string "2683476424248205541" (replay Gen.int 0);
+  equal ~msg:"nat" string "254" (replay Gen.nat 1);
+  equal ~msg:"float" string "9.32137030625773e+307" (replay Gen.float 2);
+  equal ~msg:"string" string "\"dpsagx\""
+    (replay Gen.(string_of ~size:(int_range 0 6) (char_range 'a' 'z')) 3);
+  equal ~msg:"list of small_int" string "[2657; -902; -6188; 566; 2]"
+    (replay Gen.(list ~size:(int_range 0 5) small_int) 4);
+  equal ~msg:"option, one_of and frequency" string "(Some (false), 7, 4)"
+    (replay
+       Gen.(
+         triple (option bool)
+           (one_of [ int_range 0 9; int_range 100 109 ])
+           (frequency [ (1, int_range 0 9); (3, int_range 100 109) ]))
+       5)
+
+let int32_and_int64_print_their_literal_suffix () =
+  for index = 0 to 19 do
+    let tree = Gen_engine.sample Gen.int32 (state index) in
+    equal ~msg:"int32" string
+      (Printf.sprintf "%ldl" (root_value tree))
+      (render tree);
+    let tree = Gen_engine.sample Gen.int64 (state index) in
+    equal ~msg:"int64" string
+      (Printf.sprintf "%LdL" (root_value tree))
+      (render tree)
+  done
+
+let float_prints_the_shortest_round_trip () =
+  for index = 0 to 19 do
+    let tree = Gen_engine.sample Gen.float (state index) in
+    equal string (Pp.to_string Pp.float_exact (root_value tree)) (render tree)
+  done
+
+let a_float_node_has_at_most_15_candidates () =
+  let counts =
+    List.init 20 (fun index ->
+        Seq.length
+          (Shrink_tree.children (Gen_engine.sample Gen.float (state index))))
+  in
+  List.iter (fun n -> at_most ~msg:"candidates" int ~than:15 n) counts;
+  (* A float far from 0 halves its gap more than 15 times before it
+     converges, so the cut is reached. *)
+  mem ~msg:"the cut is reached" int 15 counts
+
+let nat_strata_are_50_25_20_5 () =
+  (* Each stratum is uniform below its bound, so the bands overlap: below
+     10 is 0.5 + 0.25 * 0.1 + 0.2 * 0.01 + 0.05 * 0.001, and so on. *)
+  let values = samples Gen.nat 20_000 in
+  let share low high =
+    float_of_int
+      (List.length (List.filter (fun v -> low <= v && v < high) values))
+    /. 20_000.
+  in
+  let within name expected v =
+    is_true
+      ~msg:(Printf.sprintf "%s: %.4f, expected about %.4f" name v expected)
+      (Float.abs (v -. expected) < 0.015)
+  in
+  within "below 10" 0.52705 (share 0 10);
+  within "10 to 99" 0.24345 (share 10 100);
+  within "100 to 999" 0.1845 (share 100 1_000);
+  within "1000 to 9999" 0.045 (share 1_000 10_000)
+
+let float_is_uniform_over_bit_patterns () =
+  (* Half the finite bit patterns are negative, and half have a magnitude of
+     at least 1; a float uniform over the reals would have nearly none below
+     1. *)
+  let values = samples Gen.float 4_000 in
+  let share p = float_of_int (List.length (List.filter p values)) /. 4_000. in
+  let about_half name v =
+    is_true ~msg:(Printf.sprintf "%s: %.3f" name v) (v > 0.46 && v < 0.54)
+  in
+  about_half "negative" (share Float.sign_bit);
+  about_half "magnitude at least 1" (share (fun v -> Float.abs v >= 1.))
+
+let argument_checks_run_in_their_stated_order () =
+  let sample gen () = ignore (Gen_engine.sample gen (state 0)) in
+  raises_invalid_arg ~message:"Gen.float_range: bounds must be finite"
+    (sample (Gen.float_range 1. Float.neg_infinity));
+  raises_invalid_arg ~message:"Gen.float_range: high < low"
+    (sample (Gen.float_range 1. 0.));
+  raises_invalid_arg ~message:"Gen.float_range: high -. low > max_float"
+    (sample (Gen.float_range (-.Float.max_float) Float.max_float));
+  raises_invalid_arg ~message:"Gen.frequency: empty list"
+    (sample (Gen.frequency []));
+  raises_invalid_arg ~message:"Gen.frequency: negative weight"
+    (sample (Gen.frequency [ (-1, Gen.nat) ]));
+  raises_invalid_arg ~message:"Gen.frequency: total weight < 1"
+    (sample (Gen.frequency [ (0, Gen.nat) ]))
+
+let a_negative_length_names_gen_list () =
+  let sample gen () = ignore (Gen_engine.sample gen (state 0)) in
+  let size = Gen.constant (-1) in
+  raises_invalid_arg ~message:"Gen.list: negative size"
+    (sample Gen.(list ~size unit));
+  raises_invalid_arg ~message:"Gen.list: negative size"
+    (sample Gen.(array ~size unit));
+  raises_invalid_arg ~message:"Gen.list: negative size"
+    (sample Gen.(string_of ~size char));
+  raises_invalid_arg ~message:"Gen.list: negative size"
+    (sample Gen.(bytes_of ~size char))
+
+let unit_and_constant_consume_no_randomness () =
+  let s = state 0 in
+  is_true ~msg:"unit" (same_stream s (successor Gen.unit s));
+  is_true ~msg:"constant" (same_stream s (successor (Gen.constant 7) s));
+  is_false ~msg:"premise: bool consumes" (same_stream s (successor Gen.bool s))
+
+let char_prints_with_percent_c () =
+  for index = 0 to 59 do
+    let tree = Gen_engine.sample Gen.char (state index) in
+    equal string (Printf.sprintf "%C" (root_value tree)) (render tree)
+  done;
+  let tree = find_sample Gen.char (fun c -> Char.code c < 32) in
+  equal ~msg:"a control byte is escaped" string
+    (Printf.sprintf "%C" (root_value tree))
+    (render tree)
+
+let bytes_prints_as_bytes_of_string () =
+  for index = 0 to 19 do
+    let tree = Gen_engine.sample Gen.bytes (state index) in
+    equal string
+      (Printf.sprintf "Bytes.of_string %S" (Bytes.to_string (root_value tree)))
+      (render tree)
+  done
+
+let list_and_array_print_their_brackets () =
+  let size = Gen.int_range 0 4 in
+  let items xs = String.concat "; " (List.map string_of_int xs) in
+  for index = 0 to 19 do
+    let tree = Gen_engine.sample Gen.(list ~size small_int) (state index) in
+    equal ~msg:"list" string ("[" ^ items (root_value tree) ^ "]") (render tree);
+    let tree = Gen_engine.sample Gen.(array ~size small_int) (state index) in
+    equal ~msg:"array" string
+      ("[|" ^ items (Array.to_list (root_value tree)) ^ "|]")
+      (render tree)
+  done
+
+let default_length_is_drawn_as_nat_draws () =
+  for index = 0 to 99 do
+    equal int
+      (root_value (Gen_engine.sample Gen.nat (state index)))
+      (List.length
+         (root_value (Gen_engine.sample Gen.(list unit) (state index))))
+  done
+
+let sized_list_candidates_are_prefixes_then_element_reductions () =
+  let gen = Gen.(list ~size:(int_range 0 6) (int_range 1 9)) in
+  let tree =
+    find_sample gen (fun xs ->
+        List.length xs >= 4 && List.for_all (fun x -> x > 1) xs)
+  in
+  let drawn = root_value tree in
+  let length = List.length drawn in
+  let candidates = child_values tree in
+  let shorter = List.filter (fun xs -> List.length xs < length) candidates in
+  let same = List.filter (fun xs -> List.length xs = length) candidates in
+  is_true ~msg:"premise: both kinds are there" (shorter <> [] && same <> []);
+  equal ~msg:"the length candidates come first"
+    (list (list int))
+    shorter
+    (List.filteri (fun i _ -> i < List.length shorter) candidates);
+  List.iter
+    (fun xs ->
+      equal ~msg:"a shorter candidate is a prefix of the drawn list" (list int)
+        (List.filteri (fun i _ -> i < List.length xs) drawn)
+        xs)
+    shorter;
+  let changed xs =
+    List.filteri (fun i x -> x <> List.nth drawn i) xs |> List.length
+  in
+  let first_changed xs =
+    let rec go i = function
+      | x :: rest -> if x <> List.nth drawn i then i else go (i + 1) rest
+      | [] -> i
+    in
+    go 0 xs
+  in
+  List.iter (fun xs -> equal ~msg:"one element reduced" int 1 (changed xs)) same;
+  let positions = List.map first_changed same in
+  equal ~msg:"the reductions go from the left" (list int)
+    (List.sort compare positions)
+    positions
+
+let a_rejected_sized_list_candidate_is_skipped () =
+  (* Every element is rejected, so only the empty list generates: the
+     candidate lengths 3 and 2 are skipped, and 0 between them survives. *)
+  let gen =
+    Gen.list
+      ~size:(sized 0 [ 3; 0; 2 ])
+      (Gen.such_that (fun _ -> false) Gen.unit)
+  in
+  equal
+    (list (list unit))
+    [ [] ]
+    (child_values (Gen_engine.sample gen (state 0)))
+
+let a_negative_candidate_length_raises_at_its_forcing () =
+  let gen = Gen.list ~size:(sized 2 [ -1 ]) Gen.unit in
+  let tree = Gen_engine.sample gen (state 0) in
+  equal ~msg:"sampling draws the root" int 2 (List.length (root_value tree));
+  raises_invalid_arg ~message:"Gen.list: negative size" (fun () ->
+      Shrink_tree.children tree ())
+
+let option_result_and_either_probabilities () =
+  let share gen p =
+    float_of_int (List.length (List.filter p (samples gen 8_000))) /. 8_000.
+  in
+  let near name expected v =
+    is_true
+      ~msg:(Printf.sprintf "%s: %.3f, expected %.2f" name v expected)
+      (Float.abs (v -. expected) < 0.02)
+  in
+  near "None" 0.15 (share Gen.(option unit) Option.is_none);
+  near "Error" 0.25 (share Gen.(result unit unit) Result.is_error);
+  near "Left" 0.5 (share Gen.(either unit unit) Either.is_left)
+
+let pair_draws_its_first_component_first () =
+  for index = 0 to 9 do
+    let s = state index in
+    let a, after_a = Gen_engine.run Gen.int s in
+    let b, after_b = Gen_engine.run Gen.int after_a in
+    let ab, after_ab = Gen_engine.run Gen.(pair int int) s in
+    equal (pair int int)
+      (Shrink_tree.root a, Shrink_tree.root b)
+      (Shrink_tree.root ab);
+    is_true ~msg:"the successor is past both" (same_stream after_b after_ab)
+  done
+
+let triple_and_quad_shrink_from_the_left () =
+  let nonzero = ( <> ) 0 in
+  let tree =
+    find_sample
+      Gen.(triple nat nat nat)
+      (fun (a, b, c) -> List.for_all nonzero [ a; b; c ])
+  in
+  let _, b, c = root_value tree in
+  equal ~msg:"triple" (triple int int int) (0, b, c)
+    (root_value (first_child tree));
+  let tree =
+    find_sample
+      Gen.(quad nat nat nat nat)
+      (fun (a, b, c, d) -> List.for_all nonzero [ a; b; c; d ])
+  in
+  let _, b, c, d = root_value tree in
+  equal ~msg:"quad" (quad int int int int) (0, b, c, d)
+    (root_value (first_child tree))
+
+let one_of_offers_earlier_branches_then_the_drawn_value () =
+  let gen =
+    Gen.(one_of [ constant 10; constant 20; constant 30; int_range 40 50 ])
+  in
+  let tree = find_sample gen (fun v -> v > 41) in
+  let drawn = root_value tree in
+  let children = child_values tree in
+  (* The drawn index is 3, whose integer-scheme candidates are 0, 1, 2. *)
+  equal ~msg:"the earlier branches first" (list int) [ 10; 20; 30 ]
+    (List.filteri (fun i _ -> i < 3) children);
+  let rest = List.filteri (fun i _ -> i >= 3) children in
+  is_true ~msg:"then the drawn value's candidates" (rest <> []);
+  List.iter
+    (fun v ->
+      is_true ~msg:"a candidate of the drawn value" (40 <= v && v < drawn))
+    rest
+
+let frequency_draws_on_the_state_as_it_stands_and_keeps_its_choice () =
+  for index = 0 to 9 do
+    let s = state index in
+    let _, after_choice = Seed.below ~bound:1L s in
+    equal ~msg:"the branch draws right after the choice" int
+      (root_value (Gen_engine.sample Gen.int after_choice))
+      (root_value (Gen_engine.sample Gen.(frequency [ (1, int) ]) s))
+  done;
+  let gen = Gen.(frequency [ (1, constant 0); (1, int_range 1 100) ]) in
+  let tree = find_sample gen (fun v -> v > 2) in
+  explore ~limit:200 tree (fun v ->
+      is_true ~msg:"no candidate crosses to the other branch" (v >= 1))
+
+let such_that_draws_at_most_100_times () =
+  let draws = ref 0 in
+  let counted =
+    Gen_engine.make ~pp:Format.pp_print_int (fun state ->
+        incr draws;
+        Gen_engine.run Gen.int state)
+  in
+  (match
+     Gen_engine.sample (Gen.such_that (fun _ -> false) counted) (state 0)
+   with
+  | _ -> fail "an unsatisfiable such_that sampled"
+  | exception Gen_engine.Rejected -> ());
+  equal ~msg:"draws, the first included" int 100 !draws
+
+let map_runs_f_once_per_node_and_lets_its_exceptions_escape () =
+  let calls = ref 0 in
+  let counting v =
+    incr calls;
+    v
+  in
+  let tree = Gen_engine.sample (Gen.map counting Gen.int) (state 3) in
+  equal ~msg:"the root, at sampling" int 1 !calls;
+  let n = Seq.length (Shrink_tree.children tree) in
+  ignore (Seq.length (Shrink_tree.children tree));
+  equal ~msg:"once per forced node, forced twice" int (1 + n) !calls;
+  raises ~msg:"at sampling, out of sample" Exit (fun () ->
+      Gen_engine.sample (Gen.map (fun _ -> raise Exit) Gen.int) (state 3));
+  let tree =
+    Gen_engine.sample
+      (Gen.map (fun v -> if v = 0 then raise Exit else v) Gen.int)
+      (state 3)
+  in
+  raises ~msg:"on a candidate, out of its forcing" Exit (fun () ->
+      Shrink_tree.children tree ())
+
+let an_exception_of_bind_escapes_the_forcing () =
+  let gen =
+    Gen.bind (Gen.int_range 0 10) (fun v ->
+        if v = 0 then raise Exit else Gen.constant v)
+  in
+  let tree = find_sample gen (fun v -> v > 0) in
+  raises Exit (fun () -> Shrink_tree.children tree ())
+
+let run_returns_the_values_that_sample_draws () =
+  let gen = Gen.(list ~size:(int_range 0 4) small_int) in
+  for index = 0 to 9 do
+    equal (list int)
+      (root_value (Gen_engine.sample gen (state index)))
+      (Shrink_tree.root (fst (Gen_engine.run gen (state index))))
+  done
+
+let render_formats_again_on_every_call () =
+  let calls = ref 0 in
+  let counting ppf v =
+    incr calls;
+    Format.pp_print_int ppf v
+  in
+  let tree = Gen_engine.sample (Gen.with_pp counting Gen.int) (state 0) in
+  equal ~msg:"sampling formats nothing" int 0 !calls;
+  ignore (render tree);
+  ignore (render tree);
+  equal ~msg:"each render formats" int 2 !calls;
+  let long =
+    Gen.with_pp
+      (Pp.brackets (Pp.list Pp.int))
+      (Gen.constant (List.init 40 (fun i -> 1000 + i)))
+  in
+  let lines =
+    String.split_on_char '\n' (render (Gen_engine.sample long (state 0)))
+  in
+  is_true ~msg:"a long value breaks" (List.length lines > 1);
+  List.iter
+    (fun line ->
+      at_most ~msg:"at the default margin" int ~than:78 (String.length line))
+    lines
+
+let a_raising_printer_renders_the_exception () =
+  let rendered exn =
+    render
+      (Gen_engine.sample (Gen.with_pp (fun _ _ -> raise exn) Gen.nat) (state 0))
+  in
+  List.iter
+    (fun exn ->
+      equal string
+        (Printf.sprintf "<printer raised %s>" (Printexc.to_string exn))
+        (rendered exn))
+    [
+      Stdlib.Failure "boom";
+      Windtrap.Private.Failure.Timeout 1.5;
+      Sys.Break;
+      Out_of_memory;
+      Stack_overflow;
+    ]
+
+let make_without_pp_has_nothing_to_print () =
+  let gen =
+    Gen_engine.make (fun state ->
+        ( Shrink_tree.make ~root:1 ~children:(Seq.return (Shrink_tree.leaf 0)),
+          state ))
+  in
+  let tree = Gen_engine.sample gen (state 0) in
+  equal ~msg:"the root" string placeholder (render tree);
+  equal ~msg:"a candidate" string placeholder (render (first_child tree))
+
+let contract_suite =
+  [
+    ( "a recorded seed replays these values",
+      a_recorded_seed_replays_these_values );
+    ( "int32 and int64 print their literal suffix",
+      int32_and_int64_print_their_literal_suffix );
+    ( "float prints the shortest round trip",
+      float_prints_the_shortest_round_trip );
+    ( "a float node has at most 15 candidates",
+      a_float_node_has_at_most_15_candidates );
+    ("nat strata are 50, 25, 20 and 5 percent", nat_strata_are_50_25_20_5);
+    ( "float is uniform over the finite bit patterns",
+      float_is_uniform_over_bit_patterns );
+    ( "argument checks run in their stated order",
+      argument_checks_run_in_their_stated_order );
+    ( "a negative length names Gen.list, whoever raised",
+      a_negative_length_names_gen_list );
+    ( "unit and constant consume no randomness",
+      unit_and_constant_consume_no_randomness );
+    ("char prints with %C", char_prints_with_percent_c);
+    ("bytes prints as Bytes.of_string", bytes_prints_as_bytes_of_string);
+    ("list and array print their brackets", list_and_array_print_their_brackets);
+    ( "the default length is drawn as nat draws",
+      default_length_is_drawn_as_nat_draws );
+    ( "a sized list offers prefixes, then element reductions from the left",
+      sized_list_candidates_are_prefixes_then_element_reductions );
+    ( "a rejected sized-list candidate is skipped",
+      a_rejected_sized_list_candidate_is_skipped );
+    ( "a negative candidate length raises at its forcing",
+      a_negative_candidate_length_raises_at_its_forcing );
+    ( "option, result and either draw at 0.15, 0.25 and 0.5",
+      option_result_and_either_probabilities );
+    ( "pair draws its first component first",
+      pair_draws_its_first_component_first );
+    ( "triple and quad shrink from the left",
+      triple_and_quad_shrink_from_the_left );
+    ( "one_of offers the earlier branches, then the drawn value's candidates",
+      one_of_offers_earlier_branches_then_the_drawn_value );
+    ( "frequency draws on the state as it stands and keeps its choice",
+      frequency_draws_on_the_state_as_it_stands_and_keeps_its_choice );
+    ("such_that draws at most 100 times", such_that_draws_at_most_100_times);
+    ( "map runs f once per node, and its exceptions escape",
+      map_runs_f_once_per_node_and_lets_its_exceptions_escape );
+    ( "an exception of bind's function escapes the forcing",
+      an_exception_of_bind_escapes_the_forcing );
+    ( "run returns the values that sample draws",
+      run_returns_the_values_that_sample_draws );
+    ("render formats again on every call", render_formats_again_on_every_call);
+    ( "a raising printer renders the exception",
+      a_raising_printer_renders_the_exception );
+    ( "make without pp has nothing to print",
+      make_without_pp_has_nothing_to_print );
+  ]
+
 let suite =
   [
     ("same seed gives same value and render", same_seed_same_value_and_render);
     ("int shrinks to zero", int_shrinks_to_zero);
     ("int renders decimal", int_renders_decimal);
-    ("nat distribution is stratified", nat_distribution_is_stratified);
+    ("nat stays below 10_000", nat_stays_below_10_000);
     ("nat shrinks to zero", nat_shrinks_to_zero);
     ("small_int is small and signed", small_int_is_small_and_signed);
     ( "int_range stays in bounds while shrinking",
@@ -2085,8 +2540,39 @@ module Shrink_tree_suite = struct
     equal ~msg:"the search stops at the local minimum" string "[5]" minimum;
     at_most ~msg:"the search terminates promptly" int ~than:20 steps
 
+  let list_root_forces_no_cell () =
+    let forced = ref 0 in
+    let element root =
+      Shrink_tree.make ~root ~children:(fun () ->
+          incr forced;
+          Seq.Nil)
+    in
+    let tree = Shrink_tree.list [ element 1; element 2; element 3 ] in
+    equal ~msg:"the root" (list int) [ 1; 2; 3 ] (Shrink_tree.root tree);
+    equal ~msg:"no element cell was forced" int 0 !forced
+
+  (* Every operation of the module, then one draw of the global state against
+     a copy taken before them: a random operation would have moved it. *)
+  let performs_no_random_operation () =
+    let before = Random.get_state () in
+    let rec countdown n =
+      Shrink_tree.make ~root:n ~children:(fun () ->
+          if n = 0 then Seq.Nil else Seq.Cons (countdown (n - 1), Seq.empty))
+    in
+    let tree =
+      Shrink_tree.pair
+        (Shrink_tree.map succ (countdown 4))
+        (Shrink_tree.list [ countdown 2; Shrink_tree.leaf 9 ])
+    in
+    let rec visit tree = Seq.iter visit (Shrink_tree.children tree) in
+    visit tree;
+    equal ~msg:"the next global draw is the one due" int
+      (Random.State.bits before) (Random.bits ())
+
   let suite =
     [
+      ("list's root forces no cell", list_root_forces_no_cell);
+      ("performs no random operation", performs_no_random_operation);
       ( "root and leaf do not force children",
         root_and_leaf_do_not_force_children );
       ( "child head is cached and physically reused",
@@ -2133,7 +2619,7 @@ module Shrink_tree_suite = struct
 end
 
 let tests =
-  List.map (fun (name, fn) -> test name fn) suite
+  List.map (fun (name, fn) -> test name fn) (suite @ contract_suite)
   @ [ group "shrink tree" Shrink_tree_suite.tests ]
   @ law_tests
 
