@@ -5,7 +5,7 @@
 ; executables that `dune runtest` never runs. A dune project of its own,
 ; so that its library keeps the example's name.
 
-(copy_files ../*.ml)
+(copy_files ../{calc,half_a,half_b,stats,test_calc,test_a,test_b}.ml)
 
 (library
  (name windtrap_example_coverage)
