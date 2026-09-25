@@ -197,6 +197,41 @@ let identity_tests =
             contains ~msg:"reason" ~sub:needle reason
         | Error e ->
             failf "%S: expected Malformed, got %a" spec M.pp_arm_error e);
+    (* The fields are read from the right, and the first one wrong is the
+       one the reason names. *)
+    cases "id_of_string names the first field it cannot read"
+      ~name:(fun (spec, _) -> spec)
+      [
+        ("add", "no ':' separator");
+        ( "a.ml:1:",
+          "unknown rewrite \"\" (expected one of not, lt, le, gt, ge, eq, neq, \
+           add, sub, fadd, fsub, and, or)" );
+        ("x:add", "no position before the rewrite");
+        ("a.ml:x:add", "invalid column \"x\"");
+        ("a.ml:9:add", "no line number");
+        (":x:1:add", "invalid line \"x\"");
+        (":0:1:add", "empty file name");
+        ("a.ml:0:1:add", "line numbers are 1-based");
+        ( "a.ml:99999999999999999999:1:add",
+          "invalid line \"99999999999999999999\"" );
+      ]
+      (fun (spec, reason) ->
+        match M.id_of_string spec with
+        | Error (M.Malformed m) ->
+            equal ~msg:"spec" string spec m.spec;
+            equal ~msg:"reason" string reason m.reason
+        | Ok i -> failf "%S parsed as %a" spec pp_id i
+        | Error e -> failf "expected Malformed, got %a" M.pp_arm_error e);
+    test "a malformed identifier prints its spelling and the expected form"
+      (fun () ->
+        match M.id_of_string "lib/calc.ml:9" with
+        | Error e ->
+            equal ~msg:"message" string
+              "\"lib/calc.ml:9\" is not a mutant identifier: unknown rewrite \
+               \"9\" (expected one of not, lt, le, gt, ge, eq, neq, add, sub, \
+               fadd, fsub, and, or); expected <file>:<line>:<col>:<rewrite>"
+              (Format.asprintf "%a" M.pp_arm_error e)
+        | Ok i -> failf "parsed as %a" pp_id i);
   ]
 
 (* [with_stderr f] is [f ()] and what it wrote on standard error. *)
@@ -454,6 +489,55 @@ let registry_tests =
       (fun (name, s) ->
         raises_match ~msg:name Exn.invalid_arg (fun () ->
             register_only ~file:("t/bad_" ^ name ^ ".ml") ~sites:[| s |]));
+    cases "a malformed site table's message names the file and the site"
+      ~name:(fun (_, message) -> message)
+      [
+        ( site ~line:0 ~col:0 ~rewrite:"lt" (),
+          "Windtrap_runtime.Mutate: t/bad.ml: site 1: line 0 is not 1-based" );
+        ( site ~line:1 ~col:(-2) ~rewrite:"lt" (),
+          "Windtrap_runtime.Mutate: t/bad.ml: site 1: negative column -2" );
+        ( site ~line:1 ~col:0 ~rewrite:"plus" (),
+          "Windtrap_runtime.Mutate: t/bad.ml: site 1: unknown rewrite \"plus\""
+        );
+      ]
+      (fun (bad, message) ->
+        raises ~msg:"the first bad site of the table" (Invalid_argument message)
+          (fun () ->
+            register_only ~file:"t/bad.ml"
+              ~sites:[| site ~line:1 ~col:0 ~rewrite:"lt" (); bad; bad |]));
+    test "duplicate sites of one table are catalogued and drained once"
+      (fun () ->
+        let g =
+          M.register ~file:"t/dup_reach.ml"
+            ~sites:
+              [|
+                site ~line:1 ~col:0 ~rewrite:"or" ~before:"x" ();
+                site ~line:1 ~col:0 ~rewrite:"or" ~before:"y" ();
+              |]
+        in
+        equal ~msg:"the catalogue keeps the first site" (list mutant_t)
+          [
+            mutant ~file:"t/dup_reach.ml" ~line:1 ~col:0 ~rewrite:"or"
+              ~before:"x" ();
+          ]
+          (List.filter
+             (fun (m : M.mutant) -> m.M.id.M.file = "t/dup_reach.ml")
+             (catalogue ()));
+        fresh ();
+        ignore (g 1);
+        ignore (g 0);
+        ignore (g 1);
+        equal ~msg:"the drain keeps the site marked first, with every hit"
+          (list reached_t)
+          [
+            {
+              M.mutant =
+                mutant ~file:"t/dup_reach.ml" ~line:1 ~col:0 ~rewrite:"or"
+                  ~before:"y" ();
+              hits = 3;
+            };
+          ]
+          (drain ()));
     test "one source file registered twice arms and drains as one mutant"
       (fun () ->
         let sites = [| site ~line:2 ~col:4 ~rewrite:"gt" () |] in
@@ -834,6 +918,86 @@ let arming_tests =
                 is_false ~msg:"false past the budget and past the table"
                   (inert i))
               [ 0; 0; 0; 99; -1 ]));
+    test "each refusal prints its message verbatim" (fun () ->
+        register_only ~file:"t/seven.ml"
+          ~sites:
+            (Array.init 7 (fun i -> site ~line:(i + 1) ~col:0 ~rewrite:"or" ()));
+        let refusal id =
+          match M.arm id with
+          | Ok m -> failf "armed %a" pp_mutant m
+          | Error e -> Format.asprintf "%a" M.pp_arm_error e
+        in
+        disarming @@ fun () ->
+        equal ~msg:"uncatalogued" string
+          "t/absent.ml:1:0:lt: not this executable's mutant; it catalogues no \
+           site in t/absent.ml (if you expected one, is the library under test \
+           instrumented with ppx_windtrap.mutate?)"
+          (refusal (id ~file:"t/absent.ml" ~line:1 ~col:0 ~rewrite:"lt"));
+        equal ~msg:"unmatched" string
+          "t/seven.ml:99:0:or: no such mutation site; t/seven.ml has these:\n\
+          \    t/seven.ml:1:0:or\n\
+          \    t/seven.ml:2:0:or\n\
+          \    t/seven.ml:3:0:or\n\
+          \    t/seven.ml:4:0:or\n\
+          \    t/seven.ml:5:0:or\n\
+          \    t/seven.ml:6:0:or\n\
+          \    (and 1 more)"
+          (refusal (id ~file:"t/seven.ml" ~line:99 ~col:0 ~rewrite:"or")));
+    test "a table registered empty catalogues its file nowhere" (fun () ->
+        register_only ~file:"t/empty.ml" ~sites:[||];
+        disarming @@ fun () ->
+        match M.arm (id ~file:"t/empty.ml" ~line:1 ~col:0 ~rewrite:"lt") with
+        | Error (M.Uncatalogued _) -> ()
+        | Ok m -> failf "armed %a" pp_mutant m
+        | Error e -> failf "expected Uncatalogued, got %a" M.pp_arm_error e);
+    test "duplicates registered twice are ambiguous once per site" (fun () ->
+        let sites =
+          [|
+            site ~line:1 ~col:0 ~rewrite:"lt" ();
+            site ~line:4 ~col:2 ~rewrite:"eq" ~before:"x" ();
+            site ~line:4 ~col:2 ~rewrite:"eq" ~before:"y" ();
+          |]
+        in
+        register_only ~file:"t/dup_twice.ml" ~sites;
+        register_only ~file:"t/dup_twice.ml" ~sites:(Array.copy sites);
+        disarming @@ fun () ->
+        match
+          M.arm (id ~file:"t/dup_twice.ml" ~line:4 ~col:2 ~rewrite:"eq")
+        with
+        | Error (M.Ambiguous { candidates; _ } as e) ->
+            equal ~msg:"one candidate per site, in table order" (list mutant_t)
+              [
+                mutant ~file:"t/dup_twice.ml" ~line:4 ~col:2 ~rewrite:"eq"
+                  ~before:"x" ();
+                mutant ~file:"t/dup_twice.ml" ~line:4 ~col:2 ~rewrite:"eq"
+                  ~before:"y" ();
+              ]
+              candidates;
+            equal ~msg:"message" string
+              "t/dup_twice.ml:4:2:eq: names 2 mutation sites, so no identifier \
+               can tell them apart (a rewriter duplicating locations?); \
+               dismiss the expression with [@mutate off] or exclude the file:\n\
+              \    t/dup_twice.ml:4:2:eq\n\
+              \    t/dup_twice.ml:4:2:eq"
+              (Format.asprintf "%a" M.pp_arm_error e)
+        | Ok m -> failf "armed %a" pp_mutant m
+        | Error e -> failf "expected Ambiguous, got %a" M.pp_arm_error e);
+    test "a runaway prints its mutant, its count and its budget" (fun () ->
+        equal ~msg:"printer" string
+          "Windtrap_runtime.Mutate.Runaway: t/print.ml:2:0:not evaluated 4 \
+           times (budget 3)"
+          (Printexc.to_string
+             (M.Runaway
+                {
+                  id = id ~file:"t/print.ml" ~line:2 ~col:0 ~rewrite:"not";
+                  hits = 4;
+                  budget = 3;
+                })));
+    test "a refused budget names arm" (fun () ->
+        raises ~msg:"message"
+          (Invalid_argument
+             "Windtrap_runtime.Mutate.arm: budget must be positive") (fun () ->
+            M.arm ~budget:0 (id ~file:"t/x.ml" ~line:1 ~col:0 ~rewrite:"or")));
     test "a non-positive budget is a programmer error" (fun () ->
         disarming @@ fun () ->
         List.iter
