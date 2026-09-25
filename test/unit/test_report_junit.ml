@@ -344,6 +344,22 @@ let test_xml_range () =
     ~sub:"a\\x01b\\x0cc\u{FFFD}d\u{FFFD}e" doc;
   check_well_formed "sanitized document is well-formed" doc
 
+(* The edges of XML 1.0's range: the scalar values beside the surrogates, the
+   two noncharacters and the planes beyond the first. *)
+let test_xml_range_edges () =
+  let edges = "\u{D7FF}\u{E000}\u{FFFD}\u{FFFE}\u{FFFF}\u{10000}\u{10FFFF}" in
+  let doc =
+    Report_junit.render ~release_failures:[] ~suite:edges
+      ~results:[ fail_result [ "t" ] (Failure.message edges) ]
+      ~duration:0.1 ()
+  in
+  let kept = "\u{D7FF}\u{E000}\u{FFFD}\u{FFFD}\u{FFFD}\u{10000}\u{10FFFF}" in
+  contains ~msg:"an attribute keeps the range and loses the noncharacters"
+    ~sub:(Printf.sprintf {|<testsuite name="%s"|} kept)
+    doc;
+  contains ~msg:"and so does element text" ~sub:(kept ^ "\n</failure>") doc;
+  check_well_formed "the document is well-formed" doc
+
 let test_escaping () =
   let nasty = {|a<b>&"c'|} in
   let doc =
@@ -572,6 +588,7 @@ let tests =
     test "subtest user msg naming" test_subtest_user_msg_name;
     test "ANSI cannot reach a JUnit document" test_ansi_impossible;
     test "XML 1.0 range sanitization" test_xml_range;
+    test "the edges of the XML 1.0 range" test_xml_range_edges;
     test "escaping" test_escaping;
     test "flaky pass note" test_flaky_note;
     test "the report's path" test_path;
