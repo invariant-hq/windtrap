@@ -38,3 +38,21 @@
   (<> %{os_type} Win32))
  (action
   (diff assertions.md assertions.md.corrected)))
+
+(rule
+ (enabled_if
+  (<> %{os_type} Win32))
+ (deps
+  (alias_rec %{workspace_root}/examples/03-property-testing/all)
+  (source_tree %{workspace_root}/examples/03-property-testing))
+ (action
+  (with-stdout-to
+   property-testing.md.corrected
+   (run %{exe:../transcript/transcript.exe} %{dep:property-testing.md}))))
+
+(rule
+ (alias runtest)
+ (enabled_if
+  (<> %{os_type} Win32))
+ (action
+  (diff property-testing.md property-testing.md.corrected)))

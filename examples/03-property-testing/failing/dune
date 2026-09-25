@@ -1,0 +1,10 @@
+; The example with the bugs doc/manual/property-testing.md describes to
+; show a counterexample and a failing example. Built, never run as a
+; test; the page's transcripts run it.
+
+(copy_files# ../test_geo.ml)
+
+(executable
+ (name test_geo)
+ (modules test_geo geo)
+ (libraries windtrap))

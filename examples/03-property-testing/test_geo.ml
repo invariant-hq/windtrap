@@ -1,68 +1,57 @@
-(* The property chapter's examples (doc/manual/property-testing.md): one
-   [pp] feeds both worlds: Testable.make for assertions and Gen.with_pp for
-   counterexamples; known regressions worth keeping forever go in code via
-   [~examples]; [assume] discards a rare precondition; [cover] and
-   [classify] say whether the generator reaches the interesting region. *)
-
 open Windtrap
-open Geo
 
-let pp_shape ppf = function
-  | Circle r -> Format.fprintf ppf "Circle %g" r
-  | Rect (w, h) -> Format.fprintf ppf "Rect (%g, %g)" w h
-
-let shape = Testable.make ~pp:pp_shape ~equal:( = )
+let size = Gen.(map float_of_int (int_range 0 100))
 
 let gen_shape =
   Gen.(
     one_of
       [
-        map (fun r -> Circle r) (float_range 0. 100.);
-        map
-          (fun (w, h) -> Rect (w, h))
-          (pair (float_range 0. 100.) (float_range 0. 100.));
+        map (fun r -> Geo.Circle r) size;
+        (let+ w = size and+ h = size in
+         Geo.Rect (w, h));
       ])
-  |> Gen.with_pp pp_shape
+  |> Gen.with_pp Geo.pp
 
-let gen_rect =
-  Gen.(
-    let+ w = float_range 0. 10. and+ h = float_range 0. 10. in
-    Rect (w, h))
-  |> Gen.with_pp pp_shape
+let area =
+  group "area"
+    [
+      prop "is never negative" gen_shape (fun s ->
+          at_least ~__POS__ float_exact ~than:0. (Geo.area s));
+    ]
 
-(* A codec whose round trip is a law. *)
-let encode l = String.concat "," (List.map string_of_int l)
+let shape = Testable.make ~pp:Geo.pp ~equal:( = )
 
-let decode = function
-  | "" -> []
-  | s -> List.map int_of_string (String.split_on_char ',' s)
+let to_string =
+  group "to_string"
+    [
+      prop "is read back by of_string" gen_shape (fun s ->
+          equal ~__POS__ (option shape) (Some s)
+            (Geo.of_string (Geo.to_string s)));
+    ]
 
-let () =
-  exit
-  @@ run "geo"
-       [
-         prop "area non-negative" gen_shape (fun s ->
-             is_true (Float.compare (Geo.area s) 0. >= 0));
-         prop "rect area matches the formula"
-           ~examples:[ Rect (2., 0.) ]
-           gen_rect
-           (fun s ->
-             match s with
-             | Rect (w, h) -> equal (float 1e-9) (w *. h) (Geo.area s)
-             | Circle _ -> ());
-         test "one pp feeds both worlds" (fun () ->
-             equal shape (Circle 1.) (Circle 1.));
-         prop "decode inverts encode"
-           Gen.(list small_int)
-           (fun l -> equal (list int) l (decode (encode l)));
-         prop "division round-trips"
-           Gen.(pair small_int small_int)
-           (fun (a, b) ->
-             assume (b <> 0);
-             equal int a ((a / b * b) + (a mod b)));
-         prop "parity is exercised" ~count:200 Gen.small_int (fun n ->
-             cover "even" (n mod 2 = 0);
-             cover "odd" (n mod 2 <> 0);
-             classify "zero" (n = 0);
-             equal int n n);
-       ]
+let close = float_rel ~rel:1e-9 ~abs:1e-9
+
+let scale =
+  group "scale"
+    [
+      prop "multiplies the area by k squared"
+        ~examples:[ (2., Geo.Rect (1., 3.)) ]
+        Gen.(pair (float_range 0. 10.) gen_shape)
+        (fun (k, s) ->
+          equal ~__POS__ close (k *. k *. Geo.area s) (Geo.area (Geo.scale k s)));
+    ]
+
+let inverse =
+  group "scale by 1/k"
+    [
+      prop "undoes scale by k"
+        Gen.(pair (float_range 0. 10.) gen_shape)
+        (fun (k, s) ->
+          assume (k > 0.);
+          let back = Geo.scale (1. /. k) (Geo.scale k s) in
+          classify "circle" (match s with Circle _ -> true | Rect _ -> false);
+          cover "rect" (match s with Rect _ -> true | Circle _ -> false);
+          equal ~__POS__ close (Geo.area s) (Geo.area back));
+    ]
+
+let () = exit (run "geo" [ area; to_string; scale; inverse ])
