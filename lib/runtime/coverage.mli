@@ -8,11 +8,8 @@
 
     Code instrumented by [ppx_windtrap.coverage] calls {!register} once for each
     source file, when the module of the file loads, and {!visit} at every point.
-    The first registration installs an [at_exit] function, which writes the
-    counts of the process to a [.coverage] dump. The [windtrap coverage] command
-    loads the dumps of several executables, merges them and renders
-    {!file_reports}. This module computes the data of a report, which is counts
-    of points and uncovered lines, and it renders nothing.
+    The [windtrap coverage] command loads the dumps of several executables,
+    merges them and renders {!file_reports}.
 
     Coverage never changes what a program or a test means, with the one
     exception that {{!section-ondisk}Dumps} states. A dump that cannot be
@@ -32,16 +29,14 @@ type point = { start_ofs : int; end_ofs : int }
     has the extent of its block, which for an arm of a [match] or of [&&] is the
     whole arm. An out-edge fires when the application returns and has the extent
     of the application, so a call that raises leaves the call uncovered.
-    Out-edges nest inside their block, and {!file_report.uncovered_lines} says
-    what lines follow from extents that overlap. *)
+    Out-edges nest inside their block. *)
 
 val register : file:string -> points:point array -> counts:int array -> unit
 (** [register ~file ~points ~counts] records the point table of [file] and the
     array [counts] that {!visit} increments, where [counts.(i)] counts the
     visits of [points.(i)]. [counts] is kept and not copied. [file] is the path
     of the source file as the instrumenter read it, which under dune is relative
-    to the workspace root, as [lib/calc.ml]. It is the key of every collection,
-    and the name under which {!file_reports} looks for the source.
+    to the workspace root, as [lib/calc.ml].
 
     The first call of a process installs the [at_exit] dump and resolves where
     the dump goes (see {{!section-ondisk}Dumps}). It reads
@@ -53,11 +48,6 @@ val register : file:string -> points:point array -> counts:int array -> unit
     compiled into two modules, the dump adds up the counts of the two
     registrations and counts the points of the file once. A table that differs
     from an earlier one for [file] is dropped, with a warning on standard error.
-    The executable links two incompatible instrumentations of one source, and
-    rebuilding from scratch is the remedy.
-
-    Each warning is one line behind [windtrap: warning:], written when the
-    module loads and whatever the flags of a run.
 
     Raises [Invalid_argument] if [points] and [counts] differ in length, if a
     point breaks the invariant of {!type-point}, or if a count is negative. Only
@@ -70,27 +60,21 @@ val visit : int array -> int -> unit
     one, so a visited point stays visited. Raises [Invalid_argument] if [i] is
     outside [counts], which only a broken instrumenter causes. *)
 
-(** {1:collections Collections}
-
-    A collection is plain data: for each source file, a point table and the
-    counts accumulated for it. {!load} reads one from a dump, and {!merge}
-    combines them. *)
+(** {1:collections Collections} *)
 
 (** The type for the errors of coverage data. *)
 type error =
   | Data of Instr.error
       (** A dump cannot be read, does not start with the magic line of this
-          version, or is malformed. A dump of another version is refused, never
-          converted. *)
+          version, or is malformed. *)
   | Point_mismatch of { file : string }
       (** Two collections carry different point tables for [file], so the
           executables were built from different sources. *)
 
 val pp_error : Format.formatter -> error -> unit
 (** [pp_error ppf e] formats one line on [e] for a person. A [Data] error is
-    formatted by {!Instr.pp_error}, and the message of a {!Point_mismatch} ends
-    with a remedy. It prints nothing, and where its text shows is the contract
-    of its caller. The message is not stable enough for a program to match. *)
+    formatted by {!Instr.pp_error}. The message is not stable enough for a
+    program to match. *)
 
 type t
 (** The type for coverage collections. They are immutable, and a file name
@@ -118,13 +102,12 @@ val files : t -> string list
     directory [Instr.output_dir format ~exe:Sys.executable_name] (see
     {!Instr.output_dir}), named after the digest of its writer. Every run keeps
     a dump of its own there, so the runs of one executable add up in the merge
-    of [windtrap coverage], and a cram test that runs a command-line tool
-    several times leaves as many dumps. The directory belongs to the runtime. A
-    dump that has an identity first removes every [.coverage] file of the
-    directory whose name does not start with its own digest, so the first dump
-    of a rebuilt executable removes those of its predecessors. The name of the
-    directory depends on the path of the executable, so an executable that is
-    renamed or moved leaves its previous directory behind.
+    of [windtrap coverage]. The directory belongs to the runtime. A dump that
+    has an identity first removes every [.coverage] file of the directory whose
+    name does not start with its own digest, so the first dump of a rebuilt
+    executable removes those of its predecessors. The name of the directory
+    depends on the path of the executable, so an executable that is renamed or
+    moved leaves its previous directory behind.
 
     When [WINDTRAP_COVERAGE_FILE] is set and not empty, the process writes to
     that path instead and replaces the file atomically on every run. A relative
@@ -132,15 +115,11 @@ val files : t -> string list
     {!register}.
 
     The dump is an [at_exit] function that runs once in a process. A forked
-    child that leaves through [exit] dumps too. In the directory that is one
-    more file. The counts from before the fork are in both dumps, so they add up
-    twice in the merge. Under [WINDTRAP_COVERAGE_FILE] it is the same path,
-    where the last process to exit wins and nothing is merged. The same holds
-    for an instrumented program that a test spawns with the variable inherited.
-
-    A dump that cannot be written is one line on standard error, behind
-    [windtrap: warning:], written at exit, after the report of a run and
-    whatever its flags. It changes nothing else, and never the exit code.
+    child that leaves through [exit] dumps too. The counts from before the fork
+    are in both dumps, so they add up twice in the merge. Under
+    [WINDTRAP_COVERAGE_FILE] it is the same path, where the last process to exit
+    wins and nothing is merged. The same holds for an instrumented program that
+    a test spawns with the variable inherited.
 
     The first line of a dump is the magic line [windtrap-coverage-v3], which
     carries the version of the format. {!load} refuses another first line, and
@@ -155,8 +134,7 @@ type identity = Instr.identity = { exe : string; digest : string }
 val format : Instr.format
 (** [format] is the constants of the [.coverage] format: the magic line above,
     the data directory [coverage], the extension [coverage] and the kind
-    [coverage]. [windtrap coverage] discovers the dumps with it (see
-    {!Instr.data_dir}). *)
+    [coverage]. *)
 
 val load : string -> (t * identity option, error) result
 (** [load path] is [Ok (t, identity)] when the file at [path] is a dump, where
@@ -169,15 +147,11 @@ val load : string -> (t * identity option, error) result
       malformed identity line, or bytes after the last record.
     - [Error (Point_mismatch _)] when two entries of one file carry different
       point tables. Two entries with an equal table are accepted, and their
-      counts are added.
-
-    The dump of a process loads as the counts of the process at its exit, with
-    the identity of its writer when the dump records one. *)
+      counts are added. *)
 
 (** {1:reports Report data}
 
-    The data below carries no presentation. Ranges, excerpts and styles are the
-    choices of a renderer. *)
+    The data below carries no presentation. *)
 
 type summary = { visited : int; total : int }
 (** The type for counts of points: [visited] points were visited at least once,
@@ -199,18 +173,15 @@ type file_report = {
           [[]] when [source] is [None].
 
           One unvisited extent is enough to mark a line, so a line that visited
-          and unvisited points share is marked, as the line of
-          [let f = function A -> 1 | B -> 2] when only [A] was exercised. An
-          unvisited inner point marks the lines of its own extent only, and an
-          unvisited outer point covers the lines of the points inside it. An
-          empty extent marks the line that holds its [start_ofs]. The summary
-          counts points and not lines, so this rule does not change it. *)
+          and unvisited points share is marked. An unvisited inner point marks
+          the lines of its own extent only, and an unvisited outer point covers
+          the lines of the points inside it. An empty extent marks the line that
+          holds its [start_ofs]. *)
   line_hits : (int * int) list;
       (** [(line, visits)] for every 1-based line that a point touches, sorted
           by line. [visits] is the smallest count among the points that touch
-          the line, so a line that holds an untested arm, or a call that never
-          returned, has [0]. A line that no point touches is absent. It is [[]]
-          when [source] is [None]. *)
+          the line. A line that no point touches is absent. It is [[]] when
+          [source] is [None]. *)
   source : string option;
       (** The text of the source, when it was found under the roots of the
           report and is consistent with the point table. *)
@@ -218,9 +189,8 @@ type file_report = {
       (** [true] when the source was found and is shorter than the extents of
           the point table require, so it changed since the data was recorded.
           [source] is then [None], and [uncovered_lines] and [line_hits] are
-          [[]]. A renderer must report the staleness, whose remedy is to run the
-          instrumented tests again, and must paint no line. An edit that leaves
-          the file long enough is not detected. *)
+          [[]]. A renderer must report the staleness and must paint no line. An
+          edit that leaves the file long enough is not detected. *)
 }
 (** The type for the report data of one file. *)
 
@@ -229,6 +199,5 @@ val file_reports : ?source_roots:string list -> t -> file_report list
     order of file names. The source of a file is looked up under its recorded
     name and then under each root of [source_roots], in order. The first
     candidate that is a readable file wins, even if it is stale. [source_roots]
-    defaults to [["."]]. A file whose source is missing still reports its
-    summary and its extents. The function reads each source from disk, once in a
+    defaults to [["."]]. The function reads each source from disk, once in a
     call. *)

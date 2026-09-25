@@ -5,11 +5,8 @@
 
 (** What the two instrumentation file formats share.
 
-    The dumps of {!Coverage} and the verdict files of {!Verdicts} are named by
-    one build-path rule, record the same writer identity, are written through
-    the same atomic rename and are read by the same scanner. What differs
-    between the two formats is a {!type-format} constant. The module depends on
-    the standard library only and has no effect when it loads. *)
+    The module depends on the standard library only and has no effect when it
+    loads. *)
 
 (** {1:formats Formats} *)
 
@@ -48,28 +45,22 @@ val file_digest : string -> string option
 
     The build directory of a path is the path cut after its first component
     whose name starts with [_build], so dune's default directory and a private
-    one such as [_build_ci] are both recognized. Naming a file, recording an
-    identity and the discovery of files by the [windtrap] command all apply this
-    one rule, so a change to it moves the three together.
+    one such as [_build_ci] are both recognized.
 
     A path is first made absolute and then normalized lexically. [.] and empty
     components are dropped, and [..] is resolved against the component before
-    it, without following a symbolic link. The spellings [test/a.exe],
-    [./test/a.exe] and [test/sub/../a.exe] of one executable have one identity
-    and one file. Below the build directory a leading [.sandbox/<digest>] is
-    removed, so a run inside dune's sandbox and a direct run agree.
+    it, without following a symbolic link. Below the build directory a leading
+    [.sandbox/<digest>] is removed, so a run inside dune's sandbox and a direct
+    run agree.
 
     Normalization also rewrites every ['\\'] of the path to ['/'], on every
     platform. On Unix, a path with a backslash in one of its names gets the
     identity and the file name of a path that does not exist.
 
-    An executable below a build directory writes under {!data_dir}. An
-    executable below none writes under the {!standalone_data_dir} of the current
-    directory, because a tree built without dune must never grow a [_build]. The
-    current directory is read when {!output_file} or {!output_dir} is called,
-    not when the process starts. A value below that needs the current directory,
-    for a relative path or for an executable below no build directory, raises
-    [Sys_error] if it cannot be read. *)
+    The current directory is read when {!output_file} or {!output_dir} is
+    called, not when the process starts. A value below that needs the current
+    directory, for a relative path or for an executable below no build
+    directory, raises [Sys_error] if it cannot be read. *)
 
 val absolute : string -> string
 (** [absolute path] is [path] when it is absolute, and [path] below the current
@@ -93,15 +84,11 @@ val exe_identity : exe:string -> string
     [exe] lies below no build directory. It is the [exe] of an {!type-identity},
     and it is never [""]. Only the directories above [exe] can be its build
     directory, so an executable whose own name starts with [_build] lies below
-    none. A relative result means an executable below a build directory and an
-    absolute one an executable below none, which is how a reader finds the
-    executable again. The build context is part of the result, as in
-    [default/test/t.exe], and the build directory is not. *)
+    none. The build context is part of the result, as in [default/test/t.exe],
+    and the build directory is not. *)
 
 val data_dir : format -> build_dir:string -> string
-(** [data_dir f ~build_dir] is [<build_dir>/_<f.dir>]. Every executable below
-    [build_dir] writes the files of [f] there, and the [windtrap] command finds
-    them there. *)
+(** [data_dir f ~build_dir] is [<build_dir>/_<f.dir>]. *)
 
 val standalone_data_dir : format -> root:string -> string
 (** [standalone_data_dir f ~root] is [<root>/_windtrap/<f.dir>], where an
@@ -134,10 +121,7 @@ type error =
 
 val pp_error : format -> Format.formatter -> error -> unit
 (** [pp_error f ppf e] formats one line on [e] for a person, in the words of
-    [f]. [f.kind] names the file. The message of an {!Unknown_format} ends with
-    [f.remedy], and those of {!Unreadable} and {!Corrupt} give the reason and no
-    remedy. Nothing is printed here, and where the line shows is the contract of
-    the caller. The message is not stable enough for a program to match. *)
+    [f]. The message is not stable enough for a program to match. *)
 
 (** {1:files Reading and writing} *)
 
@@ -158,9 +142,9 @@ val write_new_file : string -> prefix:string -> ext:string -> string -> string
     [<prefix><token>.<ext>] in [dir], through a temporary file and a rename as
     {!write_file} does. It creates [dir] if needed and is the path of the new
     file. [<token>] is six hexadecimal digits that the creation of the temporary
-    file reserves, so writers at the same time never share a name, as when
-    several processes of one executable exit together. Raises [Sys_error] if no
-    name can be reserved in ten attempts, or if the file cannot be written. *)
+    file reserves, so writers at the same time never share a name. Raises
+    [Sys_error] if no name can be reserved in ten attempts, or if the file
+    cannot be written. *)
 
 (** {1:header The header}
 
@@ -181,23 +165,21 @@ val add_header : format -> Buffer.t -> identity option -> unit
 
 (** {1:parsing Parsing}
 
-    One strict scanner reads both formats. A {!type-cursor} runs over the whole
-    input, and the readers below raise {!Parse_error}, which the [load] of each
-    format turns into a {!Corrupt} error. Nothing is repaired and nothing is
-    guessed. Whitespace is a space, a tab, a carriage return or a line feed. The
-    readers skip it before a number or a word, and never inside a name. *)
+    A {!type-cursor} runs over the whole input, and the readers below raise
+    {!Parse_error}, which the [load] of each format turns into a {!Corrupt}
+    error. Nothing is repaired and nothing is guessed. Whitespace is a space, a
+    tab, a carriage return or a line feed. The readers skip it before a number
+    or a word, and never inside a name. *)
 
 type cursor
 (** The type for cursors: a position in an input string, which the readers
     advance. *)
 
 exception Parse_error of string
-(** Raised by the readers below, with a reason for a person. It never escapes
-    the [load] of a format. *)
+(** Raised by the readers below, with a reason for a person. *)
 
 val parse_fail : ('a, unit, string, 'b) format4 -> 'a
-(** [parse_fail fmt ...] raises {!Parse_error} with the formatted reason. A
-    format reports the checks of its own with it. *)
+(** [parse_fail fmt ...] raises {!Parse_error} with the formatted reason. *)
 
 val start : format -> path:string -> string -> (cursor, error) result
 (** [start f ~path s] is a cursor over [s] that stands after [f.magic]. It is
