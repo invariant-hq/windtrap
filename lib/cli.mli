@@ -7,9 +7,8 @@
 
     {!parse} reads an argument vector into the {!type-parsed} flags, {!settings}
     resolves them with the environment and the defaults into a
-    {!Run.type-config}, and {!val-help} is the help page. One table drives the
-    three. A row is a flag beside its optional mirror, or a setting that only
-    the environment spells, which {!val-help} lists and nothing here reads.
+    {!Run.type-config}, and {!val-help} is the help page. {!val-help} also lists
+    the settings that only the environment spells, which nothing here reads.
 
     Nothing here prints or exits. An error is returned as an {!type-error}, and
     [--help] and [--version] come back as fields of {!type-parsed} for the

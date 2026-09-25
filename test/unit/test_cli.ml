@@ -220,6 +220,12 @@ let () =
   silent "--prxx-xxxnt";
   (* Too far to be a slip. *)
   silent "--completely-different";
+  (* Three edits from [--tag], [--list] and [--arm], though "lt" and "ti"
+     each share a letter with a transposition. *)
+  silent "--lti";
+  (* Two edits from both [--verbose] and [--version]: the table's order
+     breaks the tie. *)
+  suggests "--verbon" "--verbose";
   (* Any two short flags are one edit apart, so any suggestion would be
      arbitrary; a confident wrong one is worse than none. *)
   silent "-Z";
@@ -250,6 +256,9 @@ let () =
   expect_error "--timeout rejects a negative number" [ "--timeout"; "-1" ]
     (function
     | Cli.Invalid_value { source = "--timeout"; _ } -> true
+    | _ -> false);
+  expect_error "--timeout rejects zero" [ "--timeout"; "0" ] (function
+    | Cli.Invalid_value { source = "--timeout"; value = "0"; _ } -> true
     | _ -> false);
   expect_error "--slow-threshold rejects a negative number"
     [ "--slow-threshold"; "-1" ] (function
