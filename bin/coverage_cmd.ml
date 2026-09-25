@@ -9,11 +9,272 @@
    is the one coverage reporter: a run prints no number of its own.
   ---------------------------------------------------------------------------*)
 
+module Coverage = Windtrap_runtime.Coverage
 module Sections = Windtrap.Private.Report_sections
 module Os = Windtrap.Private.Os
 module Cli = Windtrap.Private.Cli
+module Pp = Windtrap.Private.Pp
 
-let spf = Printf.sprintf
+let strf = Printf.sprintf
+let ( let* ) = Result.bind
+
+(* What standard output carries: the report, or a document. *)
+type output = Report | Json | Lcov
+
+type options = {
+  min : float option;
+  output : output;
+  mode : [ `Report | `Full ];
+  expect : string list;
+  do_not_expect : string list;
+  paths : string list;
+}
+
+(* A step of [run] that ends the command says why on standard error and is
+   [Error] of the exit code. *)
+
+(* Files *)
+
+let no_data =
+  "no .coverage files found\n\
+   Instrument the library under test with ppx_windtrap.coverage and run its \
+   tests first; every instrumented test executable writes its dump at exit, \
+   under the build directory's _coverage or under _windtrap/coverage."
+
+let all_excluded excluded =
+  Data_files.all_excluded ~ext:"coverage" (List.map snd excluded)
+  ^ "\n\
+    \  They were written by executables that no longer exist or have been \
+     rebuilt since.\n\
+    \  The usual cause is a build without the instrumentation flag."
+
+(* The remedy is in words: this command does not know how the suite is run. *)
+let remedy =
+  "re-run the suite instrumented (forcing the runs your build tool cached), \
+   then merge again; delete the files whose executable no longer exists"
+
+(* No flag keeps a dump of another build: a number computed from it can only
+   mislead. *)
+let merged files =
+  let say_error error =
+    Os.say (Pp.to_string Coverage.pp_error error);
+    Error 1
+  in
+  let rec judge kept excluded = function
+    | [] -> Ok (List.rev kept, List.rev excluded)
+    | path :: paths -> (
+        let* identity =
+          Data_files.identity Coverage.format path
+          |> Result.map_error (fun error -> Coverage.Data error)
+        in
+        match Data_files.freshness ~path identity with
+        | Data_files.Fresh ->
+            let* t, _ = Coverage.load path in
+            judge (t :: kept) excluded paths
+        | (Data_files.Orphan _ | Data_files.Stale _) as freshness ->
+            judge kept ((path, freshness) :: excluded) paths)
+  in
+  let merge acc t =
+    let* acc = acc in
+    Coverage.merge acc t
+  in
+  match judge [] [] files with
+  | Error error -> say_error error
+  | Ok (kept, excluded) -> (
+      List.iter Os.say (Data_files.warnings excluded);
+      match (kept, excluded) with
+      | [], [] ->
+          Os.say no_data;
+          Error 1
+      | [], excluded ->
+          Os.say (all_excluded excluded);
+          Os.say remedy;
+          Error 1
+      | kept, excluded -> (
+          if excluded <> [] then Os.say remedy;
+          match List.fold_left merge (Ok Coverage.empty) kept with
+          | Ok collection -> Ok collection
+          | Error error -> say_error error))
+
+(* Gates *)
+
+(* A backslash separates as a slash does, as in a name recorded on Windows. *)
+let stem path =
+  let parts =
+    String.split_on_char '/' (String.map (function '\\' -> '/' | c -> c) path)
+    |> List.filter (fun part -> part <> "" && part <> ".")
+  in
+  match List.rev parts with
+  | [] -> ""
+  | base :: dirs ->
+      let base =
+        match String.index_opt base '.' with
+        | Some i -> String.sub base 0 i
+        | None -> base
+      in
+      String.concat "/" (List.rev (base :: dirs))
+
+let rec sources_under dir =
+  match Sys.readdir dir with
+  | exception Sys_error _ -> []
+  | entries ->
+      Array.to_list entries |> List.sort String.compare
+      |> List.concat_map (fun entry ->
+          let path = Filename.concat dir entry in
+          match Sys.is_directory path with
+          | true
+            when entry = "_build" || entry = "_opam"
+                 || String.starts_with ~prefix:"." entry ->
+              []
+          | true -> sources_under path
+          | false
+            when List.exists
+                   (Filename.check_suffix entry)
+                   [ ".ml"; ".mll"; ".mly" ] ->
+              [ path ]
+          | false -> []
+          | exception Sys_error _ -> [])
+
+let sources paths =
+  match List.find_opt (fun path -> not (Sys.file_exists path)) paths with
+  | Some path -> Error (strf "%s: no such file or directory" path)
+  | None ->
+      Ok
+        (List.concat_map
+           (fun path ->
+             if Sys.is_directory path then sources_under path else [ path ])
+           paths)
+
+(* The sources that [--expect] names, less those that [--do-not-expect] names,
+   whose stem no recorded name has. *)
+let missing_sources o collection =
+  let* expected = sources o.expect in
+  let* exempt = sources o.do_not_expect in
+  let known = List.map stem (exempt @ Coverage.files collection) in
+  Ok
+    (List.sort_uniq String.compare
+       (List.filter (fun path -> not (List.mem (stem path) known)) expected))
+
+let expect_gate o collection =
+  (* Without [--expect], a path of [--do-not-expect] need not exist. *)
+  if o.expect = [] then 0
+  else
+    match missing_sources o collection with
+    | Error message ->
+        Os.say message;
+        1
+    | Ok missing ->
+        List.iter
+          (fun path ->
+            Os.say
+              (strf
+                 "%s: expected source has no coverage data (not instrumented, \
+                  or linked into no test executable that ran)"
+                 path))
+          missing;
+        if missing = [] then 0 else 1
+
+(* A document leaves the outcome line out, so the gate says it. *)
+let min_gate o ({ visited; total } : Coverage.summary) =
+  match o.min with
+  | None -> 0
+  | Some min ->
+      (match o.output with
+      | Report -> ()
+      | Json | Lcov ->
+          Os.say
+            (Sections.render ~ansi:false
+               (Sections.coverage_line ~min:(Some min) ~visited ~total)));
+      if Sections.percent ~visited ~total >= min then 0 else 1
+
+(* Reports and documents *)
+
+let percentage ({ visited; total } : Coverage.summary) =
+  Sections.percent ~visited ~total
+
+let json_string s =
+  let b = Buffer.create (String.length s + 2) in
+  Buffer.add_char b '"';
+  String.iter
+    (function
+      | ('"' | '\\') as c ->
+          Buffer.add_char b '\\';
+          Buffer.add_char b c
+      | '\n' -> Buffer.add_string b "\\n"
+      | '\r' -> Buffer.add_string b "\\r"
+      | '\t' -> Buffer.add_string b "\\t"
+      | c when c < ' ' -> Buffer.add_string b (strf "\\u%04x" (Char.code c))
+      | c -> Buffer.add_char b c)
+    s;
+  Buffer.add_char b '"';
+  Buffer.contents b
+
+let json (summary : Coverage.summary) reports =
+  let file (r : Coverage.file_report) =
+    strf
+      "\n\
+      \    { \"path\": %s, \"visited\": %d, \"total\": %d,\n\
+      \      \"percentage\": %.2f,\n\
+      \      \"uncovered_lines\": [%s] }"
+      (json_string r.file) r.summary.visited r.summary.total
+      (percentage r.summary)
+      (String.concat "," (List.map string_of_int r.uncovered_lines))
+  in
+  strf
+    "{ \"summary\": { \"visited\": %d, \"total\": %d, \"percentage\": %.2f },\n\
+    \  \"files\": [%s ] }\n"
+    summary.visited summary.total (percentage summary)
+    (String.concat "," (List.map file reports))
+
+(* A tracefile has no escape syntax, so the name is written as recorded. *)
+let lcov_record (r : Coverage.file_report) =
+  let hit = List.filter (fun (_, hits) -> hits > 0) r.line_hits in
+  strf "TN:\nSF:%s\n%sLF:%d\nLH:%d\nend_of_record\n" r.file
+    (String.concat ""
+       (List.map (fun (line, hits) -> strf "DA:%d,%d\n" line hits) r.line_hits))
+    (List.length r.line_hits) (List.length hit)
+
+let coverage_data (summary : Coverage.summary) reports : Sections.coverage =
+  let file (r : Coverage.file_report) : Sections.coverage_file =
+    {
+      file = r.file;
+      visited = r.summary.visited;
+      total = r.summary.total;
+      uncovered = r.uncovered_lines;
+      source = r.source;
+      stale = r.stale;
+    }
+  in
+  {
+    visited = summary.visited;
+    total = summary.total;
+    files = List.map file reports;
+  }
+
+let print o ~ansi (summary : Coverage.summary) reports =
+  (match o.output with
+  | Report ->
+      Sections.print ~out:Format.std_formatter ~ansi
+        (Sections.coverage_report ~mode:o.mode ~min:o.min
+           (coverage_data summary reports))
+  | Json -> print_string (json summary reports)
+  | Lcov ->
+      (* A file without its source has no record: its lines would paint code
+         the data does not describe. *)
+      List.iter
+        (fun (r : Coverage.file_report) ->
+          match r.source with
+          | Some _ -> print_string (lcov_record r)
+          | None ->
+              Os.say
+                (strf "%s: %s; omitted from the lcov output" r.file
+                   (if r.stale then "the source changed since the run"
+                    else "source not found")))
+        reports);
+  flush stdout
+
+(* Running *)
+
 let usage = "usage: windtrap coverage [OPTIONS] [PATH...]"
 
 let help =
@@ -55,478 +316,97 @@ ENVIRONMENT (no flag):
   WINDTRAP_COLOR
       Color output: always, never or auto.|}
 
-(* Flags *)
+(* [--flag=value] is [--flag value] for a flag that takes a value. *)
+let split_inline arg =
+  match String.index_opt arg '=' with
+  | Some i
+    when List.mem (String.sub arg 0 i)
+           [ "--min"; "--expect"; "--do-not-expect" ] ->
+      [ String.sub arg 0 i; String.sub arg (i + 1) (String.length arg - i - 1) ]
+  | Some _ | None -> [ arg ]
 
-(* What standard output carries: the report, or a document that owns it. *)
-type output = Report | Json | Lcov
-
-type options = {
-  min : float option;
-  output : output;
-  expect : string list;
-  do_not_expect : string list;
-  show_uncovered : bool;
-  paths : string list;
-}
-
-let min_of_string value =
-  match float_of_string_opt value with
-  | Some pct when Float.is_finite pct && 0. <= pct && pct <= 100. -> Some pct
-  | _ -> None
-
-(* [--flag=value] is [--flag value], for the flags that take one: the
-   spelling the help page shows. *)
-let split_inline args =
-  List.concat_map
-    (fun arg ->
-      match String.index_opt arg '=' with
-      | Some i
-        when List.mem (String.sub arg 0 i)
-               [ "--min"; "--expect"; "--do-not-expect" ] ->
-          [
-            String.sub arg 0 i;
-            String.sub arg (i + 1) (String.length arg - i - 1);
-          ]
-      | Some _ | None -> [ arg ])
-    args
-
-let parse_args args =
-  let min_error value =
-    Error
-      (`Usage
-         (spf "invalid value '%s' for --min: expected a percentage (0-100)"
-            value))
+let options args =
+  let usage_error message =
+    Os.say message;
+    prerr_endline usage;
+    Error 2
   in
-  let rec go acc = function
+  let rec parse o = function
     | [] ->
         Ok
           {
-            acc with
-            paths = List.rev acc.paths;
-            expect = List.rev acc.expect;
-            do_not_expect = List.rev acc.do_not_expect;
+            o with
+            expect = List.rev o.expect;
+            do_not_expect = List.rev o.do_not_expect;
+            paths = List.rev o.paths;
           }
-    | ("-h" | "--help" | "-help") :: _ -> Error `Help
-    | "--min" :: value :: rest -> (
-        match min_of_string value with
-        | Some pct -> go { acc with min = Some pct } rest
-        | None -> min_error value)
-    | [ "--min" ] -> Error (`Usage "option '--min' requires an argument")
-    | (("--json" | "--lcov") as flag) :: rest -> (
+    | ("-h" | "--help" | "-help") :: _ ->
+        print_endline help;
+        Error 0
+    | "--min" :: value :: args -> (
+        match float_of_string_opt value with
+        | Some min when 0. <= min && min <= 100. ->
+            parse { o with min = Some min } args
+        | Some _ | None ->
+            usage_error
+              (strf
+                 "invalid value '%s' for --min: expected a percentage (0-100)"
+                 value))
+    | "--expect" :: path :: args ->
+        parse { o with expect = path :: o.expect } args
+    | "--do-not-expect" :: path :: args ->
+        parse { o with do_not_expect = path :: o.do_not_expect } args
+    | [ (("--min" | "--expect" | "--do-not-expect") as flag) ] ->
+        usage_error (strf "option '%s' requires an argument" flag)
+    | (("--json" | "--lcov") as flag) :: args ->
         let output = if flag = "--json" then Json else Lcov in
-        match acc.output with
-        | Report -> go { acc with output } rest
-        | given when given = output -> go acc rest
-        | Json | Lcov ->
-            Error
-              (`Usage "--json and --lcov each own standard output; pick one"))
-    | "--expect" :: path :: rest ->
-        go { acc with expect = path :: acc.expect } rest
-    | [ "--expect" ] -> Error (`Usage "option '--expect' requires an argument")
-    | "--do-not-expect" :: path :: rest ->
-        go { acc with do_not_expect = path :: acc.do_not_expect } rest
-    | [ "--do-not-expect" ] ->
-        Error (`Usage "option '--do-not-expect' requires an argument")
-    | ("-u" | "--show-uncovered") :: rest ->
-        go { acc with show_uncovered = true } rest
-    | arg :: _ when String.length arg > 0 && arg.[0] = '-' ->
-        Error (`Usage (spf "unknown option '%s'" arg))
-    | path :: rest -> go { acc with paths = path :: acc.paths } rest
+        if o.output <> Report && o.output <> output then
+          usage_error "--json and --lcov each own standard output; pick one"
+        else parse { o with output } args
+    | ("-u" | "--show-uncovered") :: args -> parse { o with mode = `Full } args
+    | arg :: _ when String.starts_with ~prefix:"-" arg ->
+        usage_error (strf "unknown option '%s'" arg)
+    | path :: args -> parse { o with paths = path :: o.paths } args
   in
-  go
+  parse
     {
       min = None;
       output = Report;
+      mode = `Report;
       expect = [];
       do_not_expect = [];
-      show_uncovered = false;
       paths = [];
     }
-    (split_inline args)
+    (List.concat_map split_inline args)
 
-(* Discovery: Data_files's, shared with `windtrap mutants`, with the project
-   root resolved as the runtime resolves its dump path, explicit PATH
-   arguments as a loud contract (a silent narrowing of the merge would
-   end in the no-data message and its wrong remedy). [files] come back
-   sorted for deterministic merge order and error attribution; [roots]
-   are the source roots for line mapping. *)
-
-let discover paths = Data_files.discover Windtrap_runtime.Coverage.format paths
-
-(* The staleness pass
-
-   "Up to date" is not "re-run": the holes are dumps whose executable
-   was deleted or renamed (orphans, which would silently inflate the
-   merge) and dumps not written by the executable now on disk, after a
-   rebuild without the backend (writes no fresh dump), or a test run the
-   build tool replayed from its cache after sources reverted to an
-   already-tested state (the dump on disk stays a different build's, and
-   only a forced run heals it). Detection is Data_files.freshness's,
-   from the identity recorded in each dump; the exclusion and the remedy
-   are this command's. A flagged dump is always excluded and always
-   named: there is no override, because a number computed from a dump
-   known to describe another build can only mislead. The remedy is one
-   sentence in words any build tool's user can act on: this command
-   does not know how the suite is run, and a spelled-out command would
-   be wrong everywhere but the tree it was written in. *)
-
-(* The no-data message: no dump the merge could use. *)
-let no_data =
-  "no .coverage files found\n\
-   Instrument the library under test with ppx_windtrap.coverage and run its \
-   tests first; every instrumented test executable writes its dump at exit, \
-   under the build directory's _coverage or under _windtrap/coverage."
-
-let remedy =
-  "re-run the suite instrumented (forcing the runs your build tool cached), \
-   then merge again; delete the files whose executable no longer exists"
-
-(* Judges [files] from their headers, excludes the ones the freshness
-   pass flagged, loads the rest and merges them. The judgement comes
-   before the load, so a corrupt leftover of another build is excluded
-   like any other, while a dump of this build must load. Warnings and
-   failure details go to stderr; [Error code] is the exit code (data
-   problems are 1). *)
-let load_merged files =
-  let judged =
-    List.fold_left
-      (fun acc path ->
-        Result.bind acc (fun (kept, flagged) ->
-            Result.bind
-              (Result.map_error
-                 (fun e -> Windtrap_runtime.Coverage.Data e)
-                 (Data_files.identity Windtrap_runtime.Coverage.format path))
-              (fun identity ->
-                match Data_files.freshness ~path identity with
-                | Data_files.Fresh ->
-                    Result.map
-                      (fun (t, _) -> (t :: kept, flagged))
-                      (Windtrap_runtime.Coverage.load path)
-                | (Data_files.Orphan _ | Data_files.Stale _) as freshness ->
-                    Ok (kept, (path, freshness) :: flagged))))
-      (Ok ([], []))
-      files
-  in
-  match judged with
-  | Error error ->
-      Os.say (Format.asprintf "%a" Windtrap_runtime.Coverage.pp_error error);
-      Error 1
-  | Ok (kept, flagged) -> (
-      let kept = List.rev kept and flagged = List.rev flagged in
-      List.iter Os.say (Data_files.warnings flagged);
-      if kept = [] then
-        Os.say
-          (Data_files.all_excluded ~ext:"coverage" (List.map snd flagged)
-          ^ "\n\
-            \  They were written by executables that no longer exist or have \
-             been rebuilt since.\n\
-            \  The usual cause is a build without the instrumentation flag.");
-      if flagged <> [] then Os.say remedy;
-      if kept = [] then Error 1
-      else
-        match
-          List.fold_left
-            (fun acc t ->
-              Result.bind acc (fun acc -> Windtrap_runtime.Coverage.merge acc t))
-            (Ok Windtrap_runtime.Coverage.empty) kept
-        with
-        | Ok collection -> Ok collection
-        | Error error ->
-            Os.say
-              (Format.asprintf "%a" Windtrap_runtime.Coverage.pp_error error);
-            Error 1)
-
-(* JSON *)
-
-let json_escape s =
-  let buffer = Buffer.create (String.length s + 8) in
-  String.iter
-    (function
-      | '"' -> Buffer.add_string buffer "\\\""
-      | '\\' -> Buffer.add_string buffer "\\\\"
-      | '\n' -> Buffer.add_string buffer "\\n"
-      | '\r' -> Buffer.add_string buffer "\\r"
-      | '\t' -> Buffer.add_string buffer "\\t"
-      | c ->
-          if Char.code c < 32 then
-            Buffer.add_string buffer (spf "\\u%04x" (Char.code c))
-          else Buffer.add_char buffer c)
-    s;
-  Buffer.contents buffer
-
-let json_ints lines =
-  spf "[%s]" (String.concat "," (List.map string_of_int lines))
-
-(* The CI artifact: summary + per-file visited/total/percentage +
-   uncovered lines. Frozen keys; a file whose source is missing or stale
-   reports an empty uncovered list. *)
-let print_json ~source_roots collection =
-  let summary = Windtrap_runtime.Coverage.summary collection in
-  let reports =
-    Windtrap_runtime.Coverage.file_reports ~source_roots collection
-  in
-  Printf.printf
-    "{ \"summary\": { \"visited\": %d, \"total\": %d, \"percentage\": %.2f },\n\
-    \  \"files\": ["
-    summary.visited summary.total
-    (Sections.percent ~visited:summary.visited ~total:summary.total);
-  List.iteri
-    (fun i (r : Windtrap_runtime.Coverage.file_report) ->
-      Printf.printf
-        "%s\n\
-        \    { \"path\": \"%s\", \"visited\": %d, \"total\": %d,\n\
-        \      \"percentage\": %.2f,\n\
-        \      \"uncovered_lines\": %s }"
-        (if i = 0 then "" else ",")
-        (json_escape r.file) r.summary.visited r.summary.total
-        (Sections.percent ~visited:r.summary.visited ~total:r.summary.total)
-        (json_ints r.uncovered_lines))
-    reports;
-  Printf.printf " ] }\n%!"
-
-(* LCOV *)
-
-(* The tracefile every coverage service and gutter reads, and what
-   genhtml renders: one record per file, [DA:<line>,<hits>] for every
-   line a point touches (hits by the runtime's per-line rule, so an
-   uncovered line is a 0), then the instrumented and hit line counts.
-   Paths are as recorded, project-relative. A file whose source is
-   missing or stale has no lines to speak of and is omitted, named on
-   stderr: painting it would attribute hits to code the data does not
-   describe. *)
-let print_lcov ~source_roots collection =
-  let reports =
-    Windtrap_runtime.Coverage.file_reports ~source_roots collection
-  in
-  List.iter
-    (fun (r : Windtrap_runtime.Coverage.file_report) ->
-      match r.source with
-      | None ->
-          Os.say
-            (spf "%s: %s; omitted from the lcov output" r.file
-               (if r.stale then "the source changed since the run"
-                else "source not found"))
-      | Some _ ->
-          (* A tracefile has no escape syntax: the path is written as
-             recorded. *)
-          Printf.printf "TN:\nSF:%s\n" r.file;
-          List.iter
-            (fun (line, hits) -> Printf.printf "DA:%d,%d\n" line hits)
-            r.line_hits;
-          let hit = List.filter (fun (_, hits) -> hits > 0) r.line_hits in
-          Printf.printf "LF:%d\nLH:%d\nend_of_record\n"
-            (List.length r.line_hits) (List.length hit))
-    reports;
-  flush stdout
-
-(* Exhaustiveness *)
-
-(* Project coverage is defined over instrumented, linked code, so a
-   source file can be absent from the merge for reasons the report
-   cannot show: a library without the stanza, a module no test
-   executable links, a test executable nobody ran since the rebuild.
-   --expect names the sources that must be present; a missing one is
-   a loud failure rather than a silently smaller denominator. *)
-
-(* The recorded names and the walked paths on one footing: lexical
-   components without "" and ".", and the basename's extension chain
-   stripped at its first dot, so lib/calc.ml, ./lib/calc.ml, dune's
-   lib/calc.pp.ml, and the lib/calc.mll a lexer is generated from are
-   one stem. *)
-let stem path =
-  let components =
-    String.split_on_char '/' (String.map (function '\\' -> '/' | c -> c) path)
-    |> List.filter (fun c -> c <> "" && c <> ".")
-  in
-  match List.rev components with
-  | [] -> ""
-  | base :: rev_dirs ->
-      let base =
-        match String.index_opt base '.' with
-        | Some i -> String.sub base 0 i
-        | None -> base
-      in
-      String.concat "/" (List.rev (base :: rev_dirs))
-
-let is_source name =
-  List.exists (Filename.check_suffix name) [ ".ml"; ".mll"; ".mly" ]
-
-(* Build and switch directories, and dot-directories, are never sources. *)
-let skipped_dir name =
-  name = "_build" || name = "_opam" || (name <> "" && name.[0] = '.')
-
-let rec sources_under dir =
-  match Sys.readdir dir with
-  | exception Sys_error _ -> []
-  | entries ->
-      Array.to_list entries |> List.sort String.compare
-      |> List.concat_map (fun entry ->
-          let path = Filename.concat dir entry in
-          match Sys.is_directory path with
-          | true -> if skipped_dir entry then [] else sources_under path
-          | false -> if is_source entry then [ path ] else []
-          | exception Sys_error _ -> [])
-
-(* A named path is a contract, like a PATH argument: it must exist. *)
-let expand_expectation path =
-  if not (Sys.file_exists path) then
-    Error (spf "%s: no such file or directory" path)
-  else if Sys.is_directory path then Ok (sources_under path)
-  else Ok [ path ]
-
-let expand_expectations paths =
-  List.fold_left
-    (fun acc path ->
-      Result.bind acc (fun found ->
-          Result.map (fun more -> found @ more) (expand_expectation path)))
-    (Ok []) paths
-
-(* The sources named by [expect], less those named by [do_not_expect],
-   that [present] (the merge's recorded file names) does not cover. *)
-let missing_expectations ~expect ~do_not_expect present =
-  match (expand_expectations expect, expand_expectations do_not_expect) with
-  | Error message, _ | _, Error message -> Error message
-  | Ok expected, Ok excluded ->
-      let excluded = List.map stem excluded
-      and present = List.map stem present in
-      Ok
-        (expected
-        |> List.filter (fun path ->
-            let s = stem path in
-            not (List.mem s excluded || List.mem s present))
-        |> List.sort_uniq String.compare)
-
-let check_expectations ~expect ~do_not_expect collection =
-  if expect = [] then 0
-  else
-    match
-      missing_expectations ~expect ~do_not_expect
-        (Windtrap_runtime.Coverage.files collection)
-    with
-    | Error message ->
-        Os.say message;
-        1
-    | Ok [] -> 0
-    | Ok missing ->
-        List.iter
-          (fun path ->
-            Os.say
-              (spf
-                 "%s: expected source has no coverage data (not instrumented, \
-                  or linked into no test executable that ran)"
-                 path))
-          missing;
-        1
-
-(* The command *)
-
-(* The report's section data from what the runtime measured: the
-   aggregate counts and one line per file, sources resolved under
-   [source_roots] (the runtime's own [file_reports]). This is the one
-   place the coverage runtime meets the report vocabulary; the sections
-   name no runtime and count nothing. *)
-let coverage_data ~source_roots collection : Sections.coverage =
-  let file_line (r : Windtrap_runtime.Coverage.file_report) :
-      Sections.coverage_file =
-    {
-      Sections.file = r.file;
-      visited = r.summary.Windtrap_runtime.Coverage.visited;
-      total = r.summary.Windtrap_runtime.Coverage.total;
-      uncovered = r.uncovered_lines;
-      source = r.source;
-      stale = r.stale;
-    }
-  in
-  let s = Windtrap_runtime.Coverage.summary collection in
-  {
-    Sections.visited = s.Windtrap_runtime.Coverage.visited;
-    total = s.Windtrap_runtime.Coverage.total;
-    files =
-      List.map file_line
-        (Windtrap_runtime.Coverage.file_reports ~source_roots collection);
-  }
-
-let report_table ~color ~source_roots ~show_uncovered ~min collection =
-  let ansi =
-    Os.resolve_color color ~tty:(Os.is_tty_stdout ())
-      ~inside_dune:(Os.inside_dune ()) ~term_dumb:(Os.term_dumb ())
-  in
-  Sections.print ~out:Format.std_formatter ~ansi
-    (Sections.coverage_report
-       ~mode:(if show_uncovered then `Full else `Report)
-       ~min
-       (coverage_data ~source_roots collection))
-
-(* The gate compares raw percentages with [Sections.percent], the one
-   function the outcome line it is stated on compares. The report ends on
-   that line; a machine format owns standard output, so under one the
-   line is windtrap's own, and only a gate asks for it. *)
-let check_min ~machine (summary : Windtrap_runtime.Coverage.summary) = function
-  | None -> 0
-  | Some min ->
-      if machine then
-        Os.say
-          (String.concat ""
-             (List.map
-                (fun (span : Sections.span) -> span.text)
-                (Sections.coverage_line ~min:(Some min) ~visited:summary.visited
-                   ~total:summary.total)));
-      if Sections.percent ~visited:summary.visited ~total:summary.total >= min
-      then 0
-      else 1
+let ansi = function
+  | Json | Lcov -> Ok false
+  | Report -> (
+      match Cli.color_mode () with
+      | Error error ->
+          Os.say (Cli.error_message error);
+          Error 2
+      | Ok color ->
+          Ok
+            (Os.resolve_color color ~tty:(Os.is_tty_stdout ())
+               ~inside_dune:(Os.inside_dune ()) ~term_dumb:(Os.term_dumb ())))
 
 let run args =
-  match parse_args args with
-  | Error `Help ->
-      print_endline help;
-      0
-  | Error (`Usage message) ->
-      Os.say message;
-      prerr_endline usage;
-      2
-  | Ok options -> (
-      (* No --color flag here, so WINDTRAP_COLOR is the whole colour
-         decision of the report: read through the runner's --color parser
-         and refused on the same terms, never read as "auto" out of a typo.
-         A document has no colour, so it reads no variable. *)
-      let output =
-        match options.output with
-        | Report -> Result.map (fun color -> `Report color) (Cli.color_mode ())
-        | Json -> Ok `Json
-        | Lcov -> Ok `Lcov
-      in
-      match (output, discover options.paths) with
-      | Error error, _ ->
-          Os.say (Cli.error_message error);
-          2
-      | Ok _, Error message ->
+  let code =
+    let* o = options args in
+    let* ansi = ansi o.output in
+    let* files, source_roots =
+      match Data_files.discover Coverage.format o.paths with
+      | Ok found -> Ok found
+      | Error message ->
           Os.say message;
-          1
-      | Ok output, Ok (files, source_roots) -> (
-          if files = [] then begin
-            Os.say no_data;
-            1
-          end
-          else
-            match load_merged files with
-            | Error code -> code
-            | Ok collection ->
-                (match output with
-                | `Json -> print_json ~source_roots collection
-                | `Lcov -> print_lcov ~source_roots collection
-                | `Report color ->
-                    report_table ~color ~source_roots
-                      ~show_uncovered:options.show_uncovered ~min:options.min
-                      collection);
-                (* Both gates run, so one run names everything wrong;
-                   either failing is exit 1. *)
-                let expectations =
-                  check_expectations ~expect:options.expect
-                    ~do_not_expect:options.do_not_expect collection
-                in
-                let gate =
-                  check_min ~machine:(options.output <> Report)
-                    (Windtrap_runtime.Coverage.summary collection)
-                    options.min
-                in
-                max expectations gate))
+          Error 1
+    in
+    let* collection = merged files in
+    let summary = Coverage.summary collection in
+    print o ~ansi summary (Coverage.file_reports ~source_roots collection);
+    let expected = expect_gate o collection in
+    let met = min_gate o summary in
+    Ok (max expected met)
+  in
+  match code with Ok code | Error code -> code

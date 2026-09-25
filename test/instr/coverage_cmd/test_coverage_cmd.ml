@@ -1538,6 +1538,251 @@ let discovery_edge_tests =
         contains ~msg:"and merged" ~sub:"coverage: 100.0% (3/3 points)" out);
   ]
 
+(* The command line, the gates and the merge at their edges *)
+
+let usage_error message =
+  "windtrap: " ^ message ^ "\nusage: windtrap coverage [OPTIONS] [PATH...]\n"
+
+let lines text = String.split_on_char '\n' text
+
+let command_edge_tests =
+  [
+    test "--min refuses a number outside 0 to 100" (fun () ->
+        List.iter
+          (fun value ->
+            let code, out, err =
+              coverage_cmd ~cwd:(proj ()) [ "--min"; value ]
+            in
+            equal ~msg:(value ^ ": exit code") int 2 code;
+            equal ~msg:(value ^ ": stdout") text "" out;
+            equal ~msg:(value ^ ": stderr") text
+              (usage_error
+                 (Printf.sprintf
+                    "invalid value '%s' for --min: expected a percentage \
+                     (0-100)"
+                    value))
+              err)
+          [ "nan"; "inf"; "-inf"; "-1"; "100.5" ]);
+    test "a flag that ends the line lacks its value" (fun () ->
+        List.iter
+          (fun flag ->
+            let code, _, err = coverage_cmd ~cwd:(proj ()) [ "-u"; flag ] in
+            equal ~msg:(flag ^ ": exit code") int 2 code;
+            equal ~msg:(flag ^ ": stderr") text
+              (usage_error
+                 (Printf.sprintf "option '%s' requires an argument" flag))
+              err)
+          [ "--min"; "--expect"; "--do-not-expect" ]);
+    test "--flag=value is split before any flag is read" (fun () ->
+        let root = proj () in
+        let code, _, err = coverage_cmd ~cwd:root [ "--min"; "--expect=lib" ] in
+        equal ~msg:"--min takes the flag's own name" int 2 code;
+        equal ~msg:"and refuses it" text
+          (usage_error
+             "invalid value '--expect' for --min: expected a percentage (0-100)")
+          err;
+        List.iter
+          (fun arg ->
+            let code, _, err = coverage_cmd ~cwd:root [ arg ] in
+            equal ~msg:(arg ^ ": exit code") int 2 code;
+            equal ~msg:(arg ^ ": stderr") text
+              (usage_error (Printf.sprintf "unknown option '%s'" arg))
+              err)
+          [ "--json=1"; "--help=1"; "-" ]);
+    test "the first argument that ends the parse decides" (fun () ->
+        let root = proj () in
+        let code, _, err =
+          coverage_cmd ~cwd:root [ "--frobnicate"; "--help" ]
+        in
+        equal ~msg:"an unknown option before --help" int 2 code;
+        equal ~msg:"is refused" text
+          (usage_error "unknown option '--frobnicate'")
+          err;
+        let _, help, _ = coverage_cmd ~cwd:root [ "--help" ] in
+        let code, out, _ =
+          coverage_cmd ~cwd:root [ "--help"; "--frobnicate" ]
+        in
+        equal ~msg:"--help before an unknown option" int 0 code;
+        equal ~msg:"prints the help page" text help out;
+        let code, _, err =
+          coverage_cmd ~cwd:root [ "--json"; "--lcov"; "--frobnicate" ]
+        in
+        equal ~msg:"the clash before an unknown option" int 2 code;
+        equal ~msg:"is the error" text
+          (usage_error "--json and --lcov each own standard output; pick one")
+          err;
+        let _, json, _ = coverage_cmd ~cwd:root [ "--json" ] in
+        let code, out, err = coverage_cmd ~cwd:root [ "--json"; "--json" ] in
+        equal ~msg:"--json twice" int 0 code;
+        equal ~msg:"is --json" text json out;
+        equal ~msg:"and says nothing" text "" err);
+    test "a refused WINDTRAP_COLOR is said before the files are found"
+      (fun () ->
+        let code, out, err =
+          capture ~cwd:(temp_dir ())
+            ~env:[ ("WINDTRAP_COLOR", "sometimes") ]
+            windtrap_exe
+            [ "coverage"; scratch "absent.coverage" ]
+        in
+        equal ~msg:"exit code" int 2 code;
+        equal ~msg:"stdout" text "" out;
+        equal ~msg:"the colour sentence alone" text
+          "windtrap: invalid value 'sometimes' for WINDTRAP_COLOR: expected \
+           always, never or auto\n"
+          err);
+    test "--json escapes a recorded name" (fun () ->
+        let root = scratch "json-escape" in
+        write_file
+          (Filename.concat root "_build/_coverage/names.coverage")
+          (collection
+             [
+               ("lib/q\"b\\s\tt\r\nx\001\127\xc3\xa9.ml", ghost_points, [| 0 |]);
+             ]);
+        let code, out, err = coverage_cmd ~cwd:root [ "--json" ] in
+        equal ~msg:"exit code" int 0 code;
+        equal ~msg:"stderr" text "" err;
+        equal
+          ~msg:"quote, backslash, TAB, CR, LF and C0 escaped, the rest as is"
+          text
+          "{ \"summary\": { \"visited\": 0, \"total\": 1, \"percentage\": 0.00 \
+           },\n\
+          \  \"files\": [\n\
+          \    { \"path\": \
+           \"lib/q\\\"b\\\\s\\tt\\r\\nx\\u0001\127\xc3\xa9.ml\", \"visited\": \
+           0, \"total\": 1,\n\
+          \      \"percentage\": 0.00,\n\
+          \      \"uncovered_lines\": [] } ] }\n"
+          out);
+    test "--lcov says an omission between the records around it" (fun () ->
+        let root = scratch "lcov-order" in
+        write_file (Filename.concat root "lib/a.ml") "let a = 1\n";
+        write_file (Filename.concat root "lib/c.ml") "let c = 1\n";
+        write_file
+          (Filename.concat root "_build/_coverage/abc.coverage")
+          (collection
+             [
+               ("lib/a.ml", ghost_points, [| 1 |]);
+               ("lib/b.ml", ghost_points, [| 1 |]);
+               ("lib/c.ml", ghost_points, [| 0 |]);
+             ]);
+        let code, out, _ =
+          capture ~cwd:root "/bin/sh"
+            [ "-c"; "exec \"$0\" coverage --lcov 2>&1"; windtrap_exe ]
+        in
+        equal ~msg:"exit code" int 0 code;
+        equal ~msg:"the two streams, merged in order" text
+          "TN:\n\
+           SF:lib/a.ml\n\
+           DA:1,1\n\
+           LF:1\n\
+           LH:1\n\
+           end_of_record\n\
+           windtrap: lib/b.ml: source not found; omitted from the lcov output\n\
+           TN:\n\
+           SF:lib/c.ml\n\
+           DA:1,0\n\
+           LF:1\n\
+           LH:0\n\
+           end_of_record\n"
+          out);
+    test "--do-not-expect is read only under --expect" (fun () ->
+        let root = proj () in
+        let code, _, err =
+          coverage_cmd ~cwd:root [ "--do-not-expect"; "nope" ]
+        in
+        equal ~msg:"alone, a missing path is never looked at" int 0 code;
+        equal ~msg:"and nothing is said" text "" err;
+        let code, out, err =
+          coverage_cmd ~cwd:root
+            [ "--expect"; "lib"; "--do-not-expect"; "nope" ]
+        in
+        equal ~msg:"under --expect it must exist" int 1 code;
+        contains ~msg:"after the report" ~sub:"coverage: 60.0%" out;
+        equal ~msg:"the path is named" text
+          "windtrap: nope: no such file or directory\n" err;
+        let code, _, err =
+          coverage_cmd ~cwd:root
+            [
+              "--do-not-expect";
+              "gone3";
+              "--expect";
+              "gone1";
+              "--expect";
+              "gone2";
+            ]
+        in
+        equal ~msg:"three missing paths" int 1 code;
+        equal ~msg:"the first --expect is named, and no other" text
+          "windtrap: gone1: no such file or directory\n" err);
+    test "an expected source is named once, and matched by its stem" (fun () ->
+        let root = scratch "stems" in
+        List.iter
+          (fun name -> write_file (Filename.concat root name) "let x = 1\n")
+          [ "lib/baz.ml"; "lib/qux.ml"; "lib/extra.ml" ];
+        write_file
+          (Filename.concat root "_build/_coverage/stems.coverage")
+          (collection
+             [
+               ("./lib//baz.pp.ml", ghost_points, [| 1 |]);
+               ("lib\\qux.ml", ghost_points, [| 1 |]);
+             ]);
+        let code, _, err =
+          coverage_cmd ~cwd:root
+            [ "--expect"; "lib"; "--expect"; "lib/extra.ml" ]
+        in
+        equal ~msg:"exit code" int 1 code;
+        equal ~msg:"extra.ml, once; baz and qux are covered" text
+          "windtrap: lib/extra.ml: expected source has no coverage data (not \
+           instrumented, or linked into no test executable that ran)\n"
+          err);
+    test "a merge that fails says the exclusions and the remedy first"
+      (fun () ->
+        let root = stale_root "merge-after-exclusion" in
+        write_dump root "b.coverage"
+          ~identity:
+            {
+              C.exe = "default/test/gone.exe";
+              digest = Digest.to_hex (Digest.string "gone");
+            }
+          [ ("lib/ghost.ml", ghost_points, [| 1 |]) ];
+        write_file
+          (Filename.concat root "_build/_coverage/c.coverage")
+          (collection [ ("lib/foo.ml", bar_points, [| 1; 0 |]) ]);
+        let code, out, err = coverage_cmd ~cwd:root [] in
+        equal ~msg:"exit code" int 1 code;
+        equal ~msg:"no report" text "" out;
+        match lines err with
+        | [ warning; remedy; mismatch; "" ] ->
+            contains ~msg:"the exclusion first"
+              ~sub:"b.coverage: its executable" warning;
+            is_true ~msg:"then the remedy"
+              (String.starts_with ~prefix:"windtrap: re-run the suite" remedy);
+            is_true ~msg:"then the merge's error"
+              (String.starts_with
+                 ~prefix:"windtrap: lib/foo.ml: coverage point tables disagree"
+                 mismatch)
+        | _ -> failf "three lines expected on stderr:\n%s" err);
+    test "a dump that cannot be loaded is said alone" (fun () ->
+        let root = stale_root "load-before-exclusion" in
+        write_dump root "b.coverage"
+          ~identity:
+            {
+              C.exe = "default/test/gone.exe";
+              digest = Digest.to_hex (Digest.string "gone");
+            }
+          [ ("lib/ghost.ml", ghost_points, [| 1 |]) ];
+        write_file
+          (Filename.concat root "_build/_coverage/c.coverage")
+          "not a coverage file\n";
+        let code, out, err = coverage_cmd ~cwd:root [] in
+        equal ~msg:"exit code" int 1 code;
+        equal ~msg:"no report" text "" out;
+        match lines err with
+        | [ error; "" ] ->
+            contains ~msg:"the unreadable dump is named" ~sub:"c.coverage" error
+        | _ -> failf "one line expected on stderr:\n%s" err);
+  ]
+
 (* The suite *)
 
 let () =
@@ -1561,4 +1806,5 @@ let () =
          junit_rails;
          group "edges" edge_tests;
          group "discovery edges" discovery_edge_tests;
+         group "command edges" command_edge_tests;
        ]
