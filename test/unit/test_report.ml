@@ -5592,6 +5592,260 @@ let test_survivor_block_exe_width () =
   is_true ~msg:"the executable column is at least 12 wide"
     (column "with an executable" - column "a.exe" >= 12)
 
+(* Report_sections, the edges of its arithmetic *)
+
+(* Each block prints as its pinned text, [~] lines included. *)
+let edge_blocks () =
+  let equality expected actual =
+    failure_block (Failure.equality ~expected ~actual ())
+  in
+  let not_contains ~found_at needle haystack =
+    failure_block
+      (Failure.containment ~found_at ~demand:Failure.Anywhere ~needle ~haystack
+         ())
+  in
+  let proposed =
+    String.concat "" (List.init 20 (fun i -> Printf.sprintf "line %d\n" i))
+  in
+  let column = { Sections.gap = ""; align = `Left; width = None } in
+  [
+    ("two changed spans on one line", equality "a1b2c" "a9b8c");
+    ("the last code point of fixed width", equality "\u{24F}abc1" "\u{24F}abc2");
+    ("one side without fixed widths", equality "ab\u{65E5}" "abc");
+    ( "one side elided, coloured",
+      failure_block ~ansi:true
+        (Failure.equality ~expected:(String.make 810 'x')
+           ~actual:(String.make 790 'x') ()) );
+    ("one side spans lines", equality "a\nb" "c");
+    ("a side with no lines", equality "" "a\nb");
+    ( "its headline",
+      Sections.headline (Failure.equality ~expected:"a\nb" ~actual:"c" ()) );
+    ("an empty [-] line answered by a [+] line", equality "a\n\nc" "a\nx\nc");
+    ("blanks shared past the stem", equality "x  \ny" "x \ny");
+    ("an occurrence at byte 0", not_contains ~found_at:0 "ab" "abc");
+    ("an empty needle", not_contains ~found_at:0 "" "abc");
+    ("an occurrence at a line's start", not_contains ~found_at:2 "b" "a\nb");
+    ("an occurrence at a newline", not_contains ~found_at:1 "\nb" "a\nb");
+    ("an occurrence across lines", not_contains ~found_at:1 "a\nb" "xa\nb");
+    ( "exactly the proposed cap",
+      failure_block
+        (Failure.baseline
+           (Failure.Literal { exact = false })
+           (Failure.Missing { proposed = Failure.text proposed })) );
+    ( "a row of empty cells",
+      sections
+        [
+          Sections.Rows
+            {
+              margin = "  ";
+              columns = [ column ];
+              rows = [ [ Sections.plain "" ] ];
+            };
+        ] );
+    ( "marked lines three apart",
+      sections
+        [
+          Sections.Excerpt
+            { source = "1\n2\n3\n4\n5\n6\n7\n"; marked_lines = [ 1; 4 ] };
+        ] );
+    ( "marked lines at and past the edges",
+      sections
+        [
+          Sections.Excerpt { source = "a\nb\nc\n"; marked_lines = [ 3; 7; 0 ] };
+        ] );
+    ( "points wider than their header",
+      sections
+        (Sections.coverage_report ~mode:`Report ~min:None
+           {
+             Sections.visited = 100;
+             total = 200;
+             files = [ coverage_file "a.ml" 100 200 [] ];
+           }) );
+    ( "a survivor on line 1",
+      sections
+        (Sections.survivor_block ~exe_width:None
+           {
+             Sections.mutant =
+               mutant ~source:"let x = 1\n" "a.ml:1:8:add" 1 "1" "2";
+             witnesses = [ witness "t" 0 ];
+           }) );
+  ]
+
+(* The lines of [block] made of [~] alone. *)
+let tilde_lines block =
+  List.filter
+    (fun l ->
+      String.contains l '~' && String.for_all (fun c -> c = ' ' || c = '~') l)
+    (String.split_on_char '\n' block)
+
+let test_far_occurrences () =
+  let not_contains ?(demand = Failure.Anywhere) ~found_at needle haystack =
+    failure_block (Failure.containment ~found_at ~demand ~needle ~haystack ())
+  in
+  let block =
+    not_contains ~found_at:10_000 "NEEDLE"
+      (String.make 10_000 'a' ^ "NEEDLE" ^ String.make 10_000 'b')
+  in
+  let column =
+    match
+      List.find_opt (has ~sub:"aNEEDLE") (String.split_on_char '\n' block)
+    with
+    | Some l -> Option.get (Text.first_occurrence ~pattern:"NEEDLE" l)
+    | None -> failf "no haystack line in %S" block
+  in
+  (match tilde_lines block with
+  | [ mark ] ->
+      equal ~msg:"an occurrence deep in the haystack is marked where it prints"
+        int column (String.index mark '~')
+  | _ -> failf "one marker line, got %S" block);
+  let needle = String.make 5_000 'n' in
+  let block =
+    not_contains ~found_at:10_000 needle
+      (String.make 10_000 'a' ^ needle ^ String.make 5_000 'b')
+  in
+  equal ~msg:"an occurrence cut by the excerpt's end is marked up to it" int
+    4096
+    (occurrences_of ~sub:"~" (String.concat "" (tilde_lines block)));
+  let block =
+    not_contains
+      ~demand:(Failure.Ordered { index = 1; resumed_at = 9_000 })
+      ~found_at:0 "a" (String.make 10_000 'a')
+  in
+  equal ~msg:"an occurrence the excerpt left behind is not marked" int 0
+    (List.length (tilde_lines block))
+
+let test_diff_at_cap () =
+  let side c n =
+    String.concat "\n" (List.init n (fun i -> Printf.sprintf "%c%d" c i))
+  in
+  not_contains ~msg:"200 lines of hunks print whole" ~sub:"more diff lines"
+    (failure_block
+       (Failure.equality ~expected:(side 'e' 100) ~actual:(side 'a' 99) ()))
+
+let edge_blocks_pinned =
+  [
+    ( "two changed spans on one line",
+      "    expected  a1b2c\n\
+      \               ~ ~\n\
+      \    actual    a9b8c\n\
+      \               ~ ~\n" );
+    ( "the last code point of fixed width",
+      "    expected  \201\143abc1\n\
+      \                  ~\n\
+      \    actual    \201\143abc2\n\
+      \                  ~\n" );
+    ( "one side without fixed widths",
+      "    expected  ab\230\151\165\n    actual    abc\n" );
+    ( "one side elided, coloured",
+      "    \027[2mexpected\027[0m  \
+       \027[32mxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\226\128\166 \
+       (10 bytes \
+       elided)xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\027[0m\n\
+      \    \027[2mactual\027[0m    \
+       \027[31mxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\027[0m\n"
+    );
+    ( "one side spans lines",
+      "    --- expected\n\
+      \    +++ actual\n\
+      \    @@ -1,2 +1,1 @@\n\
+      \    - a\n\
+      \    - b\n\
+      \    + c\n" );
+    ( "a side with no lines",
+      "    --- expected\n\
+      \    +++ actual\n\
+      \    @@ -0,0 +1,2 @@\n\
+      \    + a\n\
+      \    + b\n" );
+    ("its headline", "expected and actual differ (4 diff lines)");
+    ( "an empty [-] line answered by a [+] line",
+      "    --- expected\n\
+      \    +++ actual\n\
+      \    @@ -1,3 +1,3 @@\n\
+      \      a\n\
+      \    - \n\
+      \    + x\n\
+      \      c\n" );
+    ( "blanks shared past the stem",
+      "    --- expected\n\
+      \    +++ actual\n\
+      \    @@ -1,2 +1,2 @@\n\
+      \    - x  \n\
+      \        ~\n\
+      \    + x \n\
+      \      y\n" );
+    ( "an occurrence at byte 0",
+      "    needle    \"ab\": found at byte 0\n\
+      \    haystack  abc\n\
+      \              ~~\n" );
+    ( "an empty needle",
+      "    needle    \"\": found at byte 0\n    haystack  abc\n" );
+    ( "an occurrence at a line's start",
+      "    needle    \"b\": found at byte 2\n\
+      \    haystack:\n\
+      \      a\n\
+      \      b\n\
+      \      ~\n" );
+    ( "an occurrence at a newline",
+      "    needle    \"\\nb\": found at byte 1\n\
+      \    haystack:\n\
+      \      a\n\
+      \      b\n" );
+    ( "an occurrence across lines",
+      "    needle    \"a\\nb\": found at byte 1\n\
+      \    haystack:\n\
+      \      xa\n\
+      \       ~\n\
+      \      b\n" );
+    ( "exactly the proposed cap",
+      "    expect: no baseline\n\
+      \    proposed (20 lines):\n\
+      \      + line 0\n\
+      \      + line 1\n\
+      \      + line 2\n\
+      \      + line 3\n\
+      \      + line 4\n\
+      \      + line 5\n\
+      \      + line 6\n\
+      \      + line 7\n\
+      \      + line 8\n\
+      \      + line 9\n\
+      \      + line 10\n\
+      \      + line 11\n\
+      \      + line 12\n\
+      \      + line 13\n\
+      \      + line 14\n\
+      \      + line 15\n\
+      \      + line 16\n\
+      \      + line 17\n\
+      \      + line 18\n\
+      \      + line 19\n\
+      \    accept: dune promote\n" );
+    ("a row of empty cells", "\n");
+    ( "marked lines three apart",
+      "  \226\150\140   1 \226\148\130 1\n\
+      \      2 \226\148\130 2\n\
+      \      3 \226\148\130 3\n\
+      \  \226\150\140   4 \226\148\130 4\n\
+      \      5 \226\148\130 5\n" );
+    ( "marked lines at and past the edges",
+      "      2 \226\148\130 b\n  \226\150\140   3 \226\148\130 c\n" );
+    ( "points wider than their header",
+      "   cover    points    file   uncovered lines (-u shows the source)\n\
+      \   50.0%    100/200   a.ml   (source not found)\n\
+       coverage: 50.0% (100/200 points)\n" );
+    ( "a survivor on line 1",
+      "  SURVIVED  a.ml:1:8:add  1 \226\134\146 2\n\
+      \      1 \226\148\130 let x = 1\n\n\
+      \    1 test ran this line and did not fail:\n\
+      \      t\n" );
+  ]
+
+let test_edge_blocks () =
+  List.iter2
+    (fun (name, block) (_, pinned) -> equal ~msg:name string pinned block)
+    (edge_blocks ()) edge_blocks_pinned
+
 (* Report, the unpinned edges *)
 
 let test_live_line_cut () =
@@ -5810,6 +6064,9 @@ let edge_tests =
     test "sections: a rule and its label" test_rule_width;
     test "sections: survivor_block's executable column"
       test_survivor_block_exe_width;
+    test "sections: the edges of the arithmetic" test_edge_blocks;
+    test "sections: occurrences far into a haystack" test_far_occurrences;
+    test "sections: a diff of exactly the cap" test_diff_at_cap;
   ]
 
 let tests =
