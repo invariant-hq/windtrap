@@ -172,11 +172,13 @@ it restates the program as it was typed, then the seed and the test:
 
 Run by dune, the program is dune's test action (INSIDE_DUNE set, the
 path relative to the action's directory): the line is a dune exec of the
-program's path from the project root, with no ./ left in it.
+program's path from the project root, with no ./ left in it. A core built
+with the mutation backend adds that backend's flag, which the loop's
+suite pins; this session masks it so it reads the same in either build.
 
   $ run INSIDE_DUNE=1 FACADE_FIXTURE=property ./suite_main.exe > out 2> err
   [1]
-  $ grep 'replay:' out | sed -E 's/s1:[0-9a-f]+/SEED/'
+  $ grep 'replay:' out | sed -E 's/s1:[0-9a-f]+/SEED/; s/--instrument-with ppx_windtrap\.mutate //'
       replay: dune exec suite_main.exe -- --seed SEED -f 'boom'
 
 A host that passes run no command line gives no program to restate, so

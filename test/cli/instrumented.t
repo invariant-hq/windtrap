@@ -19,7 +19,7 @@ into the build directory the session runs in. What windtrap says about
 the verdict file goes on standard error, above the outcome line, which
 stays the last line when the two streams are one:
 
-  $ run ./mutant_main.exe --mutate -f adds -o logs --junit loop.xml > out 2>&1
+  $ run ./mutant_main.exe --mutate=test/cli/ -f adds -o logs --junit loop.xml > out 2>&1
   $ scrub < out
   mutant: 1 passed in DURATION.
   windtrap: verdicts not saved: this run's selection narrows the suite, and a partial run's verdicts would stand in the project merge as the whole.
