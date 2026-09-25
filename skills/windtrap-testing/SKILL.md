@@ -113,8 +113,8 @@ let () = exit (run "mylib" [ parse ])
 - A resource belongs to a test: `bracket ~setup ~teardown` for one per
   test, `scoped` for a `with_`-style function, `fixture` for one shared
   across the run. `temp_dir`, `setenv` and `chdir` are undone when the
-  test ends. Tests never share mutable state, since `-f`, `--failed` and
-  `--shard` change which tests run.
+  test ends. Tests share only a `fixture`, and never through its mutable
+  state, since `-f`, `--failed` and `--shard` change which tests run.
 - A known bug is `xfail ~reason:"issue #N" (test …)`: green while the
   bug exists, red the day it is fixed. A test the machine cannot run is
   `skip ~reason ()`. `focus` is for a local session only; under CI a
@@ -142,6 +142,7 @@ Mechanics: [Resources and structure](https://github.com/invariant-hq/windtrap/bl
 | To | Run |
 | --- | --- |
 | run every suite | `dune runtest`; `--force` reruns suites that passed |
+| run the suites of one directory | `dune runtest test/unit` |
 | run one suite with flags | `dune exec test/test_mylib.exe -- FLAGS` |
 | select by path, drop by path | `-f PATTERN`, `-e PATTERN`, each repeatable |
 | select by tag | `--tag slow`, `--exclude-tag slow`; properties carry `prop` |
@@ -154,9 +155,11 @@ Mechanics: [Resources and structure](https://github.com/invariant-hq/windtrap/bl
 | write JUnit files under CI | `WINDTRAP_JUNIT=_build/junit dune runtest` |
 
 The exit code is `0` when no selected test failed, `1` when one failed,
-and `2` when no test ran: a filter that matched nothing, an empty
-`--failed`, a usage error. Treat `2` as a failure of the command, never
-as a pass.
+and `2` when no test ran: a filter on the command line that matched
+nothing, an empty `--failed`, a usage error. Treat `2` as a failure of
+the command, never as a pass. A `WINDTRAP_*` variable reaches every
+stanza, and a stanza whose tests its filter misses passes, saying that
+no test ran.
 
 A suite run through `dune exec` styles its report even into a pipe or a
 file. To read plain text, set `WINDTRAP_COLOR=never`, which
@@ -227,8 +230,8 @@ Mechanics: [Baselines and expect tests](https://github.com/invariant-hq/windtrap
   or simpler function, an invariant after each operation, algebraic
   identities, a relation between two runs (scaling the input scales the
   output), and "never raises" on any input.
-- Draw sizes and indices from `Gen.small_int` or `Gen.nat`, not the full
-  range of `int`. A structural precondition (non-empty, sorted) belongs
+- Draw sizes and indices from `Gen.nat` or `Gen.int_range 0 n`, and
+  magnitudes from `Gen.small_int`, not the full range of `int`. A structural precondition (non-empty, sorted) belongs
   in the generator; `assume` is for rare cases, since a property that
   discards too many gives up.
 - Give a generator of your type a printer with `Gen.with_pp`, the same
@@ -323,7 +326,7 @@ versions, home paths) with `sed` in the session. A binary built
 from an instrumented library writes coverage for each command the
 session runs, and `windtrap coverage` merges it with the suites'.
 
-## Keeping the suite honest
+## Keeping failures visible
 
 - Never weaken an assertion, change an expected value, special-case a
   test input in the code, or delete or skip a failing test to get a
