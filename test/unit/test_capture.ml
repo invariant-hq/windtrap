@@ -563,6 +563,16 @@ let test_invalid_utf8_verbatim () =
     tail.Failure.text;
   equal ~msg:"no extra bytes counted omitted" int 56 tail.Failure.omitted_bytes
 
+let test_uncut_log_kept_whole () =
+  let root = temp_dir () in
+  let cap = Capture.create ~log_dir:root ~suite:"s" () in
+  (* No cut, no skip: a log within the bound that opens on a continuation
+     byte is its own tail. *)
+  let tail = capture_string cap ~test_name:"t" "\x80abc" in
+  equal ~msg:"the leading continuation byte is kept" string "\x80abc"
+    tail.Failure.text;
+  equal ~msg:"nothing is omitted" int 0 tail.Failure.omitted_bytes
+
 (* Per-attempt reset *)
 
 let test_per_attempt_reset () =
@@ -785,6 +795,7 @@ let tests =
     test "tail cut lands on a UTF-8 boundary" test_utf8_boundary;
     test "tail cut skips up to three continuation bytes" test_utf8_max_skip;
     test "invalid UTF-8 is kept verbatim" test_invalid_utf8_verbatim;
+    test "a log within the bound is kept whole" test_uncut_log_kept_whole;
     test "per-attempt reset truncates the file" test_per_attempt_reset;
     test "sanitized layout" test_sanitized_layout;
     test "punctuation variants get distinct log files" test_name_collisions;
