@@ -30,6 +30,7 @@ let sign =
     [
       test "is 1 for a positive" (fun () -> equal int 1 (Calc.sign 5));
       test "is -1 for a negative" (fun () -> equal int (-1) (Calc.sign (-5)));
+      test "is 0 for zero" (fun () -> equal int 0 (Calc.sign 0));
     ]
 
 let abs =

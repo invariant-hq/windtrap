@@ -150,3 +150,22 @@
   (<> %{os_type} Win32))
  (action
   (diff coverage.md coverage.md.corrected)))
+
+(rule
+ (enabled_if
+  (<> %{os_type} Win32))
+ (deps
+  (alias_rec %{workspace_root}/examples/08-mutation/all)
+  (source_tree %{workspace_root}/examples/08-mutation)
+  %{workspace_root}/bin/main.exe)
+ (action
+  (with-stdout-to
+   mutation.md.corrected
+   (run %{exe:../transcript/transcript.exe} %{dep:mutation.md}))))
+
+(rule
+ (alias runtest)
+ (enabled_if
+  (<> %{os_type} Win32))
+ (action
+  (diff mutation.md mutation.md.corrected)))
