@@ -433,8 +433,8 @@ val containment :
     window of at most {!tail_bytes} bytes around it. Without one it is the head
     of the haystack, its first 10 lines or its first 1 KiB, whichever ends
     first, and under {!Suffix} its end, its last 10 lines or its last 1 KiB,
-    whichever starts last. Every cut falls on a code-point boundary, so an
-    anchored window can pass its bound by up to three bytes.
+    whichever starts last. Every cut falls on a code-point boundary, within the
+    bound.
 
     Raises [Invalid_argument] if [found_at], or the [resumed_at] of an
     {!Ordered} demand, is negative or greater than the length of [haystack]. *)

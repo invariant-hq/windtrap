@@ -131,17 +131,54 @@ let tests =
         equal ~msg:"truncated prefix ends on a char boundary" string
           "éé... (truncated; 10 bytes total)"
           (Text.truncate_bytes_utf8 5 "ééééé"));
-    test "prefix_bytes_utf8 keeps the prefix and no marker" (fun () ->
+    test "a head window keeps the prefix and no marker" (fun () ->
         equal ~msg:"fits: unchanged" string "abc"
-          (Text.prefix_bytes_utf8 3 "abc");
-        equal ~msg:"cut" string "abcd" (Text.prefix_bytes_utf8 4 "abcdefgh");
+          (snd (Text.window ~bytes:3 Head "abc"));
+        equal ~msg:"cut" string "abcd"
+          (snd (Text.window ~bytes:4 Head "abcdefgh"));
         equal ~msg:"never splits a multibyte char" string "\195\169"
-          (Text.prefix_bytes_utf8 3 "éé");
+          (snd (Text.window ~bytes:3 Head "éé"));
         equal ~msg:"non-positive budget" string ""
-          (Text.prefix_bytes_utf8 0 "abc");
+          (snd (Text.window ~bytes:0 Head "abc"));
         equal ~msg:"the marker is spelled apart" string
           "ab... (truncated; 9 bytes total)"
           (Text.mark_truncated ~length:9 "ab"));
+    test "a tail window keeps the end and its offset" (fun () ->
+        equal ~msg:"fits: whole, at 0" (pair int string) (0, "abc")
+          (Text.window ~bytes:3 Tail "abc");
+        equal ~msg:"cut" (pair int string) (4, "efgh")
+          (Text.window ~bytes:4 Tail "abcdefgh");
+        equal ~msg:"the cut moves forward past a split char" (pair int string)
+          (2, "\195\169")
+          (Text.window ~bytes:3 Tail "\195\169\195\169");
+        equal ~msg:"no budget: empty, at the end" (pair int string) (3, "")
+          (Text.window ~bytes:0 Tail "abc"));
+    test "an around window stays within its bound" (fun () ->
+        equal ~msg:"fits: whole, wherever the anchor" (pair int string)
+          (0, "abcd")
+          (Text.window ~bytes:4 (Around 3) "abcd");
+        equal ~msg:"centred" (pair int string) (3, "defg")
+          (Text.window ~bytes:4 (Around 5) "abcdefghij");
+        let _, part =
+          Text.window ~bytes:4 (Around 3) "ab\195\169\195\169\195\169"
+        in
+        is_true ~msg:"never past the bound, a multibyte char included"
+          (String.length part <= 4));
+    test "a malformed sequence moves a cut by three bytes at most" (fun () ->
+        equal ~msg:"head: back three" (pair int string) (0, "a\x80")
+          (Text.window ~bytes:5 Head "a\x80\x80\x80\x80\x80\x80");
+        equal ~msg:"tail: forward three" (pair int string) (5, "\x80a")
+          (Text.window ~bytes:5 Tail "\x80\x80\x80\x80\x80\x80a");
+        equal ~msg:"head: never before the start" (pair int string) (0, "")
+          (Text.window ~bytes:1 Head "\x80\x80"));
+    test "lines bound a head or a tail window" (fun () ->
+        equal ~msg:"head: the first two lines" (pair int string) (0, "a\nb\n")
+          (Text.window ~lines:2 ~bytes:100 Head "a\nb\nc\nd\n");
+        equal ~msg:"tail: the last two lines, a final newline ending the last"
+          (pair int string) (4, "c\nd\n")
+          (Text.window ~lines:2 ~bytes:100 Tail "a\nb\nc\nd\n");
+        equal ~msg:"the byte bound still holds" (pair int string) (0, "a\nb")
+          (Text.window ~lines:2 ~bytes:3 Head "a\nb\nc\n"));
     test "first_occurrence returns the byte offset" (fun () ->
         equal ~msg:"match in the middle" (option int) (Some 1)
           (Text.first_occurrence ~pattern:"ell" "hello");

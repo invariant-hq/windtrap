@@ -3,9 +3,6 @@
    SPDX-License-Identifier: ISC
   ---------------------------------------------------------------------------*)
 
-(* Adapted from windtrap 0.1's lib/text.ml; [escape_controls] and
-   [ensure_trailing_newline] are new in v3. *)
-
 (* Newlines *)
 
 let normalize_newlines s =
@@ -38,54 +35,95 @@ let split_lines s =
   | "" :: rest -> List.rev rest
   | parts -> List.rev parts
 
-(* UTF-8-aware operations *)
+(* Lengths and cuts *)
 
 let length_utf8 s =
   let len = String.length s in
-  let rec count byte_pos char_count =
-    if byte_pos >= len then char_count
-    else
-      let decode = String.get_utf_8_uchar s byte_pos in
-      count (byte_pos + Uchar.utf_decode_length decode) (char_count + 1)
+  let rec count i n =
+    if i >= len then n
+    else count (i + Uchar.utf_decode_length (String.get_utf_8_uchar s i)) (n + 1)
   in
   count 0 0
 
-(* The result is at most [max_chars] code points, ellipsis included. It used
-   to be [max_chars - 1] code points PLUS ["..."] (two over the bound it was
-   asked for) which is a display bound that does not bind: the live tail
-   sized to the terminal wrapped, and the erase that follows it then left
-   residue on the wrapped line. *)
+(* The ellipsis is inside the bound: a display bound that lets the text run
+   over wraps the line an erase then misses. *)
 let truncate_utf8 max_chars s =
   let len = String.length s in
   if len <= max_chars || length_utf8 s <= max_chars then s
   else if max_chars <= 3 then String.sub "..." 0 (max 0 max_chars)
   else
-    let keep = max_chars - 3 in
-    let rec find_cut_point byte_pos char_count =
-      if byte_pos >= len then byte_pos
-      else if char_count >= keep then byte_pos
-      else
-        let decode = String.get_utf_8_uchar s byte_pos in
-        find_cut_point
-          (byte_pos + Uchar.utf_decode_length decode)
-          (char_count + 1)
+    let rec cut i n =
+      if i >= len || n = max_chars - 3 then i
+      else cut (i + Uchar.utf_decode_length (String.get_utf_8_uchar s i)) (n + 1)
     in
-    let cut = find_cut_point 0 0 in
-    String.sub s 0 cut ^ "..."
+    String.sub s 0 (cut 0 0) ^ "..."
 
-let prefix_bytes_utf8 max_bytes s =
-  (* Walk forward character-by-character; [byte_pos] is always a
-     character boundary, so landing exactly on [max_bytes] is a valid cut
-     and a character straddling it is excluded. *)
-  let len = String.length s in
-  let rec find_safe_cut byte_pos =
-    if byte_pos >= len then byte_pos
+(* A cut never lands before a continuation byte unless three precede it: a
+   well-formed sequence has at most three, so a malformed one moves a cut by
+   three bytes at most. *)
+let continues s i = Char.code s.[i] land 0xC0 = 0x80
+
+let rec boundary_before s i steps =
+  if steps = 0 || i <= 0 || i >= String.length s || not (continues s i) then i
+  else boundary_before s (i - 1) (steps - 1)
+
+let rec boundary_after s i steps =
+  if steps = 0 || i >= String.length s || not (continues s i) then i
+  else boundary_after s (i + 1) (steps - 1)
+
+type at = Head | Tail | Around of int
+
+(* The byte after the [n]th newline, and the byte after the newline that
+   precedes the last [n] lines, a final newline ending the last line. *)
+let after_lines s n =
+  let rec go i n =
+    if n = 0 then Some i
     else
-      let decode = String.get_utf_8_uchar s byte_pos in
-      let next_pos = byte_pos + Uchar.utf_decode_length decode in
-      if next_pos > max_bytes then byte_pos else find_safe_cut next_pos
+      match String.index_from_opt s i '\n' with
+      | Some j -> go (j + 1) (n - 1)
+      | None -> None
   in
-  String.sub s 0 (find_safe_cut 0)
+  go 0 n
+
+let before_last_lines s n =
+  let rec go i n =
+    match String.rindex_from_opt s (i - 1) '\n' with
+    | Some j -> if n = 1 then Some (j + 1) else go j (n - 1)
+    | None -> None
+  in
+  let len = String.length s in
+  go (if String.ends_with ~suffix:"\n" s then len - 1 else len) n
+
+let window ?lines ~bytes at s =
+  let len = String.length s and bytes = max 0 bytes in
+  let start, stop =
+    match at with
+    | Head ->
+        let stop = if len <= bytes then len else boundary_before s bytes 3 in
+        let stop =
+          match Option.bind lines (after_lines s) with
+          | Some line_stop -> min line_stop stop
+          | None -> stop
+        in
+        (0, stop)
+    | Tail ->
+        let start =
+          if len <= bytes then 0 else boundary_after s (len - bytes) 3
+        in
+        let start =
+          match Option.bind lines (before_last_lines s) with
+          | Some line_start -> max line_start start
+          | None -> start
+        in
+        (start, len)
+    | Around _ when len <= bytes -> (0, len)
+    | Around i ->
+        let start = boundary_after s (max 0 (i - (bytes / 2))) 3 in
+        let stop = start + bytes in
+        (start, if stop >= len then len else boundary_before s stop 3)
+  in
+  if start = 0 && stop = len then (0, s)
+  else (start, String.sub s start (stop - start))
 
 let mark_truncated ~length kept =
   Printf.sprintf "%s... (truncated; %d bytes total)" kept length
@@ -93,22 +131,18 @@ let mark_truncated ~length kept =
 let truncate_bytes_utf8 max_bytes s =
   if max_bytes <= 0 then "<truncated>"
   else if String.length s <= max_bytes then s
-  else mark_truncated ~length:(String.length s) (prefix_bytes_utf8 max_bytes s)
+  else
+    mark_truncated ~length:(String.length s)
+      (snd (window ~bytes:max_bytes Head s))
 
-(* Each cut moves away from the middle, so neither side passes its half. A
-   UTF-8 sequence has at most three continuation bytes. *)
+(* Each side keeps at most half, its cut moved away from the middle. *)
 let elide_middle max_bytes ~show s =
   if max_bytes < 0 then invalid_arg "Text.elide_middle: negative bound";
   let len = String.length s in
   if len <= max_bytes then show s
   else
-    let continues i = Char.code s.[i] land 0xC0 = 0x80 in
-    let rec boundary i step steps =
-      if steps = 0 || i <= 0 || i >= len || not (continues i) then i
-      else boundary (i + step) step (steps - 1)
-    in
-    let head = boundary (max_bytes / 2) (-1) 3 in
-    let tail = boundary (len - (max_bytes / 2)) 1 3 in
+    let head = boundary_before s (max_bytes / 2) 3 in
+    let tail = boundary_after s (len - (max_bytes / 2)) 3 in
     Printf.sprintf "%s\u{2026} (%d bytes elided)%s"
       (show (String.sub s 0 head))
       (tail - head)

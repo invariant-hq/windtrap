@@ -29,36 +29,42 @@ val split_lines : string -> string list
 
 (** {1:utf8 Lengths and cuts}
 
-    No cut splits a well-formed UTF-8 sequence. A malformed sequence is read as
-    [String.get_utf_8_uchar] decodes it, one code point per replacement
-    character. *)
+    A length counts code points as [String.get_utf_8_uchar] decodes them. A cut
+    never splits a well-formed UTF-8 sequence; on a malformed one it moves by at
+    most three bytes. *)
 
 val length_utf8 : string -> int
 (** [length_utf8 s] is the number of UTF-8 code points of [s]. *)
 
 val truncate_utf8 : int -> string -> string
 (** [truncate_utf8 n s] is [s] when [s] has at most [n] code points, and
-    otherwise the first [n - 3] code points of [s] followed by ["..."]. The
-    ellipsis is inside the bound, so the result never has more than [n] code
-    points, unlike that of {!truncate_bytes_utf8}. For [n <= 3] a longer [s]
-    gives the first [n] bytes of ["..."]. It never raises. *)
+    otherwise the first [n - 3] code points of [s] followed by ["..."], so the
+    result never has more than [n] code points. For [n <= 3] a longer [s] gives
+    the first [n] bytes of ["..."]. It never raises. *)
 
-val prefix_bytes_utf8 : int -> string -> string
-(** [prefix_bytes_utf8 n s] is the longest prefix of [s] of at most [n] bytes
-    that ends on a code-point boundary. It is [s] when [s] is at most [n] bytes
-    long, and [""] when [n <= 0]. It never raises. *)
+(** The part of a string that a {!window} keeps. *)
+type at =
+  | Head  (** The start of the string. *)
+  | Tail  (** The end of the string. *)
+  | Around of int  (** The bytes around this offset, centred on it. *)
+
+val window : ?lines:int -> bytes:int -> at -> string -> int * string
+(** [window ~bytes at s] is [(offset, part)]: [part] is the longest part of [s]
+    at [at] that holds at most [bytes] bytes, and [offset] is where it starts in
+    [s]. It is [(0, s)] when [s] holds at most [bytes] bytes. With [lines], a
+    [Head] or [Tail] part also holds at most that many lines, a final newline
+    ending the last line; [lines] does not bound an [Around] part. A negative
+    [bytes] is [0]. It never raises. *)
 
 val mark_truncated : length:int -> string -> string
 (** [mark_truncated ~length kept] is [kept] followed by the marker
     [... (truncated; N bytes total)], where [N] is [length]. *)
 
 val truncate_bytes_utf8 : int -> string -> string
-(** [truncate_bytes_utf8 n s] is ["<truncated>"] when [n <= 0]. It is otherwise
-    [s] when [s] is at most [n] bytes long, and else
-    [mark_truncated ~length:(String.length s) (prefix_bytes_utf8 n s)].
-
-    The marker comes on top of the bound, so the result is longer than [n]
-    bytes. A caller that bounds storage must budget for it. It never raises. *)
+(** [truncate_bytes_utf8 n s] is [s] when [s] is at most [n] bytes long, and
+    else the {!Head} {!window} of [n] bytes of [s], marked by {!mark_truncated}.
+    The marker comes on top of the bound. For [n <= 0] it is ["<truncated>"]. It
+    never raises. *)
 
 val elide_middle : int -> show:(string -> string) -> string -> string
 (** [elide_middle n ~show s] is [show s] when [s] is at most [n] bytes long.

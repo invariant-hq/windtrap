@@ -360,10 +360,10 @@ let tests =
         equal ~msg:"suffix, one line: its end, on a code point" int 1_024
           (String.length
              (suffix (String.concat "" (List.init 3_000 (fun _ -> "\xc3\xa9"))))));
-    test "containment constructor: an anchored window may pass its bound by 3"
+    test "containment constructor: an anchored window stays within its bound"
       (fun () ->
         (* The window's end falls on the first continuation byte of a
-           4-byte character, so the cut moves forward three bytes. *)
+           4-byte character, so the cut moves back before it. *)
         let found_at = 10_000 in
         let four = "\xf0\x9d\x84\x9e" in
         let haystack =
@@ -375,10 +375,10 @@ let tests =
             .F.kind
         with
         | F.Containment { excerpt; _ } ->
-            equal ~msg:"tail_bytes + 3" int (F.tail_bytes + 3)
+            equal ~msg:"tail_bytes - 1" int (F.tail_bytes - 1)
               (String.length excerpt);
-            is_true ~msg:"ends on the whole character"
-              (String.ends_with ~suffix:four excerpt)
+            is_true ~msg:"ends before the character"
+              (String.ends_with ~suffix:"a" excerpt)
         | _ -> fail "containment kind");
     test "containment constructor: found_at validation and bounding" (fun () ->
         raises_match ~msg:"negative found_at rejected" Exn.invalid_arg
