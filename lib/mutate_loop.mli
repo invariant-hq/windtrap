@@ -7,34 +7,22 @@
 
     {!execute_and_report} is the one call through which a run becomes a mutation
     run, and the entry point of a suite makes it in place of {!Report.run}.
-    Under [--mutate] it is the {{!section-loop}loop}: a dry run, a determinism
-    probe, and one forked child per reached mutant. Under [--arm] it is
-    {{!section-armed}one run with one mutant armed}.
 
     The module decides which mutants survived, in which order and with which
-    reaching tests. {!Report} and {!Report_sections} render what it decides. It
-    works over the runtime, which reads no environment and no flag:
-    {!Windtrap_runtime.Mutate} holds the catalogue, the arming and the reach
-    counts, and {!Windtrap_runtime.Verdicts} the verdict file. What a run tests
-    or arms arrives on [config.mutation] ({!Run.type-mutation}), which {!Cli}
-    resolves. *)
+    reaching tests. What a run tests or arms arrives on [config.mutation]
+    ({!Run.type-mutation}), which {!Cli} resolves. *)
 
 (** {1:running Running} *)
 
 (** The type for what {!execute_and_report} did with the run. *)
 type run =
   | Ran of (Run.outcome, Run.startup_error) result
-      (** The result of {!Report.run}, which was called once: without mutation,
-          with one mutant armed, after an [--arm] identifier that names no file
-          of this executable, or after a [WINDTRAP_MUTATE] that finds nothing to
-          test ({{!section-loop}the loop}). The caller finishes its work on it
-          as it does after {!Report.run}. *)
+      (** The result of {!Report.run}, which was called once. The caller
+          finishes its work on it as it does after {!Report.run}. *)
   | Reported of int
       (** The module has printed everything, and the process must exit with this
-          code, which is [0] or [1]. The outcome of a loop's dry run is not
-          returned, so the caller sees neither its focus, nor its corrections,
-          nor its exit code. The caller must do none of the work that follows a
-          run. *)
+          code, which is [0] or [1]. The caller must do none of the work that
+          follows a run. *)
 
 val execute_and_report : suite:string -> Run.config -> Test_tree.t list -> run
 (** [execute_and_report ~suite config tests] is {!Report.run} over the same
@@ -50,8 +38,7 @@ val execute_and_report : suite:string -> Run.config -> Test_tree.t list -> run
     gates on survivors (guarantee 12 of [doc/dev/architecture.md]). [Reported 1]
     is a loop that refused to start or could not go on, or an [--arm] identifier
     that is refused. Each says its reason on standard error, and none falls back
-    to a default and runs on. No result is [Reported 2], because a dry run in
-    which no test ran is a refusal. *)
+    to a default and runs on. *)
 
 (** {1:loop The loop}
 
@@ -64,28 +51,22 @@ val execute_and_report : suite:string -> Run.config -> Test_tree.t list -> run
       ([String.starts_with]). A mutant out of scope is neither forked nor
       recorded.
     + It runs the dry run, which is {!Report.run} over [config] with [junit]
-      cleared, and which prints its ordinary transcript. A [--mutate] run thus
-      writes no JUnit file. Every other field is that of [config], [baseline]
-      included, so the dry run of a [--mutate -u] run accepts what a [-u] run
-      accepts. The events of the dry run tell the loop which tests reach which
-      mutant. A site that the dry run evaluated only outside a test, at module
-      initialization or in a fixture release, counts as unreached.
+      cleared. Every other field is that of [config], [baseline] included, so
+      the dry run of a [--mutate -u] run accepts what a [-u] run accepts. A site
+      that the dry run evaluated only outside a test, at module initialization
+      or in a fixture release, counts as unreached.
     + It runs the determinism probe, which is one unarmed child over the tests
       that the dry run executed. The probe agrees iff it executed as many tests,
       skipped as many and counted no failure.
     + It forks one child per reached mutant, in the order of the catalogue, and
-      never forks an unreached one. The report prints as the loop runs
-      ({!Report.mutation_testing}, {!Report.mutation_survivor}).
-    + When the last child has ended it writes the verdict file. It then ends the
-      report ({!Report.mutation_finish}), saying on standard error what it has
-      to say about the file just above the outcome line, and returns
-      [Reported 0].
+      never forks an unreached one.
+    + When the last child has ended it writes the verdict file.
 
     {b Children.} A child runs {!Run.execute} over {!Run.for_subset} of
     [config], with the reaching tests of its mutant as the allowlist. It checks
-    baselines read-only and records no correction (guarantee 12). Nothing that a
-    child prints is visible, because both of its standard descriptors are
-    [/dev/null]. No [at_exit] function runs in a child.
+    baselines read-only and records no correction. Nothing that a child prints
+    is visible, because both of its standard descriptors are [/dev/null]. No
+    [at_exit] function runs in a child.
 
     {b Verdicts.} A mutant is {!Windtrap_runtime.Verdicts.Killed} when its child
     counted a failure, that of a fixture release included. It is also killed
@@ -129,15 +110,12 @@ val execute_and_report : suite:string -> Run.config -> Test_tree.t list -> run
     {b Refusals.} Each of these is [Reported 1] with one sentence on standard
     error ({!Os.say}). The first six are tried in this order, and the last has
     no one place in it:
-    - The platform is Windows, which has no [Unix.fork]. An armed run forks
-      nothing and is not refused.
+    - The platform is Windows, which has no [Unix.fork].
     - The dry run is refused at startup. {!Report.run} has said why, and the
       code is [1] whatever {!Run.startup_exit_code} is.
     - The exit code of the dry run is not [0], because no test ran ([2]) or
       because the run is red.
-    - The population is empty, because the executable links no instrumented
-      module, because the prefixes leave no mutant, or because every mutant in
-      scope is dismissed.
+    - The population is empty.
     - The probe disagrees with the dry run, and the sentence names the tests
       that failed in it, or it passes its deadline, is refused at startup, or
       reports nothing readable.
@@ -145,11 +123,7 @@ val execute_and_report : suite:string -> Run.config -> Test_tree.t list -> run
     - The supervision fails. The scratch directory cannot be created, which is
       tried before the probe, or [pipe], [fork] or [waitpid] fails for the probe
       or for a child. [fork] fails in a process that has spawned a domain, in
-      the dry run or before it, and the sentence then says so.
-
-    The last two can follow survivor blocks that are already committed.
-    {!Report.mutation_refused} then says the sentence, the blocks stay as they
-    are, no closing section prints, and no verdict file is written. *)
+      the dry run or before it, and the sentence then says so. *)
 
 (** {1:armed The armed run}
 
@@ -161,17 +135,11 @@ val execute_and_report : suite:string -> Run.config -> Test_tree.t list -> run
       catalogues is [Reported 1], with the sentence of
       {!Windtrap_runtime.Mutate.pp_arm_error} on standard error, before anything
       runs.
-    - {!Windtrap_runtime.Mutate.Uncatalogued} is no refusal, because one
-      identifier is handed to every test executable of a project, and most of
-      them were built from other sources. The same sentence goes to standard
-      error before the transcript, and the result is [Ran] of the ordinary run
-      under {!Run.No_mutation}.
-    - With the mutant armed, the run announces it and ends on one verdict line
-      ({{!Report.section-armed}the lines of an armed run}), whose count of
-      evaluations starts at the arming. It runs {!Report.run} with [baseline]
-      set to {!Baseline.Check}, so it records no correction. It ends on no
-      verdict line when no test ran, which is exit code [2], or when its startup
-      was refused.
+    - {!Windtrap_runtime.Mutate.Uncatalogued} is no refusal. The same sentence
+      goes to standard error before the transcript, and the result is [Ran] of
+      the ordinary run under {!Run.No_mutation}.
+    - With the mutant armed, it runs {!Report.run} with [baseline] set to
+      {!Baseline.Check}, so it records no correction.
 
     The result of an armed run is [Ran], so its exit code is that of the
     ordinary run, [2] included, and it writes its JUnit file. *)
@@ -186,10 +154,8 @@ val execute_and_report : suite:string -> Run.config -> Test_tree.t list -> run
     not reach. The handler therefore kills the process group of the running
     child, and the mutant of that child gets no verdict, whatever the child
     reported. The loop then removes its scratch directory and writes no verdict
-    file. It ends its report with {!Report.mutation_interrupted}, in which the
-    reached mutants without a verdict count as not tested. It dies by the same
-    signal last, so its parent sees a death by signal and no [at_exit] function
-    runs.
+    file. It dies by the same signal last, so its parent sees a death by signal
+    and no [at_exit] function runs.
 
     A signal that arrives once the last child has ended stops nothing. The
     verdict file is written, a second signal excepted, and the report ends as
@@ -198,8 +164,7 @@ val execute_and_report : suite:string -> Run.config -> Test_tree.t list -> run
     [SIGPIPE] is handled over the same span. When the reader of standard output
     has gone away, the write that finds it gone fails. The loop then stops as it
     does for the other signals, except that it says nothing and tries no closing
-    report, and it dies by [SIGPIPE]. A reader that leaves once the last child
-    has ended finds the verdict file written. When the process was started with
+    report, and it dies by [SIGPIPE]. When the process was started with
     [SIGPIPE] ignored, the [Sys_error] of the failed write escapes
     {!execute_and_report} instead, after the scratch directory is removed. *)
 
