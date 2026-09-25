@@ -34,9 +34,7 @@
       ({!Report_sections.hints}), whose filter is the full path of the test.
     - A [system-out] follows these elements when a failure of the test, that of
       a subtest included, has a captured tail. It holds the whole text of the
-      first such {!Failure.type-tail}. A line before the text counts the earlier
-      bytes that the capture dropped, and a line after it names the full log,
-      each when there is one.
+      first such {!Failure.type-tail}.
 
     {b Subtests.} Each failure recorded in a subtest
     ({!Report_sections.is_subtest_failure}) is a [testcase] of its own, which
@@ -107,10 +105,9 @@ val write :
 
     {!Os.atomic_write} writes the file, so an existing report is replaced whole.
     A report that cannot be written is one warning on standard error
-    ({!Os.warn}), at every verbosity, and never a failed run. It reads
-    [could not write JUnit report to <file>: <reason>], the reason being
-    {!Os.failure_reason}'s. [write] catches the [Sys_error] and the
-    [Unix.Unix_error] of these two functions for it. *)
+    ({!Os.warn}), at every verbosity, and never a failed run. [write] catches
+    the [Sys_error] and the [Unix.Unix_error] of {!Os.mkdir_p} and
+    {!Os.atomic_write} for it. *)
 
 (**/**)
 

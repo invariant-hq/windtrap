@@ -27,22 +27,18 @@ type t
 val create :
   out:Format.formatter -> ansi:bool -> ?terminal:bool -> Run.config -> t
 (** [create ~out ~ansi config] is a renderer that writes to [out].
-    - [ansi] is whether styling is emitted. Every line goes through
-      {!Report_sections.render}, which escapes the control bytes of each text
-      under both settings.
+    - [ansi] is whether styling is emitted.
     - [terminal] is whether [out] is a terminal that a reader watches. Defaults
       to [false]. It is the [terminal] of every {!Report_sections.pp_failure}
-      entry, so a line of [~] marks what changed unless [ansi] and [terminal]
-      both hold. It is also whether {!begin_test}, {!note} and
-      {!mutation_testing} draw the live line, which the next write erases. The
-      live line is off whatever [terminal] is under [ansi:false] and under
-      [config.stream]. It is the one line that is cut to a width, which is 80
-      columns ([columns] in [report.ml]).
+      entry. It is also whether {!begin_test}, {!note} and {!mutation_testing}
+      draw the live line, which the next write erases. The live line is off
+      whatever [terminal] is under [ansi:false] and under [config.stream]. It is
+      the one line that is cut to a width, which is 80 columns ([columns] in
+      [report.ml]).
 
     [create] reads [config.verbose], [config.stream], [config.slow_threshold],
-    [config.invocation], from which every [accept:] and [replay:] command is
-    spelled, and the identifier of a [config.mutation] that is {!Run.Armed}. It
-    reads no other field.
+    [config.invocation] and the identifier of a [config.mutation] that is
+    {!Run.Armed}. It reads no other field.
 
     Raises [Invalid_argument] if [config.slow_threshold] is negative or not
     finite. *)
@@ -64,9 +60,7 @@ val terminal : Run.config -> t
 
     A compact run is one without [config.verbose]. It commits the block of a
     counted failure when its test finishes. The rule that closes the blocks, the
-    end-of-run sections and the summary wait for {!finish}. Under
-    [config.verbose] the header prints at once and every finished test commits a
-    row, with the block of a failed test under its row.
+    end-of-run sections and the summary wait for {!finish}.
 
     [config.stream] changes no line of the transcript. Under it {!result},
     {!note}, {!finish} and {!interrupted} first call {!Capture.drain}, so the
@@ -95,7 +89,6 @@ val header :
       selection. Defaults to [tests].
     - [selection] describes what narrowed the run (see
       {!selection_description}).
-    - [seed] is the root seed to show.
 
     The header prints neither [declared] nor [selection], which the summary uses
     to say why no test ran. Without a call to [header], a renderer prints no
@@ -112,35 +105,19 @@ val result : t -> Run.result -> unit
     finished test and in the order of the tests, because {!finish} relies on the
     order of the blocks.
 
-    Under [config.verbose] every result commits a row with its status, its path,
-    its duration and, when [r.attempts > 1], the number of attempts. The
-    duration starts at the same column on every row, the 52nd, or two spaces
-    after a path that reaches it, and what qualifies the row follows it in
-    parentheses, so only the length of a path moves it. A skip shows its reason
-    in place of a duration, and on the terminal the reason shows nowhere else. A
-    passing property that collected labels prints its label table under its row.
-    A failing [r] with [r.counted = false] is an excused expected failure. Its
-    row carries the reason of [r.xfail], and its block follows it, without the
-    hints and every line faint past its indent, then a blank line. A compact run
-    prints nothing of an excused failure.
+    Under [config.verbose] every result commits a row. A failing [r] with
+    [r.counted = false] is an excused expected failure. A compact run prints
+    nothing of an excused failure.
 
-    A counted failure commits its block in both kinds of run. Under
-    [config.verbose] its row is the title of the block. In a compact run nothing
-    else prints, and the first block follows the header and the rule that opens
-    the failures, which carries no count. A block holds, in this order:
-    - the title. It carries the number of attempts when [r.attempts > 1] and, in
-      an armed run, the mark of the armed mutant. Under [config.verbose] it also
-      says when a failure of [r] is a missing baseline file, which a compact
-      title does not.
+    A counted failure commits its block in both kinds of run. In a compact run
+    nothing else prints, and the first block follows the header and the rule
+    that opens the failures. A block holds, in this order:
+    - the title.
     - one {!Report_sections.pp_failure} entry per failure of [r], with its
       source line.
-    - the label table of a property: the distribution of the collected labels
-      over the passing cases, then the hits of each demanded label when one of
-      several coverage demands is unmet.
+    - the label table of a property.
     - the captured output of the first failure of [r] that carries a
-      {!type:Failure.tail}: its last {!Report_sections.max_lines} lines, under a
-      heading that counts the lines and the bytes left out, then the path of the
-      full log when the capture wrote one.
+      {!type:Failure.tail}.
     - {!Report_sections.hints} for the whole test.
 
     [result] reads the record, [r.outcome] and [r.counted], and never a message.
@@ -184,7 +161,7 @@ val empty_selection_reason :
     [Some "the suite declares none"] when [declared] is [0], and otherwise
     [Some "<selection> matched none of <declared> tests"] when [selection] is
     given, with [test] for one. It is [None] for a suite that declares tests and
-    that nothing narrowed, which has nothing to explain. *)
+    that nothing narrowed. *)
 
 (** {2:ending The end of the run} *)
 
@@ -203,9 +180,8 @@ val finish :
       in order, the results that {!result} was given, because [finish] skips as
       many of its first counted failures as [t] committed blocks.
     - one block for each of [release_failures], titled
-      {!Report_sections.release_title} with no qualifier but the mark of the
-      armed mutant and no duration, then its {!Report_sections.pp_failure} entry
-      with its source line.
+      {!Report_sections.release_title}, then its {!Report_sections.pp_failure}
+      entry with its source line.
     - in a compact run that committed a block, the rule that closes the
       failures.
     - the sections that have rows: slow tests, flaky tests, corrections. A
@@ -217,40 +193,28 @@ val finish :
       it (see {{!section-mutation}mutation lines}).
 
     {b Slow tests.} One row per result whose duration is at least
-    [config.slow_threshold], slowest first, under a heading that gives the
-    threshold. A skip and a test tagged [slow] ([r.slow_tagged]) are exempt. A
-    failed test is not, so it has its block and its row, and an excused one is
-    listed too. A threshold of [0.] disables the section.
+    [config.slow_threshold], slowest first. A skip and a test tagged [slow]
+    ([r.slow_tagged]) are exempt. A failed test is not, so it has its block and
+    its row, and an excused one is listed too. A threshold of [0.] disables the
+    section.
 
     {b Flaky tests.} One row per passing result with [r.attempts > 1], in the
-    order of [results], with the attempt that passed.
+    order of [results].
 
     {b Corrections.} One row per entry of [Baseline.writes baselines], in the
-    order of the paths as {!Os.display_path} prints them. The row of a
-    {!Baseline.Written} file says whether it was written beside its baseline or
-    accepted in place, which {!val:Baseline.mode} decides, and the row of a
-    source file counts its expectations. An accepted source file's row adds
-    [rebuild before the tests see it], or [them], since its literals are
-    compiled into the executable. The row of a {!Baseline.Refused} file is
-    [could not write <path>: <reason>]. Without [baselines] there is no section
-    and the summary has no corrections term.
+    order of the paths as {!Os.display_path} prints them. Without [baselines]
+    there is no section and the summary has no corrections term.
 
-    {b Summary.} Its terms come in this order: passed, with the flaky among
-    them, skipped, expected failures, failed, with the subtest failures among
-    them, not run, the corrections written or accepted, and the files not
-    written. A term of zero is omitted, and [duration] closes the line. A flaky
-    test counts as passed, an excused result as an expected failure only, and a
-    failed fixture release as failed although it is no test. The tests not run
-    are the [tests] of {!header} less the length of [results], never below [0].
-    Subtest failures are the entries of counted failures for which
-    {!is_subtest_failure} holds, and corrections and files not written count
-    files.
+    {b Summary.} A flaky test counts as passed, an excused result as an expected
+    failure only, and a failed fixture release as failed although it is no test.
+    The tests not run are the [tests] of {!header} less the length of [results],
+    never below [0]. Subtest failures are the entries of counted failures for
+    which {!is_subtest_failure} holds, and corrections and files not written
+    count files.
 
     A run with no result at all says instead that no tests ran, with the reason
     of {!empty_selection_reason} when there is one. When a selection emptied a
-    suite that declares tests, one line follows the summary. It is the command
-    that lists the tests under an [`Exe] invocation, and a line that names [-l]
-    under [`Mirrors]. *)
+    suite that declares tests, one line follows the summary. *)
 
 val interrupted :
   t ->
@@ -365,7 +329,7 @@ val mutation_testing : t -> index:int -> total:int -> id:string -> unit
 val mutation_survivor : t -> Report_sections.survivor -> unit
 (** [mutation_survivor t s] commits the {!Report_sections.survivor_block} of
     [s], flushed. The first call precedes the block by the rule that opens the
-    survivors, which carries no count. A block has no column of executables. *)
+    survivors. A block has no column of executables. *)
 
 val mutation_finish : ?note:string -> t -> Report_sections.mutation -> unit
 (** [mutation_finish ?note t m] ends the report of a loop with
@@ -457,5 +421,4 @@ val run :
     again. Beyond what {!Run.execute} does, [run] reads the environment
     ({!terminal}) and writes standard output, standard error and the JUnit file.
     Each block also reads the source file of a located failure and
-    {!Os.project_root}. The paths of a correction, of a refusal and of a full
-    log are printed against that root. *)
+    {!Os.project_root}. *)

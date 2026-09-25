@@ -21,9 +21,8 @@
     records and spells the identifiers in them.
 
     No function reads the terminal or a colour setting, and each writes only on
-    the formatter that it is given: where and when its text shows is its
-    caller's contract. {!pp_failure} under [~excerpt:true] opens the located
-    source file, and the path of a file baseline prints through
+    the formatter that it is given. {!pp_failure} under [~excerpt:true] opens
+    the located source file, and the path of a file baseline prints through
     {!Os.display_path}. Both read {!Os.project_root}, hence the environment and
     the working directory.
 
@@ -31,33 +30,25 @@
 
 (** {1:failures Failure projections}
 
-    An entry is what {!pp_failure} prints for one failure. Where a projection
-    prints a cut {!Failure.type-text}, it prints what the text kept and then
-    [... (truncated; N bytes total)], where [N] is the length of the whole text.
-*)
+    An entry is what {!pp_failure} prints for one failure. *)
 
 val headline : Failure.t -> string
 (** [headline f] is [f] as one unstyled sentence, for a field that holds a
     single line. It is [labeled_msg f] and [": "] when there is one, then one
-    clause for the facts of [f.kind], which {!pp_failure} prints in full. Line
-    feeds, carriage returns and tabs become spaces. Past 80 code points
-    ([max_headline_chars]) the sentence is cut and ends in an ellipsis. Any
-    other control byte is left to the escaping of the field that receives the
-    sentence. *)
+    clause for the facts of [f.kind]. Line feeds, carriage returns and tabs
+    become spaces. Past 80 code points ([max_headline_chars]) the sentence is
+    cut and ends in an ellipsis. Any other control byte is left to the escaping
+    of the field that receives the sentence. *)
 
 val is_subtest_failure : Failure.t -> bool
 (** [is_subtest_failure f] is [true] iff [f.subtest] is not empty, that is iff
-    [f] was recorded inside {!Run.subtest}. It reads the record and never the
-    text of [f.msg]. {!Report} counts such entries as the subtest failures of
-    its summary, and {!Report_junit} writes each as a testcase of its own. *)
+    [f] was recorded inside {!Run.subtest}. *)
 
 val labeled_msg : Failure.t -> string option
 (** [labeled_msg f] is the label of [f] in a single-line field. For a failure
     recorded inside {!Run.subtest} it is the components of [f.subtest], the
     test's own name first, joined by {!Test_tree.path_to_string}. [": "] and
-    [f.msg] follow when there is one. For any other failure it is [f.msg].
-
-    An entry of {!pp_failure} does not print it. *)
+    [f.msg] follow when there is one. For any other failure it is [f.msg]. *)
 
 val pp_failure :
   ansi:bool ->
@@ -95,92 +86,33 @@ val pp_failure :
       [filter] a command carries no filter.
 
     {b Equality.} Two single-line renderings print as the expected side over the
-    actual side, and the spans of {!Diff.refine} mark what changed. With [ansi]
-    a changed span is styled in its side's colour and bold. A line of [~] marks
-    the span under each side that has one, unless both [ansi] and [terminal]
-    hold: the styling of an output that is no terminal may be stripped, as dune
-    strips an action's output when its own is no terminal, or read as raw
-    escapes. A pair that {!Diff.refine} declines, and one whose expected side is
-    a claim ({!Failure.predicate}), print each side in one style and unmarked.
+    actual side, and the spans of {!Diff.refine} mark what changed. A line of
+    [~] marks the span under each side that has one, unless both [ansi] and
+    [terminal] hold: the styling of an output that is no terminal may be
+    stripped, as dune strips an action's output when its own is no terminal, or
+    read as raw escapes.
 
     When a side spans lines the entry is the unified diff of {!val:Diff.hunks},
     the expected lines as the deleted ones, under the header pair [--- expected]
     and [+++ actual]. It prints at most 200 lines of hunks ([max_diff_lines]),
-    hunk heads included and the header pair not, and then a count of the rest. A
-    deleted line and the one inserted line that answers it may differ in
-    trailing blanks alone. A marker line then prints under the deleted one,
-    under both [ansi] settings.
-
-    Three equalities have nothing to mark. A negated one ([not_]) prints the one
-    value that both sides render as. An equality whose renderings are whole and
-    equal byte for byte prints that value too, with a line saying that the
-    printer shows less than the equality compares. One whose renderings are
-    whole and differ by a final newline alone prints a sentence that names the
-    longer side.
+    hunk heads included and the header pair not, and then a count of the rest.
 
     A cut side ({!Failure.is_cut}) is compared on what the failure kept of it.
-    Two sides that kept the same bytes, one of them cut, print one sentence with
-    the number of bytes kept and the length of each side. A diff with a cut side
-    ends with a line that gives, for each cut side, the bytes that it covers.
 
-    {b Containment.} The entry prints the chain index of an {!Failure.Ordered}
-    demand, then the needle with the verdict of the search. The needle is named
-    [prefix] under {!Failure.Prefix}, [suffix] under {!Failure.Suffix} and
-    [needle] otherwise. The verdict says whether and at which byte the needle
-    was found, for an affix found elsewhere that it is not at the start or not
-    at the end, and for an ordered demand at which byte the search had resumed.
-    The excerpt of the haystack follows, whole, with the occurrence marked in it
-    as a changed span is. Its byte range comes last, when it is not the whole
-    haystack.
+    {b Baseline.} A missing baseline prints the content that it would hold, at
+    most 20 lines ([max_proposed_lines]) and then a count of the rest.
 
-    {b Raise.} The entry prints the expected exception over the raised one, each
-    in one style and never marked, or over a sentence when nothing was raised. A
-    [message_diff] prints the shared constructor once, then the two messages as
-    the sides of an equality, quoted as OCaml strings. An assertion that named
-    no exception prints the raised one, under a line that tells an uncaught
-    exception from a rejected [raises_match] predicate. When nothing was raised
-    it prints a sentence instead. The recorded backtrace closes the entry, at
-    most {!max_lines} frames and then a count of the rest.
-
-    {b Baseline.} The first line names the expectation and its state: [expect],
-    [expect_exact], or [expect_file] with its path through {!Os.display_path}. A
-    mismatch then prints the correction as hunks, from the baseline to the
-    produced text and under the cap of an equality's diff. It prints the
-    final-newline sentence of an equality when that is all that differs, and the
-    sentence or the line of a cut side as an equality does. A missing baseline
-    prints the content that it would hold, at most 20 lines
-    ([max_proposed_lines]) and then a count of the rest. An unresolvable path
-    prints the unproven path and names [WINDTRAP_PROJECT_ROOT] as the way out.
-
-    {b Property.} The head line names the case and carries the counterexample.
-    An explicit example is named by its one-based index, any other case by its
-    zero-based index and, when it has some, by its shrink steps. A [summary] and
-    a {!Failure.Pre_image} print as {!type:Failure.kind} asks of a renderer. A
-    search that did not converge ({!Failure.type-shrink_end}) adds a line that
-    says why, and a candidate that raised adds a second line with its exception.
-    The {!headline} of such a failure names the stop: [shrink limit reached],
-    [shrinking stopped] or [shrinking timed out].
-
-    The entry of the inner failure comes last. It is an entry as above, nested,
-    with no blank line after its source line and no hint lines.
-
-    {b Timeout.} One line, [timed out after <limit>s], which a case of a
-    property ends with [in case <K> (<N> passed)], or [in example <K>]. It is
-    the {!headline} too, and a generated case has a [replay:] line.
-
-    {b Message.} The text prints line by line, and an empty text as a
-    placeholder that says so.
+    {b Property.} An explicit example is named by its one-based index, any other
+    case by its zero-based index and, when it has some, by its shrink steps. The
+    entry of the inner failure comes last. It is an entry as above, nested, with
+    no blank line after its source line and no hint lines.
 
     {b Bounds and escaping.} A single-line value, a needle and a source line
     included, prints whole up to 800 bytes ([max_value_bytes]). A longer one
     prints at most 400 bytes from each end around the number of bytes left out,
     and is never marked. {!Text.elide_middle} makes the cut, before any
-    escaping.
-
-    A text of several lines prints line by line, and every line of the entry is
-    escaped by {!render}. A needle and the messages of a [message_diff] carry
-    OCaml's escapes before that. The escape is a projection, which equality,
-    containment and baseline storage never see. *)
+    escaping. The escape is a projection, which equality, containment and
+    baseline storage never see. *)
 
 val max_lines : int
 (** [max_lines] is [10], the bound on the two texts of a block that have no
@@ -203,9 +135,7 @@ val hints :
     failure has a command. A baseline failure whose correction is withheld
     ([withheld = Some _]) has no [accept:], since the command would accept
     nothing. The lines then open with one fact line per such failure, in their
-    order, equal lines once: [correction refused (line N): <reason>] for a
-    {!Failure.Refused} literal, and [no correction was kept: <reason>]
-    otherwise.
+    order, equal lines once.
 
     - [filter] is the path of the block's test as a string. It is single-quoted
       into each command, in the [$'…'] form when it holds a control byte, so a
@@ -223,8 +153,7 @@ val hints :
     A [replay:] carries the armed mutant, the seed, the filter, and the case
     count when the failure's [count] is [Some _] (see {!type:Failure.kind}). An
     [accept:] carries [-u] and the filter, or under [`Mirrors] the file that
-    holds the baseline. That file is the one of the failure's location for a
-    literal, and the path of a file baseline through {!Os.display_path}. *)
+    holds the baseline. *)
 
 (** {1:names Names and command words} *)
 
@@ -244,9 +173,8 @@ val shell_word : string -> string
 
 (** {1:sections The section vocabulary}
 
-    The lines, tables, source excerpts and rules that the coverage and mutation
-    reports are made of. Adding a constructor to {!section} is a design
-    amendment, as adding one to {!type:Failure.kind} is. *)
+    Adding a constructor to {!section} is a design amendment, as adding one to
+    {!type:Failure.kind} is. *)
 
 type span = { style : Pp.style option; text : string }
 (** The type for a run of text under one style, or under none. Styles do not
@@ -274,9 +202,7 @@ val width : span list -> int
 type column = { gap : string; align : [ `Left | `Right ]; width : int option }
 (** The type for a column of {!Rows}. [gap] is the text before each cell,
     [align] the side on which its cells are aligned, and [width] a floor in code
-    points. A column is as wide as its widest cell and at least [width].
-    {!mutation_report} uses the floor to keep the executables of all its blocks
-    in one column. *)
+    points. A column is as wide as its widest cell and at least [width]. *)
 
 type excerpt = {
   source : string;  (** The text of the file. *)
@@ -290,9 +216,7 @@ type excerpt = {
 (** The type for report sections. *)
 type section =
   | Line of span list  (** One line. [Line []] is a blank line. *)
-  | Hint of string
-      (** One line that is a command to type. It takes no span, so a hint
-          carries no style. *)
+  | Hint of string  (** One line that is a command to type. *)
   | Rows of { margin : string; columns : column list; rows : span list list }
       (** A table. A row is [margin], then for each column its [gap] and its
           cell, which is padded to the width of its column outside its style.
@@ -365,27 +289,20 @@ val coverage_report :
 (** [coverage_report ~mode ~min c] is the coverage report of [c], and [`Full] is
     the [-u] of the command. It holds, in this order:
     - when [c.files] is not empty, a header row that names the columns, then one
-      row per file in the order of [c.files]. A row holds the percentage of the
-      file, its visited and total points, its name and its uncovered lines as
-      ranges. A fully covered file has no ranges. In their place a stale file
-      says that its source changed and how to refresh the data, and a file whose
-      unvisited points have no line says that its source was not found.
+      row per file in the order of [c.files].
     - under [`Full], for each file that has uncovered lines and a [source], a
       heading with the name and the numbers of the file, then the {!Excerpt} of
       its uncovered lines.
     - {!coverage_line}, always last.
 
     A row shows its first eight ranges ([max_ranges]), then the number of ranges
-    left out. Under [`Report] the last label of the header row carries the hint
-    that [-u] shows the source. Nothing is fitted to a width, so a long file
-    name or a row of eight ranges can pass 80 columns. *)
+    left out. Nothing is fitted to a width, so a long file name or a row of
+    eight ranges can pass 80 columns. *)
 
 (** {1:mutation Mutation}
 
-    The mutation report: survivor blocks, the never-reached section, the
-    [reproduce:] command and the outcome line. {!mutation_report} is made of
-    {!survivor_block} and of the sections of {!mutation_closing}, so the two
-    reports end alike.
+    {!mutation_report} is made of {!survivor_block} and of the sections of
+    {!mutation_closing}, so the two reports end alike.
 
     Which mutants survived, in which order, and their reaching tests are the
     producer's. No count is measured here, since each one is a field of
@@ -453,8 +370,7 @@ type mutation = {
 
 val survivor_block : exe_width:int option -> survivor -> section list
 (** [survivor_block ~exe_width s] is the block of [s]. It holds, in this order:
-    - the title, with the identifier of the mutant and its rewrite, from
-      [before] to [after].
+    - the title.
     - the mutated source line, as {!pp_failure} prints a source line, when
       [source] is known and holds the line.
     - the sentence that counts the reaching tests, and their executables when
@@ -469,10 +385,7 @@ val mutation_closing : config:Run.config -> mutation -> section list
     - the rule that closes the blocks, when [m.survivors] is not empty. It is
       decided on [m], whatever was printed.
     - when [m.unreached] is not empty, the never-reached section, between an
-      opening rule that carries the number of mutants and a closing rule. It has
-      one row per file, in name order: the number of its mutants, the file, and
-      their distinct lines as ranges, bounded as {!coverage_report} bounds those
-      of a row.
+      opening rule that carries the number of mutants and a closing rule.
     - when [m.survivors] is not empty, the [reproduce:] command, which arms the
       first survivor of [m] under the selection of [config]. Under [`Exe cmd],
       the invocation of [config], it is [cmd], [--arm] and the run's [-f], [-e],
@@ -481,10 +394,7 @@ val mutation_closing : config:Run.config -> mutation -> section list
       of a forced [dune runtest] that names the mutation backend, except
       [--failed] and a filter or an exclusion of several patterns, which no
       mirror can hold.
-    - the outcome line, always last: the survivors among the reached mutants,
-      with the words of [m.scope], then the killed, the never reached and the
-      not tested. A zero term is omitted, the reached count excepted. Under
-      [Executables _] the line ends on the number of executables. *)
+    - the outcome line, always last. *)
 
 val mutation_report : invocation:Run.invocation -> mutation -> section list
 (** [mutation_report ~invocation m] is [m] as a report at rest. It holds one
