@@ -3,290 +3,202 @@
    SPDX-License-Identifier: ISC
   ---------------------------------------------------------------------------*)
 
-(* Not mutated. This module is part of the machinery a mutation run uses
-   to judge mutants (it collects the suite and calls [run]), so a
-   mutant here is armed inside the process that is supposed to detect
-   it: a dropped registration or a wrong exit code is not a survivor but
-   a corrupted verdict. This library's dune carries no mutation stanza,
-   so no build can instrument it; the attribute stays as the statement
-   of intent and the guard against a stanza appearing. Coverage still
-   measures the file. *)
+(* Not mutated: this module judges mutants (see ppx/runtime/dune). *)
 [@@@mutate exclude_file]
 
-(* The ordinary-OCaml half of ppx_windtrap: the module-load registry the
-   generated code fills, the inline-test-runner protocol dune speaks to
-   the generated main, and the undriven-registration guard. A client of
-   the public API only: every test it registers is a [Windtrap.test], and
-   running them is one [Windtrap.run] under [--corrected]. *)
+(* The registry *)
 
-(* Registration *)
+(* A registration's library, [None] for code of no library, and its
+   partition, the basename of its file. *)
+type origin = string option * string
 
-(* A [module%test] group being filled: its own sibling-name counts, and
-   its children in reverse registration order. *)
+(* An open [module%test] group. *)
 type frame = {
   name : string;
   tags : string list;
-  library : string option;
-  file : string;
-  names : (string, int ref) Hashtbl.t;
-  mutable children : Windtrap.test list;
+  origin : origin;
+  names : (string, int ref) Hashtbl.t; (* how many children took each name *)
+  mutable children : Windtrap.test list; (* newest first *)
 }
 
-let group_stack : frame list ref = ref []
+(* Module initializers fill the registry before [init] reads the protocol;
+   [collect] drains the top level. *)
+let groups : frame list ref = ref [] (* the open groups, innermost first *)
+let top_level : (origin * Windtrap.test) list ref = ref [] (* newest first *)
 
-(* Top-level trees with their library and source file, in reverse
-   registration order, and the top-level sibling-name counts per (library,
-   module, name). A library is the one dune's [library-name] cookie named
-   when the rewriter ran; [None] is code of no library, an executable's
-   own. *)
-let top_level : (string option * string * Windtrap.test) list ref = ref []
-
+(* How many top-level registrations took each name, per library and module. *)
 let top_names : (string option * string * string, int ref) Hashtbl.t =
   Hashtbl.create 16
 
-(* Every (library, basename) that registered, collected or not, in reverse
-   order and with repeats: the listing sorts them. *)
-let partitions_seen : (string option * string) list ref = ref []
+(* Every origin that registered, drained or not, newest first. *)
+let origins : origin list ref = ref []
 
-(* The undriven-registration guard
+(* The undriven guard *)
 
-   The silent success this closes: [let%expect_test] code preprocessed
-   with ppx_windtrap inside a plain (executable) or (test) stanza
-   registers its tests at module load, and no inline runner exists for an
-   executable; the binary exits 0 having run nothing, and its
-   expectations are never checked against anything. The first
-   registration of no library therefore installs a [Stdlib.at_exit]
-   handler; every legitimate driving path claims the registry ([init] and
-   [collect]); a process that terminates normally with registrations
-   never claimed prints the diagnostic and exits 2, the nothing-ran
-   code, which can be read as neither a pass nor a test failure.
+let claimed = ref false
 
-   A library's registrations never arm it. They belong to the library's
-   own runner, a process of its own, and in any other process that links
-   the library they are linked code, not tests of that process: a
-   black-box suite over a library with inline tests runs its own suite
-   and exits with its own code. Nothing in a linking process tells a
-   library with (inline_tests) from one without, so the guard cannot
-   speak for either.
-
-   Ordering against the core runner's exit guard: registration is a
-   module-load act and [Windtrap.run] installs its guard mid-run, so this
-   handler always sits deeper in the [at_exit] chain and runs after it.
-   An in-run exit the core guard cancels never reaches this handler; it
-   fires only at the exit that finally proceeds, when no run is active.
-   Firing calls [Stdlib.exit] from inside an [at_exit] handler, which is
-   safe: each registered handler runs at most once, so the nested
-   [do_at_exit] skips this one and still runs the rest, a coverage
-   runtime's at_exit dump included, which is why this is [Stdlib.exit]
-   and not [Unix._exit].
-
-   The pid check is the core guard's own defense: a test that forks
-   inherits the handler, and a child exiting through [Stdlib.exit] must
-   not repeat the parent's diagnostic. *)
-
-let guard_claimed = ref false
-let guard_installed = ref false
-let claim_registry () = guard_claimed := true
-
-(* The basenames registered under a library that [drives] accepts, sorted,
-   each once. *)
 let partitions_of drives =
   List.sort_uniq String.compare
     (List.filter_map
-       (fun (library, base) -> if drives library then Some base else None)
-       !partitions_seen)
+       (fun (library, partition) ->
+         if drives library then Some partition else None)
+       !origins)
 
-let undriven_diagnostic files =
-  "windtrap: registered inline tests were never driven: this executable links \
-   ppx_windtrap-preprocessed test code of no library ("
-  ^ String.concat ", " files
-  ^ ") and nothing ran it.\n\
-     windtrap: move the tests into a library stanza with (inline_tests), whose \
-     inline runner dune builds and drives, or drive the runner protocol \
-     yourself (Ppx_windtrap_runtime.Ppx_runtime.init/exit). Exiting 2: nothing \
-     ran.\n"
+(* [Windtrap.run] installs its exit guard mid-run, after every registration,
+   so this handler runs after it. Each [at_exit] handler runs at most once,
+   so the [Stdlib.exit] here still runs the others, a coverage dump
+   included. A forked child inherits the handler and must stay silent. *)
+let undriven_guard =
+  lazy
+    (let owner = Unix.getpid () in
+     at_exit (fun () ->
+         if (not !claimed) && Unix.getpid () = owner then begin
+           Printf.eprintf
+             "windtrap: registered inline tests were never driven: this \
+              executable links ppx_windtrap-preprocessed test code of no \
+              library (%s) and nothing ran it.\n\
+              windtrap: move the tests into a library stanza with \
+              (inline_tests), whose inline runner dune builds and drives, or \
+              drive the runner protocol yourself \
+              (Ppx_windtrap_runtime.Ppx_runtime.init/exit). Exiting 2: nothing \
+              ran.\n\
+              %!"
+             (String.concat ", " (partitions_of Option.is_none));
+           Stdlib.exit 2
+         end))
 
-let install_undriven_guard () =
-  if not !guard_installed then begin
-    guard_installed := true;
-    let owner = Unix.getpid () in
-    Stdlib.at_exit (fun () ->
-        if (not !guard_claimed) && Unix.getpid () = owner then begin
-          output_string Stdlib.stderr
-            (undriven_diagnostic (partitions_of Option.is_none));
-          flush Stdlib.stderr;
-          Stdlib.exit 2
-        end)
-  end
+(* Registration *)
 
-let note_partition ?library file =
-  (* Every registration entry point passes through here, so the first
-     registration of no library is what arms the undriven guard. A
-     process that merely links this runtime, or a library's tests,
-     installs no handler. *)
-  if Option.is_none library then install_undriven_guard ();
-  partitions_seen := (library, Filename.basename file) :: !partitions_seen
+let module_name partition =
+  String.capitalize_ascii (List.hd (String.split_on_char '.' partition))
 
-let module_name_of_file file =
-  let base = Filename.basename file in
-  let stem =
-    match String.index_opt base '.' with
-    | Some i -> String.sub base 0 i
-    | None -> base
-  in
-  String.capitalize_ascii stem
+(* The runner refuses two tests of one path. *)
+let rec unique names key name =
+  match Hashtbl.find_opt names (key name) with
+  | None ->
+      Hashtbl.add names (key name) (ref 1);
+      name
+  | Some n ->
+      incr n;
+      unique names key (Printf.sprintf "%s (%d)" name !n)
 
-(* Duplicate names in one scope: a functor containing [let%expect_test]
-   instantiated twice registers the same name and location twice.
-   ppx_expect runs both; windtrap's runner requires unique full paths, so
-   later duplicates get a " (2)", " (3)", … suffix (deterministic in
-   registration order) and both run. Top-level names are counted per
-   (library, module, name); a group's siblings are counted in the frame's own
-   table, so the scopes cannot collide. *)
-let uniquify tbl key_of name =
-  let rec fresh name =
-    match Hashtbl.find_opt tbl (key_of name) with
-    | None ->
-        Hashtbl.add tbl (key_of name) (ref 1);
-        name
-    | Some n ->
-        incr n;
-        fresh (Printf.sprintf "%s (%d)" name !n)
-  in
-  fresh name
+let note_origin ?library file =
+  if Option.is_none library then Lazy.force undriven_guard;
+  let origin = (library, Filename.basename file) in
+  origins := origin :: !origins;
+  origin
 
-let scoped_name ?library ~file name =
-  match !group_stack with
+let scoped_name (library, partition) name =
+  match !groups with
   | [] ->
-      uniquify top_names (fun n -> (library, module_name_of_file file, n)) name
-  | frame :: _ -> uniquify frame.names (fun n -> n) name
+      unique top_names (fun name -> (library, module_name partition, name)) name
+  | frame :: _ -> unique frame.names Fun.id name
 
-let register ?library ~file tree =
-  match !group_stack with
-  | [] -> top_level := (library, file, tree) :: !top_level
+let register origin tree =
+  match !groups with
+  | [] -> top_level := (origin, tree) :: !top_level
   | frame :: _ -> frame.children <- tree :: frame.children
 
 let add_test ?library ~file ~pos ~tags name fn =
-  note_partition ?library file;
-  let name = scoped_name ?library ~file name in
-  register ?library ~file (Windtrap.test ~__POS__:pos ~tags name fn)
+  let origin = note_origin ?library file in
+  let name = scoped_name origin name in
+  register origin (Windtrap.test ~__POS__:pos ~tags name fn)
 
 let enter_group ?library ~file ~tags name =
-  note_partition ?library file;
-  let name = scoped_name ?library ~file name in
-  group_stack :=
-    { name; tags; library; file; names = Hashtbl.create 8; children = [] }
-    :: !group_stack
+  let origin = note_origin ?library file in
+  let name = scoped_name origin name in
+  groups :=
+    { name; tags; origin; names = Hashtbl.create 8; children = [] } :: !groups
 
 let leave_group () =
-  match !group_stack with
+  match !groups with
   | [] -> invalid_arg "Ppx_runtime.leave_group: no group is open"
   | frame :: rest ->
-      group_stack := rest;
-      register ?library:frame.library ~file:frame.file
+      groups := rest;
+      register frame.origin
         (Windtrap.group ~tags:frame.tags frame.name (List.rev frame.children))
 
 (* The runner protocol *)
 
-let prog = ref ""
-let runner_mode = ref false
-let runner_library = ref None
-let partition = ref None
-let list_only = ref false
+(* [runner] is the library of [inline-test-runner <lib>], and [None]
+   outside the runner mode. *)
+type protocol = {
+  prog : string;
+  runner : string option;
+  partition : string option;
+  list_partitions : bool;
+}
+
+let unread =
+  { prog = ""; runner = None; partition = None; list_partitions = false }
+
+let protocol = ref unread
 
 let init argv =
-  (* The runner protocol's entry claims the registry in every mode: a
-     partition run, -list-partitions, and the generated runner invoked
-     by hand (which then does nothing, by [exit]'s documented contract:
-     a deliberate invocation is not a silent one). *)
-  claim_registry ();
-  prog := if Array.length argv > 0 then argv.(0) else "";
-  runner_mode := false;
-  runner_library := None;
-  partition := None;
-  list_only := false;
-  let rec parse = function
-    | [] -> ()
-    | "inline-test-runner" :: lib :: rest ->
-        runner_mode := true;
-        runner_library := Some lib;
-        parse rest
-    | "-partition" :: name :: rest ->
-        partition := Some name;
-        parse rest
-    | "-list-partitions" :: rest ->
-        list_only := true;
-        parse rest
-    | _ :: rest -> parse rest
+  claimed := true;
+  let rec parse p = function
+    | "inline-test-runner" :: library :: rest ->
+        parse { p with runner = Some library } rest
+    | "-partition" :: file :: rest ->
+        parse { p with partition = Some file } rest
+    | "-list-partitions" :: rest -> parse { p with list_partitions = true } rest
+    | _ :: rest -> parse p rest
+    | [] -> p
   in
-  parse (Array.to_list argv)
+  let prog = if Array.length argv > 0 then argv.(0) else "" in
+  protocol := parse { unread with prog } (Array.to_list argv)
 
-(* The registrations this process drives: those of no library, and under
-   [inline-test-runner <lib>] those of [<lib>]. A library's runner links
-   the libraries it depends on, and their tests are theirs to run. *)
-let drives = function
-  | None -> true
-  | Some library -> Option.equal String.equal (Some library) !runner_library
+let drives library =
+  Option.is_none library || Option.equal String.equal library !protocol.runner
 
-(* Partition filtering happens at collection, not registration: init
-   (which sets the partition) runs after the test modules have loaded. *)
+(* [init] runs after the test modules have loaded, so the partition is
+   applied here and not at registration. *)
 let collect () =
-  (* Draining claims the registry for the undriven guard: whoever takes
-     the trees owns the execution of what they took, the rule that
-     covers a hand-rolled main driving [Windtrap.run] itself. *)
-  claim_registry ();
-  if !group_stack <> [] then
-    invalid_arg "Ppx_runtime.collect: a module%test group was never closed";
-  let entries = List.rev !top_level in
-  top_level := [];
-  Hashtbl.reset top_names;
-  let entries =
-    List.filter_map
-      (fun (library, file, tree) ->
-        let wanted =
-          match !partition with
-          | None -> true
-          | Some wanted -> String.equal (Filename.basename file) wanted
-        in
-        if drives library && wanted then Some (file, tree) else None)
-      entries
-  in
-  let order = ref [] in
-  let by_module : (string, Windtrap.test list ref) Hashtbl.t =
-    Hashtbl.create 16
-  in
-  List.iter
-    (fun (file, tree) ->
-      let name = module_name_of_file file in
-      match Hashtbl.find_opt by_module name with
-      | Some trees -> trees := tree :: !trees
-      | None ->
-          order := name :: !order;
-          Hashtbl.add by_module name (ref [ tree ]))
-    entries;
-  List.rev_map
-    (fun name -> Windtrap.group name (List.rev !(Hashtbl.find by_module name)))
-    !order
+  claimed := true;
+  match !groups with
+  | _ :: _ ->
+      invalid_arg "Ppx_runtime.collect: a module%test group was never closed"
+  | [] ->
+      let registered = List.rev !top_level in
+      top_level := [];
+      Hashtbl.reset top_names;
+      let in_partition partition =
+        match !protocol.partition with
+        | None -> true
+        | Some wanted -> String.equal partition wanted
+      in
+      let by_module = Hashtbl.create 16 and first_seen = ref [] in
+      List.iter
+        (fun ((library, partition), tree) ->
+          if drives library && in_partition partition then
+            let name = module_name partition in
+            match Hashtbl.find_opt by_module name with
+            | Some trees -> trees := tree :: !trees
+            | None ->
+                first_seen := name :: !first_seen;
+                Hashtbl.add by_module name (ref [ tree ]))
+        registered;
+      List.rev_map
+        (fun name ->
+          Windtrap.group name (List.rev !(Hashtbl.find by_module name)))
+        !first_seen
 
 let exit () =
-  if not !runner_mode then Stdlib.exit 0;
-  if !list_only then begin
-    List.iter print_endline (partitions_of drives);
-    Stdlib.exit 0
-  end;
-  (* The suite is named per partition: dune runs a library's partitions
-     concurrently, each as its own process, so a suite named for the
-     library alone would have every partition write the same JUnit file,
-     capture log directory and last-failed store, last writer wins. *)
-  let suite =
-    match (!runner_library, !partition) with
-    | Some lib, Some partition -> lib ^ "/" ^ partition
-    | Some lib, None -> lib
-    | None, _ -> "inline tests"
-  in
-  (* One runner: the inline suite is an ordinary [run] under
-     [--corrected], which is dune's promotion protocol (a recorded
-     correction leaves the exit code alone so the [diff?] that follows
-     is the verdict), with the [WINDTRAP_*] mirrors as the rest of the
-     command line, as for every run dune drives. *)
-  Stdlib.exit (Windtrap.run ~argv:[| !prog; "--corrected" |] suite (collect ()))
+  let p = !protocol in
+  match (p.runner, p.list_partitions) with
+  | None, _ -> Stdlib.exit 0
+  | Some _, true ->
+      List.iter print_endline (partitions_of drives);
+      Stdlib.exit 0
+  | Some library, false ->
+      (* Dune runs a library's partitions concurrently, and a suite's name
+         keys its capture logs, its JUnit file and its last failed tests. *)
+      let suite =
+        match p.partition with
+        | Some file -> library ^ "/" ^ file
+        | None -> library
+      in
+      (* Under [--corrected] a recorded correction leaves the exit code
+         alone: the [diff?] dune runs next is the verdict. *)
+      Stdlib.exit
+        (Windtrap.run ~argv:[| p.prog; "--corrected" |] suite (collect ()))
