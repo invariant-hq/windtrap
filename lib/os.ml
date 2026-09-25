@@ -391,3 +391,56 @@ let say message =
   flush stderr
 
 let warn message = say ("warning: " ^ message)
+
+(* Signals *)
+
+(* The runtime blocks a signal while its handler runs: unblocked, one that the
+   handler sends is delivered at once. *)
+let default_signals signals =
+  List.iter (fun signal -> Sys.set_signal signal Sys.Signal_default) signals;
+  ignore (Unix.sigprocmask Unix.SIG_UNBLOCK signals)
+
+let with_signals signals handle fn =
+  if Sys.win32 then fn ()
+  else begin
+    let owner = Unix.getpid () in
+    let handle signal =
+      if Unix.getpid () <> owner then begin
+        default_signals signals;
+        Unix.kill (Unix.getpid ()) signal
+      end
+      else begin
+        default_signals (List.filter (fun s -> s <> Sys.sigpipe) signals);
+        handle signal
+      end
+    in
+    let previous =
+      List.map
+        (fun signal -> (signal, Sys.signal signal (Sys.Signal_handle handle)))
+        signals
+    in
+    List.iter
+      (fun (signal, behavior) ->
+        match behavior with
+        | Sys.Signal_ignore -> Sys.set_signal signal behavior
+        | Sys.Signal_default | Sys.Signal_handle _ -> ())
+      previous;
+    Fun.protect
+      ~finally:(fun () ->
+        List.iter
+          (fun (signal, behavior) -> Sys.set_signal signal behavior)
+          previous)
+      fn
+  end
+
+let die_by signal =
+  default_signals [ signal ];
+  Unix.kill (Unix.getpid ()) signal;
+  Unix._exit
+    ((128
+     +
+     if signal = Sys.sighup then 1
+     else if signal = Sys.sigint then 2
+     else if signal = Sys.sigpipe then 13
+     else 15)
+     [@mutate off "reached only when the signal does not end the process"])

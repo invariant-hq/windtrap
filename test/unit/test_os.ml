@@ -1098,6 +1098,138 @@ module Say_suite = struct
     ]
 end
 
+(* Signals *)
+
+module Signal_suite = struct
+  (* No run handles [SIGUSR1] or [SIGUSR2], and each ends the process under
+     its default disposition. *)
+  let usr1 = Sys.sigusr1
+  let usr2 = Sys.sigusr2
+  let raise_signal signal = Unix.kill (Unix.getpid ()) signal
+
+  (* A handler runs at a safepoint after [kill] returns: [until ready] polls
+     for about a second. *)
+  let until ?(tries = 1000) ready =
+    let rec poll tries =
+      if ready () || tries = 0 then ()
+      else begin
+        Unix.sleepf 0.001;
+        poll (tries - 1)
+      end
+    in
+    poll tries
+
+  (* How a forked process that runs [f] ended. It leaves through [_exit], so
+     the at-exit functions of this process do not run twice. *)
+  let forked f =
+    match Unix.fork () with
+    | 0 ->
+        (try f () with _ -> ());
+        Unix._exit 0
+    | pid ->
+        let rec wait () =
+          match Unix.waitpid [] pid with
+          | _, status -> status
+          | exception Unix.Unix_error (Unix.EINTR, _, _) -> wait ()
+        in
+        wait ()
+
+  let tests =
+    [
+      test "the handler gets the signal, and the one found is back after"
+        (fun () ->
+          if Sys.win32 then skip ~reason:"POSIX only" ();
+          let mine (_ : int) = () in
+          let found = Sys.signal usr1 (Sys.Signal_handle mine) in
+          let got = ref None in
+          Os.with_signals [ usr1 ]
+            (fun signal -> got := Some signal)
+            (fun () ->
+              raise_signal usr1;
+              until (fun () -> Option.is_some !got));
+          let after = Sys.signal usr1 found in
+          equal ~msg:"the handler got the signal" (option int) (Some usr1) !got;
+          is_true ~msg:"the handler found is back"
+            (match after with
+            | Sys.Signal_handle f -> f == mine
+            | Sys.Signal_default | Sys.Signal_ignore -> false));
+      test "a signal the process was started with ignored stays ignored"
+        (fun () ->
+          if Sys.win32 then skip ~reason:"POSIX only" ();
+          let found = Sys.signal usr1 Sys.Signal_ignore in
+          let got = ref false in
+          Os.with_signals [ usr1 ]
+            (fun _ -> got := true)
+            (fun () ->
+              raise_signal usr1;
+              until ~tries:50 (fun () -> !got));
+          Sys.set_signal usr1 found;
+          is_false ~msg:"the handler did not run" !got);
+      test
+        "the handler runs with the signals at their default disposition, \
+         unblocked" (fun () ->
+          if Sys.win32 then skip ~reason:"POSIX only" ();
+          let ended_by sent =
+            forked (fun () ->
+                Sys.set_signal usr1 Sys.Signal_default;
+                Sys.set_signal usr2 Sys.Signal_default;
+                Os.with_signals [ usr1; usr2 ]
+                  (fun _ ->
+                    raise_signal sent;
+                    Unix._exit 3)
+                  (fun () ->
+                    raise_signal usr1;
+                    until (fun () -> false)))
+          in
+          is_true ~msg:"the signal itself, sent again, ends the process at once"
+            (ended_by usr1 = Unix.WSIGNALED usr1);
+          is_true ~msg:"and so does another of the list"
+            (ended_by usr2 = Unix.WSIGNALED usr2));
+      test "SIGPIPE keeps the handler, and the others go back to the default"
+        (fun () ->
+          if Sys.win32 then skip ~reason:"POSIX only" ();
+          let status =
+            forked (fun () ->
+                Sys.set_signal Sys.sigpipe Sys.Signal_default;
+                Sys.set_signal usr1 Sys.Signal_default;
+                let count = ref 0 in
+                Os.with_signals [ Sys.sigpipe; usr1 ]
+                  (fun _ -> incr count)
+                  (fun () ->
+                    raise_signal Sys.sigpipe;
+                    until (fun () -> !count = 1);
+                    raise_signal Sys.sigpipe;
+                    until (fun () -> !count = 2);
+                    if !count <> 2 then Unix._exit (10 + !count);
+                    raise_signal usr1;
+                    until (fun () -> !count = 3));
+                Unix._exit !count)
+          in
+          is_true ~msg:"two SIGPIPEs ran the handler, then SIGUSR1 ended it"
+            (status = Unix.WSIGNALED usr1));
+      test "a process forked inside dies by the signal" (fun () ->
+          if Sys.win32 then skip ~reason:"POSIX only" ();
+          let status =
+            Os.with_signals [ usr1 ] ignore (fun () ->
+                forked (fun () ->
+                    raise_signal usr1;
+                    until (fun () -> false)))
+          in
+          is_true ~msg:"and not by the handler, which would let it exit 0"
+            (status = Unix.WSIGNALED usr1));
+      test "die_by ends the process by a signal it handles and blocks"
+        (fun () ->
+          if Sys.win32 then skip ~reason:"POSIX only" ();
+          let status =
+            forked (fun () ->
+                Sys.set_signal Sys.sigterm (Sys.Signal_handle ignore);
+                ignore (Unix.sigprocmask Unix.SIG_BLOCK [ Sys.sigterm ]);
+                Os.die_by Sys.sigterm)
+          in
+          is_true (status = Unix.WSIGNALED Sys.sigterm));
+    ]
+end
+
 (* The concurrency and say tests re-exec this executable as helper
    children, so the suite's toplevel dispatches here before its run. Never
    returns for a child invocation. *)
@@ -1111,6 +1243,7 @@ let tests =
     group "atomic" Atomic_suite.tests;
     group "paths" Path_suite.tests;
     group "say" Say_suite.tests;
+    group "signals" Signal_suite.tests;
   ]
 
 let () = exit @@ Windtrap.run "os" tests

@@ -1060,12 +1060,6 @@ let run_case ~on_event run (case : Test_tree.case) =
 
 (* Signals *)
 
-(* A handler runs at a safepoint and may allocate, but it must not re-enter
-   the report, whose formatter may be mid-line. A signal therefore acts at
-   once only in user code (an attempt, a release), and elsewhere at the next
-   boundary of [drive]. *)
-let interrupt_signals = [ Sys.sigint; Sys.sigterm; Sys.sighup ]
-
 (* No [exit]: the guard must not run, and the parent must see the signal. *)
 let interrupt ~on_event run ~started signal =
   Sys.set_signal Sys.sigalrm (Sys.Signal_handle ignore);
@@ -1088,53 +1082,22 @@ let interrupt ~on_event run ~started signal =
    with _ -> ());
   Option.iter remove_temp frame;
   (try ignore (release_fixtures run ~announce:ignore) with _ -> ());
-  Unix.kill (Unix.getpid ()) signal;
-  (* Reached only when the signal cannot be delivered: a shell's status for
-     it. *)
-  Unix._exit
-    (128
-    + if signal = Sys.sighup then 1 else if signal = Sys.sigint then 2 else 15)
+  Os.die_by signal
 
+(* A handler runs at a safepoint and may allocate, but it must not re-enter
+   the report, whose formatter may be mid-line. A signal therefore acts at
+   once only in user code (an attempt, a release), and elsewhere at the next
+   boundary of [drive]. *)
 let with_interrupts ~interrupt run fn =
-  if Sys.win32 then fn ()
-  else begin
-    let owner = Unix.getpid () in
-    let handle signal =
-      (* The runtime blocks a signal while its handler runs: unblocked, a
-         second one kills at once. *)
-      List.iter
-        (fun signal -> Sys.set_signal signal Sys.Signal_default)
-        interrupt_signals;
-      ignore (Unix.sigprocmask Unix.SIG_UNBLOCK interrupt_signals);
-      let in_user_code =
-        match !slot with
-        | Some (In_test _) -> true
-        | Some (In_run _) | None -> Option.is_some run.releasing
-      in
-      (* A process that a test forked inherits the handler, not the run. *)
-      if Unix.getpid () <> owner then Unix.kill (Unix.getpid ()) signal
-      else if in_user_code then interrupt signal
-      else run.interrupted <- Some signal
+  let handle signal =
+    let in_user_code =
+      match !slot with
+      | Some (In_test _) -> true
+      | Some (In_run _) | None -> Option.is_some run.releasing
     in
-    let previous =
-      List.map
-        (fun signal -> (signal, Sys.signal signal (Sys.Signal_handle handle)))
-        interrupt_signals
-    in
-    (* A signal ignored at startup stays ignored, as under [nohup]. *)
-    List.iter
-      (fun (signal, behavior) ->
-        match behavior with
-        | Sys.Signal_ignore -> Sys.set_signal signal behavior
-        | Sys.Signal_default | Sys.Signal_handle _ -> ())
-      previous;
-    Fun.protect
-      ~finally:(fun () ->
-        List.iter
-          (fun (signal, behavior) -> Sys.set_signal signal behavior)
-          previous)
-      fn
-  end
+    if in_user_code then interrupt signal else run.interrupted <- Some signal
+  in
+  Os.with_signals [ Sys.sigint; Sys.sigterm; Sys.sighup ] handle fn
 
 (* Executing *)
 

@@ -5,8 +5,8 @@
   ---------------------------------------------------------------------------*)
 
 (** Operating-system access: the monotonic clock, the process environment,
-    atomic file writes, the paths that a run resolves and prints, and standard
-    error. *)
+    atomic file writes, the paths that a run resolves and prints, standard
+    error, and signals. *)
 
 (** {1:clock Monotonic clock}
 
@@ -309,6 +309,27 @@ val say : string -> unit
 val warn : string -> unit
 (** [warn message] is [say ("warning: " ^ message)]. It is for something that
     the run survives, with its outcome and its exit code unchanged. *)
+
+(** {1:signals Signals} *)
+
+val with_signals : int list -> (int -> unit) -> (unit -> 'a) -> 'a
+(** [with_signals signals handle fn] is [fn ()] with [handle] as the handler of
+    [signals], except a signal that the process was started with ignored, which
+    stays ignored, as under [nohup]. The previous dispositions are put back when
+    [fn] returns or raises. On Windows it is [fn ()] and handles nothing.
+    - [handle] runs with every signal of [signals] but [SIGPIPE] back at its
+      default disposition and unblocked, so that a second one takes its default
+      action at once. [SIGPIPE] keeps [handle], so every write to a reader that
+      left fails.
+    - In a process forked inside [fn], [handle] does not run. [signals] go back
+      to their default disposition and the process is sent the signal again. *)
+
+val die_by : int -> 'a
+(** [die_by signal] sends the process [signal] under its default disposition,
+    unblocked, so that its parent sees a death by signal and no [at_exit]
+    function runs. [signal] must be [SIGHUP], [SIGINT], [SIGPIPE] or [SIGTERM].
+    Should the process outlive it, it exits with the status that a shell reports
+    for [signal], 128 plus the number of the signal. *)
 
 (**/**)
 

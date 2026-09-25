@@ -135,7 +135,6 @@ type interrupt = {
 }
 
 let interrupt = { signal = None; child = None }
-let interrupt_signals = [ Sys.sigint; Sys.sigterm; Sys.sighup ]
 
 (* The group exists once the child has run [setsid]. *)
 let kill_group pid =
@@ -144,60 +143,15 @@ let kill_group pid =
 
 (* SIGPIPE's default action would kill the parent inside a write of the
    report, past every [Fun.protect]; handled, the write fails with
-   [Sys_error] and unwinds. It keeps its handler after the first signal, so
-   that every later write to the reader that left fails too. *)
+   [Sys_error] and unwinds. *)
 let with_interrupts fn =
-  let owner = Unix.getpid () in
   interrupt.signal <- None;
   interrupt.child <- None;
-  let handled = Sys.sigpipe :: interrupt_signals in
-  let default signals =
-    List.iter (fun signal -> Sys.set_signal signal Sys.Signal_default) signals;
-    ignore (Unix.sigprocmask Unix.SIG_UNBLOCK signals)
-  in
   let handle signal =
-    (* A forked child inherits the handler until its run installs its own. *)
-    if Unix.getpid () <> owner then begin
-      default handled;
-      Unix.kill (Unix.getpid ()) signal
-    end
-    else begin
-      default interrupt_signals;
-      if Option.is_none interrupt.signal then interrupt.signal <- Some signal;
-      Option.iter kill_group interrupt.child
-    end
+    if Option.is_none interrupt.signal then interrupt.signal <- Some signal;
+    Option.iter kill_group interrupt.child
   in
-  let previous =
-    List.map
-      (fun signal -> (signal, Sys.signal signal (Sys.Signal_handle handle)))
-      handled
-  in
-  List.iter
-    (fun (signal, behavior) ->
-      match behavior with
-      | Sys.Signal_ignore -> Sys.set_signal signal behavior
-      | Sys.Signal_default | Sys.Signal_handle _ -> ())
-    previous;
-  Fun.protect
-    ~finally:(fun () ->
-      List.iter
-        (fun (signal, behavior) -> Sys.set_signal signal behavior)
-        previous)
-    fn
-
-(* The exit status is the one a shell reports for the signal, should it not
-   be delivered. *)
-let die_by signal =
-  Sys.set_signal signal Sys.Signal_default;
-  ignore (Unix.sigprocmask Unix.SIG_UNBLOCK [ signal ]);
-  Unix.kill (Unix.getpid ()) signal;
-  Unix._exit
-    (128
-    +
-    if signal = Sys.sighup then 1
-    else if signal = Sys.sigint then 2
-    else if signal = Sys.sigpipe then 13
-    else 15)
+  Os.with_signals [ Sys.sigpipe; Sys.sigint; Sys.sigterm; Sys.sighup ] handle fn
 
 (* Children *)
 
@@ -685,7 +639,7 @@ let finish renderer ~narrowed ~reach ~reached ~unreached forks =
   | Error message ->
       Report.mutation_refused renderer message;
       Reported 1
-  | Ok _ when interrupt.signal = Some Sys.sigpipe -> die_by Sys.sigpipe
+  | Ok _ when interrupt.signal = Some Sys.sigpipe -> Os.die_by Sys.sigpipe
   | Ok ({ verdicts; survivors; stopped }, note) -> (
       let records = Verdicts.records verdicts in
       let is_killed (r : Verdicts.record) =
@@ -717,12 +671,12 @@ let finish renderer ~narrowed ~reach ~reached ~unreached forks =
                  testing)
             report;
           flush_descriptors ();
-          die_by signal
+          Os.die_by signal
       | None -> (
           Report.mutation_finish ?note renderer report;
           flush_descriptors ();
           match interrupt.signal with
-          | Some signal -> die_by signal
+          | Some signal -> Os.die_by signal
           | None -> Reported 0))
 
 let loop renderer ~scope ~suite (config : Run.config) tests =
@@ -782,7 +736,7 @@ let loop renderer ~scope ~suite (config : Run.config) tests =
               with
               | Supervision message -> Error message
               | Sys_error _ when interrupt.signal = Some Sys.sigpipe ->
-                  die_by Sys.sigpipe
+                  Os.die_by Sys.sigpipe
             in
             finish renderer ~narrowed ~reach ~reached ~unreached forks)
 
