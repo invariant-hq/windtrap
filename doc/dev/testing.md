@@ -141,12 +141,26 @@ mylib: 2 passed in 0.5ms.
 
 A dune rule cannot run dune, so `doc/transcript/transcript.exe` runs
 what dune would. A command is `VAR=value` assignments then `dune runtest`
-or `dune test` (`--force` changes nothing), which runs each `(test)`
-stanza of EXAMPLE's dune file in file order as `./NAME.exe` from DIR's
-build directory, with dune's location of the stanza above the output of
-one that exits nonzero; or `dune exec PATH [-- ARGS]`, which runs the
-built PATH from the repository root. Anything else, a pipe or an
-expansion included, is refused. The environment is dune's `INSIDE_DUNE`,
+or `dune test` (`--force` changes nothing), or `dune exec PATH [-- ARGS]`,
+which runs the built PATH from the repository root. Anything else, a
+pipe or an expansion included, is refused.
+
+`dune runtest` runs what EXAMPLE's dune file declares, in file order:
+
+- A `(test)` stanza runs as `./NAME.exe` from DIR's build directory,
+  with dune's location of the stanza above the output of one that exits
+  nonzero. Its action may be `(run %{test} ARGS)`, alone or first in a
+  `progn` of `(diff? A B)`. After a run that exits 0, the first `diff?`
+  whose B differs from A prints dune's location of A and git's diff of
+  the two, as dune does but with no git configuration read, and every B
+  is removed. An action of another
+  shape is refused.
+- A library with `(inline_tests)` runs each partition of its inline
+  tests from EXAMPLE's build directory, under a variant too. The page's
+  rule depends on the runner, which `all` does not build. A partition
+  that fails is refused.
+
+The environment is dune's `INSIDE_DUNE`,
 `PATH`, `HOME`, `TMPDIR` and the assignments, so no `WINDTRAP_*`, `CI`
 or `GITHUB_ACTIONS` of the caller reaches the run. Standard output and
 standard error are read together and their escape sequences removed, as

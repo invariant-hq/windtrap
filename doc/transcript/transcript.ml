@@ -145,20 +145,71 @@ let parse_sexps text =
   if i < n then fail "unbalanced parenthesis in a dune file";
   sexps
 
-(* The name atoms of the test stanzas of [sexps], in file order. *)
-let test_names sexps =
+(* What [dune runtest] runs for a dune file: a test executable with the
+   arguments of its action's [(run %{test} ...)] and the [(diff? a b)]
+   that follow it, or the partitions of a library's inline tests. *)
+type runnable =
+  | Test of { name : atom; args : string list; diffs : (string * string) list }
+  | Inline of string  (** the library's name *)
+
+(* The runnables of [sexps], in file order. An action of another shape
+   than [(run %{test} ...)], alone or first in a [progn] of [diff?], is
+   refused rather than guessed. *)
+let runnables sexps =
   let atoms = List.filter_map (function Atom a -> Some a | List _ -> None) in
   let field name = function
     | List (Atom { text; _ } :: values) when text = name -> Some values
     | Atom _ | List _ -> None
   in
+  let action (name : atom) = function
+    | None -> ([], [])
+    | Some
+        [
+          List (Atom { text = "run"; _ } :: Atom { text = "%{test}"; _ } :: args);
+        ] ->
+        (List.map (fun (a : atom) -> a.text) (atoms args), [])
+    | Some
+        [
+          List
+            (Atom { text = "progn"; _ }
+            :: List
+                 (Atom { text = "run"; _ }
+                 :: Atom { text = "%{test}"; _ }
+                 :: args)
+            :: diffs);
+        ] ->
+        let diff = function
+          | List [ Atom { text = "diff?"; _ }; Atom a; Atom b ] ->
+              (a.text, b.text)
+          | Atom _ | List _ ->
+              fail "the action of test %s holds a step no rule models" name.text
+        in
+        (List.map (fun (a : atom) -> a.text) (atoms args), List.map diff diffs)
+    | Some _ ->
+        fail "the action of test %s has a shape no rule models" name.text
+  in
   let stanza = function
     | List (Atom { text = "test"; _ } :: fields) -> (
         match List.find_map (field "name") fields with
-        | Some [ Atom a ] -> [ a ]
+        | Some [ Atom name ] ->
+            let args, diffs =
+              action name (List.find_map (field "action") fields)
+            in
+            [ Test { name; args; diffs } ]
         | Some _ | None -> [])
     | List (Atom { text = "tests"; _ } :: fields) ->
-        atoms (Option.value ~default:[] (List.find_map (field "names") fields))
+        if List.exists (fun f -> Option.is_some (field "action" f)) fields then
+          fail "a (tests) stanza with an action is not modeled";
+        List.map
+          (fun name -> Test { name; args = []; diffs = [] })
+          (atoms
+             (Option.value ~default:[] (List.find_map (field "names") fields)))
+    | List (Atom { text = "library"; _ } :: fields)
+      when List.exists (fun f -> Option.is_some (field "inline_tests" f)) fields
+      -> (
+        match List.find_map (field "name") fields with
+        | Some [ Atom name ] -> [ Inline name.text ]
+        | Some _ | None -> [])
     | Atom _ | List _ -> []
   in
   List.concat_map stanza sexps
@@ -333,17 +384,92 @@ let run ~root ~dir ~example (assignments, command) =
     | Runtest ->
         let file = Filename.concat example "dune" in
         let text = read_file (Filename.concat root file) in
-        let names = test_names (parse_sexps text) in
-        if names = [] then fail "%s declares no test stanza" file;
+        let runnables = runnables (parse_sexps text) in
+        if runnables = [] then fail "%s declares no test" file;
         let cwd = Filename.concat root dir in
-        let test name_atom =
-          let exe = name_atom.text ^ ".exe" in
-          let out, code =
-            spawn ~cwd ~env ~prog:(Filename.concat cwd exe) [ "./" ^ exe ]
-          in
-          if code = 0 then out else dune_location ~file ~text name_atom ^ out
+        let source_root = Filename.dirname (Filename.dirname root) in
+        let in_build f =
+          String.concat "/"
+            [
+              Filename.basename (Filename.dirname root);
+              Filename.basename root;
+              dir;
+              f;
+            ]
         in
-        String.concat "" (List.map test names)
+        (* dune's [diff?] after a run that exited 0: the first that
+           differs fails the [progn] with git's diff, and each consumes
+           its corrected file. *)
+        let rec diffs = function
+          | [] -> ""
+          | (a, b) :: rest ->
+              let pb = Filename.concat cwd b in
+              if not (Sys.file_exists pb) then diffs rest
+              else
+                let same = read_file (Filename.concat cwd a) = read_file pb in
+                let shown =
+                  if same then ""
+                  else
+                    strf "File \"%s/%s\", line 1, characters 0-0:\n" dir a
+                    ^ fst
+                        (spawn ~cwd:source_root
+                           ~env:
+                             ("GIT_CONFIG_NOSYSTEM=1"
+                            :: "GIT_CONFIG_GLOBAL=/dev/null" :: env)
+                           ~prog:"/usr/bin/env"
+                           [
+                             "env";
+                             "git";
+                             "--no-pager";
+                             "diff";
+                             "--no-index";
+                             "--color=always";
+                             "-u";
+                             "--ignore-cr-at-eol";
+                             in_build a;
+                             in_build b;
+                           ])
+                in
+                Sys.remove pb;
+                if same then diffs rest else shown
+        in
+        let run_one = function
+          | Test { name; args; diffs = expected } ->
+              let exe = name.text ^ ".exe" in
+              List.iter
+                (fun (_, b) ->
+                  let pb = Filename.concat cwd b in
+                  if Sys.file_exists pb then Sys.remove pb)
+                expected;
+              let out, code =
+                spawn ~cwd ~env ~prog:(Filename.concat cwd exe)
+                  (("./" ^ exe) :: args)
+              in
+              if code = 0 then out ^ diffs expected
+              else dune_location ~file ~text name ^ out
+          | Inline lib ->
+              (* A variant builds test executables only: the library and
+                 its inline tests are the example's. *)
+              let cwd = Filename.concat root example in
+              let runner = strf ".%s.inline-tests/inline-test-runner.exe" lib in
+              let prog = Filename.concat cwd runner in
+              let argv = [ runner; "inline-test-runner"; lib ] in
+              let partitions, code =
+                spawn ~cwd ~env ~prog (argv @ [ "-list-partitions" ])
+              in
+              if code <> 0 then
+                fail "the inline tests of %s list no partitions" lib;
+              let partition p =
+                let out, code =
+                  spawn ~cwd ~env ~prog (argv @ [ "-partition"; p ])
+                in
+                if code <> 0 then
+                  fail "an inline test of %s failed, which no rule models" lib;
+                out
+              in
+              String.concat "" (List.map partition (lines partitions))
+        in
+        String.concat "" (List.map run_one runnables)
     | Exec { path; args } ->
         let prefix = example ^ "/" in
         let path =
