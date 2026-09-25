@@ -482,11 +482,12 @@ and the bullets below say what each area does now and why.
   manual shows both.
 - **Exit codes are 0, 1 or 2**: passed, failed, nothing ran. Under
   `--corrected` — a build action's run — a test whose failures are all
-  recorded corrections leaves the code alone and a selection the mirrors
-  emptied exits 0 (still printing its `no tests ran` line), because the
-  `diff?` that follows is the verdict and a `WINDTRAP_*` selection spans
-  every stanza of the tree; usage errors stay 2 in every mode. `--failed`
-  with nothing recorded refuses the run (exit 2).
+  recorded corrections leaves the code alone, because the `diff?` that
+  follows is the verdict. A selection that the mirrors alone gave exits 0
+  when it empties a suite (still printing its `no tests ran` line),
+  because a `WINDTRAP_*` selection spans every stanza of the project; a
+  selection flag on the command line keeps 2, and usage errors stay 2 in
+  every mode. `--failed` with nothing recorded refuses the run (exit 2).
 - An empty selection says why, and a typed run says how to list what
   there is: `mylib: no tests ran: filter "parsr" matched none of 48
   tests.` then `list: ./t.exe -l`, the one line after an outcome; a build
@@ -642,8 +643,11 @@ and the bullets below say what each area does now and why.
   target ending in `.xml` is that file, anything else a directory into
   which every suite writes `<dir>/<suite>.xml` — inline partitions as
   `<dir>/<lib>_<partition>-<digest>.xml`, whose log directory and
-  last-failed store are keyed the same way — so `WINDTRAP_JUNIT=_build/junit
-  dune runtest` collects every stanza. The document prints a control
+  last-failed store are keyed the same way. A relative path in
+  `WINDTRAP_JUNIT` or `WINDTRAP_OUTPUT` is read from the project root and
+  one given to `--junit` or `-o` from the working directory, so
+  `WINDTRAP_JUNIT=_build/junit dune runtest` collects every stanza under
+  the project's `_build/junit`. The document prints a control
   byte as the terminal does (`\x1b`, `\x0a` in a name), never strips it,
   and notes a flaky pass in `system-out`; a `<failure>` holds the block's lines
   and its `message` is the failure as one sentence, after the subtest's
@@ -742,7 +746,11 @@ and the bullets below say what each area does now and why.
   `--arm` together is a usage error. Both flags have mirrors,
   `WINDTRAP_MUTATE` (a truthy value is the bare flag, a falsy one its
   absence, anything else the prefixes) and `WINDTRAP_MUTATE_ARM`; the
-  runtime itself reads no flag and no environment.
+  runtime itself reads no flag and no environment. `WINDTRAP_MUTATE` on
+  an executable that has no mutant to test, or whose selection keeps no
+  test, runs the suite without mutation and says why on standard error,
+  since the variable reaches every stanza; `--mutate` there is refused
+  (exit 1).
 - **The project answer is the merge.** Each unfiltered run writes a verdict
   file under the build directory's `_mutants` (or `_windtrap/mutants`
   without one); a `--mutate=PREFIX` run replaces the records under its

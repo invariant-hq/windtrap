@@ -1626,14 +1626,12 @@ val run : ?argv:string array -> string -> test list -> int
     - [2] when no test ran, as with a mistyped filter, or when the command line
       does not parse. An empty [--shard] bucket and a [--failed] with nothing
       recorded are cases of the first, and the second returns [2] under [-l]
-      too.
+      too. A selection that the mirrors alone gave returns [0] instead (see
+      {{!section-command_line}the environment}).
 
     Under [--corrected] a test whose failures are all kept corrections leaves
     the code alone. It still stops a run under [-x], and it still enters the
-    record that [--failed] reads. A selection that keeps no test of a suite that
-    declares some returns [0]. Under [dune runtest] the mirrors reach every test
-    stanza of the project, so a filter meant for one suite empties the others.
-    The [diff?] that follows the run is the verdict there. *)
+    record that [--failed] reads. *)
 
 (** {2:command_line Command line and environment}
 
@@ -1652,6 +1650,17 @@ val run : ?argv:string array -> string -> test list -> int
     and [WINDTRAP_EXCLUDE] hold one pattern each, commas included, and the
     patterns of [-f] or [-e] on the command line replace that of the mirror.
     Flags that change what prints change no outcome and no exit code.
+
+    Under [dune runtest] a mirror reaches every test stanza of the project, and
+    a suite that cannot honour it is not in error.
+    - A selection that the mirrors alone give, and that keeps no test of a suite
+      that declares some, returns [0] with its sentence. A selection flag on the
+      command line makes it [2].
+    - [WINDTRAP_MUTATE] on an executable that has no mutant to test, or whose
+      selection keeps no test, runs the suite without mutation. [--mutate] there
+      returns [1].
+    - A relative path in [WINDTRAP_JUNIT] or [WINDTRAP_OUTPUT] is read from the
+      project root, and one on the command line from the working directory.
 
     {b Warning.} A changed variable does not make dune run a test again. On a
     stanza that already passed, a mirror does nothing without

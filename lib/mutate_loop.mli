@@ -25,9 +25,10 @@
 type run =
   | Ran of (Run.outcome, Run.startup_error) result
       (** The result of {!Report.run}, which was called once: without mutation,
-          with one mutant armed, or after an [--arm] identifier that names no
-          file of this executable. The caller finishes its work on it as it does
-          after {!Report.run}. *)
+          with one mutant armed, after an [--arm] identifier that names no file
+          of this executable, or after a [WINDTRAP_MUTATE] that finds nothing to
+          test ({{!section-loop}the loop}). The caller finishes its work on it
+          as it does after {!Report.run}. *)
   | Reported of int
       (** The module has printed everything, and the process must exit with this
           code, which is [0] or [1]. The outcome of a loop's dry run is not
@@ -42,7 +43,7 @@ val execute_and_report : suite:string -> Run.config -> Test_tree.t list -> run
       nothing else, in an instrumented build as in any other.
     - Under {!Run.Armed} it is the {{!section-armed}armed run}.
     - Under {!Run.Loop} it is the {{!section-loop}loop}, and the result is
-      always [Reported].
+      [Reported], but for a [WINDTRAP_MUTATE] that finds nothing to test.
 
     [Reported 0] is a loop that ran whole, whatever it found. Only
     [windtrap mutants], which merges the verdict files of every executable,
@@ -116,6 +117,14 @@ val execute_and_report : suite:string -> Run.config -> Test_tree.t list -> run
     the outcome line. [filter], [exclude], [tags], [exclude_tags],
     [failed_only], [shard] and an active focus narrow the suite. The scope of
     [--mutate] does not.
+
+    {b What the environment asks.} [WINDTRAP_MUTATE] reaches every test
+    executable of a project, so an executable that cannot honour it is not in
+    error. When [config.broadcast.mutate] holds, an empty population and a
+    selection that keeps no test ({!Run.list_selection}) are no refusal. The
+    result is then [Ran] of the ordinary run under {!Run.No_mutation}, before
+    which an empty population says why on standard error. Every other refusal
+    stands.
 
     {b Refusals.} Each of these is [Reported 1] with one sentence on standard
     error ({!Os.say}). The first six are tried in this order, and the last has

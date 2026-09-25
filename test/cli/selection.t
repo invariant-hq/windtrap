@@ -42,16 +42,28 @@ suite named, and the way out spelled:
   list: ./suite_main.exe -l
   [2]
 
-Under --corrected (what a build action passes) the same emptied
-selection is not an error: a WINDTRAP_* selection spans every stanza
-and inline partition of the tree, so a stanza it leaves empty exits 0
-with the same line, and dune's diff? is the verdict. A build action has
-no launcher to restate, so the way out names the flag. A command line
-that does not parse still exits 2 under the flag.
+A selection that the mirrors alone give is not an error when it
+empties the suite: a WINDTRAP_* selection spans every stanza and inline
+partition of a project (broadcast.t), so a suite it leaves empty exits
+0 with the same line, with or without --corrected. Under --corrected, a
+build action's run, there is no launcher to restate, so the way out
+names the flag:
 
-  $ run ./suite_main.exe -f zzznope --corrected
+  $ run WINDTRAP_FILTER=zzznope ./suite_main.exe
+  fixture: no tests ran: filter "zzznope" matched none of 5 tests.
+  list: ./suite_main.exe -l
+  $ run WINDTRAP_FILTER=zzznope ./suite_main.exe --corrected
   fixture: no tests ran: filter "zzznope" matched none of 5 tests.
   (list the suite's tests with -l)
+
+A selection flag on the command line makes the emptied selection a
+typo again, under --corrected too, and so does a command line that does
+not parse:
+
+  $ run WINDTRAP_FILTER=zzznope ./suite_main.exe -f zzznope --corrected
+  fixture: no tests ran: filter "zzznope" matched none of 5 tests.
+  (list the suite's tests with -l)
+  [2]
   $ run ./suite_main.exe --corrected --nosuchflag > /dev/null 2>&1
   [2]
 

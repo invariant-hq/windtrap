@@ -1127,6 +1127,22 @@ let refusal_tests =
         equal ~msg:"exit code" int 1 code;
         contains ~msg:"the reason" ~sub:"nothing to mutate" err;
         not_contains ~msg:"and no number was produced" ~sub:"mutants: " out);
+    test "WINDTRAP_MUTATE over a selection that keeps no test runs the suite"
+      (fun () ->
+        (* Nothing is refused: the suite runs as it would without the
+           variable, and the source of the selection decides the code. *)
+        let code, out, err =
+          spawn
+            [ ("WINDTRAP_MUTATE", "1"); ("WINDTRAP_FILTER", "no-such-test") ]
+        in
+        equal ~msg:"a mirror's selection: exit code" int 0 code;
+        contains ~msg:"the selection's sentence" ~sub:"no tests ran: filter" out;
+        equal ~msg:"and no refusal" text "" err;
+        let code, _, err =
+          spawn ~args:[ "-f"; "no-such-test" ] [ ("WINDTRAP_MUTATE", "1") ]
+        in
+        equal ~msg:"a typed selection: exit code" int 2 code;
+        equal ~msg:"and no refusal either" text "" err);
     test "a dry run refused at startup is exit 1, whatever its own code"
       (fun () ->
         (* [--failed] with no recorded failure is a startup refusal whose
@@ -2143,7 +2159,7 @@ let uninstrumented_tests =
            sentence under a plain and an instrumented core, so the
            missing-backend diagnosis is never what a prefix gets. *)
         let code, _, err =
-          spawn ~exe:plain_exe [ ("WINDTRAP_MUTATE", "perhaps") ]
+          spawn ~exe:plain_exe ~args:[ "--mutate=perhaps" ] []
         in
         equal ~msg:"exit code" int 1 code;
         contains ~msg:"the refusal names the scope"
@@ -2157,6 +2173,39 @@ let uninstrumented_tests =
           err;
         not_contains ~msg:"never the bare flag's diagnosis"
           ~sub:"links no instrumented module" err);
+    test "WINDTRAP_MUTATE with no mutant in its scope runs the suite as it is"
+      (fun () ->
+        (* The variable reaches every test executable of a project, and
+           most of them test no mutant: exiting 1 would fail the build
+           for the executables it was meant for. *)
+        let code, out, err =
+          spawn ~exe:plain_exe [ ("WINDTRAP_MUTATE", "perhaps") ]
+        in
+        equal ~msg:"exit code" int 0 code;
+        contains ~msg:"the ordinary summary" ~sub:"plain: 1 passed" out;
+        not_contains ~msg:"and no mutation report" ~sub:"mutants:" out;
+        equal ~msg:"one sentence on why" text
+          "windtrap: WINDTRAP_MUTATE is set, but no mutant of this \
+           executable's catalogue is under perhaps, so the suite runs without \
+           mutation\n"
+          err);
+    test "WINDTRAP_MUTATE on a build with no mutants names the backend"
+      (fun () ->
+        if core_instrumented then
+          skip
+            ~reason:
+              "under --instrument-with the core is instrumented, so plain_main \
+               catalogues its mutants"
+            ();
+        let code, out, err =
+          spawn ~exe:plain_exe [ ("WINDTRAP_MUTATE", "1") ]
+        in
+        equal ~msg:"exit code" int 0 code;
+        contains ~msg:"the ordinary summary" ~sub:"plain: 1 passed" out;
+        equal ~msg:"one sentence on why" text
+          "windtrap: WINDTRAP_MUTATE is set, but this executable links no \
+           instrumented module, so the suite runs without mutation\n"
+          err);
   ]
 
 (* The fixtures' verdict files land in the real [_build/_mutants], where

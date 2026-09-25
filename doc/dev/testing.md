@@ -31,6 +31,10 @@ non-obvious.
   renderers, JUnit, the refusals, exit codes, `-u` and `--corrected`
   (`baselines.t`), a test that calls `exit` (`process.t`), the mutation
   flags (`mutation.t`) and the session without dune (`nodune.t`, below).
+  `broadcast.t` lays out two stanzas in a scratch build context, as dune
+  does, and runs both under the same variables: a mirror's emptied
+  selection, `WINDTRAP_MUTATE` on a suite with no mutant and a mirror's
+  relative path, each beside the command line's.
   `signals.t` sends INT, TERM and HUP to a waiting run through
   `send_signal.exe`, which holds the run's pid since a shell's
   background job ignores INT: the printed failures stay, the summary
@@ -401,9 +405,8 @@ lock file, and adding it as a test-time dependency is a maintainer call.
 ## CI
 
 `.github/workflows/build.yml` runs `dune build @runtest` on Linux, macOS
-and Windows with `WINDTRAP_JUNIT` pointing at an absolute directory (one
-report per suite; a relative path would scatter them through the build
-tree) and uploads the reports; failures annotate the diff themselves,
+and Windows with `WINDTRAP_JUNIT` pointing at a directory (one report
+per suite) and uploads the reports; failures annotate the diff themselves,
 because the runner detects GitHub Actions. A Linux-only job runs
 `@self-cover`: the coverage number is a property of the suite, not of
 the OS, and instrumented builds are slower. `--shard` is

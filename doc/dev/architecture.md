@@ -241,10 +241,13 @@ the guarantees"; changing one is a design decision, recorded here first.
    acquired is released on every path where the runner regains
    control.**
 9. **The exit code is 0, 1 or 2**: passed, failed, nothing ran. Under
-   `--corrected` a recorded correction is not a failure and an emptied
-   selection is not an error, because the `diff?` that follows is the
-   verdict and the selection came from a variable spanning every stanza
-   (usage errors stay 2).
+   `--corrected` a recorded correction is not a failure, because the
+   `diff?` that follows is the verdict. What the environment broadcasts
+   is not an error of a suite that cannot honour it: a selection that
+   only the mirrors gave and that empties a suite returns 0, and
+   `WINDTRAP_MUTATE` on a suite with no mutant to test runs it
+   ordinarily (a command-line selection keeps 2, `--mutate` its
+   refusal, and usage errors stay 2).
 10. **Coverage never changes what programs or tests mean**, and the gate
     lives only in the reporting command.
 11. **Instrumentation data is transient, versioned, and never touches

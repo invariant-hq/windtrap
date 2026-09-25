@@ -607,7 +607,8 @@ let () =
   is_true ~msg:"a pattern is trimmed" (s.Run.filter = [ "parser" ]);
   is_true ~msg:"a shard is trimmed" (s.Run.shard = Some (2, 4));
   is_true ~msg:"a count is trimmed" (s.Run.prop_count = Some 12);
-  is_true ~msg:"a path is trimmed" (s.Run.junit = Some "out.xml")
+  is_true ~msg:"a path is trimmed"
+    (s.Run.junit = Some (Filename.concat (Os.project_root ()) "out.xml"))
 
 let () =
   reg "reading rules: a valueless flag's mirror is a boolean" @@ fun () ->
@@ -710,29 +711,51 @@ let () =
 let () =
   reg "env-only settings: the CI mirrors" @@ fun () ->
   clear_env ();
-  setenv "WINDTRAP_JUNIT" (Some "reports/junit.xml");
-  setenv "WINDTRAP_OUTPUT" (Some "custom-logs");
+  setenv "WINDTRAP_JUNIT" (Some "/reports/junit.xml");
+  setenv "WINDTRAP_OUTPUT" (Some "/custom-logs");
   let config = resolve Cli.empty in
-  is_true ~msg:"WINDTRAP_JUNIT"
-    ((settings Cli.empty).Run.junit = Some "reports/junit.xml");
-  (* Absolutized like [-o], for the same reason: a test that chdirs must
-     not move the rest of the run's logs. *)
-  is_true ~msg:"WINDTRAP_OUTPUT"
-    (Filename.is_relative config.Run.log_dir = false
-    && Filename.basename config.Run.log_dir = "custom-logs")
+  is_true ~msg:"WINDTRAP_JUNIT" (config.Run.junit = Some "/reports/junit.xml");
+  is_true ~msg:"WINDTRAP_OUTPUT" (config.Run.log_dir = "/custom-logs")
+
+(* A mirror reaches every stanza of a project, each run from its own build
+   directory, so its relative path is read from the project root; the
+   command line's is read from the working directory. Both are made
+   absolute before a test can chdir. *)
+let () =
+  reg "a relative path is read from the project root or the working directory"
+  @@ fun () ->
+  clear_env ();
+  setenv "WINDTRAP_PROJECT_ROOT" (Some "/somewhere/project");
+  setenv "WINDTRAP_JUNIT" (Some "_build/junit");
+  setenv "WINDTRAP_OUTPUT" (Some "logs");
+  let config = resolve Cli.empty in
+  equal ~msg:"WINDTRAP_JUNIT, from the project root" (option string)
+    (Some "/somewhere/project/_build/junit") config.Run.junit;
+  equal ~msg:"WINDTRAP_OUTPUT, from the project root" string
+    "/somewhere/project/logs" config.Run.log_dir;
+  let config =
+    resolve { Cli.empty with Cli.junit = Some "out"; log_dir = Some "logs" }
+  in
+  let cwd = Sys.getcwd () in
+  equal ~msg:"--junit, from the working directory" (option string)
+    (Some (Filename.concat cwd "out"))
+    config.Run.junit;
+  equal ~msg:"-o, from the working directory" string
+    (Filename.concat cwd "logs")
+    config.Run.log_dir
 
 let () =
   reg "the mirrors lose to their flags" @@ fun () ->
   clear_env ();
   setenv "WINDTRAP_PROP_COUNT" (Some "3");
-  setenv "WINDTRAP_JUNIT" (Some "from-env.xml");
+  setenv "WINDTRAP_JUNIT" (Some "/from-env.xml");
   let cli =
-    { Cli.empty with Cli.prop_count = Some 1; junit = Some "from-cli.xml" }
+    { Cli.empty with Cli.prop_count = Some 1; junit = Some "/from-cli.xml" }
   in
   is_true ~msg:"flag beats WINDTRAP_PROP_COUNT"
     ((resolve cli).Run.prop_count = Some 1);
   is_true ~msg:"flag beats WINDTRAP_JUNIT"
-    ((settings cli).Run.junit = Some "from-cli.xml");
+    ((settings cli).Run.junit = Some "/from-cli.xml");
   (* A malformed mirror is a usage error naming the *variable*, not a
      silent default. *)
   clear_env ();
@@ -752,6 +775,59 @@ let () =
       is_true
         ~msg:("malformed mirror leaked past the flag: " ^ Cli.error_message e)
         false
+
+(* The selection is the environment's only when the command line selects
+   nothing: one selection flag typed makes an empty selection a typo
+   again. *)
+let () =
+  reg "a selection is broadcast when the mirrors alone give it" @@ fun () ->
+  let broadcast cli = (resolve cli).Run.broadcast.Run.selection in
+  clear_env ();
+  is_false ~msg:"no selection at all" (broadcast Cli.empty);
+  List.iter
+    (fun (var, value) ->
+      clear_env ();
+      setenv var (Some value);
+      is_true ~msg:var (broadcast Cli.empty))
+    [
+      ("WINDTRAP_FILTER", "parse");
+      ("WINDTRAP_EXCLUDE", "slow");
+      ("WINDTRAP_TAG", "gpu");
+      ("WINDTRAP_EXCLUDE_TAG", "gpu");
+      ("WINDTRAP_SHARD", "1/2");
+    ];
+  clear_env ();
+  setenv "WINDTRAP_TAG" (Some "gpu");
+  List.iter
+    (fun (flag, cli) -> is_false ~msg:("beside " ^ flag) (broadcast cli))
+    [
+      ("-f", { Cli.empty with Cli.filter = [ "parse" ] });
+      ("-e", { Cli.empty with Cli.exclude = [ "slow" ] });
+      ("--tag", { Cli.empty with Cli.tags = [ "cpu" ] });
+      ("--exclude-tag", { Cli.empty with Cli.exclude_tags = [ "cpu" ] });
+      ("--shard", { Cli.empty with Cli.shard = Some (1, 2) });
+      ("--failed", { Cli.empty with Cli.failed_only = Some true });
+    ];
+  clear_env ();
+  is_false ~msg:"a command-line selection alone"
+    (broadcast { Cli.empty with Cli.filter = [ "parse" ] })
+
+let () =
+  reg "a mutation run is broadcast when WINDTRAP_MUTATE alone asks for it"
+  @@ fun () ->
+  let broadcast cli = (resolve cli).Run.broadcast.Run.mutate in
+  clear_env ();
+  is_false ~msg:"no mutation run" (broadcast Cli.empty);
+  is_false ~msg:"--mutate" (broadcast { Cli.empty with Cli.mutate = Some [] });
+  setenv "WINDTRAP_MUTATE" (Some "1");
+  is_true ~msg:"WINDTRAP_MUTATE=1" (broadcast Cli.empty);
+  is_false ~msg:"--mutate beside WINDTRAP_MUTATE"
+    (broadcast { Cli.empty with Cli.mutate = Some [ "lib/" ] });
+  setenv "WINDTRAP_MUTATE" (Some "0");
+  is_false ~msg:"WINDTRAP_MUTATE=0" (broadcast Cli.empty);
+  clear_env ();
+  setenv "WINDTRAP_MUTATE_ARM" (Some "lib/a.ml:1:0:add");
+  is_false ~msg:"WINDTRAP_MUTATE_ARM" (broadcast Cli.empty)
 
 let () =
   reg "parsed values land in the config" @@ fun () ->

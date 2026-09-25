@@ -859,43 +859,63 @@ let write_verdicts ~scope verdicts =
       Some (spf "could not write the verdict file: %s" message)
 
 (* The population, before the dry run: the catalogue is complete once
-   module initialization is over, and the scope is [--mutate]'s. The
-   three ways it comes up empty are three different refusals. A prefix
-   that leaves nothing is one sentence whatever the catalogue holds
-   (the prefix is what the reader typed, and a file it matches nothing
-   of is uninstrumented, misspelled or without sites in a plain build
-   and an instrumented one alike) so it never blames a build that is
-   instrumented and fine, and reads the same under either; the
-   missing-backend diagnosis is the bare flag's, where there is no
-   prefix to name. *)
+   module initialization is over, and the scope is [--mutate]'s. It comes
+   up empty three ways, each said in its own sentence. *)
+type no_mutant = Uninstrumented | Out_of_scope | All_dismissed
+
 let population ~scope =
   match (M.catalogue (), scope) with
-  | [], [] ->
-      Error
-        "this executable links no instrumented module, so there is nothing to \
-         mutate: instrument the library under test with ppx_windtrap.mutate \
-         and re-run"
+  | [], [] -> Error Uninstrumented
   | catalogue, _ -> (
       match
         List.filter (fun (m : M.mutant) -> in_scope ~scope m.M.id) catalogue
       with
-      | [] ->
-          Error
-            (spf
-               "--mutate=%s leaves no mutant in this executable's catalogue: \
-                no instrumented file matches the prefix (is the library under \
-                test instrumented with ppx_windtrap.mutate?), or the matched \
-                files have no mutation sites"
-               (String.concat "," scope))
+      | [] -> Error Out_of_scope
       | scoped -> (
           match
             List.filter (fun (m : M.mutant) -> m.M.dismissed = None) scoped
           with
-          | [] ->
-              Error
-                "every mutant this run could test is dismissed by [@mutate \
-                 off]; there is nothing to test"
+          | [] -> Error All_dismissed
           | population -> Ok population))
+
+(* The refusal of [--mutate] typed on a command line. A prefix that
+   leaves nothing is one sentence whatever the catalogue holds (the
+   prefix is what the reader typed, and a file it matches nothing of is
+   uninstrumented, misspelled or without sites in a plain build and an
+   instrumented one alike) so it never blames a build that is
+   instrumented and fine; the missing-backend diagnosis is the bare
+   flag's, where there is no prefix to name. *)
+let refusal ~scope = function
+  | Uninstrumented ->
+      "this executable links no instrumented module, so there is nothing to \
+       mutate: instrument the library under test with ppx_windtrap.mutate and \
+       re-run"
+  | Out_of_scope ->
+      spf
+        "--mutate=%s leaves no mutant in this executable's catalogue: no \
+         instrumented file matches the prefix (is the library under test \
+         instrumented with ppx_windtrap.mutate?), or the matched files have no \
+         mutation sites"
+        (String.concat "," scope)
+  | All_dismissed ->
+      "every mutant this run could test is dismissed by [@mutate off]; there \
+       is nothing to test"
+
+(* WINDTRAP_MUTATE reaches every test executable of a project, and most
+   of them test no mutant: an executable over another library, or an
+   inline runner whose files all declare tests. Such a suite runs as it
+   would without the variable, after this sentence. *)
+let unmutated ~scope reason =
+  let why =
+    match reason with
+    | Uninstrumented -> "this executable links no instrumented module"
+    | Out_of_scope ->
+        spf "no mutant of this executable's catalogue is under %s"
+          (String.concat "," scope)
+    | All_dismissed ->
+        "every mutant of this executable is dismissed by [@mutate off]"
+  in
+  spf "WINDTRAP_MUTATE is set, but %s, so the suite runs without mutation" why
 
 (* The loop, end to end *)
 
@@ -919,7 +939,7 @@ let loop renderer ~scope ~suite (config : Run.config) tests =
            failing one is not a score"
       else
         match population with
-        | Error message -> refuse "%s" message
+        | Error reason -> refuse "%s" (refusal ~scope reason)
         | Ok population -> (
             let reached, unreached =
               List.partition
@@ -1106,7 +1126,26 @@ let execute_and_report ~suite (config : Run.config) tests =
   match config.Run.mutation with
   | Run.No_mutation -> Ran (Report.run ~suite config tests)
   | Run.Armed spec -> arm_mode (renderer ()) ~spec ~suite config tests
-  | Run.Loop scope ->
+  | Run.Loop scope -> (
+      let ordinary () =
+        Ran
+          (Report.run ~suite
+             { config with Run.mutation = Run.No_mutation }
+             tests)
+      in
       if Sys.win32 then
         refuse "mutation testing needs Unix.fork, which Windows does not have"
-      else loop (renderer ()) ~scope ~suite config tests
+      else if not config.Run.broadcast.mutate then
+        loop (renderer ()) ~scope ~suite config tests
+      else
+        (* What the environment broadcasts is no error of a suite that
+           cannot honour it: one with no mutant, or whose selection keeps
+           no test, runs ordinarily. The selection's own sentence says
+           why nothing ran. *)
+        match (population ~scope, Run.list_selection config ~suite tests) with
+        | Error reason, _ ->
+            note "%s" (unmutated ~scope reason);
+            ordinary ()
+        | Ok _, Ok [] -> ordinary ()
+        | Ok _, (Ok (_ :: _) | Error _) ->
+            loop (renderer ()) ~scope ~suite config tests)

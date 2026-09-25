@@ -43,6 +43,18 @@ type mutation =
           identifier is kept as typed, and its grammar is that of
           [Windtrap_runtime.Mutate.id_of_string]. *)
 
+type broadcast = {
+  selection : bool;
+      (** A mirror gave a filter, an exclusion, a tag or a shard, and the
+          command line gave no [-f], bare pattern, [-e], [--tag],
+          [--exclude-tag], [--shard] or [--failed]. *)
+  mutate : bool;
+      (** The {!Loop} came from [WINDTRAP_MUTATE], and the command line gave no
+          [--mutate]. *)
+}
+(** The type for the parts of a configuration that the environment gave and the
+    command line did not. A mirror reaches every suite of a project alike. *)
+
 type config = {
   seed : Seed.seed;  (** [--seed]: the root seed of the run. *)
   filter : string list;
@@ -101,6 +113,9 @@ type config = {
   invocation : invocation;
       (** The way the report spells its commands. The caller that holds [argv]
           sets it. *)
+  broadcast : broadcast;
+      (** Which of the selection and the {!Loop} came from the environment
+          alone. The executor does not read it. *)
 }
 (** The type for the configuration of a run: what one invocation resolves from
     its command line, its mirrors and the defaults, in that precedence (see
@@ -112,9 +127,9 @@ type config = {
 val default_config : unit -> config
 (** [default_config ()] is the configuration of a run given no flag: no
     selection, every boolean [false], {!Baseline.Check}, no limit and no count,
-    [color = Os.Auto], [slow_threshold = 1.], {!No_mutation} and [`Mirrors].
-    Every call draws [seed] from {!Seed.random} and takes [log_dir] from
-    {!Os.default_log_dir}. *)
+    [color = Os.Auto], [slow_threshold = 1.], {!No_mutation}, [`Mirrors] and
+    nothing broadcast. Every call draws [seed] from {!Seed.random} and takes
+    [log_dir] from {!Os.default_log_dir}. *)
 
 val for_subset : config -> log_dir:string -> bail:bool -> config
 (** [for_subset config ~log_dir ~bail] is [config] for a run over part of the
@@ -124,7 +139,7 @@ val for_subset : config -> log_dir:string -> bail:bool -> config
     - [tags], [exclude_tags] and [seed] are kept, so the child selects within
       the tags of its parent and draws the property cases its parent drew.
     - [baseline] is {!Baseline.Check}, [junit] is [None], [mutation] is
-      {!No_mutation} and [allow_focus] is [true].
+      {!No_mutation}, nothing is broadcast and [allow_focus] is [true].
     - [stream] is [false] and [log_dir] is the argument.
     - [bail] is the argument, and every other field is [config]'s.
 

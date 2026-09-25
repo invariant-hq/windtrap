@@ -699,11 +699,39 @@ let layer_entries entries cli =
 
 let layers cli = layer_entries entries cli
 
+(* What the environment broadcasts. A mirror reaches every stanza of a
+   project, and a stanza that cannot honour it is not in error, so the
+   source of a value is kept: [cli] is the command line alone and
+   [below] the layered record, and a field that [below] holds and [cli]
+   does not came from a mirror. *)
+
+let selects p =
+  p.filter <> [] || p.exclude <> [] || p.tags <> [] || p.exclude_tags <> []
+  || p.shard <> None || p.failed_only = Some true
+
+(* A relative path is made absolute once, here, before any test body
+   runs, or it follows a test that chdirs. The command line's is read
+   from the working directory. A mirror's is read from the project root,
+   since every stanza runs in its own build directory. A base that
+   cannot be read keeps the path as given. *)
+let layered_path ~cli ~below field =
+  let absolute base path =
+    if not (Filename.is_relative path) then path
+    else
+      match base () with
+      | base -> Filename.concat base path
+      | exception Sys_error _ -> path
+  in
+  match (field cli, field below) with
+  | Some path, _ -> Some (absolute Sys.getcwd path)
+  | None, Some path -> Some (absolute Os.project_root path)
+  | None, None -> None
+
 (* One fold from the fully-layered record to the one resolved record.
    Nothing is range-checked here: every value arrived through its flag's
    own parser, the command line's or the mirror's, and each named its own
    source when it refused. *)
-let resolved below ~mutation =
+let resolved ~cli below ~mutation =
   let defaults = Run.default_config () in
   {
     Run.seed = Option.value below.seed ~default:defaults.Run.seed;
@@ -723,17 +751,9 @@ let resolved below ~mutation =
     timeout = below.timeout;
     prop_count = below.prop_count;
     log_dir =
-      (* Resolved against the cwd once, here, before any test body runs.
-           A relative [-o DIR] otherwise follows the process around: a test
-           that chdirs sends the rest of the run's capture logs somewhere
-           else, or nowhere, and the failure reports point at paths that do
-           not exist. The default is already absolute. *)
-      (let dir = Option.value below.log_dir ~default:(Os.default_log_dir ()) in
-       if not (Filename.is_relative dir) then dir
-       else
-         match Sys.getcwd () with
-         | cwd -> Filename.concat cwd dir
-         | exception Sys_error _ -> dir);
+      Option.value
+        (layered_path ~cli ~below (fun p -> p.log_dir))
+        ~default:defaults.Run.log_dir;
     (* No flag and no mirror: only a forked mutation child sets it,
          through [Run.for_subset]. *)
     allow_focus = false;
@@ -741,11 +761,16 @@ let resolved below ~mutation =
     slow_threshold =
       Option.value below.slow_threshold ~default:defaults.Run.slow_threshold;
     verbose = below.verbose = Some true;
-    junit = below.junit;
+    junit = layered_path ~cli ~below (fun p -> p.junit);
     mutation;
     github = Os.in_github_actions ();
     (* Computed from argv by the facade, which alone holds it. *)
     invocation = `Mirrors;
+    broadcast =
+      {
+        Run.selection = selects below && not (selects cli);
+        mutate = cli.mutate = None && below.mutate <> None;
+      };
   }
 
 (* The mutation switches, after both layers: the loop arms each mutant
@@ -771,7 +796,7 @@ let color_mode () =
 let settings cli =
   let* below = layers cli in
   let* mutation = mutation_of below in
-  Ok (resolved below ~mutation)
+  Ok (resolved ~cli below ~mutation)
 
 (* Help *)
 

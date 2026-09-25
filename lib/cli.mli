@@ -20,6 +20,12 @@
     command line. A mirror is named [WINDTRAP_] then the long flag in capitals,
     with [_] for [-], except that of [--arm], which is [WINDTRAP_MUTATE_ARM].
 
+    A mirror reaches every executable of a project alike, and a suite that
+    cannot honour one is not in error. {!settings} therefore keeps the source of
+    a value where it changes the outcome of a run. A relative path from a mirror
+    is read from the project root, and {!Run.type-broadcast} says which
+    selection and which [--mutate] the mirrors alone gave.
+
     A mirror is read by the parser of its flag, so a variable accepts and
     refuses what its flag does, with the same [expected] wording. An error names
     the variable as its source. {!settings} reads the mirrors in one pass, and a
@@ -168,8 +174,13 @@ val settings : parsed -> (Run.config, error) result
       [WINDTRAP_MUTATE=1] is the bare flag, [WINDTRAP_MUTATE=0] its absence, and
       [WINDTRAP_MUTATE=lib/calc.ml] a prefix. A prefix that spells a boolean
       cannot go through the variable.
-    - [log_dir]: a relative [-o DIR] is made absolute against the working
-      directory, and is kept as given when that directory cannot be read.
+    - A relative path of [--junit] or [-o] is made absolute, against the working
+      directory when the command line gives it and against {!Os.project_root}
+      when its mirror does. It is kept as given when that directory cannot be
+      read.
+    - [broadcast.selection] holds when a mirror gives the selection and the
+      command line gives none of its flags, and [broadcast.mutate] when
+      [WINDTRAP_MUTATE] gives [mutation] and [--mutate] does not.
     - [github] is {!Os.in_github_actions}[ ()], [allow_focus] is [false] and
       [invocation] is [`Mirrors]. [list_only], [help] and [version] are ignored.
 

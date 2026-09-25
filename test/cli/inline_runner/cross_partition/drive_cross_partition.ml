@@ -19,9 +19,11 @@
       declared target. Last, so the .corrected that survives is
       unambiguously this run's.
 
-   Both runs name one JUnit file, [report.xml], through the mirror, and
-   [junit-suites] records the suites it holds after the second: the
-   stale partition's alone, since each partition replaces the file. *)
+   Both runs name one JUnit file, [report.xml] in the rule's directory,
+   through the mirror, and [junit-suites] records the suites it holds
+   after the second: the stale partition's alone, since each partition
+   replaces the file. The path is absolute, since a mirror's relative
+   path is read from the project root. *)
 
 let masks = [ Drive_harness.Full_log; Drive_harness.Backtrace ]
 
@@ -41,7 +43,11 @@ let clear_corrected () =
 let run ~runner ~partition ~name =
   Drive_harness.record ~name ~exe:runner
     ~args:[ "inline-test-runner"; "cross_partition"; "-partition"; partition ]
-    ~env:[ ("WINDTRAP_SLOW_THRESHOLD", "0"); ("WINDTRAP_JUNIT", "report.xml") ]
+    ~env:
+      [
+        ("WINDTRAP_SLOW_THRESHOLD", "0");
+        ("WINDTRAP_JUNIT", Filename.concat (Sys.getcwd ()) "report.xml");
+      ]
     ~masks ()
 
 (* The [name] of every [<testsuite>] element of [report.xml], one per

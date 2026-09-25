@@ -1427,10 +1427,15 @@ let () =
   check_string "an empty selection prints nothing on stderr" ~expected:""
     ~actual:err
 
-(* Under --corrected (a build action's run) a selection that runs none
-   of the suite's tests exits 0 rather than 2, still saying why; without
-   the flag it exits 2 as before, a usage error exits 2 either way, and a
+(* A selection that the mirrors alone gave reaches every stanza of a
+   project, so a suite it leaves empty exits 0 rather than 2, still saying
+   why, with or without --corrected. A selection typed on the command line
+   exits 2 under --corrected too, a usage error exits 2 either way, and a
    suite that declares no tests keeps its 2. *)
+let with_filter_mirror pattern f =
+  Os.setenv "WINDTRAP_FILTER" (Some pattern);
+  Fun.protect ~finally:(fun () -> Os.setenv "WINDTRAP_FILTER" None) f
+
 let () =
   with_temp_root @@ fun root ->
   let suite = [ test "passes" (fun () -> is_true true) ] in
@@ -1443,26 +1448,41 @@ let () =
       "emptied: no tests ran: filter \"zzznope\" matched none of 1 test.\n\
        list: emptied -l\n"
     ~actual:out;
-  let code, out, _ =
+  let code, _, _ =
     run_in_process ~argv:[ "-f"; "zzznope"; "--corrected" ] root "emptied" suite
   in
-  check_int "under --corrected an emptied selection exits 0" ~expected:0
+  check_int "a typed selection exits 2 under --corrected too" ~expected:2
     ~actual:code;
+  with_filter_mirror "zzznope" @@ fun () ->
+  let code, out, _ = run_in_process root "emptied" suite in
+  check_int "a mirror's emptied selection exits 0" ~expected:0 ~actual:code;
+  check_string "and still says why"
+    ~expected:
+      "emptied: no tests ran: filter \"zzznope\" matched none of 1 test.\n\
+       list: emptied -l\n"
+    ~actual:out;
+  let code, out, _ =
+    run_in_process ~argv:[ "--corrected" ] root "emptied" suite
+  in
+  check_int "and exits 0 under --corrected" ~expected:0 ~actual:code;
   check_string
-    "and still says why, then names the flag: a build action has no launcher \
-     to restate"
+    "where the way out names the flag: a build action has no launcher to \
+     restate"
     ~expected:
       "emptied: no tests ran: filter \"zzznope\" matched none of 1 test.\n\
        (list the suite's tests with -l)\n"
     ~actual:out;
+  let code, _, _ =
+    run_in_process ~argv:[ "-f"; "zzznope" ] root "emptied" suite
+  in
+  check_int "a typed filter beside the mirror exits 2" ~expected:2 ~actual:code;
   let code, _, err =
     run_in_process ~argv:[ "--corrected"; "--nosuchflag" ] root "emptied" suite
   in
-  check_int "a usage error under --corrected still exits 2" ~expected:2
-    ~actual:code;
+  check_int "a usage error still exits 2" ~expected:2 ~actual:code;
   check_contains "and names the option" ~sub:"unknown option '--nosuchflag'" err;
-  let code, _, _ = run_in_process ~argv:[ "--corrected" ] root "emptied" [] in
-  check_int "a suite that declares no tests exits 2 under --corrected too"
+  let code, _, _ = run_in_process root "emptied" [] in
+  check_int "a suite that declares no tests exits 2 under a mirror too"
     ~expected:2 ~actual:code
 
 (* The promotion warning *)

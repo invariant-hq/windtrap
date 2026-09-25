@@ -316,17 +316,14 @@ let run_suite ~suite ~config tests =
               correction%s written here. Fix the failures, rerun, then 'dune \
               promote'."
              (if List.length written = 1 then "" else "s"));
-      (* A [--corrected] run is a build action's, and a build action's
-         selection is a [WINDTRAP_*] variable spanning every stanza and
-         partition of the tree: a stanza it empties is not a mistyped
-         filter, so nothing-ran is not an error there; the "no tests ran"
-         line still says so, and the [diff?] that follows is the verdict.
-         A suite that declares no tests keeps its 2, since no selection
-         emptied it; a usage error never reaches this branch. *)
+      (* A selection that the mirrors alone gave reaches every stanza and
+         partition of a project: a stanza it empties is not a mistyped
+         filter, so nothing-ran is not an error there, and the "no tests
+         ran" line still says so. A selection typed on a command line
+         keeps its 2, and so does a suite that declares no tests, since no
+         selection emptied it; a usage error never reaches this branch. *)
       let code = outcome.Run.exit_code in
-      if
-        code = 2 && outcome.Run.total > 0
-        && config.Run.baseline = Baseline.Corrected
+      if code = 2 && outcome.Run.total > 0 && config.Run.broadcast.selection
       then 0
       else code
 

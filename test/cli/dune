@@ -45,6 +45,15 @@
   (<> %{os_type} Win32))
  (deps mutant_main.exe))
 
+; broadcast.t lays out two stanzas as dune does, one of them this
+; instrumented suite, and runs both under the same WINDTRAP_* variables.
+
+(cram
+ (applies_to broadcast)
+ (enabled_if
+  (<> %{os_type} Win32))
+ (deps mutant_main.exe))
+
 (cram
  (applies_to nodune)
  (deps

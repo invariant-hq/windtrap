@@ -18,13 +18,14 @@
 
 type invocation = [ `Exe of string | `Mirrors ]
 type mutation = No_mutation | Loop of string list | Armed of string
+type broadcast = { selection : bool; mutate : bool }
 
 (* One record for everything an invocation resolves. The executor reads
    the selection and execution fields; the presentation fields (color,
    the slow threshold, verbosity, the JUnit target, the GitHub envelope
-   and the hint context) are read by Report alone, and the mutation
-   field by the loop alone. A field the executor ignores is not a
-   coupling. *)
+   and the hint context) are read by Report alone, the mutation field by
+   the loop alone, and [broadcast] by the facade's exit code and the
+   loop. A field the executor ignores is not a coupling. *)
 type config = {
   seed : Seed.seed;
   filter : string list;
@@ -47,7 +48,10 @@ type config = {
   mutation : mutation;
   github : bool;
   invocation : invocation;
+  broadcast : broadcast;
 }
+
+let not_broadcast = { selection = false; mutate = false }
 
 let default_config () =
   {
@@ -72,6 +76,7 @@ let default_config () =
     mutation = No_mutation;
     github = false;
     invocation = `Mirrors;
+    broadcast = not_broadcast;
   }
 
 (* The configuration for a run over a SUBTREE of another run's selection,
@@ -100,7 +105,9 @@ let default_config () =
    The loop is its parent, and it arms what the parent hands it.
 
    [allow_focus]: the run of the parent already passed the CI focus guard
-   over the same tree, so a child has nothing left to refuse. *)
+   over the same tree, so a child has nothing left to refuse. A child's
+   selection is its allowlist and it is no mutation run, so nothing of
+   it is [broadcast]. *)
 let for_subset config ~log_dir ~bail =
   {
     config with
@@ -115,6 +122,7 @@ let for_subset config ~log_dir ~bail =
     allow_focus = true;
     junit = None;
     mutation = No_mutation;
+    broadcast = not_broadcast;
   }
 
 (* Run records *)
