@@ -1,0 +1,19 @@
+; The example as `--instrument-with ppx_windtrap.mutate` builds it, for
+; the transcripts of doc/manual/mutation.md, which the tree's plain build
+; cannot otherwise show: the library preprocessed with the backend, its
+; module under the example's path (-loc-filename), and the suite as an
+; executable that `dune runtest` never runs. A dune project of its own, so
+; that its library keeps the example's name.
+
+(copy_files ../*.ml)
+
+(library
+ (name windtrap_example_mutation)
+ (modules calc)
+ (preprocess
+  (pps ppx_windtrap.mutate -loc-filename=examples/08-mutation/calc.ml)))
+
+(executable
+ (name test_calc)
+ (modules test_calc)
+ (libraries windtrap windtrap_example_mutation))

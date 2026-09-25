@@ -126,10 +126,12 @@ block is:
   the next one are what it printed.
 - `<!-- run DIR as EXAMPLE -->`: the same session in a variant of
   EXAMPLE, whose paths print as EXAMPLE's. A variant is a subdirectory
-  of its example that builds the same executable names from sources the
-  page tells the reader to change, as an `(executable)` so that `dune
-  runtest` stays green; `examples/01-getting-started/failing` is the
-  tutorial's failing edit.
+  of its example that builds the same executable names, as an
+  `(executable)` so that `dune runtest` stays green. It builds them from
+  sources the page tells the reader to change
+  (`examples/01-getting-started/failing` is the tutorial's failing
+  edit), or with an instrumentation backend applied, as described below
+  (`examples/07-coverage/instrumented`).
 
 ````
 <!-- run examples/01-getting-started -->
@@ -140,32 +142,55 @@ mylib: 2 passed in 0.5ms.
 ````
 
 A dune rule cannot run dune, so `doc/transcript/transcript.exe` runs
-what dune would. A command is `VAR=value` assignments then `dune runtest`
-or `dune test` (`--force` changes nothing), or `dune exec PATH [-- ARGS]`,
-which runs the built PATH from the repository root. Anything else, a
-pipe or an expansion included, is refused.
+what dune would. A command is `VAR=value` assignments then one of:
 
-`dune runtest` runs what EXAMPLE's dune file declares, in file order:
+- `dune runtest` or `dune test`, which runs what EXAMPLE's dune file
+  declares, in file order.
+- `dune exec PATH [-- ARGS]`, which runs the built PATH from the
+  repository root, PATH under EXAMPLE naming the file under DIR. The
+  public name `windtrap` is the one other PATH: it names the built
+  `bin/main.exe`, and the page's rule depends on that file.
 
-- A `(test)` stanza runs as `./NAME.exe` from DIR's build directory,
-  with dune's location of the stanza above the output of one that exits
+`dune runtest` runs, in file order:
+
+- A `(test)` stanza as `./NAME.exe` from DIR's build directory, with
+  dune's location of the stanza above the output of one that exits
   nonzero. Its action may be `(run %{test} ARGS)`, alone or first in a
   `progn` of `(diff? A B)`. After a run that exits 0, the first `diff?`
   whose B differs from A prints dune's location of A and git's diff of
   the two, as dune does but with no git configuration read, and every B
-  is removed. An action of another
-  shape is refused.
-- A library with `(inline_tests)` runs each partition of its inline
-  tests from EXAMPLE's build directory, under a variant too. The page's
-  rule depends on the runner, which `all` does not build. A partition
-  that fails is refused.
+  is removed. An action of another shape is refused.
+- A library with `(inline_tests)`, each partition of its inline tests
+  from EXAMPLE's build directory, under a variant too. The page's rule
+  depends on the runner, which `all` does not build. A partition that
+  fails is refused.
 
-The environment is dune's `INSIDE_DUNE`,
-`PATH`, `HOME`, `TMPDIR` and the assignments, so no `WINDTRAP_*`, `CI`
-or `GITHUB_ACTIONS` of the caller reaches the run. Standard output and
-standard error are read together and their escape sequences removed, as
-dune removes them when its output is not a terminal: a block is the
-terminal's text without its colours.
+`--force` changes nothing, since every run is a new one. `--instrument-with
+BACKEND`, before PATH under `dune exec`, names `ppx_windtrap.coverage` or
+`ppx_windtrap.mutate`. The tree's own build is not instrumented, so such
+a session runs a variant whose dune file applies BACKEND with
+`(preprocess (pps BACKEND -loc-filename=EXAMPLE/FILE.ml))`, one entry of
+`per_module` per module, so that the dumps and the mutants name the
+example's sources. The variant is a dune project of its own, so that its
+library keeps the example's name. A command whose `--instrument-with`
+differs from the backend DIR's dune file applies, either way, is
+refused. Anything else, a pipe or an expansion included, is refused too.
+
+Each page runs in a scratch directory laid out as the repository, under
+the temporary directory and removed when the page is done. The first
+session in DIR copies DIR's build directory to `_build/default/DIR` there
+(and EXAMPLE's, for its inline tests) and EXAMPLE's sources to
+`EXAMPLE`, and every run happens in that copy: a run's build directory
+is the copy's `_build` and its project root the copy. What the runs
+write (capture logs, the last failed tests, coverage dumps, verdict
+files, corrections) therefore stays with the page, is read by its later
+sessions, and never mixes with the tree's own `_build` or another
+page's. The environment is `INSIDE_DUNE` naming the copy's build
+context, the caller's `PATH`, `HOME` and `TMPDIR`, and the assignments,
+so no `WINDTRAP_*`, `CI` or `GITHUB_ACTIONS` of the caller reaches the
+run. Standard output and standard error are read together and their
+escape sequences removed, as dune removes them when its output is not a
+terminal: a block is the terminal's text without its colours.
 
 A block is compared after masking what varies: the number of a duration
 (its unit stays), a seed `s1:…`, and an absolute path under the
@@ -173,7 +198,8 @@ temporary directory or the repository. A block that matches is kept as
 written, so its durations stay put; one that differs is replaced by the
 run's output. Each page has two rules in `doc/manual/dune`: one writes
 `PAGE.corrected` and depends on the example directories it runs
-(`alias_rec` of their `all`, and their `source_tree`), the other diffs
+(`alias_rec` of their `all`, and their `source_tree`) and on
+`bin/main.exe` when a session runs `windtrap`, the other diffs
 it under `@runtest`. The check is off on Windows, where the runs print
 CRLF line ends.
 

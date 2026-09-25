@@ -259,10 +259,20 @@ let shell_words cmd =
   in
   word 0 [] false
 
+(* The instrumentation backends a session may name with dune's
+   [--instrument-with]. The tree's own build is not instrumented, so such a
+   session runs a variant whose dune file applies the backend with
+   [(preprocess (pps BACKEND -loc-filename=...))]; see [check_backend]. *)
+let backends = [ "ppx_windtrap.coverage"; "ppx_windtrap.mutate" ]
+
+(* The executables the repository installs, by public name, and the built
+   file [dune exec NAME] runs. *)
+let public_names = [ ("windtrap", "bin/main.exe") ]
+
 type command =
-  | Runtest  (** [dune runtest] or [dune test] *)
-  | Exec of { path : string; args : string list }
-      (** [dune exec PATH -- ARGS] *)
+  | Runtest of { backend : string option }  (** [dune runtest] or [dune test] *)
+  | Exec of { backend : string option; path : string; args : string list }
+      (** [dune exec PATH -- ARGS], [PATH] resolved from a public name *)
 
 let is_assignment w =
   match String.index_opt w '=' with
@@ -278,19 +288,40 @@ let parse_command cmd =
     | w :: rest when is_assignment w -> assignments (w :: acc) rest
     | rest -> (List.rev acc, rest)
   in
+  (* [--force] changes nothing when every run is a new one. *)
+  let rec options backend = function
+    | "--force" :: rest -> options backend rest
+    | "--instrument-with" :: b :: rest when backend = None ->
+        if not (List.mem b backends) then
+          fail "--instrument-with names %s, not one of %s: %s" b
+            (String.concat ", " backends)
+            cmd;
+        options (Some b) rest
+    | rest -> (backend, rest)
+  in
   let env, argv = assignments [] (shell_words cmd) in
   let command =
     match argv with
-    | "dune" :: ("runtest" | "test") :: flags
-      when List.for_all (String.equal "--force") flags ->
-        Runtest
-    | "dune" :: "exec" :: path :: rest
-      when String.contains path '/' && not (String.starts_with ~prefix:"-" path)
-      -> (
-        match rest with
-        | [] -> Exec { path; args = [] }
-        | "--" :: args -> Exec { path; args }
-        | _ -> fail "dune exec takes its program's arguments after --: %s" cmd)
+    | "dune" :: ("runtest" | "test") :: rest -> (
+        match options None rest with
+        | backend, [] -> Runtest { backend }
+        | _ -> fail "dune runtest takes --force and --instrument-with: %s" cmd)
+    | "dune" :: "exec" :: rest -> (
+        match options None rest with
+        | backend, path :: rest when not (String.starts_with ~prefix:"-" path)
+          -> (
+            let path =
+              match List.assoc_opt path public_names with
+              | Some built -> built
+              | None when String.contains path '/' -> path
+              | None -> fail "%s is not a public name of the repository" path
+            in
+            match rest with
+            | [] -> Exec { backend; path; args = [] }
+            | "--" :: args -> Exec { backend; path; args }
+            | _ ->
+                fail "dune exec takes its program's arguments after --: %s" cmd)
+        | _ -> fail "dune exec takes --instrument-with, then PATH: %s" cmd)
     | _ ->
         fail
           "no rule runs %s: a session holds dune runtest, dune test and dune \
@@ -301,14 +332,15 @@ let parse_command cmd =
 
 (* Running *)
 
-(* The environment of a clean shell under dune: dune's INSIDE_DUNE, and
-   PATH, HOME and TMPDIR. Nothing else of the caller's reaches the run, so
-   neither a developer's WINDTRAP_* nor CI's CI and GITHUB_ACTIONS changes
-   what it prints. *)
-let base_env () =
-  List.filter_map
-    (fun var -> Option.map (fun v -> var ^ "=" ^ v) (Sys.getenv_opt var))
-    [ "INSIDE_DUNE"; "PATH"; "HOME"; "TMPDIR" ]
+(* The environment of a clean shell under dune: INSIDE_DUNE naming the
+   scratch copy's build context, and the caller's PATH, HOME and TMPDIR.
+   Nothing else of the caller's reaches the run, so neither a developer's
+   WINDTRAP_* nor CI's CI and GITHUB_ACTIONS changes what it prints. *)
+let base_env ~context =
+  ("INSIDE_DUNE=" ^ context)
+  :: List.filter_map
+       (fun var -> Option.map (fun v -> var ^ "=" ^ v) (Sys.getenv_opt var))
+       [ "PATH"; "HOME"; "TMPDIR" ]
 
 (* Runs [prog] with [argv] from [cwd], standard output and standard error
    on one pipe, so the text is in the order the program wrote it. *)
@@ -375,28 +407,156 @@ let replace_all s ~sub ~by =
   go 0;
   Buffer.contents b
 
+(* The scratch copy
+
+   A page's sessions run in a scratch directory laid out as the
+   repository. The directory DIR a session runs is copied as built, once
+   per page, to [<top>/_build/default/DIR], and the sources of its
+   EXAMPLE, DIR included, to [<top>/EXAMPLE], so a run's build directory
+   is [<top>/_build] and its project root is [<top>]. What the runs write
+   there (capture logs, the last failed tests, coverage dumps, verdict
+   files, corrections) is seen by the page's later sessions and never by
+   another page, and is removed with the copy. *)
+
+type scratch = { top : string; mutable copied : string list }
+
+let scratch_context s =
+  Filename.concat (Filename.concat s.top "_build") "default"
+
+(* The scratch directory is named by its real path, the one a process in it
+   reads as its current directory, so that INSIDE_DUNE and the current
+   directory agree as they do under dune (on macOS, /var is a link). *)
+let create_scratch () =
+  let tmp = Filename.get_temp_dir_name () in
+  if
+    List.exists
+      (String.starts_with ~prefix:"_build")
+      (String.split_on_char '/' tmp)
+  then
+    fail
+      "the temporary directory %s lies below a build directory, where the runs \
+       would write into the tree's own"
+      tmp;
+  let rand = Random.State.make_self_init () in
+  let rec attempt n =
+    let top =
+      Filename.concat tmp
+        (strf "transcript-%d-%06x" (Unix.getpid ())
+           (Random.State.bits rand land 0xffffff))
+    in
+    match Unix.mkdir top 0o700 with
+    | () -> Unix.realpath top
+    | exception Unix.Unix_error (Unix.EEXIST, _, _) when n > 0 -> attempt (n - 1)
+    | exception Unix.Unix_error (e, _, _) ->
+        fail "cannot create a scratch directory in %s: %s" tmp
+          (Unix.error_message e)
+  in
+  { top = attempt 10; copied = [] }
+
+let rec mkdir_p dir =
+  if not (Sys.file_exists dir) then (
+    mkdir_p (Filename.dirname dir);
+    Sys.mkdir dir 0o755)
+
+(* A copy is writable, as a checkout's file is, whatever dune made of
+   the one it builds. *)
+let copy_file src dst =
+  let perm = (Unix.stat src).Unix.st_perm lor 0o200 in
+  let data = read_file src in
+  try
+    Out_channel.with_open_gen
+      [ Open_wronly; Open_creat; Open_trunc; Open_binary ] perm dst (fun oc ->
+        Out_channel.output_string oc data)
+  with Sys_error e -> fail "cannot copy to the scratch directory: %s" e
+
+(* Copies the tree [src] to [dst], leaving out the entries whose name
+   starts with a dot, which are dune's, but for the directories of inline
+   test runners, and those [skip] names. *)
+let rec copy_tree ~skip src dst =
+  mkdir_p dst;
+  let dune's name =
+    name.[0] = '.' && not (Filename.check_suffix name ".inline-tests")
+  in
+  Array.iter
+    (fun name ->
+      if (not (dune's name)) && not (skip name) then
+        let s = Filename.concat src name and d = Filename.concat dst name in
+        match (Unix.stat s).Unix.st_kind with
+        | Unix.S_DIR -> copy_tree ~skip s d
+        | Unix.S_REG -> copy_file s d
+        | _ -> ())
+    (Sys.readdir src)
+
+let rec remove_tree path =
+  match (Unix.lstat path).Unix.st_kind with
+  | Unix.S_DIR ->
+      Array.iter
+        (fun name -> remove_tree (Filename.concat path name))
+        (Sys.readdir path);
+      Unix.rmdir path
+  | _ -> Sys.remove path
+  | exception Unix.Unix_error (Unix.ENOENT, _, _) -> ()
+
+(* Copies [path] of the build context below [dst], once per page. *)
+let mirror ~root scratch ~skip ~dst path =
+  let dst = Filename.concat dst path in
+  if not (List.mem dst scratch.copied) then (
+    copy_tree ~skip (Filename.concat root path) dst;
+    scratch.copied <- dst :: scratch.copied)
+
+let copy_example ~root scratch ~dir ~example =
+  mirror ~root scratch ~skip:(fun _ -> false) ~dst:(scratch_context scratch) dir;
+  mirror ~root scratch
+    ~skip:(fun name -> Filename.check_suffix name ".exe")
+    ~dst:scratch.top example
+
+(* The backends that [dir]'s dune file applies with [(pps ...)] must be
+   the one the command names with [--instrument-with], or none. *)
+let check_backend ~root ~dir backend =
+  let rec applied = function
+    | Atom _ -> []
+    | List (Atom { text = "pps"; _ } :: args) ->
+        List.filter_map
+          (function
+            | Atom { text; _ } when List.mem text backends -> Some text
+            | Atom _ | List _ -> None)
+          args
+    | List l -> List.concat_map applied l
+  in
+  let file = Filename.concat dir "dune" in
+  let applied =
+    List.sort_uniq String.compare
+      (List.concat_map applied
+         (parse_sexps (read_file (Filename.concat root file))))
+  in
+  if applied <> Option.to_list backend then
+    match backend with
+    | Some b ->
+        fail
+          "--instrument-with %s runs a variant that applies %s with (pps %s), \
+           and %s does not"
+          b b b file
+    | None ->
+        fail "%s applies %s, which the command must name with --instrument-with"
+          file
+          (String.concat ", " applied)
+
 (* The output of one command of a session in [dir], printed as if in
    [example]. [root] is the build context, an absolute path. *)
-let run ~root ~dir ~example (assignments, command) =
-  let env = assignments @ base_env () in
+let run ~root ~scratch ~dir ~example (assignments, command) =
+  let context = scratch_context scratch in
+  let env = assignments @ base_env ~context in
   let out =
     match command with
-    | Runtest ->
+    | Runtest { backend } ->
+        check_backend ~root ~dir backend;
         let file = Filename.concat example "dune" in
         let text = read_file (Filename.concat root file) in
         let runnables = runnables (parse_sexps text) in
         if runnables = [] then fail "%s declares no test" file;
-        let cwd = Filename.concat root dir in
-        let source_root = Filename.dirname (Filename.dirname root) in
-        let in_build f =
-          String.concat "/"
-            [
-              Filename.basename (Filename.dirname root);
-              Filename.basename root;
-              dir;
-              f;
-            ]
-        in
+        copy_example ~root scratch ~dir ~example;
+        let cwd = Filename.concat context dir in
+        let in_build f = String.concat "/" [ "_build"; "default"; dir; f ] in
         (* dune's [diff?] after a run that exited 0: the first that
            differs fails the [progn] with git's diff, and each consumes
            its corrected file. *)
@@ -412,7 +572,7 @@ let run ~root ~dir ~example (assignments, command) =
                   else
                     strf "File \"%s/%s\", line 1, characters 0-0:\n" dir a
                     ^ fst
-                        (spawn ~cwd:source_root
+                        (spawn ~cwd:scratch.top
                            ~env:
                              ("GIT_CONFIG_NOSYSTEM=1"
                             :: "GIT_CONFIG_GLOBAL=/dev/null" :: env)
@@ -449,8 +609,9 @@ let run ~root ~dir ~example (assignments, command) =
               else dune_location ~file ~text name ^ out
           | Inline lib ->
               (* A variant builds test executables only: the library and
-                 its inline tests are the example's. *)
-              let cwd = Filename.concat root example in
+                 its inline tests are the example's, copied as built. *)
+              mirror ~root scratch ~skip:(fun _ -> false) ~dst:context example;
+              let cwd = Filename.concat context example in
               let runner = strf ".%s.inline-tests/inline-test-runner.exe" lib in
               let prog = Filename.concat cwd runner in
               let argv = [ runner; "inline-test-runner"; lib ] in
@@ -470,7 +631,7 @@ let run ~root ~dir ~example (assignments, command) =
               String.concat "" (List.map partition (lines partitions))
         in
         String.concat "" (List.map run_one runnables)
-    | Exec { path; args } ->
+    | Exec { backend; path; args } ->
         let prefix = example ^ "/" in
         let path =
           if String.starts_with ~prefix path then
@@ -479,14 +640,18 @@ let run ~root ~dir ~example (assignments, command) =
                 (String.length path - String.length prefix)
           else path
         in
-        let build = Filename.dirname root
-        and context = Filename.basename root in
-        let source_root = Filename.dirname build in
-        let argv0 = strf "./%s/%s/%s" (Filename.basename build) context path in
+        let prog =
+          if String.starts_with ~prefix:(dir ^ "/") path then (
+            check_backend ~root ~dir backend;
+            copy_example ~root scratch ~dir ~example;
+            Filename.concat context path)
+          else if backend <> None then
+            fail "--instrument-with applies to the executables of %s" example
+          else Filename.concat root path
+        in
         fst
-          (spawn ~cwd:source_root ~env
-             ~prog:(Filename.concat root path)
-             (argv0 :: args))
+          (spawn ~cwd:scratch.top ~env ~prog
+             (("./_build/default/" ^ path) :: args))
   in
   let out = strip_escapes out in
   let out =
@@ -580,7 +745,7 @@ let mask ~roots s =
 
 (* Pages *)
 
-let regenerate ~root ~roots marker block =
+let regenerate ~root ~roots ~scratch marker block =
   match marker with
   | File { path; excerpt = None } ->
       lines (read_file (Filename.concat root path))
@@ -608,7 +773,8 @@ let regenerate ~root ~roots marker block =
       let session = function
         | cmd when String.starts_with ~prefix:"$ " cmd ->
             let text = String.sub cmd 2 (String.length cmd - 2) in
-            Some (cmd :: run ~root ~dir ~example (parse_command text))
+            let scratch = Lazy.force scratch in
+            Some (cmd :: run ~root ~scratch ~dir ~example (parse_command text))
         | _ -> None
       in
       (match block with
@@ -634,6 +800,7 @@ let page ~root path =
   in
   let src = Array.of_list (lines (read_file path)) in
   let n = Array.length src in
+  let scratch = lazy (create_scratch ()) in
   let out = Buffer.create 4096 in
   let emit l =
     Buffer.add_string out l;
@@ -665,7 +832,9 @@ let page ~root path =
           let block =
             Array.to_list (Array.sub src (fence + 1) (last - fence - 1))
           in
-          let fresh = at_line (fun () -> regenerate ~root ~roots m block) in
+          let fresh =
+            at_line (fun () -> regenerate ~root ~roots ~scratch m block)
+          in
           let same =
             mask ~roots (String.concat "\n" block)
             = mask ~roots (String.concat "\n" fresh)
@@ -675,7 +844,10 @@ let page ~root path =
           emit src.(last);
           go (last + 1)
   in
-  go 0;
+  Fun.protect
+    ~finally:(fun () ->
+      if Lazy.is_val scratch then remove_tree (Lazy.force scratch).top)
+    (fun () -> go 0);
   Buffer.contents out
 
 (* The build context: dune runs a rule's action with INSIDE_DUNE set to it,
