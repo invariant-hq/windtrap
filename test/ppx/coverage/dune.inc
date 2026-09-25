@@ -74,6 +74,16 @@
 
 (rule
  (with-stdout-to
+  fixture_forms.actual
+  (run ./coverage_pp.exe --impl %{dep:fixture_forms.ml})))
+
+(rule
+ (alias runtest)
+ (action
+  (diff fixture_forms.expected fixture_forms.actual)))
+
+(rule
+ (with-stdout-to
   fixture_fun.actual
   (run ./coverage_pp.exe --impl %{dep:fixture_fun.ml})))
 

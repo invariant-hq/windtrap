@@ -1,0 +1,175 @@
+[@@@ocaml.text "/*"]
+module Windtrap_cov_________fixture_forms___ml =
+  struct
+    let ___windtrap_visit___ =
+      let counts = Array.make 27 0 in
+      Windtrap_runtime.Coverage.register ~file:"./fixture_forms.ml"
+        ~points:[|{
+                    Windtrap_runtime.Coverage.start_ofs = 289;
+                    Windtrap_runtime.Coverage.end_ofs = 292
+                  };{
+                      Windtrap_runtime.Coverage.start_ofs = 294;
+                      Windtrap_runtime.Coverage.end_ofs = 297
+                    };{
+                        Windtrap_runtime.Coverage.start_ofs = 288;
+                        Windtrap_runtime.Coverage.end_ofs = 298
+                      };{
+                          Windtrap_runtime.Coverage.start_ofs = 320;
+                          Windtrap_runtime.Coverage.end_ofs = 325
+                        };{
+                            Windtrap_runtime.Coverage.start_ofs = 317;
+                            Windtrap_runtime.Coverage.end_ofs = 325
+                          };{
+                              Windtrap_runtime.Coverage.start_ofs = 356;
+                              Windtrap_runtime.Coverage.end_ofs = 361
+                            };{
+                                Windtrap_runtime.Coverage.start_ofs = 343;
+                                Windtrap_runtime.Coverage.end_ofs = 363
+                              };{
+                                  Windtrap_runtime.Coverage.start_ofs = 380;
+                                  Windtrap_runtime.Coverage.end_ofs = 385
+                                };{
+                                    Windtrap_runtime.Coverage.start_ofs = 380;
+                                    Windtrap_runtime.Coverage.end_ofs = 387
+                                  };{
+                                      Windtrap_runtime.Coverage.start_ofs =
+                                        414;
+                                      Windtrap_runtime.Coverage.end_ofs = 419
+                                    };{
+                                        Windtrap_runtime.Coverage.start_ofs =
+                                          407;
+                                        Windtrap_runtime.Coverage.end_ofs =
+                                          419
+                                      };{
+                                          Windtrap_runtime.Coverage.start_ofs
+                                            = 439;
+                                          Windtrap_runtime.Coverage.end_ofs =
+                                            442
+                                        };{
+                                            Windtrap_runtime.Coverage.start_ofs
+                                              = 436;
+                                            Windtrap_runtime.Coverage.end_ofs
+                                              = 445
+                                          };{
+                                              Windtrap_runtime.Coverage.start_ofs
+                                                = 515;
+                                              Windtrap_runtime.Coverage.end_ofs
+                                                = 518
+                                            };{
+                                                Windtrap_runtime.Coverage.start_ofs
+                                                  = 588;
+                                                Windtrap_runtime.Coverage.end_ofs
+                                                  = 593
+                                              };{
+                                                  Windtrap_runtime.Coverage.start_ofs
+                                                    = 466;
+                                                  Windtrap_runtime.Coverage.end_ofs
+                                                    = 594
+                                                };{
+                                                    Windtrap_runtime.Coverage.start_ofs
+                                                      = 620;
+                                                    Windtrap_runtime.Coverage.end_ofs
+                                                      = 679
+                                                  };{
+                                                      Windtrap_runtime.Coverage.start_ofs
+                                                        = 752;
+                                                      Windtrap_runtime.Coverage.end_ofs
+                                                        = 755
+                                                    };{
+                                                        Windtrap_runtime.Coverage.start_ofs
+                                                          = 747;
+                                                        Windtrap_runtime.Coverage.end_ofs
+                                                          = 755
+                                                      };{
+                                                          Windtrap_runtime.Coverage.start_ofs
+                                                            = 782;
+                                                          Windtrap_runtime.Coverage.end_ofs
+                                                            = 785
+                                                        };{
+                                                            Windtrap_runtime.Coverage.start_ofs
+                                                              = 776;
+                                                            Windtrap_runtime.Coverage.end_ofs
+                                                              = 787
+                                                          };{
+                                                              Windtrap_runtime.Coverage.start_ofs
+                                                                = 839;
+                                                              Windtrap_runtime.Coverage.end_ofs
+                                                                = 842
+                                                            };{
+                                                                Windtrap_runtime.Coverage.start_ofs
+                                                                  = 815;
+                                                                Windtrap_runtime.Coverage.end_ofs
+                                                                  = 848
+                                                              };{
+                                                                  Windtrap_runtime.Coverage.start_ofs
+                                                                    = 931;
+                                                                  Windtrap_runtime.Coverage.end_ofs
+                                                                    = 934
+                                                                };{
+                                                                    Windtrap_runtime.Coverage.start_ofs
+                                                                    = 1074;
+                                                                    Windtrap_runtime.Coverage.end_ofs
+                                                                    = 1088
+                                                                  };{
+                                                                    Windtrap_runtime.Coverage.start_ofs
+                                                                    = 1069;
+                                                                    Windtrap_runtime.Coverage.end_ofs
+                                                                    = 1089
+                                                                    };
+                  {
+                    Windtrap_runtime.Coverage.start_ofs = 1059;
+                    Windtrap_runtime.Coverage.end_ofs = 1089
+                  }|] ~counts;
+      (fun index -> Windtrap_runtime.Coverage.visit counts index)
+    let ___windtrap_post_visit___ point_index result =
+      ___windtrap_visit___ point_index; result
+  end
+open Windtrap_cov_________fixture_forms___ml
+[@@@ocaml.text "/*"]
+type r = {
+  a: int ;
+  mutable b: int }
+let tuple f x =
+  ___windtrap_visit___ 2;
+  ((___windtrap_post_visit___ 0 (f x)), (___windtrap_post_visit___ 1 (f x)))
+let variant f x =
+  ___windtrap_visit___ 4; `V (___windtrap_post_visit___ 3 (f x))
+let record f r =
+  ___windtrap_visit___ 6;
+  { r with a = (___windtrap_post_visit___ 5 (f r.a)) }
+let field f r = ___windtrap_visit___ 8; (___windtrap_post_visit___ 7 (f r)).a
+let setfield f r =
+  ___windtrap_visit___ 10; r.b <- (___windtrap_post_visit___ 9 (f r.b))
+let array f x =
+  ___windtrap_visit___ 12; [|(___windtrap_post_visit___ 11 (f x))|]
+let scopes f x =
+  ___windtrap_visit___ 15;
+  ignore
+    (let module M = struct let y = ___windtrap_post_visit___ 13 (f x) end in
+       let exception E of int  in
+         let open M in E (___windtrap_post_visit___ 14 (f y)))
+let tail_scopes f x =
+  ___windtrap_visit___ 16;
+  (let module M = struct  end in let exception E  in let open M in f x)
+class counter =
+  object
+    val mutable v = 0
+    method set f =
+      ___windtrap_visit___ 18; v <- ___windtrap_post_visit___ 17 (f v)
+    method copy f =
+      ___windtrap_visit___ 20; {<v = ___windtrap_post_visit___ 19 (f v)>}
+  end
+let immediate f =
+  ___windtrap_visit___ 22;
+  object method get = (___windtrap_visit___ 21; f 1) end
+module type S  = sig val v : int end
+let pack f = ((module
+  struct let v = ___windtrap_post_visit___ 23 (f 1) end) : (module S))
+;;___windtrap_post_visit___ 26
+    (print_int
+       (___windtrap_post_visit___ 25
+          (fst (___windtrap_post_visit___ 24 (tuple succ 1)))))
+[@@@coverage off]
+;;print_int (fst (tuple succ 1))
+class dark = object method get = succ 1 end
+[@@@coverage on]
