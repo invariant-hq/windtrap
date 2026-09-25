@@ -1,7 +1,6 @@
 # The canonical windtrap project layout
 
-A complete, copyable instance of the layout the windtrap skill teaches
-(`skills/windtrap-testing/SKILL.md` §3): one small library, its binary,
+A complete, copyable project layout: one small library, its binary,
 and a `test/` tree where **every child is one suite with its own
 `dune` file**, split along mechanical and lifecycle boundaries — never
 by test kind.

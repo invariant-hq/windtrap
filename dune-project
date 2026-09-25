@@ -2,9 +2,9 @@
 
 (name windtrap)
 
-; test/cli is a cram suite (the blackbox level of
-; skills/windtrap-testing/SKILL.md); x-blueprint's test/cram is the same
-; shape under its own dune-project. See doc/dev/testing.md.
+; test/cli is a cram suite (the skill's "Testing an executable");
+; x-blueprint's test/cram is the same shape under its own dune-project.
+; See doc/dev/testing.md.
 
 (cram enable)
 
