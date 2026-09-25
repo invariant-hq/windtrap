@@ -139,11 +139,13 @@ geo: 1 test (seed s1:5b58964be30f69a8)
       examples/03-property-testing/test_geo.ml:28
         28 │ equal ~__POS__ (option shape) (Some s)
       expected  Some Rect (0, 1)
+                           ~  ~
       actual    Some Rect (1, 0)
+                           ~  ~
     replay: dune exec examples/03-property-testing/test_geo.exe -- --seed s1:5b58964be30f69a8 -f 'to_string › is read back by of_string'
 ──────────────────────────────────────────────────────────
 
-1 failed in 1.6ms.
+1 failed in 0.7ms.
 ```
 
 ## Keeping a counterexample as a regression

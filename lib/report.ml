@@ -54,6 +54,8 @@ let pp_duration secs =
 type t = {
   out : Format.formatter;
   ansi : bool;
+  terminal : bool;
+      (* [out] is a terminal a reader watches: colour alone marks a change *)
   verbose : bool;
   stream : bool;
   live : bool;
@@ -91,7 +93,7 @@ type t = {
          one-liner's seed suffix. *)
 }
 
-let create ~out ~ansi ?(live = false) (config : Run.config) =
+let create ~out ~ansi ?(terminal = false) (config : Run.config) =
   if
     not
       (Float.is_finite config.Run.slow_threshold
@@ -100,10 +102,11 @@ let create ~out ~ansi ?(live = false) (config : Run.config) =
   {
     out;
     ansi;
+    terminal;
     verbose = config.Run.verbose;
     stream = config.Run.stream;
     (* A streamed test's bytes would land on the tail before its erasure. *)
-    live = live && ansi && not config.Run.stream;
+    live = terminal && ansi && not config.Run.stream;
     slow_threshold = config.Run.slow_threshold;
     invocation = config.Run.invocation;
     armed =
@@ -138,7 +141,7 @@ let terminal (config : Run.config) =
       ~term_dumb:(Os.term_dumb ())
   in
   create ~out:Format.std_formatter ~ansi
-    ~live:(tty && not (Os.in_github_actions ()))
+    ~terminal:(tty && not (Os.in_github_actions ()))
     config
 
 (* The transcript's sink, as the blocks': a line is spans, escaped and
@@ -348,7 +351,8 @@ let pp_body ?(hints = true) t (r : Run.result) failures =
   List.iteri
     (fun i f ->
       if i > 0 then put t [];
-      pp_failure ~ansi:t.ansi ~excerpt:true ~hints:false t.out f)
+      pp_failure ~ansi:t.ansi ~terminal:t.terminal ~excerpt:true ~hints:false
+        t.out f)
     failures;
   (match r.prop_stats with Some s -> pp_prop_stats t s | None -> ());
   Option.iter (pp_tail t)
@@ -453,7 +457,8 @@ let release_block t f =
   put t
     (test_line ~title:true ~tag:"FAIL" ~style:`Red ~name:Sections.release_title
        ~qualifiers:(armed_qualifier t) ~timing:"" ());
-  pp_failure ~ansi:t.ansi ~excerpt:true ~hints:false t.out f;
+  pp_failure ~ansi:t.ansi ~terminal:t.terminal ~excerpt:true ~hints:false t.out
+    f;
   if t.verbose then put t []
 
 (* A block is committed when its test finishes, so a run that dies has

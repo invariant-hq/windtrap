@@ -4,6 +4,7 @@ mylib: 12 tests (seed s1:7be1d2c904aa31f5)
     «d|test/test_users.ml:31»
     «d|expected»  [("alice", [1; 2; 3]); ("bob", [4])]
     «d|actual»    [("alice", [1; 2; 3]); ("bob", [4«R|; 5]); ("carol", [»])]
+                                               «R|~~~~~~~~~~~~~~~~~~»
     «d|captured output (last 2 lines, 12034 earlier bytes omitted):»
       [debug] session table resize 2 -> 4
       [debug] carol: ghost session from pool reuse

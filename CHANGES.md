@@ -131,7 +131,7 @@ and the bullets below say what each area does now and why.
   had reached, and whether the element was present but too early. The
   block reads `needle  "<n>": <verdict>` over `haystack  <excerpt>`, the
   occurrence bold red in the haystack in color, and marked by a `~` line
-  under its line without. `starts_with` and `ends_with` name the needle
+  under its line as a changed span is. `starts_with` and `ends_with` name the needle
   `prefix` and `suffix`, and one found elsewhere reads `found at byte 9,
   not at the start` (or `not at the end`).
   **`mem t x xs`** is membership through a witness.
@@ -142,10 +142,13 @@ and the bullets below say what each area does now and why.
 - **Failure reports mark what changed**: a unified diff on multi-line
   renderings, a minimal edit script over code points on short ones. In
   color the changed span is bold in its side's color inside an otherwise
-  plain value and no `~` line prints (a changed span of spaces, which
-  color cannot show, keeps its `~` line); without color a `~` line marks
-  each side that has a changed span: both for a replacement, `actual` for
-  an insertion, `expected` for a deletion. A mark that would cover half a
+  plain value. A `~` line marks each side that has a changed span, both
+  for a replacement, `actual` for an insertion, `expected` for a
+  deletion, unless the report is colored on a terminal (and a changed
+  span of spaces, which color cannot show, keeps its `~` line there).
+  Under dune the report is colored and no terminal, so the `~` lines
+  print: dune strips the colors when its own output is no terminal, and a
+  CI log still shows where two values differ. A mark that would cover half a
   side is dropped, and each value then prints whole in its side's color;
   a `~` line that a tab or a wide character would misalign is dropped
   too. Green is the expected side and red the actual one on every block

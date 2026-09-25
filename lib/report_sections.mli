@@ -61,6 +61,7 @@ val labeled_msg : Failure.t -> string option
 
 val pp_failure :
   ansi:bool ->
+  ?terminal:bool ->
   ?excerpt:bool ->
   ?hints:bool ->
   ?filter:string ->
@@ -83,6 +84,8 @@ val pp_failure :
     The captured output of the test is no part of an entry, because it belongs
     to the test and each transport places it.
 
+    - [terminal] is whether [ppf] reaches a terminal that a reader watches. It
+      defaults to [false].
     - [excerpt] defaults to [false]. The source line prints when the file can be
       read and holds the line, and the blank line prints only with it. A
       relative path is tried under {!Os.project_root} first and then as given.
@@ -93,10 +96,12 @@ val pp_failure :
 
     {b Equality.} Two single-line renderings print as the expected side over the
     actual side, and the spans of {!Diff.refine} mark what changed. With [ansi]
-    a changed span is styled in its side's colour and bold. Without it a line of
-    [~] marks the span under each side that has one. A pair that {!Diff.refine}
-    declines, and one whose expected side is a claim ({!Failure.predicate}),
-    print each side in one style and unmarked.
+    a changed span is styled in its side's colour and bold. A line of [~] marks
+    the span under each side that has one, unless both [ansi] and [terminal]
+    hold: the styling of an output that is no terminal may be stripped, as dune
+    strips an action's output when its own is no terminal, or read as raw
+    escapes. A pair that {!Diff.refine} declines, and one whose expected side is
+    a claim ({!Failure.predicate}), print each side in one style and unmarked.
 
     When a side spans lines the entry is the unified diff of {!val:Diff.hunks},
     the expected lines as the deleted ones, under the header pair [--- expected]

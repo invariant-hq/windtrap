@@ -202,7 +202,9 @@ shop: 2 tests
       29 │ equal ~__POS__ (option item) (Some milk) (Shop.find "milk" cart));
 
     expected  Some milk x1 at 120
+                   ~~~~  ~    ~
     actual    Some bread x2 at 250
+                   ~~~~~  ~     ~
 
   FAIL  find › returns None for an unknown name
     examples/02-assertions/test_assertions.ml:31
@@ -212,7 +214,7 @@ shop: 2 tests
     actual    Some bread x2 at 250
 ──────────────────────────────────────────────────────────
 
-2 failed in 0.6ms.
+2 failed in 0.8ms.
 ```
 
 ## Comparing part of a value
@@ -459,9 +461,10 @@ shop: 2 tests
     element   1
     needle    "250": found at byte 7, before the search resumed at byte 8
     haystack  bread: 250 x 2
+                     ~~~
 ──────────────────────────────────────────────────────────
 
-1 passed, 1 failed in 0.7ms.
+1 passed, 1 failed in 0.8ms.
 ```
 
 ## Checking that code raises

@@ -24,16 +24,20 @@ type t
 (** The type for renderers. A renderer is mutable and serves one run, because it
     counts the results and the blocks that it committed. *)
 
-val create : out:Format.formatter -> ansi:bool -> ?live:bool -> Run.config -> t
+val create :
+  out:Format.formatter -> ansi:bool -> ?terminal:bool -> Run.config -> t
 (** [create ~out ~ansi config] is a renderer that writes to [out].
     - [ansi] is whether styling is emitted. Every line goes through
       {!Report_sections.render}, which escapes the control bytes of each text
       under both settings.
-    - [live] is whether {!begin_test}, {!note} and {!mutation_testing} draw the
-      live line, which the next write erases. Defaults to [false], and a caller
-      passes whether [out] is a terminal. The live line is off whatever [live]
-      is under [ansi:false] and under [config.stream]. It is the one line that
-      is cut to a width, which is 80 columns ([columns] in [report.ml]).
+    - [terminal] is whether [out] is a terminal that a reader watches. Defaults
+      to [false]. It is the [terminal] of every {!Report_sections.pp_failure}
+      entry, so a line of [~] marks what changed unless [ansi] and [terminal]
+      both hold. It is also whether {!begin_test}, {!note} and
+      {!mutation_testing} draw the live line, which the next write erases. The
+      live line is off whatever [terminal] is under [ansi:false] and under
+      [config.stream]. It is the one line that is cut to a width, which is 80
+      columns ([columns] in [report.ml]).
 
     [create] reads [config.verbose], [config.stream], [config.slow_threshold],
     [config.invocation], from which every [accept:] and [replay:] command is
@@ -46,11 +50,11 @@ val create : out:Format.formatter -> ansi:bool -> ?live:bool -> Run.config -> t
 val terminal : Run.config -> t
 (** [terminal config] is the renderer of a run on [Format.std_formatter].
     Styling is {!Os.resolve_color} of [config.color], of whether standard output
-    is a terminal, of {!Os.inside_dune} and of {!Os.term_dumb}. The live line is
-    on iff standard output is a terminal and the run is not under GitHub Actions
-    ({!Os.in_github_actions}), within what {!create} allows. [terminal] thus
-    reads the terminal status of standard output and, through these functions,
-    [INSIDE_DUNE], [TERM], [NO_COLOR], [CI] and [GITHUB_ACTIONS]. *)
+    is a terminal, of {!Os.inside_dune} and of {!Os.term_dumb}. Its [terminal]
+    holds iff standard output is a terminal and the run is not under GitHub
+    Actions ({!Os.in_github_actions}). [terminal] thus reads the terminal status
+    of standard output and, through these functions, [INSIDE_DUNE], [TERM],
+    [NO_COLOR], [CI] and [GITHUB_ACTIONS]. *)
 
 (** {1:transcript The transcript}
 
@@ -394,6 +398,7 @@ val labeled_msg : Failure.t -> string option
 
 val pp_failure :
   ansi:bool ->
+  ?terminal:bool ->
   ?excerpt:bool ->
   ?hints:bool ->
   ?filter:string ->

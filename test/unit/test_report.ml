@@ -88,12 +88,12 @@ let config ?(mode = `Compact) ?(slow_threshold = 1.0) ?(invocation = `Mirrors)
       (match armed with Some id -> Run.Armed id | None -> Run.No_mutation);
   }
 
-let with_renderer ?(ansi = false) ?mode ?live ?slow_threshold ?invocation ?armed
-    fn =
+let with_renderer ?(ansi = false) ?mode ?terminal ?slow_threshold ?invocation
+    ?armed fn =
   let buf = Buffer.create 1024 in
   let ppf = Format.formatter_of_buffer buf in
   let r =
-    Report.create ~out:ppf ~ansi ?live
+    Report.create ~out:ppf ~ansi ?terminal
       (config ?mode ?slow_threshold ?invocation ?armed ())
   in
   fn r;
@@ -110,9 +110,10 @@ let sections ?(ansi = false) l =
 
 (* As the executor drives it: each test row through [begin_test] and
    [result], the failed release only in [finish]. *)
-let transcript ?ansi ?mode ?live ?invocation ?(seed = Some Fixtures.root) () =
+let transcript ?ansi ?mode ?terminal ?invocation ?(seed = Some Fixtures.root) ()
+    =
   let tests = Fixtures.results in
-  with_renderer ?ansi ?mode ?live ?invocation (fun r ->
+  with_renderer ?ansi ?mode ?terminal ?invocation (fun r ->
       Report.header r ~suite:"mylib" ~tests:(List.length tests) ~seed ();
       List.iter
         (fun (res : Run.result) ->
@@ -123,10 +124,13 @@ let transcript ?ansi ?mode ?live ?invocation ?(seed = Some Fixtures.root) () =
         ~release_failures:[ Fixtures.release_failure ]
         ~duration:Fixtures.duration ())
 
-let failure_block ?(ansi = false) ?excerpt ?filter ?invocation ?armed f =
+(* A block as it prints; a coloured one lands on a terminal unless the
+   caller says otherwise. *)
+let failure_block ?(ansi = false) ?(terminal = ansi) ?excerpt ?filter
+    ?invocation ?armed f =
   let buf = Buffer.create 256 in
   let ppf = Format.formatter_of_buffer buf in
-  Report.pp_failure ~ansi ?excerpt ?filter ?invocation ?armed ppf f;
+  Report.pp_failure ~ansi ~terminal ?excerpt ?filter ?invocation ?armed ppf f;
   Format.pp_print_flush ppf ();
   Buffer.contents buf
 
@@ -251,16 +255,14 @@ let test_ansi () =
   contains ~msg:"ansi: PASS tag is green" ~sub:"\027[32mPASS\027[0m" t;
   contains
     ~msg:
-      "ansi: the inserted span is bold red inside a plain value, and no mark \
-       prints under colour"
+      "ansi: the inserted span is bold red inside a plain value, and off a \
+       terminal a red mark repeats it"
     ~sub:
-      "\027[2mexpected\027[0m  [(\"alice\", [1; 2; 3]); (\"bob\", [4])]\n\
-      \    \027[2mactual\027[0m    [(\"alice\", [1; 2; 3]); (\"bob\", \
-       [4\027[1;31m; 5]); (\"carol\", [\027[0m])]\n\
-      \    \027[2mcaptured output"
+      ("\027[2mexpected\027[0m  [(\"alice\", [1; 2; 3]); (\"bob\", [4])]\n\
+       \    \027[2mactual\027[0m    [(\"alice\", [1; 2; 3]); (\"bob\", \
+        [4\027[1;31m; 5]); (\"carol\", [\027[0m])]\n" ^ String.make 47 ' '
+     ^ "\027[1;31m~~~~~~~~~~~~~~~~~~\027[0m\n    \027[2mcaptured output")
     t;
-  not_contains ~msg:"ansi: no [~] line anywhere in a coloured transcript"
-    ~sub:"~" t;
   contains ~msg:"ansi: slow entry is caution yellow, one style"
     ~sub:"\n\027[33m  2.5s  slow › big sort\027[0m\n" t;
   contains ~msg:"ansi: slow heading is caution yellow, one style"
@@ -339,7 +341,7 @@ let test_ansi () =
 
 let test_live () =
   let t =
-    with_renderer ~ansi:true ~mode:`Verbose ~live:true (fun r ->
+    with_renderer ~ansi:true ~mode:`Verbose ~terminal:true (fun r ->
         Report.header r ~suite:"mylib" ~tests:2 ~seed:None ();
         Report.begin_test r ~path:[ "math"; "addition" ];
         Report.result r (List.hd Fixtures.results))
@@ -348,7 +350,7 @@ let test_live () =
     t;
   contains ~msg:"live: cursor clear emitted" ~sub:"\r\027[2K" t;
   let plain =
-    with_renderer ~ansi:false ~mode:`Verbose ~live:true (fun r ->
+    with_renderer ~ansi:false ~mode:`Verbose ~terminal:true (fun r ->
         Report.header r ~suite:"mylib" ~tests:2 ~seed:None ();
         Report.begin_test r ~path:[ "math"; "addition" ])
   in
@@ -361,7 +363,7 @@ let test_live_compact_tail () =
      stays blank, and what a pipe sees is exactly the committed
      transcript. *)
   let t =
-    with_renderer ~ansi:true ~live:true (fun r ->
+    with_renderer ~ansi:true ~terminal:true (fun r ->
         Report.header r ~suite:"mylib" ~tests:2 ~seed:None ();
         Report.begin_test r ~path:[ "math"; "addition" ];
         Report.result r (List.hd Fixtures.results);
@@ -379,7 +381,7 @@ let test_live_compact_tail () =
      erased before the first committed byte, and the next tail draws from
      column zero under the block. *)
   let after_failure =
-    with_renderer ~ansi:true ~live:true (fun r ->
+    with_renderer ~ansi:true ~terminal:true (fun r ->
         Report.header r ~suite:"mylib" ~tests:2 ~seed:None ();
         Report.begin_test r ~path:[ "bad" ];
         Report.result r
@@ -396,7 +398,7 @@ let test_live_compact_tail () =
       \r\027[2K\027[2m  [2/2] math › addition…\027[0m\r\027[2K")
     after_failure;
   let plain =
-    with_renderer ~ansi:false ~live:true (fun r ->
+    with_renderer ~ansi:false ~terminal:true (fun r ->
         Report.header r ~suite:"mylib" ~tests:2 ~seed:None ();
         Report.begin_test r ~path:[ "math"; "addition" ])
   in
@@ -520,7 +522,7 @@ let test_stream_shape () =
     let buf = Buffer.create 64 in
     let ppf = Format.formatter_of_buffer buf in
     let r =
-      Report.create ~out:ppf ~ansi:true ~live:true
+      Report.create ~out:ppf ~ansi:true ~terminal:true
         { (config ()) with Run.stream = true }
     in
     Report.begin_test r ~path:[ "ok" ];
@@ -893,7 +895,7 @@ let test_note () =
   equal ~msg:"note: verbose prints the plain line" string "releasing db\n"
     verbose;
   let live =
-    with_renderer ~ansi:true ~live:true (fun r ->
+    with_renderer ~ansi:true ~terminal:true (fun r ->
         Report.header r ~suite:"s" ~tests:2 ~seed:None ();
         Report.result r (Fixtures.result [ "a" ] Failure.Pass);
         Report.begin_test r ~path:[ "b" ];
@@ -2810,6 +2812,14 @@ let test_containment_block () =
   not_contains ~msg:"not_contains: no mark under colour" ~sub:"~" colored;
   is_true ~msg:"not_contains: colour replaces the mark and nothing else"
     (strip_ansi colored = without_marks b);
+  (* Off a terminal the escapes may be stripped, by dune for one, or read
+     raw: the mark prints under colour too. *)
+  is_true
+    ~msg:
+      "not_contains: off a terminal the coloured block, stripped, is the plain \
+       one"
+    (strip_ansi (failure_block ~ansi:true ~terminal:false not_contains_failure)
+    = b);
   (* contains: needle absent, display-capped head excerpt of a huge
      haystack. *)
   let haystack = String.make 20_006 'a' in
@@ -3749,7 +3759,7 @@ let test_name_sanitization () =
   contains ~msg:"FAIL header escapes the newline" ~sub:{|  FAIL  first\x0ahalf|}
     block;
   let live =
-    with_renderer ~ansi:true ~live:true (fun r ->
+    with_renderer ~ansi:true ~terminal:true (fun r ->
         Report.header r ~suite:"vnames" ~tests:2 ~seed:None ();
         Report.begin_test r ~path:hostile)
   in
@@ -4416,8 +4426,9 @@ let exe_invocation =
   `Exe "dune exec --instrument-with ppx_windtrap.mutate test/test_calc.exe --"
 
 (* A loop's report, from the line after its dry run's summary. *)
-let loop ?(invocation = exe_invocation) ?live (m : Sections.mutation) ~ansi =
-  with_renderer ~ansi ?live ~invocation (fun r ->
+let loop ?(invocation = exe_invocation) ?terminal (m : Sections.mutation) ~ansi
+    =
+  with_renderer ~ansi ?terminal ~invocation (fun r ->
       let total = List.length m.Sections.survivors + m.Sections.killed in
       List.iteri
         (fun i (s : Sections.survivor) ->
@@ -4517,7 +4528,7 @@ let test_mutation_streams () =
 
 let test_mutation_live () =
   let tail =
-    loop ~live:true
+    loop ~terminal:true
       { loop_report with Sections.survivors = [ add_survivor ]; unreached = [] }
       ~ansi:true
   in
@@ -4531,7 +4542,7 @@ let test_mutation_live () =
   is_true ~msg:"and none is drawn or erased after it"
     (occurrences_of ~sub:"\r\027[2K" tail = 2);
   let killed =
-    with_renderer ~ansi:true ~live:true (fun r ->
+    with_renderer ~ansi:true ~terminal:true (fun r ->
         Report.mutation_testing r ~index:1 ~total:2 ~id:"lib/calc.ml:9:3:sub";
         Report.mutation_testing r ~index:2 ~total:2 ~id:"lib/calc.ml:13:11:add")
   in
@@ -4545,7 +4556,7 @@ let test_mutation_live () =
     (with_renderer ~ansi:true (fun r ->
          Report.mutation_testing r ~index:1 ~total:2 ~id:"lib/calc.ml:9:3:sub"));
   equal ~msg:"off without colour" string ""
-    (with_renderer ~ansi:false ~live:true (fun r ->
+    (with_renderer ~ansi:false ~terminal:true (fun r ->
          Report.mutation_testing r ~index:1 ~total:2 ~id:"lib/calc.ml:9:3:sub"))
 
 (* An interrupted loop closes as a complete one does, over the children
@@ -5573,7 +5584,7 @@ let test_survivor_block_exe_width () =
 let test_live_line_cut () =
   let long = String.make 200 'n' in
   let t =
-    with_renderer ~ansi:true ~live:true (fun r ->
+    with_renderer ~ansi:true ~terminal:true (fun r ->
         Report.header r ~suite:"s" ~tests:1 ~seed:None ();
         Report.begin_test r ~path:[ long ])
   in
@@ -5637,7 +5648,7 @@ let test_note_under_stream () =
     let buf = Buffer.create 64 in
     let ppf = Format.formatter_of_buffer buf in
     let r =
-      Report.create ~out:ppf ~ansi:true ~live:true
+      Report.create ~out:ppf ~ansi:true ~terminal:true
         { (config ()) with Run.stream = true }
     in
     Report.note r "releasing db";
@@ -5668,7 +5679,7 @@ let test_observe_interrupted () =
 let test_observe_raises_nothing () =
   let fail = Fixtures.result [ "x" ] (Failure.Fail [ Failure.message "m" ]) in
   ignore
-    (with_renderer ~ansi:true ~live:true (fun r ->
+    (with_renderer ~ansi:true ~terminal:true (fun r ->
          let observe = Report.observe r ~seed:Fixtures.root ~selection:None in
          observe (Run.Test_finished fail);
          observe (Run.Fixture_release { name = "" });
@@ -5726,7 +5737,8 @@ let test_armed_lines_do_not_flush () =
 
 let test_mutation_refused () =
   let r =
-    Report.create ~out:Format.std_formatter ~ansi:true ~live:true (config ())
+    Report.create ~out:Format.std_formatter ~ansi:true ~terminal:true
+      (config ())
   in
   Report.mutation_testing r ~index:1 ~total:2 ~id:"lib/a.ml:1:0:add";
   Report.mutation_refused r "no mutant";
@@ -5741,7 +5753,7 @@ let test_mutation_refused () =
         ~sub:"\r\027[2K" erased;
       let buf = Buffer.create 64 in
       let ppf = Format.formatter_of_buffer buf in
-      let r = Report.create ~out:ppf ~ansi:true ~live:true (config ()) in
+      let r = Report.create ~out:ppf ~ansi:true ~terminal:true (config ()) in
       Report.mutation_testing r ~index:1 ~total:2 ~id:"x";
       Report.mutation_refused r "no mutant";
       is_true ~msg:"and the formatter is flushed, the erase in it"

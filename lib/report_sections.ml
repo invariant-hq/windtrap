@@ -692,12 +692,12 @@ let source_excerpt line text =
   ( spf "%d \u{2502}" line,
     match String.trim text with "" -> "" | text -> " " ^ shown text )
 
-(* What changed in [s], a value printed after [before]. With colour the
-   spans are [style]d inside the plain value and no [~] line prints, unless
-   colour cannot show one of them; without it a [~] line marks them, when
-   [aligned]. *)
-let pp_marked ~ansi put ~aligned ~style ~before s spans =
-  let tildes = (not ansi) || not (colour_shows s spans) in
+(* What changed in [s], a value printed after [before]. The spans are
+   [style]d inside the plain value. A [~] line marks them too, when
+   [aligned], unless the colour is [seen], or colour cannot show one of
+   them. *)
+let pp_marked ~seen put ~aligned ~style ~before s spans =
+  let tildes = (not seen) || not (colour_shows s spans) in
   put (before @ highlight style s spans);
   if tildes && aligned then
     Option.iter
@@ -715,7 +715,7 @@ let pp_marked ~ansi put ~aligned ~style ~before s spans =
    that does not refine prints each side whole in its colour: so does one
    whose anchors already state the difference ([marked] is off), and one
    with an elided side, which has no columns left to mark. *)
-let pp_sides ~ansi put ~ind ~anchors:(expected_anchor, actual_anchor) ~marked
+let pp_sides ~seen put ~ind ~anchors:(expected_anchor, actual_anchor) ~marked
     ~expected ~actual =
   let gutter =
     2 + max (String.length expected_anchor) (String.length actual_anchor)
@@ -741,7 +741,7 @@ let pp_sides ~ansi put ~ind ~anchors:(expected_anchor, actual_anchor) ~marked
         plain (String.make (gutter - String.length anchor) ' ');
       ]
     in
-    if refined then pp_marked ~ansi put ~aligned ~style:span ~before value spans
+    if refined then pp_marked ~seen put ~aligned ~style:span ~before value spans
     else put (before @ [ styled whole value ])
   in
   side expected_anchor ~whole:`Green ~span:`Bold_green expected expected_spans;
@@ -780,7 +780,7 @@ let pp_text_diff put ~ind ~headers ~show ~(expected : Failure.text)
   end
 
 (* An equality's two sides, through [show]. *)
-let pp_eq ~ansi put ~ind ?(show = Fun.id) ~(expected : Failure.text)
+let pp_eq ~seen put ~ind ?(show = Fun.id) ~(expected : Failure.text)
     ~(actual : Failure.text) () =
   if whole expected actual && String.equal expected.kept actual.kept then begin
     let expected = show expected.kept in
@@ -813,7 +813,7 @@ let pp_eq ~ansi put ~ind ?(show = Fun.id) ~(expected : Failure.text)
     || String.contains (show actual.kept) '\n'
   then pp_text_diff put ~ind ~headers:true ~show ~expected ~actual
   else
-    pp_sides ~ansi put ~ind ~anchors:("expected", "actual") ~marked:true
+    pp_sides ~seen put ~ind ~anchors:("expected", "actual") ~marked:true
       ~expected:(show (shown_text expected))
       ~actual:(show (shown_text actual))
 
@@ -829,11 +829,11 @@ let pp_value_block put ~ind style value =
 (* The sides of a [raises] that named its exception; [actual] is [None]
    when nothing was raised. The anchors state the difference, so nothing is
    marked; a rendering that spans lines is a block under its anchor. *)
-let pp_raise ~ansi put ~ind ~expected ~actual =
+let pp_raise ~seen put ~ind ~expected ~actual =
   let spans_lines s = String.contains s '\n' in
   match actual with
   | Some actual when not (spans_lines expected || spans_lines actual) ->
-      pp_sides ~ansi put ~ind
+      pp_sides ~seen put ~ind
         ~anchors:("expected exception", "raised")
         ~marked:false ~expected ~actual
   | Some _ | None ->
@@ -866,8 +866,8 @@ let phase_tag (f : Failure.t) =
   | Failure.Teardown -> Some "[teardown]"
   | Failure.Release -> Some "[release]"
 
-let rec pp_gen ~ansi ~excerpt ~inner ~hints:hinted ~filter ~invocation ~armed
-    ~ind ppf (f : Failure.t) =
+let rec pp_gen ~ansi ~seen ~excerpt ~inner ~hints:hinted ~filter ~invocation
+    ~armed ~ind ppf (f : Failure.t) =
   let put spans = Pp.pf ppf "%s@\n" (render ~ansi spans) in
   let put_ind spans = put (plain ind :: spans) in
   let put_text line = put_ind [ plain line ] in
@@ -929,7 +929,7 @@ let rec pp_gen ~ansi ~excerpt ~inner ~hints:hinted ~filter ~invocation ~armed
         put_ind
           [ styled `Faint "actual"; plain "    "; styled `Red (shown value) ]
   | Failure.Equality { expected; actual; _ } ->
-      pp_eq ~ansi put ~ind ~expected ~actual ()
+      pp_eq ~seen put ~ind ~expected ~actual ()
   | Failure.Containment
       { needle; found_at; haystack_length; excerpt; excerpt_offset; demand } ->
       (* The block is the containment payload, never a fake equality diff.
@@ -974,7 +974,7 @@ let rec pp_gen ~ansi ~excerpt ~inner ~hints:hinted ~filter ~invocation ~armed
       (* The occurrence is marked as a changed span is ([pp_marked]); the
          excerpt is the evidence and prints whole. *)
       let haystack ~before line spans =
-        pp_marked ~ansi put
+        pp_marked ~seen put
           ~aligned:(aligns ~tabs:false (Text.escape_controls line))
           ~style:`Bold_red ~before:(plain ind :: before) line spans
       in
@@ -1026,10 +1026,10 @@ let rec pp_gen ~ansi ~excerpt ~inner ~hints:hinted ~filter ~invocation ~armed
           (* Right constructor, wrong payload: the messages are compared,
              the constructor said once. *)
           put_text (spf "raised %s with the wrong message:" constructor);
-          pp_eq ~ansi put ~ind ~show:(spf "%S") ~expected:expected_message
+          pp_eq ~seen put ~ind ~show:(spf "%S") ~expected:expected_message
             ~actual:actual_message ()
       | None, Some expected, actual ->
-          pp_raise ~ansi put ~ind ~expected:(shown_text expected)
+          pp_raise ~seen put ~ind ~expected:(shown_text expected)
             ~actual:(Option.map shown_text actual)
       | None, None, Some actual ->
           (* [predicate] tells a [raises_match] rejection from a test body's
@@ -1165,8 +1165,8 @@ let rec pp_gen ~ansi ~excerpt ~inner ~hints:hinted ~filter ~invocation ~armed
             (match i.Failure.loc with
             | Some _ -> "which failed at:"
             | None -> "which failed with:");
-          pp_gen ~ansi ~excerpt ~inner:true ~hints:false ~filter ~invocation
-            ~armed ~ind:(ind ^ "  ") ppf i
+          pp_gen ~ansi ~seen ~excerpt ~inner:true ~hints:false ~filter
+            ~invocation ~armed ~ind:(ind ^ "  ") ppf i
       | None -> ())
   | Failure.Timeout { limit; case } -> put_text (timeout_fact ~limit case)
   | Failure.Message m -> (
@@ -1175,10 +1175,13 @@ let rec pp_gen ~ansi ~excerpt ~inner ~hints:hinted ~filter ~invocation ~armed
       | m -> List.iter put_text (Text.split_lines m)));
   if hinted then List.iter put_text (hints ?armed ~invocation ~filter [ f ])
 
-let pp_failure ~ansi ?(excerpt = false) ?(hints = true) ?filter
-    ?(invocation = `Mirrors) ?armed ppf f =
-  pp_gen ~ansi ~excerpt ~inner:false ~hints ~filter ~invocation ~armed
-    ~ind:indent ppf f
+(* Colour alone shows a changed span only on a terminal a reader watches:
+   elsewhere the escapes may be stripped (dune strips an action's output
+   when its own is no terminal) or read raw. *)
+let pp_failure ~ansi ?(terminal = false) ?(excerpt = false) ?(hints = true)
+    ?filter ?(invocation = `Mirrors) ?armed ppf f =
+  pp_gen ~ansi ~seen:(ansi && terminal) ~excerpt ~inner:false ~hints ~filter
+    ~invocation ~armed ~ind:indent ppf f
 
 (* Sub-case entries carry their identity as data (Run.subtest fills the
    [subtest] components); the msg text is never consulted. *)
