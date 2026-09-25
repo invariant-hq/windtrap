@@ -1,7 +1,7 @@
 # Architecture
 
 For maintainers. The user contract is `lib/windtrap.mli`; this file is
-the map of what sits behind it — the packages, the modules, and the
+the map of what sits behind it: the packages, the modules, and the
 twelve guarantees the design holds. Layout is described here, not
 legislated: files may move as long as the guarantees hold.
 
@@ -9,9 +9,10 @@ legislated: files may move as long as the guarantees hold.
 
 **Every test outcome flows into one `Run.t` record as typed
 `Failure.t` data; every byte of output leaves that record through the
-report.** Producers — the assertion verbs (`Check`), the property engine
-(`Property`), baseline checking (`Baseline`), capture, the executor
-(`Run`) — construct failure data and write it into the run record. The
+report.** The producers construct failure data and write it into the
+run record: the assertion verbs (`Check`), the property engine
+(`Property`), baseline checking (`Baseline`), capture and the executor
+(`Run`). The
 report (`Report`, `Report_sections`, `Report_junit`) is a pure
 projection of that record: styling, diffing and truncation exist only
 there, and no projection can alter status, counts or scheduling. No
@@ -20,16 +21,16 @@ every "where does this go?" question.
 
 Two second-order waists, both public:
 
-- `'a Testable.t` — printer + equality, the assertion-side witness;
-- `'a Gen.t` — generation + shrinking + printing, inseparable, the
+- `'a Testable.t`: printer + equality, the assertion-side witness;
+- `'a Gen.t`: generation + shrinking + printing, inseparable, the
   property-side witness.
 
 They never merge again (that was v1's mistake).
 
 One run record, one ambient slot. Core modules operate on explicit
 state values (`Capture.output st`, `Baseline.check st …`); `Run`
-aggregates the instances; the ambient-reading wrappers — `output ()`,
-`expect`, `collect`, the fixture accessors — live in the facade, which
+aggregates the instances; the ambient-reading wrappers (`output ()`,
+`expect`, `collect`, the fixture accessors) live in the facade, which
 reads `Run.current ()` and dispatches. Keeping the slot the only
 ambient thing is what would make a parallel runner an extension rather
 than a rewrite.
@@ -38,7 +39,7 @@ than a rewrite.
 
 | unit | depends on | contents |
 | --- | --- | --- |
-| `windtrap` | stdlib, unix, its own C stubs, `windtrap.runtime` | the library: one wrapped library, `windtrap.mli` the whole contract, the mutation loop; the runtime is linked for the loop alone — no run reads the coverage registry |
+| `windtrap` | stdlib, unix, its own C stubs, `windtrap.runtime` | the library: one wrapped library, `windtrap.mli` the whole contract, the mutation loop; the runtime is linked for the loop alone, and no run reads the coverage registry |
 | `windtrap.runtime` | stdlib | the one runtime every instrumented closure links, through both backends' `ppx_runtime_libraries`: `Windtrap_runtime.Coverage` (registration, the `.coverage` dump, report data), `Windtrap_runtime.Mutate` (the catalogue, the arming guard, the reach map), `Windtrap_runtime.Verdicts` (the verdict lattice and the `.mutants` format) and `Windtrap_runtime.Instr` (the versioned, executable-identified file plumbing both formats share). It reads no environment variable but `WINDTRAP_COVERAGE_FILE`; which mutants a run tests and which one it arms are the core's to resolve (`--mutate`, `--arm`) and hand down |
 | `windtrap` (binary) | `windtrap`, `windtrap.runtime` | `coverage [--min N] [--expect PATH] [--json] [--lcov] [-u] [PATH…]` and `mutants [PATH…]`: merge data files and render, never run a test or drive a build; every remedy they print says what to do in words rather than spelling a build tool's command |
 | `ppx_windtrap` | ppxlib | the expect and inline-test rewriter, a desugaring into `test`, `group`, `tags`, `expect`, `expect_exact` and `output`; `ppx_runtime_libraries windtrap ppx_windtrap.runtime ppx_windtrap.config`; the `inline_tests.backend` whose generated main calls `run --corrected` |
@@ -46,7 +47,7 @@ than a rewrite.
 | `ppx_windtrap.config` | nothing | the one-module library whose module is the top-level `Expect_test_config` (`run` and `sanitize`) generated code names unqualified |
 | `ppx_windtrap.coverage`, `ppx_windtrap.mutate` | ppxlib | the two instrumentation backends, each naming itself, in its own directory under `ppx/`; `ppx_runtime_libraries windtrap.runtime` |
 
-Two opam packages — the ppxlib boundary forces the second — seven
+Two opam packages (the ppxlib boundary forces the second), seven
 libraries, one binary. Every library is wrapped; the instrumenters emit
 `Windtrap_runtime.Coverage.…` and `Windtrap_runtime.Mutate.…` paths.
 
@@ -61,8 +62,8 @@ coupling is one dispatch call at run entry and one composed observer on
 reports arrive as the subsystem-neutral section vocabulary (labelled
 rules, rows, source excerpts), so shared layout has one home. The
 mutation loop and the `mutants` subcommand each build their own
-`Report_sections.mutation` record — one scoped to a suite, one to the
-merge — and draw it through the same projection, so the interactive
+`Report_sections.mutation` record, one scoped to a suite and one to the
+merge, and draw it through the same projection, so the interactive
 report and the aggregate cannot drift apart.
 
 ## Modules (`lib/`)
@@ -74,8 +75,8 @@ report and the aggregate cannot drift apart.
 | `Testable`, `Check`, `Failure`, `Diff` | witnesses; the verbs, pure, with no run-state dependency; failure data (typed kinds, phase, location, output tail, the `Check_failure` and `Control` exceptions); diff data (Myers hunks and character-refinement spans, no styling) |
 | `Gen` (with `Gen.Engine.Shrink_tree`), `Property`, `Stateful` | generators; the case loop (examples first, per-case seeds, the discard budget, the shrink search, label tables); commands and programs, compiled into properties |
 | `Baseline`, `Source_patch`, `Capture` | the correction registry keyed by site or path, read-only checking, corrections gated per test and written once as `.corrected` files or in place; literal rewriting inside a source file; fd-level capture into per-test log files |
-| `Cli`, `Run`, `Report`, `Report_sections`, `Report_junit` | one declarative item table — flags and flagless settings — resolved once into the one `Run.config`, each mirror declared beside its flag and read through the flag's parser; the run record and the ambient slot, the sequential executor (startup checks, selection, the per-test boundary, SIGALRM timeouts, retries, fixture release, the last-failed store, the exit guard, the exit codes), which prints nothing and emits typed events; the transcript, the GitHub envelope and `Report.run` — execute, reported; the failure projection every transport shares and the section vocabulary the coverage and mutation reports project into; the JUnit document and its file |
-| `Mutate_loop` | the dry run and its reach map, the scope applied to the population it forks over, the determinism probe, the fork loop — one child per reached mutant, each running only the tests that reach it — the verdict file, the per-executable report. It wraps `Report.run` rather than sitting beside it, because a mutation run must announce an armed mutant before any other output and fork after the dry run |
+| `Cli`, `Run`, `Report`, `Report_sections`, `Report_junit` | one declarative item table (flags and flagless settings) resolved once into the one `Run.config`, each mirror declared beside its flag and read through the flag's parser; the run record and the ambient slot, the sequential executor (startup checks, selection, the per-test boundary, SIGALRM timeouts, retries, fixture release, the last-failed store, the exit guard, the exit codes), which prints nothing and emits typed events; the transcript, the GitHub envelope and `Report.run`, execute reported; the failure projection every transport shares and the section vocabulary the coverage and mutation reports project into; the JUnit document and its file |
+| `Mutate_loop` | the dry run and its reach map, the scope applied to the population it forks over, the determinism probe, the fork loop (one child per reached mutant, each running only the tests that reach it), the verdict file, the per-executable report. It wraps `Report.run` rather than sitting beside it, because a mutation run must announce an armed mutant before any other output and fork after the dry run |
 | `Os`, `Pp`, `Text`, `Loc`, `Seed` | the clock, environment reading and its value vocabularies, atomic files, the project root and build-copy resolution; style-aware `Format` helpers; newline, UTF-8 and substring utilities; `pos` and backtrace-derived attribution; SplitMix64, `s1:` tokens and the `(root, path, index)` derivation |
 
 The rows group by role, not by layer: `Os`, `Pp`, `Text`, `Loc` and
@@ -91,15 +92,15 @@ carries no stability guarantee, and nothing in it escapes into scope on
 
 One runner. The facade's `run` resolves one invocation into the one
 `Run.config` (`Cli.settings`, plus the argv-derived invocation the
-hints spell), calls `Mutate_loop.execute_and_report` — which in every
+hints spell), calls `Mutate_loop.execute_and_report` (which in every
 uninstrumented build, every `--list` run, and every instrumented build
 the configuration asked nothing of *is* `Report.run`, same transcript,
-same bytes — and adds only what is its own: the `--list` listing, the
+same bytes) and adds only what is its own: the `--list` listing, the
 focus warning and the exit code. `Report.run` is `Run.execute` observed
 by the transcript, inside the GitHub envelope when the configuration
 says so, followed by the blocks, the baseline report, the annotations
-and the JUnit file. A `--corrected` run — a stanza's action or the
-inline runner — spells its hints as the mirrors and its acceptance as
+and the JUnit file. A `--corrected` run, a stanza's action or the
+inline runner, spells its hints as the mirrors and its acceptance as
 `dune promote`, whatever argv says. The inline runner is that same
 `run` under `--corrected`, one suite per partition: `Ppx_runtime` keeps
 the module-load registry the generated code fills, parses dune's
@@ -114,7 +115,7 @@ module.
 **Run.**
 
 - `Run.for_subset`, which a mutation child runs under, clears the
-  path-selecting knobs — `filter`, `exclude`, `shard`, `failed_only` —
+  path-selecting knobs (`filter`, `exclude`, `shard`, `failed_only`)
   and keeps the tag knobs and the root seed: the child's allowlist is
   its parent's selection already applied, an allowlist cannot express a
   tag, and per-case seeds derive from root, path and index. A new
@@ -122,10 +123,9 @@ module.
   its parent's tree already applied, which is how a deterministic suite
   comes to look non-deterministic.
 - `Run.active_run_error` is one string because three already-active
-  checks are separately load-bearing — the executor's two halves, and
-  the facade's, which must fire before `Cli.parse` can exit on `--help`
-  — and the sentence a nested `run` gets must not depend on which one
-  saw it first.
+  checks each matter: the executor's two halves, and the facade's, which
+  must fire before `Cli.parse` can exit on `--help`. The sentence a
+  nested `run` gets must not depend on which one saw it first.
 - A result row is a test's, always. A failed fixture release belongs to
   no test: it rides the outcome (`Run.outcome.release_failures`), and
   every sink of a finished run (`Report.finish`, `Report.annotations`,
@@ -144,7 +144,7 @@ which the runner puts under every user callback: a failing call whose
 own frame was consumed by tail calls yields `None`, never the line that
 called the runner, and the executor then attributes the failure to the
 test's declaration. The delimiter is recognized by its debug name and
-pinned — never inlined, `fn` not called in tail position. `to_string`
+pinned: never inlined, `fn` not called in tail position. `to_string`
 omits the column: it is identity data (`Loc.equal`), not an editor-jump
 target.
 
@@ -169,7 +169,7 @@ a lossy `%g` spelling is asked for at the call site.
 
 - Child hygiene. A forked child never reaches `Stdlib`'s exit
   machinery: every exception, fatal included, is caught, reduced to a
-  verdict line and followed by `Unix._exit` — otherwise a child dying of
+  verdict line and followed by `Unix._exit`; otherwise a child dying of
   `Out_of_memory` would run the coverage at-exit dump against a path
   resolved before the fork and overwrite the parent's `.coverage`. For
   the same reason the parent removes each child's log directory
@@ -191,10 +191,9 @@ a lossy `%g` spelling is asked for at the call site.
 
 **The runtime (`Windtrap_runtime.Mutate`, `.Coverage`).**
 
-- Uncatalogued is separate from unmatched. One `--arm` identifier is
-  handed to every test executable of a project at once — the aggregate's
-  reproduce line has no single binary to name — and most were built from
-  other sources; such an executable holds no site of that file, produces
+- Uncatalogued is separate from unmatched. `WINDTRAP_MUTATE_ARM` hands
+  one identifier to every test executable of a project at once, and most
+  were built from other sources; such an executable holds no site of that file, produces
   no verdict and hides nothing by running on. Only the registry can tell
   "no site of this file" from "this file, wrong site", so it reports
   both and the loop refuses only the latter.
@@ -214,8 +213,8 @@ a lossy `%g` spelling is asked for at the call site.
 
 ## The twelve guarantees
 
-Each is pinned by a test; changing one is a design decision, recorded
-here first.
+Each is pinned by the tests that `testing.md` names under "What pins
+the guarantees"; changing one is a design decision, recorded here first.
 
 1. **Checking never writes to the source tree.** `-u` writes in place,
    atomically, and is refused under `CI`; `--corrected` writes
