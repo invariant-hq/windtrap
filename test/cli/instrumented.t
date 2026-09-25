@@ -15,14 +15,15 @@ forks, and Windows refuses it.
 A mutation run writes no JUnit file: its output is the verdict on the
 mutants, not an outcome of the tests. The run selects its one test by
 name, and both runs keep their logs under -o, so that neither writes
-into the build directory the session runs in.
+into the build directory the session runs in. What windtrap says about
+the verdict file goes on standard error, above the outcome line, which
+stays the last line when the two streams are one:
 
-  $ run ./mutant_main.exe --mutate -f adds -o logs --junit loop.xml > out 2> err
+  $ run ./mutant_main.exe --mutate -f adds -o logs --junit loop.xml > out 2>&1
   $ scrub < out
   mutant: 1 passed in DURATION.
-  mutants: 1 reached by the 1 selected test, 1 killed
-  $ cat err
   windtrap: verdicts not saved: this run's selection narrows the suite, and a partial run's verdicts would stand in the project merge as the whole.
+  mutants: 1 reached by the 1 selected test, 1 killed
   $ test -e loop.xml || echo 'no report'
   no report
 

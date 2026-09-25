@@ -76,8 +76,9 @@ val execute_and_report : suite:string -> Run.config -> Test_tree.t list -> run
       never forks an unreached one. The report prints as the loop runs
       ({!Report.mutation_testing}, {!Report.mutation_survivor}).
     + When the last child has ended it writes the verdict file. It then ends the
-      report ({!Report.mutation_finish}), says on standard error what it has to
-      say about the file, and returns [Reported 0].
+      report ({!Report.mutation_finish}), saying on standard error what it has
+      to say about the file just above the outcome line, and returns
+      [Reported 0].
 
     {b Children.} A child runs {!Run.execute} over {!Run.for_subset} of
     [config], with the reaching tests of its mutant as the allowlist. It checks
@@ -108,13 +109,13 @@ val execute_and_report : suite:string -> Run.config -> Test_tree.t list -> run
     outside it stay when the file there was written by this build
     ({!Windtrap_runtime.Verdicts.writer_identity}), and are dropped otherwise. A
     file that cannot be written ([Sys_error]) is one sentence on standard error
-    after the report, and the result is still [Reported 0].
+    above the outcome line, and the result is still [Reported 0].
 
     Only a loop that ran whole, over the whole suite, writes it. A run whose
-    selection narrows the suite writes none and says so on standard error after
-    the report. [filter], [exclude], [tags], [exclude_tags], [failed_only],
-    [shard] and an active focus narrow the suite. The scope of [--mutate] does
-    not.
+    selection narrows the suite writes none and says so on standard error above
+    the outcome line. [filter], [exclude], [tags], [exclude_tags],
+    [failed_only], [shard] and an active focus narrow the suite. The scope of
+    [--mutate] does not.
 
     {b Refusals.} Each of these is [Reported 1] with one sentence on standard
     error ({!Os.say}). The first six are tried in this order, and the last has

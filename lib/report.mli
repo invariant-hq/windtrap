@@ -367,12 +367,14 @@ val mutation_survivor : t -> Report_sections.survivor -> unit
     [s], flushed. The first call precedes the block by the rule that opens the
     survivors, which carries no count. A block has no column of executables. *)
 
-val mutation_finish : t -> Report_sections.mutation -> unit
-(** [mutation_finish t m] ends the report of a loop with
+val mutation_finish : ?note:string -> t -> Report_sections.mutation -> unit
+(** [mutation_finish ?note t m] ends the report of a loop with
     {!Report_sections.mutation_closing} of [m] under the configuration of [t],
     flushed. [m.survivors] must be the survivors that {!mutation_survivor} was
     given, in order. The closing rule prints iff that list is not empty,
-    whatever [t] committed, and [reproduce:] arms its first. *)
+    whatever [t] committed, and [reproduce:] arms its first. [note] is said on
+    standard error ({!Os.say}) after [out] is flushed and before the outcome
+    line, so the outcome line is the last line of the two streams. *)
 
 val mutation_refused : t -> string -> unit
 (** [mutation_refused t message] erases the live line, flushes [out] and says

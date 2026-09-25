@@ -939,7 +939,7 @@ let loop renderer ~scope ~suite (config : Run.config) tests =
             (* The signals are handled from before the scratch root exists
                until the verdict file is written: a complete loop has its
                file whatever becomes of its report, and what windtrap says
-               about the file is held until the report is out. A narrowed
+               about the file is held for the line above the outcome. A narrowed
                run's verdicts are never persisted, nor a stopped run's:
                neither is the executable's whole answer. *)
             let forks =
@@ -1017,9 +1017,8 @@ let loop renderer ~scope ~suite (config : Run.config) tests =
                     match interrupt.signal with
                     | Some signal when signal = Sys.sigpipe -> die_by signal
                     | late -> (
-                        Report.mutation_finish renderer report;
+                        Report.mutation_finish ?note:unsaved renderer report;
                         flush_descriptors ();
-                        Option.iter (note "%s") unsaved;
                         match late with
                         | Some signal -> die_by signal
                         | None -> Reported 0)))))

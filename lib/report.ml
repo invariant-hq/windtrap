@@ -1020,8 +1020,16 @@ let mutation_survivor t survivor =
     @ Sections.survivor_block ~exe_width:None survivor);
   t.survivors <- t.survivors + 1
 
-let mutation_finish t m =
-  sections t (Sections.mutation_closing ~config:t.config m)
+(* A note is said just above the outcome line, which stays the last line
+   whether the two streams share a terminal or not. *)
+let mutation_finish ?note t m =
+  let closing = Sections.mutation_closing ~config:t.config m in
+  match (note, List.rev closing) with
+  | Some note, outcome :: rest ->
+      sections t (List.rev rest);
+      Os.say note;
+      sections t [ outcome ]
+  | None, _ | Some _, [] -> sections t closing
 
 (* Windtrap's own word goes to standard error, past [t.out]: the live
    display is erased before it. *)

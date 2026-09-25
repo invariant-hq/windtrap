@@ -726,9 +726,9 @@ and the bullets below say what each area does now and why.
   the selected tests reach, reports in full, and writes no verdict file,
   which it says on standard error (`windtrap: verdicts not saved: this
   run's selection narrows the suite, and a partial run's verdicts would
-  stand in the project merge as the whole.`), the report ending on its
-  `mutants:` line. A
-  per-executable run exits 0 whatever it finds. Four operators: `neg`,
+  stand in the project merge as the whole.`) just above the `mutants:`
+  line, so the outcome line stays last when the two streams share a
+  terminal. A per-executable run exits 0 whatever it finds. Four operators: `neg`,
   `cmp` (comparisons in a boolean context), `con`, `ari`. Equivalent
   mutants are dismissed in the source with `[@mutate off "reason"]` in the
   four spellings the coverage attribute uses; there is no suppression

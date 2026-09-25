@@ -189,7 +189,7 @@ run lists the mutants its tests never reached and saves no verdict.
 <!-- run examples/08-mutation/instrumented as examples/08-mutation -->
 ```
 $ dune exec --instrument-with ppx_windtrap.mutate examples/08-mutation/test_calc.exe -- --mutate=examples/08-mutation/calc.ml -f "stays positive"
-calc: 1 passed in 0.4ms.
+calc: 1 passed in 0.5ms.
 
 ─────────────────────── survivors ────────────────────────
   SURVIVED  examples/08-mutation/calc.ml:6:11:add  a - b → a + b
@@ -204,8 +204,8 @@ calc: 1 passed in 0.4ms.
 ──────────────────────────────────────────────────────────
 
 reproduce: dune exec --instrument-with ppx_windtrap.mutate examples/08-mutation/test_calc.exe -- --arm examples/08-mutation/calc.ml:6:11:add -f 'stays positive'
-mutants: 1 survived of 1 reached by the 1 selected test, 4 never reached
 windtrap: verdicts not saved: this run's selection narrows the suite, and a partial run's verdicts would stand in the project merge as the whole.
+mutants: 1 survived of 1 reached by the 1 selected test, 4 never reached
 ```
 
 ## What a survey runs
