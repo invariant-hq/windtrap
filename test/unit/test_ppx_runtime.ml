@@ -66,6 +66,16 @@ let () =
              guard's [at_exit] handler turns this [0] into a [2]. *)
           add ~file:"a.ml" "never driven" ignore;
           Stdlib.exit 0
+      | "undriven-files", [] ->
+          (* The diagnostic names each file of no library once, sorted,
+             whether a test or a group registered it. *)
+          add ~file:"src/b.ml" "one" ignore;
+          add ~file:"a.ml" "two" ignore;
+          add ~file:"a.ml" "three" ignore;
+          add ~library:"lib" ~file:"c.ml" "the library's" ignore;
+          Ppx_runtime.enter_group ~file:"g.ml" ~tags:[] "G";
+          Ppx_runtime.leave_group ();
+          Stdlib.exit 0
       | "undriven-exit-1", [] ->
           add ~file:"a.ml" "never driven" ignore;
           Stdlib.exit 1
@@ -80,6 +90,9 @@ let () =
           (try ignore (Ppx_runtime.collect ()) with Invalid_argument _ -> ());
           Stdlib.exit 0
       | "no-init", [] -> Ppx_runtime.exit ()
+      | "list-by-hand", [] ->
+          add ~file:"a.ml" "t" ignore;
+          run_protocol [ "-list-partitions" ]
       | "bad-mirror", [] ->
           Unix.putenv "WINDTRAP_TIMEOUT" "banana";
           add ~file:"a.ml" "t" ignore;
@@ -262,6 +275,23 @@ let () =
   check_paths "outside a runner only the registrations of no library are kept"
     ~expected:[ "Own › own" ] (Ppx_runtime.collect ())
 
+let () =
+  (* -partition filters outside the runner mode too, and a group of a
+     library lands at its library's top level whatever is open around the
+     tests it holds. *)
+  add ~file:"src/alpha.ml" "a" ignore;
+  add ~file:"src/beta.ml" "b" ignore;
+  Ppx_runtime.init [| "main"; "-partition"; "beta.ml" |];
+  check_paths "-partition without a runner keeps one file's registrations"
+    ~expected:[ "Beta › b" ] (Ppx_runtime.collect ());
+  Ppx_runtime.enter_group ~library:"dep" ~file:"dep.ml" ~tags:[] "G";
+  add ~file:"own.ml" "in dep's group" ignore;
+  Ppx_runtime.leave_group ();
+  add ~file:"own.ml" "own" ignore;
+  Ppx_runtime.init [| "runner"; "inline-test-runner"; "lib" |];
+  check_paths "a group registers under the library enter_group named"
+    ~expected:[ "Own › own" ] (Ppx_runtime.collect ())
+
 (* exit, on a child *)
 
 let () =
@@ -385,6 +415,28 @@ let () =
         (Sys.file_exists
            (Filename.concat junit
               (Windtrap.Private.Os.sanitize_component "lib/a.ml" ^ ".xml"))))
+
+let () =
+  let code, out, err = spawn_child [ "--child"; "undriven-files" ] in
+  check_int "an unclaimed registry of several files exits 2" ~expected:2
+    ~actual:code;
+  check_string "the guard writes nothing on stdout" ~expected:"" ~actual:out;
+  check_string "the diagnostic names the files of no library, once"
+    ~expected:
+      "windtrap: registered inline tests were never driven: this executable \
+       links ppx_windtrap-preprocessed test code of no library (a.ml, b.ml, \
+       g.ml) and nothing ran it.\n\
+       windtrap: move the tests into a library stanza with (inline_tests), \
+       whose inline runner dune builds and drives, or drive the runner \
+       protocol yourself (Ppx_windtrap_runtime.Ppx_runtime.init/exit). Exiting \
+       2: nothing ran.\n"
+    ~actual:err
+
+let () =
+  let code, out, err = spawn_child [ "--child"; "list-by-hand" ] in
+  check_int "-list-partitions outside the runner mode exits 0" ~expected:0
+    ~actual:code;
+  check_string "and lists nothing" ~expected:"" ~actual:(out ^ err)
 
 let () =
   let code, _, err = spawn_child [ "--child"; "undriven-exit-1" ] in
