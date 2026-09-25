@@ -93,3 +93,23 @@
   (<> %{os_type} Win32))
  (action
   (diff baselines.md baselines.md.corrected)))
+
+(rule
+ (enabled_if
+  (<> %{os_type} Win32))
+ (deps
+  (alias_rec %{workspace_root}/examples/06-resources-and-structure/all)
+  (source_tree %{workspace_root}/examples/06-resources-and-structure))
+ (action
+  (with-stdout-to
+   resources-and-structure.md.corrected
+   (run
+    %{exe:../transcript/transcript.exe}
+    %{dep:resources-and-structure.md}))))
+
+(rule
+ (alias runtest)
+ (enabled_if
+  (<> %{os_type} Win32))
+ (action
+  (diff resources-and-structure.md resources-and-structure.md.corrected)))
