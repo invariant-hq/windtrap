@@ -55,9 +55,10 @@ with the re-measured numbers (`testing.md`, "The conformance corpus").
 
 ## Cutting the release
 
-1. `CHANGES.md`: finalize the entry (user-visible changes, migration
-   notes, conformance and coverage number movements). First line names the
-   version and date.
+1. `CHANGES.md`: rename `## Unreleased` to `## vX.Y.Z YYYY-MM-DD` and
+   write the highlights above the areas (see `changelog.md`), with a line
+   for any conformance count that moved. The heading is the first line of
+   the file.
 2. Bump nothing in source: the version comes from the git tag
    (`dune-release` and dune substitute it). Opam metadata lives in
    `dune-project` (`generate_opam_files`); if it changed, `dune build`
