@@ -281,12 +281,15 @@ dune build @self-cover --instrument-with ppx_windtrap.coverage
 WINDTRAP_MUTATE=1 dune build @self-mutate --force --instrument-with ppx_windtrap.mutate
 ```
 
-Their shape: `(alias_rec ../runtest)` runs every stanza in the tree
-first, because `.coverage` and `.mutants` files are written by test
-executables at exit and are not declarable dependencies, so nothing else
-can express "after every suite has run"; `../runtest` rather than
-`runtest`, because the merges read every dump under `_build` and
-`examples/` carries instrumented libraries of its own; and `(universe)`
+Their shape: `(alias_rec runtest)` and `(alias_rec ../examples/runtest)`
+run every test family and every example first, because `.coverage` and
+`.mutants` files are written by test executables at exit and are not
+declarable dependencies, so nothing else can express "after every suite
+has run"; the examples too, because the merges read every dump under
+`_build` and `examples/` carries instrumented libraries of its own; not
+the manual's and the README's transcript checks, which state what the
+plain build prints and would read an instrumented core's points and
+mutants as drift; and `(universe)`
 re-runs the milliseconds-cheap merge on every build, without which the
 action caches against nothing and silently goes stale. The mutation
 command carries the variable because a verdict file exists only when a

@@ -1,12 +1,14 @@
-; Windtrap's own verdicts, opt-in and tree-wide: the merges read every
-; dump under _build, so the run half is ../runtest, and (universe) makes
-; the cheap aggregate re-run on every build. See doc/dev/testing.md,
-; "Windtrap under its own instrumentation".
+; Windtrap's own verdicts, opt-in: the run half is every test family and
+; every example (the merges read every dump under _build), never the
+; transcript checks of doc/ and README.md, which state the plain build;
+; (universe) makes the cheap aggregate re-run on every build. See
+; doc/dev/testing.md, "Windtrap under its own instrumentation".
 
 (rule
  (alias self-cover)
  (deps
-  (alias_rec ../runtest)
+  (alias_rec runtest)
+  (alias_rec ../examples/runtest)
   (universe))
  (action
   (run %{bin:windtrap} coverage --min 84)))
@@ -14,7 +16,8 @@
 (rule
  (alias self-mutate)
  (deps
-  (alias_rec ../runtest)
+  (alias_rec runtest)
+  (alias_rec ../examples/runtest)
   (universe))
  (action
   (run %{bin:windtrap} mutants)))
