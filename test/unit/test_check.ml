@@ -1054,6 +1054,14 @@ let tests =
             equal ~msg:"raises: constructors that differ have no message diff"
               string "none"
               (describe_message_diff diff));
+        raise_message_diff "raises: two constructors that carry messages"
+          (fun () ->
+            Check.raises (Invalid_argument "index 3") (fun () ->
+                failwith "index 4"))
+          (fun diff ->
+            equal ~msg:"raises: messages under two constructors are not diffed"
+              string "none"
+              (describe_message_diff diff));
         raise_message_diff "raises: same user constructor, non-string payload"
           (fun () ->
             Check.raises (Payload (1, "x")) (fun () -> raise (Payload (1, "y"))))

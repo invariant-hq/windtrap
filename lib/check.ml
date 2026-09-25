@@ -7,173 +7,104 @@ type pos = Loc.pos
 type 'a printer = Format.formatter -> 'a -> unit
 type 'a testable = 'a Testable.t
 
-(* Failure construction
-
-   Every failing verb builds one Failure.t and raises Check_failure. The
-   location comes from Loc.resolve: [?__POS__] wins, else call-stack capture,
-   else none. Payload strings are bounded by the Failure constructors. *)
-
-let fail_equality ?__POS__ ?msg ?not_ ~expected ~actual () =
+(* Each payload has one raising helper, which resolves the location within
+   the verb's call, as [Loc.capture] requires. *)
+let fail_equality ?__POS__ ?msg ?not_ ~expected actual =
   raise
     (Failure.Check_failure
        (Failure.equality ?loc:(Loc.resolve ?__POS__ ()) ?msg ?not_ ~expected
           ~actual ()))
 
-(* Shared by the verbs whose expected side is a claim: [satisfies], [mem],
-   [require_match] and the four ordering verbs. The claim is the whole of the
-   difference between them. *)
 let fail_predicate ?__POS__ ?msg ~claim value =
   raise
     (Failure.Check_failure
        (Failure.predicate ?loc:(Loc.resolve ?__POS__ ()) ?msg ~claim value))
 
-let fail_raise ?__POS__ ?msg ?expected ?actual ?predicate ?backtrace
-    ?message_diff () =
-  raise
-    (Failure.Check_failure
-       (Failure.raised ?loc:(Loc.resolve ?__POS__ ()) ?msg ?expected ?actual
-          ?predicate ?backtrace ?message_diff ()))
-
-(* The rejected side of a shape assertion, when the caller supplied a
-   printer for it: four verbs render "the branch you did not want" the same
-   way, and the fallback token is [Testable.of_equal]'s, for one
-   unprintable-value spelling across the library. *)
-let render_or_abstract pp v =
+(* The rejected side of a shape verb, through its [?pp] when it has one. *)
+let rendering pp v =
   match pp with Some pp -> Pp.to_string pp v | None -> Pp.abstract
 
-(* Comparisons *)
+(* Equalities *)
 
 let equal ?__POS__ ?msg t expected actual =
   if not (Testable.equal t expected actual) then
     fail_equality ?__POS__ ?msg
       ~expected:(Testable.to_string t expected)
-      ~actual:(Testable.to_string t actual)
-      ()
+      (Testable.to_string t actual)
 
+(* Both sides hold [a]'s rendering: a tolerance can equate two values that
+   print differently. *)
 let not_equal ?__POS__ ?msg t a b =
   if Testable.equal t a b then
-    (* One rendering, stored on both sides: the witness equality may be
-       coarser than printing (float tolerance), and renderers print the
-       value once. *)
     let rendered = Testable.to_string t a in
-    fail_equality ?__POS__ ?msg ~not_:true ~expected:rendered ~actual:rendered
-      ()
-
-(* Booleans *)
+    fail_equality ?__POS__ ?msg ~not_:true ~expected:rendered rendered
 
 let is_true ?__POS__ ?msg b =
-  if not b then fail_equality ?__POS__ ?msg ~expected:"true" ~actual:"false" ()
+  if not b then fail_equality ?__POS__ ?msg ~expected:"true" "false"
 
 let is_false ?__POS__ ?msg b =
-  if b then fail_equality ?__POS__ ?msg ~expected:"false" ~actual:"true" ()
+  if b then fail_equality ?__POS__ ?msg ~expected:"false" "true"
 
-(* String containment *)
-
-let fail_containment ?__POS__ ?msg ?found_at ~demand ~needle ~haystack () =
-  raise
-    (Failure.Check_failure
-       (Failure.containment ?loc:(Loc.resolve ?__POS__ ()) ?msg ?found_at
-          ~demand ~needle ~haystack ()))
-
-let contains ?__POS__ ?msg ~sub haystack =
-  match Text.first_occurrence ~pattern:sub haystack with
-  | Some _ -> ()
-  | None ->
-      fail_containment ?__POS__ ?msg ~demand:Failure.Anywhere ~needle:sub
-        ~haystack ()
-
-(* Each element is searched for from the end of the previous element's
-   match, so the chain never re-uses bytes and never runs backwards. On a
-   break, [found_at] is the element's first occurrence in the WHOLE string
-   ([starts_with]'s rule) because "absent" and "present, but too early"
-   are different bugs and the second is the one the reader would otherwise
-   have to scan a long string to discover. *)
-let in_order ?__POS__ ?msg ~subs haystack =
-  if subs = [] then invalid_arg "Windtrap.in_order: subs is empty";
-  let rec walk index cursor = function
-    | [] -> ()
-    | sub :: rest -> (
-        match Text.first_occurrence ~start:cursor ~pattern:sub haystack with
-        | Some at -> walk (index + 1) (at + String.length sub) rest
-        | None ->
-            fail_containment ?__POS__ ?msg
-              ?found_at:(Text.first_occurrence ~pattern:sub haystack)
-              ~demand:(Failure.Ordered { index; resumed_at = cursor })
-              ~needle:sub ~haystack ())
-  in
-  walk 0 0 subs
-
-let not_contains ?__POS__ ?msg ~sub haystack =
-  match Text.first_occurrence ~pattern:sub haystack with
+let is_none ?__POS__ ?msg ?pp = function
   | None -> ()
-  | Some found_at ->
-      fail_containment ?__POS__ ?msg ~found_at ~demand:Failure.Anywhere
-        ~needle:sub ~haystack ()
+  | Some v ->
+      fail_equality ?__POS__ ?msg ~expected:"None" ("Some " ^ rendering pp v)
 
-(* Prefix and suffix are containment with a position demanded. Reporting
-   the affix's first occurrence when there is one is the whole value here:
-   "not found" and "found, but at byte 12" are different bugs, and the
-   second is the one a reader would otherwise stare at a long string to
-   discover. *)
+(* Unwrapping *)
 
-let starts_with ?__POS__ ?msg ~affix haystack =
-  if not (String.starts_with ~prefix:affix haystack) then
-    fail_containment ?__POS__ ?msg ~demand:Failure.Prefix
-      ?found_at:(Text.first_occurrence ~pattern:affix haystack)
-      ~needle:affix ~haystack ()
+let require_some ?__POS__ ?msg = function
+  | Some v -> v
+  | None -> fail_equality ?__POS__ ?msg ~expected:"Some _" "None"
 
-let ends_with ?__POS__ ?msg ~affix haystack =
-  if not (String.ends_with ~suffix:affix haystack) then
-    fail_containment ?__POS__ ?msg ~demand:Failure.Suffix
-      ?found_at:(Text.first_occurrence ~pattern:affix haystack)
-      ~needle:affix ~haystack ()
+let require_ok ?__POS__ ?msg ?pp = function
+  | Ok v -> v
+  | Error e ->
+      fail_equality ?__POS__ ?msg ~expected:"Ok _" ("Error " ^ rendering pp e)
 
-(* Membership is containment over a witnessed element type, so it cannot
-   reuse [Failure.Containment]. That payload is byte offsets into a
-   haystack. The claim sentence names the element, the value is the list
-   the reader has to look at. *)
+let require_error ?__POS__ ?msg ?pp = function
+  | Error e -> e
+  | Ok v ->
+      fail_equality ?__POS__ ?msg ~expected:"Error _" ("Ok " ^ rendering pp v)
+
+let is_some ?__POS__ ?msg o = ignore (require_some ?__POS__ ?msg o)
+let is_ok ?__POS__ ?msg ?pp r = ignore (require_ok ?__POS__ ?msg ?pp r)
+let is_error ?__POS__ ?msg ?pp r = ignore (require_error ?__POS__ ?msg ?pp r)
+
+let require_match ?__POS__ ?msg ?pp extract v =
+  match extract v with
+  | Some b -> b
+  | None -> fail_predicate ?__POS__ ?msg ~claim:"a match" (rendering pp v)
+
+(* Predicates *)
+
+let satisfies ?__POS__ ?msg ?(claim = "value satisfying the predicate") t pred v
+    =
+  if not (pred v) then
+    fail_predicate ?__POS__ ?msg ~claim (Testable.to_string t v)
+
+(* A [Failure.Containment] holds byte offsets into a string, so membership in
+   a list is a predicate. *)
 let mem ?__POS__ ?msg t x xs =
   if not (List.exists (Testable.equal t x) xs) then
     fail_predicate ?__POS__ ?msg
       ~claim:(Pp.str "a list containing %s" (Testable.to_string t x))
       (Testable.to_string (Testable.list t) xs)
 
-(* Predicates *)
+(* Orders *)
 
-(* [?claim] is the sentence the report puts on the expected side, so a
-   predicate that has a name gets its report back: without one the failure
-   can only say the value did not satisfy "the predicate". *)
-let satisfies ?__POS__ ?msg ?(claim = "value satisfying the predicate") t pred v
-    =
-  if not (pred v) then
-    fail_predicate ?__POS__ ?msg ~claim (Testable.to_string t v)
-
-(* Orders
-
-   The four verbs are one comparison under the witness's order, read
-   through its sign, and one predicate payload whose claim is derived from
-   the verb and the bound, the shape [satisfies ~claim] leaves the caller
-   to build, and to keep in step with the predicate, by hand. A witness
-   without an order is a programmer error: the verb raises whether or not
-   the assertion would have passed, so the mistake surfaces on the first
-   run rather than on the first failure. The witness's equality is never
-   consulted; a tolerance witness orders exactly. *)
-
-let order verb t =
+let ordered verb ~relation ~holds ?__POS__ ?msg t ~than v =
   match Testable.compare t with
-  | Some compare -> compare
   | None ->
       invalid_arg
         (Pp.str
            "Windtrap.%s: the witness has no order; give it one with \
             Testable.with_compare"
            verb)
-
-let ordered verb ~relation ~holds ?__POS__ ?msg t ~than v =
-  if not (holds (order verb t v than)) then
-    fail_predicate ?__POS__ ?msg
-      ~claim:(Pp.str "%s %s" relation (Testable.to_string t than))
-      (Testable.to_string t v)
+  | Some compare ->
+      if not (holds (compare v than)) then
+        fail_predicate ?__POS__ ?msg
+          ~claim:(Pp.str "%s %s" relation (Testable.to_string t than))
+          (Testable.to_string t v)
 
 let less ?__POS__ ?msg t ~than v =
   ordered "less" ~relation:"less than"
@@ -195,135 +126,116 @@ let at_least ?__POS__ ?msg t ~than v =
     ~holds:(fun c -> c >= 0)
     ?__POS__ ?msg t ~than v
 
-(* Options
+(* String containment *)
 
-   The shape assertions, for when the value is not wanted: a witness would
-   be a printer and an equality for a type these never compare, so they take
-   the same optional printer the unwrapping verbs do, "render the branch
-   you did not want", and nothing more. *)
+(* [found_at] is the needle's first occurrence in the whole haystack under
+   every demand: "absent" and "present, but elsewhere" are different bugs. *)
+let fail_containment ?__POS__ ?msg ~demand ~needle haystack =
+  raise
+    (Failure.Check_failure
+       (Failure.containment ?loc:(Loc.resolve ?__POS__ ()) ?msg
+          ?found_at:(Text.first_occurrence ~pattern:needle haystack)
+          ~demand ~needle ~haystack ()))
 
-let is_none ?__POS__ ?msg ?pp = function
-  | None -> ()
-  | Some v ->
-      fail_equality ?__POS__ ?msg ~expected:"None"
-        ~actual:("Some " ^ render_or_abstract pp v)
-        ()
+let contains ?__POS__ ?msg ~sub haystack =
+  if not (Text.contains_substring ~pattern:sub haystack) then
+    fail_containment ?__POS__ ?msg ~demand:Failure.Anywhere ~needle:sub haystack
 
-(* No [?pp]: the failing side is [None], which has nothing to render. *)
-let is_some ?__POS__ ?msg = function
-  | Some _ -> ()
-  | None -> fail_equality ?__POS__ ?msg ~expected:"Some _" ~actual:"None" ()
+let not_contains ?__POS__ ?msg ~sub haystack =
+  if Text.contains_substring ~pattern:sub haystack then
+    fail_containment ?__POS__ ?msg ~demand:Failure.Anywhere ~needle:sub haystack
 
-(* Unwrapping *)
+let starts_with ?__POS__ ?msg ~affix haystack =
+  if not (String.starts_with ~prefix:affix haystack) then
+    fail_containment ?__POS__ ?msg ~demand:Failure.Prefix ~needle:affix haystack
 
-let require_some ?__POS__ ?msg = function
-  | Some v -> v
-  | None -> fail_equality ?__POS__ ?msg ~expected:"Some _" ~actual:"None" ()
+let ends_with ?__POS__ ?msg ~affix haystack =
+  if not (String.ends_with ~suffix:affix haystack) then
+    fail_containment ?__POS__ ?msg ~demand:Failure.Suffix ~needle:affix haystack
 
-let require_ok ?__POS__ ?msg ?pp = function
-  | Ok v -> v
-  | Error e ->
-      fail_equality ?__POS__ ?msg ~expected:"Ok _"
-        ~actual:("Error " ^ render_or_abstract pp e)
-        ()
+let in_order ?__POS__ ?msg ~subs haystack =
+  if subs = [] then invalid_arg "Windtrap.in_order: subs is empty";
+  let rec walk index cursor = function
+    | [] -> ()
+    | sub :: rest -> (
+        match Text.first_occurrence ~start:cursor ~pattern:sub haystack with
+        | Some at -> walk (index + 1) (at + String.length sub) rest
+        | None ->
+            fail_containment ?__POS__ ?msg
+              ~demand:(Failure.Ordered { index; resumed_at = cursor })
+              ~needle:sub haystack)
+  in
+  walk 0 0 subs
 
-let require_error ?__POS__ ?msg ?pp = function
-  | Error e -> e
-  | Ok v ->
-      fail_equality ?__POS__ ?msg ~expected:"Error _"
-        ~actual:("Ok " ^ render_or_abstract pp v)
-        ()
+(* Exceptions *)
 
-(* The result-shape twins of [is_some]/[is_none]: the unwrapping verbs with
-   the payload discarded, so the two build identical failures. *)
-let is_ok ?__POS__ ?msg ?pp r = ignore (require_ok ?__POS__ ?msg ?pp r)
-let is_error ?__POS__ ?msg ?pp r = ignore (require_error ?__POS__ ?msg ?pp r)
-
-let require_match ?__POS__ ?msg ?pp extract v =
-  match extract v with
-  | Some b -> b
-  | None ->
-      fail_predicate ?__POS__ ?msg ~claim:"a match" (render_or_abstract pp v)
-
-(* Exceptions
-
-   Only an [`Exception] is compared: without that, a [raises] over code that
-   itself calls [equal] would swallow the assertion failure and report "wrong
-   exception" instead of the real error, and a [raises_match] that accepts
-   anything would hide an intercepted [exit]. *)
-
-(* The exception's constructor name and message payload, for the stdlib's
-   string-carrying exceptions, the only ones whose message a renderer can
-   diff. ([Stdlib.Failure] is qualified for the reader: windtrap's [Failure]
-   module shadows only the module namespace, not the exception
-   constructor.) *)
-let exn_message = function
-  | Invalid_argument m -> Some ("Invalid_argument", m)
-  | Stdlib.Failure m -> Some ("Failure", m)
-  | Sys_error m -> Some ("Sys_error", m)
-  | _ -> None
-
-(* The message diff, when the two exceptions differ only in their message:
-   here, where both exceptions are in hand, the constructor is named rather
-   than recovered from a rendering. *)
-let message_diff expected_exn raised =
-  match (exn_message expected_exn, exn_message raised) with
-  | Some (constructor, expected_message), Some (ctor, actual_message)
-    when String.equal constructor ctor
-         && not (String.equal expected_message actual_message) ->
-      Some
-        {
-          Failure.constructor;
-          expected_message = Failure.text expected_message;
-          actual_message = Failure.text actual_message;
-        }
-  | _ -> None
-
-let raises ?__POS__ ?msg expected_exn fn =
+(* What [fn] raised, or [None] when it returned. An assertion failure and a
+   control are raised again, so a [raises] around an [equal] reports the
+   failed [equal], and no predicate intercepts an [exit]. *)
+let raised_by fn =
   match Failure.catch fn with
-  | Ok _ ->
-      fail_raise ?__POS__ ?msg ~expected:(Failure.exn_to_string expected_exn) ()
-  | Error (`Exception (raised, backtrace)) ->
-      if raised <> expected_exn then
-        fail_raise ?__POS__ ?msg
-          ~expected:(Failure.exn_to_string expected_exn)
-          ~actual:(Failure.exn_to_string raised)
-          ~backtrace:(Failure.backtrace_to_string backtrace)
-          ?message_diff:(message_diff expected_exn raised)
-          ()
+  | Ok _ -> None
+  | Error (`Exception raised) -> Some raised
   | Error c -> Failure.reraise c
+
+(* Only [raises] names the [expected] exception, and only one unequal to the
+   [raised] one, so a shared constructor carries two different messages. *)
+let message_diff expected raised =
+  let diff constructor e a =
+    Some
+      {
+        Failure.constructor;
+        expected_message = Failure.text e;
+        actual_message = Failure.text a;
+      }
+  in
+  match (expected, raised) with
+  | Some (Invalid_argument e), Some (Invalid_argument a, _) ->
+      diff "Invalid_argument" e a
+  | Some (Stdlib.Failure e), Some (Stdlib.Failure a, _) -> diff "Failure" e a
+  | Some (Sys_error e), Some (Sys_error a, _) -> diff "Sys_error" e a
+  | _ -> None
+
+let fail_raise ?__POS__ ?msg ?expected ~predicate raised =
+  raise
+    (Failure.Check_failure
+       (Failure.raised ?loc:(Loc.resolve ?__POS__ ()) ?msg
+          ?expected:(Option.map Failure.exn_to_string expected)
+          ?actual:
+            (Option.map (fun (exn, _) -> Failure.exn_to_string exn) raised)
+          ~predicate
+          ?backtrace:
+            (Option.map (fun (_, bt) -> Failure.backtrace_to_string bt) raised)
+          ?message_diff:(message_diff expected raised)
+          ()))
+
+let raises ?__POS__ ?msg expected fn =
+  match raised_by fn with
+  | Some (exn, _) when exn = expected -> ()
+  | raised -> fail_raise ?__POS__ ?msg ~expected ~predicate:false raised
 
 let raises_match ?__POS__ ?msg pred fn =
-  match Failure.catch fn with
-  | Ok _ -> fail_raise ?__POS__ ?msg ~predicate:true ()
-  | Error (`Exception (raised, backtrace)) ->
-      if not (pred raised) then
-        fail_raise ?__POS__ ?msg ~predicate:true
-          ~actual:(Failure.exn_to_string raised)
-          ~backtrace:(Failure.backtrace_to_string backtrace)
-          ()
-  | Error c -> Failure.reraise c
+  match raised_by fn with
+  | Some (exn, _) when pred exn -> ()
+  | raised -> fail_raise ?__POS__ ?msg ~predicate:true raised
 
 module Exn = struct
-  (* The message constraint resolves once, when the predicate is built,
-     never per exception examined. An exact message is [raises (Failure m)]:
-     it holds both exceptions and so reports a message diff, which this
-     cannot. *)
-  let message_check = function
-    | Some sub -> fun m -> Text.contains_substring ~pattern:sub m
-    | None -> Fun.const true
+  let has substring m =
+    match substring with
+    | None -> true
+    | Some pattern -> Text.contains_substring ~pattern m
 
-  let invalid_arg ?substring =
-    let ok = message_check substring in
-    function Invalid_argument m -> ok m | _ -> false
+  let invalid_arg ?substring = function
+    | Invalid_argument m -> has substring m
+    | _ -> false
 
-  let failure ?substring =
-    let ok = message_check substring in
-    function Stdlib.Failure m -> ok m | _ -> false
+  let failure ?substring = function
+    | Stdlib.Failure m -> has substring m
+    | _ -> false
 
-  let sys_error ?substring =
-    let ok = message_check substring in
-    function Sys_error m -> ok m | _ -> false
+  let sys_error ?substring = function
+    | Sys_error m -> has substring m
+    | _ -> false
 end
 
 (* Escape hatches *)
