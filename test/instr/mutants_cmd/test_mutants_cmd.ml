@@ -1178,7 +1178,57 @@ let edge_tests =
         let code, _, err = mutate ~cwd:(proj ()) [ "--color"; "never" ] in
         equal ~msg:"there is no --color flag" int 2 code;
         contains ~msg:"it is an unknown option" ~sub:"unknown option '--color'"
+          err;
+        let absent = scratch "absent.mutants" in
+        let code, _, err = mutate ~color:"sometimes" [ absent ] in
+        equal ~msg:"the colour is refused before a PATH" int 2 code;
+        equal ~msg:"and the PATH is never named" text
+          "windtrap: invalid value 'sometimes' for WINDTRAP_COLOR: expected \
+           always, never or auto\n"
           err);
+    test "the first argument that starts with a dash ends the parse" (fun () ->
+        let _, help, _ = mutate [ "--help" ] in
+        let code, out, err = mutate [ scratch "absent.mutants"; "-h" ] in
+        equal ~msg:"a PATH before -h" int 0 code;
+        equal ~msg:"is not looked at" text help out;
+        equal ~msg:"and nothing is said" text "" err;
+        let code, out, err = mutate [ "-x"; "--help" ] in
+        equal ~msg:"an unknown option before --help" int 2 code;
+        equal ~msg:"prints no help" text "" out;
+        equal ~msg:"and is the one refused" text
+          "windtrap: unknown option '-x'\nusage: windtrap mutants [PATH...]\n"
+          err;
+        let code, _, err = mutate [ "-" ] in
+        equal ~msg:"a lone dash is an option" int 2 code;
+        contains ~msg:"and an unknown one" ~sub:"unknown option '-'\n" err);
+    test "a relative identity of one component is the target as it is"
+      (fun () ->
+        let root = scratch "one-component" in
+        plant_sources root;
+        let identity = plant_exe root "t.exe" "a suite" in
+        save ~identity
+          (Filename.concat root "_build/_mutants/t.mutants")
+          (collection [ m_add (V.survived [ [ "calc"; "adds" ] ]) ]);
+        let code, out, err = mutate ~cwd:root [] in
+        equal ~msg:"the survivor exits 1" int 1 code;
+        equal ~msg:"the file is fresh" text "" err;
+        contains ~msg:"the target is the whole identity"
+          ~sub:
+            "\n\
+             reproduce: dune exec --instrument-with ppx_windtrap.mutate t.exe \
+             -- --arm lib/calc.ml:1:14:add\n"
+          out);
+    test "reaching tests sort by their spelled path" (fun () ->
+        (* By the path as a list, [a; b] comes before [a b]; spelled, the
+           space sorts before the separator. *)
+        let root = scratch "spelled" in
+        plant_sources root;
+        save
+          (Filename.concat root "_build/_mutants/s.mutants")
+          (collection [ m_add (V.survived [ [ "a"; "b" ]; [ "a b" ] ]) ]);
+        let _, out, _ = mutate ~cwd:root [] in
+        contains ~msg:"the rows in the order of their spelling"
+          ~sub:"\n      s.mutants  a b\n      s.mutants  a \u{203a} b\n" out);
   ]
 
 (* The suite *)
