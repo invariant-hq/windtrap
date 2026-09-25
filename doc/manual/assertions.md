@@ -6,7 +6,9 @@ Each section shows what the verb prints when its claim fails. The
 reference for every verb and witness is
 [`lib/windtrap.mli`](../../lib/windtrap.mli).
 
-The snippets test `Shop`, a module of shopping carts, `test/shop.ml`:
+The snippets test `Shop`, a module of shopping carts.
+
+`test/shop.ml`:
 
 <!-- file examples/02-assertions/shop.ml -->
 ```ocaml
@@ -43,7 +45,9 @@ let receipt cart =
   ^ Printf.sprintf "total %16d\n" (subtotal cart)
 ```
 
-The suite is `test/test_assertions.ml`, built by a `(test)` stanza:
+The suite is `test/test_assertions.ml`, built by a `(test)` stanza.
+
+`test/dune`:
 
 <!-- file examples/02-assertions/dune -->
 ```lisp
@@ -53,7 +57,9 @@ The suite is `test/test_assertions.ml`, built by a `(test)` stanza:
  (libraries windtrap))
 ```
 
-It opens `Windtrap` and declares a cart its tests share:
+It opens `Windtrap` and declares a cart its tests share.
+
+`test/test_assertions.ml`:
 
 <!-- file examples/02-assertions/test_assertions.ml from open Windtrap to let bread -->
 ```ocaml
@@ -64,7 +70,9 @@ let milk = Shop.item "milk" ~price:120 ~quantity:1
 let cart = [ bread; milk ]
 ```
 
-Its last line runs one group per section of this page:
+Its last line runs one group per section of this page.
+
+`test/test_assertions.ml`:
 
 <!-- file examples/02-assertions/test_assertions.ml from let () = -->
 ```ocaml
@@ -96,6 +104,8 @@ one group against a version of `Shop` with the bug named above it.
 The witness says how to compare and print values of a type: `int`,
 `string`, `bool` and the witnesses of the other base types are values of
 `Windtrap`. `not_equal` asserts that two values differ.
+
+`test/test_assertions.ml`:
 
 <!-- file examples/02-assertions/test_assertions.ml from let subtotal -->
 ```ocaml
@@ -130,13 +140,13 @@ shop: 2 tests
 
 ## Locating a failing assertion
 
-The failure above is located at the test's declaration. An assertion in
-tail position, such as the last expression of a body, has no line the
-runner can see, and its failure reports the test's line. To locate it,
-pass it `~__POS__`, which every verb takes. A helper that wraps a verb
-takes `?__POS__` and passes it on, so its failures carry its caller's
-line (see `Windtrap.pos`). Every other location comes from debug
-information, which dune compiles in by default.
+The assertion above is the last expression of its body, in tail
+position, and its failure is located at the test's declaration line. To
+locate a failure at the assertion's own line, pass the assertion
+`~__POS__`. A helper that wraps a verb takes `?__POS__` and passes it on
+(see `Windtrap.pos`).
+
+`test/test_assertions.ml`:
 
 <!-- file examples/02-assertions/test_assertions.ml from let names -->
 ```ocaml
@@ -173,7 +183,11 @@ A container witness takes the witnesses of its components, as in
 `list string`, `option item` or `pair string int`. For a type of your
 own, `Testable.make` builds the witness from a printer and an equality,
 and `Testable.with_compare` adds an order, which the ordering verbs
-need. `Windtrap.Testable` has the other constructors.
+need. `Windtrap.Testable` has the other constructors. A printer that
+shows less than the equality compares leaves nothing to diff, and the
+block then prints the one rendering under `both sides render as:`.
+
+`test/test_assertions.ml`:
 
 <!-- file examples/02-assertions/test_assertions.ml from let item to let find -->
 ```ocaml
@@ -224,6 +238,8 @@ it. Here two items are equal when their names are. `slist w cmp`
 compares two lists in any order, and `pass` in place of a component
 ignores it, as in `pair string pass`.
 
+`test/test_assertions.ml`:
+
 <!-- file examples/02-assertions/test_assertions.ml from let by_name to let remove -->
 ```ocaml
 let by_name = Testable.contramap (fun (item : Shop.item) -> item.name) string
@@ -258,8 +274,10 @@ shop: 1 test
 ## Comparing floats
 
 `float eps` compares with the absolute tolerance `eps`, and
-`float_rel ~rel ~abs` with a relative one. `float_exact` compares bit
-for bit, and is the witness that asserts a NaN.
+`float_rel ~rel ~abs` with a relative and an absolute one. `float_exact`
+compares bit for bit, and is the witness that asserts a NaN.
+
+`test/test_assertions.ml`:
 
 <!-- file examples/02-assertions/test_assertions.ml from let with_tax -->
 ```ocaml
@@ -295,6 +313,8 @@ shop: 1 test
 `text` compares strings and prints them verbatim, and its failure is a
 line-by-line diff. `string` prints a string quoted and escaped on one
 line, which tells `""`, `" "` and `"\t"` apart.
+
+`test/test_assertions.ml`:
 
 <!-- file examples/02-assertions/test_assertions.ml from let receipt -->
 ```ocaml
@@ -337,13 +357,13 @@ shop: 1 test
 ## Checking a bound or a predicate
 
 `less`, `at_most`, `greater` and `at_least` compare a value with the
-bound `~than` under the witness's order. A range takes two of them. A
-witness from `Testable.make` or a container witness has no order until
-`Testable.with_compare` gives it one, and an ordering verb raises
-`Invalid_argument` on it.
-`satisfies` checks any other claim and prints `~claim` in place of an
-expected value. `is_true` and `is_false` check a `bool`, and their
-failure can only print `false` where `true` was expected.
+bound `~than` under the witness's order. A range takes two of them. An
+ordering verb needs a witness with an order (see the witnesses section
+of `lib/windtrap.mli`). `satisfies` checks any other claim and prints
+`~claim` in place of an expected value. `is_true` and `is_false` check a
+`bool`, and their failure shows only the boolean.
+
+`test/test_assertions.ml`:
 
 <!-- file examples/02-assertions/test_assertions.ml from let discount -->
 ```ocaml
@@ -392,6 +412,8 @@ other side's payload. `require_match` does the same for any variant,
 through a function that returns an option. `is_some`, `is_none`,
 `is_ok` and `is_error` check the side alone.
 
+`test/test_assertions.ml`:
+
 <!-- file examples/02-assertions/test_assertions.ml from let parse_quantity -->
 ```ocaml
 let parse_quantity =
@@ -434,6 +456,8 @@ shop: 2 tests
 `~affix`, and `in_order ~subs` checks that strings occur one after the
 other. `mem` checks that a list holds an element.
 
+`test/test_assertions.ml`:
+
 <!-- file examples/02-assertions/test_assertions.ml from let label -->
 ```ocaml
 let label =
@@ -472,8 +496,10 @@ shop: 2 tests
 `raises e f` checks that `f ()` raises an exception equal to `e`.
 `raises_match p f` checks that it raises one that satisfies `p`, and
 `Exn` has such predicates for the standard exceptions. For a whole
-message, prefer `raises`: when the messages differ, its failure is a
+message, prefer `raises`. When the messages differ, its failure is a
 diff of the two.
+
+`test/test_assertions.ml`:
 
 <!-- file examples/02-assertions/test_assertions.ml from let validation -->
 ```ocaml
@@ -519,11 +545,15 @@ shop: 2 tests
 
 Every verb but `fail` and `failf` takes `~msg`, a line the failure
 prints above the values. In a loop it names the iteration that failed,
-and the loop stops there; `cases`, in
+and the loop stops there. `cases`, in
 [Resources and structure](resources-and-structure.md), makes one test
-per input instead.
+per input instead, and
+[`subtest`](resources-and-structure.md#naming-the-parts-of-one-test)
+keeps the loop going and names each failing part.
 `fail` and `failf` fail the test with a message of their own, in a
 branch the test must not reach, and `skip` ends the test as skipped.
+
+`test/test_assertions.ml`:
 
 <!-- file examples/02-assertions/test_assertions.ml from let rates -->
 ```ocaml
