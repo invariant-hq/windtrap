@@ -1,0 +1,9 @@
+; The example with the edit doc/manual/running-tests.md makes to show a
+; focus: the server's ping test is focused. Built, never run as a test;
+; the page's transcripts run it.
+
+(copy_files ../{db,db_tests,gpu_tests,process_tests,server,test_storage}.ml)
+
+(executable
+ (name test_storage)
+ (libraries windtrap))

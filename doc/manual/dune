@@ -113,3 +113,21 @@
   (<> %{os_type} Win32))
  (action
   (diff resources-and-structure.md resources-and-structure.md.corrected)))
+
+(rule
+ (enabled_if
+  (<> %{os_type} Win32))
+ (deps
+  (alias_rec %{workspace_root}/examples/06-resources-and-structure/all)
+  (source_tree %{workspace_root}/examples/06-resources-and-structure))
+ (action
+  (with-stdout-to
+   running-tests.md.corrected
+   (run %{exe:../transcript/transcript.exe} %{dep:running-tests.md}))))
+
+(rule
+ (alias runtest)
+ (enabled_if
+  (<> %{os_type} Win32))
+ (action
+  (diff running-tests.md running-tests.md.corrected)))
