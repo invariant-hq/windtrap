@@ -589,6 +589,16 @@ let filename_tests =
         equal ~msg:"below a build directory, the name follows the context"
           string "_build_x.exe"
           (I.exe_identity ~exe:"/w/_build/.sandbox/3f/_build_x.exe"));
+    test "the sandbox prefix is two directories above the executable" (fun () ->
+        equal ~msg:"a name after .sandbox is no digest" string ".sandbox/3f"
+          (I.exe_identity ~exe:"/w/_build/.sandbox/3f");
+        equal ~msg:"nor after a lone .sandbox directory" string ".sandbox/a.exe"
+          (I.exe_identity ~exe:"/w/_build/.sandbox/a.exe");
+        equal ~msg:"a .sandbox deeper down stays" string
+          "default/.sandbox/3f/a.exe"
+          (I.exe_identity ~exe:"/w/_build/default/.sandbox/3f/a.exe");
+        equal ~msg:"a .. can climb out of the build directory" string "/w/a.exe"
+          (I.exe_identity ~exe:"/w/_build/../a.exe"));
     test "a file is named by the MD5 of its executable's identity" (fun () ->
         let md5 s = Digest.to_hex (Digest.string s) in
         equal ~msg:"below a build directory" string
@@ -661,6 +671,22 @@ let plumbing_tests =
               digest =
                 String.uppercase_ascii (Digest.to_hex (Digest.string "x"));
             };
+          ]);
+    test "add_header names what is malformed" (fun () ->
+        let message identity =
+          match I.add_header C.format (Buffer.create 64) (Some identity) with
+          | () -> fail "a malformed identity was written"
+          | exception Invalid_argument message -> message
+        in
+        equal ~msg:"the messages" (list string)
+          [
+            "Windtrap_runtime.Coverage: empty identity exe";
+            "Windtrap_runtime.Coverage: identity digest is not 32 hex \
+             characters";
+          ]
+          [
+            message { I.exe = ""; digest = md5_of_bytes };
+            message { I.exe = "a.exe"; digest = "abc" };
           ]);
     test "write_file that cannot rename leaves no temporary file" (fun () ->
         let dir = temp_dir () in
@@ -785,6 +811,46 @@ let scanner_tests =
         I.finish (cursor "windtrap-coverage-v3 \t\r\n");
         parse_error ~msg:"a trailing byte" ~names:"trailing data" (fun () ->
             I.finish (cursor "windtrap-coverage-v3\nx")));
+    test "every reason of the readers, byte for byte" (fun () ->
+        let reason f =
+          match f () with
+          | () -> fail "no Parse_error"
+          | exception I.Parse_error reason -> reason
+        in
+        let after s = cursor ("windtrap-coverage-v3" ^ s) in
+        let digest = md5_of_bytes in
+        equal ~msg:"the reasons" (list string)
+          [
+            "expected size at offset 21";
+            "invalid size at offset 21";
+            "invalid size at offset 21";
+            "negative size";
+            "expected file length at offset 21";
+            "expected space before file at offset 22";
+            "truncated file";
+            "records exceeds data";
+            "expected verdict at offset 22";
+            "identity digest is not 32 hex characters at offset 25";
+            "empty executable identity";
+            "trailing data at offset 21";
+          ]
+          (List.map reason
+             [
+               (fun () -> ignore (I.read_nat (after " x") "size"));
+               (fun () -> ignore (I.read_nat (after " -") "size"));
+               (fun () ->
+                 ignore (I.read_nat (after " 99999999999999999999") "size"));
+               (fun () -> ignore (I.read_nat (after " -1") "size"));
+               (fun () -> ignore (I.read_name (after " abc") "file"));
+               (fun () -> ignore (I.read_name (after " 3\tabc") "file"));
+               (fun () -> ignore (I.read_name (after " 9 abc") "file"));
+               (fun () -> ignore (I.read_count (after " 99") "records"));
+               (fun () -> ignore (I.read_word (after "  ") "verdict"));
+               (fun () -> ignore (I.read_identity (after "\nexe abc 1 a")));
+               (fun () ->
+                 ignore (I.read_identity (after ("\nexe " ^ digest ^ " 0 "))));
+               (fun () -> I.finish (after " x"));
+             ]));
   ]
 
 (* Extent -> line derivation *)
