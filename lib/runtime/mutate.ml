@@ -3,14 +3,15 @@
    SPDX-License-Identifier: ISC
   ---------------------------------------------------------------------------*)
 
-(* Identity *)
+let strf = Printf.sprintf
+let saturating_add x y = if x > max_int - y then max_int else x + y
+
+(* Identifiers *)
 
 type id = { file : string; line : int; col : int; rewrite : string }
 
-(* The closed rewrite vocabulary. Both the site table and every parser
-   check against it: a rewrite name nobody can render is a report nobody
-   can act on, so an unknown one is refused where it enters, never
-   carried. *)
+(* The closed vocabulary. [register] and [id_of_string] refuse a name outside
+   it, since no report can render its mutant. *)
 let rewrites =
   [
     "not";
@@ -29,10 +30,7 @@ let rewrites =
   ]
 
 let is_rewrite r = List.exists (String.equal r) rewrites
-
-let id_to_string { file; line; col; rewrite } =
-  Printf.sprintf "%s:%d:%d:%s" file line col rewrite
-
+let id_to_string id = strf "%s:%d:%d:%s" id.file id.line id.col id.rewrite
 let pp_id ppf id = Format.pp_print_string ppf (id_to_string id)
 
 let compare_id a b =
@@ -45,7 +43,7 @@ let compare_id a b =
       let c = Int.compare a.col b.col in
       if c <> 0 then c else String.compare a.rewrite b.rewrite
 
-(* Sites and the Registry *)
+(* Sites and the catalogue *)
 
 type site = {
   line : int;
@@ -65,66 +63,34 @@ type mutant = {
 
 let compare_mutant a b = compare_id a.id b.id
 
-(* One registration: the file's site table plus the three per-site arrays
-   the guard closure owns. [armed_index] is this file's local index of the
-   armed site, [-1] when none - a per-file cell rather than a global
-   comparison against an absolute id, so the guard's armed test is one
-   dereference and one integer compare. *)
+(* One registration of a file's table. Each evaluation of site [i] counts in
+   [reach.(i)]; the first one in an epoch marks the site unless it is marked
+   already, and [base.(i)] holds the count before it until [drain] takes the
+   mark. *)
 type entry = {
   file : string;
   sites : site array;
   reach : int array;
-  epoch : int array;
-  base : int array;
-      (* the reach count before the evaluation that marked the site, or
-         [-1] while it is unmarked: a mark outlives its epoch until a drain
-         takes it, so the count runs from the first evaluation after a
-         drain *)
-  armed_index : int ref;
+  seen : int array; (* the epoch of each site's last evaluation *)
+  base : int array; (* [-1] while the site is unmarked *)
+  mutable armed_index : int; (* [-1] when no site of the table is armed *)
 }
 
-let registry : entry list ref = ref []
+(* The registrations of one file carry equal tables, which is what lets [arm]
+   set them all at one index. Epochs start at 1 and only increase, so the
+   zeroes of a fresh [seen] array mark no site as seen. *)
+type state = {
+  mutable registry : entry list; (* newest first *)
+  mutable epoch : int;
+  mutable marked : (entry * int) list; (* newest first *)
+  mutable armed : entry list; (* the registrations of the armed file *)
+  mutable budget : int;
+}
 
-(* Epochs start at 1 and only ever increase, so a fresh [epoch] array
-   (all zeroes) marks every site as unseen and no bump can collide with a
-   recorded value. *)
-let current_epoch = ref 1
-let dirty : (entry * int) list ref = ref []
-let armed_slots : (entry * int) list ref = ref []
-let runaway_budget = ref max_int
-let saturating_add x y = if x > max_int - y then max_int else x + y
+let state =
+  { registry = []; epoch = 1; marked = []; armed = []; budget = max_int }
 
 exception Runaway of { id : id; hits : int; budget : int }
-
-let validate ~file sites =
-  Array.iteri
-    (fun i s ->
-      let bad fmt =
-        Printf.ksprintf
-          (fun m ->
-            invalid_arg
-              (Printf.sprintf "Windtrap_runtime.Mutate: %s: site %d: %s" file i
-                 m))
-          fmt
-      in
-      if s.line < 1 then bad "line %d is not 1-based" s.line;
-      if s.col < 0 then bad "negative column %d" s.col;
-      if not (is_rewrite s.rewrite) then bad "unknown rewrite %S" s.rewrite)
-    sites
-
-let site_equal a b =
-  a.line = b.line && a.col = b.col
-  && String.equal a.rewrite b.rewrite
-  && String.equal a.before b.before
-  && String.equal a.after b.after
-  &&
-  match (a.dismissed, b.dismissed) with
-  | None, None -> true
-  | Some x, Some y -> String.equal x y
-  | Some _, None | None, Some _ -> false
-
-let sites_equal a b =
-  Array.length a = Array.length b && Array.for_all2 site_equal a b
 
 let site_mutant entry i =
   let s = entry.sites.(i) in
@@ -135,71 +101,77 @@ let site_mutant entry i =
     dismissed = s.dismissed;
   }
 
-(* The guard of a dropped registration: it must still be a total
-   [int -> bool] because the generated code binds it unconditionally. *)
-let inert (_ : int) = false
+let err_site ~file i fmt =
+  Printf.ksprintf
+    (fun m ->
+      invalid_arg (strf "Windtrap_runtime.Mutate: %s: site %d: %s" file i m))
+    fmt
+
+let validate ~file sites =
+  Array.iteri
+    (fun i s ->
+      if s.line < 1 then err_site ~file i "line %d is not 1-based" s.line;
+      if s.col < 0 then err_site ~file i "negative column %d" s.col;
+      if not (is_rewrite s.rewrite) then
+        err_site ~file i "unknown rewrite %S" s.rewrite)
+    sites
+
+let sites_equal a b =
+  let site_equal a b =
+    a.line = b.line && a.col = b.col
+    && String.equal a.rewrite b.rewrite
+    && String.equal a.before b.before
+    && String.equal a.after b.after
+    && Option.equal String.equal a.dismissed b.dismissed
+  in
+  Array.length a = Array.length b && Array.for_all2 site_equal a b
 
 let register ~file ~sites =
   validate ~file sites;
-  match List.find_opt (fun e -> String.equal e.file file) !registry with
+  match List.find_opt (fun e -> String.equal e.file file) state.registry with
   | Some prior when not (sites_equal prior.sites sites) ->
-      (* Two incompatible instrumentations of one source file are linked
-         into this executable - stale build artifacts, most likely.
-         Registration runs at module load inside the user's program, so it
-         must not raise; warn loudly and hand back an inert guard, keeping
-         the invariant that same-file entries carry equal tables (which is
-         what lets [arm] set them all). *)
+      (* Registration runs at module load inside the user's program, so a
+         stale build artifact warns, and its table is dropped. *)
       Instr.warn
         "%s: conflicting instrumentation tables in one executable (stale build \
          artifacts? rebuild from clean); ignoring one module's sites"
         file;
-      inert
-  | _ ->
+      Fun.const false
+  | Some _ | None ->
       let n = Array.length sites in
       let entry =
         {
           file;
           sites;
           reach = Array.make n 0;
-          epoch = Array.make n 0;
+          seen = Array.make n 0;
           base = Array.make n (-1);
-          armed_index = ref (-1);
+          armed_index = -1;
         }
       in
-      registry := entry :: !registry;
-      let reach = entry.reach
-      and epoch = entry.epoch
-      and base = entry.base
-      and armed_index = entry.armed_index in
+      state.registry <- entry :: state.registry;
       fun i ->
-        let hits =
-          let c = reach.(i) in
-          if c = max_int then c else c + 1
-        in
-        reach.(i) <- hits;
-        if epoch.(i) <> !current_epoch then begin
-          epoch.(i) <- !current_epoch;
-          if base.(i) < 0 then begin
-            base.(i) <- hits - 1;
-            dirty := (entry, i) :: !dirty
+        let hits = saturating_add entry.reach.(i) 1 in
+        entry.reach.(i) <- hits;
+        if entry.seen.(i) <> state.epoch then begin
+          entry.seen.(i) <- state.epoch;
+          if entry.base.(i) < 0 then begin
+            entry.base.(i) <- hits - 1;
+            state.marked <- (entry, i) :: state.marked
           end
         end;
-        if i <> !armed_index then false
-        else if hits > !runaway_budget then
+        if i <> entry.armed_index then false
+        else if hits <= state.budget then true
+        else
           raise
             (Runaway
-               { id = (site_mutant entry i).id; hits; budget = !runaway_budget })
-        else true
-
-let mutants_of entry =
-  let acc = ref [] in
-  for i = Array.length entry.sites - 1 downto 0 do
-    acc := site_mutant entry i :: !acc
-  done;
-  !acc
+               { id = (site_mutant entry i).id; hits; budget = state.budget })
 
 let catalogue () =
-  List.sort_uniq compare_mutant (List.concat_map mutants_of !registry)
+  let mutants entry =
+    List.init (Array.length entry.sites) (site_mutant entry)
+  in
+  List.sort_uniq compare_mutant (List.concat_map mutants state.registry)
 
 (* Arming *)
 
@@ -211,15 +183,11 @@ type arm_error =
 
 let pp_candidates ppf mutants =
   let shown = 6 in
-  let rec loop i = function
-    | [] -> ()
-    | rest when i = shown ->
-        Format.fprintf ppf "@\n    (and %d more)" (List.length rest)
-    | m :: rest ->
-        Format.fprintf ppf "@\n    %a" pp_id m.id;
-        loop (i + 1) rest
-  in
-  loop 0 mutants
+  List.iteri
+    (fun i m -> if i < shown then Format.fprintf ppf "@\n    %a" pp_id m.id)
+    mutants;
+  let more = List.length mutants - shown in
+  if more > 0 then Format.fprintf ppf "@\n    (and %d more)" more
 
 let pp_arm_error ppf = function
   | Malformed { spec; reason } ->
@@ -245,179 +213,125 @@ let pp_arm_error ppf = function
 
 let is_digit = function '0' .. '9' -> true | _ -> false
 
-(* Strict decimal: [int_of_string_opt] would also accept ["0x10"],
-   ["1_0"] and ["+5"], none of which any spelling of an identifier
-   contains. *)
+(* [int_of_string_opt] alone also reads ["0x10"], ["1_0"] and ["+5"]. *)
 let parse_nat s =
   if s = "" || not (String.for_all is_digit s) then None
   else int_of_string_opt s
 
+(* The fields are read from the right, so the file may hold colons, and the
+   reason names the first field that cannot be read. *)
 let id_of_string spec =
   let malformed fmt =
     Printf.ksprintf (fun reason -> Error (Malformed { spec; reason })) fmt
   in
-  let after s i = String.sub s (i + 1) (String.length s - i - 1) in
-  match String.rindex_opt spec ':' with
-  | None -> malformed "no ':' separator"
-  | Some i -> (
-      let rewrite = after spec i and rest = String.sub spec 0 i in
-      if not (is_rewrite rewrite) then
-        malformed "unknown rewrite %S (expected one of %s)" rewrite
-          (String.concat ", " rewrites)
-      else
-        match String.rindex_opt rest ':' with
-        | None -> malformed "no position before the rewrite"
-        | Some j -> (
-            let tail = after rest j and head = String.sub rest 0 j in
-            match parse_nat tail with
-            | None -> malformed "invalid column %S" tail
-            | Some col -> (
-                match String.rindex_opt head ':' with
-                | None -> malformed "no line number"
-                | Some k -> (
-                    let text = after head k and file = String.sub head 0 k in
-                    match parse_nat text with
-                    | None -> malformed "invalid line %S" text
-                    | Some _ when file = "" -> malformed "empty file name"
-                    | Some line when line >= 1 ->
-                        Ok { file; line; col; rewrite }
-                    | Some _ -> malformed "line numbers are 1-based"))))
-
-let matches (id : id) entry i =
-  let s = entry.sites.(i) in
-  String.equal entry.file id.file
-  && s.line = id.line && s.col = id.col
-  && String.equal s.rewrite id.rewrite
-
-let matching id =
-  List.concat_map
-    (fun entry ->
-      let acc = ref [] in
-      for i = Array.length entry.sites - 1 downto 0 do
-        if matches id entry i then acc := (entry, i) :: !acc
-      done;
-      !acc)
-    !registry
+  let number field s =
+    match parse_nat s with
+    | Some n -> Ok n
+    | None -> malformed "invalid %s %S" field s
+  in
+  let ( let* ) = Result.bind in
+  match List.rev (String.split_on_char ':' spec) with
+  | [] | [ _ ] -> malformed "no ':' separator"
+  | rewrite :: _ when not (is_rewrite rewrite) ->
+      malformed "unknown rewrite %S (expected one of %s)" rewrite
+        (String.concat ", " rewrites)
+  | [ _; _ ] -> malformed "no position before the rewrite"
+  | [ _; col; _ ] ->
+      let* _ = number "column" col in
+      malformed "no line number"
+  | rewrite :: col :: line :: file ->
+      let* col = number "column" col in
+      let* line = number "line" line in
+      let file = String.concat ":" (List.rev file) in
+      if file = "" then malformed "empty file name"
+      else if line < 1 then malformed "line numbers are 1-based"
+      else Ok { file; line; col; rewrite }
 
 let disarm () =
-  List.iter (fun (entry, _) -> entry.armed_index := -1) !armed_slots;
-  armed_slots := [];
-  runaway_budget := max_int
+  List.iter (fun entry -> entry.armed_index <- -1) state.armed;
+  state.armed <- [];
+  state.budget <- max_int
 
-(* The guard counts hits whether or not it answers [true], so the armed
-   site's count is on the same arrays the reach map reads. Summed over the
-   slots because the same source compiled into two modules arms together,
-   and each copy counts its own evaluations. *)
+let arm ?(budget = max_int) (id : id) =
+  if budget <= 0 then
+    invalid_arg "Windtrap_runtime.Mutate.arm: budget must be positive";
+  (* A refused arming must not leave the previous mutant live, or the next
+     verdict would be the wrong site's. *)
+  disarm ();
+  let catalogues entry =
+    String.equal entry.file id.file && Array.length entry.sites > 0
+  in
+  match List.filter catalogues state.registry with
+  | [] -> Error (Uncatalogued { id })
+  | first :: _ as entries -> (
+      (* The tables are equal, so the indices of the first are every one's. *)
+      let names i =
+        let s = first.sites.(i) in
+        s.line = id.line && s.col = id.col && String.equal s.rewrite id.rewrite
+      in
+      match List.filter names (List.init (Array.length first.sites) Fun.id) with
+      | [] ->
+          let candidates =
+            List.filter (fun m -> String.equal m.id.file id.file) (catalogue ())
+          in
+          Error (Unmatched { id; candidates })
+      | [ i ] ->
+          List.iter (fun entry -> entry.armed_index <- i) entries;
+          state.armed <- entries;
+          state.budget <- budget;
+          Ok (site_mutant first i)
+      | indices ->
+          (* A table arms one index, and no identifier tells these apart,
+             so arming one would leave the others live. *)
+          let candidates = List.map (site_mutant first) indices in
+          Error (Ambiguous { id; candidates }))
+
+(* Each registration of the armed file counts its own evaluations. *)
 let armed_hits () =
   List.fold_left
-    (fun acc (entry, i) -> saturating_add acc entry.reach.(i))
-    0 !armed_slots
+    (fun acc entry -> saturating_add acc entry.reach.(entry.armed_index))
+    0 state.armed
 
-let arm ?budget id =
-  (match budget with
-  | Some n when n <= 0 ->
-      invalid_arg "Windtrap_runtime.Mutate.arm: budget must be positive"
-  | Some _ | None -> ());
-  (* Disarm first, and unconditionally: a refused arming must never leave
-     the previous mutant live, which would attribute the next run's
-     verdict to the wrong site. *)
-  disarm ();
-  let slots = matching id in
-  (* One entry carries one [armed_index], so two matching sites in one
-     file cannot both be armed - and no identifier separates them, since
-     they agree on position and rewrite. That is an ambiguity, not an
-     arming: silently arming one would leave the other live and report a
-     false survivor for code reached through it. A repeat across entries
-     is the opposite case and is required: the same source compiled into
-     two modules must arm together. *)
-  let rec twice_in_one_entry seen = function
-    | [] -> None
-    | (entry, _) :: rest ->
-        if List.memq entry seen then Some entry
-        else twice_in_one_entry (entry :: seen) rest
-  in
-  match
-    ( twice_in_one_entry [] slots,
-      List.sort_uniq compare_mutant
-        (List.map (fun (entry, i) -> site_mutant entry i) slots) )
-  with
-  | _, [] -> (
-      (* The two ways an identifier can name nothing here, which are not
-         the same failure and must not carry the same name. A file this
-         executable catalogues no site in is a file it was not built
-         from: the identifier is about some other binary, and there is
-         nothing in this one to hide. A file it DOES catalogue, at a
-         position no site occupies, is a wrong or stale identifier - the
-         caller believes it named a mutant of this binary and it did
-         not. Only the registry can tell them apart, so it is told here,
-         in the answer, rather than left for a caller to re-derive from
-         an empty candidate list. *)
-      match
-        List.filter (fun m -> String.equal m.id.file id.file) (catalogue ())
-      with
-      | [] -> Error (Uncatalogued { id })
-      | candidates -> Error (Unmatched { id; candidates }))
-  | None, [ mutant ] ->
-      (* Every entry matching one mutant is armed: the same source file
-         compiled into two modules must not leave one copy disarmed, or a
-         mutant evaluated through it would report a false survivor. *)
-      List.iter (fun (entry, i) -> entry.armed_index := i) slots;
-      armed_slots := slots;
-      (runaway_budget := match budget with Some n -> n | None -> max_int);
-      Ok mutant
-  | Some entry, [ _ ] ->
-      (* Indistinguishable duplicates: list one candidate per site, so the
-         count the message reports is the number of sites and not the
-         number of names they share. *)
-      let candidates =
-        List.filter_map
-          (fun (e, i) -> if e == entry then Some (site_mutant e i) else None)
-          slots
-      in
-      Error (Ambiguous { id; candidates })
-  | _, candidates -> Error (Ambiguous { id; candidates })
-
-(* The Reach Map *)
+(* The reach map *)
 
 type reached = { mutant : mutant; hits : int }
 
-let next_epoch () = incr current_epoch
+let next_epoch () = state.epoch <- state.epoch + 1
 
 let drain () =
-  let marked = !dirty in
-  dirty := [];
-  let items =
-    List.rev_map
-      (fun (entry, i) ->
-        let hits = entry.reach.(i) - entry.base.(i) in
-        entry.base.(i) <- -1;
-        { mutant = site_mutant entry i; hits })
-      marked
+  let marked = state.marked in
+  state.marked <- [];
+  let reached (entry, i) =
+    let hits = entry.reach.(i) - entry.base.(i) in
+    entry.base.(i) <- -1;
+    { mutant = site_mutant entry i; hits }
   in
-  let rec dedup acc = function
-    | [] -> List.rev acc
-    | x :: rest -> (
-        match acc with
-        | y :: acc' when compare_mutant x.mutant y.mutant = 0 ->
-            dedup ({ y with hits = saturating_add y.hits x.hits } :: acc') rest
-        | _ -> dedup (x :: acc) rest)
+  (* Each registration of a file marks its own copy of a mutant. *)
+  let merge acc r =
+    match acc with
+    | prev :: acc when compare_mutant prev.mutant r.mutant = 0 ->
+        { prev with hits = saturating_add prev.hits r.hits } :: acc
+    | acc -> r :: acc
   in
-  dedup [] (List.sort (fun a b -> compare_mutant a.mutant b.mutant) items)
+  let by_mutant a b = compare_mutant a.mutant b.mutant in
+  List.rev
+    (List.fold_left merge []
+       (List.sort by_mutant (List.rev_map reached marked)))
 
 let reset_reach () =
   List.iter
     (fun entry ->
       Array.fill entry.reach 0 (Array.length entry.reach) 0;
       Array.fill entry.base 0 (Array.length entry.base) (-1))
-    !registry;
-  dirty := [];
-  incr current_epoch
+    state.registry;
+  state.marked <- [];
+  next_epoch ()
 
 let () =
   Printexc.register_printer (function
     | Runaway { id; hits; budget } ->
         Some
-          (Printf.sprintf
+          (strf
              "Windtrap_runtime.Mutate.Runaway: %s evaluated %d times (budget \
               %d)"
              (id_to_string id) hits budget)
