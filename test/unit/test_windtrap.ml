@@ -1485,6 +1485,57 @@ let () =
   check_int "a suite that declares no tests exits 2 under a mirror too"
     ~expected:2 ~actual:code
 
+(* A run without argv.(0) *)
+
+let () =
+  (* The usage line names the suite, and the report spells no command
+     line: nothing names the executable. *)
+  with_temp_root @@ fun root ->
+  let suite = [ test "passes" (fun () -> is_true true) ] in
+  let run argv =
+    with_redirected_output root (fun () -> Windtrap.run ~argv "blank" suite)
+  in
+  let fixed = [ "-o"; root; "--color"; "never" ] in
+  let code, _, err = run (Array.of_list (("" :: fixed) @ [ "--nosuchflag" ])) in
+  check_int "an empty argv.(0) with a usage error returns 2" ~expected:2
+    ~actual:code;
+  check_contains "the usage line names the suite"
+    ~sub:"usage: blank [OPTIONS] [PATTERN...]" err;
+  let code, out, _ =
+    run (Array.of_list (("" :: fixed) @ [ "-f"; "zzznope" ]))
+  in
+  check_int "an empty argv.(0) keeps a typed selection's 2" ~expected:2
+    ~actual:code;
+  check_string "its way out names the flag"
+    ~expected:
+      "blank: no tests ran: filter \"zzznope\" matched none of 1 test.\n\
+       (list the suite's tests with -l)\n"
+    ~actual:out;
+  let mirrors = [ ("WINDTRAP_OUTPUT", root); ("WINDTRAP_COLOR", "never") ] in
+  List.iter (fun (var, value) -> Os.setenv var (Some value)) mirrors;
+  Fun.protect ~finally:(fun () ->
+      List.iter (fun (var, _) -> Os.setenv var None) mirrors)
+  @@ fun () ->
+  with_filter_mirror "zzznope" @@ fun () ->
+  let code, out, _ = run [||] in
+  check_int "an empty argv under a mirror's selection returns 0" ~expected:0
+    ~actual:code;
+  check_string "and names the flag too"
+    ~expected:
+      "blank: no tests ran: filter \"zzznope\" matched none of 1 test.\n\
+       (list the suite's tests with -l)\n"
+    ~actual:out
+
+(* --version prints a substituted version *)
+
+let () =
+  with_temp_root @@ fun root ->
+  let _, out, _ = run_in_process ~argv:[ "--version" ] root "version" [] in
+  check "--version prints one line"
+    (String.index_opt out '\n' = Some (String.length out - 1));
+  check "--version prints no unsubstituted watermark"
+    (not (String.contains out '%'))
+
 (* The promotion warning *)
 
 let () =
