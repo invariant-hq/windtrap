@@ -21,9 +21,7 @@
     every component passed through {!Os.sanitize_component}. The path depends on
     the identity of the test alone, so a run overwrites the logs of the run
     before it. Each attempt truncates the log, so it holds the whole output of
-    the last attempt. The captured output of a counted failing test is in its
-    report, bounded, with the path of its log (see {!Report.result}), and the
-    output of any other test is in its log only.
+    the last attempt.
 
     The module keeps no state outside a {!t}, but descriptors 1 and 2 and the
     buffers that a drain flushes belong to the process. *)

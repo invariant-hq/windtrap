@@ -11,9 +11,9 @@
     three. A row is a flag beside its optional mirror, or a setting that only
     the environment spells, which {!val-help} lists and nothing here reads.
 
-    Nothing here prints or exits, and where a text shows is its caller's
-    contract. An error is returned as an {!type-error}, and [--help] and
-    [--version] come back as fields of {!type-parsed} for the caller to act on.
+    Nothing here prints or exits. An error is returned as an {!type-error}, and
+    [--help] and [--version] come back as fields of {!type-parsed} for the
+    caller to act on.
 
     {b Mirrors.} A mirror is the [WINDTRAP_*] variable of a flag. Under
     [dune runtest] an executable gets no command line, and the mirrors are its
@@ -22,9 +22,7 @@
 
     A mirror reaches every executable of a project alike, and a suite that
     cannot honour one is not in error. {!settings} therefore keeps the source of
-    a value where it changes the outcome of a run. A relative path from a mirror
-    is read from the project root, and {!Run.type-broadcast} says which
-    selection and which [--mutate] the mirrors alone gave.
+    a value where it changes the outcome of a run.
 
     A mirror is read by the parser of its flag, so a variable accepts and
     refuses what its flag does, with the same [expected] wording. An error names
@@ -170,17 +168,12 @@ val settings : parsed -> (Run.config, error) result
       {!Baseline.Corrected} under [corrected], else {!Baseline.Check}.
     - [mutation] is {!Run.Loop} of [mutate], {!Run.Armed} of [arm], or
       {!Run.No_mutation}. Both at once is [Error (Incompatible_flags _)],
-      whichever layer gave each, and it is checked after every mirror.
-      [WINDTRAP_MUTATE=1] is the bare flag, [WINDTRAP_MUTATE=0] its absence, and
-      [WINDTRAP_MUTATE=lib/calc.ml] a prefix. A prefix that spells a boolean
-      cannot go through the variable.
+      whichever layer gave each, and it is checked after every mirror. A prefix
+      that spells a boolean cannot go through the variable.
     - A relative path of [--junit] or [-o] is made absolute, against the working
       directory when the command line gives it and against {!Os.project_root}
       when its mirror does. It is kept as given when that directory cannot be
       read.
-    - [broadcast.selection] holds when a mirror gives the selection and the
-      command line gives none of its flags, and [broadcast.mutate] when
-      [WINDTRAP_MUTATE] gives [mutation] and [--mutate] does not.
     - [github] is {!Os.in_github_actions}[ ()], [allow_focus] is [false] and
       [invocation] is [`Mirrors]. [list_only], [help] and [version] are ignored.
 
@@ -192,8 +185,7 @@ val color_mode : unit -> (Os.color_mode, error) result
 (** [color_mode ()] is [WINDTRAP_COLOR] read by the parser of [--color], for a
     command that has no such flag. It is [Ok Os.Auto] when the variable is unset
     or empty, and [Error (Invalid_value _)] naming the variable for a word that
-    the flag would refuse. The runner needs no such call, because {!settings}
-    reads the variable as it reads every mirror. *)
+    the flag would refuse. *)
 
 (** {1:help Help} *)
 

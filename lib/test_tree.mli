@@ -47,17 +47,14 @@ module Tag : sig
       which [--exclude-tag slow] drops. *)
 
   val prop : string
-  (** [prop] is ["prop"], the tag of a property. {!Run.prop} adds none, so a
-      constructor of properties must add it to the [tags] of its test, as
-      {!Stateful.stateful} does. A selection holds a property iff a selected
-      test carries it ({!Run.Run_started}). *)
+  (** [prop] is ["prop"], the tag of a property. A selection holds a property
+      iff a selected test carries it ({!Run.Run_started}). *)
 
   type predicate
   (** The type for tag selection predicates: a set of required tags and a set of
       dropped tags. No tag is in both, so for a tag given to {!require} and to
       {!drop} the later call decides.
 
-      A selection starts from {!any} and refines it with one call per tag.
       {!Run} applies every [--tag] and then every [--exclude-tag], so a tag
       given to both flags is excluded, whatever their order on the command line.
   *)
@@ -255,9 +252,7 @@ val focus_sites : t list -> Loc.t option list
 (** {1:flattening Flattening} *)
 
 type case = {
-  path : string list;
-      (** The path of the test: the names of its enclosing groups, outermost
-          first, then its own. It is never empty. *)
+  path : string list;  (** The path of the test. It is never empty. *)
   body : body;  (** The stored body. *)
   loc : Loc.t option;
       (** The declaration site, when it is known, to which a failure without a
@@ -283,7 +278,6 @@ val flatten : t list -> case list
 
 val path_to_string : string list -> string
 (** [path_to_string path] is the components of [path] joined with [" › "]: a
-    space, U+203A and a space. The result is the path string, the identity of a
-    test (see the preamble of the module). The separator is frozen. With another
-    one a recorded seed replays other cases, no entry of the last-failed store
-    names a test, and every shard bucket changes. *)
+    space, U+203A and a space. The separator is frozen. With another one a
+    recorded seed replays other cases, no entry of the last-failed store names a
+    test, and every shard bucket changes. *)

@@ -53,7 +53,7 @@ type broadcast = {
           [--mutate]. *)
 }
 (** The type for the parts of a configuration that the environment gave and the
-    command line did not. A mirror reaches every suite of a project alike. *)
+    command line did not. *)
 
 type config = {
   seed : Seed.seed;  (** [--seed]: the root seed of the run. *)
@@ -99,9 +99,9 @@ type config = {
           against the sink of that report ({!Os.resolve_color}). *)
   slow_threshold : float;
       (** [--slow-threshold]: the seconds from which {!Report} lists a test as
-          slow at the end of the run, with or without [-v], and [0.] for no
-          list. {!Report.create} raises unless it is finite and non-negative,
-          which {!Cli} guarantees. *)
+          slow at the end of the run, and [0.] for no list. {!Report.create}
+          raises unless it is finite and non-negative, which {!Cli} guarantees.
+      *)
   verbose : bool;  (** [-v]: the report prints a line per test. *)
   junit : string option;
       (** [--junit]: a file, or a directory, where a JUnit report is written
@@ -150,11 +150,9 @@ val for_subset : config -> log_dir:string -> bail:bool -> config
 (** {1:runs Run records} *)
 
 type t
-(** The type for run records: the configuration, the capture state, the baseline
-    registry, the cache of acquired fixtures and the result rows of one run.
-    {!execute} creates one per run and never uses it again. It stays readable
-    after the run, through {!outcome.run}, when no test can reach it any more.
-*)
+(** The type for run records. {!execute} creates one per run and never uses it
+    again. It stays readable after the run, through {!outcome.run}, when no test
+    can reach it any more. *)
 
 val config : t -> config
 (** [config t] is the configuration [t] was created with. *)
@@ -186,10 +184,7 @@ val prop_context : frame -> Property.context option
     from the first event of {!execute} to the building of its outcome, so
     {!active} is [true] whenever a callback of the user may be running. Over the
     run it holds the frame of an attempt, for its setup, its body and its
-    teardown and for nothing else. {!current_frame} reads it, and through it so
-    do the operations of {{!section-body}the running test} and those that other
-    modules build on them: [output ()], the expectations, [collect], [classify]
-    and [cover]. *)
+    teardown and for nothing else. *)
 
 val active : unit -> bool
 (** [active ()] is [true] iff a run is executing, whether or not a test is
@@ -205,9 +200,7 @@ val active_run_error : string
 
 val current_frame : unit -> frame
 (** [current_frame ()] is the frame of the attempt that is running. Raises
-    [Invalid_argument] if no test is running. That is when the slot is empty or
-    holds only the run: at module top level, after the run, between two
-    attempts, in an observer and in the release of a fixture. *)
+    [Invalid_argument] if no test is running. *)
 
 val current : unit -> t
 (** [current ()] is the record of the run that the frame of {!current_frame}
@@ -251,18 +244,14 @@ val check_baseline : ?loc:Loc.t -> Baseline.subject -> string -> unit
 (** [check_baseline ?loc subject actual] is {!Baseline.check} of [actual]
     against [subject] in the registry of the run, except that a mismatch is
     recorded and not raised. A {!Failure.Missing} or {!Failure.Mismatch} failure
-    is added to the frame and the call returns, so the body goes on and the
-    attempt fails at its end with every mismatch. Inside a {!subtest} the
-    failure is labelled as {!subtest} labels one. A {!Failure.Unresolvable}
-    failure is raised as {!Failure.Check_failure}, because nothing that follows
-    a path that cannot be proven means anything.
+    is added to the frame and the call returns. Inside a {!subtest} the failure
+    is labelled as {!subtest} labels one. A {!Failure.Unresolvable} failure is
+    raised as {!Failure.Check_failure}.
 
     [loc] is the location of the failure: the position of a literal, or the site
     of the call for a file. Without it the failure takes the declaration site
-    (see {{!section-attempts}attempts}). The check records no correction for an
-    [xfail] test (see {{!section-corrections}corrections}). Under
-    {!Baseline.Update} a baseline that differs records its correction and
-    nothing fails.
+    (see {{!section-attempts}attempts}). Under {!Baseline.Update} a baseline
+    that differs records its correction and nothing fails.
 
     Raises [Sys_error] as {!Baseline.check} does, and [Invalid_argument] if no
     test is running. *)
@@ -290,8 +279,7 @@ val temp_file : ?suffix:string -> unit -> string
 val remove_tree : string -> unit
 (** [remove_tree path] removes [path] and what is under it, as far as it can. It
     removes a symbolic link without following it and ignores every file-system
-    error, a missing [path] included, so it never raises. It needs no running
-    test. *)
+    error, a missing [path] included, so it never raises. *)
 
 (** {2:process Process state}
 
@@ -353,11 +341,11 @@ type result = {
           failure, and a renderer classifies a failing row from this field and
           [xfail] alone. *)
   xfail : Test_tree.xfail option;
-      (** The {!Test_tree.val-xfail} annotation of the test, from which a
-          renderer names the known defect. [None] without one. *)
+      (** The {!Test_tree.val-xfail} annotation of the test. [None] without one.
+      *)
   slow_tagged : bool;
       (** [true] iff the test carries {!Test_tree.Tag.slow}, its own or a
-          group's. Such a test is exempt from [config.slow_threshold]. *)
+          group's. *)
   duration : float;  (** The seconds the test took, its attempts summed. *)
   attempts : int;
       (** The attempts executed, [1] plus the retries used. A [Pass] row with
@@ -409,9 +397,7 @@ val prop :
     Its context is the {!prop_context} of the frame while [law] runs. A [Fail]
     adds the {!Failure.Property} failure of the engine. [Coverage_failed] and
     [Gave_up] each add a message failure, located at the declaration of the
-    test: the labels that no passing case marked, or the number of discards,
-    each with the number of passing cases. Every outcome that the engine returns
-    puts its statistics in {!result.prop_stats}.
+    test.
 
     Raises [Invalid_argument] as {!Test_tree.test} does. A negative [count] or
     [max_discard] makes {!Property.run} raise inside the body, which fails the
@@ -487,9 +473,8 @@ val startup_exit_code : startup_error -> int
     [2] for {!No_recorded_failures}, since nothing ran, and [1] otherwise. *)
 
 val startup_message : startup_error -> string
-(** [startup_message error] explains [error] to a user in plain text, which
-    names the paths or the [focus] sites concerned and takes several lines for
-    {!Duplicate_paths}. It is not stable enough for a program to match. *)
+(** [startup_message error] explains [error] to a user in plain text. It is not
+    stable enough for a program to match. *)
 
 (** {1:executing Executing}
 
@@ -510,8 +495,7 @@ type outcome = {
           some may not have executed, and those have no row. *)
   total : int;  (** The tests that the suite declares, before any selection. *)
   focus_active : bool;
-      (** [true] iff the suite holds a focused node, selected or not. A caller
-          reads it to warn that the run was focused. *)
+      (** [true] iff the suite holds a focused node, selected or not. *)
   release_failures : Failure.t list;
       (** The failures of the fixture releases that raised, in the order of
           release, each a {!Failure.Release} message failure located at the site
@@ -539,14 +523,13 @@ val execute :
   suite:string ->
   Test_tree.t list ->
   (outcome, startup_error) Stdlib.result
-(** [execute config ~suite tests] runs [tests] as this section says, and prints
-    nothing. It is [Ok outcome], or [Error error] when a startup check refuses
-    the run, before anything executes.
+(** [execute config ~suite tests] runs [tests] as this section says. It is
+    [Ok outcome], or [Error error] when a startup check refuses the run, before
+    anything executes.
     - [on_event] receives the {!type-event}s. Defaults to a function that
       ignores them.
     - [allowlist] keeps the tests whose path string is in the list, within every
-      other layer of the {{!section-selection}selection}. It is for a caller
-      that already holds the set it wants (see {!for_subset}). Defaults to no
+      other layer of the {{!section-selection}selection}. Defaults to no
       narrowing.
     - [suite] names the directory of the capture logs and of the last-failed
       store, under [config.log_dir].
@@ -596,16 +579,13 @@ val list_selection :
     - Its path string ({!Test_tree.path_to_string}) contains one pattern of
       [config.filter] and none of [config.exclude].
     - Its tags hold every tag of [config.tags] and none of
-      [config.exclude_tags]. A tag in both lists is only excluded (see
-      {!Test_tree.Tag.predicate}).
+      [config.exclude_tags].
     - [allowlist] admits it, and under [config.failed_only] so does the
       last-failed store.
     - It falls in the bucket of [config.shard].
     - It is focused, when the suite holds a focused node.
 
-    A test left out does not execute and has no row. Neither has a selected test
-    that [config.bail] stopped the run before, which stays in
-    {!outcome.selected}.
+    A test left out does not execute and has no row.
 
     The bucket of a test is a frozen hash of its path string, modulo [N]. It
     depends on nothing else, and a change to the hash moves the tests of every
@@ -613,13 +593,12 @@ val list_selection :
 
 (** {2:attempts Attempts}
 
-    Every attempt runs in a fresh {!type-frame}, which is in
-    {{!section-ambient}the slot} for its three phases. Around them the runner
-    seeds the global [Random] state from the path of the test alone, whatever
-    [config.seed], and restores the saved state afterwards. Unless
-    [config.stream], it redirects the output into the log file of the test,
-    truncated first ({!Capture.with_capture}). A capture that cannot be set up
-    or restored is a {!Failure.Raise} failure of the body, and the run goes on.
+    Around the three phases of an attempt the runner seeds the global [Random]
+    state from the path of the test alone, whatever [config.seed], and restores
+    the saved state afterwards. Unless [config.stream], it redirects the output
+    into the log file of the test, truncated first ({!Capture.with_capture}). A
+    capture that cannot be set up or restored is a {!Failure.Raise} failure of
+    the body, and the run goes on.
 
     The limit of a test is its own, or else [config.timeout]. It is a [SIGALRM]
     timer over the three phases, so the runner owns that signal during the
@@ -639,10 +618,7 @@ val list_selection :
     A [`Skip] skips the test, and the first reason wins. A failure added without
     a location takes the declaration site of the test, which is the case of one
     raised from tail position, and a nested failure, as the [inner] of a
-    property failure, is left as it is. The failures that the runner makes
-    itself are located at the declaration of the test: a timeout, an uncaught
-    exception, an [xfail] test that passed, an intercepted [exit], a misused
-    scope, and a property that gave up or missed a label.
+    property failure, is left as it is.
 
     What {!Failure.catch} never returns is not caught (see {!execute}). After
     every attempt, on every path where it regains control, the fatal one
@@ -661,9 +637,7 @@ val list_selection :
     [scope], and does not add it a second time on its way out. Whatever else
     leaves [scope] is attributed by how far the callback got: {!Failure.Setup}
     before it was called, {!Failure.Teardown} after the body left it, and
-    {!Failure.Body} in between. A scope built on [Fun.protect] whose [finally]
-    raises thus adds a [Fun.Finally_raised] teardown failure beside the body's,
-    except for a [finally] cut by the timeout, which is a teardown timeout.
+    {!Failure.Body} in between.
 
     A second call of the callback runs nothing and returns, and the attempt then
     fails with a body message that gives the number of calls. A scope that
@@ -676,8 +650,7 @@ val list_selection :
     A test with [retries = n] runs again while its attempt counts as failed
     ({!result.counted}), up to [n + 1] attempts. An attempt that kept a
     correction is the last whatever [n], because the next one would be compared
-    with the text it recorded. The row carries the failures of the last attempt
-    and the number of attempts. Its first failure carries the tail of what that
+    with the text it recorded. Its first failure carries the tail of what that
     attempt wrote ({!Capture.output_tail}), unless [config.stream]. *)
 
 (** {2:corrections Corrections}
@@ -732,10 +705,9 @@ val list_selection :
     While a run is {!active}, a call to [exit] raises [Failure.Control `Exit]
     from the guard and the process does not end. The exception is classified
     where it lands. In a test it is a failure of the phase that called [exit],
-    the acquisition of a fixture included, or inside a {!subtest} a failure of
-    that subtest. In the [teardown] of a fixture it is the failure of that
-    release. An [exit] in an observer is an exception of that observer (see
-    {!execute}).
+    the acquisition of a fixture included. In the [teardown] of a fixture it is
+    the failure of that release. An [exit] in an observer is an exception of
+    that observer (see {!execute}).
 
     The guard does nothing while no run is active, and nothing in a process
     forked from the one that called {!execute}, where [exit] ends the child. A
