@@ -56,3 +56,21 @@
   (<> %{os_type} Win32))
  (action
   (diff property-testing.md property-testing.md.corrected)))
+
+(rule
+ (enabled_if
+  (<> %{os_type} Win32))
+ (deps
+  (alias_rec %{workspace_root}/examples/04-stateful-testing/all)
+  (source_tree %{workspace_root}/examples/04-stateful-testing))
+ (action
+  (with-stdout-to
+   stateful-testing.md.corrected
+   (run %{exe:../transcript/transcript.exe} %{dep:stateful-testing.md}))))
+
+(rule
+ (alias runtest)
+ (enabled_if
+  (<> %{os_type} Win32))
+ (action
+  (diff stateful-testing.md stateful-testing.md.corrected)))

@@ -14,7 +14,7 @@ let create capacity =
 let size q = q.size
 
 let push q x =
-  if q.size = q.capacity then raise Full;
+  if q.size > q.capacity then raise Full;
   q.data.((q.head + q.size) mod q.capacity) <- x;
   q.size <- q.size + 1
 
