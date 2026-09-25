@@ -1345,6 +1345,30 @@ let a_recorded_seed_replays_these_values () =
            (frequency [ (1, int_range 0 9); (3, int_range 100 109) ]))
        5)
 
+(* The choices a recorded seed replays over this suite's first 2000 states.
+   A choice moved by one stratum, or a side swapped, changes a count. *)
+let a_recorded_seed_replays_these_choices () =
+  let count gen p = List.length (List.filter p (samples gen 2_000)) in
+  equal ~msg:"sum of nat" int 734774
+    (List.fold_left ( + ) 0 (samples Gen.nat 2_000));
+  equal ~msg:"None" int 270 (count Gen.(option unit) Option.is_none);
+  equal ~msg:"Error" int 473 (count Gen.(result unit unit) Result.is_error);
+  equal ~msg:"Left" int 1026 (count Gen.(either unit unit) Either.is_left)
+
+let float_range_draws_inside_its_edges () =
+  let sample gen = root_value (Gen_engine.sample gen (state 0)) in
+  equal ~msg:"a one-point range" string "1.5"
+    (Pp.to_string Pp.float_exact (sample (Gen.float_range 1.5 1.5)));
+  is_true ~msg:"a span of max_float"
+    (Float.is_finite (sample (Gen.float_range 0. Float.max_float)));
+  equal ~msg:"draws of the high bound" int 0
+    (List.length
+       (List.filter (Float.equal 2.) (samples (Gen.float_range 1. 2.) 1_000)))
+
+let float_range_origin_is_positive_zero () =
+  equal ~msg:"from -0." string "0." (shrinks_to (Gen.float_range (-0.) 1.));
+  equal ~msg:"to -0." string "0." (shrinks_to (Gen.float_range (-1.) (-0.)))
+
 let int32_and_int64_print_their_literal_suffix () =
   for index = 0 to 19 do
     let tree = Gen_engine.sample Gen.int32 (state index) in
@@ -1716,6 +1740,11 @@ let contract_suite =
   [
     ( "a recorded seed replays these values",
       a_recorded_seed_replays_these_values );
+    ( "a recorded seed replays these choices",
+      a_recorded_seed_replays_these_choices );
+    ("float_range draws inside its edges", float_range_draws_inside_its_edges);
+    ( "float_range's origin is positive zero",
+      float_range_origin_is_positive_zero );
     ( "int32 and int64 print their literal suffix",
       int32_and_int64_print_their_literal_suffix );
     ( "float prints the shortest round trip",
