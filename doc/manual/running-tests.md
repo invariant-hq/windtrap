@@ -29,7 +29,9 @@ Dune runs a stanza again only when something it depends on changed.
 
 `dune exec` runs one suite's executable, and the flags go after `--`. On
 a terminal a dim line names the test that is running, so a test that
-hangs shows its name. `-v` prints a line per test:
+hangs shows its name. Under `dune exec` the report is styled even when
+its output goes to a pipe or a file, and `--color=never` turns the
+styling off. `-v` prints a line per test:
 
 <!-- run examples/06-resources-and-structure -->
 ```

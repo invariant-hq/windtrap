@@ -76,7 +76,9 @@ code, in a library with `(inline_tests)` (see
 [Baselines](baselines.md#writing-expect-tests-inside-a-library) and
 [`ppx/ppx_windtrap.mli`](../../ppx/ppx_windtrap.mli)). An executable
 suite is for tests from outside the library and for tests that need
-`bracket`, `scoped` or `fixture`.
+`bracket`, `scoped` or `fixture`. A library has one or the other: an
+executable suite that links a library holding inline tests exits `2`
+after its run, saying the registered inline tests were never driven.
 
 ## Giving each test its own resource
 
