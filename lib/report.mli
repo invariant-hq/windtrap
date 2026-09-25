@@ -113,13 +113,16 @@ val result : t -> Run.result -> unit
     order of the blocks.
 
     Under [config.verbose] every result commits a row with its status, its path,
-    its duration and, when [r.attempts > 1], the number of attempts. A skip
-    shows its reason in place of a duration, and on the terminal the reason
-    shows nowhere else. A passing property that collected labels prints its
-    label table under its row. A failing [r] with [r.counted = false] is an
-    excused expected failure. Its row carries the reason of [r.xfail], and its
-    block follows it, without the hints and every line faint past its indent,
-    then a blank line. A compact run prints nothing of an excused failure.
+    its duration and, when [r.attempts > 1], the number of attempts. The
+    duration starts at the same column on every row, the 52nd, or two spaces
+    after a path that reaches it, and what qualifies the row follows it in
+    parentheses, so only the length of a path moves it. A skip shows its reason
+    in place of a duration, and on the terminal the reason shows nowhere else. A
+    passing property that collected labels prints its label table under its row.
+    A failing [r] with [r.counted = false] is an excused expected failure. Its
+    row carries the reason of [r.xfail], and its block follows it, without the
+    hints and every line faint past its indent, then a blank line. A compact run
+    prints nothing of an excused failure.
 
     A counted failure commits its block in both kinds of run. Under
     [config.verbose] its row is the title of the block. In a compact run nothing

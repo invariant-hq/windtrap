@@ -225,8 +225,11 @@ let has_missing_baseline failures =
       | _ -> false)
     failures
 
-(* "  TAG  <name> (<qualifiers>)" padded so [timing] starts at a fixed
-   column. [title] is set on the row that is a block's title. *)
+(* "  TAG  <name>", then [timing] at [duration_column], or two spaces
+   after a name that reaches it, then "(<qualifiers>)". The qualifiers
+   follow the timing, so a long one, an expected failure's reason, never
+   moves the column; only a name can. [title] is set on the row that is a
+   block's title. *)
 let test_line ?(title = false) ~tag ~style ~name ~qualifiers ~timing () =
   let line =
     [
@@ -235,16 +238,20 @@ let test_line ?(title = false) ~tag ~style ~name ~qualifiers ~timing () =
       plain "  ";
       (if title then styled `Bold name else plain name);
     ]
-    @
+  in
+  let timing =
+    if timing = "" then []
+    else
+      let pad = max 2 (duration_column - Sections.width line) in
+      [ plain (String.make pad ' '); styled `Faint timing ]
+  in
+  let qualifiers =
     match qualifiers with
     | [] -> []
     | parts ->
         [ plain " "; styled `Faint (spf "(%s)" (String.concat ", " parts)) ]
   in
-  if timing = "" then line
-  else
-    let pad = max 2 (duration_column - Sections.width line) in
-    line @ [ plain (String.make pad ' '); styled `Faint timing ]
+  line @ timing @ qualifiers
 
 (* The label-distribution table (one producer, two placements): the failure
    blocks always show it; a passing property's prints under verbose, the
@@ -410,14 +417,15 @@ let pp_block t (r : Run.result) =
    block's lines follow it, and a blank line closes it. *)
 let verbose_result t (r : Run.result) =
   let name = Test_tree.path_to_string r.path in
-  let timing =
-    pp_duration r.duration
-    ^ if r.attempts > 1 then spf " (%d attempts)" r.attempts else ""
+  let timing = pp_duration r.duration in
+  let attempts =
+    if r.attempts > 1 then [ spf "%d attempts" r.attempts ] else []
   in
   match r.outcome with
   | Failure.Pass -> (
       put t
-        (test_line ~tag:"PASS" ~style:`Green ~name ~qualifiers:[] ~timing ());
+        (test_line ~tag:"PASS" ~style:`Green ~name ~qualifiers:attempts ~timing
+           ());
       (* A passing property with collected labels prints its distribution,
          the same [pp_prop_stats] projection as the failure blocks, so the
          bytes cannot drift. XFAIL and SKIP lines print no table. *)
@@ -433,12 +441,13 @@ let verbose_result t (r : Run.result) =
         | Some { Test_tree.reason = None } | None -> "expected failure"
       in
       put t
-        (test_line ~tag:"XFAIL" ~style:`Faint ~name ~qualifiers:[ expected ]
-           ~timing ());
+        (test_line ~tag:"XFAIL" ~style:`Faint ~name
+           ~qualifiers:(attempts @ [ expected ]) ~timing ());
       excused_block t r failures
   | Failure.Fail failures ->
       let qualifiers =
-        (if has_missing_baseline failures then [ "no baseline" ] else [])
+        attempts
+        @ (if has_missing_baseline failures then [ "no baseline" ] else [])
         @ armed_qualifier t
       in
       put t

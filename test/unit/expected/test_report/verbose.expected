@@ -16,7 +16,7 @@ mylib: 12 tests (seed s1:7be1d2c904aa31f5)
     raised              Not_found
     Raised at Parser.parse in file "lib/parser.ml", line 40
 
-  FAIL  cli › cli help (no baseline)               0.3ms
+  FAIL  cli › cli help                             0.3ms (no baseline)
     test/test_cli.ml:9
     expect_file "test/help.expected": no baseline
     proposed (3 lines):

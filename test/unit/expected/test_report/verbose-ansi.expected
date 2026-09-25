@@ -16,7 +16,7 @@ mylib: 12 tests (seed s1:7be1d2c904aa31f5)
     «d|raised»              «r|Not_found»
     «d|Raised at Parser.parse in file "lib/parser.ml", line 40»
 
-  «r|FAIL»  «b|cli › cli help» «d|(no baseline)»               «d|0.3ms»
+  «r|FAIL»  «b|cli › cli help»                             «d|0.3ms» «d|(no baseline)»
     «d|test/test_cli.ml:9»
     expect_file "test/help.expected": no baseline
     proposed (3 lines):
@@ -51,7 +51,7 @@ mylib: 12 tests (seed s1:7be1d2c904aa31f5)
     «y|[teardown]»
     teardown exploded
 
-  «g|PASS»  flaky › eventually                         «d|0.2ms (3 attempts)»
+  «g|PASS»  flaky › eventually                         «d|0.2ms» «d|(3 attempts)»
   «g|PASS»  slow › big sort                            «d|2.5s»
   «g|PASS»  slow › hash                                «d|3.0s»
   «y|SKIP»  platform › windows paths «d|(unix only)»

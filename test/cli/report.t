@@ -198,9 +198,9 @@ pass for the known defect:
   $ scrub < out
   fixture: 1 expected failure in DURATION.
   $ run FACADE_FIXTURE=collide ./suite_main.exe -v > out 2> err
-  $ scrub < out | sed -E 's/  +[0-9.]+m?s$/  TIME/'
+  $ scrub < out | sed -E 's/  +[0-9.]+m?s /  TIME /'
   fixture: 1 test
-    XFAIL  collide (expected failure)  TIME
+    XFAIL  collide  TIME (expected failure)
       test/cli/suite_main.ml:LINE
       expected to fail, but the test passed
   

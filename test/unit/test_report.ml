@@ -825,9 +825,12 @@ let test_verbose_commits_blocks () =
           (Fixtures.result [ "first" ] (Failure.Fail [ Fixtures.prop_failure ])))
   in
   contains
-    ~msg:"the row is a title: its path bold, and (mutant armed) in an armed run"
+    ~msg:
+      "the row is a title: its path bold, and (mutant armed) after its \
+       duration in an armed run"
     ~sub:
-      "  \027[31mFAIL\027[0m  \027[1mfirst\027[0m \027[2m(mutant armed)\027[0m"
+      ("  \027[31mFAIL\027[0m  \027[1mfirst\027[0m" ^ String.make 38 ' '
+     ^ "\027[2m0.2ms\027[0m \027[2m(mutant armed)\027[0m")
     armed;
   contains ~msg:"its hints are the block's, and the blank line closes it"
     ~sub:
@@ -841,11 +844,13 @@ let test_verbose_commits_blocks () =
         Report.result r
           (Fixtures.result [ "help" ] (Failure.Fail [ Fixtures.snap_missing ])))
   in
-  contains ~msg:"a missing baseline qualifies the row, in parentheses"
-    ~sub:"  FAIL  help (no baseline)  " (missing ());
+  contains
+    ~msg:
+      "a missing baseline qualifies the row, in parentheses after its duration"
+    ~sub:"0.2ms (no baseline)\n" (missing ());
   not_contains ~msg:"and no dash does" ~sub:"\u{2014}" (missing ());
   contains ~msg:"the armed qualifier shares the slot"
-    ~sub:"  FAIL  help (no baseline, mutant armed)  "
+    ~sub:"0.2ms (no baseline, mutant armed)\n"
     (missing ~armed:"lib/calc.ml:9:12:add" ())
 
 let test_note () =
@@ -2418,8 +2423,12 @@ let test_xfail_line () =
     with_renderer ~mode:`Verbose (fun r ->
         Report.result r Fixtures.excused_result)
   in
-  contains ~msg:"xfail line: XFAIL tag and reason"
-    ~sub:"  XFAIL  known › broken carry (expected failure: issue #42)" line;
+  contains
+    ~msg:"xfail line: XFAIL tag, the duration in its column, then the reason"
+    ~sub:
+      ("  XFAIL  known › broken carry" ^ String.make 22 ' '
+     ^ "0.2ms (expected failure: issue #42)")
+    line;
   not_contains ~msg:"xfail line: not a FAIL" ~sub:"  FAIL  " line;
   let no_reason =
     with_renderer ~mode:`Verbose (fun r ->
@@ -2455,20 +2464,21 @@ let test_xfail_block () =
   in
   equal ~msg:"the block under the row, closed by a blank line, no replay:"
     string
-    "  XFAIL  known \u{203a} broken carry (expected failure: issue #42)  0.2ms\n\
-    \    test/test_carry.ml:5\n\
-    \    counterexample (case 3): (1, 2)\n\
-    \    which failed with:\n\
-    \      carry lost\n\n"
+    ("  XFAIL  known \u{203a} broken carry" ^ String.make 22 ' '
+   ^ "0.2ms (expected failure: issue #42)\n\
+     \    test/test_carry.ml:5\n\
+     \    counterexample (case 3): (1, 2)\n\
+     \    which failed with:\n\
+     \      carry lost\n\n")
     (with_renderer ~mode:`Verbose ~invocation:(`Exe "./t.exe") (fun r ->
          Report.result r excused));
   equal ~msg:"styled, each line is dim past its indent" string
-    "  \027[2mXFAIL\027[0m  known \u{203a} broken carry \027[2m(expected \
-     failure: issue #42)\027[0m  \027[2m0.2ms\027[0m\n\
-    \    \027[2mtest/test_carry.ml:5\027[0m\n\
-    \    \027[2mcounterexample (case 3): (1, 2)\027[0m\n\
-    \    \027[2mwhich failed with:\027[0m\n\
-    \      \027[2mcarry lost\027[0m\n\n"
+    ("  \027[2mXFAIL\027[0m  known \u{203a} broken carry" ^ String.make 22 ' '
+   ^ "\027[2m0.2ms\027[0m \027[2m(expected failure: issue #42)\027[0m\n\
+     \    \027[2mtest/test_carry.ml:5\027[0m\n\
+     \    \027[2mcounterexample (case 3): (1, 2)\027[0m\n\
+     \    \027[2mwhich failed with:\027[0m\n\
+     \      \027[2mcarry lost\027[0m\n\n")
     (with_renderer ~ansi:true ~mode:`Verbose (fun r -> Report.result r excused));
   equal ~msg:"compact prints nothing of it" string ""
     (with_renderer (fun r -> Report.result r excused))
@@ -3828,7 +3838,10 @@ let test_name_sanitization () =
   contains ~msg:"a skip reason stays in its row"
     ~sub:{|  SKIP  skipped (no\x0adb)|} rows;
   contains ~msg:"and so does an expected failure's"
-    ~sub:"  XFAIL  excused (expected failure: issue\t42)" rows
+    ~sub:
+      ("  XFAIL  excused" ^ String.make 35 ' '
+     ^ "0.2ms (expected failure: issue\t42)")
+    rows
 
 (* Source excerpts resolve against the project root *)
 

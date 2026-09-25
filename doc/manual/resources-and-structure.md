@@ -314,12 +314,12 @@ under its `XFAIL` line:
 ```
 $ dune exec examples/06-resources-and-structure/test_storage.exe -- -v -f duplicate
 storage: 1 test
-  XFAIL  database › a duplicate row counts once (expected failure: issue #42)  0.1ms
+  XFAIL  database › a duplicate row counts once    0.1ms (expected failure: issue #42)
     examples/06-resources-and-structure/db_tests.ml:30
       30 │ (with_db "a duplicate row counts once" a_duplicate_counts_once);
 
     expected  1
     actual    2
 
-1 expected failure in 0.5ms.
+1 expected failure in 0.6ms.
 ```

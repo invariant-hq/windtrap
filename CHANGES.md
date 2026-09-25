@@ -307,7 +307,7 @@ and the bullets below say what each area does now and why.
   says so (`expect_file "<path>": the path cannot be proven to lie under the
   project root`), names the `unverified path:` and the remedy, `(set
   WINDTRAP_PROJECT_ROOT to the directory the path is relative to)`. Under
-  `-v` the row of a test with a missing file ends `(no baseline)`.
+  `-v` the row of a test with a missing file ends `0.3ms (no baseline)`.
 - **Checking is read-only, and there are two acceptance gestures.** A
   mismatch is reported with its diff and its acceptance command in every
   mode; what the run writes is its mode. Nothing by default. Under
@@ -502,7 +502,10 @@ and the bullets below say what each area does now and why.
   attempt, a `corrections (N):` section, and the summary. On a terminal an
   erasable `[k/n] current-test…` tail names the executing test, so a hung
   test names itself. `-v` streams one status line per test and prints a
-  passing property's label distribution. No run advertises `--failed`.
+  passing property's label distribution. A row's duration starts at one
+  column, or two spaces after a path that reaches it, and what qualifies
+  the row follows it in parentheses (`0.2ms (3 attempts)`, `0.1ms
+  (expected failure: issue #42)`), so a long reason never moves it. No run advertises `--failed`.
 - A failure block prints when its test finishes, under the header and a
   58-column `── failures ──` rule, so a run that dies has already printed
   what it knew; the rule that closes the failures, the other sections and
