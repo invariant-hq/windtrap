@@ -71,7 +71,8 @@ val int64 : int64 t
 val decimal : float t
 (** [decimal] formats a finite float as the shortest decimal without an exponent
     that reads back to it, so a number prints as a user configured it: [80.] as
-    [80], [0.5] as [0.5] and [99.99999] as [99.99999]. *)
+    [80], [0.5] as [0.5] and [99.99999] as [99.99999]. It keeps at most 17
+    places after the point, so a value below [0.1] can print rounded. *)
 
 val float_exact : float t
 (** [float_exact] formats a float as the shortest decimal that reads back to the
