@@ -376,10 +376,15 @@ and the bullets below say what each area does now and why.
   the reference. Compatibility is measured against Jane Street's pinned
   ppx_expect corpus (`test/conformance/RESULTS.md`).
 - **Inline tests that nothing drives fail loudly.** `let%expect_test` in
-  a stanza without `(inline_tests)` used to exit 0 having run nothing;
-  the first registration now arms an `at_exit` guard that every driving
+  an executable's own modules used to exit 0 having run nothing; the
+  first such registration now arms an `at_exit` guard that every driving
   path disarms, and a process that ends with registrations never claimed
   prints a diagnostic naming the files and both fixes, and exits 2.
+- **A library's inline tests are its own runner's.** Each registration
+  names its library (dune's `library-name` cookie), and only that
+  library's `inline-test-runner` runs it: a `(test)` executable that links
+  the library runs its own suite and exits with its own code, and the
+  runner of a library that depends on it runs only its own tests.
 - **`output ()`** consumes what the test printed since it started or the
   previous call, standard error and subprocess output included; under
   `--stream` it fails the test with "rerun without --stream" rather than

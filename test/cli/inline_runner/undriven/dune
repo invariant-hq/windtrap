@@ -1,25 +1,17 @@
-; Tests registered by (pps ppx_windtrap) without (inline_tests) are never
-; run: the guard must exit 2 for the undriven binary and stay silent on
-; every driven path. See doc/dev/testing.md, "The five families".
+; Tests registered by (pps ppx_windtrap) in an executable's own modules
+; are never run by dune: the guard must exit 2 for the undriven binary and
+; stay silent on every driven path. See doc/dev/testing.md, "The five
+; families".
 
-; One library carries the fixture so both mains link the same module.
+; One stanza carries the fixture so both mains link the same module, a
+; module of no library.
 
-(library
- (name undriven_inline_lib)
- (modules inline_undriven)
+(executables
+ (names undriven_main undriven_runner)
+ (modules undriven_main undriven_runner inline_undriven)
  (libraries windtrap ppx_windtrap.runtime)
  (preprocess
   (pps ppx_windtrap)))
-
-(executable
- (name undriven_main)
- (modules undriven_main)
- (libraries undriven_inline_lib))
-
-(executable
- (name undriven_runner)
- (modules undriven_runner)
- (libraries ppx_windtrap.runtime undriven_inline_lib))
 
 (rule
  (targets

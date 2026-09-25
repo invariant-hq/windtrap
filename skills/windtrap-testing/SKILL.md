@@ -106,10 +106,10 @@ let () = exit (run "mylib" [ parse ])
   `(preprocess (pps ppx_windtrap))`; a `let%test` body asserts with the
   same verbs and returns `unit`. The executable is for tests from
   outside the library and for tests that need `bracket`, `scoped` or
-  `fixture`. Choose one of the two per library: a `(test)` executable
-  that links a library holding inline tests exits `2` after its run,
-  saying the registered inline tests were never driven. A file that
-  declares inline tests is not mutated.
+  `fixture`. A library can have both: dune runs its inline tests in the
+  library's own runner, and a `(test)` executable that links the library
+  runs its own tests alone. A file that declares inline tests is not
+  mutated.
 - A resource belongs to a test: `bracket ~setup ~teardown` for one per
   test, `scoped` for a `with_`-style function, `fixture` for one shared
   across the run. `temp_dir`, `setenv` and `chdir` are undone when the

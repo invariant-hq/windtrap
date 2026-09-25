@@ -61,6 +61,15 @@
     [let%expect_test] for a bad node; the rest of a dropped body is not checked.
     Under ["enabled"], and without the cookie, they expand as above.
 
+    {1:library The [library-name] cookie}
+
+    Under the cookie [library-name], which dune sets for a library stanza, each
+    registration names that library, and only the inline runner of that library
+    runs its tests. A process that links the library for another purpose, a test
+    executable over its interface included, neither runs them nor fails for
+    them. Without the cookie the tests belong to no library, and the executable
+    that links them runs them through the runner protocol or exits [2].
+
     {1:refusals Refusals}
 
     Each of these is a compile error. A bad [NAME] or item shape is located at

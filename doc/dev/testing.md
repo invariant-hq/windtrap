@@ -50,8 +50,9 @@ non-obvious.
   `cross_partition/` has its own, so that its two runs share one
   process. The fixtures are the cross-partition promotion contract, a
   partition run from a cwd with no sources, the undriven-registration
-  guard, a masked assertion failure, a raising release, the slow and
-  verbose mirrors, and tail-position attribution.
+  guard, a library's tests left to its own runner by a suite and a
+  runner that link it, a masked assertion failure, a raising release,
+  the slow and verbose mirrors, and tail-position attribution.
 - `ppx/`: one directory per rewriter, `expect/`, `coverage/` and
   `mutate/`, each with expansion and rejection goldens produced by a
   standalone ppxlib driver (`expect_pp.exe`, `coverage_pp.exe`,

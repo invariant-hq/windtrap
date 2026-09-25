@@ -76,9 +76,9 @@ code, in a library with `(inline_tests)` (see
 [Baselines](baselines.md#writing-expect-tests-inside-a-library) and
 [`ppx/ppx_windtrap.mli`](../../ppx/ppx_windtrap.mli)). An executable
 suite is for tests from outside the library and for tests that need
-`bracket`, `scoped` or `fixture`. A library has one or the other: an
-executable suite that links a library holding inline tests exits `2`
-after its run, saying the registered inline tests were never driven.
+`bracket`, `scoped` or `fixture`. A library can have both: dune runs
+its inline tests in the library's own runner, and a suite that links the
+library runs its own tests alone.
 
 ## Giving each test its own resource
 

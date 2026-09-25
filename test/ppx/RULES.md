@@ -250,27 +250,27 @@ a rule whose row does not name it, and when a rule is unpinned without a
 | --- | --- | --- | --- |
 | E1 | `let%expect_test "n"` registers `add_test`, its body under `Expect_test_config.run` constrained to the synchronous type. | pwt:20-23, pwt:29-30 | `expect/expect_basic` |
 | E2 | A `_` name becomes `line_<N>`. | pwt:23-25 | `expect/expect_basic`, `expect/test_basic` |
-| E3 | Any other name pattern is refused. | pwt:69-71 | `expect/reject_name_pattern`, `expect/reject_test_name_pattern` |
-| E4 | Anything but one non-recursive binding is refused. | pwt:72-73 | `expect/reject_two_bindings`, `expect/reject_rec_binding` |
+| E3 | Any other name pattern is refused. | pwt:78-80 | `expect/reject_name_pattern`, `expect/reject_test_name_pattern` |
+| E4 | Anything but one non-recursive binding is refused. | pwt:81-82 | `expect/reject_two_bindings`, `expect/reject_rec_binding` |
 | E5 | `[@tags "s"]` and `[@tags "a", "b"]` on the name pattern. | pwt:25-26 | `expect/expect_basic`, `expect/test_basic` |
-| E6 | A malformed `[@tags]` is refused. | pwt:77-78 | `expect/reject_malformed_tags`, `expect/reject_malformed_tags_tuple` |
+| E6 | A malformed `[@tags]` is refused. | pwt:86-87 | `expect/reject_malformed_tags`, `expect/reject_malformed_tags_tuple` |
 | E7 | A `[@@tags]` on the binding, not the pattern, is ignored. | pwt:26-27 | `expect/expect_attributes` |
 | E8 | `pos` is file, line, and both columns from the start line. | pwt:23 (the shape: `Windtrap.pos`) | `expect/expect_basic`, `expect/test_basic` |
 | E9 | `[%expect lit]` and `[%expect_exact lit]` become core calls, the literal kept with its delimiters. | pwt:35-38 | `expect/expect_basic`; `expect/config/config_shadow.ml` (`{%expect_exact\|...\|}`) |
 | E10 | A bare `[%expect]` has the literal `""`. | pwt:38 | `expect/expect_basic`; `expect/inline/inline_expect.ml` "bare expect" |
 | E11 | A node's attributes are carried onto its call. | pwt:41 | `expect/expect_attributes` |
 | E12 | `[%expect.output]` is the sanitized read. | pwt:39 | `expect/expect_basic`; `expect/inline/inline_expect.ml` "output is consumed, not matched" |
-| E13 | `[%expect.output]` with a payload is refused. | pwt:80-81 | `expect/reject_output_payload` |
-| E14 | A payload that is not a string literal is refused. | pwt:79-80 | `expect/reject_bad_payload` |
-| E15 | An unimplemented family node inside a body is refused. | pwt:84-86 | `expect/reject_unreachable`, `expect/reject_if_reached` |
-| E16 | An implemented node outside a body is refused. | pwt:82-83 | `expect/reject_expect_outside` |
-| E17 | An unimplemented node outside a body is refused. | pwt:84-86 | `expect/reject_expectation`, `expect/reject_expect_prefix`, `expect/reject_expectation_prefix` |
-| E18 | A family attribute on the binding, the name pattern or a `module%test` is refused. | pwt:87-89 | `expect/reject_uncaught_exn`, `expect/reject_pattern_attr`, `expect/reject_module_attr`, `expect/reject_test_binding_attr`, `expect/reject_test_pattern_attr` |
-| E19 | A family attribute anywhere else is refused by the leftover scan. | pwt:87-89 | `expect/reject_leftover_attr`, `expect/reject_dropped_body` |
+| E13 | `[%expect.output]` with a payload is refused. | pwt:89-90 | `expect/reject_output_payload` |
+| E14 | A payload that is not a string literal is refused. | pwt:88-89 | `expect/reject_bad_payload` |
+| E15 | An unimplemented family node inside a body is refused. | pwt:93-95 | `expect/reject_unreachable`, `expect/reject_if_reached` |
+| E16 | An implemented node outside a body is refused. | pwt:91-92 | `expect/reject_expect_outside` |
+| E17 | An unimplemented node outside a body is refused. | pwt:93-95 | `expect/reject_expectation`, `expect/reject_expect_prefix`, `expect/reject_expectation_prefix` |
+| E18 | A family attribute on the binding, the name pattern or a `module%test` is refused. | pwt:96-98 | `expect/reject_uncaught_exn`, `expect/reject_pattern_attr`, `expect/reject_module_attr`, `expect/reject_test_binding_attr`, `expect/reject_test_pattern_attr` |
+| E19 | A family attribute anywhere else is refused by the leftover scan. | pwt:96-98 | `expect/reject_leftover_attr`, `expect/reject_dropped_body` |
 | E20 | `let%test` registers `add_test` without `run`. | pwt:47-49 | `expect/test_basic`; `expect/config/config_shadow.ml` (at run time) |
 | E21 | `module%test M` becomes `enter_group`, the module, `leave_group`; `[@@tags]` consumed, other attributes kept. | pwt:51-54 | `expect/test_basic` |
-| E22 | `module%test _` or another item is refused. | pwt:73-76 | `expect/reject_test_anonymous_module`, `expect/reject_test_item` |
-| E23 | The cookie `inline_tests`: `enabled` keeps, `disabled` drops, another value is refused. | pwt:58-62, pwt:90-92 | the cookie rules of expect/dune over `expect/expect_basic` and `expect/test_basic` (cookie_enabled, cookie_disabled, cookie_invalid) |
+| E22 | `module%test _` or another item is refused. | pwt:82-85 | `expect/reject_test_anonymous_module`, `expect/reject_test_item` |
+| E23 | The cookie `inline_tests`: `enabled` keeps, `disabled` drops, another value is refused. | pwt:58-62, pwt:99-101 | the cookie rules of expect/dune over `expect/expect_basic` and `expect/test_basic` (cookie_enabled, cookie_disabled, cookie_invalid) |
 | E24 | The cookie value `ignored` drops. | pwt:58-59 | the rule cookie_ignored of expect/dune over `expect/test_basic` |
 | E25 | The drop applies to `let%test` and `module%test`. | pwt:58-59 | the rule cookie_ignored of expect/dune over `expect/test_basic` |
 | E26 | Generated code is warning-free under `-w +a -warn-error +a`. | pwt:15-16 | build of `expect/strict_flags/inline_strict.ml` |
@@ -282,3 +282,4 @@ a rule whose row does not name it, and when a rule is unpinned without a
 | E32 | A body that calls `Windtrap.output` itself reads the output unsanitized. | expect_test_config.mli:50 | `expect/config/config_shadow.ml` |
 | E33 | An override of `run` that never calls `f` passes its test with nothing checked; one that calls it twice runs every expectation of the body twice. | expect_test_config.mli:37-39 | `expect/config/config_calls.ml` |
 | E34 | The sanitized text is the text compared and the text a correction writes. | expect_test_config.mli:48-49 | `expect/correction/sanitized.ml` (its correction and transcript) |
+| E35 | Under the cookie `library-name` a registration names its library, and only that library's runner runs it; without the cookie it belongs to no library. | pwt:64-71 | the fixture test/cli/inline_runner/linked (list-log, runner-log, suite-exit); `test_ppx_runtime.ml` "a runner keeps its library's registrations and those of no library" |

@@ -50,6 +50,27 @@ let () =
 
 let maybe_drop items = match !maybe_drop_mode with Keep -> items | Drop -> []
 
+(* Dune's library-name cookie
+
+   Dune names the library of every library stanza it preprocesses. A
+   registration carries it, so that the runtime hands the tests of a
+   library to that library's runner alone; code of no library, an
+   executable's own, registers without it. *)
+
+let library_name = ref None
+
+let () =
+  Driver.Cookies.add_simple_handler "library-name"
+    Ast_pattern.(estring __)
+    ~f:(fun name -> library_name := name)
+
+(* A registration [call] with [~library] first when a library is named. *)
+let with_library ~loc call =
+  match (!library_name, call.pexp_desc) with
+  | Some name, Pexp_apply (f, args) ->
+      pexp_apply ~loc f ((Labelled "library", estring ~loc name) :: args)
+  | None, _ | Some _, _ -> call
+
 (* Positions *)
 
 (* [__POS_OF__]'s tuple for [l]: file, line, and both columns measured
@@ -169,19 +190,22 @@ let tags_expr ~loc tags = elist ~loc (List.map (estring ~loc) tags)
 
 (* Registration calls *)
 
-(* [add_test ~file ~pos ~tags name (fun () -> body)] at the extension
-   point [ext_loc]: the runtime registers [Windtrap.test ~__POS__:pos ~tags
-   name] under the file's group. *)
+(* [add_test ?library ~file ~pos ~tags name (fun () -> body)] at the
+   extension point [ext_loc]: the runtime registers [Windtrap.test
+   ~__POS__:pos ~tags name] under the file's group, for the library's
+   runner. *)
 let registration ~ctxt ~tags name body =
   let ext_loc = Expansion_context.Extension.extension_point_loc ctxt in
   let file = Expansion_context.Extension.input_name ctxt in
   let loc = { ext_loc with loc_ghost = true } in
   let pos = pos_expr ~loc ext_loc in
-  [%stri
-    let () =
+  let call =
+    [%expr
       Ppx_windtrap_runtime.Ppx_runtime.add_test ~file:[%e estring ~loc file]
         ~pos:[%e pos] ~tags:[%e tags_expr ~loc tags] [%e estring ~loc name]
         (fun () -> [%e body])]
+  in
+  [%stri let () = [%e with_library ~loc call]]
 
 (* let%expect_test *)
 
@@ -373,11 +397,13 @@ let test_extension =
              they nest under the group, including nested
              module%test. *)
           let enter =
-            [%stri
-              let () =
+            let call =
+              [%expr
                 Ppx_windtrap_runtime.Ppx_runtime.enter_group
                   ~file:[%e estring ~loc file]
                   ~tags:[%e tags_expr ~loc mod_tags] [%e estring ~loc mod_name]]
+            in
+            [%stri let () = [%e with_library ~loc call]]
           in
           let leave =
             [%stri let () = Ppx_windtrap_runtime.Ppx_runtime.leave_group ()]

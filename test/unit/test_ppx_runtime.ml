@@ -19,8 +19,8 @@ module Tag = Windtrap.Private.Test_tree.Tag
 
 let pos file = (file, 1, 0, 0)
 
-let add ?(tags = []) ~file name fn =
-  Ppx_runtime.add_test ~file ~pos:(pos file) ~tags name fn
+let add ?library ?(tags = []) ~file name fn =
+  Ppx_runtime.add_test ?library ~file ~pos:(pos file) ~tags name fn
 
 (* The children: [--child SCENARIO ARG...] registers as generated code
    would, speaks the protocol, and lets [exit] (or, for the undriven
@@ -39,6 +39,8 @@ let () =
           add ~file:"src/b.ml" "b" ignore;
           add ~file:"src/a.ml" "a" ignore;
           add ~file:"src/a.ml" "a2" ignore;
+          add ~library:"lib" ~file:"src/c.ml" "c" ignore;
+          add ~library:"dep" ~file:"src/d.ml" "d" ignore;
           run_protocol [ "inline-test-runner"; "lib"; "-list-partitions" ]
       | "list-files", [] ->
           (* One basename from two directories, a name with two dots, a
@@ -91,6 +93,16 @@ let () =
           Unix.putenv "WINDTRAP_JUNIT" junit;
           add ~file:"a.ml" "passes" ignore;
           run_protocol [ "inline-test-runner"; "lib"; "-partition"; "a.ml" ]
+      | "linked-library", [ log_dir ] ->
+          (* A black-box suite over a library whose tests registered. *)
+          Unix.putenv "WINDTRAP_OUTPUT" log_dir;
+          add ~library:"lib" ~file:"a.ml" "the library's" ignore;
+          Ppx_runtime.enter_group ~library:"lib" ~file:"a.ml" ~tags:[] "G";
+          add ~library:"lib" ~file:"a.ml" "in a group" ignore;
+          Ppx_runtime.leave_group ();
+          Stdlib.exit
+            (Windtrap.run ~argv:[| "suite" |] "suite"
+               [ Windtrap.test "ran" ignore ])
       | "own-suite", [ log_dir ] ->
           (* Runs a suite of its own and never drains what it registered. *)
           Unix.putenv "WINDTRAP_OUTPUT" log_dir;
@@ -233,14 +245,32 @@ let () =
     ~expected:[ "Zeta › z"; "Alpha › a" ]
     (Ppx_runtime.collect ())
 
+let () =
+  (* A library's registrations are its runner's. One name in two
+     libraries is two tests, not a duplicate. *)
+  add ~library:"dep" ~file:"src/shared.ml" "same" ignore;
+  add ~library:"lib" ~file:"src/shared.ml" "same" ignore;
+  add ~file:"src/own.ml" "own" ignore;
+  Ppx_runtime.init [| "runner"; "inline-test-runner"; "lib" |];
+  check_paths
+    "a runner keeps its library's registrations and those of no library"
+    ~expected:[ "Shared › same"; "Own › own" ]
+    (Ppx_runtime.collect ());
+  add ~library:"lib" ~file:"src/shared.ml" "same" ignore;
+  add ~file:"src/own.ml" "own" ignore;
+  Ppx_runtime.init [| "main" |];
+  check_paths "outside a runner only the registrations of no library are kept"
+    ~expected:[ "Own › own" ] (Ppx_runtime.collect ())
+
 (* exit, on a child *)
 
 let () =
   let code, out, err = spawn_child [ "--child"; "list" ] in
   check_int "-list-partitions exits 0" ~expected:0 ~actual:code;
   check_string
-    "-list-partitions prints the sorted basenames on stdout, each once"
-    ~expected:"a.ml\nb.ml\n" ~actual:out;
+    "-list-partitions prints the sorted basenames of no library and of the \
+     runner's library, each once"
+    ~expected:"a.ml\nb.ml\nc.ml\n" ~actual:out;
   check_string "and nothing on stderr" ~expected:"" ~actual:err;
   let _, out, _ = spawn_child [ "--child"; "list-files" ] in
   check_string
@@ -276,9 +306,10 @@ let () =
   check_contains "the guard names the registered file, on stderr"
     ~sub:
       "never driven: this executable links ppx_windtrap-preprocessed test code \
-       (a.ml)"
+       of no library (a.ml)"
     err;
-  check_contains "the guard names the remedy" ~sub:"add (inline_tests)" err
+  check_contains "the guard names the remedy"
+    ~sub:"move the tests into a library stanza with (inline_tests)" err
 
 (* Registration: files, groups and their names *)
 
@@ -359,7 +390,7 @@ let () =
   let code, _, err = spawn_child [ "--child"; "undriven-exit-1" ] in
   check_int "an unclaimed registry turns an exit 1 into 2" ~expected:2
     ~actual:code;
-  check_contains "with the diagnostic" ~sub:"add (inline_tests)" err
+  check_contains "with the diagnostic" ~sub:"never driven" err
 
 let () =
   with_temp_root (fun log_dir ->
@@ -367,7 +398,16 @@ let () =
       check_int "a suite that leaves the registry undrained exits 2" ~expected:2
         ~actual:code;
       check_contains "after its report" ~sub:"own: 1 passed" out;
-      check_contains "and the diagnostic" ~sub:"add (inline_tests)" err)
+      check_contains "and the diagnostic" ~sub:"never driven" err);
+  with_temp_root (fun log_dir ->
+      let code, out, err =
+        spawn_child [ "--child"; "linked-library"; log_dir ]
+      in
+      check_int "a suite that links a library's tests exits with its own code"
+        ~expected:0 ~actual:code;
+      check_string "and runs its own suite alone" ~expected:"suite: 1 passed"
+        ~actual:(String.sub out 0 (min 15 (String.length out)));
+      check_string "silently on stderr" ~expected:"" ~actual:err)
 
 let () =
   if Sys.win32 then skip_scenario ~reason:"POSIX only" __POS__

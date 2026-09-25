@@ -1,3 +1,3 @@
 --- stderr ---
-windtrap: registered inline tests were never driven: this executable links ppx_windtrap-preprocessed test code (inline_undriven.ml) but nothing ran it.
-windtrap: add (inline_tests) to the library stanza so dune builds and drives the inline runner, or drive the runner protocol yourself (Ppx_windtrap_runtime.Ppx_runtime.init/exit). Exiting 2: nothing ran.
+windtrap: registered inline tests were never driven: this executable links ppx_windtrap-preprocessed test code of no library (inline_undriven.ml) and nothing ran it.
+windtrap: move the tests into a library stanza with (inline_tests), whose inline runner dune builds and drives, or drive the runner protocol yourself (Ppx_windtrap_runtime.Ppx_runtime.init/exit). Exiting 2: nothing ran.

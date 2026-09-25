@@ -1,0 +1,84 @@
+; The split the manual teaches: a library with inline tests, and a
+; black-box suite in a (test) stanza that links it. The library's tests
+; are its own runner's: the suite runs its own tests and exits 0, and the
+; runner of a second inline library that depends on it runs only its own.
+; See doc/dev/testing.md, "The five families".
+
+(library
+ (name linked_shapes)
+ (modules shapes)
+ (inline_tests)
+ (preprocess
+  (pps ppx_windtrap)))
+
+(library
+ (name linked_scene)
+ (modules scene)
+ (libraries linked_shapes)
+ (inline_tests)
+ (preprocess
+  (pps ppx_windtrap)))
+
+(test
+ (name test_shapes)
+ (modules test_shapes)
+ (libraries windtrap linked_shapes))
+
+; The runner of linked_scene as dune generates it, linking both libraries.
+
+(executable
+ (name scene_runner)
+ (modules scene_runner)
+ (libraries ppx_windtrap.runtime linked_scene))
+
+(rule
+ (targets suite-log suite-exit list-log list-exit runner-log runner-exit)
+ (action
+  (run
+   %{dep:../drive/drive.exe}
+   --env
+   WINDTRAP_SLOW_THRESHOLD=0
+   --run
+   suite
+   %{dep:test_shapes.exe}
+   --run
+   list
+   %{dep:scene_runner.exe}
+   inline-test-runner
+   linked_scene
+   -list-partitions
+   --run
+   runner
+   %{dep:scene_runner.exe}
+   inline-test-runner
+   linked_scene)))
+
+(rule
+ (alias runtest)
+ (action
+  (diff suite-log.expected suite-log)))
+
+(rule
+ (alias runtest)
+ (action
+  (diff suite-exit.expected suite-exit)))
+
+(rule
+ (alias runtest)
+ (action
+  (diff list-log.expected list-log)))
+
+(rule
+ (alias runtest)
+ (action
+  (diff list-exit.expected list-exit)))
+
+(rule
+ (alias runtest)
+ (action
+  (diff runner-log.expected runner-log)))
+
+(rule
+ (alias runtest)
+ (action
+  (diff runner-exit.expected runner-exit)))
