@@ -1,0 +1,5 @@
+(lang dune 3.21)
+
+(context
+ (default
+  (instrument_with ppx_windtrap.coverage)))

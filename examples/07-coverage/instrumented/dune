@@ -9,7 +9,7 @@
 
 (library
  (name windtrap_example_coverage)
- (modules calc half_a half_b)
+ (modules calc half_a half_b stats)
  (preprocess
   (per_module
    ((pps ppx_windtrap.coverage -loc-filename=examples/07-coverage/calc.ml)
@@ -17,7 +17,9 @@
    ((pps ppx_windtrap.coverage -loc-filename=examples/07-coverage/half_a.ml)
     half_a)
    ((pps ppx_windtrap.coverage -loc-filename=examples/07-coverage/half_b.ml)
-    half_b))))
+    half_b)
+   ((pps ppx_windtrap.coverage -loc-filename=examples/07-coverage/stats.ml)
+    stats))))
 
 (executables
  (names test_calc test_a test_b)

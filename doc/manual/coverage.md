@@ -1,258 +1,379 @@
 # Coverage
 
-Coverage is one stanza on the library you want measured. It is inert
-without the flag — zero overhead in normal builds — so it is committed
-once and forgotten:
+This page measures which parts of a library its tests run. It
+instruments the library, shows the lines no test reached, and fails a
+build whose coverage falls below a minimum. The example is
+`examples/07-coverage/`, and the transcripts print its paths.
 
+## Instrumenting a library
+
+Coverage is a field of the library stanza, and the tests are ordinary
+`(test)` stanzas.
+
+`dune`:
+
+<!-- file examples/07-coverage/dune -->
 ```lisp
 (library
- (name mylib)
+ (name windtrap_example_coverage)
+ (modules calc half_a half_b stats)
  (instrumentation
   (backend ppx_windtrap.coverage)))
+
+(test
+ (name test_calc)
+ (modules test_calc)
+ (libraries windtrap windtrap_example_coverage))
+
+(test
+ (name test_a)
+ (modules test_a)
+ (libraries windtrap windtrap_example_coverage))
+
+(test
+ (name test_b)
+ (modules test_b)
+ (libraries windtrap windtrap_example_coverage))
+
+(rule
+ (alias cover)
+ (deps
+  (alias_rec runtest)
+  (universe))
+ (action
+  (run %{bin:windtrap} coverage --min 80)))
 ```
 
-Coverage is a run and a merge: instrumented test executables write
-their data at exit, and `windtrap coverage` — the one coverage
-reporter — merges what they wrote and reports over the whole suite. A
-test run prints no number of its own.
+The `instrumentation` field names the backend, `ppx_windtrap.coverage`.
+It does nothing until a build passes `--instrument-with
+ppx_windtrap.coverage`, so a plain `dune runtest` builds and runs the
+library as written. An instrumented build counts and changes no test's
+outcome. The rule at the end is the alias of
+[Measuring in one command](#measuring-in-one-command).
 
-Two rules keep it honest. Coverage never changes what programs or
-tests mean: instrumentation only counts, and enabling it never alters
-test outcomes, counts, or exit codes. And coverage data is transient:
-`.coverage` files live beside the build directory's contexts, under
-`_build/_coverage`, in one directory per executable, where every run
-adds a file of its own and the first run of a rebuilt executable
-removes its predecessors' — nothing to commit, nothing to go stale
-silently. Because every run keeps its file, a binary run several
-times — a command-line tool driven by a cram test — is measured across
-every invocation, not just the last.
+## Measuring coverage
 
-## Two commands
+The library holds a calculator, and its suite leaves the `Sub` and `Mul`
+arms untested.
 
-The instrumented run, then the merge:
+`calc.ml`:
 
+<!-- file examples/07-coverage/calc.ml -->
+```ocaml
+type op = Add | Sub | Mul | Div
+
+let apply op a b =
+  match op with
+  | Add -> a + b
+  | Sub -> a - b
+  | Mul -> a * b
+  | Div -> if b = 0 then invalid_arg "Calc.apply: division by zero" else a / b
+
+let eval start steps =
+  List.fold_left (fun acc (op, operand) -> apply op acc operand) start steps
+
+let symbol = function Add -> "+" | Sub -> "-" | Mul -> "*" | Div -> "/"
+[@@coverage off]
+```
+
+`test_calc.ml`:
+
+<!-- file examples/07-coverage/test_calc.ml -->
+```ocaml
+open Windtrap
+module Calc = Windtrap_example_coverage.Calc
+
+let apply =
+  group "apply"
+    [
+      test "adds" (fun () -> equal int 5 (Calc.apply Calc.Add 2 3));
+      test "divides" (fun () -> equal int 3 (Calc.apply Calc.Div 7 2));
+      test "rejects a zero divisor" (fun () ->
+          raises_match (Exn.invalid_arg ~substring:"division by zero")
+            (fun () -> Calc.apply Calc.Div 1 0));
+    ]
+
+let eval =
+  group "eval"
+    [
+      test "folds the steps" (fun () ->
+          equal int 3 (Calc.eval 1 [ (Calc.Add, 5); (Calc.Div, 2) ]));
+    ]
+
+let () = exit (run "calc" [ apply; eval ])
+```
+
+Two commands measure it. The instrumented run builds the library with
+the backend, and each suite writes a dump when it exits; `--force` makes
+dune run the suites that already passed. A test run prints no coverage
+number. `windtrap coverage` merges the dumps into one row per source
+file and prints the total last:
+
+<!-- run examples/07-coverage/instrumented as examples/07-coverage -->
 ```
 $ dune runtest --force --instrument-with ppx_windtrap.coverage
-$ dune exec windtrap -- coverage --min 80
-coverage: 80.0% (24/30 points)
-   77.8%   7/9   lib/calc.ml    uncovered: 9-10
-   77.8%   7/9   lib/eval.ml    uncovered: 5, 10
-   83.3%  10/12  lib/lexer.ml   uncovered: 6, 8
-minimum 80%: ok
+calc: 4 passed in 3.0ms.
+half_a: 6 passed in 1.0ms.
+half_b: 8 passed in 1.9ms.
+$ dune exec windtrap -- coverage
+   cover    points   file                             uncovered lines (-u shows the source)
+   77.8%     7/9     examples/07-coverage/calc.ml     6-7
+  100.0%     9/9     examples/07-coverage/half_a.ml
+  100.0%    11/11    examples/07-coverage/half_b.ml
+coverage: 93.1% (27/29 points)
 ```
 
-`--force` re-runs every suite, so every dump describes the build you
-are looking at; without it dune replays cached test actions, and a
-dump from an earlier state of the tree is excluded from the merge
-rather than merged (see below). The flag can go: declare the backend
-once in `dune-workspace` and every command in this chapter loses its
-`--instrument-with`:
+## Seeing the uncovered lines
 
+To read the source of the uncovered lines, pass `-u`. A point is the
+entry of a block, such as a function body, a `match` arm or an `if`
+branch, or the return of a call. A call that raises leaves its line
+uncovered, unless it is in tail position, where it has no point of its
+own. A row lists eight line ranges at most, then `(+N more)`, and `-u`
+shows every one, with `▌` on each line an unvisited point touches;
+the percentage counts points, not lines:
+
+<!-- run examples/07-coverage/instrumented as examples/07-coverage -->
+```
+$ dune exec windtrap -- coverage -u
+   cover    points   file                             uncovered lines
+   77.8%     7/9     examples/07-coverage/calc.ml     6-7
+  100.0%     9/9     examples/07-coverage/half_a.ml
+  100.0%    11/11    examples/07-coverage/half_b.ml
+
+examples/07-coverage/calc.ml: 77.8% (7/9)
+
+      5 │   | Add -> a + b
+  ▌   6 │   | Sub -> a - b
+  ▌   7 │   | Mul -> a * b
+      8 │   | Div -> if b = 0 then invalid_arg "Calc.apply: division by zero" else a / b
+
+coverage: 93.1% (27/29 points)
+```
+
+## Failing a build below a minimum
+
+To fail a build below a minimum, pass `--min PCT`. The last line states
+the minimum and whether the total meets it, and the command exits 1 when
+it does not. A percentage prints red below the minimum, or below 80%
+without one:
+
+<!-- run examples/07-coverage/instrumented as examples/07-coverage -->
+```
+$ dune exec windtrap -- coverage --min 95
+   cover    points   file                             uncovered lines (-u shows the source)
+   77.8%     7/9     examples/07-coverage/calc.ml     6-7
+  100.0%     9/9     examples/07-coverage/half_a.ml
+  100.0%    11/11    examples/07-coverage/half_b.ml
+coverage: 93.1% (27/29 points), minimum 95%: FAILED
+```
+
+## Finding modules no test links
+
+A module that no suite links has no points in any dump, and neither has
+a library without the `instrumentation` field, so the total leaves them
+out. To require data for a source, pass `--expect PATH`, a file or a
+directory relative to the project root. The command names each source
+under it that has no data and exits 1; `--do-not-expect PATH` exempts a
+file or a directory. `calc.mll` and `calc.pp.ml` count as `calc.ml`. No
+suite calls `stats.ml`:
+
+<!-- run examples/07-coverage/instrumented as examples/07-coverage -->
+```
+$ dune exec windtrap -- coverage --expect examples/07-coverage/stats.ml
+   cover    points   file                             uncovered lines (-u shows the source)
+   77.8%     7/9     examples/07-coverage/calc.ml     6-7
+  100.0%     9/9     examples/07-coverage/half_a.ml
+  100.0%    11/11    examples/07-coverage/half_b.ml
+coverage: 93.1% (27/29 points)
+windtrap: examples/07-coverage/stats.ml: expected source has no coverage data (not instrumented, or linked into no test executable that ran)
+```
+
+## Excluding code from coverage
+
+To leave code out of the count, mark it with an attribute:
+`[@coverage off]` on an expression, `[@@coverage off]` on a binding,
+`[@@@coverage off]` and `[@@@coverage on]` around structure items, or
+`[@@@coverage exclude_file]` for the whole file. `symbol`, at the end of
+`calc.ml`, carries `[@@coverage off]`, and no report on this page counts
+its points.
+
+## Measuring one suite
+
+A suite's dump holds the points of every instrumented module its
+executable links. `test_b` calls `Half_a.greet` and nothing else of
+`Half_a`, and its dump holds all of `Half_a`. The project's report adds
+the counts of each point over every dump, and `half_a.ml` reads 100%
+there. To read one suite's dump, set `WINDTRAP_COVERAGE_FILE` to a path,
+which each run replaces, and pass the path to `windtrap coverage`:
+
+<!-- run examples/07-coverage/instrumented as examples/07-coverage -->
+```
+$ WINDTRAP_COVERAGE_FILE=half_b.coverage dune exec --instrument-with ppx_windtrap.coverage examples/07-coverage/test_b.exe
+half_b: 8 passed in 1.1ms.
+$ dune exec windtrap -- coverage half_b.coverage
+   cover    points   file                             uncovered lines (-u shows the source)
+   11.1%     1/9     examples/07-coverage/half_a.ml   1-2, 5-7
+  100.0%    11/11    examples/07-coverage/half_b.ml
+coverage: 60.0% (12/20 points)
+```
+
+## Exporting the report
+
+For other tools, `--json` prints the report as JSON and `--lcov` as an
+LCOV tracefile, which `genhtml`, Codecov and editor gutters read. Either
+makes standard output the document, and under `--min` the gate's line
+goes to standard error. `dune exec windtrap -- coverage --lcov >
+lcov.info` writes the tracefile:
+
+<!-- run examples/07-coverage/instrumented as examples/07-coverage -->
+```
+$ dune exec windtrap -- coverage --json
+{ "summary": { "visited": 27, "total": 29, "percentage": 93.10 },
+  "files": [
+    { "path": "examples/07-coverage/calc.ml", "visited": 7, "total": 9,
+      "percentage": 77.78,
+      "uncovered_lines": [6,7] },
+    { "path": "examples/07-coverage/half_a.ml", "visited": 9, "total": 9,
+      "percentage": 100.00,
+      "uncovered_lines": [] },
+    { "path": "examples/07-coverage/half_b.ml", "visited": 11, "total": 11,
+      "percentage": 100.00,
+      "uncovered_lines": [] } ] }
+$ dune exec windtrap -- coverage --lcov
+TN:
+SF:examples/07-coverage/calc.ml
+DA:4,5
+DA:5,2
+DA:6,0
+DA:7,0
+DA:8,1
+DA:11,1
+LF:6
+LH:4
+end_of_record
+TN:
+SF:examples/07-coverage/half_a.ml
+DA:1,1
+DA:2,1
+DA:5,1
+DA:6,1
+DA:7,1
+LF:5
+LH:5
+end_of_record
+TN:
+SF:examples/07-coverage/half_b.ml
+DA:1,1
+DA:2,1
+DA:3,1
+LF:3
+LH:3
+end_of_record
+```
+
+## Measuring in one command
+
+The `cover` alias of the example's dune file runs both commands:
+`dune build @cover --instrument-with ppx_windtrap.coverage`.
+`(alias_rec runtest)` runs every suite under the directory first, and
+`(universe)` makes dune run the merge on every build. `windtrap coverage`
+exits 1 below `--min 80`, and the build fails with it.
+
+## Instrumenting every build
+
+To drop `--instrument-with` from every command, name the backend in the
+`dune-workspace` file at the project root. Every build of the default
+context is then instrumented, and each test run writes its dump.
+
+`dune-workspace`:
+
+<!-- file examples/07-coverage/dune-workspace -->
 ```lisp
-(lang dune 3.0)
+(lang dune 3.21)
 
 (context
  (default
   (instrument_with ppx_windtrap.coverage)))
 ```
 
-The commands then read `dune runtest --force` and `dune exec windtrap
--- coverage --min 80`, and that is the whole product: the merged table,
-the exact arms you forgot to test, a gate for CI, and an LCOV tracefile
-for everything else.
+## Where the dumps are
 
-## What is measured
+A suite built by dune writes its dumps under `_build/_coverage`, in a
+directory of its own, one file per run. Every run keeps its dump, so a
+tool that a cram test runs several times is measured over every run.
+The first run of a rebuilt executable removes the dumps of its
+predecessors. An instrumented executable outside any build directory
+writes under `_windtrap/coverage` in its working directory, and
+`windtrap coverage` finds that directory from it or from below it.
+Under `dune exec` the command reads the build directory dune names, so a
+build with `--build-dir` reports its own dumps.
 
-Coverage is measured at expression grade, Bisect_ppx's model: points
-are the places where execution chooses — function bodies and
-optional-argument defaults, `match`/`try` arms and guards, `if` branches,
-`&&`/`||` condition arms, loop, `lazy`, and letop bodies, class bodies,
-toplevel bindings — plus application
-out-edges, which fire only when the call *returns*. Out-edges are what make the number
-truthful in exception-heavy OCaml: a call that raises leaves its point
-unvisited, so raising paths show up as uncovered instead of being
-painted green for having been entered.
+## Instrumenting without dune
 
-Exclude code explicitly with Bisect_ppx's spelling: `[@coverage off]`
-on an expression, `[@@coverage off]` on a value or module binding,
-`[@@@coverage off]` / `[@@@coverage on]` around a region of structure
-items, `[@@@coverage exclude_file]` for the whole file. An uncovered error
-branch is a missing test; an uncovered debug helper is what
-`[@coverage off]` is for. Chase uncovered branches, not a percentage.
+The backend is a ppxlib rewriter. Outside dune, a driver executable
+that links `ppxlib` and `ppx_windtrap.coverage` and calls
+`Ppxlib.Driver.standalone ()` instruments a file when the compiler runs
+it as `-ppx "driver.exe --as-ppx"`, with the installed
+`windtrap/runtime` directory on the include path. Instrument the
+library and not its tests, link the suite against `windtrap`, run it,
+and merge with `windtrap coverage`. `test/cli/nodune.t` holds such a
+session.
 
-## `windtrap coverage`
+## When a dump is excluded
 
-The command finds the `.coverage` files under the build directory's
-`_coverage` (or, in a tree built without one, `_windtrap/coverage`),
-walking up from the current directory to the project root, merges them
-— loudly rejecting files from foreign or mismatched builds — and
-renders the per-file table above. Under `dune exec` the build directory
-is the one dune names, so a private `--build-dir` reports its own
-dumps. It runs no tests and drives no build.
+Each dump records the executable that wrote it and a digest of its
+bytes. `windtrap coverage` leaves out a dump whose executable was
+deleted or rebuilt since, with a warning on standard error, then says
+once how to refresh the dumps: run the suites instrumented again. A
+build without `--instrument-with` rebuilds the suites uninstrumented,
+and every dump they wrote is then excluded. With every dump excluded,
+the command prints no report and exits 1. A dump in another version of
+the format stops the command, and the message says to delete it.
 
-`--min` exits 1 with a message when total coverage falls below the
-threshold — the CI gate lives here, never in the test run itself.
-`--expect PATH` is the other gate: every `.ml`, `.mll` and `.mly`
-under `PATH` (a directory, walked recursively; or a single file) must
-have coverage data, or the command names each one that has none and
-exits 1. That closes the hole the denominator cannot show — a library
-without the stanza, a module no test executable links, a test nobody
-ran since the rebuild. `--do-not-expect PATH` exempts a file or a
-directory. Paths are relative to the current directory, the project
-root under `dune exec`; dune's `foo.pp.ml` twins and a lexer's `.mll`
-count as the module they produce.
-Explicit `PATH` arguments (`.coverage` files, or directories searched
-recursively) replace the default search; naming a file that does not
-exist or lacks the `.coverage` suffix is a loud error naming the path,
-never a silent fall-through to the no-data report.
-`--json` prints a machine-readable document (per-file percentages and
-uncovered lines) on standard output for dashboards and diff-coverage
-tooling. `--lcov` prints an LCOV tracefile instead — the format Codecov,
-Coveralls, GitLab and editor coverage gutters consume, and what
-`genhtml` turns into an HTML report:
+## The command's options
 
+`windtrap coverage --help` lists every option:
+
+<!-- run examples/07-coverage/instrumented as examples/07-coverage -->
 ```
-$ dune exec windtrap -- coverage --lcov > lcov.info
-$ genhtml lcov.info -o _coverage
+$ dune exec windtrap -- coverage --help
+windtrap coverage - merge .coverage files and report
+
+usage: windtrap coverage [OPTIONS] [PATH...]
+
+Merges the .coverage files written by instrumented test executables and
+reports expression coverage per source file. Without PATH arguments the files
+are found under the build directory's _coverage (or _windtrap/coverage in a
+tree built without one), walking up from the current directory to the
+enclosing project root; PATH arguments (.coverage files, or directories
+searched recursively) replace that default.
+
+OPTIONS:
+  --min=PCT
+      Exit 1 when total coverage is below PCT.
+
+  --json
+      Machine-readable report on standard output.
+
+  --lcov
+      LCOV tracefile on standard output (genhtml, Codecov, Coveralls, GitLab,
+      editor gutters).
+
+  --expect=PATH
+      Exit 1 unless every .ml/.mll/.mly under PATH (or PATH itself) has
+      coverage data; repeatable.
+
+  --do-not-expect=PATH
+      Exempt PATH, a file or a directory, from --expect.
+
+  -u, --show-uncovered
+      Also render uncovered source excerpts.
+
+  -h, --help
+      Print this help and exit.
+
+ENVIRONMENT (no flag):
+  WINDTRAP_COLOR
+      Color output: always, never or auto.
 ```
-
-A line's hit count is the fewest visits of any point touching it, so a
-line holding an untested arm or a call that never returned reads as 0.
-Paths are project-relative, so run it from the project root; a file
-whose source is missing or has changed is omitted and named on stderr.
-Under either format `--min` still gates, and its verdict moves to
-stderr so standard output stays the artifact.
-
-`-u` (`--show-uncovered`) adds the uncovered points as source
-excerpts — the fastest way from a percentage to the missing test:
-
-```
-$ dune exec windtrap -- coverage -u
-...
-lib/calc.ml — 77.8% (7/9)
-
-      8 │   | Add -> a + b
-  ▌   9 │   | Sub -> a - b
-  ▌  10 │   | Mul -> a * b
-     11 │   | Div -> if b = 0 then invalid_arg "division by zero" else a / b
-```
-
-A line is marked when it intersects any unvisited point's extent, so a
-one-line `function A -> 1 | B -> 2` with only `A` exercised reads as
-uncovered: marking only lines wholly inside unvisited extents would
-hide the untested arm. The percentages count points, not lines, so they
-are unaffected.
-
-## Several test stanzas
-
-Each instrumented test executable reports its own view of the code
-*it* links. The linker drops modules a binary never references, so two
-stanzas over one library have different denominators, and
-per-executable numbers never sum or average. The project number is the
-merge: the union of every executable's point tables, counts added per
-point. Libraries without the instrumentation stanza, code under
-`[@coverage off]`, and modules no test executable links are absent
-from the denominator — not reported as 0%. `--expect lib/` is what
-turns that absence into a failure.
-
-Each dump records the executable that wrote it: its `_build`-relative
-path and a digest of its bytes — a digest rather than a timestamp,
-because dune's cache restores rebuilt artifacts with their original
-mtimes, so time cannot tell a rebuilt executable from the one that
-wrote the dump. The report excludes, with one warning line
-per file, dumps whose executable was deleted or rebuilt since the dump
-— typically a rebuild without the backend, or a cached test action the
-build tool did not re-run — and then says, once, what heals it:
-re-run the suite instrumented, forcing runs your build tool cached,
-then merge again; delete the `_coverage` directory to drop leftovers
-of removed executables. There is no override: a total computed from a
-dump that describes another build can only mislead. Foreign format
-versions fail with a delete instruction: re-running never removes
-stale-named files.
-
-## Without dune
-
-Any build can instrument: the backend is a Ppxlib rewriter, so a
-driver linked against it once — `let () = Ppxlib.Driver.standalone ()`
-with `ppxlib` and `ppx_windtrap.coverage` — is a `-ppx` for the
-compiler, and the installed `windtrap` is two archives beside the
-compiler's own library (`$lib` below, where `META` is). Instrument the
-library under test, not the test file; link the test against
-`windtrap`; run it; merge with the installed binary. `test/cli/nodune.t`
-in windtrap's tree is this session, held by a test:
-
-```
-$ ocamlopt -ppx "./coverage_ppx.exe --as-ppx" -I "$lib/windtrap/runtime" -c calc.ml
-$ ocamlopt -I +unix -I "$lib/windtrap/runtime" -I "$lib/windtrap" \
-    unix.cmxa windtrap_runtime.cmxa windtrap.cmxa calc.cmx test_calc.ml -o test_calc.exe
-$ ./test_calc.exe
-calc: 4 passed in 0.0002s.
-$ windtrap coverage --min 50
-coverage: 85.7% (6/7 points)
-   85.7%  6/7  calc.ml   uncovered: 3
-minimum 50%: ok
-```
-
-An executable under no build directory dumps under the working
-directory's own `_windtrap/coverage` — a tree built without dune never
-grows a `_build` — and `windtrap coverage` finds that directory by
-walking up from wherever it runs, exactly as it finds a build
-directory's `_coverage`. `WINDTRAP_COVERAGE_FILE=path` sends one run's
-dump to an explicit file instead (relative paths resolve against the
-working directory at the first registration; the file is replaced on
-every run), which is also how a build rule declares the dump as its
-target.
-
-## One command, if you want it
-
-The two commands above fold into one alias. Add it once, at the
-project root:
-
-```lisp
-(rule
- (alias cover)
- (deps (alias_rec runtest) (universe))
- (action (run %{bin:windtrap} coverage --min 80)))
-```
-
-`dune build @cover --instrument-with ppx_windtrap.coverage` runs every
-out-of-date stanza, then merges every executable's data and prints the
-project table; `--min` makes the alias your CI gate (test runs
-themselves never fail on coverage). `(universe)` is load-bearing: the
-`.coverage` files are not declarable dependencies, so it tells dune to
-re-run the milliseconds-cheap aggregate on every build. Drop `--min` if
-you only want the report, and add `--force` when a cached test action
-must be re-run.
-
-To make dumps ordinary build targets instead — pure dune dataflow, no
-`(universe)` — set `WINDTRAP_COVERAGE_FILE` and declare the target:
-
-```lisp
-(rule
- (targets test_a.coverage)
- (deps test_a.exe (sandbox always))
- (action (setenv WINDTRAP_COVERAGE_FILE test_a.coverage (run ./test_a.exe))))
-
-(rule
- (alias cover)
- (action (chdir %{workspace_root}
-  (run %{bin:windtrap} coverage
-   %{dep:test_a.coverage} %{dep:test_b.coverage}))))
-```
-
-`%{dep:…}` and the `chdir` are each load-bearing: the pform declares
-the dependency and keeps the path valid across the `chdir` (inside an
-action `%{workspace_root}` is the build-context root, where a plain
-`test_a.coverage` names nothing and the command fails loudly naming
-the missing path), and the `chdir` is what lets the
-report resolve the workspace-relative source paths the dumps record —
-without it every file renders `(source not found)`. An explicit file
-is one run's data: it is replaced, where the default directory
-accumulates.
-
-Prices: tests run once for `@runtest` and once for capture, one capture
-rule per stanza, `(inline_tests)` libraries cannot take part (dune
-drives their runner and offers no target), and the build fails when
-run uninstrumented (no dump is produced). The two commands at the top
-of this chapter are the right choice unless you need the dump as a
-declared artifact.

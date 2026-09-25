@@ -1,6 +1,3 @@
-(* The library under test: a tiny calculator whose match arms and if
-   branches are among the points coverage counts. *)
-
 type op = Add | Sub | Mul | Div
 
 let apply op a b =
@@ -12,3 +9,6 @@ let apply op a b =
 
 let eval start steps =
   List.fold_left (fun acc (op, operand) -> apply op acc operand) start steps
+
+let symbol = function Add -> "+" | Sub -> "-" | Mul -> "*" | Div -> "/"
+[@@coverage off]
