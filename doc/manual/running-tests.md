@@ -24,13 +24,13 @@ keys/keys.ml: 3 passed in 0.8ms.
 ```
 
 Dune runs a stanza again only when something it depends on changed.
-`dune runtest --force` runs every stanza.
+`dune runtest --force` runs every stanza, and `dune runtest DIR` runs
+the stanzas under one directory, as `dune runtest test/unit` does.
 
 ## Running one suite with flags
 
 `dune exec` runs one suite's executable, and the flags go after `--`. On
-a terminal a dim line names the test that is running, so a test that
-hangs shows its name. Under `dune exec` the report is styled even when
+a terminal a dim line names the running test. Under `dune exec` the report is styled even when
 its output goes to a pipe or a file, and `--color=never` turns the
 styling off. `-v` prints a line per test:
 
@@ -61,8 +61,8 @@ server › reindexing keeps it running
 
 ## Selecting tests by tag
 
-`--tag LABEL` keeps the tests that carry every named tag, and
-`--exclude-tag LABEL` drops those that carry any. A test declared with
+`--tag TAG` keeps the tests that carry every named tag, and
+`--exclude-tag TAG` drops those that carry any. A test declared with
 `slow` carries the tag `slow`:
 
 <!-- run examples/06-resources-and-structure -->
@@ -73,8 +73,9 @@ server › reindexing keeps it running
 
 ## Reading a selection that matches nothing
 
-A selection that keeps no test runs nothing, says why, and exits `2`.
-The last line is the command that lists the suite's tests:
+A selection given on the command line that keeps no test runs nothing,
+says why, and exits `2`. The last line is the command that lists the
+suite's tests:
 
 <!-- run examples/06-resources-and-structure -->
 ```
@@ -88,8 +89,10 @@ list: dune exec examples/06-resources-and-structure/test_storage.exe -- -l
 Under `dune runtest` the executable gets no command line, and a
 `WINDTRAP_*` variable, the flag's mirror, sets the flag instead. The
 mirror is the long flag in capitals, as `WINDTRAP_FILTER` is for
-`--filter`, and `--help` lists each one. Dune does not rerun a passing
-stanza when a variable changes, so pass `--force`:
+`--filter`, but for `--arm`'s, `WINDTRAP_MUTATE_ARM`, and `--help`
+lists each one. A mirror reaches every stanza of the project. A stanza
+whose tests a mirror's filter misses says so and passes, as the
+library's tests do here:
 
 <!-- run examples/06-resources-and-structure -->
 ```
@@ -99,11 +102,11 @@ keys/keys.ml: no tests ran: filter "gpu" matched none of 3 tests.
 (list the suite's tests with -l)
 ```
 
-A mirror reaches every stanza of the project, so a filter meant for one
-suite empties the others. The inline tests of a library take only the
-mirrors. `-l`, `--failed`, `-x`, `-u` and `--corrected` have none. A
-stanza meant to rerun when a variable changes declares it, as
-`(deps (env_var WINDTRAP_PROP_COUNT))`.
+To run one suite, name its directory, as in
+`WINDTRAP_FILTER=gpu dune runtest test/storage --force`. The inline
+tests of a library take only the mirrors. `-l`, `--failed`, `-x`, `-u`
+and `--corrected` have none. A stanza meant to rerun when a variable
+changes declares it, as `(deps (env_var WINDTRAP_PROP_COUNT))`.
 
 ## Reading a failure
 
@@ -132,16 +135,14 @@ storage: 15 tests
 keys/keys.ml: 3 passed in 0.5ms.
 ```
 
-The block gives the test's path, its location, the source line, and what
-the assertion compared. [Assertions](assertions.md) covers each verb's
-block. `-x` stops the run after the first failure.
+`-x` stops the run after the first failure.
 
 ## Rerunning the last failed tests
 
-`--failed` runs the tests that failed the last time the suite ran. The
-record is kept in the log directory: `-o` when given, as in the two
-commands below, else `_tests` in dune's build directory, or `windtrap`
-in the system's temporary directory outside dune.
+`--failed` runs the last failed tests. `dune runtest` and `dune exec`
+keep one record, so after a failing `dune runtest`,
+`dune exec test/test_storage.exe -- --failed` reruns its failures. The
+two commands below pass `-o` to keep this page's record apart:
 
 <!-- run examples/06-resources-and-structure/failing as examples/06-resources-and-structure -->
 ```
@@ -171,17 +172,19 @@ storage: 1 test
 1 failed in 0.6ms.
 ```
 
-A run updates the record of the tests it ran, and a test it did not run
-keeps its entry. `-l --failed` lists the tests `--failed` would run, and
-`--failed` with nothing recorded runs nothing and exits `2`.
+`-l --failed` lists the tests `--failed` would run, and `--failed` with
+nothing recorded runs nothing and exits `2` (see the command-line
+section of `lib/windtrap.mli` for how a run updates the record).
 
 ## Seeing a test's output
 
 The runner captures what a test writes to standard output and standard
 error. A failing test's block shows the last lines under
 `captured output`, and `full log:` names the file that holds all of
-them, under the log directory. `-s` turns the capture off, so the output
-reaches the terminal as it is written.
+them, under the log directory that `-o` sets. `-s` turns the capture off, so the output
+reaches the terminal as it is written, and a test that calls
+`output ()`, as every `expect (output ())` and `let%expect_test` does,
+fails.
 
 ## Focusing on one test
 
@@ -198,9 +201,9 @@ windtrap: warning: focus is active: 1 of 15 tests ran; remove the focus before c
 
 ## Running under CI
 
-The runner is under CI when `CI` is set to a value other than empty,
-`0`, `false`, `no`, `n` or `off`. A suite that holds a `focus` is then
-refused, with the focus named:
+The runner is under CI when `CI` is set to a true value (see the
+command-line section of `lib/windtrap.mli`). A suite that holds a
+`focus` is then refused, with the focus named:
 
 <!-- run examples/06-resources-and-structure/focused as examples/06-resources-and-structure -->
 ```
@@ -233,8 +236,9 @@ storage: 15 tests
 
 `--junit PATH` also writes the report as a JUnit file. A `PATH` that
 ends in `.xml` is the file, and any other is a directory that gets
-`<suite>.xml`, so `WINDTRAP_JUNIT=_build/junit dune runtest` writes one
-file per suite. `--shard K/N` keeps bucket `K` of `N` of the selection,
+`<suite>.xml`. The mirror's relative path is read from the project root,
+so `WINDTRAP_JUNIT=_build/junit dune runtest` writes one file per suite
+under the project's `_build/junit`. `--shard K/N` keeps bucket `K` of `N` of the selection,
 the same on every machine, so `N` jobs run each test once:
 
 <!-- run examples/06-resources-and-structure -->
