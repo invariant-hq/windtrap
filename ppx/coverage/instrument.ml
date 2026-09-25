@@ -4,172 +4,105 @@
    SPDX-License-Identifier: ISC
   ---------------------------------------------------------------------------*)
 
-(* The expression-grade instrumenter. Instrumentation must never change
-   what programs or tests mean: tail-call status, lazy compilation, and
-   evaluation order are preserved by construction.
-
-   The instrumented population is derived from Bisect_ppx's: block entries
-   (function leaf bodies and optional-argument defaults, match/try/function
-   arms and guards, if branches, while/for bodies, lazy and letop bodies,
-   class bodies) *and* application
-   out-edges - a point that fires only when an application *returns*, so an
-   expression that raises instead of returning reports uncovered - plus
-   [&&]/[||] condition arms.
-
-   Two insertion shapes exist:
-
-   - entry sequencing, [___windtrap_visit___ i; e] - cannot change
-     tail-call status, lazy compilation, or evaluation order;
-   - post-visit wrapping, [___windtrap_post_visit___ i e] - evaluates [e]
-     first and visits only if it returned. Post-visit wrapping is what
-     *can* alter tail-call status if mishandled, so [traverse] threads
-     [is_in_tail_position] and never wraps an application in tail
-     position; the mandatory semantics-preservation suite
-     (test/ppx/coverage/semantics) pins this. The [successor]
-     threading attributes an out-edge to the expression control flows into
-     next when one is known, and suppresses redundant wraps ([`Redundant])
-     where an enclosing form already observes the edge.
-
-   Each point carries a byte extent for report painting. The semantics are
-   mixed by design: entry points carry their block's extent (an arm's spans
-   the whole arm, pattern start to body end); out-edge points carry the
-   application's extent, so a raising call paints the call itself. Point
-   *identity* is a single attribution offset (start, or end-1 under
-   [at_end]) - two marks at one offset share a point, first extent
-   wins. The table is emitted in the per-file initialization module that
-   [transform_impl_file] prepends. *)
-
 open Ppxlib
+open Ast_builder.Default
 module Exp = Ast_helper.Exp
-module Cl = Ast_helper.Cl
-module Cf = Ast_helper.Cf
 
-(* The [coverage] attributes (Bisect_ppx's spelling). The mutate
-   attribute grammar in ppx/mutate/instrument.ml mirrors this one
-   deliberately (the manual promises the same spellings, modulo
-   mutation's optional reason string), so a spelling added or an error
-   message changed here changes there too. Keep them in sync; the
-   attribute-parity fixtures in test/ppx/coverage pin the promise. *)
+(* Attributes *)
 
-let recognize_coverage_attribute { attr_name; attr_payload; attr_loc } =
+(* The grammar is ppx/mutate/instrument.ml's too, under its own name; the
+   parity fixtures of test/ppx/coverage pin that the two agree. *)
+let coverage_attribute { attr_name; attr_payload; attr_loc = loc } =
   if not (String.equal attr_name.txt "coverage") then `None
   else
-    match attr_payload with
-    | PStr
-        [
-          {
-            pstr_desc =
-              Pstr_eval
-                ({ pexp_desc = Pexp_ident { txt = Lident payload; _ }; _ }, _);
-            _;
-          };
-        ] -> (
-        match payload with
-        | "off" -> `Off
-        | "on" -> `On
-        | "exclude_file" -> `Exclude_file
-        | _ ->
-            Location.raise_errorf ~loc:attr_loc
-              "Bad payload in coverage attribute.")
-    | _ ->
-        Location.raise_errorf ~loc:attr_loc "Bad payload in coverage attribute."
+    let ident =
+      match attr_payload with
+      | PStr
+          [
+            {
+              pstr_desc =
+                Pstr_eval
+                  ({ pexp_desc = Pexp_ident { txt = Lident id; _ }; _ }, _);
+              _;
+            };
+          ] ->
+          Some id
+      | _ -> None
+    in
+    match ident with
+    | Some "off" -> `Off
+    | Some "on" -> `On
+    | Some "exclude_file" -> `Exclude_file
+    | Some _ | None ->
+        Location.raise_errorf ~loc "Bad payload in coverage attribute."
 
-let has_off_attribute attributes =
-  (* Fold rather than short-circuit so every attribute is error-checked. *)
+let err_misplaced ~loc spelling =
+  Location.raise_errorf ~loc "coverage %s is not allowed here." spelling
+
+(* Every attribute is checked, not only those before an [off]. *)
+let is_off attributes =
   List.fold_left
-    (fun found attribute ->
-      match recognize_coverage_attribute attribute with
-      | `None -> found
+    (fun off attribute ->
+      match coverage_attribute attribute with
+      | `None -> off
       | `Off -> true
-      | `On ->
-          Location.raise_errorf ~loc:attribute.attr_loc
-            "coverage on is not allowed here."
-      | `Exclude_file ->
-          Location.raise_errorf ~loc:attribute.attr_loc
-            "coverage exclude_file is not allowed here.")
+      | `On -> err_misplaced ~loc:attribute.attr_loc "on"
+      | `Exclude_file -> err_misplaced ~loc:attribute.attr_loc "exclude_file")
     false attributes
 
-(* [[@tail_mod_cons]] / [[@ocaml.tail_mod_cons]] on a binding: the calls in
-   its body sit in a position out-edge wrapping would destroy. *)
-let has_tmc_attribute attributes =
+let is_tail_mod_cons attributes =
   List.exists
     (fun { attr_name = { txt; _ }; _ } ->
       txt = "tail_mod_cons" || txt = "ocaml.tail_mod_cons")
     attributes
 
-let has_exclude_file_attribute structure =
-  List.exists
-    (function
-      | { pstr_desc = Pstr_attribute attribute; _ } ->
-          recognize_coverage_attribute attribute = `Exclude_file
-      | _ -> false)
-    structure
+let excludes_file = function
+  | { pstr_desc = Pstr_attribute attribute; _ } ->
+      coverage_attribute attribute = `Exclude_file
+  | _ -> false
 
 (* Points *)
 
-(* [key] is the point's identity - one byte offset inside the
-   attribution expression; [start_ofs]/[end_ofs] the extent the report
-   paints. [uses_post] records whether any out-edge wrap was emitted, so
-   the initialization module only binds [___windtrap_post_visit___] when
-   the file references it. *)
+(* [key], the identity of a point, is one byte offset of the expression the
+   point is attributed to; the extent is what a report paints. *)
 type point = { key : int; start_ofs : int; end_ofs : int }
 
 type state = {
-  mutable rev_points : point list; (* most recently allocated first *)
-  mutable count : int;
-  mutable uses_post : bool;
+  mutable rev_points : point list; (* newest first *)
+  mutable count : int; (* the length of [rev_points] *)
+  mutable uses_post : bool; (* an out-edge was marked *)
 }
 
-let create_state () = { rev_points = []; count = 0; uses_post = false }
-
-(* Point identity: reuse the existing point at [key] (its first-recorded
-   extent wins); allocate otherwise. Linear search over the (small)
-   per-file table. *)
-let point_index st ~key ~start_ofs ~end_ofs =
+(* The index of the point at [key], allocated with [extent] unless there is
+   one already, whose extent then stands. *)
+let point st ~key (extent : location) =
   let rec find index = function
     | p :: _ when p.key = key -> index
-    | _ :: rest -> find (index - 1) rest
+    | _ :: older -> find (index - 1) older
     | [] ->
-        let index = st.count in
+        let start_ofs = extent.loc_start.pos_cnum in
+        let end_ofs = extent.loc_end.pos_cnum in
         st.rev_points <- { key; start_ofs; end_ofs } :: st.rev_points;
         st.count <- st.count + 1;
-        index
+        st.count - 1
   in
   find (st.count - 1) st.rev_points
 
-(* Mark insertion *)
+(* Marks *)
 
-(* [instrument_expr st e] wraps [e] with a visit of a fresh (or shared)
-   point:
-
-   - not [post]: the entry sequence [___windtrap_visit___ i; e];
-   - [post]: [___windtrap_post_visit___ i e] - [e] evaluates first, the
-     visit fires only if it returned (the out-edge). Callers must never
-     use [post] in tail position.
-
-   The point's attribution location is [use_loc_of]'s (which also carries
-   the [@coverage off] check), else [e]'s own; its key offset is that
-   location's start, or end-1 under [at_end]; its extent is [extent] when
-   given, the attribution location otherwise. Ghost attribution locations
-   (generated code) are not instrumented. The wrapper node carries [e]'s
-   own location, so a later mark of the wrapped node (arm marking after
-   out-edge wrapping, say) still keys and paints the original source. *)
-let instrument_expr st ?use_loc_of ?(at_end = false) ?(post = false) ?extent e =
-  let attr_holder = match use_loc_of with Some e' -> e' | None -> e in
-  let point_loc = attr_holder.pexp_loc in
-  if point_loc.loc_ghost || has_off_attribute attr_holder.pexp_attributes then e
-  else begin
+(* A mark is attributed to [anchor]: its point is keyed at the anchor's
+   start, or at its last byte under [at_end], and a generated (ghost) or
+   switched-off anchor takes no mark. The wrapper takes the location of [e],
+   so a later mark of the same node keys and paints the source. *)
+let mark st ~anchor ~at_end ~extent ~post e =
+  let at = anchor.pexp_loc in
+  if at.loc_ghost || is_off anchor.pexp_attributes then e
+  else
     let key =
-      if at_end then point_loc.loc_end.pos_cnum - 1
-      else point_loc.loc_start.pos_cnum
-    in
-    let extent = match extent with Some l -> l | None -> point_loc in
-    let index =
-      point_index st ~key ~start_ofs:extent.loc_start.pos_cnum
-        ~end_ofs:extent.loc_end.pos_cnum
+      if at_end then at.loc_end.pos_cnum - 1 else at.loc_start.pos_cnum
     in
     let loc = e.pexp_loc in
-    let index = Ast_builder.Default.eint ~loc index in
+    let index = eint ~loc (point st ~key extent) in
     if post then begin
       st.uses_post <- true;
       [%expr ___windtrap_post_visit___ [%e index] [%e e]]
@@ -178,47 +111,37 @@ let instrument_expr st ?use_loc_of ?(at_end = false) ?(post = false) ?extent e =
       [%expr
         ___windtrap_visit___ [%e index];
         [%e e]]
-  end
 
-(* [instrument_cases st cases] gives each arm an entry point on its
-   right-hand side and, when present, one on its guard (a guard runs
-   whenever the pattern matches, whether or not the arm is then taken).
-   The right-hand side's point is widened to the whole arm - pattern start
-   to body end - so an untested arm's report paints its [| Pattern ->]
-   line, not just the body. Arms that cannot be meaningfully entered -
-   [assert false], refutation cases [.] - and [[@coverage off]] arms are
-   left unmarked. Applied after traversal, which preserves every arm's
-   root location. *)
-let case_should_not_be_instrumented case =
+let entry st ?extent e =
+  let extent = Option.value extent ~default:e.pexp_loc in
+  mark st ~anchor:e ~at_end:false ~extent ~post:false e
+
+(* The body of an arm paints the whole arm, from its pattern, so an arm never
+   entered shows its [| pattern ->] line. The guard runs whenever the pattern
+   matches, so it is a block of its own. An arm that cannot be entered
+   ([assert false], a refutation) or is switched off keeps its guard unmarked
+   too. *)
+let arm st case =
   match case.pc_rhs with
-  | [%expr assert false] -> true
-  | { pexp_desc = Pexp_unreachable; _ } -> true
-  | { pexp_attributes; _ } -> has_off_attribute pexp_attributes
+  | [%expr assert false] | { pexp_desc = Pexp_unreachable; _ } -> case
+  | { pexp_attributes; _ } when is_off pexp_attributes -> case
+  | rhs ->
+      let pat = case.pc_lhs.ppat_loc in
+      let extent =
+        if
+          pat.loc_ghost
+          || pat.loc_start.pos_cnum > rhs.pexp_loc.loc_start.pos_cnum
+        then rhs.pexp_loc
+        else { rhs.pexp_loc with loc_start = pat.loc_start }
+      in
+      let pc_guard = Option.map (entry st) case.pc_guard in
+      let pc_rhs = entry st ~extent rhs in
+      { case with pc_guard; pc_rhs }
 
-let instrument_cases st cases =
-  List.map
-    (fun case ->
-      if case_should_not_be_instrumented case then case
-      else begin
-        let arm_extent =
-          let pat = case.pc_lhs.ppat_loc and rhs = case.pc_rhs.pexp_loc in
-          if pat.loc_ghost || pat.loc_start.pos_cnum > rhs.loc_start.pos_cnum
-          then rhs
-          else { rhs with loc_start = pat.loc_start }
-        in
-        let pc_guard = Option.map (instrument_expr st) case.pc_guard in
-        let pc_rhs = instrument_expr st ~extent:arm_extent case.pc_rhs in
-        { case with pc_guard; pc_rhs }
-      end)
-    cases
+(* Semantics guards *)
 
-(* Semantics-preservation guards *)
-
-(* [lazy] applied to a trivial syntactic value compiles as already forced;
-   a visit under such a [lazy] would turn the value into a thunk and change
-   the compilation of the [lazy] - so it is not instrumented. Mirrored
-   verbatim in ppx/mutate/instrument.ml, whose guards face the same
-   [lazy]-compilation hazard; keep the two in sync. *)
+(* [lazy] compiles a trivial syntactic value as already forced, and a visit
+   would make it a thunk. ppx/mutate/instrument.ml has the same test. *)
 let rec is_trivial_syntactic_value e =
   match e.pexp_desc with
   | Pexp_function _ | Pexp_poly _ | Pexp_ident _ | Pexp_constant _
@@ -228,727 +151,471 @@ let rec is_trivial_syntactic_value e =
       is_trivial_syntactic_value inner
   | _ -> false
 
-(* Applications of these never carry an out-edge point: they are
-   primitives that cannot fail interestingly (or, for [raise] and friends,
-   whose whole point is not returning), and wrapping every arithmetic
-   operator would double the table for no signal. The list is
-   Bisect_ppx's. *)
-let is_trivial_function = function
-  | [%expr ( && )]
-  | [%expr ( & )]
-  | [%expr not]
-  | [%expr ( = )]
-  | [%expr ( <> )]
-  | [%expr ( < )]
-  | [%expr ( <= )]
-  | [%expr ( > )]
-  | [%expr ( >= )]
-  | [%expr ( == )]
-  | [%expr ( != )]
-  | [%expr ref]
-  | [%expr ( ! )]
-  | [%expr ( := )]
-  | [%expr ( @ )]
-  | [%expr ( ^ )]
-  | [%expr ( + )]
-  | [%expr ( - )]
-  | [%expr ( * )]
-  | [%expr ( / )]
-  | [%expr ( +. )]
-  | [%expr ( -. )]
-  | [%expr ( *. )]
-  | [%expr ( /. )]
-  | [%expr ( mod )]
-  | [%expr ( land )]
-  | [%expr ( lor )]
-  | [%expr ( lxor )]
-  | [%expr ( lsl )]
-  | [%expr ( lsr )]
-  | [%expr ( asr )]
-  | [%expr raise]
-  | [%expr raise_notrace]
-  | [%expr failwith]
-  | [%expr ignore]
-  | [%expr Sys.opaque_identity]
-  | [%expr Obj.magic]
-  | [%expr ( ## )] ->
+(* The primitives whose applications take no out-edge, as Bisect_ppx lists
+   them. They cannot fail interestingly or never return, and an out-edge on
+   every operator would double the table for no signal. *)
+let trivial_primitives =
+  String.split_on_char ' '
+    "&& & not = <> < <= > >= == != ref ! := @ ^ + - * / +. -. *. /. mod land \
+     lor lxor lsl lsr asr raise raise_notrace failwith ignore ##"
+
+let is_trivial_function e =
+  match e.pexp_desc with
+  | Pexp_ident { txt = Lident name; _ } -> List.mem name trivial_primitives
+  | Pexp_ident
+      {
+        txt =
+          Ldot (Lident "Sys", "opaque_identity") | Ldot (Lident "Obj", "magic");
+        _;
+      } ->
+      true
+  | _ -> false
+
+(* Whether a tail call can sit in [e] when [e] is in tail position. The
+   right operand of [||] that can hold one keeps its position and gives up its
+   point, since an [if] condition would take the call out of tail position. *)
+let holds_tail_call e =
+  match e.pexp_desc with
+  | Pexp_apply (callee, _) -> not (is_trivial_function callee)
+  | Pexp_send _ | Pexp_new _ | Pexp_let _ | Pexp_letmodule _
+  | Pexp_letexception _ | Pexp_open _ | Pexp_match _ | Pexp_try _
+  | Pexp_ifthenelse _ | Pexp_sequence _ | Pexp_letop _ | Pexp_constraint _
+  | Pexp_coerce _ ->
       true
   | _ -> false
 
 (* Traversal *)
 
-(* [traverse] is a manual walk over the whole expression language that
-   threads [is_in_tail_position] (never post-wrap a tail application) and
-   [successor] (attribute an out-edge to the expression control reaches
-   next; [`Redundant] when an enclosing form already observes the edge).
-   Marks are inserted bottom-up: children are traversed first, then the
-   current node's slots are wrapped - generated wrappers are never
-   re-traversed. Extension and attribute payloads are left entirely
-   untouched. *)
+(* The position of an expression decides its out-edge. In [Tail] position a
+   call is never wrapped, since the wrap would take it out of tail position.
+   Elsewhere the out-edge is keyed at the start of the expression control
+   reaches next, when it is known ([Before]); is left to an enclosing form
+   that observes the return itself ([Observed]); or is keyed at the
+   expression's own callee ([Nontail]). *)
+type position = Tail | Nontail | Before of expression | Observed
+
+let is_tail = function Tail -> true | Nontail | Before _ | Observed -> false
+
+(* A sub-expression that ends its parent's evaluation is in tail position
+   when its parent is, and knows no successor. *)
+let inherited position = if is_tail position then Tail else Nontail
+
+(* The head function of a curried application. *)
+let rec head_callee e =
+  match e.pexp_desc with
+  | Pexp_apply (f, _) when not (is_off e.pexp_attributes) -> head_callee f
+  | _ -> e
+
+let out_edge st position ~callee e =
+  match position with
+  | Tail | Observed -> e
+  | Nontail ->
+      mark st ~anchor:callee ~at_end:true ~extent:e.pexp_loc ~post:true e
+  | Before next ->
+      mark st ~anchor:next ~at_end:false ~extent:e.pexp_loc ~post:true e
+
+(* A node's sub-expressions are traversed before its own blocks are marked,
+   so a wrapper is never traversed and inner points are numbered first. *)
 class instrumenter st =
-  let instrument_expr ?use_loc_of ?at_end ?post ?extent e =
-    instrument_expr st ?use_loc_of ?at_end ?post ?extent e
-  in
-  let instrument_cases cases = instrument_cases st cases in
   object (self)
     inherit Ast_traverse.map as super
 
-    (* Set by [[@@@coverage off]], cleared by [[@@@coverage on]]; nested
-       structures inherit the flag and restore it on exit. *)
+    (* Set in a [[@@@coverage off]] region; [structure] restores it on exit. *)
     val mutable suppressed = false
 
-    (* Set while traversing the body of a [[@tail_mod_cons]] binding.
-
-       TMC rewrites calls that sit in a constructor argument of a tail
-       expression, which is a position out-edge wrapping destroys: wrapping
-       the call in [___windtrap_post_visit___] leaves the function with no
-       TMC-able call, and warning 71 is an error in dune's default dev
-       profile, so there a library with one TMC function fails to build
-       under [--instrument-with ppx_windtrap.coverage]. In the release
-       profile, or under any setting where the warning is not an error, it
-       builds and the function silently becomes stack-consuming.
-
-       Out-edge points are given up inside such a body, exactly as they are
-       given up in ordinary tail position, for the same reason: guarantee 10
-       says instrumentation may not change what a program means, and the
-       frozen expression-grade scope keeps the tail guards in the model.
-       Entry points are unaffected. *)
+    (* Set in the body of a [[@tail_mod_cons]] binding. TMC rewrites a call
+       in a constructor argument of a tail expression, and an out-edge wrap
+       leaves it no call to rewrite. The result is warning 71, an error in
+       dune's dev profile, or else a function that silently consumes stack. *)
     val mutable in_tmc_body = false
 
+    method private binding traverse (binding : value_binding) =
+      let outer = in_tmc_body in
+      if is_tail_mod_cons binding.pvb_attributes then in_tmc_body <- true;
+      let pvb_expr = traverse binding.pvb_expr in
+      in_tmc_body <- outer;
+      { binding with pvb_expr }
+
     method! expression e =
-      (* The [suppressed] check matters for expressions reached outside the
-         [structure_item] dispatch below - module expressions such as
-         [(val ...)] inside a [[@@@coverage off]] region. *)
       if suppressed then e
-      else begin
-        let rec traverse ?(successor = `None) ~is_in_tail_position e =
-          let attrs = e.pexp_attributes in
-          if has_off_attribute attrs then e
-          else begin
-            let loc = e.pexp_loc in
+      else
+        let rec traverse position e =
+          if is_off e.pexp_attributes then e
+          else
+            let loc = e.pexp_loc and attrs = e.pexp_attributes in
             match e.pexp_desc with
-            (* Expressions that invoke arbitrary code, and may not
-               terminate: their out-edges are points. *)
             | Pexp_apply
-                ( (([%expr ( |> )] | [%expr ( |. )]) as operator),
+                ( (([%expr ( |> )] | [%expr ( |. )]) as pipe),
                   [ (l, lhs); (l', rhs) ] ) ->
-                let lhs_traversed =
-                  traverse ~successor:(`Expression rhs)
-                    ~is_in_tail_position:false lhs
-                in
-                let rhs_traversed =
-                  traverse ~successor:`Redundant ~is_in_tail_position:false rhs
-                in
+                let lhs' = traverse (Before rhs) lhs in
+                let rhs' = traverse Observed rhs in
                 let apply =
-                  Exp.apply ~loc ~attrs operator
-                    [ (l, lhs_traversed); (l', rhs_traversed) ]
+                  Exp.apply ~loc ~attrs pipe [ (l, lhs'); (l', rhs') ]
                 in
-                if is_in_tail_position then apply
-                else
-                  begin match successor with
-                  | `None ->
-                      let rec head_callee e' =
-                        match e'.pexp_desc with
-                        | Pexp_apply (e'', _) ->
-                            if has_off_attribute e'.pexp_attributes then e'
-                            else head_callee e''
-                        | _ -> e'
-                      in
-                      instrument_expr ~use_loc_of:(head_callee rhs) ~at_end:true
-                        ~post:true ~extent:loc apply
-                  | `Redundant -> apply
-                  | `Expression succ ->
-                      instrument_expr ~use_loc_of:succ ~post:true ~extent:loc
-                        apply
-                  end
+                out_edge st position ~callee:(head_callee rhs) apply
             | Pexp_apply
-                (([%expr ( || )] | [%expr ( or )]), [ (_l, left); (_l', right) ])
+                (([%expr ( || )] | [%expr ( or )]), [ (_, left); (_, right) ])
               ->
-                (* [a || b] becomes [if a then (mark; true) else (if b then
-                   (mark; true) else false)]: each condition arm is a
-                   point. A right arm that is a non-trivial application in
-                   tail position is left as [else b] instead - marking it
-                   would take the call out of tail position (its point is
-                   given up, not its tail call). *)
-                let left_mark =
-                  instrument_expr ~use_loc_of:left ~at_end:true [%expr true]
+                (* [(v; true)], where the visit [v] counts the times
+                   [operand] was true. *)
+                let was_true operand =
+                  mark st ~anchor:operand ~at_end:true ~extent:operand.pexp_loc
+                    ~post:false [%expr true]
                 in
-                let right_new =
+                let left_true = was_true left in
+                let right' =
                   match right.pexp_desc with
                   | Pexp_apply (([%expr ( || )] | [%expr ( or )]), _) ->
-                      traverse ~is_in_tail_position right
-                  | Pexp_apply (callee, _)
-                    when is_in_tail_position && not (is_trivial_function callee)
+                      traverse (inherited position) right
+                  | _ when is_tail position && holds_tail_call right ->
+                      traverse Tail right
+                  | _ ->
+                      let right' = traverse Nontail right in
+                      let right_true = was_true right in
+                      [%expr if [%e right'] then [%e right_true] else false]
+                in
+                let left' = traverse Nontail left in
+                [%expr if [%e left'] then [%e left_true] else [%e right']]
+            | Pexp_apply (fn, args) ->
+                let args =
+                  match (fn, args) with
+                  | ([%expr ( && )] | [%expr ( & )]), [ (l, left); (l', right) ]
                     ->
-                      traverse ~is_in_tail_position:true right
-                  | (Pexp_send _ | Pexp_new _) when is_in_tail_position ->
-                      traverse ~is_in_tail_position:true right
-                  (* Every shape below inherits tail position in its own
-                     sub-expressions, so a tail call can sit inside one.
-                     Demoting the arm to an [if] condition would traverse it
-                     with [is_in_tail_position:false] and post-wrap that
-                     call, taking it out of tail position: Stack_overflow
-                     under instrumentation only. The arm keeps its position
-                     and gives up its point, as the application case does. *)
-                  | Pexp_let _ | Pexp_letmodule _ | Pexp_letexception _
-                  | Pexp_open _ | Pexp_match _ | Pexp_try _ | Pexp_ifthenelse _
-                  | Pexp_sequence _ | Pexp_letop _
-                  (* [(e : t)] and [(e :> t)] are transparent for tail calls,
-                     so the arm they wrap inherits the position too. *)
-                  | Pexp_constraint _ | Pexp_coerce _
-                    when is_in_tail_position ->
-                      traverse ~is_in_tail_position:true right
-                  | _ ->
-                      let condition =
-                        traverse ~is_in_tail_position:false right
-                      in
-                      [%expr
-                        if [%e condition] then
-                          [%e
-                            instrument_expr ~use_loc_of:right ~at_end:true
-                              [%expr true]]
-                        else false]
-                in
-                let left_new = traverse ~is_in_tail_position:false left in
-                [%expr if [%e left_new] then [%e left_mark] else [%e right_new]]
-            | Pexp_apply (fn, arguments) ->
-                let arguments =
-                  match (fn, arguments) with
-                  | ([%expr ( && )] | [%expr ( & )]), [ (ll, el); (lr, er) ] ->
-                      (* [a && b] evaluates [b] only when [a] is true: [b]'s
-                         entry is the condition-arm point. An entry sequence
-                         never breaks [b]'s tail position. *)
-                      let el_new = traverse ~is_in_tail_position:false el in
-                      let er_new = traverse ~is_in_tail_position er in
-                      [ (ll, el_new); (lr, instrument_expr er_new) ]
+                      (* [right] runs only when [left] was true, and an entry
+                         never takes it out of tail position. *)
+                      let left = traverse Nontail left in
+                      let right = traverse (inherited position) right in
+                      [ (l, left); (l', entry st right) ]
                   | ( [%expr ( @@ )],
-                      [
-                        (ll, ({ pexp_desc = Pexp_apply _; _ } as el)); (lr, er);
-                      ] ) ->
-                      let el_new =
-                        traverse ~successor:`Redundant
-                          ~is_in_tail_position:false el
-                      in
-                      let er_new = traverse ~is_in_tail_position:false er in
-                      [ (ll, el_new); (lr, er_new) ]
-                  | _ ->
-                      List.map
-                        (fun (label, arg) ->
-                          (label, traverse ~is_in_tail_position:false arg))
-                        arguments
+                      [ (l, ({ pexp_desc = Pexp_apply _; _ } as f)); (l', x) ] )
+                    ->
+                      let f = traverse Observed f in
+                      [ (l, f); (l', traverse Nontail x) ]
+                  | _ -> List.map (fun (l, x) -> (l, traverse Nontail x)) args
                 in
-                let fn_new =
+                (* A [new] or a method call as the callee returns into the
+                   application, whose out-edge observes it. *)
+                let fn' =
                   match fn.pexp_desc with
                   | Pexp_new _ -> fn
-                  | Pexp_send _ ->
-                      traverse ~successor:`Redundant ~is_in_tail_position:false
-                        fn
-                  | _ -> traverse ~is_in_tail_position:false fn
+                  | Pexp_send _ -> traverse Observed fn
+                  | _ -> traverse Nontail fn
                 in
-                let apply = Exp.apply ~loc ~attrs fn_new arguments in
+                let apply = Exp.apply ~loc ~attrs fn' args in
                 (* An application whose every argument is labelled may be
-                   partial, and a partial application returns a closure,
-                   which says nothing of the call. The labels are all that
-                   the parsetree shows, so a total application of that shape
-                   gives up its out-edge too. *)
-                let all_arguments_labeled =
-                  List.for_all (fun (label, _) -> label <> Nolabel) arguments
+                   partial, and its closure says nothing of the call; the
+                   parsetree shows only the labels. *)
+                let all_labelled =
+                  List.for_all
+                    (function
+                      | Nolabel, _ -> false
+                      | (Labelled _ | Optional _), _ -> true)
+                    args
                 in
-                if is_in_tail_position || in_tmc_body || all_arguments_labeled
-                then apply
-                else if is_trivial_function fn then apply
+                if in_tmc_body || all_labelled || is_trivial_function fn then
+                  apply
                 else
-                  begin match successor with
-                  | `None ->
-                      let use_loc_of =
-                        match (fn, arguments) with
-                        | [%expr ( @@ )], [ (_, e'); _ ] -> e'
-                        | _ -> fn
-                      in
-                      instrument_expr ~use_loc_of ~at_end:true ~post:true
-                        ~extent:loc apply
-                  | `Redundant -> apply
-                  | `Expression succ ->
-                      instrument_expr ~use_loc_of:succ ~at_end:false ~post:true
-                        ~extent:loc apply
-                  end
+                  let callee =
+                    match (fn, args) with
+                    | [%expr ( @@ )], [ (_, f); _ ] -> f
+                    | _ -> fn
+                  in
+                  out_edge st position ~callee apply
             | Pexp_send (obj, meth) ->
-                let obj_new = traverse ~is_in_tail_position:false obj in
-                let apply = Exp.send ~loc ~attrs obj_new meth in
-                if is_in_tail_position || in_tmc_body then apply
-                else
-                  begin match successor with
-                  | `None -> instrument_expr ~at_end:true ~post:true apply
-                  | `Redundant -> apply
-                  | `Expression succ ->
-                      instrument_expr ~use_loc_of:succ ~post:true ~extent:loc
-                        apply
-                  end
-            | Pexp_new _ ->
-                if is_in_tail_position then e
-                else
-                  begin match successor with
-                  | `None -> instrument_expr ~at_end:true ~post:true e
-                  | `Redundant -> e
-                  | `Expression succ ->
-                      instrument_expr ~use_loc_of:succ ~post:true ~extent:loc e
-                  end
+                let send = Exp.send ~loc ~attrs (traverse Nontail obj) meth in
+                if in_tmc_body then send
+                else out_edge st position ~callee:send send
+            | Pexp_new _ -> out_edge st position ~callee:e e
             | Pexp_assert [%expr false] -> e
             | Pexp_assert inner ->
-                let inner_new = traverse ~is_in_tail_position:false inner in
-                instrument_expr ~use_loc_of:inner ~post:true ~extent:loc
-                  (Exp.assert_ ~loc ~attrs inner_new)
-            (* Expressions that have subexpressions that might not get
-               visited: their blocks are entry points. *)
-            | Pexp_function (params, constraint_, Pfunction_body body_expr) ->
-                let params = traverse_params params in
-                let body_expr = traverse ~is_in_tail_position:true body_expr in
-                (* Only the leaf body of a curried chain is a block:
-                   entering an intermediate body allocates the next closure
-                   and nothing else. Constraints and coercions are
-                   transparent - the point lands inside. *)
-                let rec mark_leaf body =
+                let assertion =
+                  Exp.assert_ ~loc ~attrs (traverse Nontail inner)
+                in
+                mark st ~anchor:inner ~at_end:false ~extent:loc ~post:true
+                  assertion
+            | Pexp_function (params, constraint_, body) ->
+                let params = List.map param params in
+                (* Only the leaf body of a curried chain is a block; a
+                   constraint or a coercion on it stays around the visit. *)
+                let rec leaf body =
                   match body.pexp_desc with
                   | Pexp_function _ -> body
                   | Pexp_constraint (inner, t) ->
-                      {
-                        body with
-                        pexp_desc = Pexp_constraint (mark_leaf inner, t);
-                      }
+                      { body with pexp_desc = Pexp_constraint (leaf inner, t) }
                   | Pexp_coerce (inner, t, t') ->
-                      {
-                        body with
-                        pexp_desc = Pexp_coerce (mark_leaf inner, t, t');
-                      }
-                  | _ -> if params <> [] then instrument_expr body else body
+                      { body with pexp_desc = Pexp_coerce (leaf inner, t, t') }
+                  | _ -> entry st body
                 in
-                {
-                  e with
-                  pexp_desc =
-                    Pexp_function
-                      (params, constraint_, Pfunction_body (mark_leaf body_expr));
-                }
-            | Pexp_function
-                ( params,
-                  constraint_,
-                  Pfunction_cases (cases, cases_loc, cases_attrs) ) ->
-                let params = traverse_params params in
-                let cases =
-                  instrument_cases
-                    (traverse_cases ~is_in_tail_position:true cases)
+                let body =
+                  match body with
+                  | Pfunction_body body ->
+                      Pfunction_body (leaf (traverse Tail body))
+                  | Pfunction_cases (cases, cases_loc, cases_attrs) ->
+                      Pfunction_cases (arms Tail cases, cases_loc, cases_attrs)
                 in
-                {
-                  e with
-                  pexp_desc =
-                    Pexp_function
-                      ( params,
-                        constraint_,
-                        Pfunction_cases (cases, cases_loc, cases_attrs) );
-                }
+                { e with pexp_desc = Pexp_function (params, constraint_, body) }
             | Pexp_match (scrutinee, cases) ->
-                let cases =
-                  instrument_cases (traverse_cases ~is_in_tail_position cases)
-                in
-                let scrutinee =
-                  traverse ~successor:`Redundant ~is_in_tail_position:false
-                    scrutinee
-                in
-                Exp.match_ ~loc ~attrs scrutinee cases
+                let cases = arms (inherited position) cases in
+                Exp.match_ ~loc ~attrs (traverse Observed scrutinee) cases
             | Pexp_try (body, cases) ->
-                let cases =
-                  instrument_cases (traverse_cases ~is_in_tail_position cases)
-                in
-                let body = traverse ~is_in_tail_position:false body in
-                Exp.try_ ~loc ~attrs body cases
+                let cases = arms (inherited position) cases in
+                Exp.try_ ~loc ~attrs (traverse Nontail body) cases
             | Pexp_ifthenelse (cond, then_, else_) ->
-                let cond =
-                  traverse ~successor:`Redundant ~is_in_tail_position:false cond
-                in
-                let then_ = traverse ~is_in_tail_position then_ in
+                let cond = traverse Observed cond in
+                let then_ = traverse (inherited position) then_ in
                 let else_ =
                   Option.map
-                    (fun branch ->
-                      instrument_expr (traverse ~is_in_tail_position branch))
+                    (fun else_ ->
+                      entry st (traverse (inherited position) else_))
                     else_
                 in
-                Exp.ifthenelse ~loc ~attrs cond (instrument_expr then_) else_
+                Exp.ifthenelse ~loc ~attrs cond (entry st then_) else_
             | Pexp_while (cond, body) ->
-                let cond = traverse ~is_in_tail_position:false cond in
-                let body = traverse ~is_in_tail_position:false body in
-                Exp.while_ ~loc ~attrs cond (instrument_expr body)
+                let cond = traverse Nontail cond in
+                Exp.while_ ~loc ~attrs cond (entry st (traverse Nontail body))
             | Pexp_for (pat, init, bound, direction, body) ->
-                let init = traverse ~is_in_tail_position:false init in
-                let bound = traverse ~is_in_tail_position:false bound in
-                let body = traverse ~is_in_tail_position:false body in
+                let init = traverse Nontail init in
+                let bound = traverse Nontail bound in
                 Exp.for_ ~loc ~attrs pat init bound direction
-                  (instrument_expr body)
+                  (entry st (traverse Nontail body))
             | Pexp_lazy body ->
-                let body = traverse ~is_in_tail_position:true body in
-                let body =
-                  if is_trivial_syntactic_value body then body
-                  else instrument_expr body
-                in
-                Exp.lazy_ ~loc ~attrs body
+                let body = traverse Tail body in
+                Exp.lazy_ ~loc ~attrs
+                  (if is_trivial_syntactic_value body then body
+                   else entry st body)
             | Pexp_poly (body, t) ->
-                let body = traverse ~is_in_tail_position:true body in
+                let body = traverse Tail body in
                 let body =
                   match body.pexp_desc with
                   | Pexp_function _ -> body
-                  | _ -> instrument_expr body
+                  | _ -> entry st body
                 in
                 Exp.poly ~loc ~attrs body t
             | Pexp_letop { let_; ands; body } ->
-                let traverse_binding_op op =
-                  {
-                    op with
-                    pbop_exp = traverse ~is_in_tail_position:false op.pbop_exp;
-                  }
+                let operand op =
+                  { op with pbop_exp = traverse Nontail op.pbop_exp }
                 in
-                let let_ = traverse_binding_op let_ in
-                let ands = List.map traverse_binding_op ands in
-                let body = traverse ~is_in_tail_position:true body in
-                Exp.letop ~loc ~attrs let_ ands (instrument_expr body)
-            (* Expressions that don't fit either of the above categories.
-               These don't need to be instrumented. *)
-            | Pexp_ident _ | Pexp_constant _ -> e
+                let let_ = operand let_ in
+                let ands = List.map operand ands in
+                Exp.letop ~loc ~attrs let_ ands (entry st (traverse Tail body))
             | Pexp_let (rec_flag, bindings, body) ->
-                let successor =
-                  match bindings with
-                  | [ _one ] -> `Expression body
-                  | _ -> `None
+                let bound =
+                  match bindings with [ _ ] -> Before body | _ -> Nontail
                 in
                 let bindings =
-                  List.map
-                    (fun binding ->
-                      let saved = in_tmc_body in
-                      if has_tmc_attribute binding.pvb_attributes then
-                        in_tmc_body <- true;
-                      let pvb_expr =
-                        traverse ~successor ~is_in_tail_position:false
-                          binding.pvb_expr
-                      in
-                      in_tmc_body <- saved;
-                      { binding with pvb_expr })
-                    bindings
+                  List.map (self#binding (traverse bound)) bindings
                 in
-                let body = traverse ~is_in_tail_position body in
-                Exp.let_ ~loc ~attrs rec_flag bindings body
-            | Pexp_tuple es ->
-                Exp.tuple ~loc ~attrs
-                  (List.map (traverse ~is_in_tail_position:false) es)
-            | Pexp_construct (c, arg) ->
-                Exp.construct ~loc ~attrs c
-                  (Option.map (traverse ~is_in_tail_position:false) arg)
-            | Pexp_variant (c, arg) ->
-                Exp.variant ~loc ~attrs c
-                  (Option.map (traverse ~is_in_tail_position:false) arg)
-            | Pexp_record (fields, base) ->
-                let fields =
-                  List.map
-                    (fun (f, e) -> (f, traverse ~is_in_tail_position:false e))
-                    fields
-                in
-                Exp.record ~loc ~attrs fields
-                  (Option.map (traverse ~is_in_tail_position:false) base)
-            | Pexp_field (record, f) ->
-                Exp.field ~loc ~attrs
-                  (traverse ~is_in_tail_position:false record)
-                  f
-            | Pexp_setfield (record, f, value) ->
-                let record = traverse ~is_in_tail_position:false record in
-                let value = traverse ~is_in_tail_position:false value in
-                Exp.setfield ~loc ~attrs record f value
-            | Pexp_array es ->
-                Exp.array ~loc ~attrs
-                  (List.map (traverse ~is_in_tail_position:false) es)
+                Exp.let_ ~loc ~attrs rec_flag bindings
+                  (traverse (inherited position) body)
             | Pexp_sequence (first, second) ->
-                let second = traverse ~is_in_tail_position second in
+                let second = traverse (inherited position) second in
+                (* After [if c then e], reaching the rest is informative:
+                   the point of [e] does not count when [c] is false. *)
                 let second =
-                  (* After [if c then e], reaching the rest of the sequence
-                     is itself informative: [e]'s point does not fire when
-                     the condition is false. *)
                   match first.pexp_desc with
-                  | Pexp_ifthenelse (_, _, None) -> instrument_expr second
+                  | Pexp_ifthenelse (_, _, None) -> entry st second
                   | _ -> second
                 in
-                let first =
-                  traverse ~successor:(`Expression second)
-                    ~is_in_tail_position:false first
+                Exp.sequence ~loc ~attrs (traverse (Before second) first) second
+            | Pexp_ident _ | Pexp_constant _ | Pexp_extension _
+            | Pexp_unreachable ->
+                e
+            | Pexp_tuple es ->
+                Exp.tuple ~loc ~attrs (List.map (traverse Nontail) es)
+            | Pexp_construct (c, arg) ->
+                Exp.construct ~loc ~attrs c (Option.map (traverse Nontail) arg)
+            | Pexp_variant (c, arg) ->
+                Exp.variant ~loc ~attrs c (Option.map (traverse Nontail) arg)
+            | Pexp_record (fields, base) ->
+                let fields =
+                  List.map (fun (f, x) -> (f, traverse Nontail x)) fields
                 in
-                Exp.sequence ~loc ~attrs first second
+                Exp.record ~loc ~attrs fields
+                  (Option.map (traverse Nontail) base)
+            | Pexp_field (record, f) ->
+                Exp.field ~loc ~attrs (traverse Nontail record) f
+            | Pexp_setfield (record, f, value) ->
+                let record = traverse Nontail record in
+                Exp.setfield ~loc ~attrs record f (traverse Nontail value)
+            | Pexp_array es ->
+                Exp.array ~loc ~attrs (List.map (traverse Nontail) es)
             | Pexp_constraint (inner, t) ->
                 Exp.constraint_ ~loc ~attrs
-                  (traverse ~is_in_tail_position inner)
+                  (traverse (inherited position) inner)
                   t
             | Pexp_coerce (inner, t, t') ->
                 Exp.coerce ~loc ~attrs
-                  (traverse ~is_in_tail_position inner)
+                  (traverse (inherited position) inner)
                   t t'
             | Pexp_setinstvar (f, value) ->
-                Exp.setinstvar ~loc ~attrs f
-                  (traverse ~is_in_tail_position:false value)
+                Exp.setinstvar ~loc ~attrs f (traverse Nontail value)
             | Pexp_override fields ->
                 Exp.override ~loc ~attrs
-                  (List.map
-                     (fun (f, e) -> (f, traverse ~is_in_tail_position:false e))
-                     fields)
+                  (List.map (fun (f, x) -> (f, traverse Nontail x)) fields)
             | Pexp_letmodule (m, module_expr, body) ->
                 let module_expr = self#module_expr module_expr in
-                let body = traverse ~is_in_tail_position body in
-                Exp.letmodule ~loc ~attrs m module_expr body
+                Exp.letmodule ~loc ~attrs m module_expr
+                  (traverse (inherited position) body)
             | Pexp_letexception (c, body) ->
                 Exp.letexception ~loc ~attrs c
-                  (traverse ~is_in_tail_position body)
+                  (traverse (inherited position) body)
             | Pexp_open (decl, body) ->
                 let decl = self#open_declaration decl in
-                let body = traverse ~is_in_tail_position body in
-                Exp.open_ ~loc ~attrs decl body
+                Exp.open_ ~loc ~attrs decl (traverse (inherited position) body)
             | Pexp_newtype (t, body) ->
-                Exp.newtype ~loc ~attrs t (traverse ~is_in_tail_position body)
-            (* Expressions that don't need instrumentation, and where AST
-               traversal leaves the expression language. *)
+                Exp.newtype ~loc ~attrs t (traverse (inherited position) body)
             | Pexp_object c -> Exp.object_ ~loc ~attrs (self#class_structure c)
             | Pexp_pack m -> Exp.pack ~loc ~attrs (self#module_expr m)
-            (* Expressions that are not recursively traversed at all. *)
-            | Pexp_extension _ | Pexp_unreachable -> e
-          end
-        (* An optional argument's default is a block of its own: it runs
-           only when the caller omits the argument, so its entry is a
-           point, and the expression is traversed like any other (a call
-           inside it carries an out-edge). Class [fun]s get the same
-           treatment in [class_expr]. *)
-        and traverse_params params =
-          List.map
-            (fun param ->
-              match param.pparam_desc with
-              | Pparam_val (label, Some default, pat) ->
-                  let default =
-                    instrument_expr
-                      (traverse ~is_in_tail_position:false default)
-                  in
-                  {
-                    param with
-                    pparam_desc = Pparam_val (label, Some default, pat);
-                  }
-              | Pparam_val (_, None, _) | Pparam_newtype _ -> param)
-            params
-        and traverse_cases ~is_in_tail_position cases =
-          List.map
-            (fun case ->
-              let pc_guard =
-                Option.map (traverse ~is_in_tail_position:false) case.pc_guard
-              in
-              let pc_rhs = traverse ~is_in_tail_position case.pc_rhs in
-              { case with pc_guard; pc_rhs })
-            cases
+        (* The default of an optional argument runs only when the caller
+           omits the argument, so it is a block. *)
+        and param p =
+          match p.pparam_desc with
+          | Pparam_val (label, Some default, pat) ->
+              let default = entry st (traverse Nontail default) in
+              { p with pparam_desc = Pparam_val (label, Some default, pat) }
+          | Pparam_val (_, None, _) | Pparam_newtype _ -> p
+        and arms position cases =
+          let case c =
+            let pc_guard = Option.map (traverse Nontail) c.pc_guard in
+            { c with pc_guard; pc_rhs = traverse position c.pc_rhs }
+          in
+          List.map (arm st) (List.map case cases)
         in
-        traverse ~is_in_tail_position:false e
-      end
+        traverse Nontail e
 
-    (* Class bodies: optional-argument defaults, concrete method
-       bodies, and initializers are blocks; their inner expressions reach
-       [expression] through the super traversal. *)
+    (* The optional-argument defaults of a class, its concrete method bodies
+       and its initializers are blocks. *)
     method! class_expr ce =
       if suppressed then ce
-      else begin
-        let loc = ce.pcl_loc and attrs = ce.pcl_attributes in
+      else
         let ce = super#class_expr ce in
         match ce.pcl_desc with
-        | Pcl_fun (l, default, p, body) ->
-            Cl.fun_ ~loc ~attrs l (Option.map instrument_expr default) p body
+        | Pcl_fun (label, default, pat, body) ->
+            let default = Option.map (entry st) default in
+            { ce with pcl_desc = Pcl_fun (label, default, pat, body) }
         | _ -> ce
-      end
 
     method! class_field cf =
       if suppressed then cf
-      else begin
-        let loc = cf.pcf_loc and attrs = cf.pcf_attributes in
+      else
         let cf = super#class_field cf in
         match cf.pcf_desc with
-        | Pcf_method (name, private_, kind) ->
-            Cf.method_ ~loc ~attrs name private_
-              (match kind with
-              | Cfk_virtual _ -> kind
-              | Cfk_concrete (o, body) -> Cf.concrete o (instrument_expr body))
+        | Pcf_method (name, private_, Cfk_concrete (override, body)) ->
+            let body = Cfk_concrete (override, entry st body) in
+            { cf with pcf_desc = Pcf_method (name, private_, body) }
         | Pcf_initializer body ->
-            Cf.initializer_ ~loc ~attrs (instrument_expr body)
+            { cf with pcf_desc = Pcf_initializer (entry st body) }
         | _ -> cf
-      end
 
-    (* [[@@coverage off]] on a module binding - [module M = ... [@@coverage
-       off]], plain or rec - skips the whole module, like the same attribute
-       on a value binding. *)
     method! module_binding mb =
-      if has_off_attribute mb.pmb_attributes then mb
-      else super#module_binding mb
+      if is_off mb.pmb_attributes then mb else super#module_binding mb
 
     method! structure_item si =
       match si.pstr_desc with
       | Pstr_attribute attribute ->
-          (match recognize_coverage_attribute attribute with
+          let loc = attribute.attr_loc in
+          (match coverage_attribute attribute with
           | `None -> ()
           | `Off ->
               if suppressed then
-                Location.raise_errorf ~loc:attribute.attr_loc
-                  "Coverage is already off.";
+                Location.raise_errorf ~loc "Coverage is already off.";
               suppressed <- true
           | `On ->
               if not suppressed then
-                Location.raise_errorf ~loc:attribute.attr_loc
-                  "Coverage is already on.";
+                Location.raise_errorf ~loc "Coverage is already on.";
               suppressed <- false
-          | `Exclude_file ->
-              Location.raise_errorf ~loc:attribute.attr_loc
-                "coverage exclude_file is not allowed here.");
+          | `Exclude_file -> err_misplaced ~loc "exclude_file");
           si
       | Pstr_value (rec_flag, bindings) when not suppressed ->
-          let bindings =
-            List.map
-              (fun binding ->
-                if has_off_attribute binding.pvb_attributes then binding
-                else begin
-                  let saved = in_tmc_body in
-                  if has_tmc_attribute binding.pvb_attributes then
-                    in_tmc_body <- true;
-                  let pvb_expr = self#expression binding.pvb_expr in
-                  in_tmc_body <- saved;
-                  { binding with pvb_expr }
-                end)
-              bindings
+          let binding b =
+            if is_off b.pvb_attributes then b
+            else self#binding self#expression b
           in
-          { si with pstr_desc = Pstr_value (rec_flag, bindings) }
-      | Pstr_eval (e, attrs) when not suppressed ->
-          { si with pstr_desc = Pstr_eval (self#expression e, attrs) }
-      | Pstr_value _ | Pstr_eval _ -> si
+          {
+            si with
+            pstr_desc = Pstr_value (rec_flag, List.map binding bindings);
+          }
       | _ -> super#structure_item si
 
     method! structure items =
-      let saved = suppressed in
-      let result = super#structure items in
-      suppressed <- saved;
-      result
+      let outer = suppressed in
+      let items = super#structure items in
+      suppressed <- outer;
+      items
 
-    (* Don't instrument payloads of extensions and attributes. *)
-    method! extension ext = ext
-    method! attribute attr = attr
+    method! extension x = x
+    method! attribute x = x
   end
 
-(* Per-file runtime initialization *)
+(* Generated module *)
 
-(* The generated preamble registers the point table and binds the visit
-   functions the marks call:
+(* Each compilation unit calls the visit functions of its own module, named
+   after the file, since a bare binding could be shadowed by a later [open]
+   and a file that includes another would collide with it.
+   ppx/mutate/instrument.ml mangles the same way under its own prefix. *)
+let module_name file =
+  let b = Buffer.create (String.length file + 16) in
+  Buffer.add_string b "Windtrap_cov___";
+  String.iter
+    (function
+      | ('A' .. 'Z' | 'a' .. 'z' | '0' .. '9' | '_') as c -> Buffer.add_char b c
+      | _ -> Buffer.add_string b "___")
+    file;
+  Buffer.contents b
 
-     module Windtrap_cov___<mangled file> = struct
-       let ___windtrap_visit___ =
-         let counts = Array.make <n> 0 in
-         Windtrap_runtime.Coverage.register ~file:<file> ~points:<table> ~counts;
-         fun index -> Windtrap_runtime.Coverage.visit counts index
-       let ___windtrap_post_visit___ point_index result =
-         ___windtrap_visit___ point_index;
-         result
-     end
-     open Windtrap_cov___<mangled file>
-
-   [___windtrap_post_visit___ i e] visits after its argument [e] has been
-   evaluated - the out-edge fires only if [e] returned; it is emitted only
-   when the file has out-edge points. The functions live in a module
-   mangled from the file name so that each compilation unit calls its own
-   (an unscoped binding could be shadowed by a later [open], and two files
-   could collide when one includes another). The [[@@@ocaml.text "/*"]]
-   stop comments hide the generated code from odoc. Mutation builds the
-   same mangled-name and stop-comment frame in
-   ppx/mutate/instrument.ml's [runtime_initialization] (unopened, its
-   prefix Windtrap_mut___); keep the shape in sync. *)
-
-(* The runtime module the generated code calls, spelled once: every
-   emitted identifier and record label is built from it. *)
-let runtime = "Windtrap_runtime.Coverage"
-
-let runtime_name ~loc name =
-  { txt = Longident.parse (runtime ^ "." ^ name); loc }
-
-let runtime_ident ~loc name =
-  Ast_builder.Default.pexp_ident ~loc (runtime_name ~loc name)
-
-let runtime_initialization st ~file =
+(* The stop comments hide the module from odoc. *)
+let generated_module st ~file =
   let loc = { (Location.in_file file) with loc_ghost = true } in
-  let module_name =
-    let buffer = Buffer.create (String.length file + 16) in
-    Buffer.add_string buffer "Windtrap_cov___";
-    String.iter
-      (function
-        | ('A' .. 'Z' | 'a' .. 'z' | '0' .. '9' | '_') as c ->
-            Buffer.add_char buffer c
-        | _ -> Buffer.add_string buffer "___")
-      file;
-    Buffer.contents buffer
+  let name = module_name file in
+  (* Every field is qualified, since a bare one would resolve by
+     type-directed disambiguation (warning 42). *)
+  let point p =
+    [%expr
+      {
+        Windtrap_runtime.Coverage.start_ofs = [%e eint ~loc p.start_ofs];
+        Windtrap_runtime.Coverage.end_ofs = [%e eint ~loc p.end_ofs];
+      }]
   in
-  let points_table =
-    Ast_builder.Default.pexp_array ~loc
-      (List.rev_map
-         (fun { key = _; start_ofs; end_ofs } ->
-           (* Every field qualified: a bare field would resolve by
-              type-directed disambiguation (warning 42, fatal in files
-              compiled with -w +a -warn-error +a). *)
-           Ast_builder.Default.pexp_record ~loc
-             [
-               ( runtime_name ~loc "start_ofs",
-                 Ast_builder.Default.eint ~loc start_ofs );
-               ( runtime_name ~loc "end_ofs",
-                 Ast_builder.Default.eint ~loc end_ofs );
-             ]
-             None)
-         st.rev_points)
-  in
-  let visit_binding =
+  let visit =
     [%stri
       let ___windtrap_visit___ =
-        let counts = Array.make [%e Ast_builder.Default.eint ~loc st.count] 0 in
-        [%e runtime_ident ~loc "register"]
-          ~file:[%e Ast_builder.Default.estring ~loc file]
-          ~points:[%e points_table] ~counts;
-        fun index -> [%e runtime_ident ~loc "visit"] counts index]
+        let counts = Array.make [%e eint ~loc st.count] 0 in
+        Windtrap_runtime.Coverage.register ~file:[%e estring ~loc file]
+          ~points:[%e pexp_array ~loc (List.rev_map point st.rev_points)]
+          ~counts;
+        fun index -> Windtrap_runtime.Coverage.visit counts index]
   in
-  let post_visit_binding =
+  let post_visit =
     [%stri
       let ___windtrap_post_visit___ point_index result =
         ___windtrap_visit___ point_index;
         result]
   in
-  let bindings =
-    if st.uses_post then [ visit_binding; post_visit_binding ]
-    else [ visit_binding ]
-  in
-  let generated_module =
-    Ast_helper.Str.module_ ~loc
-      (Ast_helper.Mb.mk ~loc
-         { txt = Some module_name; loc }
-         (Ast_helper.Mod.structure ~loc bindings))
-  in
-  let module_open =
-    Ast_helper.Str.open_ ~loc
-      (Ast_helper.Opn.mk ~loc
-         (Ast_helper.Mod.ident ~loc { txt = Lident module_name; loc }))
-  in
+  let items = if st.uses_post then [ visit; post_visit ] else [ visit ] in
   let stop_comment = [%stri [@@@ocaml.text "/*"]] in
-  [ stop_comment; generated_module; module_open; stop_comment ]
+  [
+    stop_comment;
+    pstr_module ~loc
+      (module_binding ~loc ~name:{ txt = Some name; loc }
+         ~expr:(pmod_structure ~loc items));
+    pstr_open ~loc
+      (open_infos ~loc ~override:Fresh
+         ~expr:(pmod_ident ~loc { txt = Lident name; loc }));
+    stop_comment;
+  ]
 
-(* Entry point *)
+(* Rewriting *)
 
-(* The ignore lists are mirrored in ppx/mutate/instrument.ml's entry
-   filter; keep them in sync. *)
-let always_ignore_paths = [ "//toplevel//"; "(stdin)" ]
-let always_ignore_basenames = [ ".ocamlinit"; "topfind" ]
+(* Toplevel phrases and findlib's scripts; ppx/mutate/instrument.ml skips
+   the same inputs. *)
+let is_ignored file =
+  List.mem file [ "//toplevel//"; "(stdin)" ]
+  || List.mem (Filename.basename file) [ ".ocamlinit"; "topfind" ]
 
 let transform_impl_file ctxt ast =
   let file = Expansion_context.Base.input_name ctxt in
-  let excluded =
-    List.mem file always_ignore_paths
-    || List.mem (Filename.basename file) always_ignore_basenames
-    || has_exclude_file_attribute ast
-  in
-  if excluded then ast
+  if is_ignored file || List.exists excludes_file ast then ast
   else
-    let st = create_state () in
+    let st = { rev_points = []; count = 0; uses_post = false } in
     let instrumented = (new instrumenter st)#structure ast in
-    if st.count = 0 then ast else runtime_initialization st ~file @ instrumented
+    if st.count = 0 then ast else generated_module st ~file @ instrumented
