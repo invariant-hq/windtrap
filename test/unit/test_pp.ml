@@ -17,10 +17,10 @@ let tests =
         equal ~msg:"int32" string "5" (s Pp.int32 5l);
         equal ~msg:"int64" string "9007199254740993"
           (s Pp.int64 9007199254740993L);
-        (* [float_exact] is the only float printer here: what it renders, a
-           reader may copy back and get the same double: a property
-           counterexample pasted into [~examples], a bit-exact witness. A
-           fixed-precision rendering would print 0.3 for this value. *)
+        (* What [float_exact] renders, a reader may copy back and get the
+           same double: a property counterexample pasted into [~examples], a
+           bit-exact witness. A fixed-precision rendering would print 0.3 for
+           this value. *)
         equal ~msg:"float_exact keeps the bits" string "0.30000000000000004"
           (s Pp.float_exact (0.1 +. 0.2));
         List.iter
@@ -61,6 +61,15 @@ let tests =
           "0.3333333333333333"
           (s Pp.float_exact (1. /. 3.));
         equal ~msg:"bool" string "true" (s Pp.bool true));
+    test "decimal prints a number as configured" (fun () ->
+        equal ~msg:"a whole value has no point" string "80" (s Pp.decimal 80.);
+        equal ~msg:"a fraction" string "0.5" (s Pp.decimal 0.5);
+        equal ~msg:"many places" string "99.99999" (s Pp.decimal 99.99999);
+        equal ~msg:"no exponent" string "0.00001" (s Pp.decimal 0.00001);
+        (* Seventeen places are the most [decimal] tries, and they cannot hold
+           a value this small. *)
+        equal ~msg:"decimal stops at 17 places" string "0.00000000000000000"
+          (s Pp.decimal 1e-20));
     test "str and pf agree with to_string" (fun () ->
         equal ~msg:"str formats like sprintf" string "a=1 b=two"
           (Pp.str "a=%d b=%s" 1 "two");
