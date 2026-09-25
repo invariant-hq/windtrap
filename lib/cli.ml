@@ -198,12 +198,12 @@ let table =
         arg =
           Value
             {
-              metavar = "LABEL";
+              metavar = "TAG";
               set =
                 (fun ~source:_ acc value ->
                   Ok { acc with tags = acc.tags @ [ value ] });
             };
-        doc = "Run only tests tagged LABEL (repeatable: all of them).";
+        doc = "Run only tests tagged TAG (repeatable: all of them).";
         mirror = repeatable "WINDTRAP_TAG";
       };
     Flag_entry
@@ -213,12 +213,12 @@ let table =
         arg =
           Value
             {
-              metavar = "LABEL";
+              metavar = "TAG";
               set =
                 (fun ~source:_ acc value ->
                   Ok { acc with exclude_tags = acc.exclude_tags @ [ value ] });
             };
-        doc = "Skip tests tagged LABEL (repeatable).";
+        doc = "Skip tests tagged TAG (repeatable).";
         mirror = repeatable "WINDTRAP_EXCLUDE_TAG";
       };
     Flag_entry
@@ -249,7 +249,7 @@ let table =
         short = None;
         long = "--failed";
         arg = Flag (fun acc -> { acc with failed_only = Some true });
-        doc = "Rerun only the last run's failures.";
+        doc = "Run only the last failed tests.";
         mirror = None;
       };
     Flag_entry

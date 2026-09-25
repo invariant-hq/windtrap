@@ -277,17 +277,17 @@ OPTIONS:
   -e PATTERN, --exclude=PATTERN (env WINDTRAP_EXCLUDE)
       Skip tests whose path contains PATTERN (repeatable).
 
-  --tag=LABEL (env WINDTRAP_TAG)
-      Run only tests tagged LABEL (repeatable: all of them).
+  --tag=TAG (env WINDTRAP_TAG)
+      Run only tests tagged TAG (repeatable: all of them).
 
-  --exclude-tag=LABEL (env WINDTRAP_EXCLUDE_TAG)
-      Skip tests tagged LABEL (repeatable).
+  --exclude-tag=TAG (env WINDTRAP_EXCLUDE_TAG)
+      Skip tests tagged TAG (repeatable).
 
   --shard=K/N (env WINDTRAP_SHARD)
       Run only the Kth of N deterministic path-hash buckets.
 
   --failed
-      Rerun only the last run's failures.
+      Run only the last failed tests.
 
   -l, --list
       List selected tests without running them.

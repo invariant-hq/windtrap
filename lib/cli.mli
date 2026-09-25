@@ -57,9 +57,9 @@ type parsed = {
       (** [-e PATTERN], [--exclude PATTERN], repeatable: the patterns in the
           order given. *)
   tags : string list;
-      (** [--tag LABEL], repeatable: the labels in the order given. *)
+      (** [--tag TAG], repeatable: the tags in the order given. *)
   exclude_tags : string list;
-      (** [--exclude-tag LABEL], repeatable: the labels in the order given. *)
+      (** [--exclude-tag TAG], repeatable: the tags in the order given. *)
   shard : (int * int) option;
       (** [--shard K/N], with [1 <= K <= N]. [K] and [N] are plain decimal
           numerals, so a sign, [0x] and [_] are refused. *)
