@@ -211,7 +211,7 @@ val in_order : ?__POS__:pos -> ?msg:string -> subs:string list -> string -> unit
     discards the case.
 
     Both build a {!Failure.raised}, and hold an exception as
-    [Printexc.to_string] gives it and its backtrace as
+    {!Failure.exn_to_string} gives it and its backtrace as
     {!Failure.backtrace_to_string} gives it. *)
 
 val raises : ?__POS__:pos -> ?msg:string -> exn -> (unit -> 'a) -> unit

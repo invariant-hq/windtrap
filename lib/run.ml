@@ -323,7 +323,8 @@ let subtest name fn =
          an uncaught exception at the test boundary. No verb raised it, so
          there is no site to have missed. *)
       let failure =
-        Failure.raised ?loc:frame.fr_loc ~actual:(Printexc.to_string exn)
+        Failure.raised ?loc:frame.fr_loc
+          ~actual:(Failure.exn_to_string exn)
           ~backtrace:(Failure.backtrace_to_string backtrace)
           ()
       in
@@ -871,7 +872,7 @@ let run_attempt run frame (case : Test_tree.case) ~limit ~groups ~test_name =
     | `Exception (exn, backtrace) ->
         record_failure ph
           (Failure.raised ?loc:case.Test_tree.loc
-             ~actual:(Printexc.to_string exn)
+             ~actual:(Failure.exn_to_string exn)
              ~backtrace:(Failure.backtrace_to_string backtrace)
              ())
     | `Skip reason -> if !skipped = None then skipped := Some reason

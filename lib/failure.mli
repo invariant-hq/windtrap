@@ -365,8 +365,15 @@ val reraise : [< caught ] -> 'a
 (** [reraise c] raises again what {!catch} returned: the same exception, with
     its backtrace for an [`Exception]. *)
 
+val exn_to_string : exn -> string
+(** [exn_to_string e] is [Printexc.to_string e] with the prefix [Dune__exe__]
+    removed from each name that starts with it, so an exception that an
+    executable defines prints under the name its source gives it: [M.E], never
+    [Dune__exe__M.E]. A producer must convert an exception with it, and never
+    with [Printexc.to_string], so that every report names it the same way. *)
+
 val caught_to_string : [< caught ] -> string
-(** [caught_to_string c] is [Printexc.to_string] of the exception that [c]
+(** [caught_to_string c] is {!exn_to_string} of the exception that [c]
     classifies. *)
 
 (** {1:backtraces Backtraces} *)

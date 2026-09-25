@@ -172,6 +172,9 @@ and the bullets below say what each area does now and why.
   frames is dropped in the one place a raw backtrace becomes report text,
   so the terminal, JUnit and GitHub agree. An uncaught exception's report
   carries its backtrace without `OCAMLRUNPARAM=b`.
+- An exception that a test executable defines is named as its source
+  names it: `expected exception  Bounded_queue.Full`, not dune's
+  `Dune__exe__Bounded_queue.Full`, in every block that prints one.
 
 ### Property testing
 

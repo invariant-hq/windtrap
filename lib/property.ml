@@ -213,7 +213,8 @@ let shrink_budget = 10_000
 let inner_failure : Failure.fault -> Failure.t = function
   | `Assertion failure -> failure
   | `Exception (exn, backtrace) ->
-      Failure.raised ~actual:(Printexc.to_string exn)
+      Failure.raised
+        ~actual:(Failure.exn_to_string exn)
         ~backtrace:(Failure.backtrace_to_string backtrace)
         ()
 

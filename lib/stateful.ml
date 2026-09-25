@@ -84,7 +84,7 @@ let () =
     | Specification_raised { name; step; phase; exn } ->
         Some
           (Pp.str "call %d: %s, %s raised %s" step name phase
-             (Printexc.to_string exn))
+             (Failure.exn_to_string exn))
     | _ -> None)
 
 let specification ~name ~step ~phase f =
@@ -396,7 +396,8 @@ let normalize fn =
   | Error (`Exception (exn, backtrace)) ->
       raise
         (Failure.Check_failure
-           (Failure.raised ~actual:(Printexc.to_string exn)
+           (Failure.raised
+              ~actual:(Failure.exn_to_string exn)
               ~backtrace:(Failure.backtrace_to_string backtrace)
               ()))
   | Error c -> Failure.reraise c

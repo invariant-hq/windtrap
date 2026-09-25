@@ -861,11 +861,9 @@ let tests =
             Check.raises (Payload (1, "x")) (fun () -> raise (Payload (1, "y"))))
           (fun (expected, actual, _) ->
             equal ~msg:"raises: the expected exception rendered" (option string)
-              (Some (Printexc.to_string (Payload (1, "x"))))
-              expected;
+              (Some "Test_check.Payload(1, \"x\")") expected;
             equal ~msg:"raises: the raised exception rendered" (option string)
-              (Some (Printexc.to_string (Payload (1, "y"))))
-              actual);
+              (Some "Test_check.Payload(1, \"y\")") actual);
         (* Structural comparison cannot see through functional payloads: the
            compare raises and propagates raw, never a silent pass, never a
            "wrong exception" misreport. The .mli points such cases at
@@ -895,8 +893,7 @@ let tests =
             is_true ~msg:"raises: expected rendered"
               (expected = Some "Not_found");
             equal ~msg:"raises: raised exception rendered" (option string)
-              (Some (Printexc.to_string (Payload (0, "z"))))
-              actual));
+              (Some "Test_check.Payload(0, \"z\")") actual));
     test "raises: backtrace recording" (fun () ->
         let saved = Printexc.backtrace_status () in
         Fun.protect

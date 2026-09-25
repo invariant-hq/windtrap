@@ -15,6 +15,14 @@ let has ~needle haystack =
 
 let loc_of file line = Loc.of_pos (file, line, 0, 0)
 
+(* Defined in an executable, so the runtime names it [Dune__exe__Test_failure.Full]. *)
+exception Full
+
+(* An exception whose text is its payload, for names a printer writes. *)
+exception Printed of string
+
+let () = Printexc.register_printer (function Printed s -> Some s | _ -> None)
+
 (* Top-level and never inlined, so the backtrace-trimming test can name each
    frame of this file. [through_delimit] puts a windtrap frame between two
    of them, which is the interior run the trim must not touch. *)
@@ -710,6 +718,20 @@ let tests =
         equal string "Not_found"
           (F.caught_to_string
              (`Exception (Not_found, Printexc.get_callstack 0))));
+    test "exn_to_string names an executable's exception as its source does"
+      (fun () ->
+        equal string "Test_failure.Full" (F.exn_to_string Full);
+        equal string "Test_failure.Full"
+          (F.caught_to_string (`Exception (Full, Printexc.get_callstack 0)));
+        equal string "Fun.Finally_raised: Test_failure.Full"
+          (F.exn_to_string (Fun.Finally_raised Full));
+        equal string "call (M.E)"
+          (F.exn_to_string (Printed "call (Dune__exe__M.E)"));
+        equal string "X_Dune__exe__M.E"
+          (F.exn_to_string (Printed "X_Dune__exe__M.E"));
+        equal string "(M.E) raised N.F in X_Dune__exe__T"
+          (F.exn_to_string
+             (Printed "(Dune__exe__M.E) raised Dune__exe__N.F in X_Dune__exe__T")));
   ]
 
 let () = exit @@ Windtrap.run "failure" tests

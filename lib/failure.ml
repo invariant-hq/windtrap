@@ -168,7 +168,37 @@ let reraise c =
   | `Exception (exn, backtrace) -> Printexc.raise_with_backtrace exn backtrace
   | c -> raise (to_exn c)
 
-let caught_to_string c = Printexc.to_string (to_exn c)
+(* Dune compiles the modules of an executable under the wrapper [Dune__exe],
+   so the name the runtime records for an exception they define is
+   [Dune__exe__M.E]. The prefix is cut wherever a name starts with it, a
+   printer's text included: [Fun.Finally_raised] prints the exception it
+   carries after its own name. *)
+let exe_wrapper = "Dune__exe__"
+
+let exn_to_string exn =
+  let s = Printexc.to_string exn in
+  let buf = Buffer.create (String.length s) in
+  let starts_name i =
+    i = 0
+    ||
+    match s.[i - 1] with
+    | 'A' .. 'Z' | 'a' .. 'z' | '0' .. '9' | '_' | '\'' -> false
+    | _ -> true
+  in
+  let rec scan i =
+    match Text.first_occurrence ~start:i ~pattern:exe_wrapper s with
+    | Some j when starts_name j ->
+        Buffer.add_substring buf s i (j - i);
+        scan (j + String.length exe_wrapper)
+    | Some j ->
+        Buffer.add_substring buf s i (j + 1 - i);
+        scan (j + 1)
+    | None -> Buffer.add_substring buf s i (String.length s - i)
+  in
+  scan 0;
+  Buffer.contents buf
+
+let caught_to_string c = exn_to_string (to_exn c)
 
 (* Backtraces *)
 

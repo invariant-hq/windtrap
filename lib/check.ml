@@ -282,12 +282,12 @@ let message_diff expected_exn raised =
 let raises ?__POS__ ?msg expected_exn fn =
   match Failure.catch fn with
   | Ok _ ->
-      fail_raise ?__POS__ ?msg ~expected:(Printexc.to_string expected_exn) ()
+      fail_raise ?__POS__ ?msg ~expected:(Failure.exn_to_string expected_exn) ()
   | Error (`Exception (raised, backtrace)) ->
       if raised <> expected_exn then
         fail_raise ?__POS__ ?msg
-          ~expected:(Printexc.to_string expected_exn)
-          ~actual:(Printexc.to_string raised)
+          ~expected:(Failure.exn_to_string expected_exn)
+          ~actual:(Failure.exn_to_string raised)
           ~backtrace:(Failure.backtrace_to_string backtrace)
           ?message_diff:(message_diff expected_exn raised)
           ()
@@ -299,7 +299,7 @@ let raises_match ?__POS__ ?msg pred fn =
   | Error (`Exception (raised, backtrace)) ->
       if not (pred raised) then
         fail_raise ?__POS__ ?msg ~predicate:true
-          ~actual:(Printexc.to_string raised)
+          ~actual:(Failure.exn_to_string raised)
           ~backtrace:(Failure.backtrace_to_string backtrace)
           ()
   | Error c -> Failure.reraise c

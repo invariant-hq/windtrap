@@ -423,7 +423,7 @@ module Engine : sig
       placeholder [<no printer: attach one with Gen.with_pp>].
 
       A printer that raises turns the whole text into [<printer raised EXN>],
-      [EXN] being the exception as [Printexc.to_string] prints it, a
+      [EXN] being the exception as [Failure.exn_to_string] prints it, a
       [Failure.Control] included. The guard is around the whole document, and
       only what [Failure.catch] never returns leaves it. *)
 

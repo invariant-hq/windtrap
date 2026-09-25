@@ -129,7 +129,7 @@ type stats = {
     - [inner] is the failure of the law on the reported counterexample, the
       final node of the search. It is the law's own [Failure.Check_failure]
       payload, or for any other exception a [Failure.Raise] payload with the
-      exception as [Printexc.to_string] prints it, and its backtrace when one
+      exception as [Failure.exn_to_string] prints it, and its backtrace when one
       was recorded. For a generator that raised it holds the generator's
       exception.
 
@@ -219,7 +219,7 @@ val run :
     It also ends after {!shrink_budget} steps, [Failure.Budget_spent], and when
     the forcing of a candidate raises anything but a [`Timeout], as a function
     given to {!Gen.map} or a [pre] of {!Stateful} can:
-    [Failure.Candidate_raised] with that exception as [Printexc.to_string]
+    [Failure.Candidate_raised] with that exception as [Failure.exn_to_string]
     prints it.
 
     A [`Timeout] raised anywhere in the search ends it as well,

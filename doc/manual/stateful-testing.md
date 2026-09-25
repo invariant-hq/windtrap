@@ -173,12 +173,12 @@ bounded_queue: 1 test (seed s1:c26eddaeb764a645)
       examples/04-stateful-testing/test_bounded_queue.ml:23
         23 │ raises ~__POS__ Bounded_queue.Full (fun () -> Bounded_queue.push q 0));
       call 5 of 5: push when full
-      expected exception  Dune__exe__Bounded_queue.Full
+      expected exception  Bounded_queue.Full
       but no exception was raised
     replay: dune exec examples/04-stateful-testing/test_bounded_queue.exe -- --seed s1:c26eddaeb764a645 -f 'queue › behaves like a list'
 ──────────────────────────────────────────────────────────
 
-1 failed in 0.7ms.
+1 failed in 0.8ms.
 ```
 
 ## Keeping a failing program as a regression
@@ -210,9 +210,9 @@ bounded_queue: 1 test
     examples/04-stateful-testing/test_bounded_queue.ml:44
       44 │ raises ~__POS__ Bounded_queue.Full (fun () -> Bounded_queue.push q 0));
 
-    expected exception  Dune__exe__Bounded_queue.Full
+    expected exception  Bounded_queue.Full
     but no exception was raised
 ──────────────────────────────────────────────────────────
 
-1 failed in 0.5ms.
+1 failed in 0.6ms.
 ```
