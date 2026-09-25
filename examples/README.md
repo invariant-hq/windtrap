@@ -17,8 +17,9 @@ example, and each passes.
 - `05-baselines`: `expect` literals and an `expect_file` baseline in a
   stanza run with `--corrected`, and a library of `let%expect_test`, for
   [Baselines and expect tests](../doc/manual/baselines.md).
-- `06-resources-and-structure`: a suite over four files, with resources,
-  cases, subtests, a skip and a known bug, for
+- `06-resources-and-structure`: a suite whose groups live in four files,
+  with resources, cases, subtests, a skip and a known bug, and a library
+  with inline tests, for
   [Resources and structure](../doc/manual/resources-and-structure.md)
   and [Running tests](../doc/manual/running-tests.md).
 - `07-coverage`: a library with the coverage backend, three suites over

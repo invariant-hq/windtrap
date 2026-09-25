@@ -99,7 +99,8 @@
   (<> %{os_type} Win32))
  (deps
   (alias_rec %{workspace_root}/examples/06-resources-and-structure/all)
-  (source_tree %{workspace_root}/examples/06-resources-and-structure))
+  (source_tree %{workspace_root}/examples/06-resources-and-structure)
+  %{workspace_root}/examples/06-resources-and-structure/.keys.inline-tests/inline-test-runner.exe)
  (action
   (with-stdout-to
    resources-and-structure.md.corrected
@@ -119,7 +120,8 @@
   (<> %{os_type} Win32))
  (deps
   (alias_rec %{workspace_root}/examples/06-resources-and-structure/all)
-  (source_tree %{workspace_root}/examples/06-resources-and-structure))
+  (source_tree %{workspace_root}/examples/06-resources-and-structure)
+  %{workspace_root}/examples/06-resources-and-structure/.keys.inline-tests/inline-test-runner.exe)
  (action
   (with-stdout-to
    running-tests.md.corrected

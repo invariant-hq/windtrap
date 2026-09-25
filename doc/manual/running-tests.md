@@ -19,7 +19,8 @@ suite with nothing to report prints one line:
 <!-- run examples/06-resources-and-structure -->
 ```
 $ dune runtest
-storage: 12 passed, 2 skipped, 1 expected failure in 1.9ms.
+storage: 12 passed, 2 skipped, 1 expected failure in 2.8ms.
+keys/keys.ml: 3 passed in 0.8ms.
 ```
 
 Dune runs a stanza again only when something it depends on changed.
@@ -93,7 +94,9 @@ stanza when a variable changes, so pass `--force`:
 <!-- run examples/06-resources-and-structure -->
 ```
 $ WINDTRAP_FILTER=gpu dune runtest --force
-storage: 2 skipped in 0.5ms.
+storage: 2 skipped in 0.4ms.
+keys/keys.ml: no tests ran: filter "gpu" matched none of 3 tests.
+(list the suite's tests with -l)
 ```
 
 A mirror reaches every stanza of the project, so a filter meant for one
@@ -125,7 +128,8 @@ storage: 15 tests
     actual    false
 ──────────────────────────────────────────────────────────
 
-11 passed, 2 skipped, 1 expected failure, 1 failed in 1.9ms.
+11 passed, 2 skipped, 1 expected failure, 1 failed in 2.3ms.
+keys/keys.ml: 3 passed in 0.5ms.
 ```
 
 The block gives the test's path, its location, the source line, and what

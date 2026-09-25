@@ -1,15 +1,17 @@
 # Resources and structure
 
-This page shows how to lay out a suite over files and groups, and how to
-give a test a resource that the runner releases. It also shows how to
-bound a test in time, retry it, skip it, or keep a known bug running.
-The reference is the declaring-tests and running-test sections of
+This page shows how to lay out a suite over files and groups, test a
+library's internals next to its code, and give a test a resource that
+the runner releases. It also shows how to bound a test in time, retry
+it, skip it, or keep a known bug running. The reference is the
+declaring-tests and running-test sections of
 [`lib/windtrap.mli`](../../lib/windtrap.mli).
 
 The snippets test `Db` and `Server`, in-memory stand-ins for a database
-connection and a shared server process, in a directory `test/`. The
-files ship as `examples/06-resources-and-structure/` in windtrap's
-repository, and the transcripts print that directory's paths.
+connection and a shared server process, and `Keys`, a library that
+checks row names, all in a directory `test/`. The files ship as
+`examples/06-resources-and-structure/` in windtrap's repository, and the
+transcripts print that directory's paths.
 
 ## Laying out a suite
 
@@ -18,7 +20,9 @@ and each test's name states its claim. A body of one to three lines
 stays inline; a longer one is a top-level function the group lists by
 name, as in `db_tests.ml` below. In a suite over several files, each
 module exports its groups, and the last line of the suite's file runs
-them:
+them.
+
+`test/test_storage.ml`:
 
 <!-- file examples/06-resources-and-structure/test_storage.ml -->
 ```ocaml
@@ -33,20 +37,23 @@ let () =
        ])
 ```
 
-The stanza builds every module of the directory into one executable:
+The stanza builds every module of the directory but the library's into
+one executable.
 
-<!-- file examples/06-resources-and-structure/dune -->
+`test/dune`:
+
+<!-- file examples/06-resources-and-structure/dune from (test -->
 ```lisp
 (test
  (name test_storage)
+ (modules :standard \ keys)
  (libraries windtrap))
 ```
 
-A test's path is its groups' names and its own, joined with `" › "`. The
-path is what `-f` matches, and it keys the test's property seeds and its
-entry in the last failed tests, so renaming a test changes them. Two
-tests with one path are refused. `current_test ()` is the running test's
-path, to name a file after the test.
+A test's path is its groups' names and its own, joined with `" › "`, and
+it is what `-f` matches and what identifies the test (see the
+declaring-tests section of `lib/windtrap.mli`). `current_test ()` is the
+running test's path, to name a file after the test.
 
 A test left out of the list does not run. `-l` prints the paths of the
 tests that do, and runs nothing:
@@ -71,14 +78,74 @@ process state › the token is read from the environment
 process state › a build writes in the working directory
 ```
 
-Tests of a library's internals are `let%test` inline tests next to the
-code, in a library with `(inline_tests)` (see
-[Baselines](baselines.md#writing-expect-tests-inside-a-library) and
-[`ppx/ppx_windtrap.mli`](../../ppx/ppx_windtrap.mli)). An executable
-suite is for tests from outside the library and for tests that need
-`bracket`, `scoped` or `fixture`. A library can have both: dune runs
-its inline tests in the library's own runner, and a suite that links the
-library runs its own tests alone.
+## Testing a library's internals
+
+A library's internals are tested next to the code, with `let%test` in a
+library that has `(inline_tests)` and `(preprocess (pps ppx_windtrap))`.
+An executable suite is for tests from outside the library and for tests
+that need `bracket`, `scoped` or `fixture`. A library can have both, and
+each runner runs its own tests alone.
+
+`test/dune`:
+
+<!-- file examples/06-resources-and-structure/dune from (library -->
+```lisp
+(library
+ (name keys)
+ (modules keys)
+ (inline_tests)
+ (preprocess
+  (pps ppx_windtrap)))
+```
+
+`Keys` exports `valid` alone, and its tests reach `normalize` beside it.
+
+`test/keys.mli`:
+
+<!-- file examples/06-resources-and-structure/keys.mli -->
+```ocaml
+val valid : string -> bool
+(** [valid name] is [true] iff [name], trimmed and lowercased, is a word of
+    letters, digits and underscores. *)
+```
+
+A `let%test` body returns `unit` and asserts with the verbs, and
+`module%test` makes a group of the tests inside its module. The forms
+are stated in [`ppx/ppx_windtrap.mli`](../../ppx/ppx_windtrap.mli), and
+[`let%expect_test`](baselines.md#writing-expect-tests-inside-a-library)
+compares printed output.
+
+`test/keys.ml`:
+
+<!-- file examples/06-resources-and-structure/keys.ml -->
+```ocaml
+let normalize name = String.lowercase_ascii (String.trim name)
+
+let valid name =
+  let name = normalize name in
+  name <> ""
+  && String.for_all
+       (function 'a' .. 'z' | '0' .. '9' | '_' -> true | _ -> false)
+       name
+
+let%test "a name is trimmed and lowercased" =
+  Windtrap.(equal string "alice" (normalize "  Alice "))
+
+module%test Valid = struct
+  let%test "a name of letters is valid" = Windtrap.is_true (valid "Alice")
+  let%test "a blank name is not" = Windtrap.is_false (valid "  ")
+end
+```
+
+`dune runtest` runs the suite, then the library's tests, one line per
+file:
+
+<!-- run examples/06-resources-and-structure -->
+```
+$ dune runtest
+storage: 12 passed, 2 skipped, 1 expected failure in 3.5ms.
+keys/keys.ml: 3 passed in 0.8ms.
+```
 
 ## Giving each test its own resource
 
@@ -87,7 +154,9 @@ A group has no setup or teardown of its own; a test gets a resource from
 test whose body receives what `setup ()` returns, and the runner calls
 `teardown` on it after the body, whatever the outcome (see
 `Windtrap.bracket`). Applied to its two functions alone, it is a
-constructor for every test that needs the resource:
+constructor for every test that needs the resource.
+
+`test/db_tests.ml`:
 
 <!-- file examples/06-resources-and-structure/db_tests.ml -->
 ```ocaml
@@ -159,7 +228,9 @@ cannot select one (see `Windtrap.subtest`).
 the resource with `create ()`, and later calls return the same value.
 The runner releases the acquired fixtures after the last test. `scoped`
 makes a test from a function that hands a resource to a callback, such
-as a session that exists only inside `Server.with_session`:
+as a session that exists only inside `Server.with_session`.
+
+`test/server_tests.ml`:
 
 <!-- file examples/06-resources-and-structure/server_tests.ml -->
 ```ocaml
@@ -182,11 +253,10 @@ let server =
     ]
 ```
 
-A scope must call its callback once, and release the resource when the
-callback raises, as `Fun.protect` does. An acquisition that raises fails
-the test that called the accessor, and every later call raises it again.
-No timeout covers a release, so a `teardown` that waits on the outside
-world needs a deadline of its own (see `Windtrap.fixture`).
+A scope calls its callback once and releases the resource when the
+callback raises, as `Fun.protect` does. No timeout covers a release, and
+a `teardown` that waits on the outside world needs a deadline of its own
+(see `Windtrap.scoped` and `Windtrap.fixture`).
 
 Under `-v` the runner names each fixture it releases, with the line
 where `fixture` was applied:
@@ -205,12 +275,12 @@ releasing fixture (examples/06-resources-and-structure/server_tests.ml:3)
 
 ## Bounding a test in time and retrying it
 
-`~timeout` is a limit in seconds for the test's setup, body and
-teardown. On a group it is the limit of every test under it that sets
-none, as the server's five seconds are. `~retries` gives a failing test
-more attempts. A test that passes on a later attempt is listed under
-`flaky tests` in the report. `--timeout` sets the limit of tests that
-have none (see `Windtrap.test`).
+`~timeout` bounds a test in seconds, and on a group it bounds every test
+under it that sets none, as the server's five seconds do. `~retries`
+gives a failing test more attempts, and a test that passes on a later
+attempt is listed under `flaky tests`. `--timeout` sets the limit of the
+tests that have none (see the declaring-tests section of
+`lib/windtrap.mli`).
 
 ## Marking a slow test
 
@@ -225,7 +295,9 @@ in the report.
 
 `skip ~reason ()` ends the test as skipped. In a fixture's `create`, the
 skip is kept for the run, so every test that calls the accessor skips
-with the same reason:
+with the same reason.
+
+`test/gpu_tests.ml`:
 
 <!-- file examples/06-resources-and-structure/gpu_tests.ml -->
 ```ocaml
@@ -263,7 +335,9 @@ storage: 2 tests
 ends, so a fixture's resource must not live in it. `setenv` binds or
 unbinds a variable, and `chdir` changes the working directory, both for
 the rest of the test. The runner restores both when the test ends, on
-every outcome:
+every outcome.
+
+`test/process_tests.ml`:
 
 <!-- file examples/06-resources-and-structure/process_tests.ml -->
 ```ocaml
@@ -299,9 +373,32 @@ let process =
     ]
 ```
 
-The environment and the working directory belong to the process, so a
-thread or a child process still running when the test ends sees the
-restoration (see `Windtrap.setenv`).
+The environment and the working directory belong to the process.
+Threads and child processes inherit the binding, and a thread still
+running when the test ends races its restoration (see
+`Windtrap.setenv`).
+
+## Testing code that runs an event loop
+
+A body may run its own event loop, as `Lwt_main.run` does, and a
+function that runs the loop around a callback is a scope. `Eio_main.run`
+is one, and `scoped Eio_main.run` makes tests whose body receives the
+environment:
+
+```ocaml
+(* fragment: requires eio_main *)
+let with_eio = scoped Eio_main.run
+
+let clock =
+  group "clock"
+    [
+      with_eio "a sleep advances the clock" (fun env ->
+          let clock = Eio.Stdenv.clock env in
+          let before = Eio.Time.now clock in
+          Eio.Time.sleep clock 0.01;
+          greater float_exact ~than:before (Eio.Time.now clock));
+    ]
+```
 
 ## Keeping a known bug in the suite
 

@@ -1,3 +1,11 @@
 (test
  (name test_storage)
+ (modules :standard \ keys)
  (libraries windtrap))
+
+(library
+ (name keys)
+ (modules keys)
+ (inline_tests)
+ (preprocess
+  (pps ppx_windtrap)))
