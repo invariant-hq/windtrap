@@ -40,13 +40,13 @@ a path is refused.
 ## A witness is a printer and an equality
 
 An assertion compares values under a witness, a printer and an equality
-with an optional order. The printer makes a failure readable: every
-failure shows both values, and the diff is computed from their printed
-forms, so every type with a printer gets a diff without diffing code of
-its own. Witnesses compose like the types they describe, as `list int`
-does, and `Testable.contramap` narrows a record to the fields a test is
-about. Generation lives in `Gen` and never in a witness, so a witness
-stays two functions and an order.
+with an optional order. The printer makes a failure readable. A failure
+shows the values it compared, and the diff is computed from their
+printed forms, so every type with a printer gets a diff without diffing
+code of its own. Witnesses compose like the types they describe, as
+`list int` does, and `Testable.contramap` narrows a record to the fields
+a test is about. Generation lives in `Gen` and never in a witness, so a
+witness stays two functions and an order.
 
 ## Generators shrink as they generate
 
@@ -64,9 +64,10 @@ by a function with no printer prints the input it was computed from.
 Every generated value derives from the run's root seed, the test's path
 and the case's index. Adding, removing or reordering other tests changes
 no property's values, and a `replay:` line reproduces a failure from its
-seed alone. The derivation is fixed within one version of windtrap. The
-shrink budget is fixed too, with no option to change it, so a replay
-descends to the same counterexample.
+seed alone. The derivation is frozen under the `s1` prefix of the seed,
+and what a generator draws from it is fixed within one version of
+windtrap. The shrink budget is fixed too, with no option to change it,
+so a replay descends to the same counterexample.
 
 ## Baselines are where the source says
 
@@ -86,9 +87,10 @@ where an expectation that raised would take one round per stale literal.
 ## Checking reads, and accepting is a separate gesture
 
 A run that checks writes nothing to the source tree. Under dune, a
-`(test)` stanza runs its suite with `--corrected`, which writes each
-correction beside its file, and `dune promote` accepts what dune's
-`diff?` showed: one review gesture for inline tests and suites alike.
+`(test)` stanza whose suite holds baselines runs it with `--corrected`,
+as the inline runner does, which writes each correction beside its
+file. `dune promote` accepts what dune's `diff?` showed, one review
+gesture for inline tests and suites alike.
 Outside dune, `-u` rewrites in place. Neither has an environment
 variable, so acceptance is never a setting a build action could inherit,
 and `-u` is refused under `CI`, where nobody reviews what it writes.
@@ -105,14 +107,14 @@ every flag, report line and exit rule would be stated twice.
 
 ## Flags, and mirrors for runs with no command line
 
-Every setting that changes a run is a flag, and each has a `WINDTRAP_*`
-mirror read through the flag's own parser. The mirrors exist for `dune
-runtest` and for inline suites, which dune starts with no command line
-of the user's. A mirror has its flag's grammar, so a flag and its mirror
-are one vocabulary. Acceptance, listing, `--failed` and `-x` have no
-mirror, since they are gestures at a command line. One variable holding
-extra arguments would be a second command line, with a splitting grammar
-of its own.
+Every setting of a run is a flag, and each flag a build action can use
+has a `WINDTRAP_*` mirror read through the flag's own parser. The
+mirrors exist for `dune runtest` and for inline suites, which dune
+starts with no command line of the user's. A mirror has its flag's
+grammar, so a flag and its mirror are one vocabulary. Acceptance,
+listing, `--failed` and `-x` have no mirror, since they are gestures at
+a command line. One variable holding extra arguments would be a second
+command line, with a splitting grammar of its own.
 
 ## Resources belong to a test
 
@@ -122,8 +124,9 @@ inside the first test that uses it and released after the last. All the
 user's code then runs inside some test's boundary, so a failing setup is
 that test's failure, with its name, its captured output and its timeout.
 A hook around a group runs outside every test, and its failure belongs
-to none of them. The runner releases a resource on every path where it
-regains control, `-x` and an interrupt included.
+to none of them. The runner releases the fixtures on every path where it
+regains control, `-x` and an interrupt included, and an interrupt skips
+only the teardown of the test it cut.
 
 ## Failures are data
 
@@ -151,10 +154,17 @@ needs no line.
 
 0 means that no selected test failed, 1 that one did, and 2 that no test
 ran. A mistyped filter selects nothing, and 2 keeps it from passing as a
-green build. Under `--corrected` a recorded correction is no failure and
-an empty selection no error. The `diff?` that follows is the verdict
-there, and a mirror's filter reaches every stanza of a tree, emptying
-most of them.
+green run. Under `--corrected` a recorded correction is no failure,
+because the `diff?` that follows is the verdict.
+
+What the environment broadcasts is not an error of a suite that cannot
+honour it. A mirror reaches every stanza of a project, so a filter meant
+for one suite empties the others. A selection that only the mirrors gave
+therefore returns 0 when it keeps nothing, while one typed on a command
+line is a typo and returns 2. For the same reason `WINDTRAP_MUTATE` runs
+a suite with no mutant to test as usual, where `--mutate` refuses, and a
+relative path in a mirror is read from the project root, where one on a
+command line is read from the working directory.
 
 ## A test cannot end the run
 
@@ -171,7 +181,7 @@ code its executable links, and suites over one library link different
 parts of it, so each suite's own number is a different view and none is
 the project's. `windtrap coverage` merges every dump into the project's
 number and holds the gate, `--min`, in one place. Instrumentation never
-changes what a program or a test means: it only counts.
+changes what a program or a test means. It only counts.
 
 ## Coverage counts returns
 
@@ -196,10 +206,10 @@ data describes a program that no longer exists.
 
 ## A suite is its own mutation runner
 
-The test executable runs its own survey under `--mutate`. It is the
-process that knows which test is running, so it can record which tests
-evaluate each mutant and name them in a survivor's block, which turns a
-score into a list of tests to strengthen. It forks one child per
+The test executable runs its own mutation run under `--mutate`. It is
+the process that knows which test is running, so it can record which
+tests evaluate each mutant and name them in a survivor's block, which
+turns a score into a list of tests to strengthen. It forks one child per
 reached mutant from its own warm state, and each child runs only the
 tests that reach its mutant, up to the first failure. A tool outside the
 suite would rebuild or restart the suite for each mutant, and could not
@@ -208,24 +218,24 @@ name the tests.
 ## Every mutant is compiled in
 
 The backend compiles every mutant of a library into one binary, each
-behind a guard, so a survey needs one build. A mutant changes what the
-program means only when armed, in a child of the survey or in an `--arm`
-run, and any other run of an instrumented build executes the original.
-Every rewrite must type-check without type information, since one
-ill-typed mutant would break the whole build: a comparison is mutated
-only in a condition, where it is a `bool`. The catalogue of mutants is a
-literal in the binary and cannot go stale against the code.
+behind a guard, so a mutation run needs one build. A mutant changes what
+the program means only when armed, in a child of a mutation run or in an
+`--arm` run, and any other run of an instrumented build executes the
+original. Every rewrite must type-check without type information, since
+one ill-typed mutant would break the whole build: a comparison is
+mutated only in a condition, where it is a `bool`. The catalogue of
+mutants is a literal in the binary and cannot go stale against the code.
 
 ## A mutant killed anywhere is killed
 
-A survey sees only what its own executable's tests reach, and a mutant
-one suite misses may be killed by another. Each suite reported alone
-would produce false survivors, sending a reader to write a test that
-exists. `windtrap mutants` merges the verdict files, a kill anywhere
-winning, and a build gates on its exit code; a single survey exits 0
-whatever it finds. A run whose selection narrows the suite saves
-no verdict, since its partial answer would stand for the whole suite in
-the merge.
+A mutation run sees only what its own executable's tests reach, and a
+mutant one suite misses may be killed by another. Each suite reported
+alone would produce false survivors, sending a reader to write a test
+that exists. `windtrap mutants` merges the verdict files, a kill
+anywhere winning, and a build gates on its exit code; a single mutation
+run exits 0 whatever it finds. A run whose selection narrows the suite
+saves no verdict, since its partial answer would stand for the whole
+suite in the merge.
 
 ## Equivalent mutants are dismissed in the source
 

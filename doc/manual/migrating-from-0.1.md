@@ -2,8 +2,8 @@
 
 This page ports a suite written for windtrap 0.1 to 0.2. Each line maps
 a 0.1 spelling to its 0.2 spelling, by area, and a spelling this page
-does not list is unchanged. The `0.2.0` entry of `CHANGES.md` lists every
-change.
+does not list is unchanged. The `0.2.0` entry of
+[`CHANGES.md`](../../CHANGES.md) lists every change.
 
 ## Declaring tests
 
@@ -133,8 +133,8 @@ change.
 - `--seed 42`, `WINDTRAP_SEED=42` → `--seed s1:<16 hex digits>`, the
   token a run prints
 - `WINDTRAP_TAIL_ERRORS`, `WINDTRAP_COLUMNS` → removed
-- `--junit out/report` → `--junit out/report.xml`: a path that does not
-  end in `.xml` names a directory, one file per suite
+- `--junit out/report` → `--junit out/report.xml`. A path that does not
+  end in `.xml` names a directory, with one file per suite.
 - `run ~output_dir` → `-o DIR`, or `WINDTRAP_OUTPUT`
 
 ## Coverage
