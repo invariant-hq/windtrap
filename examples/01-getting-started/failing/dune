@@ -1,0 +1,10 @@
+; The example with the edit doc/manual/getting-started.md makes to show a
+; failure: the addition test expects 6. Built, never run as a test; the
+; page's transcript runs it.
+
+(copy_files ../calc.ml)
+
+(executable
+ (name test_mylib)
+ (modules test_mylib calc)
+ (libraries windtrap))

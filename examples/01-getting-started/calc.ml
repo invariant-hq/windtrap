@@ -1,5 +1,3 @@
-(* The library under test in the five-minutes example. *)
-
 exception Parse_error of string
 
 let add a b = a + b

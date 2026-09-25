@@ -1,0 +1,22 @@
+; A page's marked blocks, regenerated from real runs of the examples:
+; dune runtest diffs the page with its regeneration, and dune promote
+; accepts it. See doc/dev/testing.md, "The manual's transcripts". Off on
+; Windows, where the runs print CRLF line ends.
+
+(rule
+ (enabled_if
+  (<> %{os_type} Win32))
+ (deps
+  (alias_rec %{workspace_root}/examples/01-getting-started/all)
+  (source_tree %{workspace_root}/examples/01-getting-started))
+ (action
+  (with-stdout-to
+   getting-started.md.corrected
+   (run %{exe:../transcript/transcript.exe} %{dep:getting-started.md}))))
+
+(rule
+ (alias runtest)
+ (enabled_if
+  (<> %{os_type} Win32))
+ (action
+  (diff getting-started.md getting-started.md.corrected)))

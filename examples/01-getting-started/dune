@@ -1,6 +1,3 @@
-; The manual's five-minutes example (doc/manual/getting-started.md):
-; a (test) stanza and one run call.
-
 (test
  (name test_mylib)
  (modules test_mylib calc)
