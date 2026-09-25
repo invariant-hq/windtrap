@@ -3,8 +3,6 @@
    SPDX-License-Identifier: ISC
   ---------------------------------------------------------------------------*)
 
-(* Tags *)
-
 module Tag = struct
   module String_set = Set.Make (String)
 
@@ -14,9 +12,6 @@ module Tag = struct
   let of_list = String_set.of_list
   let union = String_set.union
   let mem = String_set.mem
-
-  (* Well-known tags: "slow" is an ordinary tag pre-applied by the [slow]
-     constructor and dropped like any other. *)
   let slow = "slow"
   let prop = "prop"
 
@@ -41,15 +36,15 @@ module Tag = struct
     && String_set.is_empty (String_set.inter p.dropped tags)
 end
 
+type xfail = { reason : string option }
+
 type body =
   | Body of (unit -> unit)
   | Scoped : { scope : ('r -> unit) -> unit; body : 'r -> unit } -> body
 
-type xfail = { reason : string option }
-
-(* What a node declares of its own. Ancestors' values are applied at
-   [flatten] time, innermost wins; [None] is "not declared here", which is
-   what lets an enclosing group's default reach the node. *)
+(* What a node declares of its own, which [flatten] resolves against its
+   ancestors'. [None] is "not declared here", so an enclosing group's value
+   reaches the node. *)
 type annotations = {
   tags : Tag.t;
   focused : bool;
@@ -58,91 +53,60 @@ type annotations = {
   xfail : xfail option;
 }
 
-type t =
-  | Test of {
-      name : string;
-      body : body;
-      loc : Loc.t option;
-      annotations : annotations;
-    }
-  | Group of {
-      name : string;
-      children : t list;
-      loc : Loc.t option;
-      annotations : annotations;
-    }
+type t = {
+  name : string;
+  loc : Loc.t option;
+  annotations : annotations;
+  kind : kind;
+}
 
-(* Declaration *)
+and kind = Test of body | Group of t list
 
-let check_timeout = function
-  | None -> ()
-  | Some seconds ->
-      if (not (Float.is_finite seconds)) || seconds <= 0. then
-        invalid_arg "windtrap: timeout must be finite and positive"
-
-let check_retries = function
-  | None -> ()
-  | Some retries ->
-      if retries < 0 then invalid_arg "windtrap: retries must be non-negative"
+(* Declaring tests *)
 
 let declared ?(tags = []) ?timeout ?retries () =
-  check_timeout timeout;
-  check_retries retries;
+  let bad_timeout s = (not (Float.is_finite s)) || s <= 0. in
+  if Option.exists bad_timeout timeout then
+    invalid_arg "windtrap: timeout must be finite and positive";
+  if Option.exists (fun n -> n < 0) retries then
+    invalid_arg "windtrap: retries must be non-negative";
   { tags = Tag.of_list tags; focused = false; timeout; retries; xfail = None }
 
-(* Declaration location: [?__POS__] wins, and the backtrace fallback is
-   best-effort. It can attribute to the wrong frame when the constructor
-   call was reached through tail calls (documented in the interface).
-   Every constructor binds it with a [let], which keeps the capture out of
-   tail position. Inside these definitions [__POS__] is the parameter, not
-   the builtin: it is forwarded, never recaptured. *)
-
-let make_test ?__POS__ ?tags ?timeout ?retries name body =
+(* Inside a constructor [__POS__] is the parameter, not the builtin, so a
+   position is passed on and never captured anew. *)
+let node ?__POS__ ?tags ?timeout ?retries name kind =
   let annotations = declared ?tags ?timeout ?retries () in
   let loc = Loc.resolve ?__POS__ () in
-  Test { name; body; loc; annotations }
+  { name; loc; annotations; kind }
 
 let test ?__POS__ ?tags ?timeout ?retries name fn =
-  make_test ?__POS__ ?tags ?timeout ?retries name (Body fn)
+  node ?__POS__ ?tags ?timeout ?retries name (Test (Body fn))
 
 let slow ?__POS__ ?(tags = []) ?timeout ?retries name fn =
-  make_test ?__POS__ ~tags:(Tag.slow :: tags) ?timeout ?retries name (Body fn)
+  node ?__POS__ ~tags:(Tag.slow :: tags) ?timeout ?retries name (Test (Body fn))
 
 let group ?__POS__ ?tags ?timeout ?retries name children =
-  let annotations = declared ?tags ?timeout ?retries () in
-  let loc = Loc.resolve ?__POS__ () in
-  Group { name; children; loc; annotations }
+  node ?__POS__ ?tags ?timeout ?retries name (Group children)
 
-(* The rows are plain children: the table's tags, limit and retries sit on
-   the group and reach each row as its defaults. [name] is required: a child's
-   path is its identity, and a positional default would give other seeds and
-   another store entry to every later child whenever a row is inserted. *)
+(* A row is a plain test under the table's group, whose annotations reach it
+   as any group's do. [name] has no positional default: inserting a row would
+   rename every later one, and so change its seeds and its last-failed entry. *)
 let cases ?__POS__ ?tags ?timeout ?retries ~name base inputs fn =
   let annotations = declared ?tags ?timeout ?retries () in
   let loc = Loc.resolve ?__POS__ () in
-  let child input =
-    Test
-      {
-        name = name input;
-        body = Body (fun () -> fn input);
-        loc;
-        annotations = declared ();
-      }
+  let row input =
+    let kind = Test (Body (fun () -> fn input)) in
+    { name = name input; loc; annotations = declared (); kind }
   in
-  Group { name = base; children = List.map child inputs; loc; annotations }
+  { name = base; loc; annotations; kind = Group (List.map row inputs) }
 
-(* [scope] is positional and comes first so that [scoped Eio_main.run] is a
-   constructor with every optional argument still available: an optional is
-   erased by applying a positional argument that follows it, and here none
-   does. *)
 let scoped scope ?__POS__ ?tags ?timeout ?retries name fn =
-  make_test ?__POS__ ?tags ?timeout ?retries name (Scoped { scope; body = fn })
+  node ?__POS__ ?tags ?timeout ?retries name
+    (Test (Scoped { scope; body = fn }))
 
-(* A bracket is a scoped test whose scope is spelled by hand rather than
-   with [Fun.protect]: a raising teardown must reach the runner as itself
-   (an assertion, a skip, the re-armed timeout) not wrapped in
-   [Finally_raised], and a fatal exception, which [Failure.catch] never
-   returns, must not run user code on its way out. *)
+(* Not [Fun.protect]: a raising teardown must reach the runner as itself, not
+   as [Finally_raised], and a fatal exception, which [Failure.catch] never
+   returns, must run no user code on its way out. *)
 let bracket ?__POS__ ?tags ?timeout ?retries ~setup ~teardown name fn =
   let scope k =
     let resource = setup () in
@@ -156,30 +120,21 @@ let bracket ?__POS__ ?tags ?timeout ?retries ~setup ~teardown name fn =
 
 (* Annotations *)
 
-let annotate f = function
-  | Test t -> Test { t with annotations = f t.annotations }
-  | Group g -> Group { g with annotations = f g.annotations }
-
-let focus t = annotate (fun a -> { a with focused = true }) t
-
-(* Innermost wins: the value nearest the test (its own, else its closest
-   annotated ancestor's) is the one that applies. *)
+let focus t = { t with annotations = { t.annotations with focused = true } }
 let nearest own inherited = match own with Some _ -> own | None -> inherited
 
 let xfail ?reason t =
-  annotate (fun a -> { a with xfail = nearest a.xfail (Some { reason }) }) t
-
-(* Focus *)
+  let xfail = nearest t.annotations.xfail (Some { reason }) in
+  { t with annotations = { t.annotations with xfail } }
 
 let focus_sites tests =
-  let rec node acc = function
-    | Test { loc; annotations; _ } ->
-        if annotations.focused then loc :: acc else acc
-    | Group { loc; annotations; children; _ } ->
-        let acc = if annotations.focused then loc :: acc else acc in
-        List.fold_left node acc children
+  let rec add acc t =
+    let acc = if t.annotations.focused then t.loc :: acc else acc in
+    match t.kind with
+    | Test _ -> acc
+    | Group children -> List.fold_left add acc children
   in
-  List.rev (List.fold_left node [] tests)
+  List.rev (List.fold_left add [] tests)
 
 (* Flattening *)
 
@@ -194,8 +149,8 @@ type case = {
   xfail : xfail option;
 }
 
-(* A node's effective annotations: its own over its ancestors', tags
-   unioned, focus inherited, the rest innermost-wins. *)
+(* Tags are unioned, focus is inherited, and every other value is the one
+   declared nearest the node. *)
 let effective ~(inherited : annotations) (own : annotations) : annotations =
   {
     tags = Tag.union inherited.tags own.tags;
@@ -206,12 +161,13 @@ let effective ~(inherited : annotations) (own : annotations) : annotations =
   }
 
 let flatten tests =
-  let rec node ~rev_groups ~inherited acc = function
-    | Test t ->
-        let a = effective ~inherited t.annotations in
+  let rec add ~rev_groups ~inherited acc t =
+    let a = effective ~inherited t.annotations in
+    match t.kind with
+    | Test body ->
         {
           path = List.rev (t.name :: rev_groups);
-          body = t.body;
+          body;
           loc = t.loc;
           tags = a.tags;
           focused = a.focused;
@@ -220,12 +176,11 @@ let flatten tests =
           xfail = a.xfail;
         }
         :: acc
-    | Group g ->
-        let rev_groups = g.name :: rev_groups in
-        let inherited = effective ~inherited g.annotations in
-        List.fold_left (node ~rev_groups ~inherited) acc g.children
+    | Group children ->
+        let rev_groups = t.name :: rev_groups in
+        List.fold_left (add ~rev_groups ~inherited:a) acc children
   in
   List.rev
-    (List.fold_left (node ~rev_groups:[] ~inherited:(declared ())) [] tests)
+    (List.fold_left (add ~rev_groups:[] ~inherited:(declared ())) [] tests)
 
 let path_to_string path = String.concat " › " path

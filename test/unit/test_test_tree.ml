@@ -147,6 +147,8 @@ let () =
   reg "validation rejects bad retries and timeouts" @@ fun () ->
   raises_match ~msg:"negative retries rejected" Check.Exn.invalid_arg (fun () ->
       T.test ~retries:(-1) "t" nop);
+  equal ~msg:"zero retries accepted" int 0
+    (only "zero retries" (T.test ~retries:0 "t" nop)).T.retries;
   raises_match ~msg:"zero timeout rejected" Check.Exn.invalid_arg (fun () ->
       T.test ~timeout:0. "t" nop);
   raises_match ~msg:"negative timeout rejected" Check.Exn.invalid_arg (fun () ->
