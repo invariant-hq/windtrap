@@ -3,16 +3,16 @@
    SPDX-License-Identifier: ISC
   ---------------------------------------------------------------------------*)
 
-(* The `windtrap` binary: subcommand dispatch only. Both subcommands
-   merge instrumentation data and render it. Test executables are their
+(* The [windtrap] binary dispatches to its two commands, which merge the data
+   files of instrumented test runs and report them. Test executables are their
    own runners, so nothing else lives here. *)
 
 module Os = Windtrap.Private.Os
 
-let usage = "usage: windtrap <command> [OPTIONS]"
+let usage =
+  {|usage: windtrap <command> [OPTIONS]
 
-let commands =
-  {|COMMANDS:
+COMMANDS:
   coverage
       Merge .coverage files and report; --min gates, --json exports.
 
@@ -25,22 +25,22 @@ OPTIONS:
 
 See `windtrap <command> --help` for a subcommand's options.|}
 
-let help =
-  "windtrap - reports merged from instrumented test runs\n\n" ^ usage ^ "\n\n"
-  ^ commands
+let help = "windtrap - reports merged from instrumented test runs\n\n" ^ usage
 
-(* A wrong command is answered with the ones there are. *)
+(* A wrong command is answered with the commands there are. *)
 let refuse message =
   Os.say message;
-  prerr_endline (usage ^ "\n\n" ^ commands);
-  exit 2
+  prerr_endline usage;
+  2
 
 let () =
+  exit
+  @@
   match Array.to_list Sys.argv with
-  | _ :: "coverage" :: args -> exit (Coverage_cmd.run args)
-  | _ :: "mutants" :: args -> exit (Mutate_cmd.run args)
+  | _ :: "coverage" :: args -> Coverage_cmd.run args
+  | _ :: "mutants" :: args -> Mutate_cmd.run args
   | _ :: ("-h" | "--help" | "-help") :: _ ->
       print_endline help;
-      exit 0
+      0
   | _ :: command :: _ -> refuse (Printf.sprintf "unknown command '%s'" command)
   | _ -> refuse "no command given"

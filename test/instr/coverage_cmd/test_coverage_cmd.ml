@@ -784,7 +784,17 @@ let loud_failures =
       at_most
         ~msg:(Printf.sprintf "windtrap --help fits 80 columns: %s" line)
         int ~than:80 (String.length line))
-    (String.split_on_char '\n' out)
+    (String.split_on_char '\n' out);
+  equal ~msg:"windtrap --help is the name line, then the usage and commands"
+    text
+    ("windtrap - reports merged from instrumented test runs\n\n" ^ commands)
+    out;
+  List.iter
+    (fun flag ->
+      let code, flag_out, _ = capture windtrap_exe [ flag; "frobnicate" ] in
+      equal ~msg:(flag ^ " exits 0") int 0 code;
+      equal ~msg:(flag ^ " is --help, whatever follows it") text out flag_out)
+    [ "-h"; "-help"; "--help" ]
 
 (* --min boundaries *)
 
