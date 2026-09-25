@@ -1,8 +1,18 @@
 # Third Party Licenses
 
-Windtrap is ISC licensed. This file lists the files that include code
-derived from other open source projects, and those projects' licenses.
-Each listed file also carries the attribution in its header.
+Windtrap is ISC licensed. It builds on ideas and code from
+[Alcotest](https://github.com/mirage/alcotest) and Craig Ferguson's
+pull requests to it ([#294](https://github.com/mirage/alcotest/pull/294),
+[#247](https://github.com/mirage/alcotest/pull/247)),
+[QCheck2](https://github.com/c-cube/qcheck),
+[ppx_expect](https://github.com/janestreet/ppx_expect),
+[ppx_inline_test](https://github.com/janestreet/ppx_inline_test),
+[Bisect_ppx](https://github.com/aantron/bisect_ppx) and
+[mtime](https://erratique.ch/software/mtime).
+
+This file lists the files that include code derived from other open
+source projects, and those projects' licenses. Each listed file also
+carries the attribution in its header.
 
 ## Craig Ferguson's Alcotest work (ISC License)
 

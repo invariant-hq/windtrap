@@ -26,19 +26,19 @@ two functions (the tutorial's example, `examples/01-getting-started/`).
 <!-- file examples/01-getting-started/test_mylib.ml -->
 ```ocaml
 open Windtrap
-open Calc
 
-let () =
-  exit
-  @@ run "mylib"
-       [
-         test "addition" (fun () -> equal int 5 (Calc.add 2 3));
-         group "parser"
-           [
-             test "empty input" (fun () ->
-                 raises (Parse_error "empty") (fun () -> Calc.parse ""));
-           ];
-       ]
+let add =
+  group "add"
+    [ test "adds two integers" (fun () -> equal int 5 (Calc.add 2 3)) ]
+
+let parse =
+  group "parse"
+    [
+      test "rejects the empty string" (fun () ->
+          raises (Calc.Parse_error "empty") (fun () -> Calc.parse ""));
+    ]
+
+let () = exit (run "mylib" [ add; parse ])
 ```
 
 A run with nothing to report prints one line:
@@ -63,7 +63,7 @@ mylib: 2 passed in 0.5ms.
   report, and each mutant that survives the tests names the tests that
   ran its line.
 - `run` returns `0`, `1` or `2`, and `2` means that no test ran, so a
-  mistyped filter fails the build.
+  mistyped `-f` fails the command.
 
 ## Installation
 
@@ -84,8 +84,8 @@ The manual, [`doc/manual/`](doc/manual/), has one page per need:
   - [Running tests](doc/manual/running-tests.md): selection, reruns, `dune runtest` and CI.
   - [Coverage](doc/manual/coverage.md): the code no test runs.
   - [Mutation testing](doc/manual/mutation.md): the changes no test notices.
+  - [Migrating from 0.1](doc/manual/migrating-from-0.1.md): each 0.1 spelling and its replacement.
 - Explanation: [Design notes](doc/manual/notes.md), why windtrap is shaped as it is.
-- Migration: [Migrating from 0.1](doc/manual/migrating-from-0.1.md), each 0.1 spelling and its replacement.
 - Reference: [`lib/windtrap.mli`](lib/windtrap.mli), also read with `odig doc windtrap`, and
   [`ppx/ppx_windtrap.mli`](ppx/ppx_windtrap.mli) for the inline test forms.
 
@@ -103,16 +103,5 @@ are welcome on the [OCaml forum](https://discuss.ocaml.org/).
 
 [`doc/dev/`](doc/dev/) describes the architecture, how windtrap tests
 itself, the changelog discipline and the release checklist.
-
-## Acknowledgments
-
-Windtrap builds on ideas and code from
-[Alcotest](https://github.com/mirage/alcotest) and Craig Ferguson's
-pull requests to it ([#294](https://github.com/mirage/alcotest/pull/294),
-[#247](https://github.com/mirage/alcotest/pull/247)),
-[QCheck2](https://github.com/c-cube/qcheck),
-[ppx_expect](https://github.com/janestreet/ppx_expect),
-[ppx_inline_test](https://github.com/janestreet/ppx_inline_test),
-[Bisect_ppx](https://github.com/aantron/bisect_ppx) and
-[mtime](https://erratique.ch/software/mtime);
-[`THIRD_PARTY_LICENSES.md`](THIRD_PARTY_LICENSES.md) holds their notices.
+[`THIRD_PARTY_LICENSES.md`](THIRD_PARTY_LICENSES.md) credits the
+projects windtrap builds on and holds their notices.
