@@ -1,8 +1,4 @@
-; The assertion vocabulary (doc/manual/assertions.md): equality through
-; witnesses, the ordering verbs, assert-and-unwrap, predicates and
-; containment, exceptions, the escape hatches, and table-driven cases.
-
 (test
  (name test_assertions)
- (modules test_assertions)
+ (modules test_assertions shop)
  (libraries windtrap))

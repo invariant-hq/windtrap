@@ -20,3 +20,21 @@
   (<> %{os_type} Win32))
  (action
   (diff getting-started.md getting-started.md.corrected)))
+
+(rule
+ (enabled_if
+  (<> %{os_type} Win32))
+ (deps
+  (alias_rec %{workspace_root}/examples/02-assertions/all)
+  (source_tree %{workspace_root}/examples/02-assertions))
+ (action
+  (with-stdout-to
+   assertions.md.corrected
+   (run %{exe:../transcript/transcript.exe} %{dep:assertions.md}))))
+
+(rule
+ (alias runtest)
+ (enabled_if
+  (<> %{os_type} Win32))
+ (action
+  (diff assertions.md assertions.md.corrected)))

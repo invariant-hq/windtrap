@@ -1,0 +1,10 @@
+; The example with the bugs doc/manual/assertions.md describes to show
+; each verb's failure. Built, never run as a test; the page's
+; transcripts run it.
+
+(copy_files# ../test_assertions.ml)
+
+(executable
+ (name test_assertions)
+ (modules test_assertions shop)
+ (libraries windtrap))
