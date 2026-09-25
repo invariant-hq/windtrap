@@ -29,7 +29,7 @@
  (name windtrap)
  (synopsis "One library for all your OCaml tests")
  (description
-  "Unit, property, stateful, and snapshot tests behind one flat API: every assertion failure prints the values and marks what changed, generators shrink integrally and replay from a printed seed, snapshot baselines are keyed by name, and the runner handles filtering, sharding, and JUnit output. Inline expect tests, code coverage, and mutation testing come from the companion ppx_windtrap package.")
+  "Unit, property, stateful, and expect tests behind one flat API: every assertion failure prints the values and marks what changed, generators shrink integrally and replay from a printed seed, baselines are a literal in the test or a file it names and are accepted with dune promote, and the runner handles filtering, sharding, and JUnit output. Inline expect tests, code coverage, and mutation testing come from the companion ppx_windtrap package.")
  (depends
   (ocaml
    (>= 5.0)))
