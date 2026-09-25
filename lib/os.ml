@@ -4,47 +4,45 @@
    SPDX-License-Identifier: ISC
   ---------------------------------------------------------------------------*)
 
+let strf = Printf.sprintf
+
 (* Monotonic clock *)
 
 external elapsed_ns : unit -> int64 = "ocaml_windtrap_clock_elapsed_ns"
 
-(* Force a call at module load time to initialize the C-side clock
-   origin, so the int64 counters stay small and subtraction-safe. *)
+(* The first call fixes the origin of the clock, so counters stay small. *)
 let () = ignore (elapsed_ns ())
 
 type counter = int64
 
-let counter () = elapsed_ns ()
+let counter = elapsed_ns
 let count start = Int64.sub (elapsed_ns ()) start
-let count_s start = Int64.to_float (count start) /. 1_000_000_000.
+let count_s start = Int64.to_float (count start) /. 1e9
 
 (* Environment variables *)
 
-(* An empty value counts as unset: it lets callers clear a variable in
-   environments without unsetenv, and `VAR= cmd` reads as "not set". *)
+(* An empty value counts as unset: [VAR= cmd] then reads as unset, and a
+   platform without [unsetenv] can still clear a variable. *)
 let getenv name =
-  match Sys.getenv_opt name with Some "" | None -> None | Some s -> Some s
+  match Sys.getenv_opt name with
+  | Some "" | None -> None
+  | Some _ as value -> value
 
-(* [Unix.putenv] is only the binding half, and binding to "" is not
-   unbinding ([Sys.getenv_opt] answers [Some ""]). The unbinding half is
-   C's (os_stubs.c), so [Run.setenv] can put back a variable the test
-   found unset. The name check sits here so one bad name reads the same on
-   every platform. *)
+(* [Unix.putenv name ""] binds [name] to the empty string, so unbinding
+   takes a C stub. *)
 external unsetenv : string -> unit = "ocaml_windtrap_unsetenv"
 
+(* The name is checked here, so a bad one fails alike on every platform. The
+   message stays ASCII, since [Printexc.to_string] prints it with [%S]. *)
 let setenv name value =
   if name = "" || String.contains name '=' then
     invalid_arg
-      (* No non-ASCII here: [Printexc.to_string] renders the payload with
-         [%S], so anything outside ASCII reaches reports as escaped bytes. *)
-      (Printf.sprintf
+      (strf
          "windtrap: %S is not a usable environment variable name: a name is \
           non-empty and contains no '='"
          name);
   match value with Some v -> Unix.putenv name v | None -> unsetenv name
 
-(* The one boolean vocabulary: a mirror refuses anything outside it, so a
-   typo cannot read as "off". *)
 let bool_of_string s =
   match String.lowercase_ascii (String.trim s) with
   | "1" | "true" | "yes" | "y" | "on" -> Some true
@@ -57,31 +55,21 @@ let split_comma s =
   String.split_on_char ',' s |> List.map String.trim
   |> List.filter (fun s -> s <> "")
 
-(* Set-and-not-falsy: `CI=false` must not count as CI. *)
 let is_flagged name =
   match getenv name with
   | None -> false
-  | Some s -> ( match bool_of_string s with Some b -> b | None -> true)
+  | Some value -> Option.value (bool_of_string value) ~default:true
 
 let inside_dune () = is_flagged "INSIDE_DUNE"
 let is_tty_stdout () = Unix.isatty Unix.stdout
 
-(* TERM=dumb is the near-universal "no escape sequences" convention (git,
-   cargo, Emacs M-x shell); the exact spelling, like git's check. *)
+(* [TERM=dumb] is the common convention for a terminal without escape
+   sequences, compared as it is spelled, as git does. *)
 let term_dumb () =
   match getenv "TERM" with Some "dumb" -> true | Some _ | None -> false
 
-(* One classification behind both predicates, so a GITHUB_ACTIONS without
-   a CI cannot count as GitHub Actions. *)
-type ci = Not_ci | Github_actions | Other_ci
-
-let ci () =
-  if not (is_flagged "CI") then Not_ci
-  else if is_flagged "GITHUB_ACTIONS" then Github_actions
-  else Other_ci
-
-let in_ci () = ci () <> Not_ci
-let in_github_actions () = ci () = Github_actions
+let in_ci () = is_flagged "CI"
+let in_github_actions () = in_ci () && is_flagged "GITHUB_ACTIONS"
 
 type color_mode = Always | Never | Auto
 
@@ -92,89 +80,79 @@ let color_mode_of_string s =
   | "auto" -> Some Auto
   | _ -> None
 
-(* NO_COLOR is read here rather than passed: it is a fact about the
-   environment, not about one sink, and every command must honour it. An
-   explicit [Always] still wins: the user asked. [inside_dune] counts as a
-   terminal because dune captures the output and renders its escape
-   sequences back to the user. *)
+(* [NO_COLOR] describes the environment and not a sink, so it is read here for
+   every caller. Dune replays the escape sequences of the output it captures,
+   so [inside_dune] counts as a terminal. *)
 let resolve_color mode ~tty ~inside_dune ~term_dumb =
   match mode with
   | Always -> true
   | Never -> false
   | Auto -> (tty || inside_dune) && (not term_dumb) && getenv "NO_COLOR" = None
 
-(* Atomic file writes
-
-   Exclusive temporary creation, EINTR-safe writes, and rename-based
-   replacement; no fsync ceremony and no per-operation error catalogue:
-   publication atomicity is the whole contract. *)
+(* Atomic file writes *)
 
 let temp_prefix = ".tmp-"
 let is_temp_name name = String.starts_with ~prefix:temp_prefix name
+
+(* With the pid, the serial names each temporary of a process apart. *)
 let temp_serial = Atomic.make 0
-let temp_attempts = 256
 
-let describe = function
-  | Unix.Unix_error (error, _, _) -> Unix.error_message error
-  | Sys_error message | Failure message -> message
-  | exception_value -> Printexc.to_string exception_value
+(* An interrupt and exhausted resources pass through as themselves. *)
+let step path failed f =
+  try f () with
+  | (Sys.Break | Out_of_memory | Stack_overflow) as exn ->
+      Printexc.raise_with_backtrace exn (Printexc.get_raw_backtrace ())
+  | exn ->
+      let reason =
+        match exn with
+        | Unix.Unix_error (error, _, _) -> Unix.error_message error
+        | Sys_error reason -> reason
+        | exn -> Printexc.to_string exn
+      in
+      raise (Sys_error (strf "%s: %s: %s" path failed reason))
 
-let fail path step exception_value =
-  raise
-    (Sys_error
-       (Printf.sprintf "%s: %s: %s" path step (describe exception_value)))
+let on_failure ~undo f =
+  try f ()
+  with exn ->
+    let backtrace = Printexc.get_raw_backtrace () in
+    (try undo () with _ -> ());
+    Printexc.raise_with_backtrace exn backtrace
 
-(* Runs one step, translating failures to the module's Sys_error.
-   Asynchronous and resource-exhaustion exceptions pass through unwrapped
-   so callers still observe interrupts as interrupts. *)
-let step path name callback =
-  try callback () with
-  | (Sys.Break | Out_of_memory | Stack_overflow) as exception_value ->
-      let backtrace = Printexc.get_raw_backtrace () in
-      Printexc.raise_with_backtrace exception_value backtrace
-  | exception_value -> fail path name exception_value
-
-let rec open_temp path flags perm =
-  try Unix.openfile path flags perm
-  with Unix.Unix_error (Unix.EINTR, _, _) -> open_temp path flags perm
-
-(* EINTR on close leaves the descriptor state formally unspecified, but
-   every supported platform closes it; retrying could close a reused
-   descriptor. *)
-let close_fd fd =
-  try Unix.close fd with Unix.Unix_error (Unix.EINTR, _, _) -> ()
-
+(* A name can be taken already: a crashed run whose pid is reused leaves its
+   temporary behind. *)
 let create_temp directory perm =
   let rec attempt remaining =
-    let name =
-      Printf.sprintf "%s%x-%x" temp_prefix (Unix.getpid ())
-        (Atomic.fetch_and_add temp_serial 1)
-    in
+    let serial = Atomic.fetch_and_add temp_serial 1 in
+    let name = strf "%s%x-%x" temp_prefix (Unix.getpid ()) serial in
     let temp = Filename.concat directory name in
-    match open_temp temp Unix.[ O_WRONLY; O_CREAT; O_EXCL; O_CLOEXEC ] perm with
+    match
+      Unix.openfile temp Unix.[ O_WRONLY; O_CREAT; O_EXCL; O_CLOEXEC ] perm
+    with
     | fd -> (temp, fd)
+    | exception Unix.Unix_error (Unix.EINTR, _, _) -> attempt remaining
     | exception Unix.Unix_error (Unix.EEXIST, _, _) when remaining > 1 ->
         attempt (remaining - 1)
   in
-  attempt temp_attempts
+  attempt 256
 
-let rec write_all fd contents offset =
-  if offset < String.length contents then
-    match
-      Unix.single_write_substring fd contents offset
-        (String.length contents - offset)
-    with
-    | 0 -> failwith "write returned zero"
-    | written -> write_all fd contents (offset + written)
-    | exception Unix.Unix_error (Unix.EINTR, _, _) ->
-        write_all fd contents offset
+let rec write_all fd s first =
+  let length = String.length s - first in
+  if length > 0 then
+    match Unix.single_write_substring fd s first length with
+    | 0 -> raise (Sys_error "write returned zero")
+    | written -> write_all fd s (first + written)
+    | exception Unix.Unix_error (Unix.EINTR, _, _) -> write_all fd s first
 
+(* After an [EINTR] the descriptor is closed on every supported platform, and
+   a retry could close one reused meanwhile. *)
+let close_fd fd =
+  try Unix.close fd with Unix.Unix_error (Unix.EINTR, _, _) -> ()
+
+(* A rename over a symbolic link would replace the link, and its target would
+   keep the old bytes. *)
 let atomic_write ?(perm = 0o666) ~path contents =
   if perm land lnot 0o777 <> 0 then
     invalid_arg "Os.atomic_write: perm must contain only bits within 0o777";
-  (* Renaming over a symlink would silently substitute a regular file for
-     the link while the real target kept the old bytes. Publication never
-     changes what kind of thing a path names: refuse before any write. *)
   (match Unix.lstat path with
   | { Unix.st_kind = Unix.S_LNK; _ } ->
       raise
@@ -182,216 +160,162 @@ let atomic_write ?(perm = 0o666) ~path contents =
            (path
           ^ ": is a symbolic link; atomic replacement would substitute a \
              regular file for the link, so it is refused"))
-  | _ -> ()
-  | exception Unix.Unix_error _ -> ());
-  let directory = Filename.dirname path in
+  | _ | (exception Unix.Unix_error _) -> ());
   let temp, fd =
     step path "cannot create temporary file" (fun () ->
-        create_temp directory perm)
+        create_temp (Filename.dirname path) perm)
   in
-  let closed = ref false in
-  let close_once () =
-    if not !closed then begin
-      closed := true;
-      close_fd fd
-    end
+  on_failure ~undo:(fun () -> Unix.unlink temp) @@ fun () ->
+  on_failure
+    ~undo:(fun () -> close_fd fd)
+    (fun () -> step path "cannot write" (fun () -> write_all fd contents 0));
+  step path "cannot close" (fun () -> close_fd fd);
+  step path "cannot replace" (fun () -> Unix.rename temp path)
+
+(* Project root and log root *)
+
+let normalize_sep path = String.map (function '\\' -> '/' | c -> c) path
+
+(* The components of [path] before its first build directory, that
+   directory, and the components after it. *)
+let split_at_build_dir path =
+  let rec split before = function
+    | [] -> None
+    | c :: after when String.starts_with ~prefix:"_build" c ->
+        Some (List.rev before, c, after)
+    | c :: after -> split (c :: before) after
   in
-  let cleanup () =
-    (try close_once () with _ -> ());
-    try Unix.unlink temp with _ -> ()
-  in
-  let publish () =
-    step path "cannot write" (fun () -> write_all fd contents 0);
-    step path "cannot close" close_once;
-    step path "cannot replace" (fun () -> Unix.rename temp path)
-  in
-  try publish ()
-  with exception_value ->
-    let backtrace = Printexc.get_raw_backtrace () in
-    cleanup ();
-    Printexc.raise_with_backtrace exception_value backtrace
-
-(* Project root and log root
-
-   Two rules and no marker files: the override, else the build directory
-   the process belongs to. Under dune INSIDE_DUNE is the build context
-   ([<root>/_build/default], a private [--build-dir] likewise; a sandboxed
-   action keeps that value and only moves its cwd under [_build/.sandbox])
-   and by hand the executable's own path names it. Outside any build
-   directory the root is the working directory: a non-dune binary run from
-   a subdirectory of its project is the case the override exists for. *)
-
-let file_exists path = try Sys.file_exists path with _ -> false
-let normalize_sep s = String.map (fun c -> if c = '\\' then '/' else c) s
-
-let is_build_dir dir =
-  String.starts_with ~prefix:"_build" (Filename.basename dir)
+  split [] (String.split_on_char '/' (normalize_sep path))
 
 let build_dir_of_path path =
-  let rec go acc = function
-    | [] -> None
-    | c :: _ when is_build_dir c ->
-        Some (String.concat "/" (List.rev (c :: acc)))
-    | c :: rest -> go (c :: acc) rest
-  in
-  go [] (String.split_on_char '/' (normalize_sep path))
+  Option.map
+    (fun (before, build, _) -> String.concat "/" (before @ [ build ]))
+    (split_at_build_dir path)
 
 let absolute path =
   if Filename.is_relative path then Filename.concat (Sys.getcwd ()) path
   else path
 
-let is_drive c0 c1 =
-  (('A' <= c0 && c0 <= 'Z') || ('a' <= c0 && c0 <= 'z')) && c1 = ':'
-
-let is_absolute p =
-  let n = String.length p in
-  (n > 0 && p.[0] = '/') || (n >= 3 && is_drive p.[0] p.[1] && p.[2] = '/')
-
-(* Splits an absolute '/'-separated path into an anchor ("" for Unix
-   roots, "C:" for drives) and lexically normalized components. [None]
-   when the path is not absolute or ".." escapes above the anchor. *)
-let split_normalize p =
-  if not (is_absolute p) then None
-  else
-    match String.split_on_char '/' p with
-    | anchor :: rest ->
-        let rec norm acc = function
-          | [] -> Some (List.rev acc)
-          | ("" | ".") :: rest -> norm acc rest
-          | ".." :: rest -> (
-              match acc with [] -> None | _ :: tl -> norm tl rest)
-          | c :: rest -> norm (c :: acc) rest
-        in
-        Option.map (fun comps -> (anchor, comps)) (norm [] rest)
-    | [] -> None
-
-(* INSIDE_DUNE first: dune exports the context it is building in, which
-   is the one answer under a sandboxed action and under a private build
-   directory. The executable's directory, never its own name: a binary
-   called [_build_x.exe] is not a build directory. A value that is no path (a harness's INSIDE_DUNE=1) is a
-   relative path like any other, so it names a build directory only when
-   the working directory lies under one. *)
+(* Dune exports its build context as [INSIDE_DUNE], which a sandboxed action
+   keeps and which names a private [--build-dir]. A value that is no path (a
+   harness's [INSIDE_DUNE=1]) is relative, so it names a build directory only
+   when the working directory lies under one. *)
 let build_dir () =
   List.find_map
     (fun path -> build_dir_of_path (absolute path))
-    ((match getenv "INSIDE_DUNE" with Some d -> [ d ] | None -> [])
+    (Option.to_list (getenv "INSIDE_DUNE")
     @ [ Filename.dirname Sys.executable_name ])
 
-(* The variable is a user's spelling, and every prefix test below compares
-   bytes: [.], [..], a doubled or trailing separator would each make the
-   root prefix nothing. *)
-let lexical path =
-  match split_normalize path with
-  | Some (anchor, comps) -> anchor ^ "/" ^ String.concat "/" comps
-  | None -> path
+let is_absolute p =
+  String.starts_with ~prefix:"/" p
+  || String.length p >= 3
+     && p.[1] = ':'
+     && p.[2] = '/'
+     && match p.[0] with 'A' .. 'Z' | 'a' .. 'z' -> true | _ -> false
 
+(* The anchor of an absolute path ([""] for [/], [C:] for a drive) and its
+   components, with [.], [..] and empty ones resolved. [None] when [p] is
+   relative or climbs above its anchor. *)
+let normalized p =
+  let rec resolve above = function
+    | [] -> Some (List.rev above)
+    | ("" | ".") :: rest -> resolve above rest
+    | ".." :: rest -> (
+        match above with [] -> None | _ :: above -> resolve above rest)
+    | c :: rest -> resolve (c :: above) rest
+  in
+  match String.split_on_char '/' p with
+  | anchor :: rest when is_absolute p ->
+      Option.map (fun comps -> (anchor, comps)) (resolve [] rest)
+  | _ -> None
+
+let join (anchor, comps) = anchor ^ "/" ^ String.concat "/" comps
+
+(* The root is normalized, since a display compares it as bytes: a [.] or a
+   trailing [/] would make it prefix nothing. *)
 let project_root () =
   match getenv "WINDTRAP_PROJECT_ROOT" with
-  | Some root -> lexical (absolute root)
+  | Some root -> (
+      let root = absolute root in
+      match normalized root with Some path -> join path | None -> root)
   | None -> (
       match build_dir () with
       | Some dir -> Filename.dirname dir
       | None -> Sys.getcwd ())
 
-(* The log root follows the build directory, not the project root: a
-   private [--build-dir] keeps its own logs, and a tree built without dune
-   never grows a [_build]. *)
+(* The logs follow the build directory, so a private [--build-dir] keeps its
+   own and a tree built without dune never grows a [_build]. *)
 let default_log_dir () =
   match build_dir () with
   | Some dir -> Filename.concat dir "_tests"
   | None -> Filename.concat (Filename.get_temp_dir_name ()) "windtrap"
 
-(* Sandbox reconstruction *)
+(* Source tree and build tree *)
+
+(* The components of [path] around its build context: a sandboxed action runs
+   under [_build/.sandbox/<hash>/<context>/], any other under
+   [_build/<context>/]. *)
+let build_context path =
+  match split_at_build_dir path with
+  | Some (before, build, ".sandbox" :: hash :: context :: after) ->
+      Some (before, [ build; ".sandbox"; hash; context ], after)
+  | Some (before, build, context :: after) ->
+      Some (before, [ build; context ], after)
+  | Some (_, _, []) | None -> None
+
+let strip_build_prefix path =
+  match build_context path with
+  | Some (before, _, after) -> String.concat "/" (before @ after)
+  | None -> normalize_sep path
 
 let trim_trailing_slashes s =
-  let rec last_non_slash i =
-    if i < 0 then -1 else if s.[i] = '/' then last_non_slash (i - 1) else i
-  in
-  let i = last_non_slash (String.length s - 1) in
-  if i < 0 then s else String.sub s 0 (i + 1)
+  let rec stop i = if i > 0 && s.[i - 1] = '/' then stop (i - 1) else i in
+  match stop (String.length s) with 0 -> s | n -> String.sub s 0 n
 
-(* The components after a build directory and its context: a sandboxed
-   action runs under [_build/.sandbox/<hash>/<context>/], an unsandboxed
-   one under [_build/<context>/]. [None] when [comps] holds no build
-   directory followed by a context. *)
-let rec after_build_context = function
-  | build :: ".sandbox" :: _hash :: _context :: rest when is_build_dir build ->
-      Some rest
-  | build :: _context :: rest when is_build_dir build -> Some rest
-  | _ :: rest -> after_build_context rest
-  | [] -> None
-
-(* Not exported: [reconstruct] and [display_path] are the two ways out,
-   and both prove or relativize the result. A bare strip is the unproven
-   guess this module refuses to hand out. [Baseline.write] creates
-   directories from a reconstructed path, so a guess would create them in
-   the wrong place. *)
-let strip_build_prefix path =
-  let p = normalize_sep path in
-  let comps = String.split_on_char '/' p in
-  let rec drop acc = function
-    | build :: _ as comps when is_build_dir build -> (
-        match after_build_context comps with
-        | Some rest -> List.rev_append acc rest
-        | None -> List.rev_append acc comps)
-    | c :: rest -> drop (c :: acc) rest
-    | [] -> List.rev acc
-  in
-  String.concat "/" (drop [] comps)
-
-let build_root dir =
-  let comps = String.split_on_char '/' (normalize_sep dir) in
-  match after_build_context comps with
-  | None -> None
-  | Some rest ->
-      let kept = List.length comps - List.length rest in
-      Some (String.concat "/" (List.filteri (fun i _ -> i < kept) comps))
-
-let rec is_prefix xs ys =
-  match (xs, ys) with
-  | [], _ -> true
+let rec is_strictly_under ~dirs comps =
+  match (dirs, comps) with
+  | [], _ :: _ -> true
+  | dir :: dirs, comp :: comps ->
+      String.equal dir comp && is_strictly_under ~dirs comps
   | _, [] -> false
-  | x :: xs, y :: ys -> String.equal x y && is_prefix xs ys
 
 let reconstruct ~root file =
   let root = trim_trailing_slashes (normalize_sep root) in
-  let stripped = strip_build_prefix file in
-  let candidate =
-    if is_absolute stripped then stripped else root ^ "/" ^ stripped
-  in
-  match (split_normalize root, split_normalize candidate) with
-  | Some (root_anchor, root_comps), Some (anchor, comps)
-    when String.equal root_anchor anchor
-         && is_prefix root_comps comps
-         && List.length comps > List.length root_comps ->
-      Ok (anchor ^ "/" ^ String.concat "/" comps)
+  let file = strip_build_prefix file in
+  let candidate = if is_absolute file then file else root ^ "/" ^ file in
+  match (normalized root, normalized candidate) with
+  | Some (root_anchor, dirs), Some ((anchor, comps) as path)
+    when String.equal root_anchor anchor && is_strictly_under ~dirs comps ->
+      Ok (join path)
   | _ -> Error candidate
 
-(* Display paths
+let build_root dir =
+  Option.map
+    (fun (before, context, _) -> String.concat "/" (before @ context))
+    (build_context dir)
 
-   Total, deliberately: root discovery reads the cwd, and a test that
-   chdirs into a directory it then removes makes [Sys.getcwd] raise.
-   These paths are printed from inside failure reports, where a raise
-   would take down the whole run after the tests are already done. *)
+(* Display paths *)
 
-let relative_to_root path =
+let chop_prefix ~prefix s =
+  if String.starts_with ~prefix s then
+    let first = String.length prefix in
+    Some (String.sub s first (String.length s - first))
+  else None
+
+(* [None] when the root cannot be read: a test can remove its own working
+   directory, and these paths are printed after the run. *)
+let chop_root path =
   match project_root () with
-  | exception Sys_error _ -> path
-  | root ->
-      let prefix = root ^ "/" in
-      if String.starts_with ~prefix path then
-        String.sub path (String.length prefix)
-          (String.length path - String.length prefix)
-      else path
+  | exception Sys_error _ -> None
+  | root -> chop_prefix ~prefix:(root ^ "/") path
 
-(* Relativized before the build prefix is stripped: a project root that
-   itself lies inside a build tree (a scratch root under a sandbox) would
-   otherwise never prefix its own paths. Interior ["."] and empty segments
-   are dropped so the printed path is byte-equal across every producer
-   (dune runs tests with argv0 ["./t.exe"]). *)
+(* The root goes first: a root inside a build tree (a scratch root under a
+   sandbox) would not prefix the stripped path. Dune runs a test as
+   [./t.exe], and dropping [.] segments spells its paths as every other
+   producer does. *)
 let display_path path =
-  let normalize path =
-    let keep seg = seg <> "." && seg <> "" in
+  let clean path =
+    let keep = function "" | "." -> false | _ -> true in
     match String.split_on_char '/' path with
     | "" :: rest -> "/" ^ String.concat "/" (List.filter keep rest)
     | segments -> (
@@ -399,73 +323,67 @@ let display_path path =
         | [] -> "."
         | kept -> String.concat "/" kept)
   in
-  let relative = relative_to_root path in
-  if relative != path then normalize (strip_build_prefix relative)
-  else relative_to_root (normalize (strip_build_prefix path))
+  match chop_root path with
+  | Some relative -> clean (strip_build_prefix relative)
+  | None ->
+      let path = clean (strip_build_prefix path) in
+      Option.value (chop_root path) ~default:path
 
-let display_artifact = relative_to_root
+let display_artifact path = Option.value (chop_root path) ~default:path
 
-(* Path components
+(* Path components *)
 
-   Any name the mapping altered carries a digest of the name as given:
-   without it the mapping is many-to-one (["parse: empty"] and
-   ["parse, empty"] both become [parse__empty]) and two tests share one
-   capture log, which [Capture] opens [O_TRUNC]. Long names are truncated
-   to 40 bytes plus a digest to stay within filesystem limits. *)
+(* The digest keeps [parse: empty] and [parse, empty] apart, since two tests
+   with one component would share a capture log, which [Capture] truncates on
+   open. The bound of 80 bytes stays within filesystem limits. *)
 let sanitize_component s =
-  let is_ok = function
+  let safe = function
     | 'a' .. 'z' | 'A' .. 'Z' | '0' .. '9' | '-' | '_' | '.' -> true
     | _ -> false
   in
-  let buf = Buffer.create (String.length s) in
-  String.iter (fun c -> Buffer.add_char buf (if is_ok c then c else '_')) s;
-  let mapped = Buffer.contents buf in
-  let short = String.sub (Digest.to_hex (Digest.string s)) 0 8 in
-  let out =
-    if mapped = "" || mapped = "." || mapped = ".." then "unnamed-" ^ short
-    else if String.equal mapped s then mapped
-    else mapped ^ "-" ^ short
+  let mapped = String.map (fun c -> if safe c then c else '_') s in
+  let digest = Digest.to_hex (Digest.string s) in
+  let short = String.sub digest 0 8 in
+  let component =
+    match mapped with
+    | "" | "." | ".." -> "unnamed-" ^ short
+    | _ when String.equal mapped s -> mapped
+    | _ -> mapped ^ "-" ^ short
   in
-  if String.length out <= 80 then out
-  else String.sub out 0 40 ^ "_" ^ Digest.to_hex (Digest.string s)
+  if String.length component <= 80 then component
+  else String.sub component 0 40 ^ "_" ^ digest
 
 (* Filesystem helpers *)
 
-let rec mkdir_p path =
-  if path = "" || path = "." then ()
-  else if Sys.file_exists path then ()
-  else begin
-    let parent = Filename.dirname path in
-    if parent <> path then mkdir_p parent;
-    try Unix.mkdir path 0o770 with Unix.Unix_error (Unix.EEXIST, _, _) -> ()
-  end
+let file_exists = Sys.file_exists
 
-(* A caller names the path already, and a [Sys_error] of a file names it
-   first: the reason is what follows. *)
+let rec mkdir_p path =
+  match path with
+  | "" | "." -> ()
+  | path when file_exists path -> ()
+  | path -> (
+      let parent = Filename.dirname path in
+      if parent <> path then mkdir_p parent;
+      try Unix.mkdir path 0o770 with Unix.Unix_error (Unix.EEXIST, _, _) -> ())
+
 let failure_reason ~path = function
   | Sys_error message ->
-      let prefix = path ^ ": " in
-      if String.starts_with ~prefix message then
-        String.sub message (String.length prefix)
-          (String.length message - String.length prefix)
-      else message
+      Option.value (chop_prefix ~prefix:(path ^ ": ") message) ~default:message
   | Unix.Unix_error (error, _, dir) ->
-      Printf.sprintf "cannot create directory %s: %s" (display_path dir)
+      strf "cannot create directory %s: %s" (display_path dir)
         (Unix.error_message error)
-  | exception_value -> Printexc.to_string exception_value
+  | exn -> Printexc.to_string exn
 
 (* Standard error *)
 
-(* Standard output is flushed first: a log that merges the two streams
-   orders them by flush. A closed standard output does not cost the line. *)
+(* [Text.escape_controls] escapes a line feed too, so it sees each line
+   alone. *)
 let say message =
   (try
      Format.pp_print_flush Format.std_formatter ();
      flush stdout
    with Sys_error _ -> ());
   Format.pp_print_flush Format.err_formatter ();
-  (* A control byte would restyle the terminal or garble the line; a line
-     feed stays, since a diagnostic may span lines. *)
   let lines =
     List.map Text.escape_controls (String.split_on_char '\n' message)
   in

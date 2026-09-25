@@ -526,6 +526,35 @@ module Atomic_suite = struct
       [ "target" ]
       (sorted_directory directory)
 
+  (* Bounded retries on taken names *)
+
+  (* A fresh process numbers its temporaries from 0, so the child takes the
+     first 256 names of its own pid before it writes. *)
+  let child_collide directory =
+    for serial = 0 to 255 do
+      let name = Printf.sprintf ".tmp-%x-%x" (Unix.getpid ()) serial in
+      write_file (Filename.concat directory name) ""
+    done;
+    match Os.atomic_write ~path:(Filename.concat directory "target") "x" with
+    | () -> exit 0
+    | exception Sys_error message ->
+        prerr_string message;
+        exit 3
+
+  let test_taken_names_are_retried_a_bounded_number_of_times () =
+    let directory = temp_dir () in
+    let module Child = Windtrap_test_support.Child in
+    let r =
+      Child.run Sys.executable_name [ "--atomic-collide-child"; directory ]
+    in
+    equal ~msg:"the write fails" int 3 (Child.exit_code r);
+    is_true ~msg:"at the creation of its temporary"
+      (contains r.Child.err "cannot create temporary file: File exists");
+    is_false ~msg:"the target is not created"
+      (Sys.file_exists (Filename.concat directory "target"));
+    equal ~msg:"the taken names are left alone" int 256
+      (Array.length (Sys.readdir directory))
+
   let suite =
     [
       ("temp prefix is reserved", test_temp_prefix_is_reserved);
@@ -549,6 +578,8 @@ module Atomic_suite = struct
         test_target_symlink_is_refused_not_followed );
       ( "concurrent processes publish only whole inputs",
         test_concurrent_processes_publish_only_whole_inputs );
+      ( "taken names are retried a bounded number of times",
+        test_taken_names_are_retried_a_bounded_number_of_times );
     ]
 
   let tests = List.map (fun (name, fn) -> test name fn) suite
@@ -557,6 +588,7 @@ module Atomic_suite = struct
     match Array.to_list Sys.argv with
     | [ _; "--atomic-file-child"; path; rounds; writer ] ->
         child_replace path (int_of_string rounds) (int_of_string writer)
+    | [ _; "--atomic-collide-child"; directory ] -> child_collide directory
     | _ -> ()
 end
 
@@ -641,6 +673,27 @@ module Path_suite = struct
           equal ~msg:"a symbolic link is not resolved" (result string string)
             (Ok (root ^ "/link/x.ml"))
             (Os.reconstruct ~root "link/x.ml"));
+      test "reconstruct reads a drive as the anchor of an absolute path"
+        (fun () ->
+          let path = result string string in
+          equal ~msg:"a sandbox path under a drive root" path
+            (Ok "C:/w/test/a.ml")
+            (Os.reconstruct ~root:"C:/w" "C:\\w\\_build\\default\\test\\a.ml");
+          equal ~msg:"a lowercase drive" path (Ok "c:/w/a.ml")
+            (Os.reconstruct ~root:"c:/w" "c:/w/a.ml");
+          equal ~msg:"another drive is elsewhere" path (Error "D:/w/a.ml")
+            (Os.reconstruct ~root:"C:/w" "D:/w/a.ml");
+          equal ~msg:"the bare root of a drive is absolute" path (Error "C:/")
+            (Os.reconstruct ~root:"/w" "C:/");
+          equal ~msg:"a drive without its separator is relative" path
+            (Ok "/w/C:a.ml")
+            (Os.reconstruct ~root:"/w" "C:a.ml");
+          equal ~msg:"a digit is no drive" path (Ok "/w/1:/a.ml")
+            (Os.reconstruct ~root:"/w" "1:/a.ml"));
+      test "reconstruct's candidate spells the root without trailing slashes"
+        (fun () ->
+          equal (result string string) (Error "w/a.ml")
+            (Os.reconstruct ~root:"w//" "a.ml"));
       test "build_root cuts after the build directory and its context"
         (fun () ->
           let root = option string in
