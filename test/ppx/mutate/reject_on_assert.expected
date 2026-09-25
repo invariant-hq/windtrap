@@ -1,0 +1,4 @@
+File "./reject_on_assert.ml", line 1, characters 19-31:
+1 | let f x = assert x [@mutate on]
+                       ^^^^^^^^^^^^
+Error: mutate on is not allowed here.

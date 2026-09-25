@@ -44,6 +44,16 @@
 
 (rule
  (with-stdout-to
+  fixture_chain_off.actual
+  (run ./mutate_pp.exe --impl %{dep:fixture_chain_off.ml})))
+
+(rule
+ (alias runtest)
+ (action
+  (diff fixture_chain_off.expected fixture_chain_off.actual)))
+
+(rule
+ (with-stdout-to
   fixture_cmp.actual
   (run ./mutate_pp.exe --impl %{dep:fixture_cmp.ml})))
 
@@ -151,6 +161,16 @@
  (alias runtest)
  (action
   (diff fixture_lazy.expected fixture_lazy.actual)))
+
+(rule
+ (with-stdout-to
+  fixture_lazy_condition.actual
+  (run ./mutate_pp.exe --impl %{dep:fixture_lazy_condition.ml})))
+
+(rule
+ (alias runtest)
+ (action
+  (diff fixture_lazy_condition.expected fixture_lazy_condition.actual)))
 
 (rule
  (with-stdout-to
@@ -391,6 +411,20 @@
  (alias runtest)
  (action
   (diff reject_off_two_reasons.expected reject_off_two_reasons.actual)))
+
+(rule
+ (target reject_on_assert.actual)
+ (action
+  (with-outputs-to
+   reject_on_assert.actual
+   (with-accepted-exit-codes
+    1
+    (run ./mutate_pp.exe --impl %{dep:reject_on_assert.ml})))))
+
+(rule
+ (alias runtest)
+ (action
+  (diff reject_on_assert.expected reject_on_assert.actual)))
 
 (rule
  (target reject_on_binding.actual)

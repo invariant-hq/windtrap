@@ -167,7 +167,7 @@ a rule whose row does not name it, and when a rule is unpinned without a
 | M17 | A connective with a connective operand carries no mutant. | mut:84-86 | `mutate/fixture_nesting`, `mutate/fixture_chain` |
 | M18 | The operands of such a connective are boolean contexts all the same. | mut:86 | `mutate/fixture_contexts` |
 | M19 | In a file that lost `cmp` or `con`, such a condition carries `neg`. | mut:87-88 | `mutate/fixture_lost_cmp`, `mutate/fixture_lost_con` |
-| M20 | In a chain of one arithmetic operator the outermost application alone is a site, read from the tree. | mut:89-93 | `mutate/fixture_chain`; `test_mutate_semantics.ml` "evaluates exactly as its twin does" |
+| M20 | In a chain of one arithmetic operator the outermost application alone is a site, read from the tree. | mut:89-93 | `mutate/fixture_chain`, `mutate/fixture_chain_off`, `mutate/generated/fixture_generated_chain`; `test_mutate_semantics.ml` "evaluates exactly as its twin does" |
 | M21 | The chain rule applied to `con`. | none (unreachable code) | STATED-NOT-TESTED: unreachable, a consequence of M17 (a connective with a connective operand carries no mutant, so no `con` chain reaches the chain rule) |
 | M22 | In `a < b < c` only the outer comparison is a site. | mut:68-72 | `mutate/fixture_chain` |
 | M23 | Guards bind `__windtrap_mut_<i>_<role>`, distinct under nesting. | mut:94-95 | `mutate/fixture_chain` |
@@ -177,12 +177,12 @@ a rule whose row does not name it, and when a rule is unpinned without a
 | id | rule | interface | pinned by |
 | --- | --- | --- | --- |
 | M24 | An `assert`, with everything under it. | mut:99 | `mutate/fixture_assert` |
-| M25 | A `lazy` of a trivial value, with everything under it. | mut:100-103 | `mutate/fixture_lazy`; `test_mutate_semantics.ml` "lazy stays lazy" |
+| M25 | A `lazy` of a trivial value, with everything under it. | mut:100-103 | `mutate/fixture_lazy`, `mutate/fixture_lazy_condition`; `test_mutate_semantics.ml` "lazy stays lazy" |
 | M26 | The payloads of attributes and extension nodes. | mut:104 | `mutate/fixture_payloads` |
 | M27 | A file holding an extension node named `test` or `expect_test`. | mut:105-106 | `mutate/fixture_inline_tests` (both names), `mutate/fixture_inline_test_only`, `mutate/fixture_inline_expect_only` |
 | M28 | A file naming an identifier under `Ppx_windtrap_runtime.Ppx_runtime`. | mut:106-108 | `mutate/fixture_inline_expanded` |
 | M29 | A site at a ghost location. | mut:109 | `mutate/generated/fixture_generated` |
-| M30 | A site whose line, column and rewrite an earlier site has. | mut:110-112 | `mutate/generated/fixture_generated` |
+| M30 | A site whose line, column and rewrite an earlier site has. | mut:110-112 | `mutate/generated/fixture_generated`, `mutate/generated/fixture_generated_chain` |
 | M31 | Module initialization code is mutated. | mut:114-115 | `mutate/fixture_ari` |
 
 ### The emission law
@@ -202,7 +202,7 @@ a rule whose row does not name it, and when a rule is unpinned without a
 | --- | --- | --- | --- |
 | M38 | `[@mutate off "r"]` on a site records it dismissed with the reason, with an index and no guard. | mut:126-129 | `mutate/fixture_off`, `mutate/fixture_all_dismissed`, `mutate/fixture_off_edges` |
 | M39 | `[@mutate off]` without a reason records `""`. | mut:128-129 | `mutate/fixture_off` |
-| M40 | `[@mutate off]` on an expression that is no site records nothing and suppresses what is inside. | mut:129-131 | `mutate/fixture_off_edges` |
+| M40 | `[@mutate off]` on an expression that is no site records nothing and suppresses what is inside. | mut:129-131 | `mutate/fixture_off_edges`, `mutate/fixture_chain_off` |
 | M41 | `[@@mutate off]` on a top-level value binding and a module binding, recursive or not. | mut:132-133 | `mutate/fixture_off` (non-recursive), `mutate/fixture_off_structure` (recursive) |
 | M42 | `[@@mutate off]` on a `let ... in` binding or another item is ignored, its payload unchecked. | mut:133-135 | `mutate/fixture_off_edges` (ignored), `mutate/fixture_off_structure` (payload not checked) |
 | M43 | `[@@@mutate off]` ... `[@@@mutate on]` is a region; a nested structure inherits it and restores the outer setting; an unclosed one runs to the end. | mut:136-140 | `mutate/fixture_off`, `mutate/fixture_off_unclosed`, `mutate/fixture_off_structure` (nested) |
@@ -238,7 +238,7 @@ a rule whose row does not name it, and when a rule is unpinned without a
 | --- | --- | --- | --- |
 | M59 | An unknown identifier payload is refused. | mut:233-234 | `mutate/reject_bad_payload` |
 | M60 | Other payload shapes (empty, `off 42`, `off "a" "b"`) are refused. | mut:233-234 | `mutate/reject_empty_payload`, `mutate/reject_off_number`, `mutate/reject_off_two_reasons` |
-| M61 | `on` on an expression is refused. | mut:235 | `mutate/reject_misplaced_on` |
+| M61 | `on` on an expression is refused. | mut:235 | `mutate/reject_misplaced_on`, `mutate/reject_on_assert` |
 | M62 | `on` or `exclude_file` on a binding, `exclude_file` on an expression, are refused. | mut:235 | `mutate/reject_on_binding`, `mutate/reject_exclude_file_binding`, `mutate/reject_exclude_file_expr` |
 | M63 | `exclude_file` floating in a nested structure is refused. | mut:236 | `mutate/reject_misplaced_exclude_file` |
 | M64 | `[@@@mutate off]` inside a region is refused: "Mutation is already off." | mut:237 | `mutate/reject_double_off` |

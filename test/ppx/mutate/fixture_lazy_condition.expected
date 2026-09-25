@@ -1,0 +1,34 @@
+[@@@ocaml.text "/*"]
+module Windtrap_mut_________fixture_lazy_condition___ml =
+  struct
+    type site = Windtrap_runtime.Mutate.site =
+      {
+      line: int ;
+      col: int ;
+      rewrite: string ;
+      before: string ;
+      after: string ;
+      dismissed: string option }
+    let ___windtrap_armed___ =
+      Windtrap_runtime.Mutate.register ~file:"./fixture_lazy_condition.ml"
+        ~sites:[|{
+                   line = 4;
+                   col = 17;
+                   rewrite = "not";
+                   before = "x";
+                   after = "not x";
+                   dismissed = None
+                 }|]
+  end
+[@@@ocaml.text "/*"]
+let deferred x = if lazy x then 1 else 0
+let plain x =
+  if
+    let __windtrap_mut_0_p = x in
+    (if
+       Windtrap_mut_________fixture_lazy_condition___ml.___windtrap_armed___
+         0
+     then Stdlib.not __windtrap_mut_0_p
+     else __windtrap_mut_0_p)
+  then 1
+  else 0

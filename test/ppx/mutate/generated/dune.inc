@@ -11,3 +11,13 @@
  (alias runtest)
  (action
   (diff fixture_generated.expected fixture_generated.actual)))
+
+(rule
+ (with-stdout-to
+  fixture_generated_chain.actual
+  (run ./generated_pp.exe --impl %{dep:fixture_generated_chain.ml})))
+
+(rule
+ (alias runtest)
+ (action
+  (diff fixture_generated_chain.expected fixture_generated_chain.actual)))
