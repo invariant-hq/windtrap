@@ -105,6 +105,58 @@ and every promoted diff is reviewed as a code change.
   compare it, or the comparison is not about the thing that broke.
 - The corpus's vendored fixtures are upstream bytes and are never
   promoted from windtrap's output (below).
+- The manual's pages: `dune promote` after the failing `dune runtest`
+  (below).
+
+## The manual's transcripts
+
+Every transcript and example file a page of `doc/manual/` shows is
+regenerated from the examples, and `dune runtest` fails when a page no
+longer matches. An HTML comment on the line above a fence says what the
+block is:
+
+- `<!-- file PATH -->`: the file PATH of the repository, byte for byte.
+- `<!-- run DIR -->`: a terminal session in the example DIR. A line that
+  starts with `$ ` is a command as the reader types it; the lines up to
+  the next one are what it printed.
+- `<!-- run DIR as EXAMPLE -->`: the same session in a variant of
+  EXAMPLE, whose paths print as EXAMPLE's. A variant is a subdirectory
+  of its example that builds the same executable names from sources the
+  page tells the reader to change, as an `(executable)` so that `dune
+  runtest` stays green; `examples/01-getting-started/failing` is the
+  tutorial's failing edit.
+
+````
+<!-- run examples/01-getting-started -->
+```
+$ dune runtest
+mylib: 2 passed in 0.5ms.
+```
+````
+
+A dune rule cannot run dune, so `doc/transcript/transcript.exe` runs
+what dune would. A command is `VAR=value` assignments then `dune runtest`
+or `dune test` (`--force` changes nothing), which runs each `(test)`
+stanza of EXAMPLE's dune file in file order as `./NAME.exe` from DIR's
+build directory, with dune's location of the stanza above the output of
+one that exits nonzero; or `dune exec PATH [-- ARGS]`, which runs the
+built PATH from the repository root. Anything else, a pipe or an
+expansion included, is refused. The environment is dune's `INSIDE_DUNE`,
+`PATH`, `HOME`, `TMPDIR` and the assignments, so no `WINDTRAP_*`, `CI`
+or `GITHUB_ACTIONS` of the caller reaches the run. Standard output and
+standard error are read together and their escape sequences removed, as
+dune removes them when its output is not a terminal: a block is the
+terminal's text without its colours.
+
+A block is compared after masking what varies: the number of a duration
+(its unit stays), a seed `s1:…`, and an absolute path under the
+temporary directory or the repository. A block that matches is kept as
+written, so its durations stay put; one that differs is replaced by the
+run's output. Each page has two rules in `doc/manual/dune`: one writes
+`PAGE.corrected` and depends on the example directories it runs
+(`alias_rec` of their `all`, and their `source_tree`), the other diffs
+it under `@runtest`. The check is off on Windows, where the runs print
+CRLF line ends.
 
 ## Windtrap under its own instrumentation
 
