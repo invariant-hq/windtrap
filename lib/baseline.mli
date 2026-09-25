@@ -11,8 +11,7 @@
     ({!type-subject}). {!check} compares the two, and what the run does when
     they differ is its {!type-mode}. Under {!Corrected} and {!Update} the check
     records a correction, {!settle} keeps or drops the corrections of each
-    attempt, and {!val-write} writes the kept ones once. A registry ({!t}) is
-    one value per run, and the module holds no global state.
+    attempt, and {!val-write} writes the kept ones once.
 
     A file baseline is lines of text. Both sides of its comparison and every
     file written are made canonical: CR and CRLF line endings become LF and the
@@ -127,9 +126,7 @@ val settle : t -> keep:bool -> int
 (** [settle t ~keep] closes the attempt that recorded corrections since the
     previous call. With [keep] they are kept for {!val-write}. Otherwise they
     are dropped, and their keys are no longer accepted, so the next attempt is
-    compared with the baselines as they were first read. Which attempts keep
-    their corrections is the rule of the runner (see
-    {{!Run.section-corrections}corrections}).
+    compared with the baselines as they were first read.
 
     The result is the number of corrections kept. With [~keep:false] it is [0]
     whether the attempt had recorded none or several, and nothing else counts

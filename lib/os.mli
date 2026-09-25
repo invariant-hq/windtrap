@@ -6,21 +6,12 @@
 
 (** Operating-system access: the monotonic clock, the process environment,
     atomic file writes, the paths that a run resolves and prints, and standard
-    error.
-
-    {!reconstruct}, {!build_root} and {!display_path} read every backslash of a
-    path as a separator, on every platform, and return paths spelled with [/].
-    So does the rule of the {{!section-root}build directory}, and with it
-    {!project_root} and {!default_log_dir} when they follow that directory. On a
-    POSIX system, where a backslash is a byte of a file name, a name that holds
-    one is read as another path. {!display_artifact}, and {!project_root} under
-    [WINDTRAP_PROJECT_ROOT] or from the current directory, spell separators as
-    their inputs do. *)
+    error. *)
 
 (** {1:clock Monotonic clock}
 
     Monotonic time never goes backwards and ignores the adjustments of the
-    system clock. The durations of tests and of runs are measured on it. *)
+    system clock. *)
 
 type counter
 (** The type for points in monotonic time. *)
@@ -41,16 +32,10 @@ val count_s : counter -> float
     variable that is set to the empty string counts as unset, for every variable
     that is read here and for every mirror.
 
-    The section holds the raw lookup, the one writer, and the vocabularies that
-    the parsers of values share. It is not the inventory of variables. The
-    [WINDTRAP_*] mirror of a flag is declared beside that flag in the table of
-    {!Cli}. The parser of the flag reads it, so a mirror accepts and refuses
+    The [WINDTRAP_*] mirror of a flag is declared beside that flag in the table
+    of {!Cli}. The parser of the flag reads it, so a mirror accepts and refuses
     what its flag does. A caller of {!getenv} must likewise refuse a value that
-    it cannot parse, naming the variable, and never read a default out of it.
-
-    Two [WINDTRAP_*] variables mirror no flag. {!project_root} reads
-    [WINDTRAP_PROJECT_ROOT]. The coverage runtime reads [WINDTRAP_COVERAGE_FILE]
-    itself, because it cannot link this module. *)
+    it cannot parse, naming the variable, and never read a default out of it. *)
 
 val getenv : string -> string option
 (** [getenv var] is the value of [var], or [None] when [var] is unset or empty.
@@ -96,8 +81,7 @@ val inside_dune : unit -> bool
     which means that dune started the process. *)
 
 val is_tty_stdout : unit -> bool
-(** [is_tty_stdout ()] is [true] iff standard output is a terminal. Standard
-    error has no counterpart, because nothing styles it. *)
+(** [is_tty_stdout ()] is [true] iff standard output is a terminal. *)
 
 val term_dumb : unit -> bool
 (** [term_dumb ()] is [true] iff [TERM] is [dumb], compared as it is. *)
@@ -107,8 +91,7 @@ val in_ci : unit -> bool
 
 val in_github_actions : unit -> bool
 (** [in_github_actions ()] is [true] iff {!in_ci} and [GITHUB_ACTIONS] is set in
-    the sense above. The variable of the workflow without [CI] is not GitHub
-    Actions. *)
+    the sense above. *)
 
 (** {2:color Colour} *)
 
@@ -123,8 +106,7 @@ type color_mode =
 val color_mode_of_string : string -> color_mode option
 (** [color_mode_of_string s] is the mode that [s] spells, which is [always],
     [never] or [auto] in any case, and [None] for any other word. It does not
-    trim. It is the one vocabulary of [--color] and [WINDTRAP_COLOR], so the
-    variable accepts and refuses what the flag does. *)
+    trim. *)
 
 val resolve_color :
   color_mode -> tty:bool -> inside_dune:bool -> term_dumb:bool -> bool
@@ -186,9 +168,7 @@ val atomic_write : ?perm:int -> path:string -> string -> unit
 val project_root : unit -> string
 (** [project_root ()] is [WINDTRAP_PROJECT_ROOT] when it is set, made absolute
     against the current directory. It is else the parent of the build directory
-    when there is one, and else the current directory. The variable is for an
-    executable outside any build directory that is run from a subdirectory of
-    its project.
+    when there is one, and else the current directory.
 
     The value of the variable is normalized lexically: [.] and [..] segments,
     repeated separators and a trailing [/] are removed, and no symbolic link is
@@ -206,11 +186,7 @@ val default_log_dir : unit -> string
 (** {1:reconstruction Source tree and build tree}
 
     A compile-time source path, from [__POS__] or from debug information, names
-    a file as the compiler saw it, which under dune is a copy under [_build].
-    {!reconstruct} maps such a path back under the project root. A path that
-    cannot be proven to lie under the root is an error and never a guess.
-    {!build_root} serves the other direction, from a source file to the copy
-    that dune made of it. *)
+    a file as the compiler saw it, which under dune is a copy under [_build]. *)
 
 val reconstruct : root:string -> string -> (string, string) result
 (** [reconstruct ~root file] maps the compile-time source path [file] to an
@@ -228,8 +204,8 @@ val reconstruct : root:string -> string -> (string, string) result
 
     The result is [Ok abs] only when [abs] lies strictly under [root]. It is
     otherwise [Error candidate], where [candidate] is the unproven path, not
-    normalized, for the report of the error. [root] must be absolute, and every
-    call is an [Error] when it is not.
+    normalized. [root] must be absolute, and every call is an [Error] when it is
+    not.
 
     The proof is lexical, so no symbolic link is resolved and the target need
     not exist. On a POSIX system the proven path of a [file] that holds a
@@ -315,8 +291,7 @@ val failure_reason : path:string -> exn -> string
 val say : string -> unit
 (** [say message] writes ["windtrap: "], [message] and a newline on standard
     error. It is the one form of what windtrap says about itself, at every
-    verbosity, never styled and no part of a report. The runtime libraries
-    cannot link this module, and write the same prefix themselves.
+    verbosity, never styled and no part of a report.
     - A [message] of several lines is anchored on its first, so the prefix
       prints once.
     - Each line of [message] is written through {!Text.escape_controls}, so a
