@@ -2236,7 +2236,25 @@ let test_tail () =
     ~sub:
       "    captured output (last 10 lines, 9006 earlier bytes omitted):\n\
       \      l3\n"
-    (tail_block many)
+    (tail_block many);
+  let lines ~first ~last =
+    String.concat "\n"
+      (List.init (last - first + 1) (fun i -> Printf.sprintf "l%d" (first + i)))
+  in
+  (* A blank dropped line still counts its newline, and a final line without
+     one is still a line. *)
+  contains ~msg:"tail: a dropped blank line counts one byte"
+    ~sub:
+      "    captured output (last 10 lines, 2 earlier bytes omitted):\n\
+      \      l2\n"
+    (tail_block
+       (Failure.tail ~omitted_bytes:1 ("\n" ^ lines ~first:2 ~last:11)));
+  contains ~msg:"tail: a trailing blank line is the last line shown"
+    ~sub:
+      "    captured output (last 10 lines, 7 earlier bytes omitted):\n\
+      \      l3\n"
+    (tail_block
+       (Failure.tail ~omitted_bytes:1 (lines ~first:1 ~last:11 ^ "\n\n")))
 
 (* Bounds: a backtrace shares the captured tail's cap, and a long
    single-line value keeps its two ends *)
