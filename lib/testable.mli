@@ -5,11 +5,9 @@
 
 (** Assertion witnesses.
 
-    A witness for a type is a printer, an equality and an optional order. An
-    assertion verb compares its two values under the witness's equality and
-    prints both with its printer when they differ. The ordering verbs rank
-    values under its order. {!make} builds a witness from a printer and an
-    equality, {!with_compare} gives it an order, and {!contramap} and the
+    A witness for a type is a printer, an equality and an optional order.
+    {!make} builds a witness from a printer and an equality, {!with_compare}
+    gives it an order, and {!contramap} and the
     {{!section-containers}container constructors} compose witnesses. *)
 
 (** {1:witnesses Witnesses} *)
@@ -41,8 +39,7 @@ val structural : pp:(Format.formatter -> 'a -> unit) -> 'a t
 
 val of_equal : ('a -> 'a -> bool) -> 'a t
 (** [of_equal equal] is {!make} with [equal] and a printer that prints every
-    value as [<abstract>]. A failure then shows [<abstract>] on both sides and
-    no diff. Prefer {!make} once the type has a printer. *)
+    value as [<abstract>]. Prefer {!make} once the type has a printer. *)
 
 val contramap : ('a -> 'b) -> 'b t -> 'a t
 (** [contramap f w] is the witness that prints, compares and orders a value [a]
@@ -64,8 +61,7 @@ val compare : 'a t -> ('a -> 'a -> int) option
 (** [compare w] is [w]'s order, or [None] when [w] carries none. *)
 
 val to_string : 'a t -> 'a -> string
-(** [to_string w v] is [v] printed with [w]'s printer, as a string. Failures
-    store their values in this rendering. *)
+(** [to_string w v] is [v] printed with [w]'s printer, as a string. *)
 
 (** {1:instances Instances}
 
@@ -86,9 +82,9 @@ val string : string t
     one line. *)
 
 val text : string t
-(** [text] is {!string} printed verbatim, newlines kept. Failures on [text] diff
-    line by line. Multi-line values take [text]. Single-line values take
-    {!string}, whose quotes tell [""], [" "] and ["\t"] apart. *)
+(** [text] is {!string} printed verbatim, newlines kept. Multi-line values take
+    [text]. Single-line values take {!string}, whose quotes tell [""], [" "] and
+    ["\t"] apart. *)
 
 val bytes : bytes t
 (** [bytes] is the witness for [bytes], printed as a string literal. *)

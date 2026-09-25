@@ -9,9 +9,7 @@
     {!Failure.t} with a {{!Failure.section-constructors}constructor} of
     {!Failure}, which bounds every text that it is given. The failure is located
     by {!Loc.resolve}, and the verb raises it in a {!Failure.Check_failure}.
-    This interface states the payload that each verb builds, for whoever reads
-    or renders a failure. {!skip} raises a {!Failure.Control} and builds no
-    failure.
+    {!skip} raises a {!Failure.Control} and builds no failure.
 
     A verb's [?msg] is the failure's [msg], and its [?__POS__] is the failure's
     site in place of the one {!Loc.resolve} finds. A verb prints nothing,
@@ -46,8 +44,7 @@ type 'a testable = 'a Testable.t
     {!require_some}, {!require_ok} and {!require_error} build the same one. *)
 
 val equal : ?__POS__:pos -> ?msg:string -> 'a testable -> 'a -> 'a -> unit
-(** [equal t expected actual] is [()] iff [Testable.equal t expected actual].
-    The payload holds both values through [t]'s printer. *)
+(** [equal t expected actual] is [()] iff [Testable.equal t expected actual]. *)
 
 val not_equal : ?__POS__:pos -> ?msg:string -> 'a testable -> 'a -> 'a -> unit
 (** [not_equal t a b] is [()] iff [Testable.equal t a b] is [false]. The payload
@@ -55,12 +52,10 @@ val not_equal : ?__POS__:pos -> ?msg:string -> 'a testable -> 'a -> 'a -> unit
     printed. *)
 
 val is_true : ?__POS__:pos -> ?msg:string -> bool -> unit
-(** [is_true b] is [()] iff [b]. The payload has ["true"] as [expected] and
-    ["false"] as [actual]. *)
+(** [is_true b] is [()] iff [b]. *)
 
 val is_false : ?__POS__:pos -> ?msg:string -> bool -> unit
-(** [is_false b] is [()] iff [not b]. The payload has ["false"] as [expected]
-    and ["true"] as [actual]. *)
+(** [is_false b] is [()] iff [not b]. *)
 
 val is_none : ?__POS__:pos -> ?msg:string -> ?pp:'a printer -> 'a option -> unit
 (** [is_none o] is [()] iff [o] is [None]. The payload has ["None"] as
@@ -68,7 +63,7 @@ val is_none : ?__POS__:pos -> ?msg:string -> ?pp:'a printer -> 'a option -> unit
 
 val is_some : ?__POS__:pos -> ?msg:string -> 'a option -> unit
 (** [is_some o] is [()] iff [o] is [Some _]. Its payload is that of
-    {!require_some}. It takes no [?pp], since the failing side is [None]. *)
+    {!require_some}. *)
 
 val is_ok :
   ?__POS__:pos -> ?msg:string -> ?pp:'e printer -> ('a, 'e) result -> unit
@@ -85,8 +80,7 @@ val is_error :
     Each verb asserts a constructor and returns the value under it. *)
 
 val require_some : ?__POS__:pos -> ?msg:string -> 'a option -> 'a
-(** [require_some o] is [v] iff [o] is [Some v]. The payload has ["Some _"] as
-    [expected] and ["None"] as [actual]. *)
+(** [require_some o] is [v] iff [o] is [Some v]. *)
 
 val require_ok :
   ?__POS__:pos -> ?msg:string -> ?pp:'e printer -> ('a, 'e) result -> 'a
@@ -130,8 +124,7 @@ val satisfies :
 val mem : ?__POS__:pos -> ?msg:string -> 'a testable -> 'a -> 'a list -> unit
 (** [mem t x xs] is [()] iff [List.exists (Testable.equal t x) xs], so [x] takes
     the expected side of [t]'s equality. The claim is [a list containing <x>]
-    and the value is [xs] through [Testable.list t]. {!contains} is membership
-    over bytes. *)
+    and the value is [xs] through [Testable.list t]. *)
 
 (** {1:orders Orders}
 
@@ -139,10 +132,8 @@ val mem : ?__POS__:pos -> ?msg:string -> 'a testable -> 'a -> 'a list -> unit
     ({!Testable.compare}), and read the sign of [compare v than]. They build a
     {!Failure.predicate} whose claim is the relation and the bound through [t]'s
     printer, as [less than 3], and whose value is [v] through the same printer.
-    The relations are [less than], [at most], [greater than] and [at least]. The
-    claim is built from the relation and the bound that the verb compares, so it
-    cannot differ from the comparison. The equality of [t] is never read, so a
-    witness with a tolerance orders without it.
+    The equality of [t] is never read, so a witness with a tolerance orders
+    without it.
 
     Each verb raises [Invalid_argument] when [t] carries no order, whether or
     not its claim holds. The message names the verb and [Testable.with_compare].
@@ -198,17 +189,13 @@ val in_order : ?__POS__:pos -> ?msg:string -> subs:string list -> string -> unit
     The needle of the payload is the first element that has no such match, under
     a {!Failure.Ordered} demand, where [found_at] keeps its meaning.
 
-    Raises [Invalid_argument] if [subs] is empty, whatever [s] is, because an
-    assertion that demands nothing is a mistake and not a passing test. *)
+    Raises [Invalid_argument] if [subs] is empty, whatever [s] is. *)
 
 (** {1:exceptions Exceptions}
 
     Both verbs call the function through {!Failure.catch} and compare only an
     [`Exception], before [pred] is applied. They raise again, untouched, a
-    {!Failure.Check_failure} and every {!Failure.Control}, so an assertion that
-    fails inside the function is not reported as the wrong exception, an
-    intercepted [exit] is never accepted, and an [assume] inside the function
-    discards the case.
+    {!Failure.Check_failure} and every {!Failure.Control}.
 
     Both build a {!Failure.raised}, and hold an exception as
     {!Failure.exn_to_string} gives it and its backtrace as
@@ -232,16 +219,14 @@ val raises_match :
 (** [raises_match pred f] is [()] iff [f ()] raises an exception that [pred]
     accepts. [pred] must be total.
 
-    The payload has no [expected] and sets [predicate], which is what tells a
-    rejected exception from an uncaught one. It holds the raised exception, with
-    its backtrace when one was recorded, when [pred] rejected one, and nothing
-    when [f ()] returned. It never holds a {!Failure.message_diff}, which only
-    {!raises} can build. *)
+    The payload has no [expected] and sets [predicate]. It holds the raised
+    exception, with its backtrace when one was recorded, when [pred] rejected
+    one, and nothing when [f ()] returned. It never holds a
+    {!Failure.message_diff}, which only {!raises} can build. *)
 
 module Exn : sig
-  (** Predicates on exceptions, for {!raises_match}. The three constructors are
-      those whose messages {!raises} compares. A predicate returns [false] on
-      any other exception and never raises. *)
+  (** Predicates on exceptions, for {!raises_match}. A predicate returns [false]
+      on any other exception and never raises. *)
 
   val invalid_arg : ?substring:string -> exn -> bool
   (** [invalid_arg e] is [true] iff [e] is [Invalid_argument m] and [substring],
@@ -261,12 +246,10 @@ end
 val fail : ?__POS__:pos -> string -> 'a
 (** [fail msg] raises a {!Failure.Check_failure} whose payload is [msg], built
     by {!Failure.message}. The text is the payload and not an annotation, so the
-    [msg] of the failure is [None]. It never returns. *)
+    [msg] of the failure is [None]. *)
 
 val failf : ?__POS__:pos -> ('a, Format.formatter, unit, 'b) format4 -> 'a
-(** [failf fmt ...] is {!fail} with a message that [Format] builds. It never
-    returns. *)
+(** [failf fmt ...] is {!fail} with a message that [Format] builds. *)
 
 val skip : ?reason:string -> unit -> 'a
-(** [skip ?reason ()] raises [Failure.Control (`Skip reason)]. It never returns.
-*)
+(** [skip ?reason ()] raises [Failure.Control (`Skip reason)]. *)

@@ -18,13 +18,13 @@ type 'a t = Format.formatter -> 'a -> unit
 (** The type for printers of ['a] values. *)
 
 type style =
-  [ `Bold  (** Bold. *)
+  [ `Bold
   | `Faint  (** Faint, also called dim. *)
-  | `Red  (** A red foreground. *)
-  | `Green  (** A green foreground. *)
-  | `Yellow  (** A yellow foreground. *)
-  | `Bold_red  (** Bold and red, as one style. *)
-  | `Bold_green  (** Bold and green, as one style. *) ]
+  | `Red
+  | `Green
+  | `Yellow
+  | `Bold_red
+  | `Bold_green ]
 (** The type for the styles of a report's text ({!Report_sections.span}). Bold
     with a colour is a style of its own because styles do not nest: the reset
     that closes one style closes every style. *)
@@ -76,10 +76,9 @@ val decimal : float t
 val float_exact : float t
 (** [float_exact] formats a float as the shortest decimal that reads back to the
     same bits. A whole value keeps its point, and a rendering with an exponent
-    gets none, so [1.] prints as [1.], [-0.] as [-0.] and [1e300] as [1e+300]. A
-    finite float thus pastes back as the same double. [Float.nan], [infinity]
-    and [neg_infinity] print as [nan], [inf] and [-inf], which are no OCaml
-    expressions. *)
+    gets none, so [1.] prints as [1.], [-0.] as [-0.] and [1e300] as [1e+300].
+    [Float.nan], [infinity] and [neg_infinity] print as [nan], [inf] and [-inf],
+    which are no OCaml expressions. *)
 
 val bool : bool t
 (** [bool] formats [true] and [false]. *)

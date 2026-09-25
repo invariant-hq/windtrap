@@ -6,17 +6,13 @@
 (** Failure as data: the failure record, the outcome of a test and the control
     exception.
 
-    Failures are data and renderers are projections (guarantee 4 of
-    [doc/dev/architecture.md]). A failure site builds one {!t} with a
-    {{!section-constructors}constructor} and raises it in a {!Check_failure}, or
-    records it when the site is the runner's. A renderer reads it and changes
-    nothing. Nothing here prints.
+    A failure site builds one {!t} with a {{!section-constructors}constructor}
+    and raises it in a {!Check_failure}, or records it when the site is the
+    runner's. A renderer reads it and changes nothing.
 
-    A failure holds no styling and no command. A renderer spells the [replay:]
-    and [accept:] commands from the payload and from the invocation of the run.
-    What a failure holds is the text that cannot be made again after the failure
-    site: printed values, messages and a backtrace, each a bounded {!type-text}.
-*)
+    A failure holds no styling and no command. What a failure holds is the text
+    that cannot be made again after the failure site: printed values, messages
+    and a backtrace, each a bounded {!type-text}. *)
 
 (** {1:texts Texts} *)
 
@@ -26,14 +22,12 @@ type text = private {
           bytes that ends on a code-point boundary. It holds no marker. *)
   length : int;  (** The length of the whole text in bytes. *)
 }
-(** The type for a text of a payload: a printed value, a message, a backtrace.
-    It is cut iff [String.length kept < length]. A consumer must never take a
-    cut text for a whole one: two texts are known equal only when neither is cut
-    and their [kept] are equal. *)
+(** The type for a text of a payload: a printed value, a message, a backtrace. A
+    consumer must never take a cut text for a whole one: two texts are known
+    equal only when neither is cut and their [kept] are equal. *)
 
 val text : string -> text
-(** [text s] is [s], bounded. It is the only way to make a {!type-text}, so
-    every writer of a payload field keeps the bound. *)
+(** [text s] is [s], bounded. *)
 
 val is_cut : text -> bool
 (** [is_cut t] is [String.length t.kept < t.length]. *)
@@ -63,9 +57,7 @@ type tail = {
       (** The log file that holds the whole output, when the capture wrote one.
       *)
 }
-(** The type for the bounded end of a test's captured output. A failing test's
-    captured output is in its report, bounded, with the full log's path
-    (guarantee 5, see {!Report.result}). *)
+(** The type for the bounded end of a test's captured output. *)
 
 (** The type for what a baseline check compared against. *)
 type baseline =
@@ -74,7 +66,7 @@ type baseline =
           [exact]. A renderer takes its source file from [loc]. *)
   | File of string
       (** The file at this path, stored as the expectation spelled it and never
-          bounded, since a renderer names the file from it. *)
+          bounded. *)
 
 (** The type for how a baseline check failed (see {!Baseline.check}). *)
 type baseline_state =
@@ -83,7 +75,7 @@ type baseline_state =
           accept. *)
   | Mismatch of { expected : text; actual : text }
       (** The baseline [expected] differs from the produced [actual], both in
-          their comparison form. A renderer computes the diff from them. *)
+          their comparison form. *)
   | Unresolvable of { candidate : string }
       (** The path cannot be proven to lie under the project root. [candidate]
           is the unproven path, stored whole. *)
@@ -108,14 +100,13 @@ type message_diff = {
   constructor : string;
       (** The constructor that both exceptions share, which the producer names
           from the exceptions and never from a rendering. *)
-  expected_message : text;  (** The message of the expected exception. *)
-  actual_message : text;  (** The message of the raised exception. *)
+  expected_message : text;
+  actual_message : text;
 }
 (** The type for an exception failure with the right constructor and the wrong
     message. A producer must record one only when both exceptions share a
     constructor that carries a message ([Invalid_argument], [Failure],
-    [Sys_error]) and their messages differ. {!raised} checks none of it, and a
-    renderer decides on the presence of the value alone. *)
+    [Sys_error]) and their messages differ. *)
 
 (** The type for what a containment assertion demanded of its needle beyond an
     occurrence, which [found_at] records. *)
@@ -131,19 +122,16 @@ type containment_demand =
           occurrence anywhere, so [None] says that the needle is not in the
           string, and [Some _] that it is there before [resumed_at]. *)
 
-(** The type for failure payloads. A renderer matches on it without a wildcard,
-    so a new constructor is a design amendment that every renderer answers. *)
+(** The type for failure payloads. *)
 type kind =
   | Equality of { expected : text; actual : text; not_ : bool; diffable : bool }
       (** Two sides that had to match did not. [expected] and [actual] are
           printed values, or descriptions of a constructor such as [Some _].
-          Under [not_], a negated assertion, both must hold one rendering, and a
-          renderer prints [expected] once and never reads [actual]. [diffable]
-          is [false] when [expected] is a claim in words ({!predicate}), and a
-          renderer then computes no diff and marks neither side against the
-          other. *)
+          Under [not_], a negated assertion, both must hold one rendering.
+          [diffable] is [false] when [expected] is a claim in words
+          ({!predicate}). *)
   | Containment of {
-      needle : text;  (** The needle. *)
+      needle : text;
       found_at : int option;
           (** The byte offset of the first occurrence of the needle in the
               haystack, if any. Under {!Prefix} and {!Suffix} [Some _] says
@@ -154,10 +142,8 @@ type kind =
               renderer shows whole. [found_at] can lie outside it, and the
               needle can run past its end. *)
       excerpt_offset : int;
-          (** The byte offset of [excerpt] in the haystack. With
-              [haystack_length] it gives the bytes left out on each side. *)
+          (** The byte offset of [excerpt] in the haystack. *)
       demand : containment_demand;
-          (** What was demanded beyond an occurrence. *)
     }  (** A containment assertion failed. *)
   | Raise of {
       expected : text option;
@@ -185,18 +171,14 @@ type kind =
       state : baseline_state;
       withheld : withheld option;
           (** [Some _] iff this failure offers no correction. *)
-    }
-      (** A baseline check failed: what it compared against and how it ended. *)
+    }  (** A baseline check failed. *)
   | Property of {
       rendered : text;
           (** The counterexample as printed, after shrinking, or the text that
               stands for one (see {!Property.outcome}). *)
       summary : text option;
           (** [Some line] iff [rendered] is a table whose first line names the
-              columns. [line] then says in one line what the table holds, as
-              [2 calls, last: get] does for a stateful program. A renderer must
-              print [line] where a one-line counterexample goes, and the table
-              under it with its first line as the header row. *)
+              columns. [line] then says in one line what the table holds. *)
       case_index : int;
           (** The zero-based index of the failing case: the position of an
               example among the examples, or for a generated case the index that
@@ -206,19 +188,14 @@ type kind =
       shrink_end : shrink_end;
           (** How the shrink search ended. [rendered] is the last node that it
               accepted. It is {!Converged} beside [examples]. *)
-      root : Seed.seed;  (** The root seed of the run. *)
+      root : Seed.seed;
       count : int option;
           (** The case count when the configuration of the run gave it, and
-              [None] when the declaration or the default of the engine did. A
-              renderer restates it in the [replay:] command only when it is
-              present, since a replay under another count reaches another case.
-          *)
+              [None] when the declaration or the default of the engine did. *)
       examples : bool;
           (** [true] iff the case is one of the explicit examples, which are
-              never seeded or shrunk, so such a failure has no [replay:]
-              command. *)
+              never seeded or shrunk. *)
       rendering : rendering;
-          (** What [rendered] is, which the producer states. *)
       inner : t option;
           (** The failure of the law on the reported counterexample: the payload
               of the {!Check_failure} that the law raised, or for any other
@@ -240,7 +217,7 @@ and timed_case = {
           {!constructor-Property} failure. *)
   examples : bool;  (** [true] iff the case is one of the explicit examples. *)
   passed : int;  (** The cases that had passed, the examples included. *)
-  root : Seed.seed;  (** The root seed of the run. *)
+  root : Seed.seed;
   count : int option;
       (** The case count when the configuration of the run gave it, as the
           [count] of a {!constructor-Property} failure. *)
@@ -272,8 +249,8 @@ and rendering =
           received, and a renderer must mark it as such. *)
 
 and t = {
-  kind : kind;  (** The payload. *)
-  phase : phase;  (** The phase that the failure interrupted. *)
+  kind : kind;
+  phase : phase;
   loc : Loc.t option;
       (** The location of the failure, when it has one: that of the failing
           call, or the declaration site of the test where the runner found none.
@@ -288,8 +265,7 @@ and t = {
           the name of the test, then the names of the open subtests, outermost
           first. It is [[]] otherwise. A renderer classifies a subtest failure
           by this field and never by [msg], so an annotation of the user cannot
-          pass a plain failure off as one. It derives the displayed label from
-          this field too. *)
+          pass a plain failure off as one. *)
   output_tail : tail option;
       (** The captured output of the attempt. [None] until {!with_output_tail}.
       *)
@@ -301,7 +277,7 @@ and t = {
 (** {1:control Control} *)
 
 type control =
-  [ `Skip of string option  (** Skip the running test, with the reason. *)
+  [ `Skip of string option
   | `Timeout of float
     (** The test's limit, in seconds, expired. The runner raises it from a
         signal handler, so it can surface at any allocation or poll point of the
@@ -310,24 +286,17 @@ type control =
     (** Code under test called [Stdlib.exit] while a run is active, in the
         process that owns the run. The exit guard of {!Run} raises it, which
         cancels the exit, and it travels from the call to [exit] as any other
-        exception does (see {{!Run.section-exits}exits}). It carries no code,
-        because the guard cannot see it. *)
+        exception does (see {{!Run.section-exits}exits}). *)
   | `Discard  (** Discard the running case of a property. *) ]
 (** The type for a statement about the running test or case. The runner acts on
     the first three and the property engine on [`Discard]. *)
 
 exception Check_failure of t
-(** Raised to fail the running test with a finished failure. The assertion verbs
-    raise it, and so do {!Baseline.check}, {!Capture.val-output} when nothing is
-    captured, and {!Stateful} for the failure of a call. *)
+(** Raised to fail the running test with a finished failure. *)
 
 exception Control of control
 (** Raised through the user's code to the site that owns the control. This
-    module registers its [Printexc] printer, so every site that prints it gives
-    [windtrap skip: REASON] (or [windtrap skip] with no reason),
-    [windtrap timeout after 1.5s],
-    [Exit_attempt (code under test called exit; intercepted by windtrap)] and
-    [windtrap discard (assume or reject outside a property)]. *)
+    module registers its [Printexc] printer. *)
 
 (** {1:catching Catching the user's code}
 
@@ -367,10 +336,8 @@ val reraise : [< caught ] -> 'a
 
 val exn_to_string : exn -> string
 (** [exn_to_string e] is [Printexc.to_string e] with the prefix [Dune__exe__]
-    removed from each name that starts with it, so an exception that an
-    executable defines prints under the name its source gives it: [M.E], never
-    [Dune__exe__M.E]. A producer must convert an exception with it, and never
-    with [Printexc.to_string], so that every report names it the same way. *)
+    removed from each name that starts with it. A producer must convert an
+    exception with it, and never with [Printexc.to_string]. *)
 
 val caught_to_string : [< caught ] -> string
 (** [caught_to_string c] is {!exn_to_string} of the exception that [c]
@@ -380,28 +347,21 @@ val caught_to_string : [< caught ] -> string
 
 val backtrace_to_string : Printexc.raw_backtrace -> string
 (** [backtrace_to_string raw] is [raw] as the text of a payload. A producer must
-    convert with it, and never with [Printexc.raw_backtrace_to_string], so that
-    every report shows the same frames.
+    convert with it, and never with [Printexc.raw_backtrace_to_string].
 
     The result is the text of [Printexc.raw_backtrace_to_string] without the
     trailing run of windtrap's own frames ({!Loc.own_unit}). Only a trailing run
     is dropped, so a callback of the user that windtrap called keeps its frame
     and the frames below it, and a backtrace that never crossed code of the user
-    is kept whole. The frames keep their positions, so the first line still
-    reads [Raised at]. An empty backtrace gives [""], which {!raised} stores as
-    no backtrace. *)
+    is kept whole. An empty backtrace gives [""], which {!raised} stores as no
+    backtrace. *)
 
 (** {1:constructors Constructors}
 
     A constructor builds a {!Body} failure with no subtest label and no captured
     output. It captures no location, so a failure site passes
     [?loc:(Loc.resolve ?__POS__ ())] and leaves [loc] out where it would be a
-    guess.
-
-    {b Bounds.} A constructor makes each text that it takes as a string, [msg]
-    included, with {!val-text}. The path of a {!File}, the [candidate] of an
-    {!Unresolvable} and the [constructor] of a {!type-message_diff} are strings
-    stored whole, and an [excerpt] has the bounds of {!containment}. *)
+    guess. *)
 
 val equality :
   ?loc:Loc.t ->
@@ -412,8 +372,7 @@ val equality :
   unit ->
   t
 (** [equality ~expected ~actual ()] is a diffable {!Equality} failure over two
-    printed values. [not_] defaults to [false]. A claim against a value takes
-    {!predicate}, and a containment failure takes {!containment}. *)
+    printed values. [not_] defaults to [false]. *)
 
 val containment :
   ?loc:Loc.t ->
@@ -428,13 +387,12 @@ val containment :
     [needle], [found_at] and [demand] as given and a bounded excerpt of
     [haystack].
 
-    The excerpt is cut here, once. Its anchor is the [resumed_at] of an
-    {!Ordered} demand, or else [found_at]. With an anchor the excerpt is a
-    window of at most {!tail_bytes} bytes around it. Without one it is the head
-    of the haystack, its first 10 lines or its first 1 KiB, whichever ends
-    first, and under {!Suffix} its end, its last 10 lines or its last 1 KiB,
-    whichever starts last. Every cut falls on a code-point boundary, within the
-    bound.
+    Its anchor is the [resumed_at] of an {!Ordered} demand, or else [found_at].
+    With an anchor the excerpt is a window of at most {!tail_bytes} bytes around
+    it. Without one it is the head of the haystack, its first 10 lines or its
+    first 1 KiB, whichever ends first, and under {!Suffix} its end, its last 10
+    lines or its last 1 KiB, whichever starts last. Every cut falls on a
+    code-point boundary, within the bound.
 
     Raises [Invalid_argument] if [found_at], or the [resumed_at] of an
     {!Ordered} demand, is negative or greater than the length of [haystack]. *)
@@ -491,10 +449,7 @@ val timeout : ?loc:Loc.t -> ?case:timed_case -> float -> t
 val message : ?loc:Loc.t -> string -> t
 (** [message text] is a {!Message} failure that carries [text]. *)
 
-(** {1:updating Updating}
-
-    A failure is built where it happens, and the runner classifies and completes
-    it at the boundary of the attempt with these three. *)
+(** {1:updating Updating} *)
 
 val with_phase : phase -> t -> t
 (** [with_phase phase f] is [f] with [phase] as its phase. *)
@@ -526,8 +481,7 @@ val tail : ?log_path:string -> ?omitted_bytes:int -> string -> tail
 val tail_bytes : int
 (** [tail_bytes] is [8_192], 8 KiB: the bytes that a {!type-tail} keeps, and the
     bound of an anchored excerpt of {!containment}. A reader of captured output
-    must size its read by it, since {!val-tail} discards what is beyond it and a
-    shorter read leaves a report short. *)
+    must size its read by it. *)
 
 (** {1:outcomes Per-test outcomes} *)
 
@@ -537,9 +491,7 @@ type outcome =
   | Pass
   | Fail of t list
       (** Never empty, in the order in which the failures were recorded. The
-          entries are never merged, so a body failure and a teardown failure are
-          two entries, and one phase can add several, as each failing subtest
-          and each failing expectation does. *)
+          entries are never merged. *)
   | Skip of string option
       (** Skipped, with the first reason that the attempt gave. An attempt that
           skipped and also recorded a failure is a [Fail]. *)

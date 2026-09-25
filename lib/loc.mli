@@ -66,9 +66,8 @@ val delimit : (unit -> 'a) -> 'a
 
 val resolve : ?__POS__:pos -> unit -> t option
 (** [resolve ?__POS__ ()] is [Some (of_pos p)] when [__POS__] is [Some p], and
-    [capture ()] otherwise. An explicit position reads no call stack, so it
-    needs no debug information. It is the location rule of every function that
-    takes a [?__POS__]. *)
+    [capture ()] otherwise. It is the location rule of every function that takes
+    a [?__POS__]. *)
 
 val own_unit : string -> bool
 (** [own_unit defname] is [true] iff the compilation unit of [defname] is one of

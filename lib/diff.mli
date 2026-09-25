@@ -12,8 +12,7 @@
 
     Both functions are pure. Past a size bound {!val:hunks} gives a region whole
     and {!refine} is [None]. Both results show the degradation, so a bound never
-    makes two different inputs look equal. The one difference that {!val:hunks}
-    does not report is a single trailing newline. *)
+    makes two different inputs look equal. *)
 
 (** {1:hunks Line hunks} *)
 
