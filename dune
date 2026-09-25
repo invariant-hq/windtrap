@@ -1,0 +1,22 @@
+; README.md's marked blocks, regenerated from the tutorial's example as the
+; manual's are (doc/manual/dune): dune runtest diffs the page with its
+; regeneration, and dune promote accepts it. Off on Windows, where the runs
+; print CRLF line ends.
+
+(rule
+ (enabled_if
+  (<> %{os_type} Win32))
+ (deps
+  (alias_rec %{workspace_root}/examples/01-getting-started/all)
+  (source_tree %{workspace_root}/examples/01-getting-started))
+ (action
+  (with-stdout-to
+   README.md.corrected
+   (run %{exe:doc/transcript/transcript.exe} %{dep:README.md}))))
+
+(rule
+ (alias runtest)
+ (enabled_if
+  (<> %{os_type} Win32))
+ (action
+  (diff README.md README.md.corrected)))

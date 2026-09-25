@@ -1,12 +1,29 @@
-# Windtrap
+# Windtrap — One library for all your OCaml tests
 
-**One library for all your OCaml tests.**
+Windtrap runs unit, property, stateful and expect tests from one flat
+interface, with coverage and mutation testing in the companion ppx. A
+suite is an ordinary executable that `dune runtest` builds and runs.
+Windtrap needs OCaml 5.0 or later, the ppx adds ppxlib, and both are
+distributed under the ISC license.
 
-Unit tests, property-based tests, stateful tests, expect tests inline or
-in files, code coverage, and mutation testing — in a single package with
-one flat API. No need to glue together Alcotest + QCheck + ppx_expect +
-Bisect_ppx + custom snapshot code.
+## A first suite
 
+A suite is declared by a `(test)` stanza, here for a module `Calc` of
+two functions (the tutorial's example, `examples/01-getting-started/`).
+
+`test/dune`:
+
+<!-- file examples/01-getting-started/dune -->
+```lisp
+(test
+ (name test_mylib)
+ (modules test_mylib calc)
+ (libraries windtrap))
+```
+
+`test/test_mylib.ml`:
+
+<!-- file examples/01-getting-started/test_mylib.ml -->
 ```ocaml
 open Windtrap
 open Calc
@@ -24,203 +41,78 @@ let () =
        ]
 ```
 
-This is [`examples/01-getting-started`](examples/01-getting-started),
-verbatim apart from the file's header comment. `run` returns the exit code — 0 when
-everything passed, 1 on any failure, 2 when nothing ran — and `exit`
-hands it to the shell. Running it prints:
+A run with nothing to report prints one line:
 
+<!-- run examples/01-getting-started -->
 ```
-mylib: 2 passed in 0.00317s.
-```
-
-A green, healthy run is exactly one line; failures bring out the
-header and the full failure blocks.
-
-## Install
-
-```
-opam install windtrap
+$ dune runtest
+mylib: 2 passed in 0.5ms.
 ```
 
-For inline expect tests, code coverage, and mutation testing, also install
-the PPX:
+## What it does
 
-```
-opam install ppx_windtrap
-```
+- A failing assertion prints both values it compared, and a diff for text.
+- Every generator shrinks, and a failing property prints its smallest
+  counterexample and a `replay:` command.
+- `stateful` checks a system against a model over generated programs of
+  calls.
+- A baseline is the literal at an `expect` call or the file an
+  `expect_file` call names; `dune promote` accepts a change to it, and to
+  a `let%expect_test`, which runs on the same runner.
+- `windtrap coverage` merges the coverage of every suite into one
+  report, and each mutant that survives the tests names the tests that
+  ran its line.
+- `run` returns `0`, `1` or `2`, and `2` means that no test ran, so a
+  mistyped filter fails the build.
 
-## dune setup
+## Installation
 
-```lisp
-(test
- (name test_mylib)
- (libraries windtrap))
-```
-
-For inline expect tests:
-
-```lisp
-(library
- (name mylib)
- (inline_tests)
- (preprocess
-  (pps ppx_windtrap)))
-```
-
-For coverage and mutation testing, one inert stanza each on the library
-under test:
-
-```lisp
-(library
- (name mylib)
- (instrumentation
-  (backend ppx_windtrap.coverage))
- (instrumentation
-  (backend ppx_windtrap.mutate)))
-```
-
-## Features
-
-Each links the chapter that documents it.
-
-**[Assertions](doc/manual/assertions.md)** — every comparison goes
-through an `'a testable`, a printer plus an equality, so a failure
-prints both values and marks what changed for every type, with no diff
-function to write; values whose rendering spans lines are diffed line by
-line, and the `require_*` verbs assert *and unwrap*, keeping the happy
-path short.
-
-**[Property testing](doc/manual/property-testing.md)** — `prop` draws
-inputs from an `'a Gen.t`, runs an ordinary assertion body on each, and
-shrinks failures to a minimal counterexample; shrinking is integrated,
-so there is never a shrink function to write, and every failure prints
-an exact replay command with its `s1:` seed token.
-
-**[Stateful testing](doc/manual/stateful-testing.md)** — `stateful`
-checks a law over *sequences* of calls against a model, with each
-`command` bundling how to draw its argument, when it is legal, what it
-does to the model and what it does to the real thing; failures print the
-shrunk program one numbered step per line, the model each call was made
-in, and the step that broke.
-
-**[Baselines](doc/manual/baselines.md)** — `expect actual @@
-__POS_OF__ {|…|}` compares against the literal at the call and
-`expect_file actual "test/help.expected"` against a committed file, and
-checking is read-only: a mismatch or a missing file fails with a diff and
-its acceptance command — `dune promote` after the stanza's `--corrected`
-run, or `-u` in place — reviewed with `git diff`.
-
-**[Expect testing](doc/manual/baselines.md)** —
-`let%expect_test` and `[%expect]` via `ppx_windtrap`, a desugaring into
-`test` and `expect`: the same runner, the same corrections, accepted
-through `dune promote`. Compatibility with ppx_expect is measured
-against Jane Street's own test corpus: supported constructs run and
-promote unchanged, unsupported ones fail loudly at the exact location.
-
-**[Resources and structure](doc/manual/resources-and-structure.md)** —
-`bracket` scopes a per-test resource with teardown on every outcome and
-`scoped` takes a `with_`-style scoping function whole, `fixture` shares
-an expensive one across the run, `temp_dir` and `temp_file` give
-runner-cleaned scratch paths, and `setenv`/`chdir` bind the environment
-and the working directory for one test with the runner restoring both;
-`cases` declares one named, individually selectable test per input,
-`subtest` labels sub-cases inside a body, a group's `~timeout` and
-`~retries` are defaults for every test under it, and `focus` and
-`xfail` wrap any test or group — the latter keeping known-bug
-reproductions in-tree without a red run.
-
-**[Code coverage](doc/manual/coverage.md)** — expression-level coverage
-from the inert `(instrumentation (backend ppx_windtrap.coverage))`
-stanza, in two commands: `dune runtest --force --instrument-with
-ppx_windtrap.coverage` runs the suite instrumented (declare the backend
-once in `dune-workspace` and the flag goes), then `dune exec windtrap
--- coverage` merges every executable's data and draws the per-file
-table (`-u` for the uncovered source, `--json` for the machine-readable
-form, `--lcov` for coverage services and genhtml), and `--min 80` gates
-CI.
-
-**[Mutation testing](doc/manual/mutation.md)** — the second inert
-stanza, `(instrumentation (backend ppx_windtrap.mutate))`, makes the
-test executable its own mutation runner: `--mutate` turns the run you
-already make into a mutation run, which re-runs the tests once per
-mutant they reach and prints every survivor as a failure block naming
-the line, the rewrite, and *the tests that ran that line and did not
-fail when it changed*. Scope it to the file you are working on with
-`--mutate=lib/foo.ml`, filter to the test you just wrote with `-f`,
-reproduce a survivor with `--arm <id>`, and dismiss an equivalent
-mutant in the source with `[@mutate off "reason"]`. The project answer
-is two commands, `WINDTRAP_MUTATE=1 dune runtest --force
---instrument-with ppx_windtrap.mutate` (the flag's mirror, which
-reaches every stanza) to run every suite mutated, then `dune exec
-windtrap -- mutants` to merge their verdicts under killed-anywhere-wins
-— a mutant one suite kills and another merely reaches is killed — and
-exit 1 on any survivor.
-
-**[Test runner](doc/manual/running-tests.md)** — filtering by name and
-tag, `--failed` reruns, `--shard K/N` for CI partitioning, fail-fast,
-deterministic seeds, JUnit XML, and automatic GitHub Actions annotations
-on failures.
-
-## CLI
-
-`./test_mylib.exe --help` prints the full inventory of flags — it is
-generated from the parser, so it never drifts. The part that is not
-obvious: every option that changes what a run does or reports has a
-`WINDTRAP_*` environment mirror, because under `dune runtest` there is
-no command line and the mirrors *are* the CLI:
-
-```
-dune exec test/test_mylib.exe -- -f parser      # ad hoc, with flags
-WINDTRAP_FILTER=parser dune runtest --force     # the same, through dune
-WINDTRAP_JUNIT=_build/junit dune runtest        # in CI
-```
-
-A variable changes nothing on a warm tree unless the run passes
-`--force` or the stanza declares `(deps (env_var WINDTRAP_FILTER))`.
-`-l`, `--failed`, `-x`, `-u`, `--corrected`, `-h` and `-V` have no
-mirror: they want a command line. Three variables have no flag either —
-`WINDTRAP_PROJECT_ROOT`, `WINDTRAP_COVERAGE_FILE` and `NO_COLOR` — and
-`--help` lists those too.
+    opam install windtrap
+    opam install ppx_windtrap   # expect tests, coverage, mutation testing
 
 ## Documentation
 
-- [`doc/manual/`](doc/manual/) — the manual: a guided tour of every
-  feature.
-- [`doc/cookbook.md`](doc/cookbook.md) — recipes for the things windtrap
-  deliberately does not absorb.
-- [`examples/`](examples/) — self-contained projects, wired into `dune
-  runtest`: one runnable example per manual chapter, numbered in the
-  manual's order, plus `x-blueprint`, the canonical layout ready to
-  copy.
-- [`skills/windtrap-testing/SKILL.md`](skills/windtrap-testing/SKILL.md)
-  — the skill for coding agents: which test kind to write, how to
-  organize a suite, and the coverage and mutation discipline, pointing
-  at the manual for mechanics.
-- [`CHANGES.md`](CHANGES.md) — the 0.2.0 entry's cheat sheet maps the
-  windtrap 0.1 surface to this one.
+The manual, [`doc/manual/`](doc/manual/), has one page per need:
 
-## License
+- Tutorial: [Getting started](doc/manual/getting-started.md), the suite above and its first failure.
+- How-to:
+  - [Assertions](doc/manual/assertions.md): values, bounds, strings, results and exceptions.
+  - [Property testing](doc/manual/property-testing.md): laws over generated values.
+  - [Stateful testing](doc/manual/stateful-testing.md): a system against a model.
+  - [Baselines and expect tests](doc/manual/baselines.md): `expect`, `expect_file`, `let%expect_test`.
+  - [Resources and structure](doc/manual/resources-and-structure.md): a suite's layout and resources.
+  - [Running tests](doc/manual/running-tests.md): selection, reruns, `dune runtest` and CI.
+  - [Coverage](doc/manual/coverage.md): the code no test runs.
+  - [Mutation testing](doc/manual/mutation.md): the changes no test notices.
+- Explanation: [Design notes](doc/manual/notes.md), why windtrap is shaped as it is.
+- Migration: [Migrating from 0.1](doc/manual/migrating-from-0.1.md), each 0.1 spelling and its replacement.
+- Reference: [`lib/windtrap.mli`](lib/windtrap.mli), also read with `odig doc windtrap`, and
+  [`ppx/ppx_windtrap.mli`](ppx/ppx_windtrap.mli) for the inline test forms.
 
-ISC. Some files carry additional ISC or MIT notices for derived code. See
-[THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md) for details.
+A coding agent starts with the skill
+[`skills/windtrap-testing/SKILL.md`](skills/windtrap-testing/SKILL.md).
+[`CHANGES.md`](CHANGES.md) lists the changes of each release. Questions
+are welcome on the [OCaml forum](https://discuss.ocaml.org/).
+
+## Examples
+
+[`examples/`](examples/) holds the project of each manual page, run by
+`dune runtest`; [its README](examples/README.md) lists them.
+
+## Contributing
+
+[`doc/dev/`](doc/dev/) describes the architecture, how windtrap tests
+itself, the changelog discipline and the release checklist.
 
 ## Acknowledgments
 
-Windtrap builds on ideas and code from several OCaml testing projects:
-
-- **[Alcotest](https://github.com/mirage/alcotest)** by Thomas Gazagnaire —
-  test structure and runner design
-- **Craig Ferguson's Alcotest PRs**
-  ([#294](https://github.com/mirage/alcotest/pull/294),
-  [#247](https://github.com/mirage/alcotest/pull/247)) — API design and
-  subcomponent diffing
-- **[QCheck2](https://github.com/c-cube/qcheck)** by Simon Cruanes et al. —
-  generator distributions and integrated shrinking
-- **[ppx_expect](https://github.com/janestreet/ppx_expect)** and
-  **[ppx_inline_test](https://github.com/janestreet/ppx_inline_test)** by
-  Jane Street — the expect-test paradigm, dune integration, and the
-  conformance corpus
-- **[Bisect_ppx](https://github.com/aantron/bisect_ppx)** by Anton Bachin
-  et al. — coverage instrumentation
-- **[mtime](https://erratique.ch/software/mtime)** by The mtime
-  programmers — monotonic clock implementation
+Windtrap builds on ideas and code from
+[Alcotest](https://github.com/mirage/alcotest) and Craig Ferguson's
+pull requests to it ([#294](https://github.com/mirage/alcotest/pull/294),
+[#247](https://github.com/mirage/alcotest/pull/247)),
+[QCheck2](https://github.com/c-cube/qcheck),
+[ppx_expect](https://github.com/janestreet/ppx_expect),
+[ppx_inline_test](https://github.com/janestreet/ppx_inline_test),
+[Bisect_ppx](https://github.com/aantron/bisect_ppx) and
+[mtime](https://erratique.ch/software/mtime);
+[`THIRD_PARTY_LICENSES.md`](THIRD_PARTY_LICENSES.md) holds their notices.
