@@ -7,54 +7,24 @@
   Splittable Pseudorandom Number Generators" (OOPSLA 2014).
   --------------------------------------------------------------------------*)
 
+(* Every definition here but [random] is frozen under the token prefix [s1],
+   as seed.mli states. *)
+
+(* Seeds and tokens *)
+
 type seed = int64
 
-(* Token codec. Format frozen under the [s1] prefix: "s1:" then 16 lowercase
-   hex digits, most-significant nibble first. *)
+let to_string seed = Printf.sprintf "s1:%016Lx" seed
 
-let token_prefix = "s1:"
-let hex_digits = "0123456789abcdef"
-
-let invalid_token =
-  "seed must be s1: followed by 16 lowercase hexadecimal digits"
-
-let hex_value = function
-  | '0' .. '9' as digit -> Some (Char.code digit - Char.code '0')
-  | 'a' .. 'f' as digit -> Some (Char.code digit - Char.code 'a' + 10)
-  | _ -> None
-
+(* A text is a token iff it is the printing of the seed it reads, so
+   [to_string] alone defines the format. *)
 let of_string text =
-  if
-    String.length text <> 19
-    || String.get text 0 <> 's'
-    || String.get text 1 <> '1'
-    || String.get text 2 <> ':'
-  then Error invalid_token
-  else
-    let rec decode index seed =
-      if index = 19 then Ok seed
-      else
-        match hex_value (String.get text index) with
-        | None -> Error invalid_token
-        | Some value ->
-            decode (index + 1) Int64.(logor (shift_left seed 4) (of_int value))
-    in
-    decode 3 0L
+  match Scanf.sscanf_opt text "s1:%Lx%!" Fun.id with
+  | Some seed when String.equal (to_string seed) text -> Ok seed
+  | Some _ | None ->
+      Error "seed must be s1: followed by 16 lowercase hexadecimal digits"
 
-let to_string seed =
-  let text = Bytes.create 19 in
-  Bytes.blit_string token_prefix 0 text 0 3;
-  for index = 0 to 15 do
-    let shift = 4 * (15 - index) in
-    let value = Int64.(to_int (logand (shift_right_logical seed shift) 0xfL)) in
-    Bytes.set text (index + 3) hex_digits.[value]
-  done;
-  Bytes.unsafe_to_string text
-
-(* SplitMix64 core. The constants and the transition are the reference
-   algorithm's and are frozen under the [s1] prefix. *)
-
-let golden_gamma = 0x9e3779b97f4a7c15L
+let random () = Random.State.bits64 (Random.State.make_self_init ())
 
 let mix64 z =
   let z =
@@ -65,31 +35,23 @@ let mix64 z =
   in
   Int64.(logxor z (shift_right_logical z 31))
 
-(* Derivation. Frozen under the [s1] prefix: hash64 is 64-bit FNV-1a over the
-   path's bytes; the case seed is
-   mix64 (mix64 (root lxor hash64 path) + golden_gamma * index). *)
-
+let golden_gamma = 0x9e3779b97f4a7c15L
 let fnv_offset_basis = 0xcbf29ce484222325L
 let fnv_prime = 0x100000001b3L
 
 let hash64 text =
-  let hash = ref fnv_offset_basis in
-  String.iter
-    (fun byte ->
-      hash :=
-        Int64.mul (Int64.logxor !hash (Int64.of_int (Char.code byte))) fnv_prime)
-    text;
-  !hash
+  let add hash byte =
+    Int64.mul (Int64.logxor hash (Int64.of_int (Char.code byte))) fnv_prime
+  in
+  String.fold_left add fnv_offset_basis text
 
 let derive ~root ~path ~index =
   let stream = mix64 (Int64.logxor root (hash64 path)) in
   mix64 (Int64.add stream (Int64.mul golden_gamma (Int64.of_int index)))
 
-let random () = Random.State.bits64 (Random.State.make_self_init ())
+(* Sampling states *)
 
-(* Sampling states. *)
-
-type state = { position : int64; gamma : int64 }
+type state = { position : int64; gamma : int64 (* odd *) }
 
 let make seed = { position = seed; gamma = golden_gamma }
 
@@ -126,8 +88,8 @@ let popcount z =
   in
   Int64.(to_int (shift_right_logical (mul z 0x0101010101010101L) 56))
 
-(* Gamma derivation for split streams: the MurmurHash3 finalizer forced odd,
-   with sparse or regular bit patterns broken up, per SplittableRandom. *)
+(* The increment of a split stream is SplittableRandom's: the MurmurHash3
+   finalizer forced odd, with too regular a bit pattern broken up. *)
 let mix_gamma z =
   let z =
     Int64.(mul (logxor z (shift_right_logical z 33)) 0xff51afd7ed558ccdL)

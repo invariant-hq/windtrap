@@ -91,6 +91,25 @@ let token_parser_rejects_malformed_text () =
       is_error ~msg:(String.escaped text) ~pp:pp_hex (Seed.of_string text))
     rejected
 
+(* Spellings of an integer that a lax reader could take for a seed. *)
+let token_parser_rejects_integer_spellings () =
+  let rejected =
+    [
+      "s1:0x0000000000000f";
+      "s1:0X0000000000000f";
+      "s1:0000_0000000000f";
+      "s1:+00000000000000f";
+      "s1:-00000000000000f";
+      "s1:00000000000000FF";
+      "s1: 000000000000000";
+      "s1:10000000000000000";
+    ]
+  in
+  List.iter
+    (fun text ->
+      is_error ~msg:(String.escaped text) ~pp:pp_hex (Seed.of_string text))
+    rejected
+
 (* Stream *)
 
 let stream_vectors =
@@ -209,6 +228,18 @@ let bounded_multiple_rejection_consumes_every_word () =
     (hex_of_int64 value);
   let next, _ = Seed.bits64 successor in
   equal ~msg:"two-rejection successor" string "5c83eea29361787c"
+    (hex_of_int64 next)
+
+(* The first word of [make 0x9cd9f015db4e58b7] is 6, the threshold of bound
+   10 (2^64 mod 10): the least word the draw keeps. The seed inverts the
+   finalizer; the literals come from the arbitrary-precision reference. *)
+let bounded_keeps_a_word_equal_to_the_threshold () =
+  let value, successor =
+    Seed.below ~bound:10L (Seed.make 0x9cd9f015db4e58b7L)
+  in
+  equal ~msg:"threshold word kept" hex64 6L value;
+  let next, _ = Seed.bits64 successor in
+  equal ~msg:"threshold word successor" string "c83014e7d2248e0d"
     (hex_of_int64 next)
 
 let bounded_rejects_invalid_bounds_before_sampling () =
@@ -422,6 +453,7 @@ let tests =
     test "canonical token literals" canonical_token_literals;
     test "all token patterns round trip" all_token_patterns_round_trip;
     test "token parser rejection matrix" token_parser_rejects_malformed_text;
+    test "token parser integer spellings" token_parser_rejects_integer_spellings;
     test "stream frozen literals" stream_matches_frozen_literals;
     test "states are immutable and deterministic"
       states_are_immutable_and_deterministic;
@@ -429,6 +461,7 @@ let tests =
     test "bounded single rejection" bounded_single_rejection_consumes_both_words;
     test "bounded multiple rejection"
       bounded_multiple_rejection_consumes_every_word;
+    test "bounded threshold word" bounded_keeps_a_word_equal_to_the_threshold;
     test "bounded invalid bounds" bounded_rejects_invalid_bounds_before_sampling;
     test "bounded independent oracle"
       bounded_sampling_agrees_with_independent_small_oracle;
