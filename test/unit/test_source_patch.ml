@@ -374,6 +374,98 @@ let () =
   | Error (P.Drifted p) -> is_true ~msg:"one refusal refuses all" (p = second)
   | Ok _ | Error (P.No_literal _) -> fail "a refused patch among good ones"
 
+(* Decoding *)
+
+(* [source] holds [spelled] after [__POS_OF__ ], with nothing after it. *)
+let decodes spelled =
+  let source = "let () = expect x @@ __POS_OF__ " ^ spelled in
+  (source, pos_of source "__POS_OF__")
+
+let () =
+  reg "every escape decodes to the compiled value" @@ fun () ->
+  let source, site = decodes {|"\n\b\r\'\ \o101\x4a\x4A\u{e9}\u{1F600}"|} in
+  equal ~msg:"the literal is found and replaced" string
+    "let () = expect x @@ __POS_OF__ \"z\""
+    (apply source
+       [ exact ~site ~literal:"\n\b\r' A\x4a\x4A\u{e9}\u{1F600}" "z" ])
+
+let () =
+  reg "an escape the lexer rejects is kept as written" @@ fun () ->
+  let source, site = decodes {|"\q\o108\256\999\u{}\u{D800}\u{41"|} in
+  equal ~msg:"each backslash and its byte stay" string
+    "let () = expect x @@ __POS_OF__ \"z\""
+    (apply source
+       [ exact ~site ~literal:{|\q\o108\256\999\u{}\u{D800}\u{41|} "z" ])
+
+let () =
+  reg "a continuation drops the newline and the next line's blanks" @@ fun () ->
+  let source, site = decodes "\"a\\\n \t b\"" in
+  equal ~msg:"LF, then spaces and a tab" string
+    "let () = expect x @@ __POS_OF__ \"z\""
+    (apply source [ exact ~site ~literal:"ab" "z" ]);
+  let source, site = decodes "\"a\\\rb\"" in
+  equal ~msg:"a CR without LF is no continuation" string
+    "let () = expect x @@ __POS_OF__ \"z\""
+    (apply source [ exact ~site ~literal:"a\\\rb" "z" ])
+
+let () =
+  reg "a CR LF that ends tagged contents decodes to LF" @@ fun () ->
+  let source, site = decodes "{|a\r\n|}" in
+  equal ~msg:"the literal is found" string
+    "let () = expect x @@ __POS_OF__ {|z|}"
+    (apply source [ exact ~site ~literal:"a\n" "z" ])
+
+let () =
+  reg "tagged contents may open with the closing brace" @@ fun () ->
+  let source, site = decodes "{|}old|}" in
+  equal ~msg:"the literal closes at the first |} after its opening" string
+    "let () = expect x @@ __POS_OF__ {|z|}"
+    (apply source [ exact ~site ~literal:"}old" "z" ])
+
+let () =
+  reg "a source that ends before its literal closes has no literal" @@ fun () ->
+  List.iter
+    (fun spelled ->
+      let source, site = decodes spelled in
+      match P.apply source [ flexible ~site ~literal:"old" "new" ] with
+      | Error (P.No_literal _) -> ()
+      | Ok _ | Error (P.Drifted _) -> failf "%S has a literal" spelled)
+    [ ""; "  "; "{"; "{%"; "{|old"; "\"old"; "\"old\\"; "\"\\06"; "\"\\u{41" ];
+  let node = "  [%expect" in
+  match
+    P.apply node [ flexible ~site:(pos_of node "[%") ~literal:"" "new" ]
+  with
+  | Error (P.No_literal _) -> ()
+  | Ok _ | Error (P.Drifted _) -> fail "a node cut by the end of the source"
+
+(* Placement *)
+
+let () =
+  reg "a literal at the first byte of the source" @@ fun () ->
+  equal ~msg:"it is replaced" string "{| new |}\n"
+    (apply "{|old|}\n"
+       [ flexible ~site:("test/t.ml", 1, 0, 0) ~literal:"old" "new" ])
+
+let () =
+  reg "the same patch twice applies once" @@ fun () ->
+  let source = "let () = expect x @@ __POS_OF__ {|old|}\n" in
+  let patch =
+    flexible ~site:(pos_of source "__POS_OF__") ~literal:"old" "new"
+  in
+  equal ~msg:"one replacement" string
+    "let () = expect x @@ __POS_OF__ {| new |}\n"
+    (apply source [ patch; patch ])
+
+let () =
+  reg "the head of an untagged expect node" @@ fun () ->
+  let node = "  {%expect|old|}\n" in
+  let site = pos_of node "{%expect" in
+  equal ~msg:"no space before an empty tag" string "  {%expect| new |}\n"
+    (apply node [ flexible ~site ~literal:"old" "new" ]);
+  equal ~msg:"a space before a grown tag" string
+    "  {%expect xxx| a |} b |xxx}\n"
+    (apply node [ flexible ~site ~literal:"old" "a |} b" ])
+
 (* The layout's law *)
 
 let () =

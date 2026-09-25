@@ -3,157 +3,66 @@
    SPDX-License-Identifier: ISC
   ---------------------------------------------------------------------------*)
 
-(* The normalization and the payload formatting are ppx_expect's
-   pretty-payload pipeline, moved here from the expect runtime so that
-   the facade's [expect] and the rewriter's [%expect] compare and
-   correct through one implementation. *)
-
 (* Flexible text *)
 
-(* Whitespace is Base.Char.is_whitespace, the set ppx_expect strips with. *)
+(* Whitespace is Base.Char.is_whitespace, the set ppx_expect strips. *)
 let is_ws = function
   | ' ' | '\t' | '\n' | '\011' | '\012' | '\r' -> true
   | _ -> false
 
+(* The first offset at or after [i] whose byte does not satisfy [p]. *)
+let skip p s i =
+  let rec go i = if i < String.length s && p s.[i] then go (i + 1) else i in
+  go i
+
 let rstrip s =
-  let stop = ref (String.length s) in
-  while !stop > 0 && is_ws s.[!stop - 1] do
-    decr stop
-  done;
-  if !stop = String.length s then s else String.sub s 0 !stop
-
-let strip s =
-  let start = ref 0 and stop = ref (String.length s) in
-  while !start < !stop && is_ws s.[!start] do
-    incr start
-  done;
-  while !stop > !start && is_ws s.[!stop - 1] do
-    decr stop
-  done;
-  String.sub s !start (!stop - !start)
-
-let leading_spaces s =
-  let n = ref 0 in
-  while !n < String.length s && s.[!n] = ' ' do
-    incr n
-  done;
-  !n
-
-(* ppx_expect splits on '\n' treating "\r\n" as one separator; every
-   consumer right-strips each line, which removes the '\r' of a "\r\n"
-   pair, so a plain split suffices. A lone '\r' inside a line stays a
-   literal byte, exactly as upstream. *)
-let split_lines s = String.split_on_char '\n' s
-
-let drop_blank_edges lines =
-  let rec drop = function "" :: rest -> drop rest | lines -> lines in
-  List.rev (drop (List.rev (drop lines)))
-
-(* [(relative indent, stripped contents)] per line of pretty output.
-   Indentation counts leading spaces only; contents are stripped of all
-   whitespace, tabs included (ppx_expect's legacy rule, kept for
-   byte-compatible matching and corrections). *)
-let pretty_lines raw =
-  let lines = drop_blank_edges (List.map rstrip (split_lines raw)) in
-  let indented =
-    List.map (fun line -> (leading_spaces line, strip line)) lines
-  in
-  let min_indent =
-    List.fold_left
-      (fun acc (indent, contents) ->
-        if contents = "" then acc else min acc indent)
-      max_int indented
-  in
-  List.map
-    (fun (indent, contents) ->
-      ((if contents = "" then 0 else max 0 (indent - min_indent)), contents))
-    indented
+  let rec stop i = if i > 0 && is_ws s.[i - 1] then stop (i - 1) else i in
+  String.sub s 0 (stop (String.length s))
 
 let spaces n = String.make n ' '
 
-(* The canonical (dedented) form of pretty output. Two flexible payloads
-   match iff their normalizations are equal, which is exactly ppx_expect's
-   rule of comparing both sides through its payload formatter: the
-   formatter is [normalize] plus a uniform re-indent, so equality
-   coincides. *)
-let normalize s =
-  String.concat "\n"
-    (List.map
-       (fun (indent, contents) ->
-         if contents = "" then "" else spaces indent ^ contents)
-       (pretty_lines s))
-
-(* Literal rendering *)
-
-type delimiter = Quote | Tag of string
-
-(* Delimiter conflict fixing: grow the tag until neither delimiter occurs
-   in the contents. *)
-let fix_tag ~contents tag =
-  let rec fix tag =
-    if
-      Text.contains_substring ~pattern:("{" ^ tag ^ "|") contents
-      || Text.contains_substring ~pattern:("|" ^ tag ^ "}") contents
-    then fix (tag ^ "xxx")
-    else tag
+(* ppx_expect's pretty lines: right-stripped, without blank lines at either
+   end, and dedented by the least indentation of a nonblank line. The
+   indentation counts spaces, and the dedent drops all leading whitespace. *)
+let pretty_lines s =
+  let rec drop_blanks = function
+    | "" :: lines -> drop_blanks lines
+    | lines -> lines
   in
-  fix tag
-
-(* Format raw output as the contents of a flexible payload. [column] is
-   the indentation of the line that holds the node, in leading spaces:
-   multi-line contents are indented [column + 2], matching ppx_expect so
-   first promotes after adoption produce no churn. *)
-let format_flexible ~delimiter ~column raw =
-  match pretty_lines raw with
-  | [] -> ( match delimiter with Tag _ -> " " | Quote -> "")
-  | [ (_, line) ] -> (
-      match delimiter with Tag _ -> " " ^ line ^ " " | Quote -> line)
-  | lines ->
-      let contents_indent = column + 2 in
-      let first, indentation, last =
-        match delimiter with
-        | Quote -> (" ", 1, " ")
-        | Tag _ -> ("", contents_indent, spaces contents_indent)
-      in
-      let render (indent, contents) =
-        if contents = "" then "" else spaces (indentation + indent) ^ contents
-      in
-      String.concat "\n" ((first :: List.map render lines) @ [ last ])
-
-(* A tagged literal, with the string-extension head ([{%expect|…|}],
-   [{%expect_exact tag|…|tag}]) kept when the source spelled one: the
-   head is the node, so dropping it would drop the expectation. *)
-let tagged ?ext ~tag contents =
-  let tag = fix_tag ~contents tag in
-  let head =
-    match ext with
-    | None -> ""
-    | Some ext -> if tag = "" then ext else ext ^ " "
+  let lines = List.map rstrip (Text.split_lines s) in
+  let lines = List.rev (drop_blanks (List.rev (drop_blanks lines))) in
+  let indent line = skip (Char.equal ' ') line 0 in
+  let margin =
+    List.fold_left
+      (fun margin line ->
+        if line = "" then margin else min margin (indent line))
+      max_int lines
   in
-  "{" ^ head ^ tag ^ "|" ^ contents ^ "|" ^ tag ^ "}"
+  let dedent line =
+    if line = "" then ""
+    else
+      let start = skip is_ws line 0 in
+      spaces (indent line - margin)
+      ^ String.sub line start (String.length line - start)
+  in
+  List.map dedent lines
 
-let literal ~delimiter contents =
-  match delimiter with
-  | Tag tag -> tagged ~tag contents
-  | Quote ->
-      "\""
-      ^ String.concat "\\n"
-          (List.map String.escaped (String.split_on_char '\n' contents))
-      ^ "\""
+(* ppx_expect compares both sides through its payload formatter, which is
+   this form indented as a block, so equal forms are its match. *)
+let normalize s = String.concat "\n" (pretty_lines s)
 
 (* Patches *)
 
 type style = Flexible | Exact
 
 type patch = {
-  pos : Loc.pos;
+  site : Loc.pos;
   literal : string;
   style : style;
   content : string;
 }
 
-let patch ~site ~literal ~style content =
-  { pos = site; literal; style; content }
+let patch ~site ~literal ~style content = { site; literal; style; content }
 
 type error = No_literal of Loc.pos | Drifted of Loc.pos
 
@@ -163,293 +72,275 @@ let error_message = function
       "the literal differs from the value the binary was compiled with; \
        rebuild and rerun"
 
-(* Lexing. The position names the [__POS_OF__ literal] expression, with
-   or without its parentheses, the literal itself, or an [[%expect]] node
-   whose payload the literal is: from its first byte the literal is the
-   next token after any parentheses, the [__POS_OF__] identifier, the
-   node's [[%ident] head and whitespace, never a slice of the recorded
-   span, whose end column is measured from the start line. A node with no
-   payload is the one shape with no literal to rewrite: its correction is
-   inserted before the closing bracket. *)
+(* Literal rendering *)
 
-(* The offset of the first byte of the 1-based [line]. *)
-let line_offset source line =
-  let rec go offset n =
-    if n = line then Some offset
-    else
-      match String.index_from_opt source offset '\n' with
-      | Some newline -> go (newline + 1) (n + 1)
-      | None -> None
-  in
-  if line < 1 then None else go 0 1
+type delimiter = Quote | Tag of string
 
-let line_indent source bol =
-  let n = ref 0 in
-  while bol + !n < String.length source && source.[bol + !n] = ' ' do
-    incr n
-  done;
-  !n
+let rec fix_tag ~contents tag =
+  let occurs delimiter = Text.contains_substring ~pattern:delimiter contents in
+  if occurs ("{" ^ tag ^ "|") || occurs ("|" ^ tag ^ "}") then
+    fix_tag ~contents (tag ^ "xxx")
+  else tag
 
-let position_token = "__POS_OF__"
+(* ppx_expect's layout, so a literal that ppx_expect wrote is corrected to
+   the same bytes. *)
+let format_flexible ~delimiter ~column raw =
+  match (pretty_lines raw, delimiter) with
+  | [], Quote -> ""
+  | [], Tag _ -> " "
+  | [ line ], Quote -> line
+  | [ line ], Tag _ -> " " ^ line ^ " "
+  | lines, _ ->
+      let first, indent, last =
+        match delimiter with
+        | Quote -> (" ", 1, " ")
+        | Tag _ ->
+            let indent = column + 2 in
+            ("", indent, spaces indent)
+      in
+      let indented line = if line = "" then "" else spaces indent ^ line in
+      String.concat "\n" ((first :: List.map indented lines) @ [ last ])
 
-let starts_with_at source i prefix =
-  let n = String.length prefix in
-  i + n <= String.length source && String.equal (String.sub source i n) prefix
+(* The literal that holds [contents], after [ext], the head of a
+   [{%ext|…|}] node. *)
+let literal' ?ext ~delimiter contents =
+  match delimiter with
+  | Quote -> "\"" ^ String.escaped contents ^ "\""
+  | Tag tag ->
+      let tag = fix_tag ~contents tag in
+      let head =
+        match ext with
+        | None -> ""
+        | Some ext -> if tag = "" then ext else ext ^ " "
+      in
+      "{" ^ head ^ tag ^ "|" ^ contents ^ "|" ^ tag ^ "}"
+
+let literal ~delimiter contents = literal' ~delimiter contents
+
+(* Reading literals *)
+
+(* What a position names: the literal from [start] to [stop], whose [value]
+   is what the compiler reads, or the closing bracket of a node without
+   payload. *)
+type found =
+  | Literal of {
+      start : int;
+      stop : int;
+      ext : string option;
+      delimiter : delimiter;
+      value : string;
+    }
+  | Bare of int
+
+let is_at source i token =
+  let n = String.length token in
+  i + n <= String.length source && String.equal (String.sub source i n) token
 
 let is_ident_char = function
   | 'a' .. 'z' | 'A' .. 'Z' | '0' .. '9' | '_' | '.' -> true
   | _ -> false
 
-let skip_ws source i =
-  let len = String.length source in
-  let i = ref i in
-  while !i < len && is_ws source.[!i] do
-    incr i
-  done;
-  !i
+let is_tag_char = function 'a' .. 'z' | '_' -> true | _ -> false
+let is_blank = function ' ' | '\t' -> true | _ -> false
 
-let skip_ident source i =
-  let len = String.length source in
-  let i = ref i in
-  while !i < len && is_ident_char source.[!i] do
-    incr i
-  done;
-  !i
+(* The offset of the first byte of the 1-based [line]. *)
+let line_offset source line =
+  let rec go bol n =
+    if n = line then Some bol
+    else
+      Option.bind (String.index_from_opt source bol '\n') (fun newline ->
+          go (newline + 1) (n + 1))
+  in
+  go 0 1
 
-(* [`Literal i] with the literal's first byte, or [`Bare i] with the
-   offset of a payloadless node's closing bracket. *)
-let rec find_literal source i =
-  let len = String.length source in
-  let i = skip_ws source i in
-  if i >= len then None
-  else
-    match source.[i] with
-    | '(' -> find_literal source (i + 1)
-    | '"' | '{' -> Some (`Literal i)
-    | '[' when starts_with_at source i "[%" ->
-        let j = skip_ws source (skip_ident source (i + 2)) in
-        if j < len && source.[j] = ']' then Some (`Bare j)
-        else find_literal source j
-    | _ when starts_with_at source i position_token ->
-        find_literal source (i + String.length position_token)
-    | _ -> None
-
-(* A run of CRs before an LF is read as one LF, and a lone CR is an
-   ordinary byte. OCaml 5.2 and later drop one CR before an LF and earlier
-   versions none, so a literal that the compiler reads otherwise is refused
-   as [Drifted]. *)
+(* A run of CRs before an LF reads as that LF, and a lone CR is an ordinary
+   byte. OCaml 5.2 and later drop one CR before an LF and earlier versions
+   none, so a literal that the compiler reads otherwise is [Drifted]. *)
 let decode_newlines s =
-  if not (String.contains s '\r') then s
-  else begin
-    let b = Buffer.create (String.length s) in
-    let n = String.length s in
-    let i = ref 0 in
-    while !i < n do
-      if s.[!i] = '\r' then begin
-        let j = ref !i in
-        while !j < n && s.[!j] = '\r' do
-          incr j
-        done;
-        if !j < n && s.[!j] = '\n' then i := !j
-        else begin
-          Buffer.add_char b '\r';
-          incr i
-        end
-      end
+  let len = String.length s in
+  let b = Buffer.create len in
+  let rec go i =
+    if i < len then begin
+      let lf = skip (Char.equal '\r') s i in
+      if lf > i && is_at s lf "\n" then go lf
       else begin
-        Buffer.add_char b s.[!i];
-        incr i
+        Buffer.add_char b s.[i];
+        go (i + 1)
       end
-    done;
-    Buffer.contents b
-  end
+    end
+  in
+  go 0;
+  Buffer.contents b
 
-(* [{tag|…|tag}] or [{%ext tag|…|tag}] at [i]: the extension head if
-   any, the delimiter, the decoded contents and the offset past the
-   closing delimiter. *)
+(* [{tag|…|tag}] or [{%ext tag|…|tag}] at [i]. *)
 let read_tagged source i =
-  let len = String.length source in
-  let ext, tag_start =
-    if i + 1 < len && source.[i + 1] = '%' then (
-      let stop = skip_ident source (i + 2) in
-      let start = ref stop in
-      while !start < len && source.[!start] = ' ' do
-        incr start
-      done;
-      (Some (String.sub source (i + 1) (stop - i - 1)), !start))
+  let ext, first =
+    if is_at source i "{%" then
+      let stop = skip is_ident_char source (i + 2) in
+      ( Some (String.sub source (i + 1) (stop - i - 1)),
+        skip (Char.equal ' ') source stop )
     else (None, i + 1)
   in
-  let j = ref tag_start in
-  while
-    !j < len && match source.[!j] with 'a' .. 'z' | '_' -> true | _ -> false
-  do
-    incr j
-  done;
-  if !j >= len || source.[!j] <> '|' then None
+  let bar = skip is_tag_char source first in
+  if not (is_at source bar "|") then None
   else
-    let tag = String.sub source tag_start (!j - tag_start) in
+    let tag = String.sub source first (bar - first) in
     let close = "|" ^ tag ^ "}" in
-    match Text.first_occurrence ~start:(!j + 1) ~pattern:close source with
-    | None -> None
-    | Some k ->
-        Some
-          ( ext,
-            Tag tag,
-            decode_newlines (String.sub source (!j + 1) (k - !j - 1)),
-            k + String.length close )
+    Text.first_occurrence ~start:(bar + 1) ~pattern:close source
+    |> Option.map (fun k ->
+        let value = String.sub source (bar + 1) (k - bar - 1) in
+        Literal
+          {
+            start = i;
+            stop = k + String.length close;
+            ext;
+            delimiter = Tag tag;
+            value = decode_newlines value;
+          })
 
-let digit_value c =
-  match c with
-  | '0' .. '9' -> Some (Char.code c - Char.code '0')
-  | 'a' .. 'f' -> Some (Char.code c - Char.code 'a' + 10)
-  | 'A' .. 'F' -> Some (Char.code c - Char.code 'A' + 10)
-  | _ -> None
-
-(* [n] digits in base [radix] at [j], as a number. *)
-let digits source j n radix =
-  let rec go k acc =
-    if k = n then Some acc
-    else if j + k >= String.length source then None
+(* The number that [digits] digits in base [radix] spell at [at]. *)
+let number source ~at ~digits ~radix =
+  let digit = function
+    | '0' .. '9' as c -> Some (Char.code c - Char.code '0')
+    | 'a' .. 'f' as c -> Some (Char.code c - Char.code 'a' + 10)
+    | 'A' .. 'F' as c -> Some (Char.code c - Char.code 'A' + 10)
+    | _ -> None
+  in
+  let rec go k n =
+    if k = digits then Some n
+    else if at + k >= String.length source then None
     else
-      match digit_value source.[j + k] with
-      | Some d when d < radix -> go (k + 1) ((acc * radix) + d)
-      | _ -> None
+      match digit source.[at + k] with
+      | Some d when d < radix -> go (k + 1) ((n * radix) + d)
+      | Some _ | None -> None
   in
   go 0 0
 
-(* ["…"] at [i], decoded with OCaml's escapes. *)
+(* ["…"] at [i]. An escape that the lexer rejects is kept as written. *)
 let read_quoted source i =
   let len = String.length source in
-  let buf = Buffer.create 64 in
+  let b = Buffer.create 64 in
   let rec go j =
     if j >= len then None
     else
       match source.[j] with
-      | '"' -> Some (None, Quote, decode_newlines (Buffer.contents buf), j + 1)
-      | '\\' when j + 1 < len -> (
-          let c = source.[j + 1] in
-          let literal_escape () =
-            Buffer.add_char buf '\\';
-            Buffer.add_char buf c;
-            go (j + 2)
-          in
-          (* A numeric escape: [consumed] characters after the backslash. *)
-          let code n ~consumed =
-            match n with
-            | Some n when n < 256 ->
-                Buffer.add_char buf (Char.chr n);
-                go (j + 1 + consumed)
-            | _ -> literal_escape ()
-          in
-          match c with
-          | '\\' | '"' | '\'' | ' ' ->
-              Buffer.add_char buf c;
-              go (j + 2)
-          | 'n' ->
-              Buffer.add_char buf '\n';
-              go (j + 2)
-          | 't' ->
-              Buffer.add_char buf '\t';
-              go (j + 2)
-          | 'b' ->
-              Buffer.add_char buf '\b';
-              go (j + 2)
-          | 'r' ->
-              Buffer.add_char buf '\r';
-              go (j + 2)
-          | ('\n' | '\r') when c = '\n' || (j + 2 < len && source.[j + 2] = '\n')
-            ->
-              (* A line continuation, the newline spelled LF or CRLF as the
-                 lexer accepts it: the newline and the next line's leading
-                 blanks are not part of the value. *)
-              let k = ref (if c = '\n' then j + 2 else j + 3) in
-              while !k < len && (source.[!k] = ' ' || source.[!k] = '\t') do
-                incr k
-              done;
-              go !k
-          | '0' .. '9' -> code (digits source (j + 1) 3 10) ~consumed:3
-          | 'x' -> code (digits source (j + 2) 2 16) ~consumed:3
-          | 'o' -> code (digits source (j + 2) 3 8) ~consumed:4
-          | 'u' when j + 2 < len && source.[j + 2] = '{' -> (
-              match String.index_from_opt source (j + 3) '}' with
-              | None -> literal_escape ()
-              | Some close -> (
-                  let n = close - (j + 3) in
-                  match digits source (j + 3) n 16 with
-                  | Some v when n > 0 && Uchar.is_valid v ->
-                      Buffer.add_utf_8_uchar buf (Uchar.of_int v);
-                      go (close + 1)
-                  | _ -> literal_escape ()))
-          | _ -> literal_escape ())
-      | c ->
-          Buffer.add_char buf c;
-          go (j + 1)
+      | '"' ->
+          let value = decode_newlines (Buffer.contents b) in
+          Some
+            (Literal
+               { start = i; stop = j + 1; ext = None; delimiter = Quote; value })
+      | '\\' when j + 1 < len -> escape (j + 1)
+      | c -> add c (j + 1)
+  and add c next =
+    Buffer.add_char b c;
+    go next
+  (* [k] is the byte after the backslash. *)
+  and escape k =
+    let as_written () =
+      Buffer.add_char b '\\';
+      add source.[k] (k + 1)
+    in
+    let add_code n ~next =
+      match n with
+      | Some n when n < 256 -> add (Char.chr n) next
+      | Some _ | None -> as_written ()
+    in
+    match source.[k] with
+    | ('\\' | '"' | '\'' | ' ') as c -> add c (k + 1)
+    | 'n' -> add '\n' (k + 1)
+    | 't' -> add '\t' (k + 1)
+    | 'b' -> add '\b' (k + 1)
+    | 'r' -> add '\r' (k + 1)
+    (* A line continuation drops the newline, LF or CR LF, and the next
+       line's leading blanks. *)
+    | '\n' -> go (skip is_blank source (k + 1))
+    | '\r' when is_at source (k + 1) "\n" -> go (skip is_blank source (k + 2))
+    | '0' .. '9' ->
+        add_code (number source ~at:k ~digits:3 ~radix:10) ~next:(k + 3)
+    | 'x' ->
+        add_code (number source ~at:(k + 1) ~digits:2 ~radix:16) ~next:(k + 3)
+    | 'o' ->
+        add_code (number source ~at:(k + 1) ~digits:3 ~radix:8) ~next:(k + 4)
+    | 'u' when is_at source (k + 1) "{" -> (
+        let first = k + 2 in
+        match String.index_from_opt source first '}' with
+        | None -> as_written ()
+        | Some close -> (
+            let digits = close - first in
+            match number source ~at:first ~digits ~radix:16 with
+            | Some v when digits > 0 && Uchar.is_valid v ->
+                Buffer.add_utf_8_uchar b (Uchar.of_int v);
+                go (close + 1)
+            | Some _ | None -> as_written ()))
+    | _ -> as_written ()
   in
   go (i + 1)
 
+let position_token = "__POS_OF__"
+
+(* From the position, the literal is the next token after whitespace,
+   parentheses, [__POS_OF__] and a node's [[%ext] head. The recorded span is
+   never sliced: its end column counts from its start line. *)
+let rec find_literal source i =
+  let i = skip is_ws source i in
+  if i >= String.length source then None
+  else
+    match source.[i] with
+    | '(' -> find_literal source (i + 1)
+    | '"' -> read_quoted source i
+    | '{' -> read_tagged source i
+    | '[' when is_at source i "[%" ->
+        let j = skip is_ws source (skip is_ident_char source (i + 2)) in
+        if is_at source j "]" then Some (Bare j) else find_literal source j
+    | '_' when is_at source i position_token ->
+        find_literal source (i + String.length position_token)
+    | _ -> None
+
+(* Applying *)
+
+(* The span that the patch replaces in [source], and its new text. *)
 let locate source (p : patch) =
-  let _, line, column, _ = p.pos in
-  let contents ~delimiter ~bol =
-    match p.style with
-    | Flexible ->
-        format_flexible ~delimiter ~column:(line_indent source bol) p.content
-    | Exact -> p.content
-  in
+  let _, line, column, _ = p.site in
   match line_offset source line with
-  | None -> Error (No_literal p.pos)
+  | None -> Error (No_literal p.site)
   | Some bol -> (
+      let contents delimiter =
+        match p.style with
+        | Exact -> p.content
+        | Flexible ->
+            let column = skip (Char.equal ' ') source bol - bol in
+            format_flexible ~delimiter ~column p.content
+      in
       match find_literal source (bol + column) with
-      | None -> Error (No_literal p.pos)
-      | Some (`Bare i) ->
-          (* A payloadless node compiles to the empty string; anything
-             else means the source gained a payload since the build. *)
-          if not (String.equal p.literal "") then Error (Drifted p.pos)
+      | None -> Error (No_literal p.site)
+      | Some (Bare i) ->
+          if not (String.equal p.literal "") then Error (Drifted p.site)
           else
             let delimiter = Tag "" in
-            Ok (i, i, " " ^ literal ~delimiter (contents ~delimiter ~bol))
-      | Some (`Literal i) -> (
-          let read =
-            if source.[i] = '{' then read_tagged source i
-            else read_quoted source i
-          in
-          match read with
-          | None -> Error (No_literal p.pos)
-          | Some (ext, delimiter, value, stop) ->
-              if not (String.equal value p.literal) then Error (Drifted p.pos)
-              else
-                let contents = contents ~delimiter ~bol in
-                let text =
-                  match delimiter with
-                  | Tag tag -> tagged ?ext ~tag contents
-                  | Quote -> literal ~delimiter contents
-                in
-                Ok (i, stop, text)))
+            Ok (i, i, " " ^ literal ~delimiter (contents delimiter))
+      | Some (Literal { start; stop; ext; delimiter; value }) ->
+          if not (String.equal value p.literal) then Error (Drifted p.site)
+          else Ok (start, stop, literal' ?ext ~delimiter (contents delimiter)))
 
-let ( let* ) = Result.bind
+(* [spans] are in the order of their starts. A span that starts before the
+   cursor is the same literal patched twice, and is written once. *)
+let splice source spans =
+  let rec pieces cursor = function
+    | [] -> [ String.sub source cursor (String.length source - cursor) ]
+    | (start, _, _) :: spans when start < cursor -> pieces cursor spans
+    | (start, stop, text) :: spans ->
+        String.sub source cursor (start - cursor) :: text :: pieces stop spans
+  in
+  String.concat "" (pieces 0 spans)
 
 let apply source patches =
-  let* located =
-    List.fold_left
-      (fun acc p ->
-        let* acc = acc in
-        let* span = locate source p in
-        Ok (span :: acc))
-      (Ok []) patches
+  let rec locate_all spans = function
+    | [] -> Ok spans
+    | p :: patches ->
+        Result.bind (locate source p) (fun span ->
+            locate_all (span :: spans) patches)
   in
-  let located =
-    List.stable_sort (fun (a, _, _) (b, _, _) -> compare a b) located
-  in
-  let buf = Buffer.create (String.length source + 256) in
-  let cursor =
-    List.fold_left
-      (fun cursor (start, stop, text) ->
-        if start < cursor then cursor (* the same literal twice: once *)
-        else begin
-          Buffer.add_substring buf source cursor (start - cursor);
-          Buffer.add_string buf text;
-          stop
-        end)
-      0 located
-  in
-  Buffer.add_substring buf source cursor (String.length source - cursor);
-  Ok (Buffer.contents buf)
+  let by_start (a, _, _) (b, _, _) = Int.compare a b in
+  Result.map
+    (fun spans -> splice source (List.stable_sort by_start spans))
+    (locate_all [] patches)
