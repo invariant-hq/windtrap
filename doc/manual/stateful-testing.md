@@ -6,7 +6,9 @@ prints, and keep that program as a regression. The reference is
 [`lib/windtrap.mli`](../../lib/windtrap.mli), under `Windtrap.stateful`.
 
 The snippets test `Bounded_queue`, a queue of integers with a fixed
-capacity, `test/bounded_queue.ml`:
+capacity.
+
+`test/bounded_queue.ml`:
 
 <!-- file examples/04-stateful-testing/bounded_queue.ml -->
 ```ocaml
@@ -40,7 +42,9 @@ let pop q =
 let peek q = if q.size = 0 then raise Empty else q.data.(q.head)
 ```
 
-The suite is `test/test_bounded_queue.ml`, built by a `(test)` stanza:
+The suite is `test/test_bounded_queue.ml`, built by a `(test)` stanza.
+
+`test/dune`:
 
 <!-- file examples/04-stateful-testing/dune -->
 ```lisp
@@ -50,7 +54,9 @@ The suite is `test/test_bounded_queue.ml`, built by a `(test)` stanza:
  (libraries windtrap))
 ```
 
-Its last line runs its two groups:
+Its last line runs its two groups.
+
+`test/test_bounded_queue.ml`:
 
 <!-- file examples/04-stateful-testing/test_bounded_queue.ml from let () = -->
 ```ocaml
@@ -72,7 +78,12 @@ argument. `~next` gives the model after the call, and the body calls the
 system and asserts on what it returns, given the model before the call.
 `~pre` restricts an operation to the models where it is legal, which
 also selects the state it needs, as `push when full` does. A command
-listed twice is drawn twice as often.
+listed twice is drawn twice as often. An argument that names something
+the program created, such as a handle, is drawn as an index the body
+resolves in the model, as `List.nth m (i mod List.length m)` under a
+`~pre` that keeps `m` non-empty.
+
+`test/test_bounded_queue.ml`:
 
 <!-- file examples/04-stateful-testing/test_bounded_queue.ml from open Windtrap to let commands -->
 ```ocaml
@@ -102,14 +113,15 @@ let commands =
   ]
 ```
 
-`stateful` takes the initial model and the commands. `~scope` hands a
-fresh system to each program and to each shrink candidate, and must
-release it whether the program passes or fails. `~invariant` checks the
-system before the first call and after every call, and `~pp_model`
-prints the model beside each call of a failing program. `~pre` and
-`~next` must be pure, and the model persistent, such as a list or a
-`Map`. A `cover` in the invariant fails the test when no program reaches
-the state it names, such as the full queue that `push when full` needs.
+`stateful` takes the initial model and the commands. `~scope` hands each
+program a fresh system, `~invariant` checks the system between calls,
+and `~pp_model` prints the model beside each call of a failing program.
+Keep the model persistent, such as a list or a `Map`, and `~pre` and
+`~next` pure (see `Windtrap.stateful`). A `cover` in the invariant fails
+the test when no program reaches the state it names, such as the full
+queue that `push when full` needs.
+
+`test/test_bounded_queue.ml`:
 
 <!-- file examples/04-stateful-testing/test_bounded_queue.ml from let queue -->
 ```ocaml
@@ -141,11 +153,8 @@ bounded_queue: 1 test (seed s1:c26eddaeb764a645)
 
 ## Reading a failing program
 
-A failure prints the shrunk program as a table, one call per row, with
-the model before each call when `~pp_model` is given. Under the table
-come the call that failed, as `call K of N` or `invariant after call K
-of N`, and its failure. Shrinking removes calls and shrinks their
-arguments, and never replaces one operation by another. The `replay:`
+A failure prints the shrunk program as a table of calls, with the model
+before each, then the call that failed and its failure. The `replay:`
 line and `--seed` work as for a [property](property-testing.md).
 `~steps` sets the number of calls drawn per program, 20 by default, and
 `~count` the number of programs.
@@ -186,6 +195,8 @@ bounded_queue: 1 test (seed s1:c26eddaeb764a645)
 A stateful test takes no fixed program, so a program that failed is
 kept by copying its calls into a `test`:
 
+`test/test_bounded_queue.ml`:
+
 <!-- file examples/04-stateful-testing/test_bounded_queue.ml from let regressions -->
 ```ocaml
 let regressions =
@@ -215,4 +226,24 @@ bounded_queue: 1 test
 ──────────────────────────────────────────────────────────
 
 1 failed in 0.6ms.
+```
+
+## Giving each program a fresh system
+
+`~scope` runs once per program and once per shrink candidate, and must
+release the system whether the program passes or fails. `temp_dir`,
+`setenv` and `chdir` last for the whole test, never for one program, so
+a system that keeps files in a directory makes and removes its own, under
+an absolute path:
+
+```ocaml
+(* fragment: Store and remove_tree are the project's own *)
+let scope run =
+  let dir = Filename.temp_dir "store" "" in
+  let store = Store.open_dir dir in
+  Fun.protect
+    ~finally:(fun () ->
+      Store.close store;
+      remove_tree dir)
+    (fun () -> run store)
 ```
