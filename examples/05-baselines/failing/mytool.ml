@@ -11,5 +11,5 @@ let help () =
       "  --help   Show this help";
     ]
 
-let report ~rows = Printf.sprintf "processed %d rows\nstatus: ok" rows
+let report ~rows = Printf.sprintf "read %d rows\nstatus: ok" rows
 let greet name = Printf.printf "Hello, %s!\n" name

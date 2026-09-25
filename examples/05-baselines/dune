@@ -1,16 +1,3 @@
-; Baselines (doc/manual/baselines.md): both storages, both acceptance
-; gestures, and the inline form.
-;
-; The (test) stanza holds an expect literal in the test file and an
-; expect_file against help.expected. It runs the suite with --corrected
-; and diffs each corrected file, so a stale expectation shows as a diff
-; under `dune runtest` and `dune promote` accepts it, the same
-; promotion protocol as for [%expect] and cram tests.
-;
-; The (library) beside it is the inline form: (inline_tests) with
-; (pps ppx_windtrap). dune builds and drives the runner; a stale
-; [%expect] payload shows as a diff and is accepted with dune promote.
-
 (test
  (name test_mytool)
  (modules test_mytool mytool)
@@ -23,8 +10,8 @@
    (diff? help.expected help.expected.corrected))))
 
 (library
- (name windtrap_example_expect)
- (modules parser sanitized)
+ (name tokenizer)
+ (modules tokens timing)
  (inline_tests)
  (preprocess
   (pps ppx_windtrap)))

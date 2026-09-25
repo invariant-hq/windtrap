@@ -274,7 +274,7 @@ a rule whose row does not name it, and when a rule is unpinned without a
 | E24 | The cookie value `ignored` drops. | pwt:58-59 | the rule cookie_ignored of expect/dune over `expect/test_basic` |
 | E25 | The drop applies to `let%test` and `module%test`. | pwt:58-59 | the rule cookie_ignored of expect/dune over `expect/test_basic` |
 | E26 | Generated code is warning-free under `-w +a -warn-error +a`. | pwt:15-16 | build of `expect/strict_flags/inline_strict.ml` |
-| E27 | `Expect_test_config` is named unqualified, so a local module shadows it. | pwt:30-32; expect_test_config.mli:15-16 | `expect/config/config_shadow.ml`; `examples/05-baselines/sanitized.ml` |
+| E27 | `Expect_test_config` is named unqualified, so a local module shadows it. | pwt:30-32; expect_test_config.mli:15-16 | `expect/config/config_shadow.ml`; `examples/05-baselines/timing.ml` |
 | E28 | A monadic `run` fails to compile at the reference. | pwt:31-32 | `expect/wrong_run/wrong_run.ml` (located at the test); `test/conformance`, `hello_async.compile-rejected.expected` |
 | E29 | Nothing is checked after the body: output written after its last node, and a node it never reaches, fail nothing. | pwt:41-43 | `expect/config/config_shadow.ml`; `test/conformance`, `negative-tests/trailing.ml` |
 | E30 | A dropped form is still refused for a bad name, shape or `[@tags]`, and a `let%expect_test` for a bad node; the rest of a dropped body is not checked. | pwt:60-61 | the cookie_disabled rules of expect/dune over `expect/reject_name_pattern`, `expect/reject_two_bindings`, `expect/reject_malformed_tags`, `expect/reject_bad_payload`, `expect/reject_dropped_body` |

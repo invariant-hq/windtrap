@@ -1,6 +1,3 @@
-(* doc/manual/baselines.md's walkthrough: print what the code does, let
-   [%expect] hold the answer, and accept changes with dune promote. *)
-
 type token = Int of int | Plus | Eof
 
 let tokenize input =
@@ -24,7 +21,7 @@ let print_tokens tokens =
       | Eof -> print_endline "EOF")
     tokens
 
-let%expect_test "tokenize" =
+let%expect_test "a sum is two integers around a plus" =
   print_tokens (tokenize "1 + 2");
   [%expect {|
     INT 1
@@ -33,7 +30,7 @@ let%expect_test "tokenize" =
     EOF
     |}]
 
-let%expect_test "tokenize skips repeated spaces" =
+let%expect_test "repeated spaces are skipped" =
   print_tokens (tokenize "1   +  2");
   [%expect {|
     INT 1

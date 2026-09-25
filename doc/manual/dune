@@ -74,3 +74,22 @@
   (<> %{os_type} Win32))
  (action
   (diff stateful-testing.md stateful-testing.md.corrected)))
+
+(rule
+ (enabled_if
+  (<> %{os_type} Win32))
+ (deps
+  (alias_rec %{workspace_root}/examples/05-baselines/all)
+  (source_tree %{workspace_root}/examples/05-baselines)
+  %{workspace_root}/examples/05-baselines/.tokenizer.inline-tests/inline-test-runner.exe)
+ (action
+  (with-stdout-to
+   baselines.md.corrected
+   (run %{exe:../transcript/transcript.exe} %{dep:baselines.md}))))
+
+(rule
+ (alias runtest)
+ (enabled_if
+  (<> %{os_type} Win32))
+ (action
+  (diff baselines.md baselines.md.corrected)))
