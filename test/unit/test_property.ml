@@ -382,6 +382,41 @@ let mixed_discards_still_pass () =
   is_true ~msg:"count cases must pass" (stats.Property.cases = 20);
   is_true ~msg:"odd draws must discard" (stats.Property.discards > 0)
 
+(* A discard spends its index, whether the law or the generator discarded:
+   the case after it is case 1. *)
+let a_discard_spends_its_index () =
+  let first_index gen law =
+    let first = ref true in
+    let discard_first () =
+      if !first then begin
+        first := false;
+        Property.reject ()
+      end
+    in
+    let failure, _ =
+      expect_fail
+        (Property.run ~root ~path:"discard index" (gen discard_first)
+           (law discard_first))
+    in
+    let _, case_index, _, _, _, _, _ = property_payload failure in
+    case_index
+  in
+  equal ~msg:"after a discarding law" int 1
+    (first_index
+       (fun _ -> Gen.int)
+       (fun discard_first _ _ ->
+         discard_first ();
+         Check.fail "fails"));
+  equal ~msg:"after a discarding generator" int 1
+    (first_index
+       (fun discard_first ->
+         Gen.map
+           (fun x ->
+             discard_first ();
+             x)
+           Gen.int)
+       (fun _ _ _ -> Check.fail "fails"))
+
 (* Labelling *)
 
 let classify_partitions_cases () =
@@ -1362,6 +1397,7 @@ let suite =
     ( "passing examples do not consume the budget",
       passing_examples_do_not_consume_the_budget );
     ("mixed discards still pass", mixed_discards_still_pass);
+    ("a discard spends its index", a_discard_spends_its_index);
     ("classify partitions cases", classify_partitions_cases);
     ("collect counts each case once", collect_counts_each_case_once);
     ( "discarded cases do not commit labels",
