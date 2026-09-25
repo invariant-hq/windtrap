@@ -32,7 +32,7 @@
 
 module Instr = Instr
 (** What the two file formats share: build paths, writer identities, atomic
-    writes and the scanner. *)
+    writes and the scanner. It also holds the warning line of the runtime. *)
 
 module Coverage = Coverage
 (** Expression coverage: the point registry, the dump written at exit and the

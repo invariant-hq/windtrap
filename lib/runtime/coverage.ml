@@ -16,11 +16,6 @@ let format =
     who = "Windtrap_runtime.Coverage";
   }
 
-(* The runtime links no core, so its messages skip the report's escape of
-   control bytes; what they print is build paths. *)
-let warn fmt =
-  Printf.ksprintf (fun m -> Printf.eprintf "windtrap: warning: %s\n%!" m) fmt
-
 (* Collections *)
 
 type error = Data of Instr.error | Point_mismatch of { file : string }
@@ -186,7 +181,8 @@ let dump target ~exe () =
   | File path -> (
       try Instr.write_file path data
       with e ->
-        warn "cannot write coverage file %s: %s" path (Printexc.to_string e))
+        Instr.warn "cannot write coverage file %s: %s" path
+          (Printexc.to_string e))
   | Dir dir -> (
       let prefix =
         match identity with
@@ -198,7 +194,7 @@ let dump target ~exe () =
       in
       try ignore (Instr.write_new_file dir ~prefix ~ext:format.Instr.ext data)
       with e ->
-        warn "cannot write a coverage file under %s: %s" dir
+        Instr.warn "cannot write a coverage file under %s: %s" dir
           (Printexc.to_string e))
 
 (* A relative executable path under an unreadable current directory
@@ -209,7 +205,7 @@ let install_dump () =
     match f () with
     | v -> Some v
     | exception e ->
-        warn "cannot determine the coverage output file: %s"
+        Instr.warn "cannot determine the coverage output file: %s"
           (Printexc.to_string e);
         None
   in
@@ -245,7 +241,7 @@ let register ~file ~points ~counts =
   | Some (table, _) when not (points_equal table points) ->
       (* Registration runs at module load in the user's program, whose
          meaning coverage never changes, so it warns instead of raising. *)
-      warn
+      Instr.warn
         "%s: conflicting instrumentation tables in one executable (stale build \
          artifacts? rebuild from clean); ignoring one module's coverage data"
         file

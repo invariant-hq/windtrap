@@ -96,11 +96,6 @@ let saturating_add x y = if x > max_int - y then max_int else x + y
 
 exception Runaway of { id : id; hits : int; budget : int }
 
-(* The runtime links no core, so its messages skip the report's escape of
-   control bytes; what they print is identifiers and build paths. *)
-let warn fmt =
-  Printf.ksprintf (fun m -> Printf.eprintf "windtrap: warning: %s\n%!" m) fmt
-
 let validate ~file sites =
   Array.iteri
     (fun i s ->
@@ -154,7 +149,7 @@ let register ~file ~sites =
          must not raise; warn loudly and hand back an inert guard, keeping
          the invariant that same-file entries carry equal tables (which is
          what lets [arm] set them all). *)
-      warn
+      Instr.warn
         "%s: conflicting instrumentation tables in one executable (stale build \
          artifacts? rebuild from clean); ignoring one module's sites"
         file;

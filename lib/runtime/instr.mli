@@ -3,7 +3,8 @@
    SPDX-License-Identifier: ISC
   ---------------------------------------------------------------------------*)
 
-(** What the two instrumentation file formats share.
+(** What the two instrumentation file formats share, and the warnings of the
+    runtime.
 
     The module depends on the standard library only and has no effect when it
     loads. *)
@@ -106,7 +107,7 @@ val output_dir : format -> exe:string -> string
     directory for each executable, for a format whose every run keeps a file of
     its own (see {!write_new_file}). *)
 
-(** {1:errors Errors} *)
+(** {1:errors Errors and warnings} *)
 
 (** The type for the errors of reading a file, the same for the two formats. *)
 type error =
@@ -122,6 +123,11 @@ type error =
 val pp_error : format -> Format.formatter -> error -> unit
 (** [pp_error f ppf e] formats one line on [e] for a person, in the words of
     [f]. The message is not stable enough for a program to match. *)
+
+val warn : ('a, unit, string, unit) format4 -> 'a
+(** [warn fmt ...] writes [windtrap: warning: ], the message that [fmt] formats
+    and a newline on standard error, and flushes it. Control bytes are written
+    as they are. *)
 
 (** {1:files Reading and writing} *)
 

@@ -144,6 +144,11 @@ let pp_error format ppf = function
   | Corrupt { path; reason } ->
       Format.fprintf ppf "%s: corrupt %s file: %s" path format.kind reason
 
+(* The runtime links no core, so its warnings skip the report's escape of
+   control bytes; what they print is identifiers and build paths. *)
+let warn fmt =
+  Printf.ksprintf (fun m -> Printf.eprintf "windtrap: warning: %s\n%!" m) fmt
+
 (* Reading and Writing *)
 
 let read_file path =
