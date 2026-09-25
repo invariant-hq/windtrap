@@ -56,30 +56,19 @@ let remedy =
 (* No flag keeps a dump of another build: a number computed from it can only
    mislead. *)
 let merged files =
-  let say_error error =
-    Os.say (Pp.to_string Coverage.pp_error error);
-    Error 1
-  in
-  let rec judge kept excluded = function
-    | [] -> Ok (List.rev kept, List.rev excluded)
-    | path :: paths -> (
-        let* identity =
-          Data_files.identity Coverage.format path
-          |> Result.map_error (fun error -> Coverage.Data error)
-        in
-        match Data_files.freshness ~path identity with
-        | Data_files.Fresh ->
-            let* t, _ = Coverage.load path in
-            judge (t :: kept) excluded paths
-        | (Data_files.Orphan _ | Data_files.Stale _) as freshness ->
-            judge kept ((path, freshness) :: excluded) paths)
+  let load path =
+    match Coverage.load path with
+    | Ok (t, _) -> Ok t
+    | Error error -> Error (Pp.to_string Coverage.pp_error error)
   in
   let merge acc t =
     let* acc = acc in
     Coverage.merge acc t
   in
-  match judge [] [] files with
-  | Error error -> say_error error
+  match Data_files.load_fresh Coverage.format ~load files with
+  | Error message ->
+      Os.say message;
+      Error 1
   | Ok (kept, excluded) -> (
       List.iter Os.say (Data_files.warnings excluded);
       match (kept, excluded) with
@@ -94,7 +83,9 @@ let merged files =
           if excluded <> [] then Os.say remedy;
           match List.fold_left merge (Ok Coverage.empty) kept with
           | Ok collection -> Ok collection
-          | Error error -> say_error error))
+          | Error error ->
+              Os.say (Pp.to_string Coverage.pp_error error);
+              Error 1))
 
 (* Gates *)
 

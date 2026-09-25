@@ -139,34 +139,21 @@ let invocation identity =
        ^ Sections.shell_word target ^ " --")
   | Some { exe; _ } -> `Exe (Sections.shell_word exe)
 
-(* Judges [files] from their headers, drops the orphaned and stale ones
-   loudly, loads the rest and returns them, each collection with its
-   executable's label and how to run it again. Warnings and failure
-   details go to stderr; [Error code] is the exit code (data problems are
-   1). *)
+(* The fresh collections, each with its executable's label and how to run
+   it again. Warnings and failure details go to stderr; [Error code] is the
+   exit code (data problems are 1). *)
 let load_fresh files =
-  let judged =
-    List.fold_left
-      (fun acc path ->
-        Result.bind acc (fun (kept, excluded) ->
-            Result.bind (Data_files.identity V.format path) (fun identity ->
-                match Data_files.freshness ~path identity with
-                | Data_files.Fresh ->
-                    Result.map
-                      (fun (t, identity) ->
-                        ((path, t, identity) :: kept, excluded))
-                      (V.load path)
-                | (Data_files.Orphan _ | Data_files.Stale _) as freshness ->
-                    Ok (kept, (path, freshness) :: excluded))))
-      (Ok ([], []))
-      files
+  let load path =
+    match V.load path with
+    | Ok (t, identity) ->
+        Ok (executable_label ~path identity, invocation identity, t)
+    | Error error -> Error (Format.asprintf "%a" V.pp_error error)
   in
-  match judged with
-  | Error error ->
-      Os.say (Format.asprintf "%a" V.pp_error error);
+  match Data_files.load_fresh V.format ~load files with
+  | Error message ->
+      Os.say message;
       Error 1
   | Ok (kept, excluded) ->
-      let kept = List.rev kept and excluded = List.rev excluded in
       List.iter Os.say (Data_files.warnings excluded);
       if kept = [] then
         Os.say
@@ -177,13 +164,7 @@ let load_fresh files =
             \  invalidated by any later build of the executable that wrote it."
           );
       if excluded <> [] then Os.say remedy;
-      if kept = [] then Error 1
-      else
-        Ok
-          (List.map
-             (fun (path, t, identity) ->
-               (executable_label ~path identity, invocation identity, t))
-             kept)
+      if kept = [] then Error 1 else Ok kept
 
 (* Report data *)
 

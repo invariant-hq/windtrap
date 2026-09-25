@@ -6,6 +6,7 @@
 module Instr = Windtrap_runtime.Instr
 
 let spf = Printf.sprintf
+let ( let* ) = Result.bind
 
 (* Discovery *)
 
@@ -201,3 +202,23 @@ let all_excluded ~ext excluded =
     (if orphans = total then "orphaned"
      else if orphans = 0 then "stale"
      else spf "stale or orphaned (%d orphaned)" orphans)
+
+(* Loading *)
+
+let load_fresh (format : Instr.format) ~load files =
+  let rec judge loaded excluded = function
+    | [] -> Ok (List.rev loaded, List.rev excluded)
+    | path :: paths -> (
+        let* identity =
+          Result.map_error
+            (Format.asprintf "%a" (Instr.pp_error format))
+            (identity format path)
+        in
+        match freshness ~path identity with
+        | Fresh ->
+            let* t = load path in
+            judge (t :: loaded) excluded paths
+        | (Orphan _ | Stale _) as freshness ->
+            judge loaded ((path, freshness) :: excluded) paths)
+  in
+  judge [] [] files

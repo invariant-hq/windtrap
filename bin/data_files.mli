@@ -10,8 +10,9 @@
     {!Windtrap_runtime.Instr.format}, by the build-path rule under which the
     runtime wrote them or under the paths of the command line. {!identity} reads
     the writer identity that a file records on its header, {!val-freshness}
-    judges the file from it, and {!warnings} and {!all_excluded} are the lines
-    for the files that a command excludes.
+    judges the file from it, {!load_fresh} loads the files that it keeps, and
+    {!warnings} and {!all_excluded} are the lines for the files that a command
+    excludes.
 
     The module prints nothing and writes nothing. Each command says the strings
     of this module on standard error behind [windtrap:]. The module reads
@@ -111,3 +112,18 @@ val all_excluded : ext:string -> freshness list -> string
     file. It counts the files, names them by [ext], and says whether they are
     stale, orphaned, or both, with the number of orphaned ones. [excluded] must
     not be empty and must hold no [Fresh], and neither is checked. *)
+
+(** {1:loading Loading} *)
+
+val load_fresh :
+  Windtrap_runtime.Instr.format ->
+  load:(string -> ('a, string) result) ->
+  string list ->
+  ('a list * (string * freshness) list, string) result
+(** [load_fresh format ~load files] is [Ok (loaded, excluded)]. [loaded] is
+    [load path] for each file of [files] whose {!val-freshness} is [Fresh], and
+    [excluded] is every other file with its freshness, both in the order of
+    [files]. A file is judged from its {!identity} before it is loaded, so a
+    file of another build is excluded whatever its records hold. The error is
+    the first met in that order, that of {!identity} in the words of
+    [Windtrap_runtime.Instr.pp_error format], or that of [load]. *)
