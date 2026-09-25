@@ -22,4 +22,4 @@ end
 
 (* Rules pinned here, by id in RULES.md and interface line: E2, pwt:23-25;
    E5, pwt:25-26; E8, pwt:23; E20, pwt:47-49; E21, pwt:51-54; E23, pwt:58-62;
-   E24, pwt:58-59; E25, pwt:58-59. *)
+   E24, pwt:58-59; E25, pwt:58-59; E35, pwt:64-71. *)

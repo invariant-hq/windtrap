@@ -195,3 +195,43 @@
  (alias runtest)
  (action
   (diff cookie_disabled_body.expected cookie_disabled_body.actual)))
+
+; A dropped let%expect_test is refused for a node of the family that is not
+; supported, as for a bad payload.
+
+(rule
+ (target cookie_disabled_unsupported.actual)
+ (action
+  (with-outputs-to
+   cookie_disabled_unsupported.actual
+   (with-accepted-exit-codes
+    1
+    (run
+     ./expect_pp.exe
+     -cookie
+     "inline_tests=\"disabled\""
+     --impl
+     %{dep:reject_unreachable.ml})))))
+
+(rule
+ (alias runtest)
+ (action
+  (diff reject_unreachable.expected cookie_disabled_unsupported.actual)))
+
+; The library-name cookie: every registration, a group's included, names the
+; library first; leave_group names none.
+
+(rule
+ (with-stdout-to
+  cookie_library.actual
+  (run
+   ./expect_pp.exe
+   -cookie
+   "library-name=\"scene\""
+   --impl
+   %{dep:test_basic.ml})))
+
+(rule
+ (alias runtest)
+ (action
+  (diff cookie_library.expected cookie_library.actual)))
