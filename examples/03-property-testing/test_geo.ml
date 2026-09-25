@@ -42,7 +42,7 @@ let scale =
     ]
 
 let inverse =
-  group "scale by 1/k"
+  group "inverse"
     [
       prop "undoes scale by k"
         Gen.(pair (float_range 0. 10.) gen_shape)
@@ -54,4 +54,27 @@ let inverse =
           equal ~__POS__ close (Geo.area s) (Geo.area back));
     ]
 
-let () = exit (run "geo" [ area; to_string; scale; inverse ])
+let rec gen_drawing depth =
+  if depth = 0 then Gen.map (fun s -> Geo.Shape s) gen_shape
+  else
+    Gen.(
+      one_of
+        [
+          map (fun s -> Geo.Shape s) gen_shape;
+          map
+            (fun ds -> Geo.Group ds)
+            (list ~size:(int_range 0 4) (gen_drawing (depth - 1)));
+        ])
+
+let total_area =
+  group "total_area"
+    [
+      prop "is never negative"
+        Gen.(
+          with_pp Geo.pp_drawing
+            (let* depth = int_range 0 3 in
+             gen_drawing depth))
+        (fun d -> at_least ~__POS__ float_exact ~than:0. (Geo.total_area d));
+    ]
+
+let () = exit (run "geo" [ area; to_string; scale; inverse; total_area ])

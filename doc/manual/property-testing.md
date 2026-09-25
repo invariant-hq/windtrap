@@ -6,9 +6,11 @@ keep one as a regression, and see what a generator reaches. The
 reference is [`lib/windtrap.mli`](../../lib/windtrap.mli), under
 `Windtrap.prop` and `Windtrap.Gen`.
 
-The snippets test `Geo`, a module of shapes, `test/geo.ml`:
+The snippets test `Geo`, a module of shapes.
 
-<!-- file examples/03-property-testing/geo.ml -->
+`test/geo.ml`:
+
+<!-- file examples/03-property-testing/geo.ml from type shape to let of_string -->
 ```ocaml
 type shape = Circle of float | Rect of float * float
 
@@ -33,7 +35,9 @@ let of_string s =
   | _ -> None
 ```
 
-The suite is `test/test_geo.ml`, built by a `(test)` stanza:
+The suite is `test/test_geo.ml`, built by a `(test)` stanza.
+
+`test/dune`:
 
 <!-- file examples/03-property-testing/dune -->
 ```lisp
@@ -43,11 +47,13 @@ The suite is `test/test_geo.ml`, built by a `(test)` stanza:
  (libraries windtrap))
 ```
 
-Its last line runs one group per section of this page:
+Its last line runs one group per section of this page.
+
+`test/test_geo.ml`:
 
 <!-- file examples/03-property-testing/test_geo.ml from let () = -->
 ```ocaml
-let () = exit (run "geo" [ area; to_string; scale; inverse ])
+let () = exit (run "geo" [ area; to_string; scale; inverse; total_area ])
 ```
 
 The files ship as `examples/03-property-testing/` in windtrap's
@@ -65,6 +71,8 @@ has a witness, under the same name, and composes them with `map`, `let+`
 and `one_of`. `Gen.with_pp` gives a generator the printer its
 counterexamples print with. Without one, a value that `map` or `let+`
 computed prints as what it was computed from, after `computed from`.
+
+`test/test_geo.ml`:
 
 <!-- file examples/03-property-testing/test_geo.ml from open Windtrap to let area -->
 ```ocaml
@@ -95,7 +103,7 @@ A run that holds a property prints its seed on the summary line:
 <!-- run examples/03-property-testing -->
 ```
 $ dune runtest
-geo: 4 passed in 1.2ms (seed s1:0aacf67ada23754f).
+geo: 5 passed in 2.0ms (seed s1:2517c1601bf6fe73).
 ```
 
 ## Reading a counterexample
@@ -104,10 +112,15 @@ When the law fails, the property shrinks the value to a counterexample
 and prints it with the case that found it, the number of shrink steps,
 and the assertion that failed. Its `replay:` line runs the test again
 under the run's seed, which finds the same counterexample with the same
-version of windtrap. The transcripts of this page pass that seed with
-`--seed`. A run without it draws a new seed, and the case and the number
-of shrink steps change. Renaming or regrouping the property changes the
-values it draws, and the other tests of the suite do not.
+version of windtrap. The counterexample transcripts of this page pass
+that seed with `--seed`. A run without it draws a new seed, and the case
+and the number of shrink steps change. Renaming or regrouping the property changes the
+values it draws, and the other tests of the suite do not. A search cut
+short says so, as `shrinking stopped after N steps` or
+`timed out after Ns while shrinking`, and adds that the counterexample
+may not be minimal.
+
+`test/test_geo.ml`:
 
 <!-- file examples/03-property-testing/test_geo.ml from let shape to let to_string -->
 ```ocaml
@@ -155,6 +168,8 @@ whatever the seed. A counterexample pasted there stays tested. A failing
 example is reported as `example N`, unshrunk and without a `replay:`
 line.
 
+`test/test_geo.ml`:
+
 <!-- file examples/03-property-testing/test_geo.ml from let close to let scale -->
 ```ocaml
 let close = float_rel ~rel:1e-9 ~abs:1e-9
@@ -195,19 +210,20 @@ geo: 1 test (seed s1:96b69c9ed18d0547)
 
 ## Discarding and labelling cases
 
-`assume cond` discards the case unless `cond` holds, and a property that
-discards more than `~max_discard` cases gives up and fails. A
-precondition on the value's structure belongs in the generator, built in
-or with `Gen.such_that`. `classify` and `collect` label a case, and `-v`
-prints the share of passing cases that carry each label. `cover` labels
-a case too, and fails the property when no passing case carries its
-label. Its demand registers when the law calls it, so a `cover` the law
-does not always reach may demand nothing.
+`assume cond` discards a case the law does not apply to (see
+`Windtrap.assume`). A property that discards more than `~max_discard`
+cases fails with `property gave up:` and its counts. A precondition on
+the value's structure belongs in the generator, built in or with
+`Gen.such_that`. `classify` and `collect` label a case, and `cover`
+fails the property when no passing case carries its label (see
+`Windtrap.cover`).
+
+`test/test_geo.ml`:
 
 <!-- file examples/03-property-testing/test_geo.ml from let inverse -->
 ```ocaml
 let inverse =
-  group "scale by 1/k"
+  group "inverse"
     [
       prop "undoes scale by k"
         Gen.(pair (float_range 0. 10.) gen_shape)
@@ -220,15 +236,95 @@ let inverse =
     ]
 ```
 
-Under `-v`, over 1000 cases:
+Under `-v` the passing property prints the share of its cases under each
+label:
 
 <!-- run examples/03-property-testing -->
 ```
-$ dune exec examples/03-property-testing/test_geo.exe -- -v --seed s1:5b58964be30f69a8 --prop-count 1000 -f 1/k
+$ dune exec examples/03-property-testing/test_geo.exe -- -v --seed s1:5b58964be30f69a8 --prop-count 1000 -f inverse
 geo: 1 test (seed s1:5b58964be30f69a8)
-  PASS  scale by 1/k › undoes scale by k           2.5ms
+  PASS  inverse › undoes scale by k                1.5ms
     labels (1000 passing cases):
-       52.9%  circle
-       47.1%  rect
-1 passed in 3.3ms.
+       50.0%  circle
+       50.0%  rect
+1 passed in 2.3ms.
+```
+
+## Generating a recursive type
+
+A generator of a recursive type takes a depth and draws a leaf at depth
+0. `let*` draws the depth first, from a small range. `~size` bounds the
+length of a list, and without it a length follows `Gen.nat`, the
+generator of sizes, lengths and counts. `Geo` groups shapes in drawings.
+
+`test/geo.ml`:
+
+<!-- file examples/03-property-testing/geo.ml from type drawing to let rec total_area -->
+```ocaml
+type drawing = Shape of shape | Group of drawing list
+
+let rec pp_drawing ppf = function
+  | Shape s -> pp ppf s
+  | Group ds ->
+      Format.fprintf ppf "Group [%a]"
+        (Format.pp_print_list
+           ~pp_sep:(fun ppf () -> Format.fprintf ppf "; ")
+           pp_drawing)
+        ds
+
+let rec total_area = function
+  | Shape s -> area s
+  | Group ds -> List.fold_left (fun sum d -> sum +. total_area d) 0. ds
+```
+
+`test/test_geo.ml`:
+
+<!-- file examples/03-property-testing/test_geo.ml from let rec gen_drawing to let total_area -->
+```ocaml
+let rec gen_drawing depth =
+  if depth = 0 then Gen.map (fun s -> Geo.Shape s) gen_shape
+  else
+    Gen.(
+      one_of
+        [
+          map (fun s -> Geo.Shape s) gen_shape;
+          map
+            (fun ds -> Geo.Group ds)
+            (list ~size:(int_range 0 4) (gen_drawing (depth - 1)));
+        ])
+
+let total_area =
+  group "total_area"
+    [
+      prop "is never negative"
+        Gen.(
+          with_pp Geo.pp_drawing
+            (let* depth = int_range 0 3 in
+             gen_drawing depth))
+        (fun d -> at_least ~__POS__ float_exact ~than:0. (Geo.total_area d));
+    ]
+```
+
+If `total_area` subtracted the drawings of a group, shrinking would
+reduce the failing drawing to a group of one circle:
+
+<!-- run examples/03-property-testing/failing as examples/03-property-testing -->
+```
+$ dune exec examples/03-property-testing/test_geo.exe -- --seed s1:5b58964be30f69a8 -f total_area
+geo: 1 test (seed s1:5b58964be30f69a8)
+──────────────────────── failures ────────────────────────
+  FAIL  total_area › is never negative
+    examples/03-property-testing/test_geo.ml:72
+      72 │ prop "is never negative"
+
+    counterexample (case 1, shrunk 8 steps): Group [Circle 1]
+    which failed at:
+      examples/03-property-testing/test_geo.ml:77
+        77 │ (fun d -> at_least ~__POS__ float_exact ~than:0. (Geo.total_area d));
+      expected  at least 0.
+      actual    -3.141592653589793
+    replay: dune exec examples/03-property-testing/test_geo.exe -- --seed s1:5b58964be30f69a8 -f 'total_area › is never negative'
+──────────────────────────────────────────────────────────
+
+1 failed in 0.7ms.
 ```
