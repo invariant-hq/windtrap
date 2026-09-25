@@ -3,407 +3,255 @@
    SPDX-License-Identifier: ISC
   ---------------------------------------------------------------------------*)
 
-(* The mutation instrumenter. Every mutant of a file compiles into the
-   same binary behind a runtime guard, so a single ill-typed arm is not
-   one bad mutant - it is a broken build for the whole project. That is
-   the constraint this file is shaped by:
-
-     EMISSION LAW. Every arm of a guard must be well-typed without type
-     information, and must mention only identifiers already present in
-     the original expression, plus [Stdlib]-qualified names.
-
-   Consequences, each implemented below:
-
-   - [cmp] negates the operator the source already wrote instead of
-     naming its partner ([comparison_rewrite]), and fires only where the
-     expression is syntactically obliged to be [bool] (the [`Cond] and
-     [`Bool] contexts), so a user-shadowed comparison cannot make the two
-     arms disagree in type. Naming the partner would also fail in silence:
-     under an [open Version] that exports [<] and not [<=], an armed arm
-     written [a <= b] would compare with [Stdlib.( <= )].
-   - [con] uses the branch-on-the-armed-flag encoding ([con_guard]), the
-     only shape that keeps [&&]/[||]'s short-circuiting without
-     duplicating an operand.
-   - [ari] is the one admitted exception - [a + b -> a - b] cannot be
-     written without naming [-] - and is guarded by skipping the
-     operators a file visibly rebinds ([capabilities_of_structure]).
-
-   The engine is a plain [Ast_traverse.map]. Coverage's instrumenter
-   needs tail-position and successor analysis because it wraps
-   application out-edges; mutation replaces an expression in place with a
-   guard whose disarmed arm is the original expression, so it needs
-   neither. The only context threaded is one three-valued flag saying
-   whether the expression under the cursor is syntactically obliged to be
-   a boolean, and whether it is a condition. *)
+(* A guard replaces its site in place and its disarmed arm is the original
+   expression, so the rewriter is a map that threads one context: whether an
+   expression must be a boolean, and whether it is a condition. Every arm
+   keeps the emission law of
+   instrument.mli, because all the mutants share one binary and one ill-typed
+   arm breaks the build of the whole project. *)
 
 open Ppxlib
 open Ast_builder.Default
 
-(* The [mutate] attributes, mirroring the coverage attribute grammar
-   exactly - [[@mutate off]] on an expression, [[@@mutate off]] on a
-   value or module binding, [[@@@mutate off]]/[[@@@mutate on]] around a
-   region, [[@@@mutate exclude_file]] for a file - plus an optional
-   reason string on [off]. The reason of an expression that is a site
-   lands in the site table's [dismissed] field; no report prints it. *)
+(* Attributes *)
 
 type directive = No_directive | Off of string | On | Exclude_file
 
-let recognize_mutate_attribute { attr_name; attr_payload; attr_loc } =
+(* The grammar is the [coverage] attribute's (ppx/coverage/instrument.ml),
+   with a reason on [off]. *)
+let directive { attr_name; attr_payload; attr_loc } =
+  let payload =
+    match attr_payload with
+    | PStr [ { pstr_desc = Pstr_eval (payload, _); _ } ] ->
+        Some payload.pexp_desc
+    | _ -> None
+  in
   if not (String.equal attr_name.txt "mutate") then No_directive
   else
-    let bad () =
-      Location.raise_errorf ~loc:attr_loc "Bad payload in mutate attribute."
-    in
-    match attr_payload with
-    | PStr [ { pstr_desc = Pstr_eval (payload, _); _ } ] -> (
-        match payload.pexp_desc with
-        | Pexp_ident { txt = Lident "off"; _ } -> Off ""
-        | Pexp_ident { txt = Lident "on"; _ } -> On
-        | Pexp_ident { txt = Lident "exclude_file"; _ } -> Exclude_file
-        | Pexp_apply
-            ( { pexp_desc = Pexp_ident { txt = Lident "off"; _ }; _ },
-              [
-                ( Nolabel,
-                  {
-                    pexp_desc = Pexp_constant (Pconst_string (reason, _, _));
-                    _;
-                  } );
-              ] ) ->
-            Off reason
-        | _ -> bad ())
-    | _ -> bad ()
+    match payload with
+    | Some (Pexp_ident { txt = Lident "off"; _ }) -> Off ""
+    | Some (Pexp_ident { txt = Lident "on"; _ }) -> On
+    | Some (Pexp_ident { txt = Lident "exclude_file"; _ }) -> Exclude_file
+    | Some
+        (Pexp_apply
+           ( { pexp_desc = Pexp_ident { txt = Lident "off"; _ }; _ },
+             [
+               ( Nolabel,
+                 { pexp_desc = Pexp_constant (Pconst_string (reason, _, _)); _ }
+               );
+             ] )) ->
+        Off reason
+    | _ ->
+        Location.raise_errorf ~loc:attr_loc "Bad payload in mutate attribute."
 
-(* [off_reason attrs] is [Some reason] when [attrs] carries
-   [[@mutate off]]; [reason] is [""] when none was given. Folds rather
-   than short-circuits so every attribute is error-checked. *)
+let err_misplaced attribute name =
+  Location.raise_errorf ~loc:attribute.attr_loc "mutate %s is not allowed here."
+    name
+
+(* Every attribute is read, so a malformed one is an error beside an [off]
+   too. *)
 let off_reason attributes =
   List.fold_left
     (fun found attribute ->
-      match recognize_mutate_attribute attribute with
+      match directive attribute with
       | No_directive -> found
       | Off reason -> Some reason
-      | On ->
-          Location.raise_errorf ~loc:attribute.attr_loc
-            "mutate on is not allowed here."
-      | Exclude_file ->
-          Location.raise_errorf ~loc:attribute.attr_loc
-            "mutate exclude_file is not allowed here.")
+      | On -> err_misplaced attribute "on"
+      | Exclude_file -> err_misplaced attribute "exclude_file")
     None attributes
 
-let has_off_attribute attributes = off_reason attributes <> None
+let is_off attributes = Option.is_some (off_reason attributes)
 
-let has_exclude_file_attribute structure =
+let excludes_file structure =
   List.exists
     (function
       | { pstr_desc = Pstr_attribute attribute; _ } -> (
-          match recognize_mutate_attribute attribute with
+          match directive attribute with
           | Exclude_file -> true
           | No_directive | Off _ | On -> false)
       | _ -> false)
     structure
 
-(* File-level exclusions *)
+(* Test code *)
 
-(* A file that declares inline tests is test code, and test code is not
-   the population under test. Both spellings are recognized: the
-   extension nodes themselves - this instrumenter can run in a driver
-   that does not link ppx_windtrap, and the golden tests are such a
-   driver - and the calls ppx_windtrap expands them into, which is what a
-   real build sees, because instrumentation runs after every other
-   rewriter. *)
-let file_declares_inline_tests structure =
-  let found = ref false in
+(* The rewriter sees the extension nodes of inline tests in a driver without
+   ppx_windtrap, and the calls they expand into in a build, where
+   instrumentation runs after every other rewriter. *)
+let declares_inline_tests structure =
   let scan =
     object
-      inherit Ast_traverse.iter as super
+      inherit [bool] Ast_traverse.fold as super
 
-      method! extension ((name, _) as ext) =
-        (match name.txt with
-        | "test" | "expect_test" -> found := true
-        | _ -> ());
-        super#extension ext
+      method! extension ((name, _) as extension) found =
+        let found =
+          match name.txt with "test" | "expect_test" -> true | _ -> found
+        in
+        super#extension extension found
 
-      method! longident lid =
-        (match lid with
-        | Ldot (Ldot (Lident "Ppx_windtrap_runtime", "Ppx_runtime"), _) ->
-            found := true
-        | _ -> ());
-        super#longident lid
+      method! longident lid found =
+        let found =
+          match lid with
+          | Ldot (Ldot (Lident "Ppx_windtrap_runtime", "Ppx_runtime"), _) ->
+              true
+          | _ -> found
+        in
+        super#longident lid found
     end
   in
-  scan#structure structure;
-  !found
+  scan#structure structure false
 
-(* Which operator families the file may be instrumented for. [ari] emits
-   [-] where the source wrote [+], so a file that gives [+] another
-   meaning gets no [ari] sites; [con] rewrites [&&] into an [if], which
-   is meaning-preserving only for Stdlib's [&&], and its operands are
-   boolean positions only for Stdlib's; [cmp]'s operand swap assumes the
-   comparison is symmetric in its argument types. A binding this pass can
-   see is skipped; what an [open] brings in it cannot see, and that
-   residue is documented rather than solved - the remedy is one compile
-   error at the user's own source location and
-   [[@@@mutate exclude_file]]. *)
+(* Operators *)
 
-let arithmetic_operators = [ "+"; "-"; "+."; "-." ]
-let comparison_operators = [ "<"; "<="; ">"; ">="; "="; "<>" ]
-let connective_operators = [ "&&"; "||" ]
+type family = Ari | Cmp | Con
 
-type capabilities = { ari : bool; cmp : bool; con : bool }
+(* Each rewritten operator with its family, the name of its rewrite and the
+   operator that replaces it. *)
+let operators =
+  [
+    ("+", (Ari, "sub", "-"));
+    ("-", (Ari, "add", "+"));
+    ("+.", (Ari, "fsub", "-."));
+    ("-.", (Ari, "fadd", "+."));
+    ("<", (Cmp, "le", "<="));
+    ("<=", (Cmp, "lt", "<"));
+    (">", (Cmp, "ge", ">="));
+    (">=", (Cmp, "gt", ">"));
+    ("=", (Cmp, "neq", "<>"));
+    ("<>", (Cmp, "eq", "="));
+    ("&&", (Con, "or", "||"));
+    ("||", (Con, "and", "&&"));
+  ]
 
-let capabilities_of_structure structure =
-  let rebound = Hashtbl.create 8 in
-  let watched name =
-    List.mem name arithmetic_operators
-    || List.mem name comparison_operators
-    || List.mem name connective_operators
+(* A family keeps its sites only where its operators are Stdlib's: [ari]
+   names its replacement, [con] turns [&&] into an [if], and [cmp] swaps
+   operands of one type. A binding that this pass sees loses the family of
+   its name; what an [open] brings in is not seen. *)
+let kept_families structure =
+  let lose name lost =
+    match List.assoc_opt name operators with
+    | Some (family, _, _) -> family :: lost
+    | None -> lost
   in
-  let note name = if watched name then Hashtbl.replace rebound name () in
   let scan =
     object
-      inherit Ast_traverse.iter as super
+      inherit [family list] Ast_traverse.fold as super
 
-      method! pattern p =
-        (match p.ppat_desc with Ppat_var { txt; _ } -> note txt | _ -> ());
-        super#pattern p
+      method! pattern p lost =
+        let lost =
+          match p.ppat_desc with
+          | Ppat_var { txt; _ } -> lose txt lost
+          | _ -> lost
+        in
+        super#pattern p lost
 
-      method! value_description vd =
-        note vd.pval_name.txt;
-        super#value_description vd
+      method! value_description vd lost =
+        super#value_description vd (lose vd.pval_name.txt lost)
     end
   in
-  scan#structure structure;
-  let free ops = not (List.exists (Hashtbl.mem rebound) ops) in
-  {
-    ari = free arithmetic_operators;
-    cmp = free comparison_operators;
-    con = free connective_operators;
-  }
+  let lost = scan#structure structure [] in
+  fun family -> not (List.mem family lost)
 
-(* Sites *)
+(* Mutants *)
 
-(* One entry of the file's site table: [line] and [col] locate the
-   mutated expression, [before] and [after] are its renderings for the
-   report. *)
-type site = {
-  line : int;
-  col : int;
-  rewrite : string;
-  before : string;
-  after : string;
-  dismissed : string option;
+(* [Condition] is an [if] or [while] condition or an arm's guard, and
+   [Boolean] a direct operand of [&&] or [||]. [cmp] fires in these two
+   alone, where the expression must be a boolean, so that a user's comparison
+   cannot give its two arms two types. *)
+type context = Condition | Boolean | Ordinary
+
+(* A bare operator applied to two unlabelled arguments. A qualified operator
+   may be anything, and is no site. *)
+type application = {
+  name : string;
+  operator : expression;
+  left : expression;
+  right : expression;
 }
 
-type state = {
-  mutable rev_sites : site list; (* most recently allocated first *)
-  mutable count : int;
-  mutable pinned : bool;
-      (* A swapping [cmp] guard was emitted, so the preamble must declare
-         the [operands] abbreviation it names; see [binary_guard]. *)
-  seen : (int * int * string, unit) Hashtbl.t;
-  chained : (int * int, unit) Hashtbl.t;
-      (* Byte extents of nodes suppressed by the chain rule below, keyed
-         by extent because that is what identifies a node regardless of
-         how the parser located it. *)
-}
-
-let create_state () =
-  {
-    rev_sites = [];
-    count = 0;
-    pinned = false;
-    seen = Hashtbl.create 64;
-    chained = Hashtbl.create 16;
-  }
-
-(* [suppress_chain st name left] records [left] as chained when it is
-   itself an application of the operator [name] - that is, when [left] is
-   the inner node of a left-associative chain of one operator, as [a + b]
-   is in [a + b + c].
-
-   A chain of n operators of one family carries one mutant, not n-1, and
-   the outermost is the one kept: the traversal is top-down, so the outer
-   node allocates its site before this suppresses the inner one, and the
-   inner node in turn suppresses its own left operand, so the rule is
-   transitive along the whole chain.
-
-   Detecting the chain STRUCTURALLY, from the operator, is what makes the
-   population independent of layout. Keying it on the line and column
-   would happen to work for a bare chain - every node of [a + b + c]
-   starts at [a]'s byte - but OCaml's parser gives a parenthesized
-   expression a location that starts at its [(], so [f (a + b + c)] would
-   carry two mutants where [a + b + c] carries one. Parenthesizing an
-   expression must not change how many mutants it carries; a score whose
-   denominator moves when brackets are added is not a score. Keying it on
-   extent containment instead would be layout-independent but far too
-   broad: it would swallow a genuinely distinct inner site, such as the
-   [neg] on [a] inside the [neg] on [a && b]. *)
-let suppress_chain st name left =
-  match left.pexp_desc with
-  | Pexp_apply
-      ( { pexp_desc = Pexp_ident { txt = Lident inner; _ }; _ },
-        [ (Nolabel, _); (Nolabel, _) ] )
-    when String.equal inner name ->
-      Hashtbl.replace st.chained
-        (left.pexp_loc.loc_start.pos_cnum, left.pexp_loc.loc_end.pos_cnum)
-        ()
-  | _ -> ()
-
-(* [add_site st ~loc …] records a site, and is [Some index] when a guard
-   must be emitted for it.
-
-   It is [None] - and, for the first two reasons, no table entry is made
-   either - when:
-
-   - the attribution location is a ghost one, which means generated code
-     no user can act on;
-   - another site of this file already claims this line, column and
-     rewrite. [<file>:<line>:<col>:<rewrite>] must name at most one site,
-     and rewriters such as [[@@deriving]] duplicate non-ghost locations,
-     so a later collider is dropped rather than instrumented;
-   - the node was suppressed by the chain rule ([suppress_chain]);
-   - the expression carries [[@mutate off]]. The site is catalogued with
-     its reason, but the expression is left exactly as written: a
-     dismissal that still rewrote the code would be a dismissal in name
-     only. *)
-let add_site st ~(loc : Location.t) ~rewrite ~before ~after ~dismissed =
-  if loc.loc_ghost then None
-  else begin
-    let line = loc.loc_start.pos_lnum
-    and col = loc.loc_start.pos_cnum - loc.loc_start.pos_bol in
-    let extent = (loc.loc_start.pos_cnum, loc.loc_end.pos_cnum) in
-    let key = (line, col, rewrite) in
-    if Hashtbl.mem st.chained extent || Hashtbl.mem st.seen key then None
-    else begin
-      Hashtbl.add st.seen key ();
-      let index = st.count in
-      st.rev_sites <-
-        { line; col; rewrite; before; after; dismissed } :: st.rev_sites;
-      st.count <- index + 1;
-      match dismissed with Some _ -> None | None -> Some index
-    end
-  end
-
-(* The operator tables. [rewrite] names the REPLACEMENT, never the
-   original.
-
-   [cmp] is the place this file is easiest to get quietly wrong. The
-   emission law forbids naming the partner operator, so each rewrite is
-   expressed by negating the operator the source already wrote. For a
-   totally ordered type the four ordering identities all SWAP their
-   operands:
-
-     a <= b  =  not (b <  a)      a <  b  =  not (b <= a)
-     a >= b  =  not (b >  a)      a >  b  =  not (b >= a)
-
-   and the two equality identities do NOT:
-
-     a <> b  =  not (a =  b)      a =  b  =  not (a <> b)
-
-   The third component of [comparison_rewrite] records which shape
-   applies.
-
-   The ordering identities need a total order. On floats they fail on NaN:
-   [nan <= 1.] is [false] and [not (1. < nan)] is [true]. An armed ordering
-   mutant thus differs from its [after] text when an operand is NaN, and
-   the interface states that limit. *)
-let comparison_rewrite = function
-  | "<" -> Some ("le", "<=", true)
-  | "<=" -> Some ("lt", "<", true)
-  | ">" -> Some ("ge", ">=", true)
-  | ">=" -> Some ("gt", ">", true)
-  | "=" -> Some ("neq", "<>", false)
-  | "<>" -> Some ("eq", "=", false)
-  | _ -> None
-
-let arithmetic_rewrite = function
-  | "+" -> Some ("sub", "-")
-  | "-" -> Some ("add", "+")
-  | "+." -> Some ("fsub", "-.")
-  | "-." -> Some ("fadd", "+.")
-  | _ -> None
-
-let connective_rewrite = function
-  | "&&" -> Some ("or", "||")
-  | "||" -> Some ("and", "&&")
-  | _ -> None
-
-(* [binary e] is [Some (name, operator, left, right)] when [e] applies a
-   bare operator identifier to two unlabelled arguments. Qualified
-   spellings ([Float.( < )]) and labelled or partial applications are not
-   sites: the rewrite vocabulary names bare operators, and a qualified
-   one may be anything at all. *)
-let binary expression =
-  match expression.pexp_desc with
+let application e =
+  match e.pexp_desc with
   | Pexp_apply
       ( ({ pexp_desc = Pexp_ident { txt = Lident name; _ }; _ } as operator),
         [ (Nolabel, left); (Nolabel, right) ] ) ->
-      Some (name, operator, left, right)
+      Some { name; operator; left; right }
   | _ -> None
 
-let is_connective_apply capabilities expression =
-  capabilities.con
-  &&
-  match binary expression with
-  | Some (name, _, _, _) -> connective_rewrite name <> None
+let applies name e =
+  match application e with
+  | Some app -> String.equal app.name name
   | None -> false
 
-(* Renderings. The source text is never read: a preprocessor's working
-   directory under sandboxing is not what one expects, and a catalogue
-   that is a literal in the code it describes cannot be stale. Both
-   strings are therefore printed from the parsetree, with whitespace runs
-   collapsed so that a rendering is one line - including runs inside
-   string literals, which is the one place a rendering differs from the
-   source in more than layout. *)
-let render expression =
-  let text =
-    Pprintast.string_of_expression { expression with pexp_attributes = [] }
+let is_connective ~keeps e = keeps Con && (applies "&&" e || applies "||" e)
+
+(* [apply ~loc name args] applies the bare operator [name] to [args]. *)
+let apply ~loc name args =
+  pexp_apply ~loc
+    (pexp_ident ~loc { txt = Lident name; loc })
+    (List.map (fun arg -> (Nolabel, arg)) args)
+
+(* A text is printed from the parsetree, since a preprocessor cannot rely on
+   the path of its source, and each run of blanks becomes one space. *)
+let render e =
+  Pprintast.string_of_expression { e with pexp_attributes = [] }
+  |> String.map (function '\t' | '\n' | '\r' -> ' ' | c -> c)
+  |> String.split_on_char ' '
+  |> List.filter (fun word -> word <> "")
+  |> String.concat " "
+
+(* How a guard arms its site. The emission law forbids naming a comparison's
+   partner, so [cmp] negates the operator the source wrote: on a total order
+   [a <= b] is [not (b < a)], so an ordering swaps its operands, and [a <> b]
+   is [not (a = b)], so an equality does not. *)
+type guard = Neg | Operator of application * operator_guard
+
+and operator_guard =
+  | Negate (* [cmp] on an equality *)
+  | Swap (* [cmp] on an ordering *)
+  | Branch (* [con] *)
+  | Replace of string (* [ari], by this operator *)
+
+type mutant = { guard : guard; rewrite : string; after : string }
+
+(* A connective with a connective operand carries no mutant, since its guard
+   would hold another site. *)
+let mutant ~keeps context e =
+  let loc = e.pexp_loc in
+  let neg () =
+    if context <> Condition then None
+    else
+      let negated = apply ~loc "not" [ { e with pexp_attributes = [] } ] in
+      Some { guard = Neg; rewrite = "not"; after = render negated }
   in
-  let buffer = Buffer.create (String.length text) in
-  let pending = ref false and started = ref false in
-  String.iter
-    (fun c ->
-      match c with
-      | ' ' | '\t' | '\n' | '\r' -> if !started then pending := true
-      | c ->
-          if !pending then Buffer.add_char buffer ' ';
-          pending := false;
-          started := true;
-          Buffer.add_char buffer c)
-    text;
-  Buffer.contents buffer
-
-let render_binary ~loc replacement left right =
-  render
-    (pexp_apply ~loc
-       (pexp_ident ~loc { txt = Lident replacement; loc })
-       [ (Nolabel, left); (Nolabel, right) ])
-
-let render_negation ~loc expression =
-  render
-    (pexp_apply ~loc
-       (pexp_ident ~loc { txt = Lident "not"; loc })
-       [ (Nolabel, { expression with pexp_attributes = [] }) ])
+  match application e with
+  | None -> neg ()
+  | Some app -> (
+      match List.assoc_opt app.name operators with
+      | Some (family, rewrite, replacement) when keeps family -> (
+          let after = render (apply ~loc replacement [ app.left; app.right ]) in
+          let mutant guard =
+            Some { guard = Operator (app, guard); rewrite; after }
+          in
+          match family with
+          | Con ->
+              if is_connective ~keeps app.left || is_connective ~keeps app.right
+              then None
+              else mutant Branch
+          | Cmp when context = Ordinary -> None
+          | Cmp ->
+              mutant
+                (if app.name = "=" || app.name = "<>" then Negate else Swap)
+          | Ari -> mutant (Replace replacement))
+      | Some _ | None -> neg ())
 
 (* Guards *)
 
-(* Rule 4: every binder the instrumenter introduces is site-indexed and
-   lives in a reserved namespace. A short name would shadow a user
-   binding of the same name for the extent of the guarded operand, and
-   nested guards would shadow each other. *)
+(* A binder is site-indexed in a reserved namespace, so that a guard shadows
+   neither a user's binding nor another guard's. *)
 let binder index role = Printf.sprintf "__windtrap_mut_%d_%s" index role
 
-(* The generated module is named after the file so that each compilation
-   unit calls its own guard - two files could otherwise collide when one
-   includes another. It is referenced qualified rather than opened: it
-   must declare the site record's type to name that record's fields
-   without type-directed disambiguation (see [runtime_initialization]),
-   and opening a module that carries a record type would put labels named
-   [line], [col], [before] and [after] into the user's scope.
-   The mangling itself mirrors coverage's (Windtrap_cov___, in
-   ppx/coverage/instrument.ml's [runtime_initialization]); keep the two
-   in sync. *)
-let generated_module_name ~file =
+(* The module is named after the file, so that each compilation unit calls its
+   own. The coverage rewriter mangles its module in the same way. *)
+let generated_module_name file =
   let buffer = Buffer.create (String.length file + 16) in
   Buffer.add_string buffer "Windtrap_mut___";
   String.iter
@@ -420,210 +268,104 @@ let armed ~loc ~module_name index =
        { txt = Ldot (Lident module_name, "___windtrap_armed___"); loc })
     [ (Nolabel, eint ~loc index) ]
 
-let stdlib ~loc name =
-  pexp_ident ~loc { txt = Ldot (Lident "Stdlib", name); loc }
-
-(* The abbreviation the swapping [cmp] guard pins its operands with,
-   [type 'a operands = 'a * 'a] (see [binary_guard]). It is declared in
-   the generated module by [runtime_initialization], and only in a file
-   where some guard names it: under an .mli that hides the module, an
-   unreferenced declaration is warning 34, fatal by default. *)
-let operands = "operands"
-
-let operands_type ~loc ~module_name =
-  ptyp_constr ~loc
-    { txt = Ldot (Lident module_name, operands); loc }
-    [ ptyp_any ~loc ]
-
-(* [neg], and [cmp]'s self-negating form for [=] and [<>]: one shape, and
-   the same one, because both negate a boolean the source already wrote.
-   The value is bound once so that it is evaluated exactly as often as
-   before; [=] and [<>] bind the whole comparison rather than its two
-   operands, since their identities do not swap, which leaves the
-   operands the evaluation order the compiler chose for them instead of
-   fixing it here. [Stdlib.not] rather than [not]: the emission law
-   admits identifiers of the original expression plus Stdlib-qualified
-   names, and nothing else. *)
-let negating_guard ~loc ~module_name ~index value =
+(* [neg], and [cmp] on an equality. The value is bound once, so it is
+   evaluated as often as before, and binding the whole comparison leaves its
+   operands the order the compiler gives them. *)
+let negation ~loc ~module_name ~index value =
   let p = binder index "p" in
   [%expr
     let [%p pvar ~loc p] = [%e value] in
     if [%e armed ~loc ~module_name index] then Stdlib.not [%e evar ~loc p]
     else [%e evar ~loc p]]
 
-(* [cmp]'s swapping form and [ari], which are one skeleton. The operands
-   are lifted through ONE tuple binding, [let (l, r) = (left, right)],
-   and both arms apply an operator to the two binders: the disarmed arm
-   the one the source wrote, the armed arm what the rewrite says -
-   [cmp] the same operator on the swapped operands under [Stdlib.not],
-   [ari] its replacement.
+(* [cmp] on an ordering, and [ari]: [let l, r = left, right in if armed then
+   ... else l op r], where the disarmed arm is the application of [e] rebuilt
+   over the binders, with its location and its attributes.
 
-   The tuple, not a chain of [let]s, is load-bearing on both sides of
-   the type-checker, because the two sides read it in opposite orders
-   and both orders matter:
+   The type-checker reads the tuple left to right, as it reads the arguments
+   of an application, so a qualified field of the left operand still resolves
+   an unqualified field of the right one. The match compiler destructures the
+   literal tuple without building it, into the [let] chain the application
+   compiles to, right operand first: each operand is evaluated once, in the
+   original order, with no allocation. A [let] chain written here would impose
+   one order on both, and a right-to-left check breaks that disambiguation.
 
-   - CHECKING is left to right, component by component - the order the
-     original application's arguments were checked in. That is what
-     preserves the user's typing context: type-directed record
-     disambiguation lets one qualified access ([rect.Layout.x]) teach
-     the checker the type a later unqualified field of the same record
-     ([rect.height]) resolves by, and only source order keeps the
-     teaching operand ahead of the taught one. A chain of [let]s must
-     pick ONE order for both checking and evaluation, and the
-     right-to-left chain this replaced chose evaluation - real code
-     stopped compiling with "Unbound record field" under
-     instrumentation.
+   An application also checks its right argument against the type of the left
+   one, which resolves a constructor or a record literal whose name a later
+   type declaration reuses. [~pin] restores that for an ordering by the
+   annotation [_ operands], with [type 'a operands = 'a * 'a]. The swapped arm
+   already needs one type for both operands, so the pin rejects nothing. A
+   variable [: 'a] cannot say it: it is scoped to the whole toplevel phrase,
+   so it would tie the phrase's sites together and keep a local
+   [let lt x y = x < y] from generalizing. [ari] does not pin, since an
+   [open]-provided [+] may take two types, and number types disambiguate
+   nothing.
 
-   - COMPILING destructures a literal tuple without ever building it:
-     the match compiler emits exactly the [let]-chain this shape used to
-     spell out, right operand bound first. So the guard still evaluates
-     each operand exactly once, in the order the compiler gives the
-     uninstrumented application, still allocates nothing, and guarantee 12
-     holds bit for bit; test/ppx/mutate/semantics/ checks all of it
-     against an uninstrumented twin.
-
-   Order is not all an application gives its arguments: it gives each an
-   EXPECTED TYPE too, and a bare tuple gives its components none. Under
-   [( < ) : 'a -> 'a -> bool] the right operand is checked against the
-   type the left one has just fixed, and that is what resolves the
-   [Green] of [c < Green], or a record literal, to [c]'s type when a
-   type declared later in scope reuses the name; checked against a fresh
-   component type, the name resolves by scope instead and the build
-   breaks. So [pin] annotates the tuple, [((left, right) : _ M.operands)]
-   with [type 'a operands = 'a * 'a], which hands the right component
-   the left one's type exactly as the comparison's signature does. An
-   abbreviation, because no annotation spells that sharing otherwise: a
-   named variable ([: 'a]) is scoped to the whole toplevel phrase, at
-   the phrase's level, so it would tie every site of the phrase together
-   and stop a local [let lt x y = x < y] from generalizing. The
-   annotation expands to the same tuple and costs nothing at run time,
-   and it is exact for [cmp]: the swapped arm [r < l] already requires
-   the two operands to share a type, so the pin rejects nothing the
-   guard did not reject. [ari] does not pin: its operator's signature is
-   what types both operands, an [open]-provided [+] may take two
-   different types, and integer and float expected types disambiguate
-   nothing anyway. test/ppx/mutate/integration/expected_type.ml is the
-   corpus.
-
-   The other shape that gets both properties right, an immediately
-   applied function [(fun l r -> …) left right], is not used: native
-   code reduces it to the same chain, but bytecode under [-g] keeps the
-   call - a closure allocation and a frame per comparison - and "still
-   allocates nothing" is part of the law.
-
-   Binding the operator to a value, [let op = if armed i then ( <= ) else
-   ( < ) in op l r], is rejected twice over. It names a second operator,
-   against the emission law. And a comparison reached through a value is
-   the polymorphic one on both paths, so an integer comparison that the
-   compiler inlined becomes a call to [caml_lessthan] in the program that
-   arms nothing. *)
-let binary_guard ~loc ~module_name ~index ~operator ~attrs ~original_loc ~pin
-    ~armed_arm left right =
+   An applied [(fun l r -> ...) left right] would keep its call and its
+   closure in bytecode under [-g]. Binding the operator, as in [let op = if
+   armed then ( <= ) else ( < )], names a second operator, and reaches the
+   polymorphic comparison even when nothing is armed. *)
+let binary ~loc ~module_name ~index ~pin e app ~armed_arm left right =
   let l = binder index "l" and r = binder index "r" in
   let operands =
     let tuple = pexp_tuple ~loc [ left; right ] in
-    if pin then pexp_constraint ~loc tuple (operands_type ~loc ~module_name)
-    else tuple
+    if not pin then tuple
+    else
+      pexp_constraint ~loc tuple
+        (ptyp_constr ~loc
+           { txt = Ldot (Lident module_name, "operands"); loc }
+           [ ptyp_any ~loc ])
   in
   let disarmed =
     {
-      (pexp_apply ~loc:original_loc operator
+      (pexp_apply ~loc:e.pexp_loc app.operator
          [ (Nolabel, evar ~loc l); (Nolabel, evar ~loc r) ])
       with
-      pexp_attributes = attrs;
+      pexp_attributes = e.pexp_attributes;
     }
   in
   [%expr
     let [%p pvar ~loc l], [%p pvar ~loc r] = [%e operands] in
     if [%e armed ~loc ~module_name index] then
-      [%e armed_arm ~l:(evar ~loc l) ~r:(evar ~loc r)]
+      [%e armed_arm (evar ~loc l) (evar ~loc r)]
     else [%e disarmed]]
 
-(* [cmp], swapping form: the armed arm applies the operator the source
-   wrote to the swapped operands, under [Stdlib.not]. *)
-let cmp_guard_swapped ~loc ~module_name ~index ~operator ~attrs ~original_loc
-    left right =
-  binary_guard ~loc ~module_name ~index ~operator ~attrs ~original_loc ~pin:true
-    ~armed_arm:(fun ~l ~r ->
-      [%expr
-        Stdlib.not [%e pexp_apply ~loc operator [ (Nolabel, r); (Nolabel, l) ]]])
-    left right
-
-(* [con]. [&&] and [||] cannot be lifted to values without losing
-   short-circuiting, and branching on the armed flag around the whole
-   expression duplicates both operands - exponential under nesting. But
-   the two connectives differ only in their short-circuit value, so one
-   branch expresses both:
+(* [con] branches once on the armed flag, which keeps the short circuit, the
+   tail position of [b] and one copy of each operand:
 
      a && b  ->  let p = a in
                  if Stdlib.( <> ) (p : Stdlib.Bool.t) (armed i) then b else p
      a || b  ->  let p = a in
-                 if Stdlib.( =  ) (p : Stdlib.Bool.t) (armed i) then b else p
+                 if Stdlib.( = ) (p : Stdlib.Bool.t) (armed i) then b else p
 
-   Disarmed, [armed i] is [false] and the first reads [if p then b else
-   p], which is [a && b]; armed it reads [if not p then b else p], which
-   is [a || b]. [b] appears once, stays in tail position, is evaluated on
-   exactly the original schedule, and nothing is allocated.
-
-   Both decorations are load-bearing. The constraint makes the compiler
-   specialize the comparison to an integer compare instead of calling
-   [caml_notequal] on the path the whole program runs. [Stdlib.] answers
-   the emission law against a user-shadowed [( = )].
-
-   The constraint is spelled [Stdlib.Bool.t] and NOT [bool], for the same
-   reason the operator is qualified: [bool] is an ordinary type name and
-   a file containing [type bool = ...] would fail to compile every [con]
-   guard in it - a whole-project build break, which is exactly what the
-   emission law exists to prevent. There is no [Stdlib.bool] (the
-   predefined types are not re-exported from [Stdlib]), so [Bool.t] is
-   the qualified spelling. *)
-let con_guard ~loc ~module_name ~index ~is_and left right =
+   Armed, the first reads [if not p then b else p], which is [a || b]. The
+   constraint makes the comparison an integer one, and it names
+   [Stdlib.Bool.t] because a file may declare its own [bool]. No node of the
+   guard is the original expression, so the whole guard takes its
+   attributes. *)
+let branch ~loc ~module_name ~index e app left right =
   let p = binder index "p" in
+  let value = [%expr ([%e evar ~loc p] : Stdlib.Bool.t)] in
+  let armed = armed ~loc ~module_name index in
   let test =
-    pexp_apply ~loc
-      (stdlib ~loc (if is_and then "<>" else "="))
-      [
-        (Nolabel, pexp_constraint ~loc (evar ~loc p) [%type: Stdlib.Bool.t]);
-        (Nolabel, armed ~loc ~module_name index);
-      ]
+    if String.equal app.name "&&" then
+      [%expr Stdlib.( <> ) [%e value] [%e armed]]
+    else [%expr Stdlib.( = ) [%e value] [%e armed]]
   in
-  [%expr
-    let [%p pvar ~loc p] = [%e left] in
-    if [%e test] then [%e right] else [%e evar ~loc p]]
+  {
+    ([%expr
+       let [%p pvar ~loc p] = [%e left] in
+       if [%e test] then [%e right] else [%e evar ~loc p]])
+    with
+    pexp_attributes = e.pexp_attributes;
+  }
 
-(* [ari]. The one operator whose well-typedness is not structural: the
-   armed arm names an operator the source did not write, which is why
-   [capabilities.ari] must hold for it to be emitted at all. *)
-let ari_guard ~loc ~module_name ~index ~operator ~replacement ~attrs
-    ~original_loc left right =
-  binary_guard ~loc ~module_name ~index ~operator ~attrs ~original_loc
-    ~pin:false
-    ~armed_arm:(fun ~l ~r ->
-      pexp_apply ~loc
-        (pexp_ident ~loc { txt = Lident replacement; loc })
-        [ (Nolabel, l); (Nolabel, r) ])
-    left right
+(* Traversal *)
 
-(* [lazy] applied to a trivial syntactic value compiles as already
-   forced, so a guard under such a [lazy] would change the compilation of
-   the [lazy] itself. Coverage's predicate, verbatim; the subtree is left
-   alone.
-
-   This predicate is also where placement rule 3 - no guard on a value
-   spine - would be implemented, and the rule is VACUOUS today: every
-   site of the four operators is an application or a conditional, which
-   is never a syntactic value, so a binding carrying one was already
-   non-generalizable and the guard changes nothing. The operator that
-   would bind is [bool], whose site is a constructor and therefore IS a
-   syntactic value: making part of a binding's value spine non-syntactic
-   weakens [let flags = (true, [])] from [bool * 'a list] to
-   [bool * '_weak1], and an [.mli] declaring the former stops matching.
-   Whoever adds it must thread a positional flag through the traversal -
-   set at a binding's right-hand side, preserved through tuple
-   components, constructor arguments, record fields, [lazy] bodies,
-   [let ... in] bodies and type constraints, cleared at function bodies -
-   and must make this predicate gate guard PLACEMENT rather than only
-   subtree descent. *)
+(* [lazy] of a trivial syntactic value compiles as already forced, and a
+   guard under it would change that. Coverage's predicate, verbatim. No guard
+   weakens the generalization of a binding, since every site is an
+   application or a condition, which is never a syntactic value. *)
 let rec is_trivial_syntactic_value e =
   match e.pexp_desc with
   | Pexp_function _ | Pexp_poly _ | Pexp_ident _ | Pexp_constant _
@@ -633,208 +375,136 @@ let rec is_trivial_syntactic_value e =
       is_trivial_syntactic_value inner
   | _ -> false
 
-(* Traversal *)
+(* Nothing under an opaque expression is rewritten. The type-checker gives
+   [assert false] every type only as written. *)
+let is_opaque e =
+  match e.pexp_desc with
+  | Pexp_assert _ -> true
+  | Pexp_lazy body -> is_trivial_syntactic_value body
+  | _ -> false
 
-(* The context an expression is looked at in:
-
-   - [`Cond] - an [if] or [while] condition, or a [when] guard. [cmp],
-     [con] and [neg] can all fire here; placement rule 1 gives [cmp] and
-     [con] priority, so [neg] fires only on a condition that is neither.
-   - [`Bool] - a direct operand of [&&] or [||]. Syntactically obliged to
-     be a boolean, so [cmp] may fire; [neg] may not, because negating a
-     connective's operand is not one of this slice's operators.
-   - [`Ordinary] - everywhere else. Only [con] and [ari] fire, both of
-     which are well-typed with no assumption about the context.
-
-   The restriction of [cmp] to the first two costs the mutants of
-   [let ok = a < b]. If they are wanted, the way is to carry the context
-   through the forms that are transparent for the type (the last
-   expression of a sequence, the body of a [let], a constraint), never to
-   drop the restriction. *)
-type context = [ `Cond | `Bool | `Ordinary ]
-
-(* What guard, if any, [e] carries in a given context. Computed from the
-   expression as written, so that the guard emitter and the dismissal
-   recorder answer the same question. *)
-(* A binary application as [binary] destructured it: the operator's name,
-   the operator expression, and the two operands. Carried on the shape so
-   that the guard emitter destructures nothing a second time: the four
-   impossible-case handlers that cost, one per shape, are what a shape
-   that forgets its own operands buys. *)
-type application = {
-  name : string;
-  operator : expression;
-  left : expression;
-  right : expression;
+type site = {
+  line : int;
+  col : int;
+  rewrite : string;
+  before : string;
+  after : string;
+  dismissed : string option;
 }
 
-type shape =
-  | Neg
-  | Cmp_swapped of application
-  | Cmp_direct of application
-  | Con of application (* [name] is ["&&"] or ["||"] *)
-  | Ari of application * string (* the replacement operator's name *)
-
-let shape_of capabilities (context : context) e =
-  let loc = e.pexp_loc in
-  match e.pexp_desc with
-  | Pexp_assert _ -> None
-  | Pexp_lazy body when is_trivial_syntactic_value body -> None
-  | _ -> (
-      match binary e with
-      | Some (name, operator, left, right) -> (
-          match
-            ( connective_rewrite name,
-              comparison_rewrite name,
-              arithmetic_rewrite name )
-          with
-          | Some (rewrite, replacement), _, _ when capabilities.con ->
-              (* Placement rule 2: no guard whose expansion duplicates
-                 another mutation site. In [a && b && c] only the inner
-                 connective is mutated. The rule is conservative:
-                 [con_guard] mentions each operand once, so a guard around
-                 [a && (b && c)] would duplicate nothing today. *)
-              if
-                is_connective_apply capabilities left
-                || is_connective_apply capabilities right
-              then None
-              else
-                Some
-                  ( Con { name; operator; left; right },
-                    rewrite,
-                    render_binary ~loc replacement left right )
-          | _, Some (rewrite, replacement, swap), _
-            when capabilities.cmp && context <> `Ordinary ->
-              let site = { name; operator; left; right } in
-              Some
-                ( (if swap then Cmp_swapped site else Cmp_direct site),
-                  rewrite,
-                  render_binary ~loc replacement left right )
-          | _, _, Some (rewrite, replacement) when capabilities.ari ->
-              Some
-                ( Ari ({ name; operator; left; right }, replacement),
-                  rewrite,
-                  render_binary ~loc replacement left right )
-          | _ ->
-              if context = `Cond then Some (Neg, "not", render_negation ~loc e)
-              else None)
-      | None ->
-          if context = `Cond then Some (Neg, "not", render_negation ~loc e)
-          else None)
-
-class instrumenter st capabilities module_name =
+class instrumenter ~keeps ~module_name =
   object (self)
     inherit Ast_traverse.map as super
 
-    (* Set by [[@@@mutate off]], cleared by [[@@@mutate on]]; nested
-       structures inherit the flag and restore it on exit. *)
-    val mutable suppressed = false
+    (* The identifier of every recorded site, so its length is the next
+       index. *)
+    val seen = Hashtbl.create 64
+    val mutable sites = [] (* newest first *)
+    val mutable pins = false (* a guard names [operands] *)
+    val mutable suppressed = false (* inside a [[@@@mutate off]] region *)
+    method sites = List.rev sites
+    method pins = pins
 
-    method private mutate (context : context) e =
-      match off_reason e.pexp_attributes with
-      | Some reason ->
-          (* [[@mutate off]] leaves the expression exactly as written -
-             including everything inside it - and records what was
-             dismissed, with its reason, in the catalogue. *)
-          (match shape_of capabilities context e with
-          | Some (_, rewrite, after) ->
-              ignore
-                (add_site st ~loc:e.pexp_loc ~rewrite ~before:(render e) ~after
-                   ~dismissed:(Some reason))
-          | None -> ());
-          e
-      | None -> (
-          match shape_of capabilities context e with
-          | None -> self#descend e
-          | Some (shape, rewrite, after) ->
-              let index =
-                add_site st ~loc:e.pexp_loc ~rewrite ~before:(render e) ~after
-                  ~dismissed:None
-              in
-              self#guard shape index e)
+    (* [site e mutant ~dismissed] records the site of [e] and is its index.
+       It is [None], with nothing recorded, for generated code and for a site
+       whose identifier another one has, as a deriver's copy does. *)
+    method private site e (mutant : mutant) ~dismissed =
+      let start = e.pexp_loc.loc_start in
+      let line = start.pos_lnum and col = start.pos_cnum - start.pos_bol in
+      let key = (line, col, mutant.rewrite) in
+      if e.pexp_loc.loc_ghost || Hashtbl.mem seen key then None
+      else begin
+        let index = Hashtbl.length seen in
+        Hashtbl.add seen key ();
+        let site =
+          {
+            line;
+            col;
+            rewrite = mutant.rewrite;
+            before = render e;
+            after = mutant.after;
+            dismissed;
+          }
+        in
+        sites <- site :: sites;
+        Some index
+      end
 
-    (* Builds one guard around [e]'s traversed children. [index] is
-       [None] when the site was dropped (a ghost location, or a position
-       another site already claims), in which case the children are still
-       traversed and the expression rebuilt unchanged. *)
-    method private guard shape index e =
+    (* [chained] marks the left operand of a site that applies the same
+       operator: a chain of one operator carries one mutant, and reading it
+       from the tree keeps a bracket from changing the count. A dismissal
+       leaves [e] as written. *)
+    method private mutate ?(chained = false) context e =
+      let off = off_reason e.pexp_attributes in
+      if is_opaque e then e
+      else
+        match (off, mutant ~keeps context e) with
+        | Some _, None -> e
+        | Some reason, Some mutant ->
+            if not chained then
+              ignore (self#site e mutant ~dismissed:(Some reason));
+            e
+        | None, None -> self#descend e
+        | None, Some mutant ->
+            let index =
+              if chained then None else self#site e mutant ~dismissed:None
+            in
+            self#guard e mutant index
+
+    method private guard e mutant index =
       let loc = { e.pexp_loc with loc_ghost = true } in
-      let original_loc = e.pexp_loc in
-      let attrs = e.pexp_attributes in
-      let rebuild operator left right =
-        {
-          e with
-          pexp_desc =
-            Pexp_apply (operator, [ (Nolabel, left); (Nolabel, right) ]);
-        }
-      in
-      match shape with
+      match mutant.guard with
       | Neg -> (
-          let inner = self#descend e in
+          let value = self#descend e in
           match index with
-          | Some index -> negating_guard ~loc ~module_name ~index inner
-          | None -> inner)
-      | Con { name; operator; left; right } -> (
-          suppress_chain st name left;
-          let left = self#mutate `Bool left
-          and right = self#mutate `Bool right in
+          | None -> value
+          | Some index -> negation ~loc ~module_name ~index value)
+      | Operator (app, guard) -> (
+          let context =
+            match guard with
+            | Branch -> Boolean
+            | Negate | Swap | Replace _ -> Ordinary
+          in
+          let chained = applies app.name app.left in
+          let left = self#mutate ~chained context app.left in
+          let right = self#mutate context app.right in
+          let rebuilt =
+            {
+              e with
+              pexp_desc =
+                Pexp_apply (app.operator, [ (Nolabel, left); (Nolabel, right) ]);
+            }
+          in
           match index with
-          | Some index ->
-              (* The [con] guard is the one shape in which no single
-                 generated node is the original expression, so the
-                 original's attributes go on the outermost node rather
-                 than on an arm. Every other shape has a disarmed arm to
-                 carry them. *)
-              {
-                (con_guard ~loc ~module_name ~index
-                   ~is_and:(String.equal name "&&") left right)
-                with
-                pexp_attributes = attrs;
-              }
-          | None -> rebuild operator left right)
-      | Cmp_direct { operator; left; right; _ } -> (
-          let left = self#mutate `Ordinary left
-          and right = self#mutate `Ordinary right in
-          let comparison = rebuild operator left right in
-          match index with
-          | Some index -> negating_guard ~loc ~module_name ~index comparison
-          | None -> comparison)
-      | Cmp_swapped { operator; left; right; _ } -> (
-          let left = self#mutate `Ordinary left
-          and right = self#mutate `Ordinary right in
-          match index with
-          | Some index ->
-              st.pinned <- true;
-              cmp_guard_swapped ~loc ~module_name ~index ~operator ~attrs
-                ~original_loc left right
-          | None -> rebuild operator left right)
-      | Ari ({ name; operator; left; right }, replacement) -> (
-          suppress_chain st name left;
-          let left = self#mutate `Ordinary left
-          and right = self#mutate `Ordinary right in
-          match index with
-          | Some index ->
-              ari_guard ~loc ~module_name ~index ~operator ~replacement ~attrs
-                ~original_loc left right
-          | None -> rebuild operator left right)
+          | None -> rebuilt
+          | Some index -> (
+              match guard with
+              | Negate -> negation ~loc ~module_name ~index rebuilt
+              | Swap ->
+                  pins <- true;
+                  binary ~loc ~module_name ~index ~pin:true e app left right
+                    ~armed_arm:(fun l r ->
+                      let swapped =
+                        pexp_apply ~loc app.operator
+                          [ (Nolabel, r); (Nolabel, l) ]
+                      in
+                      [%expr Stdlib.not [%e swapped]])
+              | Branch -> branch ~loc ~module_name ~index e app left right
+              | Replace replacement ->
+                  binary ~loc ~module_name ~index ~pin:false e app left right
+                    ~armed_arm:(fun l r -> apply ~loc replacement [ l; r ])))
 
-    (* Traverses [e]'s children without guarding [e] itself. The forms
-       that create a context are handled here; everything else goes
-       through the generic map, whose children reach [expression] and so
-       are traversed in [`Ordinary] context. *)
+    (* [descend e] rewrites the children of [e], each in the context that [e]
+       gives it. A connective that carries no mutant still has boolean
+       operands. *)
     method private descend e =
       match e.pexp_desc with
-      (* [assert] is rewritten to a polymorphic raise, so mutating
-         anything under it breaks typing in exactly the arms where it
-         appears. The whole subtree is left alone. *)
-      | Pexp_assert _ -> e
-      | Pexp_lazy body when is_trivial_syntactic_value body -> e
       | Pexp_ifthenelse (condition, then_, else_) ->
           {
             e with
             pexp_desc =
               Pexp_ifthenelse
-                ( self#mutate `Cond condition,
+                ( self#mutate Condition condition,
                   self#expression then_,
                   Option.map self#expression else_ );
           }
@@ -842,50 +512,40 @@ class instrumenter st capabilities module_name =
           {
             e with
             pexp_desc =
-              Pexp_while (self#mutate `Cond condition, self#expression body);
+              Pexp_while (self#mutate Condition condition, self#expression body);
           }
       | Pexp_apply (operator, [ (Nolabel, left); (Nolabel, right) ])
-        when is_connective_apply capabilities e ->
-          (* A connective rule 2 skipped: its operands are boolean
-             positions all the same. *)
+        when is_connective ~keeps e ->
           {
             e with
             pexp_desc =
               Pexp_apply
                 ( operator,
                   [
-                    (Nolabel, self#mutate `Bool left);
-                    (Nolabel, self#mutate `Bool right);
+                    (Nolabel, self#mutate Boolean left);
+                    (Nolabel, self#mutate Boolean right);
                   ] );
           }
       | _ -> super#expression e
 
-    method! expression e =
-      (* The [suppressed] check matters for expressions reached outside
-         the [structure_item] dispatch below - module expressions such as
-         [(val ...)] inside a [[@@@mutate off]] region. *)
-      if suppressed then e else self#mutate `Ordinary e
+    (* Inside a region, every structure item but a value binding reaches its
+       expressions through here. *)
+    method! expression e = if suppressed then e else self#mutate Ordinary e
 
     method! case c =
-      if suppressed then c
-      else
-        {
-          pc_lhs = self#pattern c.pc_lhs;
-          pc_guard = Option.map (self#mutate `Cond) c.pc_guard;
-          pc_rhs = self#expression c.pc_rhs;
-        }
+      {
+        pc_lhs = self#pattern c.pc_lhs;
+        pc_guard = Option.map (self#mutate Condition) c.pc_guard;
+        pc_rhs = self#expression c.pc_rhs;
+      }
 
-    (* [[@@mutate off]] on a module binding - [module M = ... [@@mutate
-       off]], plain or rec - skips the whole module, like the same
-       attribute on a value binding. *)
     method! module_binding mb =
-      if has_off_attribute mb.pmb_attributes then mb
-      else super#module_binding mb
+      if is_off mb.pmb_attributes then mb else super#module_binding mb
 
     method! structure_item si =
       match si.pstr_desc with
       | Pstr_attribute attribute ->
-          (match recognize_mutate_attribute attribute with
+          (match directive attribute with
           | No_directive -> ()
           | Off _ ->
               if suppressed then
@@ -897,102 +557,63 @@ class instrumenter st capabilities module_name =
                 Location.raise_errorf ~loc:attribute.attr_loc
                   "Mutation is already on.";
               suppressed <- false
-          | Exclude_file ->
-              Location.raise_errorf ~loc:attribute.attr_loc
-                "mutate exclude_file is not allowed here.");
+          | Exclude_file -> err_misplaced attribute "exclude_file");
           si
       | Pstr_value (rec_flag, bindings) when not suppressed ->
-          let bindings =
-            List.map
-              (fun binding ->
-                if has_off_attribute binding.pvb_attributes then binding
-                else
-                  { binding with pvb_expr = self#expression binding.pvb_expr })
-              bindings
+          let binding b =
+            if is_off b.pvb_attributes then b
+            else { b with pvb_expr = self#expression b.pvb_expr }
           in
-          { si with pstr_desc = Pstr_value (rec_flag, bindings) }
-      | Pstr_eval (e, attrs) when not suppressed ->
-          { si with pstr_desc = Pstr_eval (self#expression e, attrs) }
-      | Pstr_value _ | Pstr_eval _ -> si
+          {
+            si with
+            pstr_desc = Pstr_value (rec_flag, List.map binding bindings);
+          }
       | _ -> super#structure_item si
 
     method! structure items =
-      let saved = suppressed in
-      let result = super#structure items in
-      suppressed <- saved;
-      result
+      let outer = suppressed in
+      let items = super#structure items in
+      suppressed <- outer;
+      items
 
-    (* Don't instrument payloads of extensions and attributes. *)
-    method! extension ext = ext
-    method! attribute attr = attr
+    method! extension extension = extension
+    method! attribute attribute = attribute
   end
 
-(* Per-file runtime initialization *)
+(* The generated module *)
 
-(* The generated preamble is one type declaration and one binding: the
-   site record's type, re-exported so the table below can name its
-   fields, and the guard closure the file's guards call - plus, in a
-   file where a swapping [cmp] guard was emitted, the [operands]
-   abbreviation that guard pins its tuple with ([binary_guard]).
+(* The module re-exports the runtime's [site] type, so that the table names
+   its fields without type-directed disambiguation: the runtime declares these
+   labels on three records, and warning 42 is fatal under [-w +a -warn-error
+   +a]. The type equation turns a runtime record that drifted into a compile
+   error. Because of its labels the module is never opened, and a file whose
+   every site is dismissed has no unused [open].
 
-     module Windtrap_mut___<mangled file> = struct
-       type site = Windtrap_runtime.Mutate.site = {
-         line : int; col : int; rewrite : string;
-         before : string; after : string; dismissed : string option;
-       }
-
-       type 'a operands = 'a * 'a   (* only when a guard names it *)
-
-       let ___windtrap_armed___ =
-         Windtrap_runtime.Mutate.register ~file:<file> ~sites:<table>
-     end
-
-   [register] allocates the reach and epoch arrays itself and captures
-   them in the closure, so site indices are file-local: a single global
-   array indexed by an absolute id would be indexed before every file had
-   registered - link order decides - and reading past its end is
-   undefined behaviour rather than an exception. The module is mangled
-   from the file name so that each compilation unit calls its own, and
-   the [[@@@ocaml.text "/*"]] stop comments hide the generated code from
-   odoc.
-
-   Two decisions here differ from coverage's otherwise identical
-   preamble, and both have the same cause: the [Mutate] runtime declares
-   [line], [col], [rewrite], [before], [after] and [dismissed] across
-   three record types, so a qualified [before] resolves to [mutant]'s
-   field and using it for a [site] is warning 42 - disambiguated-name,
-   fatal in a library compiled with [-w +a -warn-error +a]. Qualifying
-   every field, which is all coverage needs, is therefore not enough. Re-exporting the type makes its labels
-   the only ones in scope inside the generated module, so the table names
-   them with no type-directed disambiguation at all - and the equation
-   makes a runtime whose record has drifted a loud compile error rather
-   than a silent mis-registration.
-
-   Because the module now carries a record type, it is referenced
-   qualified instead of being opened: opening it would put labels named
-   [line], [col], [before] and [after] into the user's scope,
-   where they could shadow the user's own or make the user's records
-   ambiguous. Not opening it also keeps a file whose every site is
-   dismissed, where no guard refers to the module, free of an unused
-   [open] (warning 33).
-
-   The preamble stands above the user's structure, so it may name [int],
-   [string], [option], [None] and [Some] unqualified: no definition of the
-   file can shadow them there. A guard sits inside the user's code and has
-   no such shelter, which is why its arms name [Stdlib]. *)
-
-(* The runtime module the generated code calls, spelled once: the
-   re-exported type and the registration call are built from it. *)
-let runtime = "Windtrap_runtime.Mutate"
-
-let runtime_name ~loc name =
-  { txt = Longident.parse (runtime ^ "." ^ name); loc }
-
-let runtime_initialization st ~file ~module_name =
+   [register] allocates the arrays of the file, so indices are file-local, and
+   the stop comments hide the module from odoc. The module stands above the
+   user's code, so it names [int], [option] and [Some] unqualified, which a
+   guard cannot. *)
+let runtime_initialization ~file ~module_name ~sites ~pins =
   let loc = { (Location.in_file file) with loc_ghost = true } in
+  let site { line; col; rewrite; before; after; dismissed } =
+    let dismissed =
+      match dismissed with
+      | None -> [%expr None]
+      | Some reason -> [%expr Some [%e estring ~loc reason]]
+    in
+    [%expr
+      {
+        line = [%e eint ~loc line];
+        col = [%e eint ~loc col];
+        rewrite = [%e estring ~loc rewrite];
+        before = [%e estring ~loc before];
+        after = [%e estring ~loc after];
+        dismissed = [%e dismissed];
+      }]
+  in
   let site_type =
     [%stri
-      type site = [%t ptyp_constr ~loc (runtime_name ~loc "site") []] = {
+      type site = Windtrap_runtime.Mutate.site = {
         line : int;
         col : int;
         rewrite : string;
@@ -1001,77 +622,46 @@ let runtime_initialization st ~file ~module_name =
         dismissed : string option;
       }]
   in
-  let sites_table =
-    pexp_array ~loc
-      (List.rev_map
-         (fun site ->
-           [%expr
-             {
-               line = [%e eint ~loc site.line];
-               col = [%e eint ~loc site.col];
-               rewrite = [%e estring ~loc site.rewrite];
-               before = [%e estring ~loc site.before];
-               after = [%e estring ~loc site.after];
-               dismissed =
-                 [%e
-                   match site.dismissed with
-                   | None -> [%expr None]
-                   | Some reason -> [%expr Some [%e estring ~loc reason]]];
-             }])
-         st.rev_sites)
-  in
-  let armed_binding =
+  let operands = [%stri type 'a operands = 'a * 'a] in
+  let armed =
     [%stri
       let ___windtrap_armed___ =
-        [%e pexp_ident ~loc (runtime_name ~loc "register")]
-          ~file:[%e estring ~loc file] ~sites:[%e sites_table]]
-  in
-  let operands_declaration =
-    let a = ptyp_var ~loc "a" in
-    pstr_type ~loc Recursive
-      [
-        type_declaration ~loc ~name:{ txt = operands; loc }
-          ~params:[ (a, (NoVariance, NoInjectivity)) ]
-          ~cstrs:[] ~kind:Ptype_abstract ~private_:Public
-          ~manifest:(Some (ptyp_tuple ~loc [ a; a ]));
-      ]
+        Windtrap_runtime.Mutate.register ~file:[%e estring ~loc file]
+          ~sites:[%e pexp_array ~loc (List.map site sites)]]
   in
   let items =
-    if st.pinned then [ site_type; operands_declaration; armed_binding ]
-    else [ site_type; armed_binding ]
+    if pins then [ site_type; operands; armed ] else [ site_type; armed ]
   in
-  let generated_module =
-    Ast_helper.Str.module_ ~loc
-      (Ast_helper.Mb.mk ~loc
-         { txt = Some module_name; loc }
-         (Ast_helper.Mod.structure ~loc items))
+  let generated =
+    pstr_module ~loc
+      (module_binding ~loc
+         ~name:{ txt = Some module_name; loc }
+         ~expr:(pmod_structure ~loc items))
   in
   let stop_comment = [%stri [@@@ocaml.text "/*"]] in
-  [ stop_comment; generated_module; stop_comment ]
+  [ stop_comment; generated; stop_comment ]
 
-(* Entry point *)
+(* Rewriting *)
 
-(* The ignore lists mirror coverage's entry filter
-   (ppx/coverage/instrument.ml); keep them in sync. Mutation adds one
-   exclusion of its own: files declaring inline tests. *)
+(* The ignore lists are the coverage rewriter's. *)
 let always_ignore_paths = [ "//toplevel//"; "(stdin)" ]
 let always_ignore_basenames = [ ".ocamlinit"; "topfind" ]
 
 let transform_impl_file ctxt ast =
   let file = Expansion_context.Base.input_name ctxt in
-  let excluded =
+  if
     List.mem file always_ignore_paths
     || List.mem (Filename.basename file) always_ignore_basenames
-    || has_exclude_file_attribute ast
-    || file_declares_inline_tests ast
-  in
-  if excluded then ast
+    || excludes_file ast || declares_inline_tests ast
+  then ast
   else
-    let st = create_state () in
-    let capabilities = capabilities_of_structure ast in
-    let module_name = generated_module_name ~file in
-    let instrumented =
-      (new instrumenter st capabilities module_name)#structure ast
+    let module_name = generated_module_name file in
+    let instrumenter =
+      new instrumenter ~keeps:(kept_families ast) ~module_name
     in
-    if st.count = 0 then ast
-    else runtime_initialization st ~file ~module_name @ instrumented
+    let instrumented = instrumenter#structure ast in
+    match instrumenter#sites with
+    | [] -> ast
+    | sites ->
+        runtime_initialization ~file ~module_name ~sites ~pins:instrumenter#pins
+        @ instrumented
