@@ -3,18 +3,11 @@
    SPDX-License-Identifier: ISC
   ---------------------------------------------------------------------------*)
 
-(* Points *)
-
 type point = { start_ofs : int; end_ofs : int }
 
-let magic = "windtrap-coverage-v3"
-
-(* The constants Instr's shared plumbing is parameterized by:
-   this format's magic line, its on-disk home, and the words its error
-   messages use. *)
 let format =
   {
-    Instr.magic;
+    Instr.magic = "windtrap-coverage-v3";
     kind = "coverage";
     dir = "coverage";
     ext = "coverage";
@@ -23,42 +16,18 @@ let format =
     who = "Windtrap_runtime.Coverage";
   }
 
-let points_equal a b =
-  Array.length a = Array.length b
-  && Array.for_all2
-       (fun p q -> p.start_ofs = q.start_ofs && p.end_ofs = q.end_ofs)
-       a b
-
-let validate ~file points counts =
-  if Array.length points <> Array.length counts then
-    invalid_arg
-      (Printf.sprintf "Windtrap_runtime.Coverage: %s: %d points but %d counts"
-         file (Array.length points) (Array.length counts));
-  Array.iter
-    (fun p ->
-      if p.start_ofs < 0 || p.end_ofs < p.start_ofs then
-        invalid_arg
-          (Printf.sprintf "Windtrap_runtime.Coverage: %s: invalid extent %d-%d"
-             file p.start_ofs p.end_ofs))
-    points;
-  Array.iter
-    (fun c ->
-      if c < 0 then
-        invalid_arg
-          (Printf.sprintf "Windtrap_runtime.Coverage: %s: negative count" file))
-    counts
+(* The runtime links no core, so its messages skip the report's escape of
+   control bytes; what they print is build paths. *)
+let warn fmt =
+  Printf.ksprintf (fun m -> Printf.eprintf "windtrap: warning: %s\n%!" m) fmt
 
 (* Collections *)
 
 type error = Data of Instr.error | Point_mismatch of { file : string }
 
-(* Data carries the shared plumbing's failures verbatim; Point_mismatch
-   is coverage's own - merging produces it and parsing reports it -
-   which is why the public type cannot simply be Instr.error.
-   The hint asymmetry is deliberate: re-running never removes a
-   foreign-*named* file, so Unknown_format instructs deletion;
-   Point_mismatch self-heals under a full instrumented re-run, so
-   deletion is only the fallback for leftovers. *)
+(* A full instrumented re-run heals a mismatch, so its hint deletes files
+   only as a fallback; a file of another format survives every re-run, and
+   the hint of [Instr.pp_error] deletes it. *)
 let pp_error ppf = function
   | Data e -> Instr.pp_error format ppf e
   | Point_mismatch { file } ->
@@ -71,58 +40,37 @@ let pp_error ppf = function
 
 module File_map = Map.Make (String)
 
+(* [counts.(i)] counts the visits of [points.(i)]. *)
 type entry = { points : point array; counts : int array }
 type t = entry File_map.t
 
 let empty = File_map.empty
-let is_empty = File_map.is_empty
+
+let points_equal a b =
+  Array.length a = Array.length b
+  && Array.for_all2
+       (fun p q -> p.start_ofs = q.start_ofs && p.end_ofs = q.end_ofs)
+       a b
+
 let saturating_add x y = if x > max_int - y then max_int else x + y
 
-let add t ~file ~points ~counts =
-  validate ~file points counts;
+let add t ~file entry =
   match File_map.find_opt file t with
-  | None ->
-      Ok
-        (File_map.add file
-           { points = Array.copy points; counts = Array.copy counts }
-           t)
-  | Some entry ->
-      if not (points_equal entry.points points) then
-        Error (Point_mismatch { file })
-      else
-        let counts = Array.map2 saturating_add entry.counts counts in
-        Ok (File_map.add file { entry with counts } t)
+  | None -> Ok (File_map.add file entry t)
+  | Some prior when not (points_equal prior.points entry.points) ->
+      Error (Point_mismatch { file })
+  | Some prior ->
+      let counts = Array.map2 saturating_add prior.counts entry.counts in
+      Ok (File_map.add file { prior with counts } t)
 
 let merge a b =
   File_map.fold
-    (fun file entry acc ->
-      Result.bind acc (fun t ->
-          add t ~file ~points:entry.points ~counts:entry.counts))
+    (fun file entry acc -> Result.bind acc (fun t -> add t ~file entry))
     b (Ok a)
 
 let files t = List.map fst (File_map.bindings t)
 
-(* In-Process Registry *)
-
-(* Registrations keep the generated code's live counts arrays; [snapshot]
-   copies. [register] guarantees same-file registrations carry equal point
-   tables, which is what makes the [add] in [snapshot] infallible. *)
-
-let registrations : (string * point array * int array) list ref = ref []
-
-let snapshot () =
-  List.fold_left
-    (fun t (file, points, counts) ->
-      match add t ~file ~points ~counts with
-      | Ok t -> t
-      | Error _ -> assert false (* register enforced table agreement *))
-    empty !registrations
-
-let visit counts index =
-  let count = counts.(index) in
-  if count < max_int then counts.(index) <- count + 1
-
-(* Serialization *)
+(* Dumps *)
 
 type identity = Instr.identity = { exe : string; digest : string }
 
@@ -134,198 +82,191 @@ type identity = Instr.identity = { exe : string; digest : string }
      <point count>
      <start_ofs> <end_ofs> <count>    for each point, in table order
 
-   A file name is length-prefixed, so it may hold any byte. [of_string]
-   reads this grammar and nothing else. *)
-let to_string ?identity t =
-  let buffer = Buffer.create 1024 in
-  Instr.add_header format buffer identity;
-  Printf.bprintf buffer "%d\n" (File_map.cardinal t);
+   A file name is length-prefixed, so it may hold any byte. [load] reads
+   this grammar and nothing else. *)
+let to_string ~identity t =
+  let b = Buffer.create 1024 in
+  Instr.add_header format b identity;
+  Printf.bprintf b "%d\n" (File_map.cardinal t);
   File_map.iter
     (fun file { points; counts } ->
-      Printf.bprintf buffer "%d %s\n" (String.length file) file;
-      Printf.bprintf buffer "%d\n" (Array.length points);
+      Printf.bprintf b "%d %s\n%d\n" (String.length file) file
+        (Array.length points);
       Array.iteri
         (fun i p ->
-          Printf.bprintf buffer "%d %d %d\n" p.start_ofs p.end_ofs counts.(i))
+          Printf.bprintf b "%d %d %d\n" p.start_ofs p.end_ofs counts.(i))
         points)
     t;
-  Buffer.contents buffer
+  Buffer.contents b
 
-exception Conflicting_entry of error
-
-let of_string ?(path = "<string>") s =
-  match Instr.start format ~path s with
+let load path =
+  let read_entry c file =
+    let read_point _ =
+      let start_ofs = Instr.read_nat c "extent start" in
+      let end_ofs = Instr.read_nat c "extent end" in
+      if end_ofs < start_ofs then
+        Instr.parse_fail "inverted extent %d-%d in %s" start_ofs end_ofs file;
+      ({ start_ofs; end_ofs }, Instr.read_nat c "count")
+    in
+    let rows = Array.init (Instr.read_count c "point count") read_point in
+    let points, counts = Array.split rows in
+    { points; counts }
+  in
+  let rec read_files c t n =
+    if n = 0 then begin
+      Instr.finish c;
+      Ok t
+    end
+    else
+      let file = Instr.read_name c "file name" in
+      Result.bind
+        (add t ~file (read_entry c file))
+        (fun t -> read_files c t (n - 1))
+  in
+  match Result.bind (Instr.read_file path) (Instr.start format ~path) with
   | Error e -> Error (Data e)
   | Ok c -> (
       try
         let identity = Instr.read_identity c in
         let file_count = Instr.read_count c "file count" in
-        let result = ref empty in
-        for _ = 1 to file_count do
-          let file = Instr.read_name c "file name" in
-          let point_count = Instr.read_count c "point count" in
-          let points = Array.make point_count { start_ofs = 0; end_ofs = 0 } in
-          let counts = Array.make point_count 0 in
-          for i = 0 to point_count - 1 do
-            let start_ofs = Instr.read_nat c "extent start" in
-            let end_ofs = Instr.read_nat c "extent end" in
-            if end_ofs < start_ofs then
-              Instr.parse_fail "inverted extent %d-%d in %s" start_ofs end_ofs
-                file;
-            let count = Instr.read_nat c "count" in
-            points.(i) <- { start_ofs; end_ofs };
-            counts.(i) <- count
-          done;
-          match add !result ~file ~points ~counts with
-          | Ok t -> result := t
-          | Error e -> raise (Conflicting_entry e)
-        done;
-        Instr.finish c;
-        Ok (!result, identity)
-      with
-      | Instr.Parse_error reason ->
-          Error (Data (Instr.Corrupt { path; reason }))
-      | Conflicting_entry e -> Error e)
+        Result.map (fun t -> (t, identity)) (read_files c empty file_count)
+      with Instr.Parse_error reason ->
+        Error (Data (Instr.Corrupt { path; reason })))
 
-let load path =
-  match Instr.read_file path with
-  | Ok contents -> of_string ~path contents
-  | Error e -> Error (Data e)
+(* Instrumentation *)
 
-(* Output Path and Identity *)
+(* Each registered file's point table, and the live counts arrays of the
+   registrations that share it. *)
+let registry : (point array * int array list) File_map.t ref =
+  ref File_map.empty
 
-let output_dir ~exe = Instr.output_dir format ~exe
-
-(* At-Exit Dump *)
+let snapshot () =
+  File_map.map
+    (fun (points, live) ->
+      let zero = Array.make (Array.length points) 0 in
+      { points; counts = List.fold_left (Array.map2 saturating_add) zero live })
+    !registry
 
 (* Where the dump lands: the one file WINDTRAP_COVERAGE_FILE names,
    replaced on every run, or a fresh file in this executable's own
    directory, where every run keeps its own. *)
 type target = File of string | Dir of string
 
-let dump_target : target option ref = ref None
-let dump_exe : string option ref = ref None
-let dumped = ref false
-
-(* The runtime links no core, so its messages skip the report's escape of
-   control bytes; what they print is build paths. *)
-let warn fmt =
-  Printf.ksprintf (fun m -> Printf.eprintf "windtrap: warning: %s\n%!" m) fmt
-
-(* The identity digests the running executable's bytes (a few
-   milliseconds for a typical test binary, off the test path at exit):
-   the reporting command re-digests the file at the recorded path, and
-   any difference means the executable on disk is not the one that wrote
-   the dump; mtimes cannot say that (dune's shared cache restores
-   artifacts with their original timestamps). Best-effort: no identity
-   is recorded when the executable cannot be read back. *)
-let dump_identity () =
-  match !dump_exe with
-  | None -> None
-  | Some exe ->
-      Option.map
-        (fun digest -> { exe; digest })
-        (Instr.file_digest Sys.executable_name)
-
-(* A dump in this executable's directory is named after the digest of
-   the build that wrote it, so the directory says which build each file
-   describes without being read. *)
-let name_prefix digest = digest ^ "-"
-
-(* The directory belongs to this executable, and a dump in it not named
-   after this build's digest was written by a predecessor - a build this
-   one replaced. Left in place it would be excluded as stale by the
-   reporting command, with a warning, on every aggregate for the rest of
-   the build directory's life; removed here, a rebuild heals itself on
-   its first instrumented run. Files still being written ([.tmp]) are
-   not dumps and are left alone. *)
-let remove_predecessors dir ~digest =
+(* The directory belongs to this executable, and a dump in it named after
+   another digest was written by a build this one replaced, which the
+   reporting command would exclude with a warning on every merge. A [.tmp]
+   file is not a dump. *)
+let remove_predecessors dir ~prefix =
   match Sys.readdir dir with
   | exception Sys_error _ -> ()
-  | entries ->
+  | names ->
       Array.iter
         (fun name ->
           if
             Filename.check_suffix name ("." ^ format.Instr.ext)
-            && not (String.starts_with ~prefix:(name_prefix digest) name)
+            && not (String.starts_with ~prefix name)
           then
             try Sys.remove (Filename.concat dir name) with Sys_error _ -> ())
-        entries
+        names
 
-let dump () =
-  if not !dumped then begin
-    dumped := true;
-    match !dump_target with
-    | None -> ()
-    | Some target -> (
-        let t = snapshot () in
-        if not (is_empty t) then
-          let identity = dump_identity () in
-          let data = to_string ?identity t in
-          match target with
-          | File path -> (
-              try Instr.write_file path data
-              with e ->
-                warn "cannot write coverage file %s: %s" path
-                  (Printexc.to_string e))
-          | Dir dir -> (
-              let prefix =
-                match identity with
-                | Some { digest; _ } ->
-                    remove_predecessors dir ~digest;
-                    name_prefix digest
-                | None -> ""
-              in
-              try
-                ignore
-                  (Instr.write_new_file dir ~prefix ~ext:format.Instr.ext data)
-              with e ->
-                warn "cannot write a coverage file under %s: %s" dir
-                  (Printexc.to_string e)))
-  end
+(* The identity digests the executable's bytes, since dune's shared cache
+   restores artifacts with their original mtimes; an executable that cannot
+   be read back leaves the dump without one. A dump in the directory is
+   named after that digest, so the directory tells builds apart unread. *)
+let dump target ~exe () =
+  let t = snapshot () in
+  let identity =
+    Option.bind exe (fun exe ->
+        Option.map
+          (fun digest -> { exe; digest })
+          (Instr.file_digest Sys.executable_name))
+  in
+  let data = to_string ~identity t in
+  match target with
+  | File path -> (
+      try Instr.write_file path data
+      with e ->
+        warn "cannot write coverage file %s: %s" path (Printexc.to_string e))
+  | Dir dir -> (
+      let prefix =
+        match identity with
+        | None -> ""
+        | Some { digest; _ } ->
+            let prefix = digest ^ "-" in
+            remove_predecessors dir ~prefix;
+            prefix
+      in
+      try ignore (Instr.write_new_file dir ~prefix ~ext:format.Instr.ext data)
+      with e ->
+        warn "cannot write a coverage file under %s: %s" dir
+          (Printexc.to_string e))
 
-let resolve_dump_target () =
-  match Sys.getenv_opt "WINDTRAP_COVERAGE_FILE" with
-  | Some path when path <> "" -> File (Instr.absolute path)
-  | _ -> Dir (output_dir ~exe:Sys.executable_name)
+(* A relative executable path under an unreadable current directory
+   leaves the target known and the identity not, and the dump is then
+   written without one. *)
+let install_dump () =
+  let determined f =
+    match f () with
+    | v -> Some v
+    | exception e ->
+        warn "cannot determine the coverage output file: %s"
+          (Printexc.to_string e);
+        None
+  in
+  let target () =
+    match Sys.getenv_opt "WINDTRAP_COVERAGE_FILE" with
+    | Some path when path <> "" -> File (Instr.absolute path)
+    | Some _ | None -> Dir (Instr.output_dir format ~exe:Sys.executable_name)
+  in
+  match determined target with
+  | None -> ()
+  | Some target ->
+      let exe =
+        determined (fun () -> Instr.exe_identity ~exe:Sys.executable_name)
+      in
+      at_exit (dump target ~exe)
+
+let validate ~file points counts =
+  let err fmt =
+    Printf.ksprintf invalid_arg ("Windtrap_runtime.Coverage: %s: " ^^ fmt) file
+  in
+  if Array.length points <> Array.length counts then
+    err "%d points but %d counts" (Array.length points) (Array.length counts);
+  Array.iter
+    (fun p ->
+      if p.start_ofs < 0 || p.end_ofs < p.start_ofs then
+        err "invalid extent %d-%d" p.start_ofs p.end_ofs)
+    points;
+  if Array.exists (fun c -> c < 0) counts then err "negative count"
 
 let register ~file ~points ~counts =
   validate ~file points counts;
-  match List.find_opt (fun (f, _, _) -> String.equal f file) !registrations with
-  | Some (_, prior, _) when not (points_equal prior points) ->
-      (* Two incompatible instrumentations of one source file are linked into
-         this executable (stale build artifacts, most likely). Registration
-         runs at module load inside the user's program, so it must not raise
-         (coverage never changes what programs mean): warn loudly and drop
-         this registration, keeping the snapshot invariant that same-file
-         registrations carry equal tables. *)
+  match File_map.find_opt file !registry with
+  | Some (table, _) when not (points_equal table points) ->
+      (* Registration runs at module load in the user's program, whose
+         meaning coverage never changes, so it warns instead of raising. *)
       warn
         "%s: conflicting instrumentation tables in one executable (stale build \
          artifacts? rebuild from clean); ignoring one module's coverage data"
         file
-  | _ ->
-      (match !registrations with
-      | [] ->
-          (try
-             dump_target := Some (resolve_dump_target ());
-             dump_exe := Some (Instr.exe_identity ~exe:Sys.executable_name)
-           with e ->
-             warn "cannot determine the coverage output file: %s"
-               (Printexc.to_string e));
-          at_exit dump
-      | _ :: _ -> ());
-      registrations := (file, points, counts) :: !registrations
+  | registered ->
+      if File_map.is_empty !registry then install_dump ();
+      let table, live = Option.value registered ~default:(points, []) in
+      registry := File_map.add file (table, counts :: live) !registry
+
+let visit counts index =
+  let count = counts.(index) in
+  if count < max_int then counts.(index) <- count + 1
 
 (* Summaries *)
 
 type summary = { visited : int; total : int }
 
 let file_summary entry =
-  {
-    total = Array.length entry.counts;
-    visited =
-      Array.fold_left (fun n c -> if c > 0 then n + 1 else n) 0 entry.counts;
-  }
+  let visited =
+    Array.fold_left (fun n c -> if c > 0 then n + 1 else n) 0 entry.counts
+  in
+  { visited; total = Array.length entry.counts }
 
 let summary t =
   File_map.fold
@@ -334,63 +275,67 @@ let summary t =
       { visited = acc.visited + s.visited; total = acc.total + s.total })
     t { visited = 0; total = 0 }
 
-(* Extent -> Line Mapping *)
+(* Reports *)
 
-(* Byte offsets at which each line starts, excluding the phantom line a
-   trailing newline would open. Empty source has no lines. *)
+(* The byte offset at which each line starts. A final newline ends the
+   last line and opens none. *)
 let line_starts source =
-  let n = String.length source in
-  if n = 0 then [||]
-  else begin
-    let starts = ref [ 0 ] in
-    for i = 0 to n - 2 do
-      if source.[i] = '\n' then starts := (i + 1) :: !starts
-    done;
-    Array.of_list (List.rev !starts)
-  end
+  let starts = ref [ 0 ] in
+  for i = 0 to String.length source - 2 do
+    if source.[i] = '\n' then starts := (i + 1) :: !starts
+  done;
+  Array.of_list (List.rev !starts)
 
-(* 1-based line containing byte [ofs]; offsets past the end clamp to the
-   last line. [starts] is non-empty. *)
-let line_of starts ofs =
+(* The index of the line holding byte [ofs], which is the last line for an
+   offset past the end. *)
+let line_index starts ofs =
   let rec search lo hi =
-    if lo >= hi then lo + 1
+    if lo >= hi then lo
     else
       let mid = (lo + hi + 1) / 2 in
       if starts.(mid) <= ofs then search mid hi else search lo (mid - 1)
   in
   search 0 (Array.length starts - 1)
 
-(* The 1-based lines an extent touches: an empty extent touches the
-   line of its start. *)
-let line_range starts p =
-  let first = line_of starts p.start_ofs in
-  let last = line_of starts (max p.start_ofs (p.end_ofs - 1)) in
-  (first, last)
-
-(* Every line a point touches, with the fewest visits of any point
-   touching it, so a line's hits are 0 exactly when an unvisited extent
-   touches it. Marking only the lines that lie wholly inside unvisited
-   extents would hide an unvisited arm that shares its line with visited
-   code. *)
+(* A line's hits are the fewest visits of any point touching it, so an
+   unvisited arm marks its line even beside visited code. An empty extent
+   touches the line of its start, and an empty source has no line. *)
 let line_hits ~source entry =
-  let starts = line_starts source in
-  if Array.length starts = 0 then []
-  else begin
-    let hits = Hashtbl.create 64 in
+  if source = "" then []
+  else
+    let starts = line_starts source in
+    let hits = Array.make (Array.length starts) None in
     Array.iteri
       (fun i p ->
-        let first, last = line_range starts p in
+        let count = entry.counts.(i) in
+        let first = line_index starts p.start_ofs in
+        let last = line_index starts (max p.start_ofs (p.end_ofs - 1)) in
         for line = first to last do
-          match Hashtbl.find_opt hits line with
-          | Some h when h <= entry.counts.(i) -> ()
-          | _ -> Hashtbl.replace hits line entry.counts.(i)
+          match hits.(line) with
+          | Some h when h <= count -> ()
+          | Some _ | None -> hits.(line) <- Some count
         done)
       entry.points;
-    Hashtbl.fold (fun line h acc -> (line, h) :: acc) hits []
-    |> List.sort (fun (a, _) (b, _) -> Int.compare a b)
-  end
+    Array.to_list hits
+    |> List.mapi (fun line h -> Option.map (fun h -> (line + 1, h)) h)
+    |> List.filter_map Fun.id
 
-(* Per-File Reports *)
+let uncovered_extents entry =
+  List.filteri (fun i _ -> entry.counts.(i) = 0) (Array.to_list entry.points)
+
+(* A directory can open as a file, with a length it cannot be read to. *)
+let find_source ~roots file =
+  file :: List.map (fun root -> Filename.concat root file) roots
+  |> List.find_map (fun path ->
+      match Sys.is_directory path with
+      | false -> Result.to_option (Instr.read_file path)
+      | true | (exception Sys_error _) -> None)
+
+(* A source shorter than an extent changed since the run, and its lines
+   would paint the wrong code. An edit that keeps the file long enough goes
+   unseen. *)
+let is_stale entry source =
+  Array.exists (fun p -> p.end_ofs > String.length source) entry.points
 
 type file_report = {
   file : string;
@@ -402,68 +347,27 @@ type file_report = {
   stale : bool;
 }
 
-let uncovered_extents entry =
-  let acc = ref [] in
-  for i = Array.length entry.points - 1 downto 0 do
-    if entry.counts.(i) = 0 then acc := entry.points.(i) :: !acc
-  done;
-  !acc
-
-let read_source path =
-  match
-    let ic = open_in_bin path in
-    Fun.protect
-      ~finally:(fun () -> close_in_noerr ic)
-      (fun () -> really_input_string ic (in_channel_length ic))
-  with
-  | contents -> Some contents
-  | exception (Sys_error _ | End_of_file) -> None
-
-let find_source ~roots file =
-  file :: List.map (fun root -> Filename.concat root file) roots
-  |> List.find_map (fun path ->
-      match Sys.is_directory path with
-      | true -> None
-      | false -> read_source path
-      | exception Sys_error _ -> None)
-
-(* The data cannot describe this source: some extent ends past its last
-   byte (a consistent extent's [end_ofs] is at most the length), so the
-   source changed since the run. Mapping stale extents to lines would
-   paint the wrong code; the report says so instead. Edits that keep the
-   file at least as long as the extents are undetectable: the check is
-   best effort. *)
-let stale_source entry source =
-  let len = String.length source in
-  Array.exists (fun p -> p.end_ofs > len) entry.points
-
 let file_reports ?(source_roots = [ Filename.current_dir_name ]) t =
-  File_map.fold
-    (fun file entry acc ->
-      let uncovered_extents = uncovered_extents entry in
-      let source, stale =
-        match find_source ~roots:source_roots file with
-        | None -> (None, false)
-        | Some source when stale_source entry source -> (None, true)
-        | Some source -> (Some source, false)
-      in
-      let line_hits =
-        match source with None -> [] | Some source -> line_hits ~source entry
-      in
-      let uncovered_lines =
+  let report (file, entry) =
+    let source, stale =
+      match find_source ~roots:source_roots file with
+      | Some source when is_stale entry source -> (None, true)
+      | source -> (source, false)
+    in
+    let line_hits =
+      match source with None -> [] | Some source -> line_hits ~source entry
+    in
+    {
+      file;
+      summary = file_summary entry;
+      uncovered_extents = uncovered_extents entry;
+      uncovered_lines =
         List.filter_map
           (fun (line, hits) -> if hits = 0 then Some line else None)
-          line_hits
-      in
-      {
-        file;
-        summary = file_summary entry;
-        uncovered_extents;
-        uncovered_lines;
-        line_hits;
-        source;
-        stale;
-      }
-      :: acc)
-    t []
-  |> List.rev
+          line_hits;
+      line_hits;
+      source;
+      stale;
+    }
+  in
+  List.map report (File_map.bindings t)

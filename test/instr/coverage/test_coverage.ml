@@ -829,6 +829,28 @@ let line_tests =
         equal ~msg:"a source without a trailing newline keeps its last line"
           (list int) [ 2 ]
           (uncovered ~source:"a\nb" [ pt 2 3 ]));
+    test "an empty extent at the end of a source marks its last line" (fun () ->
+        equal ~msg:"after a final newline, which opens no line" (list int) [ 3 ]
+          (uncovered [ pt 29 29 ]);
+        equal ~msg:"and without one" (list int) [ 2 ]
+          (uncovered ~source:"a\nb" [ pt 3 3 ]));
+    test "an empty source has no line" (fun () ->
+        let root = temp_dir () in
+        write_source root "lib/empty.ml" "";
+        match
+          C.file_reports ~source_roots:[ root ]
+            (collection [ ("lib/empty.ml", [ (pt 0 0, 0) ]) ])
+        with
+        | [ r ] ->
+            equal ~msg:"the source is found" (option string) (Some "")
+              r.C.source;
+            is_false ~msg:"and is not stale" r.C.stale;
+            equal ~msg:"no line hits" (list (pair int int)) [] r.C.line_hits;
+            equal ~msg:"no uncovered line" (list int) [] r.C.uncovered_lines;
+            equal ~msg:"the extent stays uncovered" (list point)
+              [ pt 0 0 ]
+              r.C.uncovered_extents
+        | reports -> failf "one file, %d reports" (List.length reports));
     test "a huge file stays exact" (fun () ->
         (* One file-spanning extent over 20 000 lines marks each of them,
            once and in order. *)
@@ -964,6 +986,12 @@ let report_tests =
           (Some three_lines) (report ~roots:[ whole; short ] t).C.source;
         equal ~msg:"a root holding no copy is passed over" (option string)
           (Some three_lines) (report ~roots:[ temp_dir (); whole ] t).C.source;
+        let directory = temp_dir () in
+        Sys.mkdir (Filename.concat directory "lib") 0o755;
+        Sys.mkdir (Filename.concat directory "lib/order.ml") 0o755;
+        equal ~msg:"and so is a root holding a directory under the name"
+          (option string) (Some three_lines)
+          (report ~roots:[ directory; whole ] t).C.source;
         (* An absolute recorded name, found as it is before any root is
            tried, where a root holds a stale copy under the same name. *)
         let recorded = Filename.concat (temp_dir ()) "recorded.ml" in
