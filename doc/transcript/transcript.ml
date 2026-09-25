@@ -31,7 +31,10 @@ let lines s =
 (* Markers *)
 
 type marker =
-  | File of string  (** the block is this file *)
+  | File of { path : string; excerpt : (string * string option) option }
+      (** the block is this file, or the excerpt [(first, last)]: its lines from
+          the first that starts with [first] to the end of the paragraph of the
+          next that starts with [last], or of the first *)
   | Run of { dir : string; example : string }
       (** the block is a session in [dir], printed as if in [example] *)
 
@@ -47,13 +50,23 @@ let marker line =
   if not is_comment then None
   else
     match words (String.sub line 4 (String.length line - 7)) with
-    | [ "file"; path ] -> Some (File path)
+    | [ "file"; path ] -> Some (File { path; excerpt = None })
+    | "file" :: path :: "from" :: (_ :: _ as words) -> (
+        let text = String.concat " " in
+        match List.find_index (String.equal "to") words with
+        | None -> Some (File { path; excerpt = Some (text words, None) })
+        | Some i ->
+            let first = List.filteri (fun j _ -> j < i) words
+            and last = List.filteri (fun j _ -> j > i) words in
+            if first = [] || last = [] then
+              fail "malformed marker %s: expected from TEXT to TEXT" line;
+            Some (File { path; excerpt = Some (text first, Some (text last)) }))
     | [ "run"; dir ] -> Some (Run { dir; example = dir })
     | [ "run"; dir; "as"; example ] -> Some (Run { dir; example })
     | ("file" | "run") :: _ ->
         fail
-          "malformed marker %s: expected <!-- file PATH -->, <!-- run DIR --> \
-           or <!-- run DIR as EXAMPLE -->"
+          "malformed marker %s: expected <!-- file PATH [from TEXT [to TEXT]] \
+           -->, <!-- run DIR --> or <!-- run DIR as EXAMPLE -->"
           line
     | _ -> None
 
@@ -443,7 +456,28 @@ let mask ~roots s =
 
 let regenerate ~root ~roots marker block =
   match marker with
-  | File path -> lines (read_file (Filename.concat root path))
+  | File { path; excerpt = None } ->
+      lines (read_file (Filename.concat root path))
+  | File { path; excerpt = Some (first, last) } ->
+      let starts prefix l = String.starts_with ~prefix l in
+      let rec paragraph = function
+        | "" :: _ | [] -> []
+        | l :: rest -> l :: paragraph rest
+      in
+      let rec upto prefix = function
+        | [] -> fail "%s has no line that starts with %S" path prefix
+        | l :: _ as rest when starts prefix l -> paragraph rest
+        | l :: rest -> l :: upto prefix rest
+      in
+      let rec from = function
+        | [] -> fail "%s has no line that starts with %S" path first
+        | l :: rest when starts first l -> (
+            match last with
+            | None -> paragraph (l :: rest)
+            | Some last -> l :: upto last rest)
+        | _ :: rest -> from rest
+      in
+      from (lines (read_file (Filename.concat root path)))
   | Run { dir; example } ->
       let session = function
         | cmd when String.starts_with ~prefix:"$ " cmd ->

@@ -116,6 +116,11 @@ longer matches. An HTML comment on the line above a fence says what the
 block is:
 
 - `<!-- file PATH -->`: the file PATH of the repository, byte for byte.
+- `<!-- file PATH from TEXT -->`: the lines of PATH from the first that
+  starts with TEXT up to the next blank line, such as one top-level
+  definition. `from TEXT to LAST` runs on to the end of the paragraph of
+  the next line that starts with LAST. A page that shows a file in parts
+  shows every part of it.
 - `<!-- run DIR -->`: a terminal session in the example DIR. A line that
   starts with `$ ` is a command as the reader types it; the lines up to
   the next one are what it printed.
