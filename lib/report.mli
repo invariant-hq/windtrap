@@ -36,9 +36,9 @@ val create :
       the one line that is cut to a width, which is 80 columns ([columns] in
       [report.ml]).
 
-    [create] reads [config.verbose], [config.stream], [config.slow_threshold],
-    [config.invocation] and the identifier of a [config.mutation] that is
-    {!Run.Armed}. It reads no other field.
+    The renderer keeps [config]. [create] reads [config.stream],
+    [config.slow_threshold] and the identifier of a [config.mutation] that is
+    {!Run.Armed}; the other calls read the fields they print.
 
     Raises [Invalid_argument] if [config.slow_threshold] is negative or not
     finite. *)
