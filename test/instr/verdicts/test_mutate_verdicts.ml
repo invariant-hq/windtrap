@@ -147,6 +147,11 @@ let verdict_tests =
            claiming otherwise is corrupt (see the parse group). *)
         equal ~msg:"one reaching test" verdict_t (V.survived [ [ "a" ] ])
           (V.Survived { first = [ "a" ]; others = [] }));
+    test "survived refuses an empty list in the module's words" (fun () ->
+        raises
+          (Invalid_argument
+             "Windtrap_runtime.Verdicts.survived: a survivor names at least \
+              one test") (fun () -> V.survived []));
     test "survived only when every executable that reached it survived"
       (fun () ->
         equal ~msg:"survived and unreached" verdict_t (V.survived [ [ "a" ] ])
@@ -594,6 +599,57 @@ let rejection_tests =
           "empty executable identity" );
       ]
       (fun (name, s, sub) -> check_corrupt name ~sub s);
+    (* The reasons a reader sees in full: the module's own words, and the
+       name of each field it asks Instr to read. *)
+    cases "a refusal names the field and the fault verbatim"
+      ~name:(fun (name, _, _) -> name)
+      [
+        ( "empty file name",
+          "windtrap-mutants-v3\n1\n0  1 2 3 add 0 0 1 b 1 a unreached\n",
+          "empty file name" );
+        ( "truncated file name",
+          "windtrap-mutants-v3\n1\n80 lib/a.ml 1 2 3 add 1 b 1 a unreached\n",
+          "truncated file name" );
+        ( "line 0",
+          "windtrap-mutants-v3\n1\n8 lib/a.ml 0 2 3 add 1 b 1 a unreached\n",
+          "line 0 is not 1-based" );
+        ( "truncated rewrite",
+          "windtrap-mutants-v3\n1\n8 lib/a.ml 1 2 30 add 1 b 1 a unreached\n",
+          "truncated rewrite" );
+        ( "unknown rewrite",
+          "windtrap-mutants-v3\n1\n8 lib/a.ml 1 2 4 plus 1 b 1 a unreached\n",
+          "unknown rewrite \"plus\"" );
+        ( "truncated after",
+          "windtrap-mutants-v3\n1\n8 lib/a.ml 1 2 3 add 1 b 80 a unreached\n",
+          "truncated after" );
+        ( "unknown verdict",
+          "windtrap-mutants-v3\n1\n8 lib/a.ml 1 2 3 add 1 b 1 a errored\n",
+          "unknown verdict \"errored\"" );
+        ( "survivor with no reaching test",
+          "windtrap-mutants-v3\n1\n8 lib/a.ml 1 2 3 add 1 b 1 a survived 0\n",
+          "a survivor names no test (survived is not unreached)" );
+        ( "reaching test count exceeds data",
+          "windtrap-mutants-v3\n\
+           1\n\
+           8 lib/a.ml 1 2 3 add 1 b 1 a survived 99999999\n",
+          "reaching test count exceeds data" );
+        ( "truncated test name",
+          "windtrap-mutants-v3\n\
+           1\n\
+           8 lib/a.ml 1 2 3 add 1 b 1 a survived 1 1 80 g\n",
+          "truncated test name" );
+        ( "duplicate record",
+          "windtrap-mutants-v3\n\
+           2\n\
+           8 lib/a.ml 1 2 3 add 1 b 1 a unreached\n\
+           8 lib/a.ml 1 2 3 add 1 b 1 a killed\n",
+          "duplicate record for lib/a.ml:1:2:add" );
+      ]
+      (fun (name, s, reason) ->
+        match snd (load_text s) with
+        | Error (V.Corrupt c) -> equal ~msg:"reason" string reason c.reason
+        | Error e -> failf "%s: expected Corrupt, got %a" name V.pp_error e
+        | Ok _ -> failf "%s: parsed, expected %S" name reason);
     test "one malformed record refuses the whole file" (fun () ->
         check_corrupt "a valid record, then a malformed one" ~sub:"line"
           "windtrap-mutants-v3\n\

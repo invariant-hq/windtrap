@@ -3,11 +3,83 @@
    SPDX-License-Identifier: ISC
   ---------------------------------------------------------------------------*)
 
-module M = Mutate
+(* Verdicts *)
 
-(* The constants Instr's shared plumbing is parameterized by:
-   this format's magic line, its on-disk home, and the words its error
-   messages use. *)
+type reaching_test = string list
+
+type verdict =
+  | Killed
+  | Survived of { first : reaching_test; others : reaching_test list }
+  | Unreached
+
+(* A collection builds each survivor it holds here, so its reaching tests
+   are sorted and without duplicates. *)
+let survived ts =
+  match List.sort_uniq (List.compare String.compare) ts with
+  | [] ->
+      invalid_arg
+        "Windtrap_runtime.Verdicts.survived: a survivor names at least one test"
+  | first :: others -> Survived { first; others }
+
+(* The verdict of a mutant that one executable saw as [a] and another as
+   [b]. Both are held by a collection, so a survivor is already sorted. *)
+let merge_verdict a b =
+  match (a, b) with
+  | Killed, (Killed | Survived _ | Unreached) | (Survived _ | Unreached), Killed
+    ->
+      Killed
+  | Survived x, Survived y ->
+      survived (x.first :: y.first :: (x.others @ y.others))
+  | (Survived _ as v), Unreached | Unreached, ((Survived _ | Unreached) as v) ->
+      v
+
+(* Collections *)
+
+type record = {
+  id : Mutate.id;
+  before : string;
+  after : string;
+  verdict : verdict;
+}
+
+let record_of_mutant (m : Mutate.mutant) verdict =
+  { id = m.id; before = m.before; after = m.after; verdict }
+
+module Id_map = Map.Make (struct
+  type t = Mutate.id
+
+  let compare = Mutate.compare_id
+end)
+
+(* Each record is bound under its own [id]. *)
+type t = record Id_map.t
+
+let empty = Id_map.empty
+
+(* Two records of one mutant disagree on its rendering only across builds of
+   one source, and nothing says which build the reader has open. The smaller
+   pair wins, which keeps [add] and [merge] commutative and associative. *)
+let combine a b =
+  let kept =
+    if compare (a.before, a.after) (b.before, b.after) <= 0 then a else b
+  in
+  { kept with verdict = merge_verdict a.verdict b.verdict }
+
+let add t r =
+  let r =
+    match r.verdict with
+    | Survived s -> { r with verdict = survived (s.first :: s.others) }
+    | Killed | Unreached -> r
+  in
+  Id_map.update r.id
+    (function None -> Some r | Some prior -> Some (combine prior r))
+    t
+
+let records t = List.map snd (Id_map.bindings t)
+let merge a b = Id_map.union (fun _ a b -> Some (combine a b)) a b
+
+(* Verdict files *)
+
 let format =
   {
     Instr.magic = "windtrap-mutants-v3";
@@ -18,50 +90,6 @@ let format =
     who = "Windtrap_runtime.Verdicts";
   }
 
-(* The rewrite vocabulary is the runtime's, and the parser checks against
-   it: a rewrite name nobody can render is a report nobody can act on, so
-   an unknown one is refused where it enters, never carried. *)
-let is_rewrite r = List.exists (String.equal r) M.rewrites
-
-(* Verdicts *)
-
-type reaching_test = string list
-
-type verdict =
-  | Killed
-  | Survived of { first : reaching_test; others : reaching_test list }
-  | Unreached
-
-let compare_test = List.compare String.compare
-let sorted_tests ts = List.sort_uniq compare_test ts
-
-(* A survivor names at least one test: a mutant no test reached is
-   [Unreached] and is never forked, so the empty case is a caller error
-   rather than a verdict. Every path into [Survived] goes through here, so
-   the reaching tests are sorted and duplicate-free by construction and the
-   report's count is the number of tests that ran the line. *)
-let survived ts =
-  match sorted_tests ts with
-  | [] ->
-      invalid_arg
-        "Windtrap_runtime.Verdicts.survived: a survivor names at least one test"
-  | first :: others -> Survived { first; others }
-
-let merge_verdict a b =
-  match (a, b) with
-  | Killed, Killed -> Killed
-  | Killed, (Survived _ | Unreached) -> a
-  | (Survived _ | Unreached), Killed -> b
-  | Survived x, Survived y ->
-      survived (x.first :: y.first :: (x.others @ y.others))
-  | Survived s, Unreached | Unreached, Survived s ->
-      survived (s.first :: s.others)
-  | Unreached, Unreached -> Unreached
-
-(* Collections *)
-
-(* The shared plumbing's error type, re-exported with its constructors: a
-   verdict file fails in exactly the three ways both formats share. *)
 type error = Instr.error =
   | Unknown_format of { path : string; header : string }
   | Unreadable of { path : string; reason : string }
@@ -69,179 +97,99 @@ type error = Instr.error =
 
 let pp_error ppf e = Instr.pp_error format ppf e
 
-module Id_map = Map.Make (struct
-  type t = M.id
-
-  let compare = M.compare_id
-end)
-
-type record = { id : M.id; before : string; after : string; verdict : verdict }
-
-let record_of_mutant (m : M.mutant) verdict =
-  { id = m.M.id; before = m.M.before; after = m.M.after; verdict }
-
-(* The rendering a record carries beside its verdict. Stored apart from
-   the identifier because the identifier is the map's key: a value that
-   repeated it could disagree with it. *)
-type rendering = { r_before : string; r_after : string }
-
-(* Two files describing one mutant are expected to agree here, and can
-   disagree only across builds of one source - where the data says
-   nothing about which build the reader is looking at. So the choice is
-   made for determinism: a total order, smaller wins, which is what keeps
-   [add] and [merge] commutative and associative. *)
-let compare_rendering a b =
-  let c = String.compare a.r_before b.r_before in
-  if c <> 0 then c else String.compare a.r_after b.r_after
-
-type t = (rendering * verdict) Id_map.t
-
-let empty = Id_map.empty
-
-let record_of id (r, verdict) =
-  { id; before = r.r_before; after = r.r_after; verdict }
-
-let add t r =
-  let verdict =
-    match r.verdict with
-    | Survived s -> survived (s.first :: s.others)
-    | Killed | Unreached -> r.verdict
-  in
-  let rendering = { r_before = r.before; r_after = r.after } in
-  Id_map.update r.id
-    (function
-      | None -> Some (rendering, verdict)
-      | Some (prior, prior_verdict) ->
-          Some
-            ( (if compare_rendering prior rendering <= 0 then prior
-               else rendering),
-              merge_verdict prior_verdict verdict ))
-    t
-
-let records t = List.map (fun (id, v) -> record_of id v) (Id_map.bindings t)
-let merge a b = Id_map.fold (fun id v acc -> add acc (record_of id v)) b a
-
-(* Serialization *)
-
 type identity = Instr.identity = { exe : string; digest : string }
 
-let add_test buffer w =
-  Printf.bprintf buffer "%d" (List.length w);
-  List.iter
-    (fun part -> Printf.bprintf buffer " %d %s" (String.length part) part)
-    w
+(* The digest, not the modification time, tells that the executable on disk
+   is not the writer: dune's shared cache restores an artifact with its
+   original timestamps. *)
+let writer_identity ~exe =
+  Option.map
+    (fun digest -> { exe = Instr.exe_identity ~exe; digest })
+    (Instr.file_digest exe)
 
-let add_verdict buffer = function
-  | Unreached -> Buffer.add_string buffer "unreached"
-  | Killed -> Buffer.add_string buffer "killed"
-  | Survived s ->
-      let ws = s.first :: s.others in
-      Printf.bprintf buffer "survived %d" (List.length ws);
-      List.iter
-        (fun w ->
-          Buffer.add_char buffer ' ';
-          add_test buffer w)
-        ws
+let output_file ~exe = Instr.output_file format ~exe
 
-(* The records after the header. Every number is in decimal, and every
-   string is length-prefixed as [<byte length> <bytes>], so it may hold any
-   byte, a line feed included:
+(* The records after the header. Every number is in decimal, and a name is
+   [<byte length> <bytes>], so it may hold any byte:
 
      <record count>
      <file> <line> <col> <rewrite> <before> <after> <verdict>
 
    with one such line for each record, in [Mutate.compare_id] order.
    [<verdict>] is [unreached], [killed], or [survived <n>] and then [n]
-   reaching tests, each written as [<k>] and then its [k] names.
-   [of_string] reads this grammar and nothing else. *)
-let to_string ?identity t =
-  let buffer = Buffer.create 1024 in
-  Instr.add_header format buffer identity;
-  Printf.bprintf buffer "%d\n" (Id_map.cardinal t);
-  Id_map.iter
-    (fun (id : M.id) (r, verdict) ->
-      Printf.bprintf buffer "%d %s %d %d %d %s %d %s %d %s "
-        (String.length id.M.file) id.M.file id.M.line id.M.col
-        (String.length id.M.rewrite)
-        id.M.rewrite (String.length r.r_before) r.r_before
-        (String.length r.r_after) r.r_after;
-      add_verdict buffer verdict;
-      Buffer.add_char buffer '\n')
-    t;
-  Buffer.contents buffer
-
-let of_string ?(path = "<string>") s =
-  match Instr.start format ~path s with
+   reaching tests, each [<k>] and then its [k] names. [load] reads this
+   grammar and nothing else, and refuses a rewrite outside
+   [Mutate.rewrites], which no report could render. *)
+let load path =
+  let read_test c =
+    List.init (Instr.read_count c "test path length") (fun _ ->
+        Instr.read_name c "test name")
+  in
+  let read_verdict c =
+    match Instr.read_word c "verdict" with
+    | "unreached" -> Unreached
+    | "killed" -> Killed
+    | "survived" ->
+        let n = Instr.read_count c "reaching test count" in
+        if n = 0 then
+          Instr.parse_fail
+            "a survivor names no test (survived is not unreached)";
+        survived (List.init n (fun _ -> read_test c))
+    | word -> Instr.parse_fail "unknown verdict %S" word
+  in
+  let read_id c =
+    let file = Instr.read_name c "file name" in
+    if file = "" then Instr.parse_fail "empty file name";
+    let line = Instr.read_nat c "line" in
+    if line < 1 then Instr.parse_fail "line %d is not 1-based" line;
+    let col = Instr.read_nat c "column" in
+    let rewrite = Instr.read_name c "rewrite" in
+    if not (List.mem rewrite Mutate.rewrites) then
+      Instr.parse_fail "unknown rewrite %S" rewrite;
+    { Mutate.file; line; col; rewrite }
+  in
+  let rec read_records c t n =
+    if n = 0 then t
+    else
+      let id = read_id c in
+      if Id_map.mem id t then
+        Instr.parse_fail "duplicate record for %s" (Mutate.id_to_string id);
+      let before = Instr.read_name c "before" in
+      let after = Instr.read_name c "after" in
+      let verdict = read_verdict c in
+      read_records c (add t { id; before; after; verdict }) (n - 1)
+  in
+  match Result.bind (Instr.read_file path) (Instr.start format ~path) with
   | Error e -> Error e
   | Ok c -> (
-      let read_test () =
-        let n = Instr.read_count c "test path length" in
-        let acc = ref [] in
-        for _ = 1 to n do
-          acc := Instr.read_name c "test name" :: !acc
-        done;
-        List.rev !acc
-      in
-      let read_verdict () =
-        match Instr.read_word c "verdict" with
-        | "unreached" -> Unreached
-        | "killed" -> Killed
-        | "survived" ->
-            let n = Instr.read_count c "reaching test count" in
-            if n = 0 then
-              Instr.parse_fail
-                "a survivor names no test (survived is not unreached)";
-            let acc = ref [] in
-            for _ = 1 to n do
-              acc := read_test () :: !acc
-            done;
-            survived !acc
-        | word -> Instr.parse_fail "unknown verdict %S" word
-      in
       try
         let identity = Instr.read_identity c in
-        let record_count = Instr.read_count c "record count" in
-        let result = ref empty in
-        for _ = 1 to record_count do
-          let file = Instr.read_name c "file name" in
-          if file = "" then Instr.parse_fail "empty file name";
-          let line = Instr.read_nat c "line" in
-          if line < 1 then Instr.parse_fail "line %d is not 1-based" line;
-          let col = Instr.read_nat c "column" in
-          let rewrite = Instr.read_name c "rewrite" in
-          if not (is_rewrite rewrite) then
-            Instr.parse_fail "unknown rewrite %S" rewrite;
-          let id = { M.file; line; col; rewrite } in
-          if Id_map.mem id !result then
-            Instr.parse_fail "duplicate record for %s" (M.id_to_string id);
-          let before = Instr.read_name c "before" in
-          let after = Instr.read_name c "after" in
-          let verdict = read_verdict () in
-          result := add !result { id; before; after; verdict }
-        done;
+        let t = read_records c empty (Instr.read_count c "record count") in
         Instr.finish c;
-        Ok (!result, identity)
+        Ok (t, identity)
       with Instr.Parse_error reason -> Error (Corrupt { path; reason }))
 
-let load path =
-  match Instr.read_file path with
-  | Ok contents -> of_string ~path contents
-  | Error e -> Error e
-
-(* Output Path and Identity *)
-
-let output_file ~exe = Instr.output_file format ~exe
-
-(* Digesting the executable's bytes is what makes a stale verdict
-   detectable: the reporting command re-digests the file at the recorded
-   path, and any difference means the executable on disk is not the one
-   that wrote the file - mtimes cannot say that, because dune's shared
-   cache restores artifacts with their original timestamps. *)
-let writer_identity ~exe =
-  Option.map
-    (fun digest -> { exe = Instr.exe_identity ~exe; digest })
-    (Instr.file_digest exe)
-
-(* Atomic Write *)
-
-let save ?identity path t = Instr.write_file path (to_string ?identity t)
+let save ?identity path t =
+  let add_name b s = Printf.bprintf b "%d %s" (String.length s) s in
+  let add_test b names =
+    Printf.bprintf b "%d" (List.length names);
+    List.iter (Printf.bprintf b " %a" add_name) names
+  in
+  let add_verdict b = function
+    | Unreached -> Buffer.add_string b "unreached"
+    | Killed -> Buffer.add_string b "killed"
+    | Survived s ->
+        let tests = s.first :: s.others in
+        Printf.bprintf b "survived %d" (List.length tests);
+        List.iter (Printf.bprintf b " %a" add_test) tests
+  in
+  let b = Buffer.create 1024 in
+  Instr.add_header format b identity;
+  Printf.bprintf b "%d\n" (Id_map.cardinal t);
+  Id_map.iter
+    (fun (id : Mutate.id) r ->
+      Printf.bprintf b "%a %d %d %a %a %a %a\n" add_name id.file id.line id.col
+        add_name id.rewrite add_name r.before add_name r.after add_verdict
+        r.verdict)
+    t;
+  Instr.write_file path (Buffer.contents b)
