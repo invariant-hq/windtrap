@@ -146,5 +146,5 @@ manual is one chapter per workflow.
 - [Baselines and expect tests](baselines.md) covers `expect` and
   `expect_file`, accepted with `dune promote`.
 
-The [index](README.md) lists every chapter with its kind, and
-`lib/windtrap.mli` is the reference.
+The [index](../../README.md#documentation) lists every chapter with its
+kind, and `lib/windtrap.mli` is the reference.
