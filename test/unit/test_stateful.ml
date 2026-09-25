@@ -1032,6 +1032,25 @@ let a_scope_that_runs_the_program_twice_is_invalid () =
       (Printf.sprintf "the reader is not told the harness is wrong:\n%s" block)
     (contains "called its callback twice" block)
 
+(* The misuse outranks what the scope raises after swallowing it. *)
+let a_double_call_outranks_the_scope_s_own_exception () =
+  match
+    Stateful.execute
+      ~scope:(fun run ->
+        run ();
+        (try run () with Invalid_argument _ -> ());
+        raise Exit)
+      (counter_program 0)
+  with
+  | exception Invalid_argument message ->
+      is_true
+        ~msg:(Printf.sprintf "the double-call error said %S" message)
+        (contains "twice" message)
+  | exception exn ->
+      failf "a double call under a raising scope came back as %s"
+        (Printexc.to_string exn)
+  | () -> failf "a double call under a raising scope was accepted"
+
 (* Before the callback the scope is acquiring, and what it raises there
    propagates as itself (unconverted and unlabelled) so an assertion is
    an exception-class failure, a skip skips the whole test, and an alarm
@@ -1516,6 +1535,31 @@ let long_programs_truncate_with_a_step_omitted_line () =
   equal ~msg:"the summary counts the calls, not the rows that print" string
     (Pp.str "50 calls, last: %s" (List.nth drawn 49))
     (summary_of program)
+
+(* The cut starts past twice the context: 40 calls print whole, and 41
+   omit one call. *)
+let the_cut_starts_past_forty_calls () =
+  let rows steps =
+    let gen = Stateful.program ~steps ~model:0 counter_draws in
+    List.tl (lines_of gen (program_at gen 0))
+  in
+  let whole = rows 40 in
+  equal ~msg:"a 40-call program prints every call" int 40 (List.length whole);
+  is_true
+    ~msg:
+      (Printf.sprintf "a 40-call program printed:\n%s"
+         (String.concat "\n" whole))
+    (not (List.exists (contains "omitted") whole));
+  let cut = rows 41 in
+  equal ~msg:"a 41-call program prints 40 calls and the omission" int 41
+    (List.length cut);
+  equal string "\u{2026} (1 call omitted)" (List.nth cut 20)
+
+(* Past the empty command list, [~steps:0] is legal and draws the empty
+   program. *)
+let zero_steps_draw_the_empty_program () =
+  let gen = Stateful.program ~steps:0 ~model:0 counter_draws in
+  equal string "(no commands)" (render gen (program_at gen 0))
 
 (* Malformed arguments are reported at sample time, inside the running
    test's exception boundary. *)
@@ -2063,6 +2107,8 @@ let suite =
       a_scope_that_never_runs_the_program_fails_the_case );
     ( "a scope that runs the program twice is invalid",
       a_scope_that_runs_the_program_twice_is_invalid );
+    ( "a double call outranks the scope's own exception",
+      a_double_call_outranks_the_scope_s_own_exception );
     ( "a scope that raises before the callback propagates unconverted",
       a_scope_that_raises_before_the_callback_propagates_unconverted );
     ( "a failing program keeps its identity through the scope",
@@ -2087,6 +2133,8 @@ let suite =
       newlines_in_names_and_cells_are_flattened );
     ( "long programs truncate with a calls-omitted line",
       long_programs_truncate_with_a_step_omitted_line );
+    ("the cut starts past forty calls", the_cut_starts_past_forty_calls);
+    ("zero steps draw the empty program", zero_steps_draw_the_empty_program);
     ( "a malformed declaration raises at sample time",
       a_malformed_declaration_raises_at_sample_time );
     ( "stateful declares a prop node with its tags, timeout and site",
