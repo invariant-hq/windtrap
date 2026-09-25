@@ -6,8 +6,10 @@ a stale baseline reads under `dune runtest`, how to accept the change,
 and how to write expect tests inside a library. The reference is the
 baselines section of [`lib/windtrap.mli`](../../lib/windtrap.mli).
 
-The module under test, `test/mytool.ml`, builds a help text and a
-report, and prints a greeting:
+The module under test builds a help text and a report, and prints a
+greeting.
+
+`test/mytool.ml`:
 
 <!-- file examples/05-baselines/mytool.ml -->
 ```ocaml
@@ -39,6 +41,8 @@ print that directory's paths.
 `__POS_OF__` pairs the literal with its position, where a correction
 rewrites it.
 
+`test/test_mytool.ml`:
+
 <!-- file examples/05-baselines/test_mytool.ml from open Windtrap to let report_counts_the_rows -->
 ```ocaml
 open Windtrap
@@ -51,8 +55,8 @@ let report_counts_the_rows () =
     |}
 ```
 
-A mismatch fails the test without ending its body. The next expectation
-still runs, so one run reports every stale baseline.
+A mismatch fails the test and the body goes on, so one run reports every
+stale baseline (see `Windtrap.expect`).
 
 ## Keeping a baseline in a file
 
@@ -60,7 +64,9 @@ still runs, so one run reports every stale baseline.
 root whatever the working directory. Under dune the root is the
 directory that holds the build directory, here windtrap's repository,
 and `WINDTRAP_PROJECT_ROOT` sets another. The file holds the text as it
-is:
+is.
+
+`test/help.expected`:
 
 <!-- file examples/05-baselines/help.expected -->
 ```
@@ -75,7 +81,9 @@ Options:
 ```
 
 The group lists the three tests of the suite, the second one on the
-file:
+file.
+
+`test/test_mytool.ml`:
 
 <!-- file examples/05-baselines/test_mytool.ml from let messages -->
 ```ocaml
@@ -91,8 +99,10 @@ let messages =
     ]
 ```
 
-A missing file fails as a mismatch does, and its `accept:` line says how
-to create it.
+To start a file baseline under dune, create the file empty, name it in
+`(deps …)`, run the tests and promote the correction. Dune stops before
+the suite runs when a file named in `(deps …)` does not exist. Outside
+dune, `-u` writes the missing file.
 
 ## Checking printed output
 
@@ -102,7 +112,9 @@ test wrote to standard output and standard error since the previous call
 
 ## Running expectations under dune
 
-The suite's last line runs the group:
+The suite's last line runs the group.
+
+`test/test_mytool.ml`:
 
 <!-- file examples/05-baselines/test_mytool.ml from let () = -->
 ```ocaml
@@ -112,7 +124,9 @@ let () = exit (run "mytool" [ messages ])
 The stanza runs the suite with `--corrected`, which writes the
 correction of a stale baseline beside its file as `<file>.corrected`.
 Each `diff?` then compares one file that holds baselines with its
-correction. `(deps …)` names every file an `expect_file` reads:
+correction. `(deps …)` names every file an `expect_file` reads.
+
+`test/dune`:
 
 <!-- file examples/05-baselines/dune from (test -->
 ```lisp
@@ -199,8 +213,8 @@ that exits 0, so another failing test of the suite withholds it, and the
 run says so on standard error.
 
 The stanza's action stops at its first `diff?` that fails, so dune holds
-at most one correction per run. When two files are stale, the second
-file's `accept:` line finds nothing to promote until the first is
+at most one correction per stanza and run. When two files are stale, the
+second file's `accept:` line finds nothing to promote until the first is
 accepted and the tests run again.
 
 ## Accepting without dune promote
@@ -228,10 +242,22 @@ mytool: 3 tests
 2 passed, 1 failed in 0.7ms.
 ```
 
-`-u` rewrites the literals and the files in place, for review with
-`git diff`. A literal is compiled into the executable, so build it again
-before the next run. `-u` is refused under CI (see [Running
-tests](running-tests.md)).
+To accept, run the line. `-u` rewrites the literal in place, and its
+row under `corrections` says to build the executable again before the
+next run:
+
+<!-- run examples/05-baselines/failing as examples/05-baselines -->
+```
+$ dune exec examples/05-baselines/test_mytool.exe -- -u -f 'messages › the report counts the rows'
+mytool: 1 test
+corrections (1):
+  accepted examples/05-baselines/test_mytool.ml (1 expectation; rebuild before the tests see it)
+
+1 passed, 1 correction accepted in 0.9ms.
+```
+
+Review the change with `git diff`. `-u` is refused under CI (see
+[Running tests](running-tests.md)).
 
 ## Reading a block with no `accept:` line
 
@@ -244,7 +270,9 @@ take, as when the file changed since the build, says
 ## Writing expect tests inside a library
 
 An expect test lives next to the code it tests, in a library with
-`(inline_tests)` preprocessed by `ppx_windtrap`:
+`(inline_tests)` preprocessed by `ppx_windtrap`.
+
+`test/dune`:
 
 <!-- file examples/05-baselines/dune from (library -->
 ```lisp
@@ -257,7 +285,9 @@ An expect test lives next to the code it tests, in a library with
 ```
 
 `let%expect_test` declares a test, and each `[%expect {|…|}]` compares
-what the test printed since the previous node:
+what the test printed since the previous node.
+
+`test/tokens.ml`:
 
 <!-- file examples/05-baselines/tokens.ml -->
 ```ocaml
@@ -313,7 +343,9 @@ The rewriter's forms are stated in
 
 A module named `Expect_test_config` configures the expect tests below it
 in its file. Its `sanitize` rewrites the printed text before the
-comparison and before a correction is written:
+comparison and before a correction is written.
+
+`test/timing.ml`:
 
 <!-- file examples/05-baselines/timing.ml -->
 ```ocaml
