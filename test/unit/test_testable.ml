@@ -389,6 +389,11 @@ let tests =
         let w = T.float_rel ~rel:0.1 ~abs:0. in
         check_equal "expected smaller" w 1.0 1.105;
         check_equal "expected larger" w 1.105 1.0);
+    test "float_rel: a difference of exactly rel times the larger is equal"
+      (fun () ->
+        let w = T.float_rel ~rel:0.5 ~abs:0. in
+        check_equal "|2 - 1| = 0.5 * 2" w 1.0 2.0;
+        check_differ "just past it" w 1.0 (Float.succ 2.0));
     test "equality verbs apply the equality to the expected value first"
       (fun () ->
         let calls = ref [] in
