@@ -1,9 +1,10 @@
 # Mutation testing
 
-This page tests the tests. It changes the library's code one mutant at
-a time and reports each mutant that no test notices, then shows how to
-kill it, reproduce it or dismiss it. The example is
-`examples/08-mutation/`, and the transcripts print its paths.
+This page shows how to find the changes to a library that no test
+notices, one mutant at a time, and how to kill, reproduce or dismiss
+each. The reference is `windtrap mutants --help`, in the
+[last section](#the-commands-options), and the suite's `--help`. The
+example is `examples/08-mutation/`, and the transcripts print its paths.
 
 ## Instrumenting a library for mutation
 
@@ -152,9 +153,10 @@ mutants: 2 survived of 5 reached by this suite, 3 killed
 The `reproduce:` line arms the first survivor. `--arm ID` runs the
 suite once with that mutant active, names it first, records no
 correction, and ends on its verdict: killed, survived, or not evaluated
-when no selected test ran the site. Arming a killed mutant shows the
-failure that killed it. Under `dune runtest`, `WINDTRAP_MUTATE_ARM=ID`
-arms the mutant in every suite that holds its file:
+when no selected test ran the site. Under `dune runtest`, the mirror
+arms it in every suite that holds its file, as in
+`WINDTRAP_MUTATE_ARM=ID dune runtest --force --instrument-with ppx_windtrap.mutate`.
+Arming a killed mutant shows the failure that killed it:
 
 <!-- run examples/08-mutation/instrumented as examples/08-mutation -->
 ```
@@ -178,13 +180,13 @@ calc: 10 tests
 mutant killed.
 ```
 
-## Surveying one test
+## Testing one test's mutants
 
-To survey a new test, narrow the run. `--mutate=PREFIX` tests only the
-mutants of the files whose path starts with a prefix, and still saves
-its verdicts. The filters select the tests as in any run; a filtered
-run lists the mutants its tests never reached and saves no verdict.
-`stays positive` checks a sign that `a - b → a + b` keeps:
+To judge a new test, narrow the mutation run. `--mutate=PREFIX` tests
+only the mutants of the files whose path starts with a prefix, and still
+saves its verdicts. The filters select the tests as in any run; a
+filtered run lists the mutants its tests never reached and saves no
+verdict. `stays positive` checks a sign that `a - b → a + b` keeps:
 
 <!-- run examples/08-mutation/instrumented as examples/08-mutation -->
 ```
@@ -208,20 +210,22 @@ windtrap: verdicts not saved: this run's selection narrows the suite, and a part
 mutants: 1 survived of 1 reached by the 1 selected test, 4 never reached
 ```
 
-## What a survey runs
+## What a mutation run runs
 
-A survey runs in passes, and prints no focus warning:
+A mutation run runs in passes, and prints neither the focus warning nor
+the withheld-correction warning:
 
-- The first pass is the suite's ordinary run. Under `-u` it accepts
+- The dry run is the suite's ordinary run. Under `-u` it accepts
   corrections before any mutant is armed.
-- A second pass, in a child process, checks that the suite passes again.
+- The determinism probe, in a child process, checks that the suite
+  passes again.
 - Each reached mutant runs in a child with its reaching tests, up to the
-  first failure. A child that outruns a deadline taken from the first
-  pass, or evaluates its site far more often than that pass did, is
-  killed, and its mutant counts as killed.
+  first failure. A child that outruns a deadline taken from the dry run,
+  or evaluates its site more than `hits * 8 + 1000` times, `hits` being
+  the dry run's count, is killed, and its mutant counts as killed.
 
-The survey exits 0 whatever it finds. It exits 1, with a sentence on
-standard error, when a pass fails or no mutant is left to test.
+The mutation run exits 0 whatever it finds. It exits 1, with a sentence
+on standard error, when a pass fails or no mutant is left to test.
 
 ## Dismissing an equivalent mutant
 
@@ -236,14 +240,15 @@ which no report prints.
 
 ## Mutation testing a project
 
-A suite's survey covers its own executable. To judge the project, run
-every suite with `WINDTRAP_MUTATE=1` and merge the verdict files with
-`windtrap mutants`. `WINDTRAP_MUTATE` is the mirror of `--mutate`: `1`
-is the bare flag, `0` its absence, and a value that spells no boolean
-the prefixes. A mutant killed by one executable is killed, and the
-command exits 1 when a mutant survived every executable that reached it,
-listing the most reached first. `--force` makes dune run the suites that
-already passed:
+A suite's mutation run covers its own executable. To judge the project,
+run every suite with `WINDTRAP_MUTATE=1` and merge the verdict files
+with `windtrap mutants`. `WINDTRAP_MUTATE` is the mirror of `--mutate`,
+where `1` is the bare flag, `0` its absence, and a value that spells no
+boolean the prefixes. A suite with no mutant to test, such as a suite
+over another library, runs as usual and says why on standard error. A
+mutant killed by one executable is killed, and the command exits 1 when
+a mutant survived every executable that reached it, listing the most
+reached first. `--force` makes dune run the suites that already passed:
 
 <!-- run examples/08-mutation/instrumented as examples/08-mutation -->
 ```
@@ -291,9 +296,9 @@ mutants: 2 survived of 5 reached, 3 killed, 1 executable
 
 The `mutate` alias of the example's dune file runs both commands:
 `WINDTRAP_MUTATE=1 dune build @mutate --force --instrument-with
-ppx_windtrap.mutate`. `(alias_rec runtest)` runs every suite under the
-directory first, and `(universe)` makes dune run the merge on every
-build. `(deps (env_var WINDTRAP_MUTATE))` on a test stanza makes dune
+ppx_windtrap.mutate`. It is built as the alias of
+[coverage](coverage.md#measuring-in-one-command) is.
+`(deps (env_var WINDTRAP_MUTATE))` on a test stanza makes dune
 run it again when the variable changes, in place of `--force`. A
 `dune-workspace` naming the backend drops `--instrument-with`, as for
 [coverage](coverage.md#instrumenting-every-build).
@@ -317,8 +322,8 @@ let sign =
     ]
 ```
 
-The survey then kills every mutant the suite reaches, and the project's
-merge passes:
+The mutation run then kills every mutant the suite reaches, and the
+project's merge passes:
 
 <!-- run examples/08-mutation/killed as examples/08-mutation -->
 ```
@@ -345,7 +350,8 @@ A comparison outside a condition, as in `let ok = a < b`, carries no
 mutant, and neither does an `assert`. In a chain of one operator, as
 `a + b + c`, the outermost application alone is a site. A file that
 declares inline tests is not mutated, and a file that rebinds an
-operator loses that operator's rewrites.
+operator loses the rewrites of its family: the four arithmetic
+operators, the six comparisons or the two connectives.
 
 ## Where the verdicts are
 
@@ -361,19 +367,15 @@ deleted or rebuilt since, with a warning, as
 
 ## Mutation testing without dune
 
-The backend is a ppxlib rewriter. Outside dune, a driver executable
-that links `ppxlib` and `ppx_windtrap.mutate` and calls
-`Ppxlib.Driver.standalone ()` instruments a file when the compiler runs
-it as `-ppx "driver.exe --as-ppx"`, with the installed
-`windtrap/runtime` directory on the include path. Instrument the
-library and not its tests, link the suite against `windtrap`, and run
-it with `--mutate`. `test/cli/nodune.t` holds such a session.
+The mutation backend is applied without dune as
+[the coverage backend](coverage.md#instrumenting-without-dune) is, and
+the suite then runs with `--mutate`.
 
 ## When a run cannot mutate
 
-A survey forks a child process for each mutant. It is refused on
+A mutation run forks a child process for each mutant. It is refused on
 Windows, and in a process that has started a domain. `--mutate` and
-`--arm` together are a usage error. An interrupt ends the survey: the
+`--arm` together are a usage error. An interrupt ends the run: the
 running child is killed, the mutant under test is named on standard
 error, and no verdict file is written.
 

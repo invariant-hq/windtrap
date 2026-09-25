@@ -253,7 +253,7 @@ geo: 1 test (seed s1:5b58964be30f69a8)
 ## Generating a recursive type
 
 A generator of a recursive type takes a depth and draws a leaf at depth
-0. `let*` draws the depth first, from a small range. `~size` bounds the
+zero. `let*` draws the depth first, from a small range. `~size` bounds the
 length of a list, and without it a length follows `Gen.nat`, the
 generator of sizes, lengths and counts. `Geo` groups shapes in drawings.
 

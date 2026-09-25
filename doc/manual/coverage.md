@@ -1,8 +1,9 @@
 # Coverage
 
-This page measures which parts of a library its tests run. It
-instruments the library, shows the lines no test reached, and fails a
-build whose coverage falls below a minimum. The example is
+This page shows how to measure which parts of a library its tests run,
+read the lines no test reached, and fail a build whose coverage falls
+below a minimum. The reference is `windtrap coverage --help`, in the
+[last section](#the-commands-options). The example is
 `examples/07-coverage/`, and the transcripts print its paths.
 
 ## Instrumenting a library
@@ -127,11 +128,13 @@ coverage: 93.1% (27/29 points)
 
 To read the source of the uncovered lines, pass `-u`. A point is the
 entry of a block, such as a function body, a `match` arm or an `if`
-branch, or the return of a call. A call that raises leaves its line
-uncovered, unless it is in tail position, where it has no point of its
-own. A row lists eight line ranges at most, then `(+N more)`, and `-u`
-shows every one, with `▌` on each line an unvisited point touches;
-the percentage counts points, not lines:
+branch, or the return of a call. A call that raises leaves its point
+unvisited, except in tail position, where it has no point of its own. A
+raising call still reads covered when it shares its point with the block
+it opens, and calls of `raise`, `failwith` and the other trivial
+primitives have no point for their return. A row lists at most eight
+line ranges, then `(+N more)`. `-u` shows every one, with `▌` on each
+line an unvisited point touches. The percentage counts points:
 
 <!-- run examples/07-coverage/instrumented as examples/07-coverage -->
 ```
@@ -194,9 +197,10 @@ windtrap: examples/07-coverage/stats.ml: expected source has no coverage data (n
 To leave code out of the count, mark it with an attribute:
 `[@coverage off]` on an expression, `[@@coverage off]` on a binding,
 `[@@@coverage off]` and `[@@@coverage on]` around structure items, or
-`[@@@coverage exclude_file]` for the whole file. `symbol`, at the end of
-`calc.ml`, carries `[@@coverage off]`, and no report on this page counts
-its points.
+`[@@@coverage exclude_file]` for the whole file (see
+[`ppx/coverage/instrument.mli`](../../ppx/coverage/instrument.mli)).
+`symbol`, at the end of `calc.ml`, carries `[@@coverage off]`, and no
+report on this page counts its points.
 
 ## Measuring one suite
 
@@ -311,14 +315,15 @@ build with `--build-dir` reports its own dumps.
 
 ## Instrumenting without dune
 
-The backend is a ppxlib rewriter. Outside dune, a driver executable
-that links `ppxlib` and `ppx_windtrap.coverage` and calls
-`Ppxlib.Driver.standalone ()` instruments a file when the compiler runs
-it as `-ppx "driver.exe --as-ppx"`, with the installed
-`windtrap/runtime` directory on the include path. Instrument the
-library and not its tests, link the suite against `windtrap`, run it,
-and merge with `windtrap coverage`. `test/cli/nodune.t` holds such a
-session.
+Each backend, `ppx_windtrap.coverage` and `ppx_windtrap.mutate`, is a
+ppxlib rewriter. Outside dune, a driver executable that links `ppxlib`
+and the backend and calls `Ppxlib.Driver.standalone ()` instruments a
+file when the compiler runs it as `-ppx "driver.exe --as-ppx"`, with the
+installed `windtrap/runtime` directory on the include path. Instrument
+the library and not its tests, link the suite against `windtrap`, and
+run it, with `--mutate` for the mutation backend. `windtrap coverage` or
+`windtrap mutants` then merges what it wrote. `test/cli/nodune.t` holds
+such a session.
 
 ## When a dump is excluded
 
@@ -328,8 +333,10 @@ deleted or rebuilt since, with a warning on standard error, then says
 once how to refresh the dumps: run the suites instrumented again. A
 build without `--instrument-with` rebuilds the suites uninstrumented,
 and every dump they wrote is then excluded. With every dump excluded,
-the command prints no report and exits 1. A dump in another version of
-the format stops the command, and the message says to delete it.
+the command prints no report and exits 1, and it does the same with no
+dump at all, as before any instrumented run, saying how to write one. A
+dump in another version of the format stops the command, and the
+message says to delete it.
 
 ## The command's options
 
