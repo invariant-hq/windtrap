@@ -411,6 +411,9 @@ let hunk_tests =
          in
          flag "minimality"
            (changes = edit_distance ~with_sub:false String.equal e_lines a_lines)));
+    test "a repeated line is counted in one common end" (fun () ->
+        check_hunks "the longer text repeats its last line" ~expected:"a\n"
+          ~actual:"a\na\n" "@@ -1,1 +1,2 @@| a|+a");
   ]
 
 let refine_tests =
@@ -546,15 +549,39 @@ let refine_tests =
                  && spans_ok actual r.Diff.actual_spans)
              then
                failf "bad spans\n  expected: %S\n  actual:   %S" expected actual));
+    test "refinement: pinned ties between minimal scripts" (fun () ->
+        check_refine "a deletion, then an insertion" ~expected:"aab"
+          ~actual:"abc" "e[1+1] a[2+1]";
+        check_refine "an insertion, then a deletion" ~expected:"aab"
+          ~actual:"aba" "e[2+1] a[1+1]";
+        check_refine "a deletion at the start" ~expected:"aba" ~actual:"bac"
+          "e[0+1] a[2+1]");
+    test "refinement: a repeated code point is counted in one common end"
+      (fun () ->
+        check_refine "the longer string repeats its last code point"
+          ~expected:"aaaa" ~actual:"aaaaa" "e[] a[4+1]");
+    test "refinement: the cell guard admits 4000000 cells" (fun () ->
+        let side first n last = first ^ String.make n 'm' ^ last in
+        is_true ~msg:"2000 by 2000 cells refine"
+          (Option.is_some
+             (Diff.refine ~expected:(side "A" 1997 "B")
+                ~actual:(side "C" 1997 "D")));
+        is_true ~msg:"2001 by 2000 cells decline"
+          (Option.is_none
+             (Diff.refine ~expected:(side "A" 1998 "B")
+                ~actual:(side "C" 1997 "D")));
+        is_true ~msg:"2000 by 2001 cells decline"
+          (Option.is_none
+             (Diff.refine ~expected:(side "A" 1997 "B")
+                ~actual:(side "C" 1998 "D"))));
   ]
 
 (* Refinement's allocation per grid cell.
 
-   [wagner_fischer] calls [cp_equal] once per cell, so anything [cp_equal]
-   allocates is multiplied by the grid. A local [let rec] closing over the
-   offsets used to put a closure there, ~8 minor words per cell, 194M words
-   for the sweep below, against 9M once the loop was lifted to a top-level
-   function. Timing is too machine-dependent to assert, but minor-word counts
+   Refinement compares two code points once per cell, so anything the
+   comparison allocates is multiplied by the grid. A closure allocated per
+   comparison cost ~8 minor words per cell, 194M words for the sweep below,
+   against 9M without it. Timing is too machine-dependent to assert, but minor-word counts
    are deterministic, so this pins the shape: per-cell allocation stays O(1)
    words and well under the closure regime. The bound is loose on purpose.
    It is here to catch a reintroduced per-cell allocation, not to freeze the
