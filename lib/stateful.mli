@@ -34,11 +34,7 @@
     {!execute}). [pre] and [next] run at generation time, over models that no
     program may ever run in, and there an assertion does not mean what it says.
     Raised by [pre] or [next], it is wrapped as any other exception is, and a
-    control keeps its meaning (see {!val-program}).
-
-    {b Output.} This module prints nothing. The text of a program and its
-    summary ride the {!Failure.Property} payload, and the label of the failing
-    call rides the [msg] of the inner failure. *)
+    control keeps its meaning (see {!val-program}). *)
 
 (** {1:commands Commands} *)
 
@@ -62,8 +58,7 @@ val command :
       [fun _ _ -> true].
     - [next m arg] is the model after the call.
     - [body m arg sut] calls the system and asserts. [m] is the model before the
-      call. A body that asserts nothing is checked by {!stateful}'s [invariant]
-      alone.
+      call.
     - [name] identifies the command in the printed program, in its summary and
       in the label of the failing call. Its newlines become spaces.
     - [__POS__] is the declaration site. It defaults to a capture at this call
@@ -79,20 +74,15 @@ val call :
   ('model -> 'sut -> unit) ->
   ('model, 'sut) command
 (** [call name ~next body] is {!val-command} at ['arg = unit] over {!Gen.unit}.
-    [pre], [next] and [body] take no argument. The printer of programs omits an
-    argument whose text is [()], which is how {!Gen.unit} prints, so a call of
-    it prints as its name alone. [__POS__] is forwarded. Without it,
-    {!val-command}'s capture walks past the frames of this function and lands on
-    the caller. *)
+    [pre], [next] and [body] take no argument. [__POS__] is forwarded. Without
+    it, {!val-command}'s capture walks past the frames of this function and
+    lands on the caller. *)
 
-(** {1:programs Programs}
-
-    {!stateful} wires the three functions below together. *)
+(** {1:programs Programs} *)
 
 type ('model, 'sut) program
 (** The type for a repaired program: an initial model and the calls made from
-    it, in order, each legal in the model that the calls before it produced. It
-    has no constructor. A program comes from {!val-program} only. *)
+    it, in order, each legal in the model that the calls before it produced. *)
 
 val program :
   ?steps:int ->
@@ -120,27 +110,17 @@ val program :
     that deletes that call or reduces its argument can repeat the program of its
     parent. A candidate that deletes an earlier call can make the dropped call
     legal again, and then be longer than its parent. {!Property.run} compares
-    failures and never programs, so it accepts such a repeat as a step, and
-    [shrunk N steps] counts it.
+    failures and never programs, so it accepts such a repeat as a step.
 
     A search runs one whole program, and calls [scope] once, per candidate. A
     program of [n] calls has about [2 * n] structural candidates, so the calls
     that a search executes grow with the square of [steps].
 
     {b Printing.} The generator always prints, so a program is never a
-    pre-image. The empty program prints as [(no commands)]. Any other prints as
-    a table: the header row [ #  model before  call], or [ #  call] without
-    [pp_model], then one row per call with its number, the model before it, and
-    the name of the command followed by its argument.
-    - An argument prints through [Gen.Engine.render_value]. It has no pre-image,
-      and without a printer it is the placeholder, the argument of a {!Gen.map}
-      included. It is flattened to one line and cut at [200] bytes, with a
-      marker that gives its size. An argument that prints as [()] is omitted.
-    - A model cell is flattened to one line and cut at [60] code points, the
-      last three being [...]. A [pp_model] that raises, whatever the exception,
-      costs its own cell, which reads [<pp_model raised EXN>].
-    - A program of more than [40] calls prints its first [20] and its last [20]
-      around the line [… (N calls omitted)].
+    pre-image. An argument prints through [Gen.Engine.render_value]. It has no
+    pre-image, and without a printer it is the placeholder, the argument of a
+    {!Gen.map} included. A [pp_model] that raises, whatever the exception, costs
+    its own cell, which reads [<pp_model raised EXN>].
 
     Sampling raises [Invalid_argument] if [commands] is empty, under [~steps:0]
     too, or if [steps] is negative. Both messages name [Windtrap.stateful].
@@ -155,11 +135,9 @@ val program :
     becomes of each). *)
 
 val summary : ('model, 'sut) program -> string option
-(** [summary program] is [program]'s table in one line, as in
-    [5 calls, last: pop] or [1 call, last: pop], and [None] for the empty
+(** [summary program] is [program]'s table in one line, and [None] for the empty
     program, which prints no table. It names the last call and never the failing
-    one, since a program does not know which call failed. The label of
-    {!execute} names that call. *)
+    one, since a program does not know which call failed. *)
 
 val execute :
   ?loc:Loc.t ->
@@ -238,6 +216,6 @@ val stateful :
     since a second attempt would replay the same programs from the root seed.
 
     Raises [Invalid_argument] if [timeout] is given and is not finite and
-    positive, as every constructor of {!Test_tree} does. An empty [commands] and
-    a negative [steps] raise at the first sample, inside the running test (see
-    {!val-program}). With [~count:0] no sample is drawn and nothing raises. *)
+    positive. An empty [commands] and a negative [steps] raise at the first
+    sample, inside the running test (see {!val-program}). With [~count:0] no
+    sample is drawn and nothing raises. *)

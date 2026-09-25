@@ -13,9 +13,7 @@
     samples from a seed derived from the root seed, the test's path and the
     index of the case (see {!run}). An outcome is then a pure function of
     {!run}'s arguments, provided the law and the functions of the generator are
-    pure. The other tests of a suite never change the values that a property
-    draws, and a recorded root seed replays every failure (guarantee 7 of
-    [doc/dev/architecture.md]).
+    pure.
 
     {b Laws.} A law returns [()] to pass and raises to fail. The engine calls
     it, the generator and the printers through [Failure.catch], and keeps
@@ -29,13 +27,6 @@
       the first run of a case, ends the run in a [Fail] whose failure is a
       [Failure.Timeout] that names the case. Any other control is raised again
       through {!run} then.
-    - Once a generated case has failed, a [`Timeout] ends the shrink search and
-      any other control rejects the candidate, so nothing replaces the failure
-      found (see {!run}).
-
-    {b Output.} The engine prints nothing. Its texts ride the {!outcome}, in the
-    {!Failure.Property} payload of a [Fail] and in the {!type-stats}, and
-    {!Report} decides what a run shows of them.
 
     Nothing in this module is global. Labels go through the {!context} that
     {!run} gives to the law. *)
@@ -54,11 +45,9 @@ val reject : unit -> 'a
 
 (** {1:labelling Labelling}
 
-    Labels give the distribution of the generated inputs over the passing cases,
-    and a {!cover} label fails a property that never reached a region. The marks
-    of a case accumulate in the {!context} and commit when the case passes, so a
-    discarded case and a failing case commit nothing. The shrink search marks a
-    scratch context, which is thrown away. *)
+    The marks of a case accumulate in the {!context} and commit when the case
+    passes, so a discarded case and a failing case commit nothing. The shrink
+    search marks a scratch context, which is thrown away. *)
 
 type context
 (** The type for the label accumulator of one {!run}. {!run} creates one per
@@ -127,11 +116,7 @@ type stats = {
     - [shrink_steps] is [0] for an example and for a generator that raised.
     - [count] is [Some n] for a [`Config n] count, and [None] otherwise.
     - [inner] is the failure of the law on the reported counterexample, the
-      final node of the search. It is the law's own [Failure.Check_failure]
-      payload, or for any other exception a [Failure.Raise] payload with the
-      exception as [Failure.exn_to_string] prints it, and its backtrace when one
-      was recorded. For a generator that raised it holds the generator's
-      exception.
+      final node of the search.
 
     The [failure] of a [Fail] that a timeout ended before any case failed is
     instead a [Failure.Timeout] located at [loc]. Its case is that of the
@@ -217,8 +202,7 @@ val run :
 
     The search ends at a node with no accepted candidate, [Failure.Converged].
     It also ends after {!shrink_budget} steps, [Failure.Budget_spent], and when
-    the forcing of a candidate raises anything but a [`Timeout], as a function
-    given to {!Gen.map} or a [pre] of {!Stateful} can:
+    the forcing of a candidate raises anything but a [`Timeout]:
     [Failure.Candidate_raised] with that exception as [Failure.exn_to_string]
     prints it.
 

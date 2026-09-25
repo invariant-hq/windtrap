@@ -8,31 +8,21 @@
     A generator couples three things that move together: a draw from a
     {!Seed.state}, the lazy tree of the drawn value's shrink candidates, and how
     each value of that tree prints. The values below are the vocabulary that
-    tests compose. {!Engine} is what {!Property} and {!Stateful} reach for:
-    shrink trees, sampling, rendering and the raw constructor.
+    tests compose.
 
     {b Shrinking.} A value is drawn with its candidates, and every candidate
-    satisfies the constraints of its generator. A candidate of [int_range 2 5]
-    lies in \[[2];[5]\], and one of [such_that p gen] satisfies [p]. A new
-    generator must keep that invariant. No value of the vocabulary takes a
-    shrink function, and {!Engine.make} takes one in the form of a tree that its
-    caller builds.
+    satisfies the constraints of its generator. A new generator must keep that
+    invariant.
 
     {b Printing.} A generator prints through two channels. Its optional printer
     prints a bare value (see {!Engine.render_value}). Each node of a sampled
     tree carries its own rendering (see {!Engine.render}), which is drawn and
-    shrunk with the value, so the node that a search ends on holds both the
-    counterexample and its text. A container derives both by one rule, and
-    prints iff every component prints. {!map}, {!bind}, {!option}, {!one_of} and
-    {!string_of} say where the two differ.
+    shrunk with the value. A container derives both by one rule, and prints iff
+    every component prints.
 
     A rendering is a [Value], a [Pre_image] or nothing (see
-    {!Engine.type-rendering}). The generators of base types render values, and
-    {!constant} and {!of_list} have nothing to print. A composite renders iff
-    every part renders, and as a [Value] iff every part is one.
-
-    This module prints nothing. The text of a sample rides a {!Failure.Property}
-    payload.
+    {!Engine.type-rendering}). A composite renders iff every part renders, and
+    as a [Value] iff every part is one.
 
     {b Validation.} A constructor never raises. Every check of an argument runs
     inside the draw, so a malformed generator raises [Invalid_argument] when it
@@ -53,10 +43,7 @@
    change to one text is a change to the other. *)
 
 type 'a t
-(** The type for generators of ['a] values: an optional printer and a draw. The
-    draw maps a {!Seed.state} to a shrink tree and the successor state. Every
-    node of the tree holds a value and its rendering (see {!Engine.val-sample}).
-*)
+(** The type for generators of ['a] values: an optional printer and a draw.*)
 
 (** {1:numeric Numbers}
 
@@ -191,8 +178,7 @@ val either : 'a t -> 'b t -> ('a, 'b) Either.t t
 val pair : 'a t -> 'b t -> ('a * 'b) t
 (** [pair a b] generates both components, [a]'s first. Its tree is
     {!Engine.Shrink_tree.pair}, so the first component shrinks, then the second.
-    A pair of renderings lays out as the pair of values would, so a pre-image
-    reads like the value. *)
+*)
 
 val triple : 'a t -> 'b t -> 'c t -> ('a * 'b * 'c) t
 (** [triple a b c] is {!pair} for three components. Its tree is a right-nested
@@ -268,8 +254,7 @@ val bind : 'a t -> ('a -> 'b t) -> 'b t
     It has no printer. A node renders as the inner value does when that
     rendering is a [Value] or nothing. When it is a [Pre_image], the node
     renders as the pre-image [outer -> inner], or as nothing when the outer
-    value has nothing to print. An outer rendering that is itself an arrow
-    prints in parentheses. *)
+    value has nothing to print. *)
 
 val with_pp : (Format.formatter -> 'a -> unit) -> 'a t -> 'a t
 (** [with_pp pp gen] is [gen] printing with [pp]. It sets the generator's
@@ -307,9 +292,7 @@ module Engine : sig
         The sequences given to {!make} and the functions given to {!map} are
         caller code, and they run at the forcing points. They must be
         deterministic and free of effects, and they must not read a random state
-        whose value depends on the order of forcing. A sampler takes every
-        random choice from the state it is given, or from a state split off from
-        it at sampling. This module performs no random operation. *)
+        whose value depends on the order of forcing. *)
 
     type 'a t
     (** The type for a value and its ordered shrink candidates. A tree may be
@@ -341,7 +324,7 @@ module Engine : sig
         root at once, and on a descendant when its cell is forced, at most once.
         What [f] raises on the root escapes [map]. What it raises on a
         descendant, a discard excepted, escapes the forcing of that cell, which
-        caches it. Mapping does not make an effectful [f] pure. *)
+        caches it. *)
 
     val pair : 'a t -> 'b t -> ('a * 'b) t
     (** [pair left right] is rooted at [(root left, root right)]. Its candidates
@@ -366,9 +349,7 @@ module Engine : sig
         candidates. The empty list has no candidates. A candidate is a strictly
         shorter list, or the same list with one element reduced, so the tree is
         finite in depth when the element trees are. Building the root is
-        stack-safe and forces no cell.
-
-        See also {!Gen.list}, {!Gen.string_of} and {!Stateful.val-program}. *)
+        stack-safe and forces no cell. *)
   end
 
   (** {1:sampling Sampling} *)
@@ -382,10 +363,9 @@ module Engine : sig
       the root is drawn, and the candidates are generated and memoized when the
       tree is traversed. The successor state is dropped, and {!run} returns it.
 
-      Raises [Failure.Control `Discard] on a discard at generation time, as when
-      a {!Gen.such_that} filter finds no value in its draws, [Invalid_argument]
-      on a malformed generator argument, and whatever a function of [gen]
-      raises.
+      Raises [Failure.Control `Discard] on a discard at generation time,
+      [Invalid_argument] on a malformed generator argument, and whatever a
+      function of [gen] raises.
 
       Forcing a candidate never raises [Failure.Control `Discard]: a candidate
       whose generation discards is skipped, and the search goes on with its
@@ -406,8 +386,7 @@ module Engine : sig
   (** The type for the text of a sample: the value, or what the value was
       computed from. A sample with nothing to print has no case of its own. It
       renders as a [Value], the placeholder of {!render}, whose text carries its
-      own remedy. {!Failure.type-rendering} is the same classification on the
-      payload of a failure. *)
+      own remedy. *)
   type 'a rendering =
     | Value of 'a
         (** The value, through the printer of the generator that drew it. *)
@@ -429,11 +408,10 @@ module Engine : sig
 
   val render_value : 'a t -> 'a -> string
   (** [render_value gen v] is [v] through [gen]'s printer, or {!render}'s
-      placeholder when [gen] has none. It is for a bare value with no tree to
-      render from. It reads the generator's printer and never a node, so a value
-      of a {!Gen.map} or a {!Gen.bind} without {!Gen.with_pp} is the placeholder
-      here, where a sample of the same generator renders as a pre-image. It has
-      {!render}'s guard. *)
+      placeholder when [gen] has none. It reads the generator's printer and
+      never a node, so a value of a {!Gen.map} or a {!Gen.bind} without
+      {!Gen.with_pp} is the placeholder here, where a sample of the same
+      generator renders as a pre-image. It has {!render}'s guard. *)
 
   (** {1:building Building generators} *)
 
@@ -450,9 +428,7 @@ module Engine : sig
       [pp]. [draw] returns a tree of values and the successor state, as {!run}
       does. With [pp], every node renders as a [Value] through [pp], whatever
       the generators that [draw] ran rendered as. Without it, every node has
-      nothing to print, as under {!Gen.constant}.
-
-      {!Stateful.val-program} assembles with it a tree that no combinator
-      expresses. [make] checks nothing. [draw] must itself keep the rules of
-      validation and determinism that the module's preamble states. *)
+      nothing to print, as under {!Gen.constant}. [make] checks nothing. [draw]
+      must itself keep the rules of validation and determinism that the module's
+      preamble states. *)
 end
