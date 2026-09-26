@@ -38,9 +38,9 @@ let rec any_odd n = if n <= 0 then false else n mod 2 = 1 || any_odd (n - 2)
 
 (* [||] right arms that are not bare applications. Each of these shapes
    inherits tail position in its own sub-expressions, so the recursive call
-   inside is a tail call, and the arm used to be demoted to an [if]
-   condition, which traversed it out of tail position and post-wrapped the
-   call. Instrumented, these overflowed at the depths below. [or_try] is
+   inside is a tail call. An arm demoted to an [if] condition would lose
+   it: a condition is out of tail position, and its call is post-wrapped,
+   which overflows at the depths the suite uses. [or_try] is
    the exception: its call sits in the body of the [try], which is never a
    tail position, and only its handler inherits one. *)
 let rec or_let n =

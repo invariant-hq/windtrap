@@ -2,7 +2,7 @@
 ; must name a file that exists in this build.
 
 (copy_files
- (files ../../coverage/semantics/covsem_fixtures.ml))
+ (files ../../../unit/semantics/coverage/covsem_fixtures.ml))
 
 (library
  (name mutsem_fixtures)
