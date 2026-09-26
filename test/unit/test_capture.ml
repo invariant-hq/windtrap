@@ -609,8 +609,7 @@ let reading =
         "output fails the test when the log cannot be opened, naming the log, \
          and keeps its cursor"
         log_gone;
-      test "assumed: a log truncated below the cursor has no unread bytes"
-        truncated;
+      test "a log truncated below the cursor has no unread bytes" truncated;
       cases
         "output_tail is the end of what the attempt wrote after output's cursor"
         ~name:(fun (name, _, _) -> name)

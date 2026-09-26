@@ -101,7 +101,8 @@ val output : ?__POS__:Loc.pos -> t -> string
     call, or since it started. It drains first, and moves its cursor past what
     it returns.
 
-    It is [""] when everything was read already and when [t] has no current log.
+    It is [""] when everything was read already, when the log was truncated
+    below the cursor, and when [t] has no current log.
 
     Raises [Failure.Check_failure] when no bytes can be returned, with a
     {!Failure.Message} located at [Loc.resolve ?__POS__ ()]:
@@ -118,9 +119,9 @@ val output_tail : t -> Failure.tail option
 (** [output_tail t] is the end of what the last attempt wrote after the cursor
     of {!val-output}, as the {!type:Failure.tail} that a failure carries. The
     bytes that {!val-output} returned are not in the tail, so a tail is [""]
-    when the attempt wrote nothing after its last {!val-output}. It reads the
-    log as {!with_capture} left it and drains nothing, so a call inside an
-    attempt misses what a buffer still holds.
+    when the attempt wrote nothing after its last {!val-output} or truncated its
+    log below the cursor. It reads the log as {!with_capture} left it and drains
+    nothing, so a call inside an attempt misses what a buffer still holds.
 
     The tail keeps at most the last {!Failure.tail_bytes} bytes after the cursor
     and reads no more than that. [omitted_bytes] counts the bytes between the
