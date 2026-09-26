@@ -3,1176 +3,446 @@
    SPDX-License-Identifier: ISC
   ---------------------------------------------------------------------------*)
 
-(* Tests for Cli: the flag table (every flag, both spellings, value
-   validation), positional-filter handling, typed parse errors, the
-   generated help/usage text, the argument grammar's optional-value kind,
-   and resolution precedence (CLI > env > default, additive tags, the two
-   mirror reading rules, the WINDTRAP_SEED and WINDTRAP_SHARD error
-   paths). Parsing and resolution are pure over argv and env, so each test
-   clears the windtrap variables it touches. *)
+(* A parsed record and a configuration are compared as rows of the fields a
+   claim changes: a record as the flags it holds, a configuration as the
+   fields where it departs from [Run.default_config ()], which [settings]
+   falls back on. The seed is left out of the row, since the default draws
+   one at random. *)
 
 open Windtrap
-open Windtrap.Private
+module Baseline = Windtrap.Private.Baseline
+module Cli = Windtrap.Private.Cli
+module Os = Windtrap.Private.Os
+module Run = Windtrap.Private.Run
+module Seed = Windtrap.Private.Seed
 
-(* Each [let () = reg name @@ fun () -> ...] block below registers one
-   windtrap test; [tests] collects them in declaration order. *)
-let registered = ref []
-let reg name body = registered := Windtrap.test name body :: !registered
-let contains needle haystack = Text.contains_substring ~pattern:needle haystack
+let strf = Printf.sprintf
+let words items = "[" ^ String.concat "; " items ^ "]"
+let joined = function [] -> "no argument" | args -> String.concat " " args
 
-(* No toplevel clear: module initialization must not clear the hosting
-   runner's own environment. Each resolution test clears what it reads,
-   through the runner's [setenv], which restores every variable when the
-   attempt ends, so a test that fails half-way leaves nothing behind. The
-   variable inventory is the harness's ([Harness.windtrap_vars]). One
-   list, one owner, so a mirror added there is cleared here by
-   construction. INSIDE_DUNE and WINDTRAP_PROJECT_ROOT stay untouched:
-   they configure the hosting run itself, not [Cli] resolution. *)
-let clear_env () =
-  List.iter
-    (fun var ->
-      if var <> "INSIDE_DUNE" && var <> "WINDTRAP_PROJECT_ROOT" then
-        setenv var (Some ""))
-    Harness.windtrap_vars
+let color_name = function
+  | Os.Always -> "always"
+  | Os.Never -> "never"
+  | Os.Auto -> "auto"
+
+let error_row = function
+  | Cli.Unknown_flag flag -> "unknown " ^ flag
+  | Cli.Missing_value flag -> "missing value " ^ flag
+  | Cli.Invalid_value { source; value; expected = _ } ->
+      strf "invalid %s %S" source value
+  | Cli.Incompatible_flags (first, second) ->
+      strf "incompatible %s %s" first second
+
+let pp_error ppf e = Format.pp_print_string ppf (error_row e)
+
+let expected_of = function
+  | Error (Cli.Invalid_value { expected; _ }) -> Some expected
+  | _ -> None
+
+(* A [bool option] prints [false] beside its name, so a [Some false] shows. *)
+let flags (p : Cli.parsed) =
+  let list name = function [] -> [] | l -> [ name ^ " " ^ words l ] in
+  let some name show = function
+    | None -> []
+    | Some v -> [ name ^ " " ^ show v ]
+  in
+  let switch name = function
+    | None -> []
+    | Some true -> [ name ]
+    | Some false -> [ name ^ " false" ]
+  in
+  let bool name b = if b then [ name ] else [] in
+  match
+    List.concat
+      [
+        list "filter" p.filter;
+        list "exclude" p.exclude;
+        list "tags" p.tags;
+        list "exclude_tags" p.exclude_tags;
+        some "shard" (fun (k, n) -> strf "%d/%d" k n) p.shard;
+        switch "failed_only" p.failed_only;
+        switch "list_only" p.list_only;
+        switch "bail" p.bail;
+        switch "stream" p.stream;
+        switch "update" p.update;
+        switch "corrected" p.corrected;
+        some "seed" Seed.to_string p.seed;
+        some "timeout" (strf "%g") p.timeout;
+        some "slow_threshold" (strf "%g") p.slow_threshold;
+        some "prop_count" string_of_int p.prop_count;
+        switch "verbose" p.verbose;
+        some "junit" Fun.id p.junit;
+        some "color" color_name p.color;
+        some "log_dir" Fun.id p.log_dir;
+        some "mutate" words p.mutate;
+        some "arm" Fun.id p.arm;
+        bool "help" p.help;
+        bool "version" p.version;
+      ]
+  with
+  | [] -> "empty"
+  | fields -> String.concat ", " fields
+
+let parsed_argv argv =
+  match Cli.parse argv with Ok p -> flags p | Error e -> error_row e
 
 let parse args = Cli.parse (Array.of_list ("windtrap-test" :: args))
+let parsed args = parsed_argv (Array.of_list ("windtrap-test" :: args))
 
-let expect_ok name args f =
-  match parse args with
-  | Ok parsed -> f parsed
-  | Error error -> fail (name ^ ": parse error: " ^ Cli.error_message error)
+let mutation_name = function
+  | Run.No_mutation -> "none"
+  | Run.Loop prefixes -> "loop " ^ words prefixes
+  | Run.Armed id -> "armed " ^ id
 
-let expect_error name args pred =
-  match parse args with
-  | Ok _ -> is_true ~msg:(name ^ " (should not parse)") false
-  | Error error -> is_true ~msg:name (pred error)
+let baseline_name = function
+  | Baseline.Check -> "check"
+  | Baseline.Update -> "update"
+  | Baseline.Corrected -> "corrected"
 
-let () =
-  reg "no arguments parse to the empty record" @@ fun () ->
-  expect_ok "no arguments parse to the empty record" [] (fun p ->
-      is_true ~msg:"empty record" (p = Cli.empty));
-  is_true ~msg:"an empty argv, no program name either, is empty"
-    (Cli.parse [||] = Ok Cli.empty)
+let invocation_name = function
+  | `Mirrors -> "mirrors"
+  | `Exe cmd -> "exe " ^ cmd
 
-let () =
-  reg "every flag in one vector" @@ fun () ->
-  expect_ok "every flag in one vector"
+let changes (c : Run.config) =
+  let d = Run.default_config () in
+  let field name show get =
+    match show (get c) with
+    | v when String.equal v (show (get d)) -> []
+    | "true" -> [ name ]
+    | v -> [ name ^ " " ^ v ]
+  in
+  let opt show = function None -> "none" | Some v -> show v in
+  let bool = string_of_bool in
+  match
+    List.concat
+      [
+        field "filter" words (fun c -> c.Run.filter);
+        field "exclude" words (fun c -> c.Run.exclude);
+        field "tags" words (fun c -> c.Run.tags);
+        field "exclude_tags" words (fun c -> c.Run.exclude_tags);
+        field "shard"
+          (opt (fun (k, n) -> strf "%d/%d" k n))
+          (fun c -> c.Run.shard);
+        field "failed_only" bool (fun c -> c.Run.failed_only);
+        field "bail" bool (fun c -> c.Run.bail);
+        field "stream" bool (fun c -> c.Run.stream);
+        field "baseline" baseline_name (fun c -> c.Run.baseline);
+        field "timeout" (opt (strf "%g")) (fun c -> c.Run.timeout);
+        field "prop_count" (opt string_of_int) (fun c -> c.Run.prop_count);
+        field "log_dir" Fun.id (fun c -> c.Run.log_dir);
+        field "allow_focus" bool (fun c -> c.Run.allow_focus);
+        field "color" color_name (fun c -> c.Run.color);
+        field "slow_threshold" (strf "%g") (fun c -> c.Run.slow_threshold);
+        field "verbose" bool (fun c -> c.Run.verbose);
+        field "junit" (opt Fun.id) (fun c -> c.Run.junit);
+        field "mutation" mutation_name (fun c -> c.Run.mutation);
+        field "github" bool (fun c -> c.Run.github);
+        field "invocation" invocation_name (fun c -> c.Run.invocation);
+        field "broadcast selection" bool (fun c ->
+            c.Run.broadcast.Run.selection);
+        field "broadcast mutate" bool (fun c -> c.Run.broadcast.Run.mutate);
+      ]
+  with
+  | [] -> "defaults"
+  | fields -> String.concat ", " fields
+
+(* [settings] reads every [WINDTRAP_*] variable, [CI] and [GITHUB_ACTIONS], and
+   [INSIDE_DUNE] through the defaults. Each is unset, then [env] is bound; the
+   runner restores them when the test ends. *)
+let stated env =
+  let windtrap =
+    List.filter_map
+      (fun binding ->
+        match String.index_opt binding '=' with
+        | Some i when String.starts_with ~prefix:"WINDTRAP_" binding ->
+            Some (String.sub binding 0 i)
+        | Some _ | None -> None)
+      (Array.to_list (Unix.environment ()))
+  in
+  List.iter
+    (fun var -> setenv var None)
+    ([ "CI"; "GITHUB_ACTIONS"; "INSIDE_DUNE" ] @ windtrap);
+  List.iter (fun (var, value) -> setenv var (Some value)) env
+
+let settings ?(env = []) p =
+  stated env;
+  Cli.settings p
+
+let settled ?env p =
+  match settings ?env p with Ok c -> changes c | Error e -> error_row e
+
+let resolved ?env args =
+  match parse args with Ok p -> settled ?env p | Error e -> error_row e
+
+let config ?env args =
+  require_ok ~pp:pp_error (settings ?env (require_ok ~pp:pp_error (parse args)))
+
+(* Mirrors *)
+
+let mirror_rows name rows =
+  cases name
+    ~name:(fun (var, value, _) -> strf "%s=%S" var value)
+    rows
+    (fun (var, value, row) ->
+      equal string row (resolved ~env:[ (var, value) ] []))
+
+(* A mirror's value is trimmed and a flag's is not, so no row holds a space. *)
+let refused_alike (var, flag, value) =
+  let expected = require_match expected_of (parse [ flag; value ]) in
+  let refusal = settings ~env:[ (var, value) ] Cli.empty in
+  equal (pair string string)
+    (strf "invalid %s %S" var value, expected)
+    ( Result.fold ~ok:changes ~error:error_row refusal,
+      require_match expected_of refusal )
+
+let boolean_wording () =
+  let refusal = settings ~env:[ ("WINDTRAP_STREAM", "maybe") ] Cli.empty in
+  equal string Os.bool_expected (require_match expected_of refusal)
+
+let mirrors =
+  group "Mirrors"
     [
-      "-f";
-      "pat";
-      "-e";
-      "ex";
-      "--tag";
-      "a";
-      "--tag";
-      "b";
-      "--exclude-tag";
-      "c";
-      "--failed";
-      "-l";
-      "-x";
-      "-s";
-      "-u";
-      "--seed";
-      "s1:00000000000000ff";
-      "--timeout";
-      "2.5";
-      "--prop-count";
-      "50";
-      "-v";
-      "--junit";
-      "out.xml";
-      "--color";
-      "never";
-      "-o";
-      "logs";
-      "--mutate=lib/a.ml,lib/b.ml";
-      "--arm";
-      "lib/a.ml:1:0:add";
-    ] (fun p ->
-      is_true ~msg:"filter" (p.Cli.filter = [ "pat" ]);
-      is_true ~msg:"exclude" (p.Cli.exclude = [ "ex" ]);
-      is_true ~msg:"tags accumulate in order" (p.Cli.tags = [ "a"; "b" ]);
-      is_true ~msg:"exclude_tags" (p.Cli.exclude_tags = [ "c" ]);
-      is_true ~msg:"failed_only" (p.Cli.failed_only = Some true);
-      is_true ~msg:"list_only" (p.Cli.list_only = Some true);
-      is_true ~msg:"bail" (p.Cli.bail = Some true);
-      is_true ~msg:"stream" (p.Cli.stream = Some true);
-      is_true ~msg:"update" (p.Cli.update = Some true);
-      is_true ~msg:"seed" (p.Cli.seed = Some 0xffL);
-      is_true ~msg:"timeout" (p.Cli.timeout = Some 2.5);
-      is_true ~msg:"prop_count" (p.Cli.prop_count = Some 50);
-      is_true ~msg:"verbose" (p.Cli.verbose = Some true);
-      is_true ~msg:"junit" (p.Cli.junit = Some "out.xml");
-      is_true ~msg:"color" (p.Cli.color = Some Os.Never);
-      is_true ~msg:"log_dir" (p.Cli.log_dir = Some "logs");
-      is_true ~msg:"mutate" (p.Cli.mutate = Some [ "lib/a.ml"; "lib/b.ml" ]);
-      is_true ~msg:"arm" (p.Cli.arm = Some "lib/a.ml:1:0:add");
-      is_true ~msg:"help off" (not p.Cli.help);
-      is_true ~msg:"version off" (not p.Cli.version))
+      mirror_rows
+        "a mirror is WINDTRAP_ and its long flag in capitals, with _ for -, \
+         and gives that flag's field"
+        [
+          ("WINDTRAP_FILTER", "parse", "filter [parse], broadcast selection");
+          ("WINDTRAP_EXCLUDE", "slow", "exclude [slow], broadcast selection");
+          ("WINDTRAP_TAG", "gpu", "tags [gpu], broadcast selection");
+          ( "WINDTRAP_EXCLUDE_TAG",
+            "gpu",
+            "exclude_tags [gpu], broadcast selection" );
+          ("WINDTRAP_SHARD", "2/3", "shard 2/3, broadcast selection");
+          ("WINDTRAP_TIMEOUT", "1.5", "timeout 1.5");
+          ("WINDTRAP_SLOW_THRESHOLD", "3", "slow_threshold 3");
+          ("WINDTRAP_PROP_COUNT", "7", "prop_count 7");
+          ("WINDTRAP_STREAM", "1", "stream");
+          ("WINDTRAP_VERBOSE", "1", "verbose");
+          ("WINDTRAP_JUNIT", "/reports/junit.xml", "junit /reports/junit.xml");
+          ("WINDTRAP_COLOR", "never", "color never");
+          ("WINDTRAP_OUTPUT", "/custom-logs", "log_dir /custom-logs");
+        ];
+      test "the mirror of --arm is WINDTRAP_MUTATE_ARM" (fun () ->
+          equal string "mutation armed lib/a.ml:1:0:add"
+            (resolved ~env:[ ("WINDTRAP_MUTATE_ARM", "lib/a.ml:1:0:add") ] []));
+      cases
+        "a mirror refuses what its flag refuses, naming the variable and the \
+         value as typed, in the flag's words"
+        ~name:(fun (var, _, value) -> strf "%s=%S" var value)
+        [
+          ("WINDTRAP_SHARD", "--shard", "9/2");
+          ("WINDTRAP_TIMEOUT", "--timeout", "-5");
+          ("WINDTRAP_TIMEOUT", "--timeout", "banana");
+          ("WINDTRAP_TIMEOUT", "--timeout", "-5.0");
+          ("WINDTRAP_TIMEOUT", "--timeout", "1e400");
+          ("WINDTRAP_SLOW_THRESHOLD", "--slow-threshold", "-2");
+          ("WINDTRAP_SLOW_THRESHOLD", "--slow-threshold", "soon");
+          ("WINDTRAP_SEED", "--seed", "not-a-seed");
+          ("WINDTRAP_PROP_COUNT", "--prop-count", "0");
+          ("WINDTRAP_PROP_COUNT", "--prop-count", "1O0");
+          ("WINDTRAP_COLOR", "--color", "sometimes");
+        ]
+        refused_alike;
+      mirror_rows "a mirror set to the empty string counts as unset"
+        [
+          ("WINDTRAP_FILTER", "", "defaults");
+          ("WINDTRAP_TAG", "", "defaults");
+          ("WINDTRAP_SHARD", "", "defaults");
+          ("WINDTRAP_STREAM", "", "defaults");
+          ("WINDTRAP_MUTATE", "", "defaults");
+        ];
+      mirror_rows
+        "the mirror of a flag that takes a value is one token, trimmed, so a \
+         comma belongs to a pattern"
+        [
+          ( "WINDTRAP_FILTER",
+            "  parser ",
+            "filter [parser], broadcast selection" );
+          ("WINDTRAP_FILTER", " a, b ", "filter [a, b], broadcast selection");
+          ("WINDTRAP_EXCLUDE", "c,d", "exclude [c,d], broadcast selection");
+          ("WINDTRAP_SHARD", " 2/4 ", "shard 2/4, broadcast selection");
+          ("WINDTRAP_PROP_COUNT", " 12 ", "prop_count 12");
+          ("WINDTRAP_COLOR", " Never ", "color never");
+          ("WINDTRAP_JUNIT", " /out.xml ", "junit /out.xml");
+        ];
+      mirror_rows
+        "the mirror of --tag or --exclude-tag is a comma-separated list, \
+         trimmed, without empty items"
+        [
+          ("WINDTRAP_TAG", "e1, e2", "tags [e1; e2], broadcast selection");
+          ( "WINDTRAP_EXCLUDE_TAG",
+            "x1 ,, x2 ",
+            "exclude_tags [x1; x2], broadcast selection" );
+          ("WINDTRAP_TAG", " , ", "defaults");
+        ];
+      mirror_rows
+        "the mirror of a flag that takes no value is a boolean, true the flag \
+         and false its absence"
+        [
+          ("WINDTRAP_STREAM", "yes", "stream");
+          ("WINDTRAP_VERBOSE", " OFF ", "defaults");
+          ("WINDTRAP_STREAM", "maybe", {|invalid WINDTRAP_STREAM "maybe"|});
+        ];
+      test "a boolean mirror refuses another word in Os.bool_expected's words"
+        boolean_wording;
+      mirror_rows
+        "the mirror of --mutate is the bare flag or its absence for a boolean, \
+         and else the prefixes"
+        [
+          ("WINDTRAP_MUTATE", "1", "mutation loop [], broadcast mutate");
+          ("WINDTRAP_MUTATE", "on", "mutation loop [], broadcast mutate");
+          ("WINDTRAP_MUTATE", "off", "defaults");
+          ("WINDTRAP_MUTATE", "0", "defaults");
+          ( "WINDTRAP_MUTATE",
+            " lib/calc.ml ",
+            "mutation loop [lib/calc.ml], broadcast mutate" );
+          ( "WINDTRAP_MUTATE",
+            "lib/a.ml,lib/b.ml",
+            "mutation loop [lib/a.ml; lib/b.ml], broadcast mutate" );
+        ];
+      mirror_rows "--failed, -x, -u and --corrected have no mirror"
+        [
+          ("WINDTRAP_FAILED", "1", "defaults");
+          ("WINDTRAP_FAIL_FAST", "1", "defaults");
+          ("WINDTRAP_BAIL", "1", "defaults");
+          ("WINDTRAP_UPDATE", "1", "defaults");
+          ("WINDTRAP_CORRECTED", "1", "defaults");
+        ];
+    ]
 
-let () =
-  reg "long spellings and inline values" @@ fun () ->
-  expect_ok "long spellings and --flag=value"
-    [ "--filter=abc"; "--exclude=xyz"; "--prop-count=7"; "--color=ALWAYS" ]
-    (fun p ->
-      is_true ~msg:"--filter=" (p.Cli.filter = [ "abc" ]);
-      is_true ~msg:"--exclude=" (p.Cli.exclude = [ "xyz" ]);
-      is_true ~msg:"--prop-count=" (p.Cli.prop_count = Some 7);
-      is_true ~msg:"--color= is case-insensitive" (p.Cli.color = Some Os.Always));
-  expect_ok "-x is a boolean" [ "-x" ] (fun p ->
-      is_true ~msg:"-x" (p.Cli.bail = Some true));
-  expect_ok "--fail-fast is -x" [ "--fail-fast" ] (fun p ->
-      is_true ~msg:"--fail-fast" (p.Cli.bail = Some true));
-  expect_error "-x takes no value" [ "--fail-fast=2" ] (function
-    | Cli.Invalid_value { source = "--fail-fast"; value = "2"; _ } -> true
-    | _ -> false);
-  expect_ok "later occurrence of a single-valued flag wins"
-    [ "--junit"; "first"; "--junit"; "second" ] (fun p ->
-      is_true ~msg:"last wins" (p.Cli.junit = Some "second"));
-  expect_ok "a second -f adds a pattern, it does not replace the first"
-    [ "-f"; "first"; "--filter"; "second"; "-e"; "x"; "--exclude=y" ] (fun p ->
-      equal ~msg:"the patterns, in the order given" (list string)
-        [ "first"; "second" ] p.Cli.filter;
-      equal ~msg:"-e likewise" (list string) [ "x"; "y" ] p.Cli.exclude);
-  expect_ok "repeatable flags accept the inline spelling"
-    [ "--tag=a"; "--exclude-tag=b"; "--tag=c" ] (fun p ->
-      is_true ~msg:"inline tags accumulate"
-        (p.Cli.tags = [ "a"; "c" ] && p.Cli.exclude_tags = [ "b" ]))
+(* Parsed flags *)
 
-(* Parsing: the output level (default ⊂ -v) *)
+let parsed_flags =
+  group "Parsed flags"
+    [
+      test "empty is the record with every flag absent" (fun () ->
+          equal string "empty" (flags Cli.empty));
+    ]
 
-let () =
-  reg "output level parsing" @@ fun () ->
-  expect_ok "-v parses as verbose" [ "-v" ] (fun p ->
-      is_true ~msg:"-v" (p.Cli.verbose = Some true));
-  expect_ok "--verbose parses" [ "--verbose" ] (fun p ->
-      is_true ~msg:"--verbose" (p.Cli.verbose = Some true));
-  expect_ok "--exclude-tag is selection only, not the output level"
-    [ "--exclude-tag"; "slow" ] (fun p ->
-      is_true ~msg:"--exclude-tag"
-        (p.Cli.exclude_tags = [ "slow" ] && p.Cli.verbose = None))
+(* Errors *)
 
-(* Parsing: positionals *)
-
-let () =
-  reg "positionals" @@ fun () ->
-  expect_ok "a bare argument is the filter" [ "somepattern" ] (fun p ->
-      equal ~msg:"positional filter" (list string) [ "somepattern" ]
-        p.Cli.filter);
-  expect_ok "arguments after -- are positionals" [ "--"; "-weird" ] (fun p ->
-      equal ~msg:"post -- positional" (list string) [ "-weird" ] p.Cli.filter);
-  expect_ok "a second positional is a second pattern" [ "one"; "two" ] (fun p ->
-      equal ~msg:"both, in order" (list string) [ "one"; "two" ] p.Cli.filter);
-  expect_ok "positionals and -f add up, in the order given"
-    [ "one"; "-f"; "two"; "three"; "--"; "-four" ] (fun p ->
-      equal ~msg:"every pattern" (list string)
-        [ "one"; "two"; "three"; "-four" ]
-        p.Cli.filter);
-  expect_ok "a lone dash is an ordinary positional" [ "-" ] (fun p ->
-      equal ~msg:"dash filter" (list string) [ "-" ] p.Cli.filter)
-
-(* Parsing: help and version stop early *)
-
-let () =
-  reg "help and version stop early" @@ fun () ->
-  expect_ok "-h sets help" [ "-h" ] (fun p -> is_true ~msg:"help" p.Cli.help);
-  expect_ok "-V sets version" [ "-V" ] (fun p ->
-      is_true ~msg:"version" p.Cli.version);
-  expect_ok "--help wins over later garbage" [ "--help"; "--bogus" ] (fun p ->
-      is_true ~msg:"help despite garbage" p.Cli.help)
-
-(* Parsing: typed errors *)
-
-let () =
-  reg "unknown flags suggest the near miss" @@ fun () ->
-  let message args =
-    match parse args with
-    | Ok _ -> fail "expected a parse error"
-    | Error e -> Cli.error_message e
-  in
-  let suggests typo expected =
-    let m = message [ typo ] in
-    is_true
-      ~msg:(Printf.sprintf "%s should suggest %s, got: %s" typo expected m)
-      (contains (Printf.sprintf "did you mean '%s'?" expected) m)
-  in
-  suggests "--fliter" "--filter";
-  suggests "--colour" "--color";
-  suggests "--tags" "--tag";
-  (* Transposition is one edit, not two: plain Levenshtein ties --juint
-     between --junit and --update, and the tie goes to table order. *)
-  suggests "--juint" "--junit";
-  (* The verb a reader reaches for, one letter from the flag. *)
-  suggests "--mutant" "--mutate";
-  let silent typo =
-    let m = message [ typo ] in
-    is_true
-      ~msg:(Printf.sprintf "%s should suggest nothing, got: %s" typo m)
-      (not (contains "did you mean" m))
-  in
-  (* The rule at its boundary: at most [max 2 (n / 3)] edits from a long
-     flag, [n] the typed flag's length. Eight bytes allow two edits... *)
-  suggests "--fxltxr" "--filter";
-  silent "--fxxtxr";
-  (* ... and twelve allow four. *)
-  suggests "--prxx-cxxnt" "--prop-count";
-  silent "--prxx-xxxnt";
-  (* Too far to be a slip. *)
-  silent "--completely-different";
-  (* Three edits from [--tag], [--list] and [--arm], though "lt" and "ti"
-     each share a letter with a transposition. *)
-  silent "--lti";
-  (* Two edits from both [--verbose] and [--version]: the table's order
-     breaks the tie. *)
-  suggests "--verbon" "--verbose";
-  (* Any two short flags are one edit apart, so any suggestion would be
-     arbitrary; a confident wrong one is worse than none. *)
-  silent "-Z";
-  is_true ~msg:"the bare error is still there"
-    (contains "unknown option '-Z'" (message [ "-Z" ]))
-
-let () =
-  reg "typed parse errors" @@ fun () ->
-  expect_error "unknown long flag" [ "--bogus" ] (function
-    | Cli.Unknown_flag "--bogus" -> true
-    | _ -> false);
-  expect_error "unknown short flag" [ "-z" ] (function
-    | Cli.Unknown_flag "-z" -> true
-    | _ -> false);
-  expect_error "missing value at end of line" [ "--filter" ] (function
-    | Cli.Missing_value "--filter" -> true
-    | _ -> false);
-  expect_error "flag refuses an inline value" [ "--list=x" ] (function
-    | Cli.Invalid_value { source = "--list"; _ } -> true
-    | _ -> false);
-  expect_error "--prop-count rejects zero" [ "--prop-count"; "0" ] (function
-    | Cli.Invalid_value { source = "--prop-count"; value = "0"; _ } -> true
-    | _ -> false);
-  expect_error "--prop-count rejects garbage" [ "--prop-count"; "many" ]
-    (function
-    | Cli.Invalid_value { source = "--prop-count"; _ } -> true
-    | _ -> false);
-  expect_error "--timeout rejects a negative number" [ "--timeout"; "-1" ]
-    (function
-    | Cli.Invalid_value { source = "--timeout"; _ } -> true
-    | _ -> false);
-  expect_error "--timeout rejects zero" [ "--timeout"; "0" ] (function
-    | Cli.Invalid_value { source = "--timeout"; value = "0"; _ } -> true
-    | _ -> false);
-  expect_error "--slow-threshold rejects a negative number"
-    [ "--slow-threshold"; "-1" ] (function
-    | Cli.Invalid_value { source = "--slow-threshold"; value = "-1"; _ } -> true
-    | _ -> false);
-  expect_error "--slow-threshold rejects garbage" [ "--slow-threshold"; "fast" ]
-    (function
-    | Cli.Invalid_value { source = "--slow-threshold"; _ } -> true
-    | _ -> false);
-  expect_error "--seed rejects a decimal" [ "--seed"; "42" ] (function
-    | Cli.Invalid_value { source = "--seed"; value = "42"; _ } -> true
-    | _ -> false);
-  expect_error "--color rejects unknown modes" [ "--color"; "sometimes" ]
-    (function
-    | Cli.Invalid_value { source = "--color"; _ } -> true
-    | _ -> false)
-
-let () =
-  reg "error messages" @@ fun () ->
-  let messages =
+let messages () =
+  let constructed =
     [
       Cli.Unknown_flag "--bogus";
-      Cli.Missing_value "--filter";
+      Cli.Unknown_flag "--filtre";
+      Cli.Unknown_flag "-Z";
+      Cli.Missing_value "--junit";
       Cli.Invalid_value
         { source = "--prop-count"; value = "x"; expected = "an int" };
+      Cli.Incompatible_flags ("-u", "--corrected");
+      Cli.Incompatible_flags ("--mutate", "--arm");
     ]
   in
-  List.iter
-    (fun error ->
-      let message = Cli.error_message error in
-      is_true ~msg:"error messages are non-empty" (String.length message > 0))
-    messages;
-  is_true ~msg:"error message names the flag"
-    (contains "--bogus" (Cli.error_message (Cli.Unknown_flag "--bogus")));
-  (* One sentence each, to go behind [windtrap:]; the facade's cram pins
-     them on stderr. *)
-  List.iter
-    (fun (error, expected) ->
-      equal ~msg:expected string expected (Cli.error_message error))
-    [
-      (Cli.Unknown_flag "--bogus", "unknown option '--bogus'");
-      ( Cli.Unknown_flag "--filtre",
-        "unknown option '--filtre'; did you mean '--filter'?" );
-      (Cli.Missing_value "--junit", "option '--junit' requires an argument");
-      ( Cli.Invalid_value
-          { source = "--prop-count"; value = "x"; expected = "an int" },
-        "invalid value 'x' for --prop-count: expected an int" );
-      ( Cli.Incompatible_flags ("--mutate", "--arm"),
-        "options '--mutate' and '--arm' cannot be combined" );
-    ];
-  let parse_error args =
-    match parse args with
-    | Ok _ -> fail "expected a parse error"
-    | Error e -> Cli.error_message e
+  let refused =
+    List.map
+      (fun args -> require_error (parse args))
+      [
+        [ "--seed"; "nope" ];
+        [ "--shard"; "9/2" ];
+        [ "--list=x" ];
+        [ "--timeout"; "0" ];
+        [ "--slow-threshold"; "-1" ];
+        [ "--prop-count"; "0" ];
+        [ "--color"; "sometimes" ];
+      ]
   in
-  equal ~msg:"a seed's accepted form is spelled in full" string
-    "invalid value 'nope' for --seed: expected an s1: token with 16 lowercase \
-     hexadecimal digits"
-    (parse_error [ "--seed"; "nope" ]);
-  equal ~msg:"a shard's accepted form carries its example" string
-    "invalid value '9/2' for --shard: expected K/N with 1 <= K <= N (e.g. 2/4)"
-    (parse_error [ "--shard"; "9/2" ]);
-  equal ~msg:"a flag that takes no argument says so" string
-    "invalid value 'x' for --list: expected no argument"
-    (parse_error [ "--list=x" ])
+  let mirror =
+    require_error (settings ~env:[ ("WINDTRAP_PROP_COUNT", "0") ] Cli.empty)
+  in
+  expect
+    (String.concat "\n"
+       (List.map Cli.error_message (constructed @ refused @ [ mirror ])))
+  @@ __POS_OF__
+       {|
+    unknown option '--bogus'
+    unknown option '--filtre'; did you mean '--filter'?
+    unknown option '-Z'
+    option '--junit' requires an argument
+    invalid value 'x' for --prop-count: expected an int
+    options '-u' and '--corrected' cannot be combined
+    options '--mutate' and '--arm' cannot be combined
+    invalid value 'nope' for --seed: expected an s1: token with 16 lowercase hexadecimal digits
+    invalid value '9/2' for --shard: expected K/N with 1 <= K <= N (e.g. 2/4)
+    invalid value 'x' for --list: expected no argument
+    invalid value '0' for --timeout: expected a positive number
+    invalid value '-1' for --slow-threshold: expected a non-negative number
+    invalid value '0' for --prop-count: expected a positive integer
+    invalid value 'sometimes' for --color: expected always, never or auto
+    invalid value '0' for WINDTRAP_PROP_COUNT: expected a positive integer
+    |}
 
-(* --slow-threshold *)
+let suggestion flag =
+  match
+    String.split_on_char '\'' (Cli.error_message (Cli.Unknown_flag flag))
+  with
+  | [ _; _; _; name; "?" ] -> Some name
+  | _ -> None
 
-let () =
-  reg "--slow-threshold parsing" @@ fun () ->
-  expect_ok "--slow-threshold parses a decimal" [ "--slow-threshold"; "2.5" ]
-    (fun p -> is_true ~msg:"threshold value" (p.Cli.slow_threshold = Some 2.5));
-  expect_ok "--slow-threshold accepts zero (disable)"
-    [ "--slow-threshold"; "0" ] (fun p ->
-      is_true ~msg:"zero threshold" (p.Cli.slow_threshold = Some 0.0));
-  expect_ok "--slow-threshold=SECS parses inline" [ "--slow-threshold=0.5" ]
-    (fun p -> is_true ~msg:"inline threshold" (p.Cli.slow_threshold = Some 0.5))
-
-(* --shard *)
-
-let () =
-  reg "--shard parsing" @@ fun () ->
-  expect_ok "--shard K/N parses" [ "--shard"; "2/4" ] (fun p ->
-      is_true ~msg:"shard pair" (p.Cli.shard = Some (2, 4)));
-  expect_ok "--shard=K/N parses inline" [ "--shard=1/1" ] (fun p ->
-      is_true ~msg:"inline shard" (p.Cli.shard = Some (1, 1)));
-  List.iter
-    (fun value ->
-      expect_error (Printf.sprintf "--shard rejects %S" value)
-        [ "--shard"; value ] (function
-        | Cli.Invalid_value { source = "--shard"; value = v; _ } -> v = value
-        | _ -> false))
+let errors =
+  group "Errors"
     [
-      "0/4";
-      "5/4";
-      "2";
-      "2/";
-      "/4";
-      "a/b";
-      "-1/4";
-      "2/0";
-      (* Decimal numerals only: int_of_string's leniency must not leak into
-         a frozen CI-facing spelling. *)
-      "0x1/4";
-      "+1/4";
-      "1_0/20";
-      " 1/4";
+      test "error_message is one sentence that names the flag or the variable"
+        messages;
+      cases
+        "an unknown long flag's message suggests the nearest long flag when \
+         one is near"
+        ~name:fst
+        [
+          ("--fliter", Some "--filter");
+          ("--colour", Some "--color");
+          ("--tags", Some "--tag");
+          (* A transposition is one edit, which puts --juint nearer --junit
+             than --update. *)
+          ("--juint", Some "--junit");
+          ("--mutant", Some "--mutate");
+          (* Two edits from --verbose and from --version: the first in the
+             table wins. *)
+          ("--verbon", Some "--verbose");
+          (* Near is within a third of the typed length, or two edits. *)
+          ("--fxltxr", Some "--filter");
+          ("--fxxtxr", None);
+          ("--prxx-cxxnt", Some "--prop-count");
+          ("--prxx-xxxnt", None);
+          ("--lti", None);
+          ("--completely-different", None);
+        ]
+        (fun (typo, near) -> equal (option string) near (suggestion typo));
+      test "an unknown short flag's message suggests nothing" (fun () ->
+          equal (option string) None (suggestion "-Z"));
     ]
 
-(* The argument grammar: the optional-value kind, over a synthetic row.
-   [--mutate[=PREFIX,...]] is the flag that uses it, and this pins what
-   the kind gives any row, apart from what that flag makes of its value.
-   The row stores into [junit], which nothing else in a one-row table
-   touches. *)
+(* Parsing *)
 
-let probe_row : Cli.entry =
-  {
-    Cli.short = Some "-p";
-    long = "--probe";
-    arg =
-      Cli.Optional_value
-        {
-          metavar = "V";
-          set =
-            (fun ~source acc value ->
-              match value with
-              | None -> Ok { acc with Cli.junit = Some "<bare>" }
-              | Some "bad" ->
-                  Error
-                    (Cli.Invalid_value
-                       { source; value = "bad"; expected = "anything but bad" })
-              | Some v -> Ok { acc with Cli.junit = Some v });
-        };
-    doc = "Probe the grammar";
-    mirror =
-      Some
-        {
-          Cli.var = "WINDTRAP_PROBE";
-          layering = Cli.Single (fun p -> p.Cli.junit = None);
-        };
-  }
+let parse_rows name rows =
+  cases name
+    ~name:(fun (args, _) -> joined args)
+    rows
+    (fun (args, row) -> equal string row (parsed args))
 
-let () =
-  reg "grammar: an optional-value flag on the command line" @@ fun () ->
-  let parse args =
-    Cli.parse_entries [ probe_row ] (Array.of_list ("windtrap-test" :: args))
-  in
-  let junit name args =
-    match parse args with
-    | Ok p -> p.Cli.junit
-    | Error e -> fail (name ^ ": " ^ Cli.error_message e)
-  in
-  equal ~msg:"the help heading spells the value as optional, then the mirror"
-    string "-p, --probe[=V] (env WINDTRAP_PROBE)"
-    (Cli.flag_heading probe_row);
-  is_true ~msg:"the bare long flag" (junit "bare" [ "--probe" ] = Some "<bare>");
-  is_true ~msg:"the bare short flag" (junit "short" [ "-p" ] = Some "<bare>");
-  is_true ~msg:"an inline value"
-    (junit "inline" [ "--probe=lib/a.ml,lib/b.ml" ] = Some "lib/a.ml,lib/b.ml");
-  (match parse [ "--probe"; "next" ] with
-  | Ok p ->
-      is_true ~msg:"a bare flag never consumes the next argument"
-        (p.Cli.junit = Some "<bare>" && p.Cli.filter = [ "next" ])
-  | Error e -> fail (Cli.error_message e));
-  match parse [ "--probe=bad" ] with
-  | Error (Cli.Invalid_value { source = "--probe"; value = "bad"; _ }) ->
-      is_true ~msg:"the row's parser refuses, naming the flag" true
-  | Ok _ | Error _ ->
-      is_true ~msg:"the row's parser refuses, naming the flag" false
+let every_flag () =
+  equal string
+    "filter [pat], exclude [ex], tags [a; b], exclude_tags [c], shard 2/4, \
+     failed_only, list_only, bail, stream, update, seed s1:00000000000000ff, \
+     timeout 2.5, slow_threshold 3, prop_count 50, verbose, junit out.xml, \
+     color never, log_dir logs, mutate [lib/a.ml; lib/b.ml], arm \
+     lib/a.ml:1:0:add"
+    (parsed
+       (String.split_on_char ' '
+          "-f pat -e ex --tag a --tag b --exclude-tag c --shard 2/4 --failed \
+           -l -x -s -u --seed s1:00000000000000ff --timeout 2.5 \
+           --slow-threshold 3 --prop-count 50 -v --junit out.xml --color never \
+           -o logs --mutate=lib/a.ml,lib/b.ml --arm lib/a.ml:1:0:add"))
 
-let () =
-  reg "grammar: an optional-value flag's mirror" @@ fun () ->
-  let layered cli =
-    match Cli.layer_entries [ probe_row ] cli with
-    | Ok p -> Ok p.Cli.junit
-    | Error e -> Error e
-  in
-  setenv "WINDTRAP_PROBE" (Some "1");
-  is_true ~msg:"a truthy value is the bare flag"
-    (layered Cli.empty = Ok (Some "<bare>"));
-  setenv "WINDTRAP_PROBE" (Some "off");
-  is_true ~msg:"a falsy value is absence" (layered Cli.empty = Ok None);
-  setenv "WINDTRAP_PROBE" (Some " lib/a.ml ");
-  is_true ~msg:"anything else is the value, trimmed"
-    (layered Cli.empty = Ok (Some "lib/a.ml"));
-  setenv "WINDTRAP_PROBE" (Some "bad");
-  (match layered Cli.empty with
-  | Error (Cli.Invalid_value { source = "WINDTRAP_PROBE"; value = "bad"; _ }) ->
-      is_true
-        ~msg:"the mirror refuses through the same parser, naming the variable"
-        true
-  | Ok _ | Error _ ->
-      is_true
-        ~msg:"the mirror refuses through the same parser, naming the variable"
-        false);
-  is_true ~msg:"the command line shadows the mirror, unread"
-    (layered { Cli.empty with Cli.junit = Some "cli" } = Ok (Some "cli"))
-
-(* Help and usage *)
-
-(* --help is the CLI's whole user-facing surface, and the baseline pins
-   every byte of it: its columns, its ordering, its wording, and which
-   flags and variables exist at all. A second list asserting that each
-   flag is MENTIONED said less than the golden already says. *)
-let () =
-  reg "help text, whole" @@ fun () ->
-  expect_file
-    (Cli.help ~prog:"/some/path/mytests.exe")
-    "test/unit/expected/test_cli/help.expected"
-
-(* The meta harness clears the runner's variables by name, and a name it
-   misses is a setting the scripted runs silently take from the shell
-   running them. The page names every variable a user sets: the mirrors
-   after their flags, the rest under ENVIRONMENT. *)
-let () =
-  reg "the harness clears every variable the help page names" @@ fun () ->
-  let page = Cli.help ~prog:"mytests.exe" in
-  let is_name_char c = (c >= 'A' && c <= 'Z') || c = '_' in
-  let rec names i acc =
-    if i >= String.length page then acc
-    else if is_name_char page.[i] then begin
-      let j = ref i in
-      while !j < String.length page && is_name_char page.[!j] do
-        incr j
-      done;
-      let word = String.sub page i (!j - i) in
-      let acc =
-        if String.starts_with ~prefix:"WINDTRAP_" word || word = "NO_COLOR" then
-          word :: acc
-        else acc
-      in
-      names !j acc
-    end
-    else names (i + 1) acc
-  in
-  let on_the_page = List.sort_uniq String.compare (names 0 []) in
-  let read_but_not_listed =
-    (* Set by the host, never by a user of the page: the CI service and
-       dune. *)
-    [ "CI"; "GITHUB_ACTIONS"; "INSIDE_DUNE" ]
-  in
-  let bound_by_this_suite =
-    [
-      "WINDTRAP_UPDATE";
-      "WINDTRAP_BAIL";
-      "WINDTRAP_FAILED";
-      "WINDTRAP_LIST";
-      "WINDTRAP_PROBE";
-    ]
-  in
-  equal ~msg:"the harness's list is the page's names and the named extras"
-    (slist string String.compare)
-    (on_the_page @ read_but_not_listed @ bound_by_this_suite)
-    Harness.windtrap_vars
-
-let () =
-  reg "usage line" @@ fun () ->
-  equal ~msg:"usage is one line with the basename" string
-    "usage: mytests.exe [OPTIONS] [PATTERN...]"
-    (Cli.usage ~prog:"/some/path/mytests.exe")
-
-(* Resolution: defaults *)
-
-let settings parsed =
-  match Cli.settings parsed with
-  | Ok settings -> settings
-  | Error error ->
-      is_true ~msg:"settings succeeds" false;
-      Printf.printf "  settings error: %s\n%!" (Cli.error_message error);
-      Run.default_config ()
-
-let resolve = settings
-
-let () =
-  reg "resolution defaults" @@ fun () ->
-  clear_env ();
-  let config = resolve Cli.empty in
-  is_true ~msg:"default: no filters"
-    (config.Run.filter = [] && config.Run.exclude = []);
-  is_true ~msg:"default: no tags"
-    (config.Run.tags = [] && config.Run.exclude_tags = []);
-  is_true ~msg:"default: flags off"
-    ((not config.Run.failed_only)
-    && (not config.Run.bail) && (not config.Run.stream)
-    && not config.Run.allow_focus);
-  is_true ~msg:"default: baselines are checked"
-    (config.Run.baseline = Baseline.Check);
-  is_true ~msg:"default: no timeout/prop-count"
-    (config.Run.timeout = None && config.Run.prop_count = None);
-  is_true ~msg:"default: no JUnit report" (config.Run.junit = None);
-  is_true ~msg:"default: color auto" (config.Run.color = Os.Auto);
-  is_true ~msg:"default: the slow threshold is one second"
-    (config.Run.slow_threshold = 1.0);
-  is_true ~msg:"default: compact" (not config.Run.verbose);
-  is_true ~msg:"default: not a mutation run"
-    (config.Run.mutation = Run.No_mutation);
-  is_true ~msg:"default: log dir non-empty"
-    (String.length config.Run.log_dir > 0)
-
-(* Resolution: precedence *)
-
-let () =
-  reg "resolution precedence: CLI > env" @@ fun () ->
-  clear_env ();
-  setenv "WINDTRAP_FILTER" (Some "envpat");
-  let config = resolve Cli.empty in
-  is_true ~msg:"env fills an absent flag" (config.Run.filter = [ "envpat" ]);
-  let config = resolve { Cli.empty with Cli.filter = [ "clipat" ] } in
-  is_true ~msg:"CLI beats env" (config.Run.filter = [ "clipat" ])
-
-(* The patterns repeat as the tags do, but their mirrors hold one pattern,
-   so the command line's patterns replace the mirror's instead of adding
-   to it. *)
-let () =
-  reg "patterns: the command line replaces the mirror" @@ fun () ->
-  clear_env ();
-  setenv "WINDTRAP_FILTER" (Some " a, b ");
-  setenv "WINDTRAP_EXCLUDE" (Some "c,d");
-  let config = resolve Cli.empty in
-  equal ~msg:"a comma is part of the filter pattern" (list string) [ "a, b" ]
-    config.Run.filter;
-  equal ~msg:"and of the exclusion pattern" (list string) [ "c,d" ]
-    config.Run.exclude;
-  let config =
-    resolve { Cli.empty with Cli.filter = [ "x"; "y" ]; exclude = [ "z" ] }
-  in
-  equal ~msg:"the command line's filter patterns, the mirror's dropped"
-    (list string) [ "x"; "y" ] config.Run.filter;
-  equal ~msg:"likewise for the exclusion" (list string) [ "z" ]
-    config.Run.exclude
-
-let () =
-  reg "tags are additive across layers" @@ fun () ->
-  clear_env ();
-  setenv "WINDTRAP_TAG" (Some "e1, e2");
-  setenv "WINDTRAP_EXCLUDE_TAG" (Some "x1 ,, x2 ");
-  let config =
-    resolve { Cli.empty with Cli.tags = [ "c" ]; exclude_tags = [ "xc" ] }
-  in
-  is_true ~msg:"tags are additive across layers, the CLI's first"
-    (config.Run.tags = [ "c"; "e1"; "e2" ]);
-  is_true ~msg:"exclude tags are additive too, commas split and trimmed"
-    (config.Run.exclude_tags = [ "xc"; "x1"; "x2" ])
-
-(* Resolution: the two reading rules *)
-
-let () =
-  reg "reading rules: a plain value is one token, trimmed" @@ fun () ->
-  clear_env ();
-  setenv "WINDTRAP_FILTER" (Some "  parser ");
-  setenv "WINDTRAP_SHARD" (Some " 2/4 ");
-  setenv "WINDTRAP_PROP_COUNT" (Some " 12 ");
-  setenv "WINDTRAP_JUNIT" (Some " out.xml ");
-  let s = settings Cli.empty in
-  is_true ~msg:"a pattern is trimmed" (s.Run.filter = [ "parser" ]);
-  is_true ~msg:"a shard is trimmed" (s.Run.shard = Some (2, 4));
-  is_true ~msg:"a count is trimmed" (s.Run.prop_count = Some 12);
-  is_true ~msg:"a path is trimmed"
-    (s.Run.junit = Some (Filename.concat (Os.project_root ()) "out.xml"))
-
-let () =
-  reg "reading rules: a valueless flag's mirror is a boolean" @@ fun () ->
-  clear_env ();
-  setenv "WINDTRAP_STREAM" (Some "yes");
-  setenv "WINDTRAP_VERBOSE" (Some " OFF ");
-  let s = settings Cli.empty in
-  is_true ~msg:"a truthy spelling applies the flag" s.Run.stream;
-  is_true ~msg:"a falsy spelling is absence, trimmed and case-insensitively"
-    (not s.Run.verbose);
-  setenv "WINDTRAP_STREAM" (Some "maybe");
-  (match Cli.settings Cli.empty with
-  | Error
-      (Cli.Invalid_value
-         { source = "WINDTRAP_STREAM"; value = "maybe"; expected }) ->
-      is_true
-        ~msg:"anything else is refused, naming the variable and the vocabulary"
-        (contains "1/0" expected)
-  | Ok _ | Error _ ->
-      is_true
-        ~msg:"anything else is refused, naming the variable and the vocabulary"
-        false);
-  is_true ~msg:"a flag on the command line shadows the bad value, unread"
-    (resolve { Cli.empty with Cli.stream = Some true }).Run.stream
-
-(* The two acceptance flags have no mirror: a build action accepts nothing
-   through its environment. Neither do the three feedback-loop flags. *)
-let () =
-  reg "acceptance flags: no mirror, one mode each, never both" @@ fun () ->
-  clear_env ();
-  setenv "WINDTRAP_UPDATE" (Some "1");
-  is_true ~msg:"WINDTRAP_UPDATE is not a mirror"
-    ((resolve Cli.empty).Run.baseline = Baseline.Check);
-  clear_env ();
-  is_true ~msg:"-u resolves to Update"
-    ((resolve { Cli.empty with Cli.update = Some true }).Run.baseline
-   = Baseline.Update);
-  is_true ~msg:"--corrected resolves to Corrected"
-    ((resolve { Cli.empty with Cli.corrected = Some true }).Run.baseline
-   = Baseline.Corrected);
-  expect_ok "--corrected parses" [ "--corrected" ] (fun p ->
-      is_true ~msg:"corrected"
-        (p.Cli.corrected = Some true && p.Cli.update = None));
-  expect_error "-u and --corrected together are refused" [ "-u"; "--corrected" ]
-    (function
-    | Cli.Incompatible_flags ("-u", "--corrected") -> true
-    | _ -> false);
-  expect_error "the refusal reads either order" [ "--corrected"; "--update" ]
-    (function
-    | Cli.Incompatible_flags _ -> true
-    | _ -> false);
-  Windtrap.contains ~msg:"the message names both flags"
-    ~sub:"'-u' and '--corrected'"
-    (Cli.error_message (Cli.Incompatible_flags ("-u", "--corrected")))
-
-let () =
-  reg "feedback-loop flags: no mirror" @@ fun () ->
-  clear_env ();
-  setenv "WINDTRAP_BAIL" (Some "1");
-  setenv "WINDTRAP_FAILED" (Some "1");
-  setenv "WINDTRAP_LIST" (Some "1");
-  let config = resolve Cli.empty in
-  is_true ~msg:"WINDTRAP_BAIL is not a mirror" (not config.Run.bail);
-  is_true ~msg:"WINDTRAP_FAILED is not a mirror" (not config.Run.failed_only);
-  is_true ~msg:"-x resolves to bail"
-    (resolve { Cli.empty with Cli.bail = Some true }).Run.bail
-
-let () =
-  reg "seed precedence and malformed env seeds" @@ fun () ->
-  clear_env ();
-  setenv "WINDTRAP_SEED" (Some "s1:00000000000000aa");
-  let config = resolve Cli.empty in
-  is_true ~msg:"env seed is parsed" (config.Run.seed = 0xaaL);
-  setenv "WINDTRAP_SEED" (Some "not-a-seed");
-  (match Cli.settings Cli.empty with
-  | Error (Cli.Invalid_value { source = "WINDTRAP_SEED"; value; _ }) ->
-      is_true ~msg:"malformed env seed errors with its source"
-        (value = "not-a-seed")
-  | Ok _ | Error _ -> is_true ~msg:"malformed env seed errors" false);
-  let config = resolve { Cli.empty with Cli.seed = Some 7L } in
-  is_true ~msg:"a CLI seed leaves a malformed env seed unread"
-    (config.Run.seed = 7L)
-
-let () =
-  reg "env-only settings" @@ fun () ->
-  clear_env ();
-  setenv "WINDTRAP_STREAM" (Some "1");
-  setenv "WINDTRAP_TIMEOUT" (Some "1.5");
-  setenv "WINDTRAP_PROP_COUNT" (Some "7");
-  setenv "WINDTRAP_EXCLUDE" (Some "skipme");
-  let config = resolve Cli.empty in
-  is_true ~msg:"WINDTRAP_STREAM" config.Run.stream;
-  is_true ~msg:"WINDTRAP_TIMEOUT" (config.Run.timeout = Some 1.5);
-  is_true ~msg:"WINDTRAP_PROP_COUNT" (config.Run.prop_count = Some 7);
-  is_true ~msg:"WINDTRAP_EXCLUDE" (config.Run.exclude = [ "skipme" ])
-
-(* The mirrors that only existed as flags. Under `dune runtest` the mirrors
-   *are* the CLI, so a flag without one is a documented feature no dune user
-   can reach (`--junit`, which the CI guide recommends, most of all). *)
-let () =
-  reg "env-only settings: the CI mirrors" @@ fun () ->
-  clear_env ();
-  setenv "WINDTRAP_JUNIT" (Some "/reports/junit.xml");
-  setenv "WINDTRAP_OUTPUT" (Some "/custom-logs");
-  let config = resolve Cli.empty in
-  is_true ~msg:"WINDTRAP_JUNIT" (config.Run.junit = Some "/reports/junit.xml");
-  is_true ~msg:"WINDTRAP_OUTPUT" (config.Run.log_dir = "/custom-logs")
-
-(* A mirror reaches every stanza of a project, each run from its own build
-   directory, so its relative path is read from the project root; the
-   command line's is read from the working directory. Both are made
-   absolute before a test can chdir. *)
-let () =
-  reg "a relative path is read from the project root or the working directory"
-  @@ fun () ->
-  clear_env ();
-  setenv "WINDTRAP_PROJECT_ROOT" (Some "/somewhere/project");
-  setenv "WINDTRAP_JUNIT" (Some "_build/junit");
-  setenv "WINDTRAP_OUTPUT" (Some "logs");
-  let config = resolve Cli.empty in
-  let root = "/somewhere/project" in
-  equal ~msg:"WINDTRAP_JUNIT, from the project root" (option string)
-    (Some (Filename.concat root "_build/junit"))
-    config.Run.junit;
-  equal ~msg:"WINDTRAP_OUTPUT, from the project root" string
-    (Filename.concat root "logs")
-    config.Run.log_dir;
-  let config =
-    resolve { Cli.empty with Cli.junit = Some "out"; log_dir = Some "logs" }
-  in
-  let cwd = Sys.getcwd () in
-  equal ~msg:"--junit, from the working directory" (option string)
-    (Some (Filename.concat cwd "out"))
-    config.Run.junit;
-  equal ~msg:"-o, from the working directory" string
-    (Filename.concat cwd "logs")
-    config.Run.log_dir
-
-let () =
-  reg "the mirrors lose to their flags" @@ fun () ->
-  clear_env ();
-  setenv "WINDTRAP_PROP_COUNT" (Some "3");
-  setenv "WINDTRAP_JUNIT" (Some "/from-env.xml");
-  let cli =
-    { Cli.empty with Cli.prop_count = Some 1; junit = Some "/from-cli.xml" }
-  in
-  is_true ~msg:"flag beats WINDTRAP_PROP_COUNT"
-    ((resolve cli).Run.prop_count = Some 1);
-  is_true ~msg:"flag beats WINDTRAP_JUNIT"
-    ((settings cli).Run.junit = Some "/from-cli.xml");
-  (* A malformed mirror is a usage error naming the *variable*, not a
-     silent default. *)
-  clear_env ();
-  setenv "WINDTRAP_PROP_COUNT" (Some "0");
-  (match Cli.settings Cli.empty with
-  | Ok _ -> is_true ~msg:"WINDTRAP_PROP_COUNT=0 is rejected" false
-  | Error e ->
-      is_true ~msg:"the error names the variable, not the flag"
-        (contains "WINDTRAP_PROP_COUNT" (Cli.error_message e)));
-  (* A losing layer stays unread: a valid flag shadows a malformed mirror. *)
-  setenv "WINDTRAP_PROP_COUNT" (Some "not-a-number");
-  match Cli.settings { Cli.empty with Cli.prop_count = Some 2 } with
-  | Ok s ->
-      is_true ~msg:"a valid flag shadows a malformed mirror"
-        (s.Run.prop_count = Some 2)
-  | Error e ->
-      is_true
-        ~msg:("malformed mirror leaked past the flag: " ^ Cli.error_message e)
-        false
-
-(* The selection is the environment's only when the command line selects
-   nothing: one selection flag typed makes an empty selection a typo
-   again. *)
-let () =
-  reg "a selection is broadcast when the mirrors alone give it" @@ fun () ->
-  let broadcast cli = (resolve cli).Run.broadcast.Run.selection in
-  clear_env ();
-  is_false ~msg:"no selection at all" (broadcast Cli.empty);
-  List.iter
-    (fun (var, value) ->
-      clear_env ();
-      setenv var (Some value);
-      is_true ~msg:var (broadcast Cli.empty))
-    [
-      ("WINDTRAP_FILTER", "parse");
-      ("WINDTRAP_EXCLUDE", "slow");
-      ("WINDTRAP_TAG", "gpu");
-      ("WINDTRAP_EXCLUDE_TAG", "gpu");
-      ("WINDTRAP_SHARD", "1/2");
-    ];
-  clear_env ();
-  setenv "WINDTRAP_TAG" (Some "gpu");
-  List.iter
-    (fun (flag, cli) -> is_false ~msg:("beside " ^ flag) (broadcast cli))
-    [
-      ("-f", { Cli.empty with Cli.filter = [ "parse" ] });
-      ("-e", { Cli.empty with Cli.exclude = [ "slow" ] });
-      ("--tag", { Cli.empty with Cli.tags = [ "cpu" ] });
-      ("--exclude-tag", { Cli.empty with Cli.exclude_tags = [ "cpu" ] });
-      ("--shard", { Cli.empty with Cli.shard = Some (1, 2) });
-      ("--failed", { Cli.empty with Cli.failed_only = Some true });
-    ];
-  clear_env ();
-  is_false ~msg:"a command-line selection alone"
-    (broadcast { Cli.empty with Cli.filter = [ "parse" ] })
-
-let () =
-  reg "a mutation run is broadcast when WINDTRAP_MUTATE alone asks for it"
-  @@ fun () ->
-  let broadcast cli = (resolve cli).Run.broadcast.Run.mutate in
-  clear_env ();
-  is_false ~msg:"no mutation run" (broadcast Cli.empty);
-  is_false ~msg:"--mutate" (broadcast { Cli.empty with Cli.mutate = Some [] });
-  setenv "WINDTRAP_MUTATE" (Some "1");
-  is_true ~msg:"WINDTRAP_MUTATE=1" (broadcast Cli.empty);
-  is_false ~msg:"--mutate beside WINDTRAP_MUTATE"
-    (broadcast { Cli.empty with Cli.mutate = Some [ "lib/" ] });
-  setenv "WINDTRAP_MUTATE" (Some "0");
-  is_false ~msg:"WINDTRAP_MUTATE=0" (broadcast Cli.empty);
-  clear_env ();
-  setenv "WINDTRAP_MUTATE_ARM" (Some "lib/a.ml:1:0:add");
-  is_false ~msg:"WINDTRAP_MUTATE_ARM" (broadcast Cli.empty)
-
-let () =
-  reg "parsed values land in the config" @@ fun () ->
-  clear_env ();
-  let config =
-    resolve
-      {
-        Cli.empty with
-        Cli.stream = Some true;
-        bail = Some true;
-        log_dir = Some "custom-logs";
-      }
-  in
-  is_true ~msg:"parsed booleans and values land in the config"
-    (config.Run.stream && config.Run.bail
-    (* Absolutized at resolve time so a test that chdirs cannot move the
-       run's logs; the relative spelling is still what it ends with. *)
-    && Filename.is_relative config.Run.log_dir = false
-    && Filename.basename config.Run.log_dir = "custom-logs")
-
-(* Resolution: a mirror is validated by its flag's own parser *)
-
-let () =
-  reg "numeric mirrors are validated by their flag's parser" @@ fun () ->
-  clear_env ();
-  setenv "WINDTRAP_TIMEOUT" (Some "-5");
-  (match Cli.settings Cli.empty with
-  | Error (Cli.Invalid_value { source = "WINDTRAP_TIMEOUT"; value = "-5"; _ })
-    ->
-      is_true ~msg:"a negative env timeout errors with its source" true
-  | Ok _ | Error _ ->
-      is_true ~msg:"a negative env timeout errors with its source" false);
-  let config = resolve { Cli.empty with Cli.timeout = Some 1.0 } in
-  is_true ~msg:"a valid CLI timeout shadows the bad env value"
-    (config.Run.timeout = Some 1.0);
-  clear_env ();
-  setenv "WINDTRAP_PROP_COUNT" (Some "0");
-  (match Cli.settings Cli.empty with
-  | Error (Cli.Invalid_value { source = "WINDTRAP_PROP_COUNT"; value = "0"; _ })
-    ->
-      is_true ~msg:"a zero env prop count errors with its source" true
-  | Ok _ | Error _ ->
-      is_true ~msg:"a zero env prop count errors with its source" false);
-  clear_env ();
-  (* Malformed mirror tokens error like their flags: same knob,
-     same garbage, same loud refusal in every layer. *)
-  setenv "WINDTRAP_PROP_COUNT" (Some "1O0");
-  (match Cli.settings Cli.empty with
-  | Error
-      (Cli.Invalid_value { source = "WINDTRAP_PROP_COUNT"; value = "1O0"; _ })
-    ->
-      is_true ~msg:"a malformed winning env prop count errors with its source"
-        true
-  | Ok _ | Error _ ->
-      is_true ~msg:"a malformed winning env prop count errors with its source"
-        false);
-  let config = resolve { Cli.empty with Cli.prop_count = Some 50 } in
-  is_true ~msg:"a valid CLI prop count leaves a malformed mirror unread"
-    (config.Run.prop_count = Some 50);
-  clear_env ();
-  setenv "WINDTRAP_TIMEOUT" (Some "banana");
-  (match Cli.settings Cli.empty with
-  | Error
-      (Cli.Invalid_value { source = "WINDTRAP_TIMEOUT"; value = "banana"; _ })
-    ->
-      is_true ~msg:"a malformed winning env timeout errors with its source" true
-  | Ok _ | Error _ ->
-      is_true ~msg:"a malformed winning env timeout errors with its source"
-        false);
-  let config = resolve { Cli.empty with Cli.timeout = Some 2.0 } in
-  is_true ~msg:"a valid CLI timeout leaves a malformed mirror unread"
-    (config.Run.timeout = Some 2.0);
-  clear_env ();
-  (* A mirror quotes the token as typed, exactly as its flag does: "-5.0"
-     is what the user wrote and "-5.0" is what the message must show, not
-     the shortest spelling of the float it parsed to. *)
-  setenv "WINDTRAP_TIMEOUT" (Some "-5.0");
-  (match Cli.settings Cli.empty with
-  | Error (Cli.Invalid_value { source = "WINDTRAP_TIMEOUT"; value; _ }) ->
-      is_true ~msg:"a mirror quotes the token as written" (value = "-5.0")
-  | Ok _ | Error _ -> is_true ~msg:"a mirror quotes the token as written" false);
-  setenv "WINDTRAP_TIMEOUT" (Some "1e400");
-  match Cli.settings Cli.empty with
-  | Error (Cli.Invalid_value { source = "WINDTRAP_TIMEOUT"; value; _ }) ->
-      is_true ~msg:"an overflowing token is quoted, not printed as 'inf'"
-        (value = "1e400")
-  | Ok _ | Error _ ->
-      is_true ~msg:"an overflowing token is quoted, not printed as 'inf'" false
-
-(* WINDTRAP_COLOR is a mirror like every other: --color's parser reads
-   it, so a word the flag refuses is refused here too, never read as
-   auto. The flagless commands read the variable through the same
-   parser. *)
-let () =
-  reg "color precedence, and the mirror refuses what the flag refuses"
-  @@ fun () ->
-  clear_env ();
-  setenv "WINDTRAP_COLOR" (Some "never");
-  let render = settings Cli.empty in
-  is_true ~msg:"WINDTRAP_COLOR fills the default" (render.Run.color = Os.Never);
-  let render = settings { Cli.empty with Cli.color = Some Os.Always } in
-  is_true ~msg:"--color beats WINDTRAP_COLOR" (render.Run.color = Os.Always);
-  setenv "WINDTRAP_COLOR" (Some " Never ");
-  is_true ~msg:"the mirror is trimmed and case-insensitive, as --color is"
-    ((settings Cli.empty).Run.color = Os.Never);
-  is_true ~msg:"color_mode reads the same variable the same way"
-    (Cli.color_mode () = Ok Os.Never);
-  setenv "WINDTRAP_COLOR" (Some "sometimes");
-  (match Cli.settings Cli.empty with
-  | Error
-      (Cli.Invalid_value
-         { source = "WINDTRAP_COLOR"; value = "sometimes"; expected }) ->
-      is_true ~msg:"a bad WINDTRAP_COLOR is refused with --color's wording"
-        (expected = "always, never or auto")
-  | Ok _ | Error _ ->
-      is_true ~msg:"a bad WINDTRAP_COLOR is refused with --color's wording"
-        false);
-  (match Cli.color_mode () with
-  | Error
-      (Cli.Invalid_value { source = "WINDTRAP_COLOR"; value = "sometimes"; _ })
-    ->
-      is_true ~msg:"color_mode refuses it too, naming the variable" true
-  | Ok _ | Error _ ->
-      is_true ~msg:"color_mode refuses it too, naming the variable" false);
-  is_true ~msg:"a --color on the command line shadows the bad value, unread"
-    ((settings { Cli.empty with Cli.color = Some Os.Auto }).Run.color = Os.Auto);
-  clear_env ();
-  is_true ~msg:"color_mode defaults to auto" (Cli.color_mode () = Ok Os.Auto)
-
-(* Resolution: the mutation switches *)
-
-let () =
-  reg "mutation switches: the flags, their mirrors, and both at once"
-  @@ fun () ->
-  clear_env ();
-  let mutation cli = (settings cli).Run.mutation in
-  let parsed args =
-    match parse args with Ok p -> p | Error e -> fail (Cli.error_message e)
-  in
-  is_true ~msg:"the bare flag surveys every mutant"
-    (mutation (parsed [ "--mutate" ]) = Run.Loop []);
-  is_true ~msg:"a value is the comma-separated prefixes"
-    (mutation (parsed [ "--mutate=lib/a.ml, lib/b.ml" ])
-    = Run.Loop [ "lib/a.ml"; "lib/b.ml" ]);
-  is_true ~msg:"the bare flag never consumes the next argument"
-    ((parsed [ "--mutate"; "lib/a.ml" ]).Cli.filter = [ "lib/a.ml" ]);
-  is_true ~msg:"--arm takes the identifier, unparsed"
-    (mutation (parsed [ "--arm"; "lib/a.ml:9:12:add" ])
-    = Run.Armed "lib/a.ml:9:12:add");
-  is_true ~msg:"--arm=ID spells the same"
-    (mutation (parsed [ "--arm=x" ]) = Run.Armed "x");
-  (* WINDTRAP_MUTATE reads both ways: a boolean is the bare flag or its
-     absence, anything else the prefixes, so a CI recipe's `1` and a
-     developer's file name both keep working. *)
-  setenv "WINDTRAP_MUTATE" (Some "1");
-  is_true ~msg:"WINDTRAP_MUTATE=1 is the bare flag"
-    (mutation Cli.empty = Run.Loop []);
-  setenv "WINDTRAP_MUTATE" (Some "off");
-  is_true ~msg:"a falsy WINDTRAP_MUTATE is no mutation run"
-    (mutation Cli.empty = Run.No_mutation);
-  setenv "WINDTRAP_MUTATE" (Some " lib/calc.ml ");
-  is_true ~msg:"any other WINDTRAP_MUTATE is the prefixes, trimmed"
-    (mutation Cli.empty = Run.Loop [ "lib/calc.ml" ]);
-  setenv "WINDTRAP_MUTATE" (Some "lib/a.ml,lib/b.ml");
-  is_true ~msg:"and splits on commas as the flag does"
-    (mutation Cli.empty = Run.Loop [ "lib/a.ml"; "lib/b.ml" ]);
-  is_true ~msg:"the flag shadows the mirror"
-    (mutation (parsed [ "--mutate=lib/x.ml" ]) = Run.Loop [ "lib/x.ml" ]);
-  clear_env ();
-  setenv "WINDTRAP_MUTATE_ARM" (Some "lib/a.ml:9:12:add");
-  is_true ~msg:"WINDTRAP_MUTATE_ARM mirrors --arm"
-    (mutation Cli.empty = Run.Armed "lib/a.ml:9:12:add");
-  (* Both at once, whichever layer each arrived by: the loop arms each
-     mutant itself, so an armed parent would mutate its own dry run. *)
-  let refused cli =
-    match Cli.settings cli with
-    | Error (Cli.Incompatible_flags ("--mutate", "--arm")) -> true
-    | Ok _ | Error _ -> false
-  in
-  is_true ~msg:"--arm with WINDTRAP_MUTATE_ARM's sibling --mutate is refused"
-    (refused (parsed [ "--mutate" ]));
-  clear_env ();
-  is_true ~msg:"--mutate and --arm on one command line are refused"
-    (refused (parsed [ "--mutate"; "--arm"; "x" ]));
-  setenv "WINDTRAP_MUTATE" (Some "1");
-  is_true ~msg:"WINDTRAP_MUTATE=1 with --arm is refused"
-    (refused (parsed [ "--arm"; "x" ]));
-  is_true ~msg:"the message names both flags"
-    (contains "'--mutate' and '--arm' cannot be combined"
-       (Cli.error_message (Cli.Incompatible_flags ("--mutate", "--arm"))))
-
-(* Resolution: --slow-threshold and WINDTRAP_SLOW_THRESHOLD *)
-
-let () =
-  reg "--slow-threshold resolution" @@ fun () ->
-  clear_env ();
-  let render = settings Cli.empty in
-  is_true ~msg:"the built-in default is one second"
-    (render.Run.slow_threshold = 1.0);
-  setenv "WINDTRAP_SLOW_THRESHOLD" (Some "3");
-  let render = settings Cli.empty in
-  is_true ~msg:"WINDTRAP_SLOW_THRESHOLD fills an absent flag"
-    (render.Run.slow_threshold = 3.0);
-  let render = settings { Cli.empty with Cli.slow_threshold = Some 0.5 } in
-  is_true ~msg:"--slow-threshold beats the env mirror"
-    (render.Run.slow_threshold = 0.5);
-  setenv "WINDTRAP_SLOW_THRESHOLD" (Some "-2");
-  (match Cli.settings Cli.empty with
-  | Error
-      (Cli.Invalid_value { source = "WINDTRAP_SLOW_THRESHOLD"; value = "-2"; _ })
-    ->
-      is_true ~msg:"a negative winning env threshold errors with its source"
-        true
-  | Ok _ | Error _ ->
-      is_true ~msg:"a negative winning env threshold errors with its source"
-        false);
-  let render = settings { Cli.empty with Cli.slow_threshold = Some 1.5 } in
-  is_true ~msg:"a CLI threshold shadows the bad env value"
-    (render.Run.slow_threshold = 1.5);
-  setenv "WINDTRAP_SLOW_THRESHOLD" (Some "soon");
-  match Cli.settings Cli.empty with
-  | Error
-      (Cli.Invalid_value
-         { source = "WINDTRAP_SLOW_THRESHOLD"; value = "soon"; _ }) ->
-      is_true
-        ~msg:"a malformed winning env threshold errors, as WINDTRAP_TIMEOUT's"
-        true
-  | Ok _ | Error _ ->
-      is_true
-        ~msg:"a malformed winning env threshold errors, as WINDTRAP_TIMEOUT's"
-        false
-
-(* Resolution: --shard and WINDTRAP_SHARD *)
-
-let () =
-  reg "--shard resolution" @@ fun () ->
-  clear_env ();
-  let config = resolve Cli.empty in
-  is_true ~msg:"no layer means no shard" (config.Run.shard = None);
-  setenv "WINDTRAP_SHARD" (Some "2/3");
-  let config = resolve Cli.empty in
-  is_true ~msg:"WINDTRAP_SHARD fills an absent flag"
-    (config.Run.shard = Some (2, 3));
-  let config = resolve { Cli.empty with Cli.shard = Some (1, 2) } in
-  is_true ~msg:"--shard beats WINDTRAP_SHARD" (config.Run.shard = Some (1, 2));
-  setenv "WINDTRAP_SHARD" (Some "9/2");
-  (match Cli.settings Cli.empty with
-  | Error (Cli.Invalid_value { source = "WINDTRAP_SHARD"; value = "9/2"; _ }) ->
-      is_true ~msg:"a malformed winning env shard errors with its source" true
-  | Ok _ | Error _ ->
-      is_true ~msg:"a malformed winning env shard errors with its source" false);
-  let config = resolve { Cli.empty with Cli.shard = Some (1, 2) } in
-  is_true ~msg:"a CLI shard leaves a malformed env shard unread"
-    (config.Run.shard = Some (1, 2))
-
-(* Parsing: the edges of the argument grammar *)
-
-let () =
-  reg "an argument of two bytes that starts with a dash is a flag" @@ fun () ->
-  List.iter
-    (fun (arg, typed) ->
-      expect_error (Printf.sprintf "%s is an unknown flag" arg) [ arg ]
-        (function
-        | Cli.Unknown_flag f -> f = typed
-        | _ -> false))
-    [ ("-1", "-1"); ("-xv", "-xv"); ("--bogus=1", "--bogus") ]
-
-let () =
-  reg "a short flag takes no inline value" @@ fun () ->
-  (* The payload is the argument whole: without its value, [-f] would name
-     a flag that exists. *)
-  List.iter
-    (fun arg ->
-      expect_error (Printf.sprintf "%s is an unknown flag" arg) [ arg ]
-        (function
-        | Cli.Unknown_flag f -> f = arg
-        | _ -> false))
-    [ "-f=x"; "-fx" ]
-
-let () =
-  reg "a flag takes the next argument whatever it looks like" @@ fun () ->
-  expect_ok "-f --verbose" [ "-f"; "--verbose" ] (fun p ->
-      equal ~msg:"the filter is the flag-shaped word" (list string)
-        [ "--verbose" ] p.Cli.filter;
-      equal ~msg:"and --verbose was not read as a flag" (option bool) None
-        p.Cli.verbose)
-
-let () =
-  reg "an error before --help wins over it" @@ fun () ->
-  expect_error "an unknown flag before --help" [ "--bogus"; "--help" ] (function
-    | Cli.Unknown_flag "--bogus" -> true
-    | _ -> false);
-  expect_error "-u --corrected --help" [ "-u"; "--corrected"; "--help" ]
-    (function
-    | Cli.Incompatible_flags ("-u", "--corrected") -> true
-    | _ -> false)
-
-let () =
-  reg "the acceptance refusal names -u first in either order" @@ fun () ->
-  expect_error "--corrected --update" [ "--corrected"; "--update" ] (function
-    | Cli.Incompatible_flags ("-u", "--corrected") -> true
-    | _ -> false)
-
-let () =
-  reg "parse reads no environment" @@ fun () ->
-  clear_env ();
-  setenv "WINDTRAP_FILTER" (Some "from-env");
-  setenv "WINDTRAP_STREAM" (Some "1");
-  is_true ~msg:"no argument is the empty record, the mirrors set"
-    (parse [] = Ok Cli.empty)
-
-(* Command lines made of whole arguments: every flag that takes no value in
-   both spellings, value flags with a good value, and the misspellings and
-   separators, so most vectors parse and some do not. Whatever a vector
-   holds, [parse] returns. *)
+(* Whole arguments: each valueless flag in both spellings, value flags with a
+   good value, and misspellings and separators, so that most vectors parse
+   and some do not. *)
 let argv_chunks =
   List.map
     (fun a -> [ a ])
-    [
-      "--failed";
-      "-l";
-      "--list";
-      "-x";
-      "--fail-fast";
-      "-s";
-      "--stream";
-      "-u";
-      "--update";
-      "--corrected";
-      "-v";
-      "--verbose";
-      "--mutate";
-    ]
+    (String.split_on_char ' '
+       "--failed -l --list -x --fail-fast -s --stream -u --update --corrected \
+        -v --verbose --mutate")
   @ [
       [ "-f"; "p" ];
       [ "--tag=a" ];
@@ -1189,72 +459,228 @@ let argv_chunks =
       [ "" ];
     ]
 
-let () =
-  registered :=
-    prop "parse never raises and never gives Some false"
-      Gen.(map List.concat (list (of_list argv_chunks)))
-      (fun args ->
-        match parse args with
-        | Error _ -> ()
-        | Ok p ->
-            let flags =
-              [
-                p.Cli.failed_only;
-                p.Cli.list_only;
-                p.Cli.bail;
-                p.Cli.stream;
-                p.Cli.update;
-                p.Cli.corrected;
-                p.Cli.verbose;
-              ]
-            in
-            is_true ~msg:"a boolean flag is None or Some true"
-              (List.for_all (fun b -> b <> Some false) flags))
-    :: !registered
+let never_some_false args =
+  match parse args with
+  | Error _ -> ()
+  | Ok p ->
+      equal
+        (list (option bool))
+        []
+        (List.filter
+           (Option.equal Bool.equal (Some false))
+           [
+             p.Cli.failed_only;
+             p.list_only;
+             p.bail;
+             p.stream;
+             p.update;
+             p.corrected;
+             p.verbose;
+           ])
 
-(* Resolution: the order of the mirrors, and the edges of each layer *)
+let refused_value (flag, value) =
+  equal string (strf "invalid %s %S" flag value) (parsed [ flag; value ])
 
-let invalid_source = function
-  | Error (Cli.Invalid_value { source; _ }) -> Some source
-  | Ok _ | Error _ -> None
+let parsing =
+  group "Parsing"
+    [
+      parse_rows "each flag gives its field, in each of its spellings"
+        [
+          ([ "-f"; "pat" ], "filter [pat]");
+          ([ "--filter"; "pat" ], "filter [pat]");
+          ([ "--filter=abc" ], "filter [abc]");
+          ([ "-e"; "ex" ], "exclude [ex]");
+          ([ "--exclude"; "ex" ], "exclude [ex]");
+          ([ "--exclude=xyz" ], "exclude [xyz]");
+          ([ "--tag"; "a" ], "tags [a]");
+          ([ "--tag=a" ], "tags [a]");
+          ([ "--exclude-tag"; "slow" ], "exclude_tags [slow]");
+          ([ "--exclude-tag=b" ], "exclude_tags [b]");
+          ([ "--shard"; "2/4" ], "shard 2/4");
+          ([ "--shard=1/1" ], "shard 1/1");
+          ([ "--shard"; "4/4" ], "shard 4/4");
+          ([ "--failed" ], "failed_only");
+          ([ "-l" ], "list_only");
+          ([ "--list" ], "list_only");
+          ([ "-x" ], "bail");
+          ([ "--fail-fast" ], "bail");
+          ([ "--timeout"; "2.5" ], "timeout 2.5");
+          ([ "--slow-threshold"; "2.5" ], "slow_threshold 2.5");
+          ([ "--slow-threshold"; "0" ], "slow_threshold 0");
+          ([ "--slow-threshold=0.5" ], "slow_threshold 0.5");
+          ([ "--seed"; "s1:00000000000000ff" ], "seed s1:00000000000000ff");
+          ([ "--prop-count"; "50" ], "prop_count 50");
+          ([ "--prop-count=7" ], "prop_count 7");
+          ([ "-u" ], "update");
+          ([ "--update" ], "update");
+          ([ "--corrected" ], "corrected");
+          ([ "-s" ], "stream");
+          ([ "--stream" ], "stream");
+          ([ "-v" ], "verbose");
+          ([ "--verbose" ], "verbose");
+          ([ "--junit"; "out.xml" ], "junit out.xml");
+          ([ "--color"; "never" ], "color never");
+          ([ "--color=ALWAYS" ], "color always");
+          ([ "--color"; "Auto" ], "color auto");
+          ([ "-o"; "logs" ], "log_dir logs");
+          ([ "--output=logs" ], "log_dir logs");
+          ([ "--mutate" ], "mutate []");
+          ([ "--mutate=lib/a.ml, lib/b.ml" ], "mutate [lib/a.ml; lib/b.ml]");
+          ([ "--arm"; "lib/a.ml:1:0:add" ], "arm lib/a.ml:1:0:add");
+          ([ "--arm=x" ], "arm x");
+          ([ "-h" ], "help");
+          ([ "--help" ], "help");
+          ([ "-V" ], "version");
+          ([ "--version" ], "version");
+        ];
+      test "every flag fits one command line" every_flag;
+      test "argv.(0) is not read, and an empty argv is empty" (fun () ->
+          equal (pair string string) ("empty", "empty")
+            (parsed_argv [||], parsed_argv [| "--bogus" |]));
+      test "parse reads no environment" (fun () ->
+          stated [ ("WINDTRAP_FILTER", "from-env"); ("WINDTRAP_STREAM", "1") ];
+          equal string "empty" (parsed []));
+      parse_rows
+        "a repeated flag keeps its last value, and -f, -e, --tag and \
+         --exclude-tag accumulate in order"
+        [
+          ([ "--junit"; "first"; "--junit"; "second" ], "junit second");
+          ([ "--shard"; "1/2"; "--shard=2/2" ], "shard 2/2");
+          ( [ "-f"; "first"; "--filter"; "second"; "-e"; "x"; "--exclude=y" ],
+            "filter [first; second], exclude [x; y]" );
+          ( [ "--tag=a"; "--exclude-tag=b"; "--tag=c" ],
+            "tags [a; c], exclude_tags [b]" );
+        ];
+      parse_rows
+        "an argument of two bytes or more that starts with - is a flag, \
+         unknown as typed but for a long flag's =value"
+        [
+          ([ "--bogus" ], "unknown --bogus");
+          ([ "-z" ], "unknown -z");
+          ([ "-1" ], "unknown -1");
+          ([ "-xv" ], "unknown -xv");
+          ([ "--bogus=1" ], "unknown --bogus");
+        ];
+      parse_rows
+        "a short flag takes no inline value, so -f=x and -fx are unknown"
+        [ ([ "-f=x" ], "unknown -f=x"); ([ "-fx" ], "unknown -fx") ];
+      parse_rows
+        "a flag that takes a value takes the next argument, whatever it is"
+        [
+          ([ "-f"; "--verbose" ], "filter [--verbose]");
+          ([ "--arm"; "--mutate" ], "arm --mutate");
+        ];
+      parse_rows
+        "a flag that takes a value and ends the command line is missing it"
+        [
+          ([ "--filter" ], "missing value --filter");
+          ([ "-f"; "a"; "--seed" ], "missing value --seed");
+        ];
+      test "a bare --mutate never takes the next argument" (fun () ->
+          equal string "filter [lib/a.ml], mutate []"
+            (parsed [ "--mutate"; "lib/a.ml" ]));
+      parse_rows "a flag that takes no value refuses one"
+        [
+          ([ "--list=x" ], {|invalid --list "x"|});
+          ([ "--fail-fast=2" ], {|invalid --fail-fast "2"|});
+          ([ "--verbose=1" ], {|invalid --verbose "1"|});
+        ];
+      test "a flag that takes no value refuses one with expected no argument"
+        (fun () ->
+          equal string "no argument"
+            (require_match expected_of (parse [ "--verbose=1" ])));
+      cases
+        "a flag refuses a value outside its field's description, naming the \
+         value as typed"
+        ~name:(fun (flag, value) -> strf "%s %S" flag value)
+        [
+          ("--shard", "0/4");
+          ("--shard", "5/4");
+          ("--shard", "9/2");
+          ("--shard", "2");
+          ("--shard", "2/");
+          ("--shard", "/4");
+          ("--shard", "a/b");
+          ("--shard", "-1/4");
+          ("--shard", "2/0");
+          (* Decimal numerals only: the spelling is frozen for CI. *)
+          ("--shard", "0x1/4");
+          ("--shard", "+1/4");
+          ("--shard", "1_0/20");
+          ("--shard", " 1/4");
+          ("--timeout", "0");
+          ("--timeout", "-1");
+          ("--timeout", "nan");
+          ("--timeout", "inf");
+          ("--timeout", "1e400");
+          ("--slow-threshold", "-1");
+          ("--slow-threshold", "fast");
+          ("--slow-threshold", "inf");
+          ("--prop-count", "0");
+          ("--prop-count", "-3");
+          ("--prop-count", "many");
+          ("--seed", "42");
+          ("--color", "sometimes");
+        ]
+        refused_value;
+      parse_rows "parse is the first error from the left"
+        [
+          ([ "--bogus"; "--prop-count"; "0" ], "unknown --bogus");
+          ([ "--prop-count"; "0"; "--bogus" ], {|invalid --prop-count "0"|});
+        ];
+      parse_rows
+        "a bare argument adds a pattern to filter, as does every argument \
+         after --"
+        [
+          ([ "somepattern" ], "filter [somepattern]");
+          ([ "one"; "two" ], "filter [one; two]");
+          ( [ "one"; "-f"; "two"; "three"; "--"; "-four" ],
+            "filter [one; two; three; -four]" );
+          ([ "--"; "-weird" ], "filter [-weird]");
+          ([ "--"; "--help" ], "filter [--help]");
+          ([ "-" ], "filter [-]");
+        ];
+      parse_rows
+        "parsing stops at --help and --version, and an error before them wins"
+        [
+          ([ "--help"; "--bogus" ], "help");
+          ([ "-V"; "--prop-count"; "0" ], "version");
+          ([ "--bogus"; "--help" ], "unknown --bogus");
+          ([ "-u"; "--corrected"; "--help" ], "incompatible -u --corrected");
+        ];
+      parse_rows "-u with --corrected is refused, whatever the order"
+        [
+          ([ "-u"; "--corrected" ], "incompatible -u --corrected");
+          ([ "--corrected"; "--update" ], "incompatible -u --corrected");
+        ];
+      prop "parse never raises and never gives Some false"
+        Gen.(map List.concat (list (of_list argv_chunks)))
+        never_some_false;
+    ]
 
-let () =
-  reg "the mirrors are read in help order and the first error wins" @@ fun () ->
-  clear_env ();
-  (* Help order is SHARD, STREAM, COLOR; the alphabet puts COLOR first. *)
-  setenv "WINDTRAP_COLOR" (Some "sometimes");
-  setenv "WINDTRAP_SHARD" (Some "9/2");
-  equal ~msg:"the earlier row's variable is named" (option string)
-    (Some "WINDTRAP_SHARD")
-    (invalid_source (Cli.settings Cli.empty));
-  setenv "WINDTRAP_SHARD" None;
-  setenv "WINDTRAP_STREAM" (Some "maybe");
-  equal ~msg:"then the next bad one in help order" (option string)
-    (Some "WINDTRAP_STREAM")
-    (invalid_source (Cli.settings Cli.empty))
+(* Resolution *)
 
-let () =
-  reg "a bad mirror wins over --mutate with --arm" @@ fun () ->
-  clear_env ();
-  setenv "WINDTRAP_COLOR" (Some "sometimes");
-  equal ~msg:"the incompatibility is checked after every mirror" (option string)
-    (Some "WINDTRAP_COLOR")
-    (invalid_source
-       (Cli.settings
-          { Cli.empty with Cli.mutate = Some []; arm = Some "lib/a.ml:1:0:add" }))
+let resolve_rows name rows =
+  cases name
+    ~name:(fun (env, args, _) ->
+      match List.map fst env @ args with
+      | [] -> "no variable and no flag"
+      | words -> String.concat " " words)
+    rows
+    (fun (env, args, row) -> equal string row (resolved ~env args))
 
-let () =
-  reg "WINDTRAP_CORRECTED is not a mirror" @@ fun () ->
-  clear_env ();
-  setenv "WINDTRAP_CORRECTED" (Some "1");
-  is_true ~msg:"the baselines are checked"
-    ((resolve Cli.empty).Run.baseline = Baseline.Check)
+let from_the_working_directory () =
+  stated [];
+  chdir (temp_dir ());
+  let cwd = Sys.getcwd () in
+  let c = config [ "--junit"; "out"; "-o"; "logs" ] in
+  equal
+    (pair (option string) string)
+    (Some (Filename.concat cwd "out"), Filename.concat cwd "logs")
+    (c.Run.junit, c.Run.log_dir)
 
-let () =
-  reg "a relative -o is kept as given when the directory cannot be read"
-  @@ fun () ->
+let unreadable_directory () =
   if Sys.win32 then skip ~reason:"POSIX only" ();
-  clear_env ();
   let gone = Filename.concat (temp_dir ()) "gone" in
   Unix.mkdir gone 0o700;
   chdir gone;
@@ -1262,28 +688,260 @@ let () =
   (match Sys.getcwd () with
   | _ -> skip ~reason:"this system reads a removed working directory" ()
   | exception Sys_error _ -> ());
-  equal ~msg:"the log dir is the relative spelling" string "logs"
-    (resolve { Cli.empty with Cli.log_dir = Some "logs" }).Run.log_dir
+  equal string "logs" (config [ "-o"; "logs" ]).Run.log_dir
+
+let seed_of env args = Seed.to_string (config ~env args).Run.seed
+
+let resolution =
+  group "Resolution"
+    [
+      test "with no flag and no mirror, every field but the seed is the default"
+        (fun () -> equal string "defaults" (resolved []));
+      test "allow_focus is false and invocation is `Mirrors" (fun () ->
+          let c = config [] in
+          equal (pair bool string) (false, "mirrors")
+            (c.allow_focus, invocation_name c.invocation));
+      test "list_only, help and version are ignored" (fun () ->
+          equal string "defaults"
+            (settled
+               {
+                 Cli.empty with
+                 list_only = Some true;
+                 help = true;
+                 version = true;
+               }));
+      resolve_rows "a flag's value is its field's"
+        [
+          ([], [ "--failed" ], "failed_only");
+          ([], [ "-x" ], "bail");
+          ([], [ "-s" ], "stream");
+          ([], [ "-v" ], "verbose");
+        ];
+      resolve_rows "a flag given on the command line wins over its mirror"
+        [
+          ([ ("WINDTRAP_SHARD", "2/3") ], [ "--shard"; "1/2" ], "shard 1/2");
+          ([ ("WINDTRAP_TIMEOUT", "3") ], [ "--timeout"; "1" ], "timeout 1");
+          ( [ ("WINDTRAP_SLOW_THRESHOLD", "3") ],
+            [ "--slow-threshold"; "0.5" ],
+            "slow_threshold 0.5" );
+          ( [ ("WINDTRAP_PROP_COUNT", "3") ],
+            [ "--prop-count"; "1" ],
+            "prop_count 1" );
+          ( [ ("WINDTRAP_JUNIT", "/from-env.xml") ],
+            [ "--junit"; "/from-cli.xml" ],
+            "junit /from-cli.xml" );
+          ( [ ("WINDTRAP_COLOR", "never") ],
+            [ "--color"; "always" ],
+            "color always" );
+          ( [ ("WINDTRAP_OUTPUT", "/env-logs") ],
+            [ "-o"; "/cli-logs" ],
+            "log_dir /cli-logs" );
+          ( [ ("WINDTRAP_MUTATE", "lib/a.ml") ],
+            [ "--mutate=lib/x.ml" ],
+            "mutation loop [lib/x.ml]" );
+          ( [ ("WINDTRAP_MUTATE_ARM", "a") ],
+            [ "--arm"; "b" ],
+            "mutation armed b" );
+        ];
+      resolve_rows
+        "a mirror whose flag was given is not read, so a valid flag hides a \
+         malformed mirror"
+        [
+          ([ ("WINDTRAP_SHARD", "9/2") ], [ "--shard"; "1/2" ], "shard 1/2");
+          ([ ("WINDTRAP_TIMEOUT", "-5") ], [ "--timeout"; "1" ], "timeout 1");
+          ([ ("WINDTRAP_TIMEOUT", "banana") ], [ "--timeout=2" ], "timeout 2");
+          ( [ ("WINDTRAP_SLOW_THRESHOLD", "-2") ],
+            [ "--slow-threshold"; "1.5" ],
+            "slow_threshold 1.5" );
+          ( [ ("WINDTRAP_SEED", "not-a-seed") ],
+            [ "--seed"; "s1:0000000000000007" ],
+            "defaults" );
+          ( [ ("WINDTRAP_PROP_COUNT", "1O0") ],
+            [ "--prop-count"; "50" ],
+            "prop_count 50" );
+          ( [ ("WINDTRAP_PROP_COUNT", "not-a-number") ],
+            [ "--prop-count=2" ],
+            "prop_count 2" );
+          ([ ("WINDTRAP_STREAM", "maybe") ], [ "-s" ], "stream");
+          ( [ ("WINDTRAP_COLOR", "sometimes") ],
+            [ "--color"; "auto" ],
+            "defaults" );
+        ];
+      resolve_rows
+        "the mirrors are read in the order of help, and the first error ends \
+         the resolution"
+        [
+          ( [ ("WINDTRAP_COLOR", "sometimes"); ("WINDTRAP_SHARD", "9/2") ],
+            [],
+            {|invalid WINDTRAP_SHARD "9/2"|} );
+          ( [ ("WINDTRAP_COLOR", "sometimes"); ("WINDTRAP_STREAM", "maybe") ],
+            [],
+            {|invalid WINDTRAP_STREAM "maybe"|} );
+        ];
+      resolve_rows
+        "tags add up, the command line's first, and the command line's \
+         patterns replace the mirror's"
+        [
+          ([ ("WINDTRAP_TAG", "e") ], [ "--tag"; "c" ], "tags [c; e]");
+          ( [ ("WINDTRAP_EXCLUDE_TAG", "x") ],
+            [ "--exclude-tag"; "xc" ],
+            "exclude_tags [xc; x]" );
+          ( [ ("WINDTRAP_FILTER", " a, b ") ],
+            [ "-f"; "x"; "y" ],
+            "filter [x; y]" );
+          ([ ("WINDTRAP_EXCLUDE", "c,d") ], [ "-e"; "z" ], "exclude [z]");
+        ];
+      cases
+        "baseline is Update under update, else Corrected under corrected, else \
+         Check"
+        ~name:fst
+        [
+          ("update", ({ Cli.empty with update = Some true }, "baseline update"));
+          ( "corrected",
+            ({ Cli.empty with corrected = Some true }, "baseline corrected") );
+          ( "both",
+            ( { Cli.empty with update = Some true; corrected = Some true },
+              "baseline update" ) );
+        ]
+        (fun (_, (p, row)) -> equal string row (settled p));
+      resolve_rows "mutation is Loop of --mutate and Armed of --arm"
+        [
+          ([], [ "--mutate" ], "mutation loop []");
+          ( [],
+            [ "--mutate=lib/a.ml, lib/b.ml" ],
+            "mutation loop [lib/a.ml; lib/b.ml]" );
+          ( [],
+            [ "--arm"; "lib/a.ml:9:12:add" ],
+            "mutation armed lib/a.ml:9:12:add" );
+        ];
+      resolve_rows "--mutate with --arm is refused, whichever layer gave each"
+        [
+          ([], [ "--mutate"; "--arm"; "x" ], "incompatible --mutate --arm");
+          ( [ ("WINDTRAP_MUTATE_ARM", "x") ],
+            [ "--mutate" ],
+            "incompatible --mutate --arm" );
+          ( [ ("WINDTRAP_MUTATE", "1") ],
+            [ "--arm"; "x" ],
+            "incompatible --mutate --arm" );
+          ( [ ("WINDTRAP_MUTATE", "1"); ("WINDTRAP_MUTATE_ARM", "x") ],
+            [],
+            "incompatible --mutate --arm" );
+        ];
+      test "--mutate with --arm is checked after every mirror" (fun () ->
+          equal string {|invalid WINDTRAP_COLOR "sometimes"|}
+            (resolved
+               ~env:[ ("WINDTRAP_COLOR", "sometimes") ]
+               [ "--mutate"; "--arm"; "x" ]));
+      test "a mirror's relative path is read from the project root" (fun () ->
+          let root = "/somewhere/project" in
+          equal string
+            (Printf.sprintf "log_dir %s, junit %s"
+               (Filename.concat root "logs")
+               (Filename.concat root "_build/junit"))
+            (resolved
+               ~env:
+                 [
+                   ("WINDTRAP_PROJECT_ROOT", root);
+                   ("WINDTRAP_JUNIT", "_build/junit");
+                   ("WINDTRAP_OUTPUT", "logs");
+                 ]
+               []));
+      test "a flag's relative path is read from the working directory"
+        from_the_working_directory;
+      test
+        "a relative -o is kept as given when the working directory cannot be \
+         read"
+        unreadable_directory;
+      test "github is Os.in_github_actions ()" (fun () ->
+          equal string "github"
+            (resolved ~env:[ ("CI", "true"); ("GITHUB_ACTIONS", "true") ] []));
+      resolve_rows "a selection is broadcast when the mirrors alone give it"
+        [
+          ( [ ("WINDTRAP_TAG", "gpu") ],
+            [ "-f"; "parse" ],
+            "filter [parse], tags [gpu]" );
+          ( [ ("WINDTRAP_TAG", "gpu") ],
+            [ "-e"; "slow" ],
+            "exclude [slow], tags [gpu]" );
+          ([ ("WINDTRAP_TAG", "gpu") ], [ "--tag"; "cpu" ], "tags [cpu; gpu]");
+          ( [ ("WINDTRAP_TAG", "gpu") ],
+            [ "--exclude-tag"; "cpu" ],
+            "tags [gpu], exclude_tags [cpu]" );
+          ( [ ("WINDTRAP_TAG", "gpu") ],
+            [ "--shard"; "1/2" ],
+            "tags [gpu], shard 1/2" );
+          ( [ ("WINDTRAP_TAG", "gpu") ],
+            [ "--failed" ],
+            "tags [gpu], failed_only" );
+          ([], [ "-f"; "parse" ], "filter [parse]");
+        ];
+      test "a mutation run is broadcast when WINDTRAP_MUTATE alone asks for it"
+        (fun () ->
+          equal string "mutation loop [lib/]"
+            (resolved ~env:[ ("WINDTRAP_MUTATE", "1") ] [ "--mutate=lib/" ]));
+      cases "the seed is the command line's, else WINDTRAP_SEED's"
+        ~name:(fun (env, args, _) -> joined (List.map snd env @ args))
+        [
+          ( [ ("WINDTRAP_SEED", "s1:00000000000000aa") ],
+            [],
+            "s1:00000000000000aa" );
+          ( [ ("WINDTRAP_SEED", "s1:00000000000000aa") ],
+            [ "--seed"; "s1:0000000000000007" ],
+            "s1:0000000000000007" );
+        ]
+        (fun (env, args, seed) -> equal string seed (seed_of env args));
+      test "without a seed in any layer, each call draws another" (fun () ->
+          not_equal string (seed_of [] []) (seed_of [] []));
+      cases "color_mode reads WINDTRAP_COLOR by the parser of --color"
+        ~name:(fun (value, _) ->
+          Option.fold ~none:"unset" ~some:(strf "%S") value)
+        [
+          (None, "auto");
+          (Some "", "auto");
+          (Some " Never ", "never");
+          (Some "ALWAYS", "always");
+          (Some "sometimes", {|invalid WINDTRAP_COLOR "sometimes"|});
+        ]
+        (fun (value, row) ->
+          stated
+            (Option.fold ~none:[]
+               ~some:(fun v -> [ ("WINDTRAP_COLOR", v) ])
+               value);
+          equal string row
+            (Result.fold ~ok:color_name ~error:error_row (Cli.color_mode ())));
+      test "color_mode refuses a word in --color's words" (fun () ->
+          stated [ ("WINDTRAP_COLOR", "sometimes") ];
+          equal string
+            (require_match expected_of (parse [ "--color"; "sometimes" ]))
+            (require_match expected_of (Cli.color_mode ())));
+    ]
+
+(* Help *)
+
+let longest_line page =
+  List.fold_left
+    (fun longest line -> max longest (String.length line))
+    0
+    (String.split_on_char '\n' page)
+
+let help =
+  group "Help"
+    [
+      test "usage is one line with the basename of prog" (fun () ->
+          equal string "usage: mytests.exe [OPTIONS] [PATTERN...]"
+            (Cli.usage ~prog:"/some/path/mytests.exe"));
+      test
+        "help is the page of every flag, then of every setting no flag spells"
+        (fun () ->
+          expect_file
+            (Cli.help ~prog:"/some/path/mytests.exe")
+            "test/unit/expected/test_cli/help.expected");
+      test "every line of help fits 80 columns" (fun () ->
+          at_most int ~than:80 (longest_line (Cli.help ~prog:"mytests.exe")));
+      test "help ends with a newline" (fun () ->
+          let page = Cli.help ~prog:"mytests.exe" in
+          equal char '\n' page.[String.length page - 1]);
+    ]
 
 let () =
-  reg "settings: github from the environment, the mirrors' spelling"
-  @@ fun () ->
-  clear_env ();
-  let c = resolve Cli.empty in
-  is_true ~msg:"outside GitHub Actions" (not c.Run.github);
-  is_true ~msg:"commands are spelled with the mirrors"
-    (c.Run.invocation = `Mirrors);
-  setenv "CI" (Some "true");
-  setenv "GITHUB_ACTIONS" (Some "true");
-  is_true ~msg:"under GitHub Actions" (resolve Cli.empty).Run.github
-
-let () =
-  reg "settings draws a fresh seed on every call" @@ fun () ->
-  clear_env ();
-  let a = (resolve Cli.empty).Run.seed and b = (resolve Cli.empty).Run.seed in
-  is_true ~msg:"two calls, two seeds" (a <> b)
-
-(* Suite *)
-
-let tests = List.rev !registered
-let () = exit @@ Windtrap.run "cli" tests
+  exit (run "cli" [ mirrors; parsed_flags; errors; parsing; resolution; help ])

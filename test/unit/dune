@@ -1,14 +1,6 @@
 (tests
- (names
-  test_os
-  test_report
-  test_report_junit
-  test_cli)
- (modules
-  test_os
-  test_report
-  test_report_junit
-  test_cli)
+ (names test_os test_report test_report_junit)
+ (modules test_os test_report test_report_junit)
  (libraries
   windtrap
   windtrap_runtime
@@ -112,6 +104,19 @@
  (name test_property)
  (modules test_property)
  (libraries windtrap))
+
+(test
+ (name test_cli)
+ (modules test_cli)
+ (libraries windtrap unix)
+ (deps expected/test_cli/help.expected)
+ (action
+  (progn
+   (run %{test} --corrected)
+   (diff? test_cli.ml test_cli.ml.corrected)
+   (diff?
+    expected/test_cli/help.expected
+    expected/test_cli/help.expected.corrected))))
 
 (test
  (name test_run)
