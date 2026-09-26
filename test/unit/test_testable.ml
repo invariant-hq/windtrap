@@ -3,501 +3,469 @@
    SPDX-License-Identifier: ISC
   ---------------------------------------------------------------------------*)
 
-(* Tests for Testable: instance printing and equality tables, tolerance
-   semantics, and combinator composition. The witness sits below Check, so assertions on
-   it go through booleans and string renderings, never through the witness
-   under test. *)
+(* The witnesses under test are judged through the bool and the string they
+   give, never through a witness of their own kind. *)
 
 open Windtrap
-module T = Testable
-module Pp = Windtrap.Private.Pp
 
-let check_prints name witness value ~expected =
-  equal ~msg:name string expected (T.to_string witness value)
+type equality =
+  | Equal : 'a Testable.t * 'a * 'a -> equality
+  | Differ : 'a Testable.t * 'a * 'a -> equality
 
-let check_equal name witness a b = is_true ~msg:name (T.equal witness a b)
-let check_differ name witness a b = is_false ~msg:name (T.equal witness a b)
+type printing = Prints : 'a Testable.t * 'a * string -> printing
+type ordering = Orders : 'a Testable.t * 'a * 'a * string -> ordering
 
-(* Fixtures for the conventional [t]/[pp]/[equal] trio [make] consumes. *)
+let equalities claim rows =
+  cases claim ~name:fst rows (function
+    | _, Equal (w, a, b) -> equal bool true (Testable.equal w a b)
+    | _, Differ (w, a, b) -> equal bool false (Testable.equal w a b))
 
-module Point = struct
-  type t = { x : int; y : int }
+let printings claim rows =
+  cases claim ~name:fst rows (function _, Prints (w, v, s) ->
+      equal string s (Testable.to_string w v))
 
-  let pp ppf { x; y } = Format.fprintf ppf "(%d, %d)" x y
-  let equal a b = a.x = b.x && a.y = b.y
-end
+let sign c = if c < 0 then "below" else if c > 0 then "above" else "same"
 
-(* A wider module: extra members beyond the trio are simply not read. *)
-module Version = struct
-  type t = int * int
+(* [a] against [b], [b] against [a], then [a] against itself. *)
+let order w a b =
+  match Testable.compare w with
+  | None -> "no order"
+  | Some cmp -> String.concat ", " (List.map sign [ cmp a b; cmp b a; cmp a a ])
 
-  let make maj min = (maj, min)
-  let pp ppf (maj, min) = Format.fprintf ppf "%d.%d" maj min
-  let equal = ( = )
-  let compare = Stdlib.compare
-end
+let orderings claim rows =
+  cases claim ~name:fst rows (function _, Orders (w, a, b, row) ->
+      equal string row (order w a b))
 
-(* A module whose [equal] is finer than structural equality (physical
-   equality). The witness must pass it through untouched: no structural
-   fallback, no comparison mediated by the printed form. *)
-module Phys = struct
-  type t = int ref
+let ordered = "below, above, same"
 
-  let pp ppf r = Format.fprintf ppf "ref %d" !r
-  let equal = ( == )
-end
+(* Witnesses *)
 
-let point = T.make ~pp:Point.pp ~equal:Point.equal
+let mod3 =
+  Testable.make ~pp:Format.pp_print_int ~equal:(fun a b -> a mod 3 = b mod 3)
 
-(* [a] ranks strictly below [b] under the witness's order, which it must
-   carry. *)
-let ordered_or_fail name w a b =
-  match T.compare w with
-  | Some cmp ->
-      is_true ~msg:(name ^ ": below") (cmp a b < 0);
-      is_true ~msg:(name ^ ": above") (cmp b a > 0);
-      is_true ~msg:(name ^ ": same") (cmp a a = 0)
-  | None -> fail (name ^ ": carries no order")
+let physical =
+  Testable.make ~pp:(fun ppf r -> Format.fprintf ppf "ref %d" !r) ~equal:( == )
 
-let tests =
+let pp_ratio ppf (a, b) = Format.fprintf ppf "%d / %d" a b
+let ratio = Testable.structural ~pp:pp_ratio
+
+let caseless =
+  Testable.of_equal (fun a b ->
+      String.lowercase_ascii a = String.lowercase_ascii b)
+
+let length = Testable.contramap String.length Testable.int
+let reversed = Testable.with_compare (fun a b -> Int.compare b a) Testable.int
+let one = ref 1
+
+let made_equal =
+  let open Testable in
   [
-    test "printing: base types" (fun () ->
-        check_prints "prints unit" T.unit () ~expected:"()";
-        check_prints "prints bool" T.bool true ~expected:"true";
-        check_prints "prints char" T.char 'a' ~expected:"'a'";
-        check_prints "prints escaped char" T.char '\n' ~expected:"'\\n'";
-        check_prints "prints string quoted" T.string "hello"
-          ~expected:"\"hello\"";
-        check_prints "prints string escapes" T.string "a\nb"
-          ~expected:"\"a\\nb\"";
-        check_prints "prints text verbatim" T.text "hello" ~expected:"hello";
-        check_prints "prints bytes quoted" T.bytes (Bytes.of_string "hi")
-          ~expected:"\"hi\"";
-        check_prints "prints int" T.int 42 ~expected:"42";
-        check_prints "prints negative int" T.int (-7) ~expected:"-7";
-        check_prints "prints int32" T.int32 42l ~expected:"42";
-        check_prints "prints int64" T.int64 42L ~expected:"42";
-        check_prints "prints nativeint" T.nativeint 42n ~expected:"42";
-        check_prints "prints float with %g" (T.float 0.1) 1.5 ~expected:"1.5";
-        check_prints "prints whole float compactly" (T.float 0.1) 1.0
-          ~expected:"1";
-        check_prints "prints nan" (T.float 0.1) Float.nan ~expected:"nan";
-        check_prints "prints float_rel with %g"
-          (T.float_rel ~rel:0.1 ~abs:0.1)
-          2.5 ~expected:"2.5");
-    test "printing: containers and combinators" (fun () ->
-        check_prints "prints None" (T.option T.int) None ~expected:"None";
-        check_prints "prints Some" (T.option T.int) (Some 1) ~expected:"Some 1";
-        check_prints "prints Ok" (T.result T.int T.string) (Ok 1)
-          ~expected:"Ok 1";
-        check_prints "prints Error" (T.result T.int T.string) (Error "x")
-          ~expected:"Error \"x\"";
-        check_prints "prints Left" (T.either T.int T.string) (Either.Left 1)
-          ~expected:"Left (1)";
-        check_prints "prints Right" (T.either T.int T.string) (Either.Right "h")
-          ~expected:"Right (\"h\")";
-        check_prints "prints list" (T.list T.int) [ 1; 2; 3 ]
-          ~expected:"[1; 2; 3]";
-        check_prints "prints empty list" (T.list T.int) [] ~expected:"[]";
-        check_prints "prints array" (T.array T.int) [| 1; 2 |]
-          ~expected:"[|1; 2|]";
-        check_prints "prints empty array" (T.array T.int) [||] ~expected:"[||]";
-        check_prints "prints pair" (T.pair T.int T.string) (1, "x")
-          ~expected:"(1, \"x\")";
-        check_prints "prints triple"
-          (T.triple T.int T.int T.int)
-          (1, 2, 3) ~expected:"(1, 2, 3)";
-        check_prints "prints quad"
-          (T.quad T.int T.int T.int T.int)
-          (1, 2, 3, 4) ~expected:"(1, 2, 3, 4)";
-        (* Failures print the sides in the sorted order the equality
-           compared: the diff shows the multiset difference, never
-           the incidental arrival order. *)
-        check_prints "slist prints the sorted sides the equality compared"
-          (T.slist T.int Int.compare)
-          [ 3; 1; 2 ] ~expected:"[1; 2; 3]";
-        check_prints "slist sorts with the given comparison"
-          (T.slist T.int (fun a b -> Int.compare b a))
-          [ 3; 1; 2 ] ~expected:"[3; 2; 1]";
-        check_prints "pass prints <pass>" T.pass 42 ~expected:"<pass>";
-        check_prints "of_equal prints <abstract>" (T.of_equal Int.equal) 42
-          ~expected:"<abstract>";
-        check_prints "contramap prints the image, not the original"
-          (T.contramap String.length T.int)
-          "abc" ~expected:"3");
-    (* [text] exists for one reason: its rendering keeps the newlines, and a
-       rendering that spans lines is exactly what sends the report down the
-       unified-diff path instead of marking spans in an escaped one-liner.
-       Pin that property here, at the witness, so the two ends of the
-       contract cannot drift apart. *)
-    test "text: renders verbatim, where string escapes" (fun () ->
-        let doc = "alpha\nbeta\n" in
-        check_prints "keeps newlines" T.text doc ~expected:"alpha\nbeta\n";
-        is_true ~msg:"the rendering spans lines"
-          (String.contains (T.to_string T.text doc) '\n');
-        check_prints "string collapses the same value to one escaped line"
-          T.string doc ~expected:"\"alpha\\nbeta\\n\"";
-        is_false ~msg:"string's rendering never spans lines"
-          (String.contains (T.to_string T.string doc) '\n');
-        check_prints "no quotes around the empty value" T.text "" ~expected:"";
-        (* Byte equality, like [string]: the differences [text] renders
-           without escapes are still differences it reports. *)
-        check_differ "trailing space is a difference" T.text "a" "a ";
-        check_differ "trailing newline is a difference" T.text "a" "a\n");
-    test "equality: base types" (fun () ->
-        check_equal "unit equal" T.unit () ();
-        check_equal "bool equal" T.bool true true;
-        check_differ "bool differs" T.bool true false;
-        check_equal "int equal" T.int 42 42;
-        check_differ "int differs" T.int 42 43;
-        check_equal "int32 equal" T.int32 1l 1l;
-        check_equal "int64 equal" T.int64 1L 1L;
-        check_equal "nativeint equal" T.nativeint 42n 42n;
-        check_differ "nativeint differs" T.nativeint 0n 1n;
-        check_equal "char equal" T.char 'a' 'a';
-        check_differ "char differs" T.char 'a' 'b';
-        check_equal "string equal" T.string "hello" "hello";
-        check_differ "string differs" T.string "hello" "world";
-        check_equal "text equal" T.text "a\nb" "a\nb";
-        check_differ "text differs" T.text "a\nb" "a\nc";
-        check_equal "bytes equal" T.bytes (Bytes.of_string "a")
-          (Bytes.of_string "a");
-        check_differ "bytes differ" T.bytes (Bytes.of_string "a")
-          (Bytes.of_string "b"));
-    test "equality: option, result, either" (fun () ->
-        check_equal "option: Some equals Some" (T.option T.int) (Some 1)
-          (Some 1);
-        check_equal "option: None equals None" (T.option T.int) None None;
-        check_differ "option: Some differs from None" (T.option T.int) (Some 1)
-          None;
-        check_differ "option: differing payloads" (T.option T.int) (Some 1)
-          (Some 2);
-        check_equal "option: payload witness is used"
-          (T.option (T.float 0.1))
-          (Some 1.0) (Some 1.05);
-        check_equal "result: Ok equals Ok" (T.result T.int T.string) (Ok 1)
-          (Ok 1);
-        check_equal "result: Error equals Error" (T.result T.int T.string)
-          (Error "e") (Error "e");
-        check_differ "result: Ok differs from Error" (T.result T.int T.string)
-          (Ok 1) (Error "e");
-        check_differ "result: differing Ok payloads" (T.result T.int T.string)
-          (Ok 1) (Ok 2);
-        check_equal "either: Left equals Left" (T.either T.int T.string)
-          (Either.Left 1) (Either.Left 1);
-        check_equal "either: Right equals Right" (T.either T.int T.string)
-          (Either.Right "h") (Either.Right "h");
-        check_differ "either: Left differs from Right" (T.either T.int T.int)
-          (Either.Left 1) (Either.Right 1));
-    test "equality: lists, arrays, slist" (fun () ->
-        check_equal "list: equal" (T.list T.int) [ 1; 2; 3 ] [ 1; 2; 3 ];
-        check_equal "list: empty" (T.list T.int) [] [];
-        check_differ "list: different lengths" (T.list T.int) [ 1; 2 ]
-          [ 1; 2; 3 ];
-        check_differ "list: different element" (T.list T.int) [ 1; 2; 3 ]
-          [ 1; 9; 3 ];
-        check_equal "list: element witness is used"
-          (T.list (T.float 0.1))
-          [ 1.0 ] [ 1.05 ];
-        check_equal "array: equal" (T.array T.int) [| 1; 2 |] [| 1; 2 |];
-        check_differ "array: different lengths" (T.array T.int) [| 1 |]
-          [| 1; 2 |];
-        check_differ "array: different element" (T.array T.int) [| 1; 2 |]
-          [| 1; 3 |];
-        check_equal "slist: ignores order"
-          (T.slist T.int Int.compare)
-          [ 3; 1; 2 ] [ 1; 2; 3 ];
-        check_differ "slist: detects missing elements"
-          (T.slist T.int Int.compare)
-          [ 1; 2 ] [ 1; 2; 3 ];
-        check_equal "slist: duplicates as multiset"
-          (T.slist T.int Int.compare)
-          [ 1; 1; 2 ] [ 1; 2; 1 ];
-        check_differ "slist: multiplicity matters"
-          (T.slist T.int Int.compare)
-          [ 1; 1; 2 ] [ 1; 2; 2 ]);
-    test "equality: tuples" (fun () ->
-        check_equal "pair: componentwise" (T.pair T.int T.string) (1, "a")
-          (1, "a");
-        check_differ "pair: first differs" (T.pair T.int T.string) (1, "a")
-          (2, "a");
-        check_differ "pair: second differs" (T.pair T.int T.string) (1, "a")
-          (1, "b");
-        check_equal "pair: component witnesses are used"
-          (T.pair (T.float 0.1) T.int)
-          (1.0, 2) (1.05, 2);
-        check_equal "triple: componentwise"
-          (T.triple T.int T.int T.int)
-          (1, 2, 3) (1, 2, 3);
-        check_differ "triple: last differs"
-          (T.triple T.int T.int T.int)
-          (1, 2, 3) (1, 2, 4);
-        check_equal "quad: componentwise"
-          (T.quad T.int T.int T.int T.int)
-          (1, 2, 3, 4) (1, 2, 3, 4);
-        check_differ "quad: last differs"
-          (T.quad T.int T.int T.int T.int)
-          (1, 2, 3, 4) (1, 2, 3, 5));
-    test "constructors and combinators" (fun () ->
-        let mod3 =
-          T.make ~pp:Format.pp_print_int ~equal:(fun a b -> a mod 3 = b mod 3)
-        in
-        check_equal "make: custom equality is used" mod3 4 7;
-        check_differ "make: custom equality can reject" mod3 4 6;
-        let s = T.structural ~pp:(Pp.list Pp.int) in
-        check_equal "structural: polymorphic equality" s [ 1; 2 ] [ 1; 2 ];
-        check_differ "structural: rejects structural difference" s [ 1 ] [ 2 ];
-        let ci =
-          T.of_equal (fun a b ->
-              String.lowercase_ascii a = String.lowercase_ascii b)
-        in
-        check_equal "of_equal: custom equality" ci "Hello" "HELLO";
-        check_differ "of_equal: rejects" ci "Hello" "World";
-        let by_length = T.contramap String.length T.int in
-        check_equal "contramap: compares through the map" by_length "foo" "bar";
-        check_differ "contramap: detects differences after the map" by_length
-          "foo" "quux";
-        check_equal "pass: everything is equal" T.pass 1 2;
-        check_equal "pass: composes as an ignored component"
-          (T.pair T.string T.pass) ("k", 1) ("k", 2);
-        check_differ "pass: other components still compared"
-          (T.pair T.string T.pass) ("k", 1) ("j", 1);
-        check_equal "composition: contramap inside a container"
-          (T.list (T.pair (T.contramap fst T.int) T.pass))
-          [ ((1, 2), "x") ]
-          [ ((1, 9), "y") ];
-        check_differ "composition: mapped component still compared"
-          (T.list (T.pair (T.contramap fst T.int) T.pass))
-          [ ((1, 2), "x") ]
-          [ ((3, 2), "x") ]);
-    test "float_exact: equality" (fun () ->
-        check_equal "identical floats are equal" T.float_exact 1.5 1.5;
-        check_differ "adjacent floats differ" T.float_exact 1.0 (Float.succ 1.0);
-        check_differ "no tolerance at all" T.float_exact 0.3 (0.1 +. 0.2);
-        check_equal "NaN equals NaN" T.float_exact Float.nan Float.nan;
-        check_equal "NaN equals sign-flipped NaN" T.float_exact Float.nan
-          (-.Float.nan);
-        check_differ "NaN differs from a number" T.float_exact Float.nan 1.0;
-        check_differ "a number differs from NaN" T.float_exact 1.0 Float.nan;
-        check_differ "positive and negative zero differ" T.float_exact 0. (-0.);
-        check_equal "negative zero equals itself" T.float_exact (-0.) (-0.);
-        check_equal "equal infinities" T.float_exact Float.infinity
-          Float.infinity;
-        check_equal "equal negative infinities" T.float_exact Float.neg_infinity
-          Float.neg_infinity;
-        check_differ "opposite infinities differ" T.float_exact Float.infinity
-          Float.neg_infinity;
-        check_differ "infinity differs from max_float" T.float_exact
-          Float.infinity Float.max_float;
-        check_equal "subnormals compare exactly" T.float_exact 1e-310 1e-310;
-        check_differ "distinct subnormals differ" T.float_exact 1e-310
-          (Float.succ 1e-310));
-    test "float_exact: distinct values never print alike" (fun () ->
-        not_equal ~msg:"renders 0.3 and 0.1 +. 0.2 differently" string
-          (T.to_string T.float_exact 0.3)
-          (T.to_string T.float_exact (0.1 +. 0.2));
-        not_equal ~msg:"renders the zeros differently" string
-          (T.to_string T.float_exact 0.)
-          (T.to_string T.float_exact (-0.)));
-    test "float: tolerance and IEEE default semantics" (fun () ->
-        check_equal "equal values short-circuit the tolerance" (T.float 1e-9)
-          1.5 1.5;
-        check_equal "within epsilon" (T.float 0.01) 1.0 1.005;
-        check_differ "outside epsilon" (T.float 0.001) 1.0 1.005;
-        check_differ "NaN differs from NaN by default (use float_exact)"
-          (T.float 0.001) Float.nan Float.nan;
-        check_differ "NaN differs from NaN under a wide tolerance"
-          (T.float 1e10) Float.nan Float.nan;
-        check_differ "NaN differs from a number" (T.float 1.0) Float.nan 1.0;
-        check_differ "a number differs from NaN" (T.float 1.0) 1.0 Float.nan;
-        check_equal "signed zeros are equal" (T.float 0.001) 0. (-0.);
-        check_equal "equal infinities" (T.float 0.001) Float.infinity
-          Float.infinity;
-        check_differ "opposite infinities differ" (T.float 1e300) Float.infinity
-          Float.neg_infinity;
-        check_differ "infinity differs from a finite value" (T.float 1e300)
-          Float.infinity Float.max_float);
-    test "float_rel: tolerance and IEEE default semantics" (fun () ->
-        check_equal "relative tolerance"
-          (T.float_rel ~rel:0.01 ~abs:0.0)
-          100.0 100.5;
-        check_differ "outside relative tolerance"
-          (T.float_rel ~rel:0.001 ~abs:0.0)
-          100.0 100.5;
-        check_equal "absolute tolerance near zero"
-          (T.float_rel ~rel:0.0 ~abs:0.1)
-          0.0 0.05;
-        check_differ "outside both tolerances"
-          (T.float_rel ~rel:0.001 ~abs:0.001)
-          1.0 1.5;
-        check_differ "NaN differs from NaN by default (use float_exact)"
-          (T.float_rel ~rel:0.001 ~abs:0.001)
-          Float.nan Float.nan;
-        check_differ "NaN differs from NaN under wide tolerances"
-          (T.float_rel ~rel:1.0 ~abs:1e10)
-          Float.nan Float.nan;
-        check_differ "NaN differs from a number"
-          (T.float_rel ~rel:1.0 ~abs:1.0)
-          Float.nan 1.0;
-        check_equal "signed zeros are equal"
-          (T.float_rel ~rel:0.001 ~abs:0.0)
-          0. (-0.);
-        check_equal "equal infinities"
-          (T.float_rel ~rel:0.01 ~abs:0.0)
-          Float.infinity Float.infinity;
-        check_differ "opposite infinities differ"
-          (T.float_rel ~rel:1.0 ~abs:0.0)
-          Float.infinity Float.neg_infinity;
-        check_differ "infinity differs from a finite value"
-          (T.float_rel ~rel:1.0 ~abs:0.0)
-          Float.infinity Float.max_float);
-    test "float: a non-positive eps is rejected" (fun () ->
-        (* [float 0.] (and any eps below it) is exact equality wearing a
-           tolerance's syntax; the guard names the honest spelling. *)
-        let rejects msg fn =
-          raises_match ~msg (Exn.invalid_arg ~substring:"float_exact") fn
-        in
-        rejects "zero eps" (fun () -> T.float 0.);
-        rejects "negative zero eps" (fun () -> T.float (-0.));
-        rejects "negative eps" (fun () -> T.float (-1e-9));
-        rejects "NaN eps" (fun () -> T.float Float.nan));
-    test "float_rel: degenerate bounds are rejected" (fun () ->
-        raises_match ~msg:"negative rel" (Exn.invalid_arg ~substring:"~rel")
-          (fun () -> T.float_rel ~rel:(-0.1) ~abs:0.1);
-        raises_match ~msg:"negative abs" (Exn.invalid_arg ~substring:"~abs")
-          (fun () -> T.float_rel ~rel:0.1 ~abs:(-0.1));
-        raises_match ~msg:"NaN rel" (Exn.invalid_arg ~substring:"~rel")
-          (fun () -> T.float_rel ~rel:Float.nan ~abs:0.1);
-        raises_match ~msg:"NaN abs" (Exn.invalid_arg ~substring:"~abs")
-          (fun () -> T.float_rel ~rel:0.1 ~abs:Float.nan);
-        raises_match ~msg:"both bounds zero"
-          (Exn.invalid_arg ~substring:"float_exact") (fun () ->
-            T.float_rel ~rel:0. ~abs:0.);
-        (* One zero bound stays legal: it switches a component off while the
-           other remains a real tolerance. *)
-        check_equal "pure relative still constructs"
-          (T.float_rel ~rel:0.01 ~abs:0.)
-          100.0 100.5;
-        check_equal "pure absolute still constructs"
-          (T.float_rel ~rel:0. ~abs:0.1)
-          0.0 0.05);
-    test "float: a difference of exactly eps is equal" (fun () ->
-        check_equal "|1.5 - 1.0| = 0.5" (T.float 0.5) 1.0 1.5;
-        check_differ "just past eps" (T.float 0.5) 1.0 (Float.succ 1.5));
-    test "float_rel: rel scales by the larger magnitude" (fun () ->
-        (* |1.105 - 1.0| = 0.105: within 0.1 * 1.105, not within 0.1 * 1.0. *)
-        let w = T.float_rel ~rel:0.1 ~abs:0. in
-        check_equal "expected smaller" w 1.0 1.105;
-        check_equal "expected larger" w 1.105 1.0);
-    test "float_rel: a difference of exactly rel times the larger is equal"
-      (fun () ->
-        let w = T.float_rel ~rel:0.5 ~abs:0. in
-        check_equal "|2 - 1| = 0.5 * 2" w 1.0 2.0;
-        check_differ "just past it" w 1.0 (Float.succ 2.0));
-    test "equality verbs apply the equality to the expected value first"
-      (fun () ->
-        let calls = ref [] in
-        let w =
-          T.make ~pp:Format.pp_print_string ~equal:(fun a b ->
-              calls := (a, b) :: !calls;
-              true)
-        in
-        equal w "expected" "actual";
-        ignore (T.equal w "expected" "actual");
-        equal ~msg:"(expected, actual) at each call"
-          (list (pair string string))
-          [ ("expected", "actual"); ("expected", "actual") ]
-          !calls);
-    test "an exception from the equality or the printer escapes the verb"
-      (fun () ->
-        let raising_equal =
-          T.make ~pp:Format.pp_print_int ~equal:(fun _ _ -> raise Exit)
-        in
-        raises ~msg:"equality" Exit (fun () -> equal raising_equal 1 1);
-        let raising_pp = T.make ~pp:(fun _ _ -> raise Exit) ~equal:Int.equal in
-        raises ~msg:"printer of a failing equal" Exit (fun () ->
-            equal raising_pp 1 2));
-    test "make: physical equality passes through" (fun () ->
-        let phys = T.make ~pp:Phys.pp ~equal:Phys.equal in
-        let r = ref 0 in
-        check_equal "physical equality holds on the same value" phys r r;
-        check_differ "physical equality distinguishes structural twins" phys
-          (ref 0) (ref 0);
-        check_prints "printing is independent of the equality" phys (ref 42)
-          ~expected:"ref 42");
-    test "order: instances carry their module's, containers none" (fun () ->
-        let ordered name w a b =
-          match T.compare w with
-          | Some cmp ->
-              is_true ~msg:(name ^ ": below") (cmp a b < 0);
-              is_true ~msg:(name ^ ": above") (cmp b a > 0);
-              is_true ~msg:(name ^ ": same") (cmp a a = 0)
-          | None -> fail (name ^ ": carries no order")
-        in
-        let unordered name w =
-          is_none ~msg:(name ^ ": no order") (T.compare w)
-        in
-        ordered "int" T.int 1 2;
-        ordered "int32" T.int32 1l 2l;
-        ordered "int64" T.int64 1L 2L;
-        ordered "nativeint" T.nativeint 1n 2n;
-        ordered "char" T.char 'a' 'b';
-        ordered "string" T.string "a" "b";
-        ordered "text" T.text "a" "b";
-        ordered "bytes" T.bytes (Bytes.of_string "a") (Bytes.of_string "b");
-        ordered "bool" T.bool false true;
-        (* Tolerance belongs to equality: every float witness orders exactly,
-           and NaN sorts first, as [Float.compare] has it. *)
-        ordered "float" (T.float 0.5) 1.0 1.2;
-        ordered "float_rel" (T.float_rel ~rel:0.5 ~abs:0.5) 1.0 1.2;
-        ordered "float_exact" T.float_exact 1.0 1.2;
-        ordered "float: nan sorts below -inf" (T.float 0.5) Float.nan
-          neg_infinity;
-        is_true ~msg:"unit: one value, ranked the same"
-          (match T.compare T.unit with
-          | Some cmp -> cmp () () = 0
-          | None -> false);
-        unordered "option" (T.option T.int);
-        unordered "result" (T.result T.int T.int);
-        unordered "either" (T.either T.int T.int);
-        unordered "list" (T.list T.int);
-        unordered "array" (T.array T.int);
-        unordered "slist" (T.slist T.int Int.compare);
-        unordered "pair" (T.pair T.int T.int);
-        unordered "triple" (T.triple T.int T.int T.int);
-        unordered "quad" (T.quad T.int T.int T.int T.int);
-        unordered "pass" T.pass;
-        unordered "of_equal" (T.of_equal Int.equal);
-        unordered "make" (T.make ~pp:Pp.int ~equal:Int.equal));
-    test "order: with_compare, structural, contramap" (fun () ->
-        (* [with_compare] gives a plain witness its order and leaves the
-           printer and equality alone; a second call replaces the first. *)
-        let v = T.make ~pp:Version.pp ~equal:Version.equal in
-        ordered_or_fail "with_compare: the module's compare"
-          (T.with_compare Version.compare v)
-          (Version.make 1 2) (Version.make 1 3);
-        check_prints "with_compare: printer untouched"
-          (T.with_compare Version.compare v)
-          (Version.make 3 14) ~expected:"3.14";
-        check_equal "with_compare: equality untouched"
-          (T.with_compare Version.compare v)
-          (Version.make 1 2) (1, 2);
-        ordered_or_fail "with_compare: replaces an existing order"
-          (T.with_compare (fun a b -> Int.compare b a) T.int)
-          2 1;
-        (* [structural] carries polymorphic order next to polymorphic
-           equality: both structural, both named by the constructor. *)
-        ordered_or_fail "structural: Stdlib.compare"
-          (T.structural ~pp:(Pp.list Pp.int))
-          [ 1; 2 ] [ 1; 3 ];
-        (* [contramap] sends the order through the projection with the
-           equality and the printer, and has none to send when the
-           underlying witness has none. *)
-        ordered_or_fail "contramap: orders through the projection"
-          (T.contramap String.length T.int)
-          "ab" "abc";
-        is_none ~msg:"contramap: no order without one underneath"
-          (T.compare (T.contramap (fun p -> [ p ]) (T.list point))));
+    ("make, 4 and 7 mod 3", Equal (mod3, 4, 7));
+    ("make, 4 and 6 mod 3", Differ (mod3, 4, 6));
+    ("make, a reference and itself", Equal (physical, one, one));
+    ("make, two references to 0", Differ (physical, ref 0, ref 0));
+    ( "with_compare keeps the equality",
+      Equal (with_compare Int.compare mod3, 4, 7) );
+    ("structural, equal pairs", Equal (ratio, (1, 2), (1, 2)));
+    ("structural, unequal pairs", Differ (ratio, (1, 2), (1, 3)));
+    ("of_equal, Hello and HELLO", Equal (caseless, "Hello", "HELLO"));
+    ("of_equal, Hello and World", Differ (caseless, "Hello", "World"));
+    ("contramap, foo and bar by length", Equal (length, "foo", "bar"));
+    ("contramap, foo and quux by length", Differ (length, "foo", "quux"));
+    ("pass, 1 and 2", Equal (pass, 1, 2));
+    ( "pair string pass, equal first components",
+      Equal (pair string pass, ("k", 1), ("k", 2)) );
+    ( "pair string pass, unequal first components",
+      Differ (pair string pass, ("k", 1), ("j", 1)) );
+    ( "contramap in a container, equal images",
+      Equal
+        ( list (pair (contramap fst int) pass),
+          [ ((1, 2), "x") ],
+          [ ((1, 9), "y") ] ) );
+    ( "contramap in a container, unequal images",
+      Differ
+        ( list (pair (contramap fst int) pass),
+          [ ((1, 2), "x") ],
+          [ ((3, 2), "x") ] ) );
   ]
 
-let () = exit @@ Windtrap.run "testable" tests
+let made_prints =
+  let open Testable in
+  [
+    ("make", Prints (physical, ref 42, "ref 42"));
+    ( "with_compare keeps the printer",
+      Prints (with_compare Int.compare mod3, 42, "42") );
+    ("structural", Prints (ratio, (-7, 2), "-7 / 2"));
+    ("of_equal", Prints (caseless, "a", "<abstract>"));
+    ("pass", Prints (pass, 42, "<pass>"));
+    ("contramap, the image", Prints (length, "abc", "3"));
+  ]
+
+let made_orders =
+  let open Testable in
+  [
+    ("make", Orders (mod3, 1, 2, "no order"));
+    ("with_compare", Orders (with_compare Int.compare mod3, 4, 7, ordered));
+    ("with_compare replaces an order", Orders (reversed, 2, 1, ordered));
+    ("structural", Orders (ratio, (1, 2), (1, 3), ordered));
+    ("of_equal", Orders (caseless, "a", "b", "no order"));
+    ("contramap of an order", Orders (length, "ab", "abc", ordered));
+    ( "contramap of no order",
+      Orders (contramap (fun n -> [ n ]) (list int), 1, 2, "no order") );
+    ("pass", Orders (pass, 1, 2, "no order"));
+  ]
+
+let expected_first () =
+  let calls = ref [] in
+  let note a b =
+    calls := (a ^ " then " ^ b) :: !calls;
+    true
+  in
+  let w = Testable.make ~pp:Format.pp_print_string ~equal:note in
+  equal w "expected" "actual";
+  ignore (Testable.equal w "expected" "actual" : bool);
+  equal string "expected then actual; expected then actual"
+    (String.concat "; " !calls)
+
+let raising_equal =
+  Testable.make ~pp:Format.pp_print_int ~equal:(fun _ _ -> raise Exit)
+
+let raising_pp = Testable.make ~pp:(fun _ _ -> raise Exit) ~equal:Int.equal
+
+let unread_halves () =
+  equal (Testable.with_compare (fun _ _ -> raise Exit) Testable.int) 1 1;
+  less (Testable.with_compare Int.compare raising_equal) ~than:2 1
+
+let witnesses =
+  group "Witnesses"
+    [
+      equalities "a witness compares with the equality it was made with"
+        made_equal;
+      printings "a witness prints with the printer it was made with" made_prints;
+      orderings "a witness carries the order it was made with" made_orders;
+      test "an equality verb applies the equality to the expected value first"
+        expected_first;
+      cases "an exception from the equality or the printer escapes the verb"
+        ~name:fst
+        [
+          ("the equality", fun () -> equal raising_equal 1 1);
+          ("the printer of a failing verb", fun () -> equal raising_pp 1 2);
+        ]
+        (fun (_, verb) -> raises Exit verb);
+      test
+        "the equality verbs never read the order, nor the ordering verbs the \
+         equality"
+        unread_halves;
+    ]
+
+(* Instances *)
+
+let doc = "alpha\nbeta\n"
+
+let instance_prints =
+  let open Testable in
+  [
+    ("unit", Prints (unit, (), "()"));
+    ("bool", Prints (bool, true, "true"));
+    ("char", Prints (char, 'a', "'a'"));
+    ("char, escaped", Prints (char, '\n', "'\\n'"));
+    ("string, quoted", Prints (string, "hello", "\"hello\""));
+    ("string, escaped", Prints (string, "a\nb", "\"a\\nb\""));
+    ("string, on one line", Prints (string, doc, "\"alpha\\nbeta\\n\""));
+    ("text", Prints (text, "hello", "hello"));
+    ("text, newlines kept", Prints (text, doc, doc));
+    ("text, the empty string", Prints (text, "", ""));
+    ("bytes", Prints (bytes, Bytes.of_string "hi", "\"hi\""));
+    ("int", Prints (int, 42, "42"));
+    ("int, negative", Prints (int, -7, "-7"));
+    ("int32", Prints (int32, 42l, "42"));
+    ("int64", Prints (int64, 42L, "42"));
+    ("nativeint", Prints (nativeint, 42n, "42"));
+  ]
+
+let instance_equal =
+  let open Testable in
+  [
+    ("unit", Equal (unit, (), ()));
+    ("bool, equal", Equal (bool, true, true));
+    ("bool, unequal", Differ (bool, true, false));
+    ("int, equal", Equal (int, 42, 42));
+    ("int, unequal", Differ (int, 42, 43));
+    ("int32", Equal (int32, 1l, 1l));
+    ("int64", Equal (int64, 1L, 1L));
+    ("nativeint, equal", Equal (nativeint, 42n, 42n));
+    ("nativeint, unequal", Differ (nativeint, 0n, 1n));
+    ("char, equal", Equal (char, 'a', 'a'));
+    ("char, unequal", Differ (char, 'a', 'b'));
+    ("string, equal", Equal (string, "hello", "hello"));
+    ("string, unequal", Differ (string, "hello", "world"));
+    ("text, equal", Equal (text, "a\nb", "a\nb"));
+    ("text, unequal", Differ (text, "a\nb", "a\nc"));
+    ("text, a trailing space", Differ (text, "a", "a "));
+    ("text, a trailing newline", Differ (text, "a", "a\n"));
+    ("bytes, equal", Equal (bytes, Bytes.of_string "a", Bytes.of_string "a"));
+    ("bytes, unequal", Differ (bytes, Bytes.of_string "a", Bytes.of_string "b"));
+  ]
+
+let instance_orders =
+  let open Testable in
+  [
+    ("unit", Orders (unit, (), (), "same, same, same"));
+    ("bool", Orders (bool, false, true, ordered));
+    ("char", Orders (char, 'a', 'b', ordered));
+    ("string", Orders (string, "a", "b", ordered));
+    ("text", Orders (text, "a", "b", ordered));
+    ("bytes", Orders (bytes, Bytes.of_string "a", Bytes.of_string "b", ordered));
+    ("int", Orders (int, 1, 2, ordered));
+    ("int32", Orders (int32, 1l, 2l, ordered));
+    ("int64", Orders (int64, 1L, 2L, ordered));
+    ("nativeint", Orders (nativeint, 1n, 2n, ordered));
+  ]
+
+let instances =
+  group "Instances"
+    [
+      printings "an instance prints its type's values" instance_prints;
+      equalities "an instance compares with its type's equality" instance_equal;
+      orderings "an instance carries its type's order" instance_orders;
+    ]
+
+(* Floats *)
+
+let exact_rows =
+  let open Testable in
+  [
+    ("1.5 and 1.5", Equal (float_exact, 1.5, 1.5));
+    ("1. and the next float", Differ (float_exact, 1.0, Float.succ 1.0));
+    ("0.3 and 0.1 +. 0.2", Differ (float_exact, 0.3, 0.1 +. 0.2));
+    ("nan and nan", Equal (float_exact, Float.nan, Float.nan));
+    ("nan and its negation", Equal (float_exact, Float.nan, -.Float.nan));
+    ("nan and 1.", Differ (float_exact, Float.nan, 1.0));
+    ("1. and nan", Differ (float_exact, 1.0, Float.nan));
+    ("0. and -0.", Differ (float_exact, 0., -0.));
+    ("-0. and -0.", Equal (float_exact, -0., -0.));
+    ( "infinity and infinity",
+      Equal (float_exact, Float.infinity, Float.infinity) );
+    ( "neg_infinity and neg_infinity",
+      Equal (float_exact, Float.neg_infinity, Float.neg_infinity) );
+    ( "infinity and neg_infinity",
+      Differ (float_exact, Float.infinity, Float.neg_infinity) );
+    ( "infinity and max_float",
+      Differ (float_exact, Float.infinity, Float.max_float) );
+    ("a subnormal and itself", Equal (float_exact, 1e-310, 1e-310));
+    ("a subnormal and the next", Differ (float_exact, 1e-310, Float.succ 1e-310));
+  ]
+
+(* The tolerant witnesses are made inside each test, where a mutant of the
+   checks of [float] and [float_rel] is armed. *)
+let eps_rows =
+  [
+    ("1.5 and 1.5 within 1e-9", (1e-9, 1.5, 1.5, true));
+    ("1. and 1.005 within 0.01", (0.01, 1.0, 1.005, true));
+    ("1. and 1.005 within 0.001", (0.001, 1.0, 1.005, false));
+    ("1. and 1.5 within 0.5", (0.5, 1.0, 1.5, true));
+    ("1. and past 1.5 within 0.5", (0.5, 1.0, Float.succ 1.5, false));
+    ("nan and nan", (0.001, Float.nan, Float.nan, false));
+    ("nan and nan within 1e10", (1e10, Float.nan, Float.nan, false));
+    ("nan and 1.", (1.0, Float.nan, 1.0, false));
+    ("1. and nan", (1.0, 1.0, Float.nan, false));
+    ("0. and -0.", (0.001, 0., -0., true));
+    ("infinity and infinity", (0.001, Float.infinity, Float.infinity, true));
+    ( "infinity and neg_infinity",
+      (1e300, Float.infinity, Float.neg_infinity, false) );
+    ("infinity and max_float", (1e300, Float.infinity, Float.max_float, false));
+  ]
+
+let within_eps (_, (eps, a, b, holds)) =
+  equal bool holds (Testable.equal (Testable.float eps) a b)
+
+let rel_rows =
+  [
+    ("100. and 100.5, rel 0.01", ((0.01, 0.), 100.0, 100.5, true));
+    ("100. and 100.5, rel 0.001", ((0.001, 0.), 100.0, 100.5, false));
+    ("0. and 0.05, abs 0.1", ((0., 0.1), 0.0, 0.05, true));
+    ("1. and 1.5, rel and abs 0.001", ((0.001, 0.001), 1.0, 1.5, false));
+    ("1. and 1.105, rel 0.1 of the actual", ((0.1, 0.), 1.0, 1.105, true));
+    ("1.105 and 1., rel 0.1 of the expected", ((0.1, 0.), 1.105, 1.0, true));
+    ("1. and 2., rel 0.5", ((0.5, 0.), 1.0, 2.0, true));
+    ("1. and past 2., rel 0.5", ((0.5, 0.), 1.0, Float.succ 2.0, false));
+    ("nan and nan", ((0.001, 0.001), Float.nan, Float.nan, false));
+    ("nan and nan, wide bounds", ((1.0, 1e10), Float.nan, Float.nan, false));
+    ("nan and 1.", ((1.0, 1.0), Float.nan, 1.0, false));
+    ("0. and -0.", ((0.001, 0.), 0., -0., true));
+    ("infinity and infinity", ((0.01, 0.), Float.infinity, Float.infinity, true));
+    ( "infinity and neg_infinity",
+      ((1.0, 0.), Float.infinity, Float.neg_infinity, false) );
+    ( "infinity and max_float",
+      ((1.0, 0.), Float.infinity, Float.max_float, false) );
+  ]
+
+let within_rel (_, ((rel, abs), a, b, holds)) =
+  equal bool holds (Testable.equal (Testable.float_rel ~rel ~abs) a b)
+
+let float_prints =
+  let open Testable in
+  [
+    ("float, 1.5", Prints (float 0.1, 1.5, "1.5"));
+    ("float, a whole value", Prints (float 0.1, 1.0, "1"));
+    ("float, nan", Prints (float 0.1, Float.nan, "nan"));
+    ("float_rel", Prints (float_rel ~rel:0.1 ~abs:0.1, 2.5, "2.5"));
+    ( "float_exact, 0.1 +. 0.2",
+      Prints (float_exact, 0.1 +. 0.2, "0.30000000000000004") );
+  ]
+
+let float_orders =
+  let open Testable in
+  [
+    ("float", Orders (float 0.5, 1.0, 1.2, ordered));
+    ("float_rel", Orders (float_rel ~rel:0.5 ~abs:0.5, 1.0, 1.2, ordered));
+    ("float_exact", Orders (float_exact, 1.0, 1.2, ordered));
+    ( "float, nan below neg_infinity",
+      Orders (float 0.5, Float.nan, Float.neg_infinity, ordered) );
+  ]
+
+let exact_apart (a, b) =
+  not_equal string
+    (Testable.to_string Testable.float_exact a)
+    (Testable.to_string Testable.float_exact b)
+
+let refuses substring make = raises_match (Exn.invalid_arg ~substring) make
+
+let floats =
+  group "Floats"
+    [
+      equalities
+        "float_exact compares bit for bit, every nan equal to every nan"
+        exact_rows;
+      cases "float eps holds when a = b or |a -. b| <= eps, never on nan"
+        ~name:fst eps_rows within_eps;
+      cases
+        "float_rel holds when a = b, within abs, or within rel of the larger \
+         magnitude, never on nan"
+        ~name:fst rel_rows within_rel;
+      printings
+        "a float witness prints with %g, float_exact the shortest decimal"
+        float_prints;
+      cases "float_exact prints two unequal floats apart" ~name:fst
+        [ ("0.3 and 0.1 +. 0.2", (0.3, 0.1 +. 0.2)); ("0. and -0.", (0., -0.)) ]
+        (fun (_, pair) -> exact_apart pair);
+      prop "float_exact prints a float apart from the next one" Gen.float
+        (fun x -> exact_apart (x, Float.succ x));
+      orderings
+        "the float witnesses order with Float.compare, whatever the tolerance"
+        float_orders;
+      cases "float refuses an eps that is not strictly positive" ~name:fst
+        [ ("0.", 0.); ("-0.", -0.); ("-1e-9", -1e-9); ("nan", Float.nan) ]
+        (fun (_, eps) -> refuses "float_exact" (fun () -> Testable.float eps));
+      cases "float_rel refuses a negative or nan bound, and two zero bounds"
+        ~name:fst
+        [
+          ("a negative rel", ("~rel", -0.1, 0.1));
+          ("a negative abs", ("~abs", 0.1, -0.1));
+          ("a nan rel", ("~rel", Float.nan, 0.1));
+          ("a nan abs", ("~abs", 0.1, Float.nan));
+          ("two zero bounds", ("float_exact", 0., 0.));
+        ]
+        (fun (_, (substring, rel, abs)) ->
+          refuses substring (fun () -> Testable.float_rel ~rel ~abs));
+    ]
+
+(* Containers *)
+
+let container_prints =
+  let open Testable in
+  [
+    ("option, None", Prints (option int, None, "None"));
+    ("option, Some", Prints (option int, Some 1, "Some 1"));
+    ("result, Ok", Prints (result int string, Ok 1, "Ok 1"));
+    ("result, Error", Prints (result int string, Error "x", "Error \"x\""));
+    ("either, Left", Prints (either int string, Either.Left 1, "Left (1)"));
+    ( "either, Right",
+      Prints (either int string, Either.Right "h", "Right (\"h\")") );
+    ("list", Prints (list int, [ 1; 2; 3 ], "[1; 2; 3]"));
+    ("list, empty", Prints (list int, [], "[]"));
+    ("array", Prints (array int, [| 1; 2 |], "[|1; 2|]"));
+    ("array, empty", Prints (array int, [||], "[||]"));
+    ("pair", Prints (pair int string, (1, "x"), "(1, \"x\")"));
+    ("triple", Prints (triple int int int, (1, 2, 3), "(1, 2, 3)"));
+    ("quad", Prints (quad int int int int, (1, 2, 3, 4), "(1, 2, 3, 4)"));
+    ("slist, sorted", Prints (slist int Int.compare, [ 3; 1; 2 ], "[1; 2; 3]"));
+    ( "slist, sorted by its comparison",
+      Prints (slist int (fun a b -> Int.compare b a), [ 3; 1; 2 ], "[3; 2; 1]")
+    );
+  ]
+
+let container_equal =
+  let open Testable in
+  let loose = float 0.1 in
+  let sorted = slist int Int.compare in
+  let int3 = triple int int int and int4 = quad int int int int in
+  [
+    ("option, Some and Some", Equal (option int, Some 1, Some 1));
+    ("option, None and None", Equal (option int, None, None));
+    ("option, Some and None", Differ (option int, Some 1, None));
+    ("option, unequal payloads", Differ (option int, Some 1, Some 2));
+    ( "option, payloads under their witness",
+      Equal (option loose, Some 1.0, Some 1.05) );
+    ("result, Ok and Ok", Equal (result int string, Ok 1, Ok 1));
+    ("result, Error and Error", Equal (result int string, Error "e", Error "e"));
+    ("result, Ok and Error", Differ (result int string, Ok 1, Error "e"));
+    ("result, unequal Ok payloads", Differ (result int string, Ok 1, Ok 2));
+    ( "either, Left and Left",
+      Equal (either int string, Either.Left 1, Either.Left 1) );
+    ( "either, Right and Right",
+      Equal (either int string, Either.Right "h", Either.Right "h") );
+    ( "either, Left and Right",
+      Differ (either int int, Either.Left 1, Either.Right 1) );
+    ("list, equal", Equal (list int, [ 1; 2; 3 ], [ 1; 2; 3 ]));
+    ("list, empty", Equal (list int, [], []));
+    ("list, shorter", Differ (list int, [ 1; 2 ], [ 1; 2; 3 ]));
+    ("list, an unequal element", Differ (list int, [ 1; 2; 3 ], [ 1; 9; 3 ]));
+    ("list, elements under their witness", Equal (list loose, [ 1.0 ], [ 1.05 ]));
+    ("array, equal", Equal (array int, [| 1; 2 |], [| 1; 2 |]));
+    ("array, shorter", Differ (array int, [| 1 |], [| 1; 2 |]));
+    ("array, an unequal element", Differ (array int, [| 1; 2 |], [| 1; 3 |]));
+    ("slist, another order", Equal (sorted, [ 3; 1; 2 ], [ 1; 2; 3 ]));
+    ("slist, a missing element", Differ (sorted, [ 1; 2 ], [ 1; 2; 3 ]));
+    ( "slist, duplicates in another order",
+      Equal (sorted, [ 1; 1; 2 ], [ 1; 2; 1 ]) );
+    ("slist, another multiplicity", Differ (sorted, [ 1; 1; 2 ], [ 1; 2; 2 ]));
+    ("pair, equal", Equal (pair int string, (1, "a"), (1, "a")));
+    ("pair, first unequal", Differ (pair int string, (1, "a"), (2, "a")));
+    ("pair, second unequal", Differ (pair int string, (1, "a"), (1, "b")));
+    ( "pair, components under their witnesses",
+      Equal (pair loose int, (1.0, 2), (1.05, 2)) );
+    ("triple, equal", Equal (int3, (1, 2, 3), (1, 2, 3)));
+    ("triple, last unequal", Differ (int3, (1, 2, 3), (1, 2, 4)));
+    ("quad, equal", Equal (int4, (1, 2, 3, 4), (1, 2, 3, 4)));
+    ("quad, last unequal", Differ (int4, (1, 2, 3, 4), (1, 2, 3, 5)));
+  ]
+
+let container_orders =
+  let open Testable in
+  [
+    ("option", Orders (option int, None, Some 1, "no order"));
+    ("result", Orders (result int int, Ok 1, Error 1, "no order"));
+    ( "either",
+      Orders (either int int, Either.Left 1, Either.Right 1, "no order") );
+    ("list", Orders (list int, [ 1 ], [ 2 ], "no order"));
+    ("array", Orders (array int, [| 1 |], [| 2 |], "no order"));
+    ("slist", Orders (slist int Int.compare, [ 1 ], [ 2 ], "no order"));
+    ("pair", Orders (pair int int, (1, 1), (1, 2), "no order"));
+    ("triple", Orders (triple int int int, (1, 1, 1), (1, 1, 2), "no order"));
+    ( "quad",
+      Orders (quad int int int int, (1, 1, 1, 1), (1, 1, 1, 2), "no order") );
+  ]
+
+let containers =
+  group "Containers"
+    [
+      printings "a container prints its elements with their witnesses"
+        container_prints;
+      equalities "a container compares its elements with their witnesses"
+        container_equal;
+      orderings "no container carries an order, whatever its components carry"
+        container_orders;
+    ]
+
+let () = exit (run "testable" [ witnesses; instances; floats; containers ])
