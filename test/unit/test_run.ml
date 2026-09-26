@@ -808,6 +808,12 @@ let scratch =
         test "skips" (fun () ->
             keep (Run.temp_dir ());
             skip ());
+        test "locks its directory" (fun () ->
+            let dir = Run.temp_dir () in
+            keep dir;
+            touch (Filename.concat dir "file");
+            Unix.chmod dir 0o000;
+            Unix.chmod (Filename.dirname dir) 0o500);
         bracket "tears down" ~setup:ignore
           ~teardown:(fun () ->
             keep (Run.temp_dir ~prefix:"td" ());
@@ -860,17 +866,32 @@ let removes_a_link_and_never_its_target () =
   is_false (Sys.file_exists tree);
   equal (list string) [ "file" ] (Array.to_list (Sys.readdir kept))
 
+let removes_what_the_test_locked () =
+  if Sys.win32 then skip ~reason:"POSIX permissions" ();
+  let tree = Filename.concat (temp_dir ()) "tree" in
+  let unreadable = Filename.concat tree "unreadable" in
+  Unix.mkdir tree 0o700;
+  Unix.mkdir unreadable 0o700;
+  touch (Filename.concat unreadable "file");
+  Unix.chmod unreadable 0o000;
+  Unix.chmod tree 0o500;
+  Run.remove_tree tree;
+  is_false (Sys.file_exists tree)
+
+(* [remove_tree] never changes the mode of its argument's parent, and a
+   read-only parent refuses the removal of the directory itself: its entries
+   go, the last step fails, and the failure is ignored. *)
 let ignores_an_error_on_the_way () =
-  if Sys.win32 || Unix.geteuid () = 0 then
-    skip ~reason:"every directory is writable here" ();
-  let locked = Filename.concat (temp_dir ()) "locked" in
-  Unix.mkdir locked 0o700;
-  touch (Filename.concat locked "stuck");
-  Unix.chmod locked 0o500;
-  Fun.protect
-    ~finally:(fun () -> Unix.chmod locked 0o700)
-    (fun () -> Run.remove_tree locked);
-  equal (list string) [ "stuck" ] (Array.to_list (Sys.readdir locked))
+  if Sys.win32 then skip ~reason:"Windows has no directory modes" ();
+  if Unix.geteuid () = 0 then skip ~reason:"root removes any entry" ();
+  let parent = Filename.concat (temp_dir ()) "parent" in
+  let child = Filename.concat parent "child" in
+  Unix.mkdir parent 0o700;
+  Unix.mkdir child 0o700;
+  touch (Filename.concat child "entry");
+  Unix.chmod parent 0o500;
+  Run.remove_tree child;
+  equal (list string) [] (Array.to_list (Sys.readdir child))
 
 let the_empty_suffix_adds_nothing () =
   let name = scratch_name "file" in
@@ -906,6 +927,7 @@ let the_removal_changes_no_row () =
       "cannot make its directory: pass";
       "fails: fail body";
       "skips: skip";
+      "locks its directory: pass";
       "tears down: fail teardown";
       "retried: pass";
     ]
@@ -949,6 +971,8 @@ let temporary_paths =
         removes_a_link_and_never_its_target;
       test "remove_tree of a missing path raises nothing" (fun () ->
           Run.remove_tree (Filename.concat (temp_dir ()) "missing"));
+      test "remove_tree removes directories the test made unreadable"
+        removes_what_the_test_locked;
       test "remove_tree ignores an error on the way" ignores_an_error_on_the_way;
     ]
 

@@ -279,8 +279,9 @@ val temp_file : ?suffix:string -> unit -> string
 
 val remove_tree : string -> unit
 (** [remove_tree path] removes [path] and what is under it, as far as it can. It
-    removes a symbolic link without following it and ignores every file-system
-    error, a missing [path] included, so it never raises. *)
+    gives each directory its owner's read, write and search permissions before
+    it lists it. It removes a symbolic link without following it and ignores
+    every file-system error, a missing [path] included, so it never raises. *)
 
 (** {2:process Process state}
 

@@ -1127,8 +1127,11 @@ val subtest : string -> (unit -> unit) -> unit
 val temp_dir : ?prefix:string -> unit -> string
 (** [temp_dir ?prefix ()] is a fresh empty directory under the system temporary
     directory. Each call makes another directory. The runner removes it when the
-    attempt ends, on every outcome. [prefix] starts its basename and defaults to
-    ["dir"].
+    attempt ends, on every outcome. The runner first gives the owner read, write
+    and search permission on each directory in it, so a directory the test made
+    unreadable or read-only is removed too. What the runner still cannot remove,
+    such as a directory of another user, stays, and the outcome of the test does
+    not change. [prefix] starts its basename and defaults to ["dir"].
 
     A resource that outlives the test, such as a {!fixture}'s, must not live in
     it. Raises [Unix.Unix_error] if the directory cannot be made. *)

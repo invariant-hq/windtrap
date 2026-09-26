@@ -743,19 +743,16 @@ let refused_alone () =
     []
   in
   let trace =
-    Fun.protect
-      ~finally:(fun () -> Unix.chmod read_only 0o700)
-      (fun () ->
-        scenario ~mode:Update root
-          [
-            check old "new";
-            check (File "ro/sub/x") "v";
-            check (File "z.txt") "z";
-            settle ~keep:true;
-            lock;
-            write;
-            writes root;
-          ])
+    scenario ~mode:Update root
+      [
+        check old "new";
+        check (File "ro/sub/x") "v";
+        check (File "z.txt") "z";
+        settle ~keep:true;
+        lock;
+        write;
+        writes root;
+      ]
   in
   equal traced
     [

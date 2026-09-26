@@ -335,9 +335,13 @@ let temp_file ?(suffix = "") () =
        0o600);
   path
 
+(* Listing a directory takes read and search permission, and removing its
+   entries write and search: a test may have taken them from its owner. *)
 let rec remove_tree path =
-  match (Unix.lstat path).st_kind with
-  | Unix.S_DIR -> (
+  match Unix.lstat path with
+  | { Unix.st_kind = S_DIR; st_perm; _ } -> (
+      (if st_perm land 0o700 <> 0o700 then
+         try Unix.chmod path (st_perm lor 0o700) with Unix.Unix_error _ -> ());
       let entries = try Sys.readdir path with Sys_error _ -> [||] in
       Array.iter (fun name -> remove_tree (Filename.concat path name)) entries;
       try Unix.rmdir path with Unix.Unix_error _ -> ())
@@ -397,6 +401,8 @@ let restore_bindings frame =
   in
   List.iter restore bindings
 
+(* Unlike a restoration, a removal that fails is no failure of the test: the
+   next attempt makes a directory of another name. *)
 let remove_temp frame =
   match frame.temp_root with
   | None -> ()

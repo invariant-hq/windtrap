@@ -381,7 +381,6 @@ let read_only_parent () =
   let path = Filename.concat locked "target" in
   write path "previous contents";
   Unix.chmod locked 0o500;
-  Fun.protect ~finally:(fun () -> Unix.chmod locked 0o700) @@ fun () ->
   raises_match (fails_at ~path "cannot create temporary file") (fun () ->
       Os.atomic_write ~path "replacement");
   equal (list string)
@@ -830,7 +829,6 @@ let unsearchable () =
   let inside = Filename.concat locked "x" in
   write inside "";
   Unix.chmod locked 0o000;
-  Fun.protect ~finally:(fun () -> Unix.chmod locked 0o700) @@ fun () ->
   equal bool false (Os.file_exists inside)
 
 let creates_parents () =
