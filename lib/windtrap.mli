@@ -1046,7 +1046,8 @@ val expect : string -> pos * string -> unit
 
 val expect_exact : string -> pos * string -> unit
 (** [expect_exact actual @@ __POS_OF__ {|…|}] is {!expect} comparing byte for
-    byte. *)
+    byte. The correction of an [actual] that holds a CR is a quoted literal,
+    with the CR written [\r]. *)
 
 val expect_file : string -> string -> unit
 (** [expect_file actual path] compares [actual] with the file at [path],

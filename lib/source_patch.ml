@@ -225,11 +225,15 @@ let read_quoted source i =
     else
       match source.[j] with
       | '"' ->
-          let value = decode_newlines (Buffer.contents b) in
+          let value = Buffer.contents b in
           Some
             (Literal
                { start = i; stop = j + 1; ext = None; delimiter = Quote; value })
       | '\\' when j + 1 < len -> escape (j + 1)
+      (* Only a CR of the source is a line end: a [\r] escape is the byte. *)
+      | '\r' ->
+          let lf = skip (Char.equal '\r') source j in
+          if is_at source lf "\n" then go lf else add '\r' (j + 1)
       | c -> add c (j + 1)
   and add c next =
     Buffer.add_char b c;
@@ -311,16 +315,32 @@ let locate source (p : patch) =
             let column = skip (Char.equal ' ') source bol - bol in
             format_flexible ~delimiter ~column p.content
       in
+      (* A CR before an LF inside a tagged literal reads as LF, so exact
+         contents that hold a CR are written quoted, where it is [\r]. *)
+      let quoted =
+        match p.style with
+        | Exact -> String.contains p.content '\r'
+        | Flexible -> false
+      in
       match find_literal source (bol + column) with
       | None -> Error (No_literal p.site)
       | Some (Bare i) ->
           if not (String.equal p.literal "") then Error (Drifted p.site)
           else
-            let delimiter = Tag "" in
+            let delimiter = if quoted then Quote else Tag "" in
             Ok (i, i, " " ^ literal ~delimiter (contents delimiter))
-      | Some (Literal { start; stop; ext; delimiter; value }) ->
+      | Some (Literal { start; stop; ext; delimiter; value }) -> (
           if not (String.equal value p.literal) then Error (Drifted p.site)
-          else Ok (start, stop, literal' ?ext ~delimiter (contents delimiter)))
+          else
+            match (quoted, ext) with
+            | false, _ ->
+                Ok (start, stop, literal' ?ext ~delimiter (contents delimiter))
+            | true, None ->
+                Ok (start, stop, literal ~delimiter:Quote (contents Quote))
+            | true, Some ext ->
+                (* A [{%ext|…|}] node has no quoted spelling. *)
+                let node = literal ~delimiter:Quote (contents Quote) in
+                Ok (start, stop, "[" ^ ext ^ " " ^ node ^ "]")))
 
 (* [spans] are in the order of their starts. A span that starts before the
    cursor is the same literal patched twice, and is written once. *)

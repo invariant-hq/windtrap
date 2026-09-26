@@ -389,6 +389,8 @@ Each one is also listed under its area below.
 - A correcting run lists its files under `corrections (N):`.
 - A correction keeps its literal's delimiter and lays out a multi-line
   text like ppx_expect, and a bare `[%expect]` keeps its node.
+- An `expect_exact` correction whose text holds a CR is a quoted literal
+  with the CR written `\r`, so it passes once promoted.
 - The inline runner runs each partition as `run --corrected` under the
   suite `<lib>/<file>`, and exits 1 when a test failed outside its kept
   corrections.

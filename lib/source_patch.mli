@@ -99,6 +99,11 @@ val apply : string -> patch list -> (string, error) result
     The head of a [{%expect tag|…|tag}] node is kept. A node without payload
     gets a space and a [{|…|}] literal before its closing bracket.
 
+    The new contents of an {!Exact} patch that hold a CR are written in a quoted
+    literal, whatever the delimiter of the old one, and the CR is written [\r].
+    A [{%ext|…|}] node becomes [[%ext "…"]], and a node without payload gets a
+    space and the quoted literal.
+
     The new contents of an {!Exact} patch are its [content] as given. Those of a
     {!Flexible} patch are the lines of [normalize content], laid out as follows,
     where [c] is the number of leading spaces of the line that holds the

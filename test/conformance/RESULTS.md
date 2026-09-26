@@ -92,10 +92,11 @@ to an older source with blank lines inside the node, a dangling `]` and
 no `;;`: upstream's own runtime, run on the pinned source, cannot
 produce the pinned golden.
 
-## Known failure
+### A CR in an `[%expect_exact]` correction is escaped
 
-`negative-tests/escaped_strings.ml`'s correction does not converge on
-OCaml 5.2 and later: it writes the CR LF of an `[%expect_exact]` output
-raw inside a `{|…|}` literal, which those compilers read as LF, so the
-corrected source mismatches again. `converged/` pins that failure as it
-is until the product decides.
+`negative-tests/escaped_strings.ml` corrects `[%expect_exact]` nodes
+over output that holds CR LF. Upstream writes the CR raw inside a
+`{|…|}` literal, which OCaml 5.2 and later read as LF, so its corrected
+source fails again. Windtrap writes such a correction as a quoted
+literal with `\r`, and `converged/` runs the corrected source to show
+that it passes.

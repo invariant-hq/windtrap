@@ -416,6 +416,21 @@ let () =
     (apply source [ exact ~site ~literal:"a\n" "z" ])
 
 let () =
+  reg "a CR of the source in quoted contents is a line end before an LF alone"
+  @@ fun () ->
+  let source, site = decodes "\"a\r\nb\"" in
+  equal ~msg:"a CR LF decodes to LF" string
+    "let () = expect x @@ __POS_OF__ \"z\""
+    (apply source [ exact ~site ~literal:"a\nb" "z" ]);
+  (match P.apply source [ exact ~site ~literal:"a\r\nb" "z" ] with
+  | Error (P.Drifted _) -> ()
+  | Ok _ | Error (P.No_literal _) -> fail "a CR LF of the source is no CR");
+  let source, site = decodes "\"a\rb\"" in
+  equal ~msg:"a CR without LF is kept" string
+    "let () = expect x @@ __POS_OF__ \"z\""
+    (apply source [ exact ~site ~literal:"a\rb" "z" ])
+
+let () =
   reg "tagged contents may open with the closing brace" @@ fun () ->
   let source, site = decodes "{|}old|}" in
   equal ~msg:"the literal closes at the first |} after its opening" string
@@ -466,7 +481,57 @@ let () =
     "  {%expect xxx| a |} b |xxx}\n"
     (apply node [ flexible ~site ~literal:"old" "a |} b" ])
 
+(* A CR in exact contents *)
+
+let () =
+  reg "exact contents that hold a CR are written quoted" @@ fun () ->
+  let crlf = exact ~literal:"old" "a\r\nb" in
+  let source = "let () = expect_exact x @@ __POS_OF__ {|old|}\n" in
+  equal ~msg:"a tagged literal becomes a quoted one" string
+    "let () = expect_exact x @@ __POS_OF__ \"a\\r\\nb\"\n"
+    (apply source [ crlf ~site:(pos_of source "__POS_OF__") ]);
+  let node = "  [%expect_exact {|old|}]\n" in
+  equal ~msg:"in a node" string "  [%expect_exact \"a\\r\\nb\"]\n"
+    (apply node [ crlf ~site:(pos_of node "[%") ]);
+  let bare = "  [%expect_exact]\n" in
+  equal ~msg:"in a node without payload" string
+    "  [%expect_exact \"a\\r\\nb\"]\n"
+    (apply bare [ exact ~site:(pos_of bare "[%") ~literal:"" "a\r\nb" ]);
+  let short = "  {%expect_exact|old|}\n" in
+  equal ~msg:"a string-extension node becomes a bracketed one" string
+    "  [%expect_exact \"a\\r\\nb\"]\n"
+    (apply short [ crlf ~site:(pos_of short "{%") ]);
+  let quoted = "  [%expect_exact \"a\\r\\nb\"]\n" in
+  equal ~msg:"an escaped CR before an escaped LF decodes to CR LF" string
+    "  [%expect_exact \"z\"]\n"
+    (apply quoted [ exact ~site:(pos_of quoted "[%") ~literal:"a\r\nb" "z" ])
+
 (* The layout's law *)
+
+let () =
+  registered :=
+    prop "an exact correction reads back as its contents"
+      Gen.(
+        pair
+          (string_of ~size:(int_range 0 12)
+             (of_list [ 'a'; ' '; '\r'; '\n'; '|'; '}'; '"'; '\\' ]))
+          (of_list
+             [
+               "__POS_OF__ {|old|}";
+               "__POS_OF__ \"old\"";
+               "[%expect_exact {|old|}]";
+               "{%expect_exact|old|}";
+             ]))
+      (fun (content, spelled) ->
+        let source = "let () = f @@ " ^ spelled ^ "\n" in
+        let site = ("test/t.ml", 1, String.length "let () = f @@ ", 0) in
+        let corrected = apply source [ exact ~site ~literal:"old" content ] in
+        match P.apply corrected [ exact ~site ~literal:content "z" ] with
+        | Ok _ -> ()
+        | Error error ->
+            failf "%S written as %S: %s" content corrected
+              (P.error_message error))
+    :: !registered
 
 let () =
   registered :=

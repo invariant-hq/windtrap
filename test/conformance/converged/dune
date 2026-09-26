@@ -134,11 +134,10 @@
  (action
   (diff chdir-log.expected chdir-log)))
 
-; escaped_strings.ml does not converge on OCaml 5.2 and later, and is
-; pinned as a known failure: its correction of an [%expect_exact] over
-; "a\r\nb" writes the CR LF raw inside a {|...|} literal, the compiler
-; reads a CR LF line end in a literal as LF since 5.2, so the corrected
-; source prints "a\r\nb" against a payload of "a\nb" and mismatches again.
+; escaped_strings.ml runs in a process of its own, on OCaml 5.2 and later,
+; which read a CR LF line end inside a literal as LF. Its corrections of
+; [%expect_exact] over "a\r\nb" are quoted literals, so the corrected
+; source passes.
 
 (rule
  (copy

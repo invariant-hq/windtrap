@@ -38,7 +38,8 @@ print that directory's paths.
 `expect` compares a text with a literal up to whitespace (see
 `Windtrap.expect`), and `expect_exact` compares byte for byte.
 `__POS_OF__` pairs the literal with its position, where a correction
-rewrites it.
+rewrites it. The correction of an `expect_exact` text that holds a CR is a
+quoted literal, with the CR written `\r`.
 
 `test/test_mytool.ml`:
 

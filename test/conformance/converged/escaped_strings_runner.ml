@@ -1,5 +1,5 @@
 (* Windtrap-authored runner main for the corrected escaped_strings.ml
-   alone, the correction known not to converge (see dune). *)
+   alone (see dune). *)
 
 module _ = Escaped_strings
 

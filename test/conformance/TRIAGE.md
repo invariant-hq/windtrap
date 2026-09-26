@@ -64,7 +64,7 @@ the single-line source tweak listed under [Source tweaks](#source-tweaks).
 | upstream `test/` path | vendored at `corpus/` | notes |
 | --- | --- | --- |
 | `negative-tests/chdir.ml` | `negative-tests/` | conforms |
-| `negative-tests/escaped_strings.ml` | `negative-tests/` | conforms; bare nodes materialize on the node's line (formatting, `RESULTS.md`); the correction does not converge on OCaml 5.2 and later (known failure, `RESULTS.md`) |
+| `negative-tests/escaped_strings.ml` | `negative-tests/` | conforms; bare nodes materialize on the node's line (formatting, `RESULTS.md`); an `[%expect_exact]` correction that holds a CR is a quoted literal (ruling in `RESULTS.md`) |
 | `negative-tests/exact.ml` (T) | `negative-tests/` | conforms |
 | `negative-tests/export_test.ml` | `negative-tests/` | passes; no correction (the runner's transcript) |
 | `negative-tests/flexible.ml` (T) | `negative-tests/` | conforms |
