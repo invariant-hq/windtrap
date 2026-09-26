@@ -65,11 +65,13 @@ and kind = Test of body | Group of t list
 (* Declaring tests *)
 
 let declared ?(tags = []) ?timeout ?retries () =
-  let bad_timeout s = (not (Float.is_finite s)) || s <= 0. in
-  if Option.exists bad_timeout timeout then
-    invalid_arg "windtrap: timeout must be finite and positive";
-  if Option.exists (fun n -> n < 0) retries then
-    invalid_arg "windtrap: retries must be non-negative";
+  (match timeout with
+  | Some s when (not (Float.is_finite s)) || s <= 0. ->
+      invalid_arg "windtrap: timeout must be finite and positive"
+  | Some _ | None -> ());
+  (match retries with
+  | Some n when n < 0 -> invalid_arg "windtrap: retries must be non-negative"
+  | Some _ | None -> ());
   { tags = Tag.of_list tags; focused = false; timeout; retries; xfail = None }
 
 (* Inside a constructor [__POS__] is the parameter, not the builtin, so a

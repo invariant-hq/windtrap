@@ -192,11 +192,14 @@ let condensed = function
 let rec elide acc = function
   | [] -> List.rev acc
   | line :: rest when String.equal line marker -> (
-      match List.find_index (String.equal marker) rest with
+      let rec block items = function
+        | [] -> None
+        | l :: after when String.equal l marker -> Some (List.rev items, after)
+        | l :: after -> block (l :: items) after
+      in
+      match block [] rest with
       | None -> List.rev_append acc (line :: rest)
-      | Some n -> (
-          let items = List.filteri (fun i _ -> i < n) rest in
-          let after = List.filteri (fun i _ -> i > n) rest in
+      | Some (items, after) -> (
           let source = String.concat "\n" items in
           match
             condensed (Parse.implementation (Lexing.from_string source))

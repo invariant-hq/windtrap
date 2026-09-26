@@ -1,11 +1,14 @@
 ; ppx_runtime_libraries lists only the stdlib-only runtime, so instrumented
 ; code never links the core.
+; ppxlib.astlib is named because ppxlib's AST types alias its modules and,
+; before OCaml 5.2, dune cannot pass a library's own dependencies as hidden
+; include directories when implicit_transitive_deps is off.
 
 (library
  (name windtrap_coverage_ppx)
  (public_name ppx_windtrap.coverage)
  (kind ppx_rewriter)
- (libraries ppxlib)
+ (libraries ppxlib ppxlib.astlib)
  (ppx_runtime_libraries windtrap.runtime)
  (instrumentation.backend
   (ppx ppx_windtrap.coverage))

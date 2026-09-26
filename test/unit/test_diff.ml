@@ -385,7 +385,9 @@ let line_hunks =
           List.iter (fun h -> not_contains ~sub:"id" (kinds h)) hs);
       lines_law "hunks is [] iff the lines of any two texts are equal"
         (fun e a _ hs ->
-          equal bool (List.equal String.equal e a) (List.is_empty hs));
+          equal bool
+            (List.equal String.equal e a)
+            (match hs with [] -> true | _ :: _ -> false));
       lines_law
         "below the bounds, the hunks change as many lines as the insertion and \
          deletion distance" (fun e a _ hs ->
