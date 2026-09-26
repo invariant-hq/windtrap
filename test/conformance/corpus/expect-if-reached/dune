@@ -5,6 +5,7 @@
 ; OCAML_COLOR is set for the reason ../root/dune gives.
 
 (rule
+ (deps passing_tests.ml)
  (target passing_tests.rejected)
  (action
   (with-outputs-to
@@ -14,7 +15,7 @@
     never
     (with-accepted-exit-codes
      1
-     (run ../../pp.exe --impl %{dep:passing_tests.ml}))))))
+     (run ../../pp.exe --impl ./passing_tests.ml))))))
 
 (rule
  (package ppx_windtrap)
@@ -23,6 +24,7 @@
   (diff passing_tests.rejected.expected passing_tests.rejected)))
 
 (rule
+ (deps expect_if_reacheds_are_corrected.ml)
  (target expect_if_reacheds_are_corrected.rejected)
  (action
   (with-outputs-to
@@ -32,7 +34,7 @@
     never
     (with-accepted-exit-codes
      1
-     (run ../../pp.exe --impl %{dep:expect_if_reacheds_are_corrected.ml}))))))
+     (run ../../pp.exe --impl ./expect_if_reacheds_are_corrected.ml))))))
 
 (rule
  (package ppx_windtrap)
@@ -43,6 +45,7 @@
    expect_if_reacheds_are_corrected.rejected)))
 
 (rule
+ (deps expects_still_must_be_reached.ml)
  (target expects_still_must_be_reached.rejected)
  (action
   (with-outputs-to
@@ -52,7 +55,7 @@
     never
     (with-accepted-exit-codes
      1
-     (run ../../pp.exe --impl %{dep:expects_still_must_be_reached.ml}))))))
+     (run ../../pp.exe --impl ./expects_still_must_be_reached.ml))))))
 
 (rule
  (package ppx_windtrap)

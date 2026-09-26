@@ -24,6 +24,7 @@
 ; CLICOLOR_FORCE), and the diagnostic would then carry escapes.
 
 (rule
+ (deps test_expectation.ml)
  (target test_expectation.rejected)
  (action
   (with-outputs-to
@@ -33,7 +34,7 @@
     never
     (with-accepted-exit-codes
      1
-     (run ../../pp.exe --impl %{dep:test_expectation.ml}))))))
+     (run ../../pp.exe --impl ./test_expectation.ml))))))
 
 (rule
  (package ppx_windtrap)
@@ -42,6 +43,7 @@
   (diff test_expectation.rejected.expected test_expectation.rejected)))
 
 (rule
+ (deps test_sanitize.ml)
  (target test_sanitize.rejected)
  (action
   (with-outputs-to
@@ -51,7 +53,7 @@
     never
     (with-accepted-exit-codes
      1
-     (run ../../pp.exe --impl %{dep:test_sanitize.ml}))))))
+     (run ../../pp.exe --impl ./test_sanitize.ml))))))
 
 (rule
  (package ppx_windtrap)
@@ -60,6 +62,7 @@
   (diff test_sanitize.rejected.expected test_sanitize.rejected)))
 
 (rule
+ (deps uncaught_exn.ml)
  (target uncaught_exn.rejected)
  (action
   (with-outputs-to
@@ -69,7 +72,7 @@
     never
     (with-accepted-exit-codes
      1
-     (run ../../pp.exe --impl %{dep:uncaught_exn.ml}))))))
+     (run ../../pp.exe --impl ./uncaught_exn.ml))))))
 
 (rule
  (package ppx_windtrap)
@@ -78,6 +81,7 @@
   (diff uncaught_exn.rejected.expected uncaught_exn.rejected)))
 
 (rule
+ (deps unreachable.ml)
  (target unreachable.rejected)
  (action
   (with-outputs-to
@@ -87,7 +91,7 @@
     never
     (with-accepted-exit-codes
      1
-     (run ../../pp.exe --impl %{dep:unreachable.ml}))))))
+     (run ../../pp.exe --impl ./unreachable.ml))))))
 
 (rule
  (package ppx_windtrap)
@@ -96,6 +100,7 @@
   (diff unreachable.rejected.expected unreachable.rejected)))
 
 (rule
+ (deps warning_40.ml)
  (target warning_40.rejected)
  (action
   (with-outputs-to
@@ -105,7 +110,7 @@
     never
     (with-accepted-exit-codes
      1
-     (run ../../pp.exe --impl %{dep:warning_40.ml}))))))
+     (run ../../pp.exe --impl ./warning_40.ml))))))
 
 (rule
  (package ppx_windtrap)
@@ -114,6 +119,7 @@
   (diff warning_40.rejected.expected warning_40.rejected)))
 
 (rule
+ (deps zero_alloc_attr.ml)
  (target zero_alloc_attr.rejected)
  (action
   (with-outputs-to
@@ -123,7 +129,7 @@
     never
     (with-accepted-exit-codes
      1
-     (run ../../pp.exe --impl %{dep:zero_alloc_attr.ml}))))))
+     (run ../../pp.exe --impl ./zero_alloc_attr.ml))))))
 
 (rule
  (package ppx_windtrap)

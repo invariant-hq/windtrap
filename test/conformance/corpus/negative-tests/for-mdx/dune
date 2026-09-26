@@ -48,6 +48,7 @@
 ; OCAML_COLOR is set for the reason ../../root/dune gives.
 
 (rule
+ (deps mdx_cases.ml)
  (target mdx_cases.rejected)
  (action
   (with-outputs-to
@@ -57,7 +58,7 @@
     never
     (with-accepted-exit-codes
      1
-     (run ../../../pp.exe --impl %{dep:mdx_cases.ml}))))))
+     (run ../../../pp.exe --impl ./mdx_cases.ml))))))
 
 (rule
  (package ppx_windtrap)

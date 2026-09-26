@@ -33,11 +33,12 @@
 ; rules hold from 5.4 on.
 
 (rule
+ (deps hello_async.ml)
  (target hello_async_pp.ml)
  (action
   (with-stdout-to
    hello_async_pp.ml
-   (run ../../pp.exe --impl %{dep:hello_async.ml}))))
+   (run ../../pp.exe --impl ./hello_async.ml))))
 
 (rule
  (target hello_async.compile-rejected)

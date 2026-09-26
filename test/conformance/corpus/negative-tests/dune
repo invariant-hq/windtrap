@@ -290,6 +290,7 @@
 ; OCAML_COLOR is set for the reason ../root/dune gives.
 
 (rule
+ (deps comment.ml)
  (target comment.rejected)
  (action
   (with-outputs-to
@@ -299,7 +300,7 @@
     never
     (with-accepted-exit-codes
      1
-     (run ../../pp.exe --impl %{dep:comment.ml}))))))
+     (run ../../pp.exe --impl ./comment.ml))))))
 
 (rule
  (package ppx_windtrap)
@@ -308,6 +309,7 @@
   (diff comment.rejected.expected comment.rejected)))
 
 (rule
+ (deps exn.ml)
  (target exn.rejected)
  (action
   (with-outputs-to
@@ -317,7 +319,7 @@
     never
     (with-accepted-exit-codes
      1
-     (run ../../pp.exe --impl %{dep:exn.ml}))))))
+     (run ../../pp.exe --impl ./exn.ml))))))
 
 (rule
  (package ppx_windtrap)
@@ -326,6 +328,7 @@
   (diff exn.rejected.expected exn.rejected)))
 
 (rule
+ (deps exn_and_trailing.ml)
  (target exn_and_trailing.rejected)
  (action
   (with-outputs-to
@@ -335,7 +338,7 @@
     never
     (with-accepted-exit-codes
      1
-     (run ../../pp.exe --impl %{dep:exn_and_trailing.ml}))))))
+     (run ../../pp.exe --impl ./exn_and_trailing.ml))))))
 
 (rule
  (package ppx_windtrap)
@@ -344,6 +347,7 @@
   (diff exn_and_trailing.rejected.expected exn_and_trailing.rejected)))
 
 (rule
+ (deps exn_missing.ml)
  (target exn_missing.rejected)
  (action
   (with-outputs-to
@@ -353,7 +357,7 @@
     never
     (with-accepted-exit-codes
      1
-     (run ../../pp.exe --impl %{dep:exn_missing.ml}))))))
+     (run ../../pp.exe --impl ./exn_missing.ml))))))
 
 (rule
  (package ppx_windtrap)
@@ -362,6 +366,7 @@
   (diff exn_missing.rejected.expected exn_missing.rejected)))
 
 (rule
+ (deps expectation.ml)
  (target expectation.rejected)
  (action
   (with-outputs-to
@@ -371,7 +376,7 @@
     never
     (with-accepted-exit-codes
      1
-     (run ../../pp.exe --impl %{dep:expectation.ml}))))))
+     (run ../../pp.exe --impl ./expectation.ml))))))
 
 (rule
  (package ppx_windtrap)
@@ -380,6 +385,7 @@
   (diff expectation.rejected.expected expectation.rejected)))
 
 (rule
+ (deps function_with_distinct_outputs.ml)
  (target function_with_distinct_outputs.rejected)
  (action
   (with-outputs-to
@@ -389,7 +395,7 @@
     never
     (with-accepted-exit-codes
      1
-     (run ../../pp.exe --impl %{dep:function_with_distinct_outputs.ml}))))))
+     (run ../../pp.exe --impl ./function_with_distinct_outputs.ml))))))
 
 (rule
  (package ppx_windtrap)
@@ -400,6 +406,7 @@
    function_with_distinct_outputs.rejected)))
 
 (rule
+ (deps functor.ml)
  (target functor.rejected)
  (action
   (with-outputs-to
@@ -409,7 +416,7 @@
     never
     (with-accepted-exit-codes
      1
-     (run ../../pp.exe --impl %{dep:functor.ml}))))))
+     (run ../../pp.exe --impl ./functor.ml))))))
 
 (rule
  (package ppx_windtrap)
@@ -418,6 +425,7 @@
   (diff functor.rejected.expected functor.rejected)))
 
 (rule
+ (deps tag.ml)
  (target tag.rejected)
  (action
   (with-outputs-to
@@ -427,7 +435,7 @@
     never
     (with-accepted-exit-codes
      1
-     (run ../../pp.exe --impl %{dep:tag.ml}))))))
+     (run ../../pp.exe --impl ./tag.ml))))))
 
 (rule
  (package ppx_windtrap)
@@ -436,6 +444,7 @@
   (diff tag.rejected.expected tag.rejected)))
 
 (rule
+ (deps zero_alloc.ml)
  (target zero_alloc.rejected)
  (action
   (with-outputs-to
@@ -445,7 +454,7 @@
     never
     (with-accepted-exit-codes
      1
-     (run ../../pp.exe --impl %{dep:zero_alloc.ml}))))))
+     (run ../../pp.exe --impl ./zero_alloc.ml))))))
 
 (rule
  (package ppx_windtrap)
