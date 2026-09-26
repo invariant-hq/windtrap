@@ -222,11 +222,26 @@ let finish_within ?(seconds = 10.) ~what started =
       end;
       failf "%s: the run was still going after %.0fs" what seconds
 
+(* A zombie has died and waits for its reaper, which a container's first
+   process may never be: Linux shows its state in /proc, and elsewhere
+   init reaps it. *)
+let zombie pid =
+  match
+    In_channel.with_open_bin (strf "/proc/%d/stat" pid) In_channel.input_all
+  with
+  | stat -> (
+      (* The state follows the ")" that closes the command's name. *)
+      match String.rindex_opt stat ')' with
+      | Some i when i + 2 < String.length stat -> stat.[i + 2] = 'Z'
+      | Some _ | None -> false)
+  | exception Sys_error _ -> false
+
 (* A grandchild that ignores SIGTERM dies only by its group's SIGKILL, and
    init's reap of it can lag. *)
 let fate pid =
   let rec poll attempts =
     match Unix.kill pid 0 with
+    | () when zombie pid -> "gone"
     | () when attempts = 0 -> "alive"
     | () ->
         Unix.sleepf 0.1;
