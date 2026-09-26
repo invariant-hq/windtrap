@@ -36,6 +36,7 @@ let pp_verdict ppf = function
            ~pp_sep:(fun ppf () -> Format.pp_print_string ppf ", ")
            pp_test)
         (first :: others)
+  | V.Not_evaluated -> Format.pp_print_string ppf "not evaluated"
   | V.Unreached -> Format.pp_print_string ppf "unreached"
 
 let find t id =
@@ -113,6 +114,7 @@ let sample_verdicts =
     V.survived [ [ "a" ] ];
     V.survived [ [ "b"; "c" ] ];
     V.survived [ [ "a" ]; [ "b"; "c" ] ];
+    V.Not_evaluated;
     V.Killed;
   ]
 
@@ -134,8 +136,20 @@ let verdict_tests =
                 V.Unreached;
                 V.survived [ [ "a" ] ];
                 V.survived [ [ "a" ]; [ "b" ] ];
+                V.Not_evaluated;
               ])
           [ V.Killed ]);
+    test "not evaluated anywhere outranks a survivor" (fun () ->
+        (* An executable whose child did not evaluate the site has not
+           tested the mutant, and a kill anywhere wins: the mutant survives
+           the merge only once every executable that reached it evaluated
+           it. *)
+        equal ~msg:"not evaluated and survived" verdict_t V.Not_evaluated
+          (merged V.Not_evaluated (V.survived [ [ "a" ] ]));
+        equal ~msg:"survived and not evaluated" verdict_t V.Not_evaluated
+          (merged (V.survived [ [ "a" ] ]) V.Not_evaluated);
+        equal ~msg:"not evaluated and unreached" verdict_t V.Not_evaluated
+          (merged V.Unreached V.Not_evaluated));
     test "a survivor names at least one test" (fun () ->
         (* [Survived] with no reaching test would print as "no test ran this line
            and none failed when it changed", which is [Unreached]'s
@@ -392,25 +406,29 @@ let verdict_tests =
 (* The verdict file format *)
 
 let sample_collection () =
-  V.add
-    (V.add
-       (V.add V.empty
-          (record ~before:"a - b" ~after:"a + b"
-             (id ~file:"lib/a.ml" ~line:1 ~col:2 ~rewrite:"add")
-             V.Unreached))
-       (record ~before:"p && q" ~after:"not (p && q)"
-          (id ~file:"lib/b.ml" ~line:3 ~col:4 ~rewrite:"not")
-          V.Killed))
-    (record ~before:"a || b" ~after:"a && b"
-       (id ~file:"lib/b.ml" ~line:5 ~col:0 ~rewrite:"or")
-       (V.survived [ [ "x" ]; [ "y"; "z" ] ]))
+  List.fold_left V.add V.empty
+    [
+      record ~before:"a - b" ~after:"a + b"
+        (id ~file:"lib/a.ml" ~line:1 ~col:2 ~rewrite:"add")
+        V.Unreached;
+      record ~before:"p && q" ~after:"not (p && q)"
+        (id ~file:"lib/b.ml" ~line:3 ~col:4 ~rewrite:"not")
+        V.Killed;
+      record ~before:"a || b" ~after:"a && b"
+        (id ~file:"lib/b.ml" ~line:5 ~col:0 ~rewrite:"or")
+        (V.survived [ [ "x" ]; [ "y"; "z" ] ]);
+      record ~before:"a + b" ~after:"a - b"
+        (id ~file:"lib/c.ml" ~line:7 ~col:1 ~rewrite:"sub")
+        V.Not_evaluated;
+    ]
 
 let sample_bytes =
   "windtrap-mutants-v3\n\
-   3\n\
+   4\n\
    8 lib/a.ml 1 2 3 add 5 a - b 5 a + b unreached\n\
    8 lib/b.ml 3 4 3 not 6 p && q 12 not (p && q) killed\n\
-   8 lib/b.ml 5 0 2 or 6 a || b 6 a && b survived 2 1 1 x 2 1 y 1 z\n"
+   8 lib/b.ml 5 0 2 or 6 a || b 6 a && b survived 2 1 1 x 2 1 y 1 z\n\
+   8 lib/c.ml 7 1 3 sub 5 a + b 5 a - b not_evaluated\n"
 
 let digest = String.make 32 'a'
 

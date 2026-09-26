@@ -72,6 +72,12 @@ val execute_and_report : suite:string -> Run.config -> Test_tree.t list -> run
     counted a failure, that of a fixture release included. It is also killed
     when its child reported no survivor, because the child recorded no test,
     passed its deadline, did not exit with [0], or left no complete line.
+    Otherwise it is {!Windtrap_runtime.Verdicts.Not_evaluated} when its child
+    did not evaluate the armed site ({!Windtrap_runtime.Mutate.armed_hits} is
+    [0]), and survived when it did. A child starts from the state that the dry
+    run left, so a site whose result the dry run cached, in a table or a forced
+    lazy value, can pass unevaluated. The report lists such a mutant with the
+    [--arm] command that tests it in a new process, and names it no survivor.
 
     {b Tests marked xfail.} A test marked xfail ({!Test_tree.val-xfail}) reaches
     no mutant and kills none. The dry run and the probe run it, no child runs

@@ -13,9 +13,9 @@
 
 (** {1:verdicts Verdicts}
 
-    A verdict is one of three cases, and never a boolean or an exit code. A
-    failure to supervise the child that arms a mutant is none of the three, and
-    a caller must record no verdict for it. *)
+    A verdict is one of four cases, and never a boolean or an exit code. A
+    failure to supervise the child that arms a mutant is none of the four, and a
+    caller must record no verdict for it. *)
 
 type reaching_test = string list
 (** The type for a test that evaluated a mutant, by its path: the names of its
@@ -29,8 +29,13 @@ type verdict =
       (** A reaching test failed, or the child that armed the mutant crashed or
           hung. *)
   | Survived of { first : reaching_test; others : reaching_test list }
-      (** Every reaching test passed. [first] and [others] are the reaching
-          tests, sorted and without duplicates, and [first] is the first. *)
+      (** Every reaching test passed, and the armed site was evaluated. [first]
+          and [others] are the reaching tests, sorted and without duplicates,
+          and [first] is the first. *)
+  | Not_evaluated
+      (** Every reaching test passed, and the armed site was not evaluated. The
+          dry run evaluated the site and the child did not, as when the dry run
+          cached the result of the site in a table or a forced lazy value. *)
   | Unreached
       (** No test evaluated the site, so the loop forks no child for the mutant.
       *)
@@ -69,8 +74,8 @@ val add : t -> record -> t
     [(before, after)] pair in lexicographic order is kept, and the two verdicts
     combine into the verdict of a mutant that one executable saw one way and
     another the other way. It is {!Killed} if either is. Otherwise it is
-    {!Survived} with the reaching tests of both if either is, and {!Unreached}
-    if both are.
+    {!Not_evaluated} if either is, then {!Survived} with the reaching tests of
+    both if either is, and {!Unreached} if both are.
 
     [add] checks nothing of [r.id]. It accepts an empty [file], a [line] below
     [1], a negative [col] and a [rewrite] outside {!Mutate.rewrites}, and

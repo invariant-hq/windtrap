@@ -549,6 +549,32 @@ let only_unreached =
   equal ~msg:"the summary counts it without a survived term" text
     "mutants: 2 reached, 2 killed, 1 never reached, 1 executable" (summary out)
 
+let not_evaluated =
+  test "a mutant one executable did not evaluate is no survivor" @@ fun () ->
+  (* [sub] survives in A, and B's child passed without evaluating its site.
+     B has not tested the mutant, so the merge calls no survivor: it lists
+     the mutant with the command that arms it, and the build stays green. *)
+  let root = scratch "not-evaluated" in
+  plant_sources root;
+  save
+    (Filename.concat root "_build/_mutants/a.mutants")
+    (collection [ m_add V.Killed; m_sub (V.survived [ [ "cli"; "runs" ] ]) ]);
+  save
+    (Filename.concat root "_build/_mutants/b.mutants")
+    (collection [ m_add V.Killed; m_sub V.Not_evaluated ]);
+  let code, out, err = mutate ~cwd:root [] in
+  equal ~msg:"no survivor: exit 0" int 0 code;
+  equal ~msg:"stderr" text "" err;
+  equal ~msg:"the report, whole" text
+    "─────────────────── not evaluated (1) ────────────────────\n\
+    \  Each site ran in the dry run and not in its mutant's child.\n\
+    \  lib/calc.ml:2:14:sub  a - b \u{2192} a + b\n\
+    \    arm: WINDTRAP_MUTATE_ARM=lib/calc.ml:2:14:sub dune runtest --force \
+     --instrument-with ppx_windtrap.mutate\n\
+     ──────────────────────────────────────────────────────────\n\n\
+     mutants: 2 reached, 1 killed, 1 not evaluated, 2 executables\n"
+    out
+
 (* Discovery *)
 
 let discovery =
@@ -1250,6 +1276,7 @@ let () =
          single_file;
          clean_report;
          only_unreached;
+         not_evaluated;
          discovery;
          explicit_paths;
          staleness;

@@ -399,6 +399,23 @@ let known =
     xfail (test "orphan is 99" (fun () -> equal int 99 (Subject.orphan 1 2)));
   ]
 
+(* [widen]'s answer, memoized. The dry run fills the table, and a child
+   forked after it finds the answer there, so its armed [widen] never runs
+   and the test passes. An armed run is a new process, which computes the
+   answer and fails the test. *)
+let memo = Hashtbl.create 1
+
+let memoized_widen a b =
+  match Hashtbl.find_opt memo (a, b) with
+  | Some sum -> sum
+  | None ->
+      let sum = Subject.widen a b in
+      Hashtbl.add memo (a, b) sum;
+      sum
+
+let memoized =
+  [ test "memoized widen adds" (fun () -> equal int 7 (memoized_widen 3 4)) ]
+
 let retried = ref 0
 let handle = fixture ~teardown:(fun () -> ignore (Subject.crasher 3 1)) Fun.id
 
@@ -439,6 +456,7 @@ let () =
   | "flip" -> exit @@ run "calc" [ group "flip" flip ]
   | "focused" -> exit @@ run "calc" [ group "focused" focused ]
   | "known" -> exit @@ run "calc" [ group "known" known ]
+  | "memo" -> exit @@ run "calc" [ group "calc" strong; group "memo" memoized ]
   | "crash" ->
       exit
       @@ run "calc"

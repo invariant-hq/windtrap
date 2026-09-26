@@ -135,7 +135,7 @@ let survived_in verdicts =
       match r.verdict with
       | Survived { first; others } ->
           Ids.add (Mutate.id_to_string r.id) (first :: others) acc
-      | Killed | Unreached -> acc)
+      | Killed | Not_evaluated | Unreached -> acc)
     Ids.empty
     (Verdicts.records verdicts)
 
@@ -148,6 +148,15 @@ let merge ~source files =
       Verdicts.empty files
   in
   let survivals = List.map (fun f -> (f, survived_in f.verdicts)) files in
+  let mutant (r : Verdicts.record) : Sections.mutant =
+    {
+      id = Mutate.id_to_string r.id;
+      line = r.id.line;
+      before = r.before;
+      after = r.after;
+      source = source r.id.file;
+    }
+  in
   let survivor (r : Verdicts.record) : Sections.survivor =
     let id = Mutate.id_to_string r.id in
     let witnesses =
@@ -162,28 +171,45 @@ let merge ~source files =
         survivals
     in
     {
-      mutant =
-        {
-          id;
-          line = r.id.line;
-          before = r.before;
-          after = r.after;
-          source = source r.id.file;
-        };
+      mutant = mutant r;
       witnesses =
         List.map
           (fun (exe, test) -> { Sections.test; loc = None; exe = Some exe })
           (List.sort_uniq compare witnesses);
     }
   in
-  let survivors, unreached, killed =
+  (* The first executable, in the order of [files], that did not evaluate
+     the mutant is the one its command runs. A merge is [Not_evaluated] only
+     when a file is. *)
+  let not_evaluated (r : Verdicts.record) : Sections.not_evaluated =
+    let missed f =
+      List.exists
+        (fun (fr : Verdicts.record) ->
+          Mutate.compare_id fr.id r.id = 0
+          &&
+          match fr.verdict with
+          | Not_evaluated -> true
+          | Killed | Survived _ | Unreached -> false)
+        (Verdicts.records f.verdicts)
+    in
+    let invocation =
+      match List.find_opt missed files with
+      | Some f -> f.invocation
+      | None -> assert false
+    in
+    { mutant = mutant r; invocation }
+  in
+  let survivors, not_evaluated, unreached, killed =
     List.fold_right
-      (fun (r : Verdicts.record) (survivors, unreached, killed) ->
+      (fun (r : Verdicts.record) (survivors, missed, unreached, killed) ->
         match r.verdict with
-        | Survived _ -> (survivor r :: survivors, unreached, killed)
-        | Unreached -> (survivors, (r.id.file, r.id.line) :: unreached, killed)
-        | Killed -> (survivors, unreached, killed + 1))
-      (Verdicts.records merged) ([], [], 0)
+        | Survived _ -> (survivor r :: survivors, missed, unreached, killed)
+        | Not_evaluated ->
+            (survivors, not_evaluated r :: missed, unreached, killed)
+        | Unreached ->
+            (survivors, missed, (r.id.file, r.id.line) :: unreached, killed)
+        | Killed -> (survivors, missed, unreached, killed + 1))
+      (Verdicts.records merged) ([], [], [], 0)
   in
   (* The survivor the most tests watched is the one a reader can act on
      soonest. The sort is stable, so identifier order holds within a count. *)
@@ -206,6 +232,7 @@ let merge ~source files =
   in
   ( {
       Sections.survivors;
+      not_evaluated;
       unreached;
       killed;
       not_tested = 0;

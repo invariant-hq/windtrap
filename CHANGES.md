@@ -604,6 +604,12 @@ Each one is also listed under its area below.
 - `--mutate` is refused (exit 1) on Windows, in a process that spawned a
   domain, when the dry run fails or has no mutant in scope, and when the
   determinism probe disagrees with the dry run.
+- A mutant whose child passed without evaluating its site, as when the
+  dry run cached the site's result, is not evaluated and no survivor;
+  the report lists it under `not evaluated` with the `arm:` command that
+  tests it in a new process, and the merge keeps it not evaluated unless
+  an executable killed it (see
+  [What a mutation run runs](https://github.com/invariant-hq/windtrap/blob/main/doc/manual/mutation.md#what-a-mutation-run-runs)).
 
 ### Packages and libraries
 

@@ -30,6 +30,7 @@ let pp_verdict ppf = function
   | V.Survived { first; others } ->
       Format.fprintf ppf "survived by %s"
         (String.concat ", " (List.map (String.concat " > ") (first :: others)))
+  | V.Not_evaluated -> Format.pp_print_string ppf "not evaluated"
   | V.Unreached -> Format.pp_print_string ppf "unreached"
 
 (* A file a fixture writes, read back; a file it never wrote reads as
@@ -781,6 +782,62 @@ let xfail_tests =
              mutant survived: the armed site was evaluated 2 times and no test \
              failed.\n"
           out);
+  ]
+
+(* The [memo] suite memoizes [widen]: the dry run fills the table, so the
+   child that arms [widen]'s mutant reads the answer from it and never
+   evaluates the site. Its test passes there, and an armed run, a new
+   process, fails it. The loop must say that the child did not evaluate the
+   site, and must not call the mutant a survivor. *)
+let memo_loop =
+  lazy
+    ((try Sys.remove verdict_path with Sys_error _ -> ());
+     let code, out, err =
+       spawn ~args:[ mutate ] [ ("MUTATE_FIXTURE", "memo") ]
+     in
+     { code; out; err; saved = read_file verdict_path })
+
+let not_evaluated_tests =
+  [
+    test "a mutant its child did not evaluate is no survivor" (fun () ->
+        let { code; out; err; _ } = Lazy.force memo_loop in
+        equal ~msg:"exit code" int 0 code;
+        equal ~msg:"stderr" text "" err;
+        equal ~msg:"the report, whole" text
+          ("calc: 4 passed in <time>.\n\n\
+            ─────────────────── not evaluated (1) ────────────────────\n\
+           \  Each site ran in the dry run and not in its mutant's child.\n\
+           \  " ^ mutant_named "sub" ^ "  a + b \u{2192} a - b\n    arm: "
+         ^ suite_exe ^ " --arm " ^ mutant_named "sub"
+         ^ "\n\
+            ──────────────────────────────────────────────────────────\n\n\
+            ─────────────────── never reached (2) ────────────────────\n\
+           \  2  test/instr/loop/subject.ml   lines 21, 27\n\
+            ──────────────────────────────────────────────────────────\n\n\
+            mutants: 2 reached by this suite, 1 killed, 1 not evaluated, 2 \
+            never reached\n")
+          (masked out));
+    test "its arm command kills it in a new process" (fun () ->
+        let code, out, _ =
+          spawn
+            ~args:[ "--arm"; mutant_named "sub" ]
+            [ ("MUTATE_FIXTURE", "memo") ]
+        in
+        equal ~msg:"the memoized test failed" int 1 code;
+        contains ~msg:"the closing line" ~sub:"\nmutant killed.\n" out);
+    test "the verdict file records it as not evaluated" (fun () ->
+        let { saved; _ } = Lazy.force memo_loop in
+        match load_saved saved with
+        | Error e -> failf "verdict file unreadable: %a" V.pp_error e
+        | Ok (verdicts, _) ->
+            equal ~msg:"sub killed, widen not evaluated" (list string)
+              [
+                "15 killed"; "18 not evaluated"; "21 unreached"; "27 unreached";
+              ]
+              (List.map
+                 (fun (r : V.record) ->
+                   Format.asprintf "%d %a" r.V.id.M.line pp_verdict r.V.verdict)
+                 (V.records verdicts)));
   ]
 
 (* Child hygiene: a mutation child leaves through [Unix._exit] and nothing
@@ -2336,6 +2393,7 @@ let () =
          group "loop" loop_tests;
          group "reach map" reach_tests;
          group "xfail" xfail_tests;
+         group "not evaluated" not_evaluated_tests;
          group "dry run and children" dry_run_tests;
          group "no trace outside the pipe" no_trace_tests;
          group "verdict file" verdict_file_tests;

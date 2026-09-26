@@ -1353,10 +1353,12 @@ type mutant = {
 }
 
 type survivor = { mutant : mutant; witnesses : witness list }
+type not_evaluated = { mutant : mutant; invocation : Run.invocation }
 type scope = Suite | Selected of int | Executables of int
 
 type mutation = {
   survivors : survivor list;
+  not_evaluated : not_evaluated list;
   unreached : (string * int) list;
   killed : int;
   not_tested : int;
@@ -1366,14 +1368,15 @@ type mutation = {
 (* A build action's suite is reached through dune alone: [--force] because
    dune replays a cached test action, which arms nothing, and the backend
    because a plain build carries no mutant. *)
-let reproduce_line ~invocation ~selection id =
+let arm_command ~invocation ~selection id =
   match invocation with
-  | `Exe cmd -> strf "reproduce: %s%s%s" cmd (arm_flag (Some id)) selection
+  | `Exe cmd -> strf "%s%s%s" cmd (arm_flag (Some id)) selection
   | `Mirrors ->
-      strf
-        "reproduce: %s%sdune runtest --force --instrument-with \
-         ppx_windtrap.mutate"
+      strf "%s%sdune runtest --force --instrument-with ppx_windtrap.mutate"
         (arm_mirror (Some id)) selection
+
+let reproduce_line ~invocation ~selection id =
+  "reproduce: " ^ arm_command ~invocation ~selection id
 
 (* A survivor is drawn as a failure block is: it is a defect report about the
    tests it names. *)
@@ -1442,7 +1445,7 @@ let survivor_block ~exe_width (s : survivor) =
 let mutation_summary (m : mutation) =
   let survived = List.length m.survivors in
   let reached =
-    let n = m.killed + survived + m.not_tested in
+    let n = m.killed + survived + List.length m.not_evaluated + m.not_tested in
     match m.scope with
     | Suite -> strf "%d reached by this suite" n
     | Selected tests ->
@@ -1457,6 +1460,8 @@ let mutation_summary (m : mutation) =
        ]
      else [ [ plain reached ] ])
     @ term m.killed (fun n -> [ styled `Green (strf "%d killed" n) ])
+    @ term (List.length m.not_evaluated) (fun n ->
+        [ styled `Yellow (strf "%d not evaluated" n) ])
     @ term (List.length m.unreached) (fun n ->
         [ styled `Yellow (strf "%d never reached" n) ])
     @ term m.not_tested (fun n -> [ plain (strf "%d not tested" n) ])
@@ -1466,6 +1471,33 @@ let mutation_summary (m : mutation) =
     | Suite | Selected _ -> []
   in
   plain "mutants: " :: separated (plain ", ") terms
+
+(* Each mutant with the command that tests it in a new process, which starts
+   from no state that a dry run left. *)
+let not_evaluated_section ~selection = function
+  | [] -> []
+  | not_evaluated ->
+      let mutant (n : not_evaluated) =
+        [
+          Line
+            [
+              plain "  ";
+              styled `Bold n.mutant.id;
+              plain (strf "  %s \u{2192} %s" n.mutant.before n.mutant.after);
+            ];
+          Hint
+            ("    arm: "
+            ^ arm_command ~invocation:n.invocation ~selection n.mutant.id);
+        ]
+      in
+      Rule (Some (strf "not evaluated (%d)" (List.length not_evaluated)))
+      :: Line
+           [
+             plain
+               "  Each site ran in the dry run and not in its mutant's child.";
+           ]
+      :: List.concat_map mutant not_evaluated
+      @ [ Rule None ]
 
 (* One row per file: what a reader does with an unreached mutant is write a
    test for its lines, and a project has hundreds of them. *)
@@ -1513,13 +1545,18 @@ let outcome ~invocation ~selection (m : mutation) =
 let mutation_closing ~(config : Run.config) (m : mutation) =
   let invocation = config.invocation in
   let selection = selection_words invocation config in
-  let rest =
-    join [ unreached_section m.unreached; outcome ~invocation ~selection m ]
+  let sections =
+    [
+      not_evaluated_section ~selection m.not_evaluated;
+      unreached_section m.unreached;
+    ]
   in
-  match (m.survivors, m.unreached) with
-  | [], [] -> rest
-  | [], _ :: _ -> Line [] :: rest
-  | _ :: _, _ -> Rule None :: Line [] :: rest
+  let rest = join (sections @ [ outcome ~invocation ~selection m ]) in
+  match m.survivors with
+  | [] when List.for_all (function [] -> true | _ :: _ -> false) sections ->
+      rest
+  | [] -> Line [] :: rest
+  | _ :: _ -> Rule None :: Line [] :: rest
 
 let mutation_report ~invocation (m : mutation) =
   let exes =
@@ -1544,6 +1581,7 @@ let mutation_report ~invocation (m : mutation) =
   join
     [
       survivors;
+      not_evaluated_section ~selection:"" m.not_evaluated;
       unreached_section m.unreached;
       outcome ~invocation ~selection:"" m;
     ]

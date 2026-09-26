@@ -4656,9 +4656,19 @@ let ge_survivor =
       ];
   }
 
+let memo_missed =
+  {
+    Sections.mutant =
+      mutant
+        ~source:(source_of [ (4, "  | None -> let v = a + b in") ])
+        "lib/memo.ml:4:17:sub" 4 "a + b" "a - b";
+    invocation = `Exe "./test_memo.exe";
+  }
+
 let loop_report =
   {
     Sections.survivors = [ add_survivor; ge_survivor ];
+    not_evaluated = [];
     unreached = [ ("lib/calc.ml", 40); ("lib/calc.ml", 41) ];
     killed = 3;
     not_tested = 0;
@@ -4877,6 +4887,7 @@ let not_survivor =
 let merge_report =
   {
     Sections.survivors = [ eq_survivor; not_survivor ];
+    not_evaluated = [];
     unreached =
       List.map (fun line -> ("lib/text.ml", line)) [ 12; 13; 14; 32 ]
       @ [ ("lib/run.ml", 40); ("lib/run.ml", 40); ("lib/report.ml", 61) ];
@@ -5023,11 +5034,18 @@ let test_mutation_sentence () =
     (block [ named; { other with Sections.exe = Some "test_eval.exe" } ])
 
 let test_mutation_summary_forms () =
-  let summary ?(survivors = []) ?(unreached = []) ?(not_tested = 0) ~killed
-      scope =
+  let summary ?(survivors = []) ?(not_evaluated = []) ?(unreached = [])
+      ?(not_tested = 0) ~killed scope =
     last_line
       (at_rest
-         { Sections.survivors; unreached; killed; not_tested; scope }
+         {
+           Sections.survivors;
+           not_evaluated;
+           unreached;
+           killed;
+           not_tested;
+           scope;
+         }
          ~ansi:false)
   in
   let unreached = [ ("lib/calc.ml", 22); ("lib/calc.ml", 31) ] in
@@ -5073,6 +5091,10 @@ let test_mutation_summary_forms () =
      reached, 3 not tested"
     (summary ~survivors:[ add_survivor ] ~unreached ~not_tested:3 ~killed:2
        Sections.Suite);
+  equal ~msg:"a mutant its child did not evaluate is reached" string
+    "mutants: 1 survived of 4 reached by this suite, 2 killed, 1 not evaluated"
+    (summary ~survivors:[ add_survivor ] ~not_evaluated:[ memo_missed ]
+       ~killed:2 Sections.Suite);
   not_contains ~msg:"no middle dot joins the terms" ~sub:"\u{00b7}"
     (summary ~survivors:[ add_survivor ] ~unreached ~killed:11
        (Sections.Executables 3))
@@ -5165,6 +5187,67 @@ let test_mutation_reproduce () =
   not_contains ~msg:"no placeholder to fill" ~sub:"<id>" out;
   not_contains ~msg:"and no selection restated" ~sub:" -f " out
 
+(* A mutant whose child did not evaluate its site is listed with the
+   command that arms it, in its own section above the never-reached one. *)
+
+let test_mutation_not_evaluated () =
+  let report =
+    {
+      loop_report with
+      Sections.survivors = [];
+      not_evaluated = [ memo_missed ];
+    }
+  in
+  equal ~msg:"the section at rest, under the executable that missed it" string
+    (roles
+       "\u{ab}d|─────────────────── not evaluated (1) ────────────────────\u{bb}\n\
+       \  Each site ran in the dry run and not in its mutant's child.\n\
+       \  \u{ab}b|lib/memo.ml:4:17:sub\u{bb}  a + b \u{2192} a - b\n\
+       \    arm: ./test_memo.exe --arm lib/memo.ml:4:17:sub\n"
+    ^ roles closing ^ "\n"
+    ^ roles
+        "\u{ab}d|─────────────────── never reached (2) \
+         ────────────────────\u{bb}\n\
+        \  \u{ab}y|2\u{bb}  lib/calc.ml   lines 40-41\n"
+    ^ roles closing
+    ^ "\n\
+       mutants: 4 reached by this suite, \027[32m3 killed\027[0m, \027[33m1 \
+       not evaluated\027[0m, \027[33m2 never reached\027[0m\n")
+    (at_rest report ~ansi:true);
+  let config =
+    {
+      (config ~invocation:(`Exe "./t.exe") ()) with
+      Run.filter = [ "memoized" ];
+    }
+  in
+  equal ~msg:"in a loop: after the survivors, under the run's selection" string
+    ("\n\
+      ─────────────────── not evaluated (1) ────────────────────\n\
+     \  Each site ran in the dry run and not in its mutant's child.\n\
+     \  lib/memo.ml:4:17:sub  a + b \u{2192} a - b\n\
+     \    arm: ./test_memo.exe --arm lib/memo.ml:4:17:sub -f 'memoized'\n"
+   ^ closing_rule)
+    (String.concat "\n"
+       (List.filteri
+          (fun i _ -> i < 6)
+          (String.split_on_char '\n'
+             (sections (Sections.mutation_closing ~config report)))));
+  equal ~msg:"under a build action: the mirror" string
+    "    arm: WINDTRAP_MUTATE_ARM=lib/memo.ml:4:17:sub dune runtest --force \
+     --instrument-with ppx_windtrap.mutate"
+    (List.find
+       (String.starts_with ~prefix:"    arm: ")
+       (String.split_on_char '\n'
+          (at_rest
+             {
+               report with
+               Sections.not_evaluated =
+                 [ { memo_missed with Sections.invocation = `Mirrors } ];
+             }
+             ~ansi:false)));
+  not_contains ~msg:"no survivor, nothing to reproduce" ~sub:"reproduce:"
+    (at_rest report ~ansi:false)
+
 (* Never-reached mutants are one row per file, in path order, their
    distinct lines fitted as a coverage row's are. *)
 
@@ -5178,6 +5261,7 @@ let test_mutation_unreached () =
     at_rest
       {
         Sections.survivors = [];
+        not_evaluated = [];
         unreached = wide;
         killed = 1;
         not_tested = 0;
@@ -6421,6 +6505,8 @@ let tests =
       test_mutation_sentence;
     test "mutation: the outcome line's forms" test_mutation_summary_forms;
     test "mutation: the reproduce command" test_mutation_reproduce;
+    test "mutation: not evaluated, with the command that arms each"
+      test_mutation_not_evaluated;
     test "mutation: never reached, one row per file" test_mutation_unreached;
     test "mutation: a survivor's source line is escaped" test_mutation_escapes;
     test "mutation: the armed verdict counts in English"

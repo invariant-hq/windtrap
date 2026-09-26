@@ -387,6 +387,14 @@ type survivor = {
 }
 (** The type for a survived mutant. *)
 
+type not_evaluated = {
+  mutant : mutant;  (** The mutant whose child did not evaluate its site. *)
+  invocation : Run.invocation;
+      (** How to run again an executable whose child did not evaluate it. *)
+}
+(** The type for a reached mutant whose child passed without evaluating its
+    site, which is no survivor. *)
+
 (** The type for what the reached count of a report is relative to. The outcome
     line names it. *)
 type scope =
@@ -400,6 +408,9 @@ type scope =
 type mutation = {
   survivors : survivor list;
       (** Every survivor, in the order in which its block prints. *)
+  not_evaluated : not_evaluated list;
+      (** Every reached mutant whose child did not evaluate its site, in the
+          order in which it prints. *)
   unreached : (string * int) list;
       (** The file and the one-based line of each mutant that no test evaluated,
           one pair per mutant. *)
@@ -411,7 +422,8 @@ type mutation = {
   scope : scope;  (** What the reached count is relative to. *)
 }
 (** The type for a whole mutation report. Its reached count is
-    [killed + List.length survivors + not_tested]. *)
+    [killed + List.length survivors + List.length not_evaluated + not_tested].
+*)
 
 val survivor_block : exe_width:int option -> survivor -> section list
 (** [survivor_block ~exe_width s] is the block of [s]. It holds, in this order:
@@ -429,6 +441,12 @@ val mutation_closing : config:Run.config -> mutation -> section list
     already printed under an opening rule. It holds, in this order:
     - the rule that closes the blocks, when [m.survivors] is not empty. It is
       decided on [m], whatever was printed.
+    - when [m.not_evaluated] is not empty, the not-evaluated section, between an
+      opening rule that carries their number and a closing rule. It says in one
+      line that each site ran in the dry run and not in the child of its mutant,
+      then gives each mutant on one line and, under it, the [arm:] command that
+      runs its [invocation] with [--arm] and the selection of [config], as the
+      [reproduce:] command below does.
     - when [m.unreached] is not empty, the never-reached section, between an
       opening rule that carries the number of mutants and a closing rule.
     - when [m.survivors] is not empty, the [reproduce:] command, which arms the
@@ -444,6 +462,7 @@ val mutation_report : invocation:Run.invocation -> mutation -> section list
 (** [mutation_report ~invocation m] is [m] as a report at rest. It holds one
     {!survivor_block} per survivor, between an opening rule that carries their
     number and a closing rule. The executables of all blocks form one column,
-    which is absent when no reaching test names an executable. The never-reached
-    section, the [reproduce:] command and the outcome line follow, as
-    {!mutation_closing} builds them for a run that selects every test. *)
+    which is absent when no reaching test names an executable. The not-evaluated
+    section, the never-reached section, the [reproduce:] command and the outcome
+    line follow, as {!mutation_closing} builds them for a run that selects every
+    test. *)

@@ -212,6 +212,13 @@ the withheld-correction warning:
   or evaluates its site more than `hits * 8 + 1000` times, `hits` being
   the dry run's count, is killed, and its mutant counts as killed.
 
+A child starts from the state the dry run left. When a child passes
+without evaluating its mutant's site, as when the dry run cached the
+site's result in a table or a forced lazy value, the mutant is not
+evaluated and is no survivor. The report lists it under `not evaluated`
+with an `arm:` command, which runs the suite in a new process and ends
+on the mutant's verdict.
+
 A test marked `xfail` reaches no mutant. The dry run and the probe run
 it, and no child does. A line that only such tests run is never
 reached, and an `--arm` run of its mutant ends on `mutant not reached`.
@@ -238,9 +245,10 @@ with `windtrap mutants`. `WINDTRAP_MUTATE` is the mirror of `--mutate`,
 where `1` is the bare flag, `0` its absence, and a value that spells no
 boolean the prefixes. A suite with no mutant to test, such as a suite
 over another library, runs as usual and says why on standard error. A
-mutant killed by one executable is killed, and the command exits 1 when
-a mutant survived every executable that reached it, listing the most
-reached first.
+mutant killed by one executable is killed. A mutant that no executable
+killed and one did not evaluate is not evaluated. The command exits 1
+when a mutant survived every executable that reached it, listing the
+most reached first.
 
 Dune does not track `WINDTRAP_MUTATE`. A suite that ran without it
 does not run again when it is set, unless its build changed, and the

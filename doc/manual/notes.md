@@ -214,9 +214,16 @@ the process that knows which test is running, so it can record which
 tests evaluate each mutant and name them in a survivor's block, which
 turns a score into a list of tests to strengthen. It forks one child per
 reached mutant from its own warm state, and each child runs only the
-tests that reach its mutant, up to the first failure. A tool outside the
-suite would rebuild or restart the suite for each mutant, and could not
-name the tests.
+tests that reach its mutant, up to the first failure. A tool outside
+the suite would rebuild or restart the suite for each mutant, and could
+not name the tests.
+
+A child inherits what the dry run cached, so a test can pass in it
+without evaluating the mutant's site. The child counts the evaluations
+of its armed site, and a mutant whose site it never evaluated is not
+evaluated. Called a survivor, it would send a reader to strengthen
+tests that were never given the mutant. An `--arm` run starts in a new
+process and judges it.
 
 ## Every mutant is compiled in
 

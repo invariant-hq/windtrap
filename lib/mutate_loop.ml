@@ -459,9 +459,12 @@ let killed_by (outcome : Run.outcome) =
        (Run.results outcome.run)
 
 (* A child that recorded no test did not test its mutant: a survivor would
-   send the reader to strengthen tests that never ran. *)
+   send the reader to strengthen tests that never ran. A child keeps the
+   dry run's state, so a site whose result the dry run cached can pass
+   unevaluated. *)
 let verdict_line (outcome : Run.outcome) =
   if killed_by outcome || Run.results outcome.run = [] then "killed"
+  else if Mutate.armed_hits () = 0 then "not_evaluated"
   else "survived"
 
 let budget_of hits =
@@ -490,6 +493,7 @@ let test_mutant loop ~index (mutant : Mutate.mutant) (site : site) =
           (Supervision
              (strf "%s: %s" (Mutate.id_to_string mutant.id) diagnostic))
     | Ok [ "survived" ], Unix.WEXITED 0 -> Verdicts.survived paths
+    | Ok [ "not_evaluated" ], Unix.WEXITED 0 -> Verdicts.Not_evaluated
     | Ok _, (Unix.WEXITED _ | Unix.WSIGNALED _ | Unix.WSTOPPED _) ->
         Verdicts.Killed
 
@@ -518,27 +522,27 @@ let read_source =
         Hashtbl.add cache file source;
         source
 
+let shown (mutant : Mutate.mutant) : Report_sections.mutant =
+  {
+    id = Mutate.id_to_string mutant.id;
+    line = mutant.id.line;
+    before = mutant.before;
+    after = mutant.after;
+    source = read_source mutant.id.file;
+  }
+
 let survivor ~locations (mutant : Mutate.mutant) reaching :
     Report_sections.survivor =
   let witness path : Report_sections.witness =
     let test = Test_tree.path_to_string path in
     { test; loc = Option.join (Hashtbl.find_opt locations test); exe = None }
   in
-  {
-    mutant =
-      {
-        id = Mutate.id_to_string mutant.id;
-        line = mutant.id.line;
-        before = mutant.before;
-        after = mutant.after;
-        source = read_source mutant.id.file;
-      };
-    witnesses = List.map witness reaching;
-  }
+  { mutant = shown mutant; witnesses = List.map witness reaching }
 
 type tested = {
   verdicts : Verdicts.t; (* of the children that ended *)
   survivors : Report_sections.survivor list; (* as their blocks printed *)
+  not_evaluated : Report_sections.not_evaluated list; (* in catalogue order *)
   stopped : (int * Mutate.mutant option) option;
       (* the signal that stopped the forks, and the mutant whose child it
          found running *)
@@ -554,8 +558,14 @@ let test_mutants renderer loop reached =
       Hashtbl.replace locations (Test_tree.path_to_string case.path) case.loc)
     (Test_tree.flatten loop.tests);
   let total = List.length reached in
-  let rec next index verdicts survivors = function
-    | [] -> { verdicts; survivors = List.rev survivors; stopped = None }
+  let rec next index verdicts survivors not_evaluated = function
+    | [] ->
+        {
+          verdicts;
+          survivors = List.rev survivors;
+          not_evaluated = List.rev not_evaluated;
+          stopped = None;
+        }
     | ((mutant : Mutate.mutant), site) :: rest -> (
         Report.mutation_testing renderer ~index:(index + 1) ~total
           ~id:(Mutate.id_to_string mutant.id);
@@ -565,21 +575,33 @@ let test_mutants renderer loop reached =
             {
               verdicts;
               survivors = List.rev survivors;
+              not_evaluated = List.rev not_evaluated;
               stopped = Some (signal, Some mutant);
             }
         | None ->
-            let survivors =
+            let survivors, not_evaluated =
               match verdict with
               | Verdicts.Survived { first; others } ->
                   let found = survivor ~locations mutant (first :: others) in
                   Report.mutation_survivor renderer found;
-                  found :: survivors
-              | Verdicts.Killed | Verdicts.Unreached -> survivors
+                  (found :: survivors, not_evaluated)
+              | Verdicts.Not_evaluated ->
+                  let missed : Report_sections.not_evaluated =
+                    {
+                      mutant = shown mutant;
+                      invocation = loop.config.invocation;
+                    }
+                  in
+                  (survivors, missed :: not_evaluated)
+              | Verdicts.Killed | Verdicts.Unreached ->
+                  (survivors, not_evaluated)
             in
             let record = Verdicts.record_of_mutant mutant verdict in
-            next (index + 1) (Verdicts.add verdicts record) survivors rest)
+            next (index + 1)
+              (Verdicts.add verdicts record)
+              survivors not_evaluated rest)
   in
-  next 0 Verdicts.empty [] reached
+  next 0 Verdicts.empty [] [] reached
 
 (* The scratch directory is removed however the forks end. A signal
    outranks the disagreement of a probe it killed. *)
@@ -592,6 +614,7 @@ let fork renderer loop reached =
         {
           verdicts = Verdicts.empty;
           survivors = [];
+          not_evaluated = [];
           stopped = Some (signal, None);
         }
   | (Error _ as refused), None -> refused
@@ -646,16 +669,18 @@ let finish renderer ~narrowed ~reach ~reached ~unreached forks =
       Report.mutation_refused renderer message;
       Reported 1
   | Ok _ when interrupt.signal = Some Sys.sigpipe -> Os.die_by Sys.sigpipe
-  | Ok ({ verdicts; survivors; stopped }, note) -> (
+  | Ok ({ verdicts; survivors; not_evaluated; stopped }, note) -> (
       let records = Verdicts.records verdicts in
       let is_killed (r : Verdicts.record) =
         match r.verdict with
         | Verdicts.Killed -> true
-        | Verdicts.Survived _ | Verdicts.Unreached -> false
+        | Verdicts.Survived _ | Verdicts.Not_evaluated | Verdicts.Unreached ->
+            false
       in
       let report : Report_sections.mutation =
         {
           survivors;
+          not_evaluated;
           unreached =
             List.map
               (fun (m : Mutate.mutant) -> (m.id.file, m.id.line))
