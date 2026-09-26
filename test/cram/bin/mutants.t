@@ -302,9 +302,10 @@ once:
   reproduce: dune exec --instrument-with ppx_windtrap.mutate test/a.exe -- --arm lib/calc.ml:3:14:lt
   mutants: 1 survived of 2 reached, 1 killed, 3 never reached, 1 executable
   --- stderr
-  windtrap: .../b.mutants: its executable (default/test/b.exe) no longer exists; excluding it
-  windtrap: .../c.mutants: not written by the executable now at default/test/c.exe (rebuilt since); excluding it
-  windtrap: re-run every suite with its mutants (--mutate, instrumented with ppx_windtrap.mutate, forcing the runs your build tool cached), then merge again; delete the files whose executable no longer exists
+  windtrap: .../b.mutants: its executable (_build/default/test/b.exe) no longer exists; excluding it
+  windtrap: .../c.mutants: not written by the executable now at _build/default/test/c.exe (rebuilt since); excluding it
+  windtrap: re-run every suite with its mutants, then merge again; delete the files whose executable no longer exists
+    WINDTRAP_MUTATE=1 dune runtest --force --instrument-with ppx_windtrap.mutate
   [1]
 
 When every file is excluded, the command says what a verdict file is and
@@ -314,12 +315,30 @@ what invalidates one:
   $ rm _build/_mutants/b.mutants _build/_mutants/c.mutants
   $ run windtrap mutants
   --- stderr
-  windtrap: .../a.mutants: not written by the executable now at default/test/a.exe (rebuilt since); excluding it
+  windtrap: .../a.mutants: not written by the executable now at _build/default/test/a.exe (rebuilt since); excluding it
   windtrap: found 1 .mutants file and every one is stale
     A verdict is written only by a run asked to test its mutants, and it is
     invalidated by any later build of the executable that wrote it.
-  windtrap: re-run every suite with its mutants (--mutate, instrumented with ppx_windtrap.mutate, forcing the runs your build tool cached), then merge again; delete the files whose executable no longer exists
+  windtrap: re-run every suite with its mutants, then merge again; delete the files whose executable no longer exists
+    WINDTRAP_MUTATE=1 dune runtest --force --instrument-with ppx_windtrap.mutate
   [1]
+
+An executable outside every build directory writes under _windtrap, and
+the remedy names no command:
+
+  $ rm _build/_mutants/a.mutants
+  $ echo 'a hand-built suite' > no-such-exe
+  $ mkdata mutants _windtrap/mutants/abs.mutants --exe no-such-exe "$lt=killed"
+  $ rm no-such-exe
+  $ run windtrap mutants > abs
+  [1]
+  $ sed -E 's#\(.*[/\\]no-such-exe\)#(.../no-such-exe)#' abs
+  --- stderr
+  windtrap: .../abs.mutants: its executable (.../no-such-exe) no longer exists; excluding it
+  windtrap: found 1 .mutants file and every one is orphaned
+    A verdict is written only by a run asked to test its mutants, and it is
+    invalidated by any later build of the executable that wrote it.
+  windtrap: re-run every suite with its mutants (--mutate, instrumented with ppx_windtrap.mutate, forcing the runs your build tool cached), then merge again; delete the files whose executable no longer exists
 
 The executable column names each file by its executable's basename, an
 inline-test runner by its library, and a file with no identity by its own

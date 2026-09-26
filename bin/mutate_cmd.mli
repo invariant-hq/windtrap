@@ -36,7 +36,10 @@
     out could turn a killed mutant into a survivor. On standard error the
     command says the {!Data_files.warnings} of the excluded files, then
     {!Data_files.all_excluded} when no file is left, and then once, in a
-    sentence of its own, how to refresh them.
+    sentence of its own, how to refresh them. When every excluded file lies
+    under a build directory ({!Windtrap_runtime.Instr.build_dir}), the command
+    [WINDTRAP_MUTATE=1 dune runtest --force --instrument-with
+     ppx_windtrap.mutate] follows that sentence on a line of its own.
 
     The source of a mutated file is looked for under the roots of
     {!Data_files.discover}: the root of the project after a search, and the

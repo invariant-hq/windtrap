@@ -75,8 +75,9 @@ val identity :
 
 (** The type for the freshness of a file, judged from the
     {!Windtrap_runtime.Instr.identity} that it records. [Orphan] and [Stale]
-    carry the [exe] of that identity as it was recorded, which is a path below a
-    build directory or an absolute one. *)
+    carry the path of the recorded executable relative to the parent of its
+    build directory, as [_build/default/test/t.exe], or its absolute path when
+    it lies below no build directory. *)
 type freshness =
   | Fresh
       (** The executable at the recorded path has the recorded digest, or

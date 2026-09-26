@@ -4,6 +4,7 @@
   ---------------------------------------------------------------------------*)
 
 module Coverage = Windtrap_runtime.Coverage
+module Instr = Windtrap_runtime.Instr
 module Sections = Windtrap.Private.Report_sections
 module Os = Windtrap.Private.Os
 module Cli = Windtrap.Private.Cli
@@ -43,10 +44,18 @@ let all_excluded excluded =
      rebuilt since.\n\
     \  The usual cause is a build without the instrumentation flag."
 
-(* The remedy is in words: this command does not know how the suite is run. *)
-let remedy =
-  "re-run the suite instrumented (forcing the runs your build tool cached), \
-   then merge again; delete the files whose executable no longer exists"
+(* A dump under a build directory was written by a suite that dune ran, whose
+   command follows the remedy on a line of its own. Elsewhere the remedy is in
+   words: this command does not know how the suite is run. *)
+let remedy excluded =
+  let under_build_dir (path, _) = Option.is_some (Instr.build_dir ~path) in
+  if List.for_all under_build_dir excluded then
+    "re-run the suite instrumented, then merge again; delete the files whose \
+     executable no longer exists\n\
+    \  dune runtest --force --instrument-with ppx_windtrap.coverage"
+  else
+    "re-run the suite instrumented (forcing the runs your build tool cached), \
+     then merge again; delete the files whose executable no longer exists"
 
 (* No flag keeps a dump of another build: a number computed from it can only
    mislead. *)
@@ -72,10 +81,10 @@ let merged files =
           Error 1
       | [], excluded ->
           Os.say (all_excluded excluded);
-          Os.say remedy;
+          Os.say (remedy excluded);
           Error 1
       | kept, excluded -> (
-          if excluded <> [] then Os.say remedy;
+          if excluded <> [] then Os.say (remedy excluded);
           match List.fold_left merge (Ok Coverage.empty) kept with
           | Ok collection -> Ok collection
           | Error error ->

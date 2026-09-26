@@ -29,7 +29,11 @@
 
     On standard error the command says the {!Data_files.warnings} of the
     excluded dumps, then {!Data_files.all_excluded} when no dump is left, and
-    then once, in a sentence of its own, how to refresh them.
+    then once, in a sentence of its own, how to refresh them. When every
+    excluded dump lies under a build directory
+    ({!Windtrap_runtime.Instr.build_dir}), the command
+    [dune runtest --force --instrument-with ppx_windtrap.coverage] follows that
+    sentence on a line of its own.
 
     A recorded source is looked for by {!Windtrap_runtime.Coverage.file_reports}
     under the roots of {!Data_files.discover}: the root of the project after a

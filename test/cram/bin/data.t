@@ -187,9 +187,10 @@ are named and left out, and the remedy is said once:
     100.0%    3/3      lib/foo.ml
   coverage: 100.0% (3/3 points)
   --- stderr
-  windtrap: .../b.coverage: not written by the executable now at default/test/b.exe (rebuilt since); excluding it
-  windtrap: .../gone.coverage: its executable (default/test/gone.exe) no longer exists; excluding it
-  windtrap: re-run the suite instrumented (forcing the runs your build tool cached), then merge again; delete the files whose executable no longer exists
+  windtrap: .../b.coverage: not written by the executable now at _build/default/test/b.exe (rebuilt since); excluding it
+  windtrap: .../gone.coverage: its executable (_build/default/test/gone.exe) no longer exists; excluding it
+  windtrap: re-run the suite instrumented, then merge again; delete the files whose executable no longer exists
+    dune runtest --force --instrument-with ppx_windtrap.coverage
 
 When every file is left out, the command says how many there were and what
 they are. Three are named at most, and the rest are counted:
@@ -197,13 +198,14 @@ they are. Three are named at most, and the rest are counted:
   $ echo 'an uninstrumented rebuild' > _build/default/test/a.exe
   $ run windtrap coverage
   --- stderr
-  windtrap: .../a.coverage: not written by the executable now at default/test/a.exe (rebuilt since); excluding it
-  windtrap: .../b.coverage: not written by the executable now at default/test/b.exe (rebuilt since); excluding it
-  windtrap: .../gone.coverage: its executable (default/test/gone.exe) no longer exists; excluding it
+  windtrap: .../a.coverage: not written by the executable now at _build/default/test/a.exe (rebuilt since); excluding it
+  windtrap: .../b.coverage: not written by the executable now at _build/default/test/b.exe (rebuilt since); excluding it
+  windtrap: .../gone.coverage: its executable (_build/default/test/gone.exe) no longer exists; excluding it
   windtrap: found 3 .coverage files and every one is stale or orphaned (1 orphaned)
     They were written by executables that no longer exist or have been rebuilt since.
     The usual cause is a build without the instrumentation flag.
-  windtrap: re-run the suite instrumented (forcing the runs your build tool cached), then merge again; delete the files whose executable no longer exists
+  windtrap: re-run the suite instrumented, then merge again; delete the files whose executable no longer exists
+    dune runtest --force --instrument-with ppx_windtrap.coverage
   [1]
   $ for name in d e; do
   >   echo 'the instrumented build' > _build/default/test/$name.exe
@@ -212,31 +214,33 @@ they are. Three are named at most, and the rest are counted:
   > done
   $ run windtrap coverage
   --- stderr
-  windtrap: .../a.coverage: not written by the executable now at default/test/a.exe (rebuilt since); excluding it
-  windtrap: .../b.coverage: not written by the executable now at default/test/b.exe (rebuilt since); excluding it
-  windtrap: .../d.coverage: not written by the executable now at default/test/d.exe (rebuilt since); excluding it
+  windtrap: .../a.coverage: not written by the executable now at _build/default/test/a.exe (rebuilt since); excluding it
+  windtrap: .../b.coverage: not written by the executable now at _build/default/test/b.exe (rebuilt since); excluding it
+  windtrap: .../d.coverage: not written by the executable now at _build/default/test/d.exe (rebuilt since); excluding it
   windtrap: ... and 2 more like that
   windtrap: found 5 .coverage files and every one is stale or orphaned (1 orphaned)
     They were written by executables that no longer exist or have been rebuilt since.
     The usual cause is a build without the instrumentation flag.
-  windtrap: re-run the suite instrumented (forcing the runs your build tool cached), then merge again; delete the files whose executable no longer exists
+  windtrap: re-run the suite instrumented, then merge again; delete the files whose executable no longer exists
+    dune runtest --force --instrument-with ppx_windtrap.coverage
   [1]
   $ cd _build/_coverage && rm b.coverage d.coverage e.coverage gone.coverage && cd ../..
   $ run windtrap coverage
   --- stderr
-  windtrap: .../a.coverage: not written by the executable now at default/test/a.exe (rebuilt since); excluding it
+  windtrap: .../a.coverage: not written by the executable now at _build/default/test/a.exe (rebuilt since); excluding it
   windtrap: found 1 .coverage file and every one is stale
     They were written by executables that no longer exist or have been rebuilt since.
     The usual cause is a build without the instrumentation flag.
-  windtrap: re-run the suite instrumented (forcing the runs your build tool cached), then merge again; delete the files whose executable no longer exists
+  windtrap: re-run the suite instrumented, then merge again; delete the files whose executable no longer exists
+    dune runtest --force --instrument-with ppx_windtrap.coverage
   [1]
 
 An executable outside every build directory is recorded by its absolute
-path:
+path and writes under _windtrap, and the remedy names no command:
 
   $ rm _build/_coverage/a.coverage
   $ echo 'a hand-built suite' > no-such-exe
-  $ mkdata coverage _build/_coverage/abs.coverage --exe no-such-exe lib/ghost.ml=1
+  $ mkdata coverage _windtrap/coverage/abs.coverage --exe no-such-exe lib/ghost.ml=1
   $ rm no-such-exe
   $ run windtrap coverage > abs
   [1]
@@ -266,8 +270,9 @@ executable did:
      66.7%    2/3      lib/foo.ml   3
   coverage: 60.0% (3/5 points)
   --- stderr
-  windtrap: .../leftover.coverage: its executable (default/test/old.exe) no longer exists; excluding it
-  windtrap: re-run the suite instrumented (forcing the runs your build tool cached), then merge again; delete the files whose executable no longer exists
+  windtrap: .../leftover.coverage: its executable (_build/default/test/old.exe) no longer exists; excluding it
+  windtrap: re-run the suite instrumented, then merge again; delete the files whose executable no longer exists
+    dune runtest --force --instrument-with ppx_windtrap.coverage
   $ echo 'a later build' > _build/default/test/old.exe
   $ run windtrap coverage
      cover    points   file         uncovered lines (-u shows the source)
@@ -275,8 +280,9 @@ executable did:
      66.7%    2/3      lib/foo.ml   3
   coverage: 60.0% (3/5 points)
   --- stderr
-  windtrap: .../leftover.coverage: not written by the executable now at default/test/old.exe (rebuilt since); excluding it
-  windtrap: re-run the suite instrumented (forcing the runs your build tool cached), then merge again; delete the files whose executable no longer exists
+  windtrap: .../leftover.coverage: not written by the executable now at _build/default/test/old.exe (rebuilt since); excluding it
+  windtrap: re-run the suite instrumented, then merge again; delete the files whose executable no longer exists
+    dune runtest --force --instrument-with ppx_windtrap.coverage
   $ { head -n 2 _build/_coverage/a.coverage; echo 2; } > _build/_coverage/leftover.coverage
   $ run windtrap coverage
   --- stderr
@@ -306,8 +312,9 @@ remedy first, and a file that cannot be loaded is said alone:
   $ mkdata coverage _build/_coverage/d.coverage lib/foo.ml=1,0
   $ run windtrap coverage
   --- stderr
-  windtrap: .../c.coverage: its executable (default/test/gone.exe) no longer exists; excluding it
-  windtrap: re-run the suite instrumented (forcing the runs your build tool cached), then merge again; delete the files whose executable no longer exists
+  windtrap: .../c.coverage: its executable (_build/default/test/gone.exe) no longer exists; excluding it
+  windtrap: re-run the suite instrumented, then merge again; delete the files whose executable no longer exists
+    dune runtest --force --instrument-with ppx_windtrap.coverage
   windtrap: lib/foo.ml: coverage point tables disagree across coverage files (executables built from different sources?); re-run every instrumented test executable from one build, then merge again; delete the coverage files only if leftovers remain
   [1]
   $ echo 'not a coverage file' > _build/_coverage/d.coverage

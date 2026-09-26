@@ -76,12 +76,21 @@ let all_excluded excluded =
     \  A verdict is written only by a run asked to test its mutants, and it is\n\
     \  invalidated by any later build of the executable that wrote it."
 
-(* The remedy is in words: this command does not know how the suite is run,
-   and a run its build tool replays from the cache writes no verdict. *)
-let remedy =
-  "re-run every suite with its mutants (--mutate, instrumented with \
-   ppx_windtrap.mutate, forcing the runs your build tool cached), then merge \
-   again; delete the files whose executable no longer exists"
+(* A verdict file under a build directory was written by a suite that dune
+   ran, whose command follows the remedy on a line of its own. Elsewhere the
+   remedy is in words: this command does not know how the suite is run, and a
+   run its build tool replays from the cache writes no verdict. *)
+let remedy excluded =
+  let under_build_dir (path, _) = Option.is_some (Instr.build_dir ~path) in
+  if List.for_all under_build_dir excluded then
+    "re-run every suite with its mutants, then merge again; delete the files \
+     whose executable no longer exists\n\
+    \  WINDTRAP_MUTATE=1 dune runtest --force --instrument-with \
+     ppx_windtrap.mutate"
+  else
+    "re-run every suite with its mutants (--mutate, instrumented with \
+     ppx_windtrap.mutate, forcing the runs your build tool cached), then merge \
+     again; delete the files whose executable no longer exists"
 
 let fresh files =
   let load path =
@@ -103,9 +112,9 @@ let fresh files =
       | [], [] -> fail ~code:1 no_data
       | [], excluded ->
           Os.say (all_excluded excluded);
-          fail ~code:1 remedy
+          fail ~code:1 (remedy excluded)
       | kept, excluded ->
-          if excluded <> [] then Os.say remedy;
+          if excluded <> [] then Os.say (remedy excluded);
           Ok kept)
 
 (* Survivor sources are read once per file, under the first root that holds
