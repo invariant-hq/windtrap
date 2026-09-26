@@ -3,7 +3,6 @@
   test_os
   test_gen
   test_property
-  test_baseline
   test_source_patch
   test_stateful
   test_report
@@ -13,7 +12,6 @@
   test_os
   test_gen
   test_property
-  test_baseline
   test_source_patch
   test_stateful
   test_report
@@ -45,6 +43,11 @@
  (name test_check)
  (modules test_check)
  (libraries windtrap))
+
+(test
+ (name test_baseline)
+ (modules test_baseline)
+ (libraries windtrap unix))
 
 (test
  (name test_seed)

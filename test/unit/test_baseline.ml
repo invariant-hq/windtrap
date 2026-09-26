@@ -3,600 +3,380 @@
    SPDX-License-Identifier: ISC
   ---------------------------------------------------------------------------*)
 
-(* Tests for Baseline: the registry law (one content per key per run) over
-   both keys, the three modes, the gating of corrections by [settle],
-   corrected-file versus in-place writing, and the build-copy placement.
-   Each test builds its own registry over a throwaway project root and
-   drives [B.check] directly; the CI refusal is the runner's and is pinned
-   in test_run.ml. *)
-
 open Windtrap
-open Windtrap.Private
-module B = Baseline
+module Baseline = Windtrap.Private.Baseline
+module Failure = Windtrap.Private.Failure
+module Loc = Windtrap.Private.Loc
+module Os = Windtrap.Private.Os
+module Source_patch = Windtrap.Private.Source_patch
 
-let registered = ref []
-let reg name body = registered := Windtrap.test name body :: !registered
+let strf = Printf.sprintf
 
-(* Filesystem scaffolding *)
+(* Projects on disk *)
 
-let write_raw path contents =
+let read path = In_channel.with_open_bin path In_channel.input_all
+
+let put root file contents =
+  let path = Filename.concat root file in
   Os.mkdir_p (Filename.dirname path);
-  Out_channel.with_open_bin path (fun oc ->
-      Out_channel.output_string oc contents)
+  Out_channel.with_open_bin path (fun oc -> output_string oc contents)
 
-let read_raw path = In_channel.with_open_bin path In_channel.input_all
-let exists = Sys.file_exists
+let project files =
+  let root = temp_dir () in
+  List.iter (fun (file, contents) -> put root file contents) files;
+  root
 
-(* Failure-catching helpers *)
+(* The files under [root] with their contents, and its empty directories, in
+   the order of their paths. *)
+let tree root =
+  let rec entries dir =
+    Sys.readdir (Filename.concat root dir)
+    |> Array.to_list |> List.sort String.compare
+    |> List.concat_map (fun name ->
+        let file = if dir = "" then name else dir ^ "/" ^ name in
+        let path = Filename.concat root file in
+        if not (Sys.is_directory path) then [ strf "%s %S" file (read path) ]
+        else match entries file with [] -> [ file ^ "/" ] | inside -> inside)
+  in
+  entries ""
 
-let expect_failure label f =
-  match f () with
-  | () ->
-      is_true ~msg:(label ^ ": raises Check_failure") false;
-      None
-  | exception Failure.Check_failure fl -> (
-      match fl.Failure.kind with
-      | Failure.Baseline { baseline; state } -> Some (baseline, state)
-      | _ ->
-          is_true ~msg:(label ^ ": kind is Baseline") false;
-          None)
+let file file contents = strf "%s %S" file contents
 
-let expect_pass label f =
-  match f () with
-  | () -> is_true ~msg:(label ^ ": passes") true
-  | exception Failure.Check_failure _ ->
-      is_true ~msg:(label ^ ": passes (got Check_failure)") false
+let disk = function
+  | [] -> "on disk: nothing"
+  | entries -> "on disk: " ^ String.concat ", " entries
+
+(* What a check did *)
+
+let text (t : Failure.text) =
+  if Failure.is_cut t then
+    strf "%d bytes cut to %d" t.length (String.length t.kept)
+  else strf "%S" t.kept
+
+let compared = function
+  | Failure.Literal { exact = true } -> "exact literal"
+  | Literal { exact = false } -> "literal"
+  | File path -> "file " ^ path
+
+let state = function
+  | Failure.Missing { proposed } -> "missing " ^ text proposed
+  | Mismatch { expected; actual } ->
+      strf "mismatch %s against %s" (text actual) (text expected)
+  | Unresolvable { candidate } -> strf "unresolvable %S" candidate
+
+let withheld = function
+  | None -> ""
+  | Some (Failure.Refused { line; reason }) ->
+      strf ", refused at line %d: %s" line reason
+  | Some Conflict -> ", conflict"
+  | Some Failed_outside -> ", failed outside"
+  | Some Skipped -> ", skipped"
+
+(* The steps of a run. Each gives the rows of what it did. *)
+
+let check ?correct subject actual t =
+  match Baseline.check t ?correct subject actual with
+  | () -> [ "pass" ]
+  | exception
+      Failure.Check_failure
+        { kind = Baseline { baseline; state = s; withheld = w }; _ } ->
+      [ strf "%s: %s%s" (compared baseline) (state s) (withheld w) ]
+  | exception Failure.Check_failure _ -> [ "a failure of another kind" ]
+
+let settle ~keep t = [ strf "kept %d" (Baseline.settle t ~keep) ]
+
+let write t =
+  Baseline.write t;
+  []
+
+let relative root path =
+  let prefix = root ^ "/" in
+  if String.starts_with ~prefix path then
+    String.sub path (String.length prefix)
+      (String.length path - String.length prefix)
+  else "not under the root: " ^ path
+
+let writes root t =
+  List.map
+    (function
+      | Baseline.Written { path; literals } ->
+          strf "wrote %s, %d literals" (relative root path) literals
+      | Refused { path; reason } ->
+          strf "refused %s: %s" (relative root path) reason)
+    (Baseline.writes t)
+
+let on_disk root _t = [ disk (tree root) ]
+
+let edit root file contents _t =
+  put root file contents;
+  []
+
+let play t steps = List.concat_map (fun step -> step t) steps
+let commit root t = play t [ settle ~keep:true; write; writes root ]
+
+let scenario ?cwd ~mode root steps =
+  let cwd = Option.value cwd ~default:root in
+  play (Baseline.create ~root ~cwd ~mode ()) steps
+
+let traced = list string
+
+let mode_name = function
+  | Baseline.Check -> "Check"
+  | Corrected -> "Corrected"
+  | Update -> "Update"
+
+(* Sources and subjects *)
 
 let help = "test/help.expected"
-let file_help = B.File help
+let file_help = Baseline.File help
 
-(* A source file holding one flexible literal, and its subject: the
-   position [__POS_OF__] records starts at its own token. *)
+(* A source holding one flexible literal at line 2. The position that
+   [__POS_OF__] records starts at its own token, column 19. *)
 let source = "let () =\n  expect (f ()) @@ __POS_OF__ {| old |}\n"
+let edited = "let () =\n  expect (f ()) @@ __POS_OF__ {| edited |}\n"
 
-(* Keys are positions: a second literal in a test needs its own line. *)
-let literal ?(line = 2) ?(exact = false) value =
-  B.Literal { pos = ("test/t.ml", line, 19, 40); value; exact }
+let literal ?(line = 2) ?(column = 19) ?(exact = false) value =
+  Baseline.Literal { pos = ("test/t.ml", line, column, 40); value; exact }
 
-(* File baselines *)
+let old = literal " old "
 
-let () =
-  reg "file: a missing baseline is read-only in Check mode" @@ fun () ->
-  let root = temp_dir () in
-  let t = B.create ~root ~cwd:root ~mode:B.Check () in
-  (match
-     expect_failure "missing" (fun () -> B.check t file_help "hello\r\nworld")
-   with
-  | Some
-      ( Failure.File path,
-        Failure.Missing { proposed = { Failure.kept = proposed; _ } } ) ->
-      equal ~msg:"the failure names the path as given" string help path;
-      equal ~msg:"the proposal is canonical" string "hello\nworld\n" proposed
-  | _ -> is_true ~msg:"missing: File/Missing payload" false);
-  is_true ~msg:"nothing was created"
-    (not (exists (Filename.concat root "test")));
-  B.write t;
-  is_true ~msg:"Check mode writes nothing" (B.writes t = [])
-
-let () =
-  reg "file: both sides canonicalize" @@ fun () ->
-  let root = temp_dir () in
-  write_raw (Filename.concat root help) "hello\r\nworld";
-  let t = B.create ~root ~cwd:root ~mode:B.Check () in
-  expect_pass "CRLF baseline vs LF actual" (fun () ->
-      B.check t file_help "hello\nworld\n");
-  expect_pass "actual without a final newline" (fun () ->
-      B.check t file_help "hello\nworld");
-  equal ~msg:"the file is untouched" string "hello\r\nworld"
-    (read_raw (Filename.concat root help))
-
-let () =
-  reg "file: mismatch carries both canonical texts" @@ fun () ->
-  let root = temp_dir () in
-  write_raw (Filename.concat root help) "hello\n";
-  let t = B.create ~root ~cwd:root ~mode:B.Check () in
-  match expect_failure "mismatch" (fun () -> B.check t file_help "bye") with
-  | Some
-      ( _,
-        Failure.Mismatch
-          {
-            expected = { Failure.kept = expected; _ };
-            actual = { Failure.kept = actual; _ };
-          } ) ->
-      equal ~msg:"expected is the canonical baseline" string "hello\n" expected;
-      equal ~msg:"actual is canonical" string "bye\n" actual
-  | _ -> is_true ~msg:"mismatch: Mismatch payload" false
-
-let () =
-  reg "file: the baseline is read once per run" @@ fun () ->
-  let root = temp_dir () in
-  let path = Filename.concat root help in
-  write_raw path "one\n";
-  let t = B.create ~root ~cwd:root ~mode:B.Check () in
-  expect_pass "first check reads the file" (fun () -> B.check t file_help "one");
-  write_raw path "two\n";
-  expect_pass "a recheck compares against the same content" (fun () ->
-      B.check t file_help "one");
-  match expect_failure "divergence" (fun () -> B.check t file_help "two") with
-  | Some (_, Failure.Mismatch { expected = { Failure.kept = expected; _ }; _ })
-    ->
-      equal ~msg:"against the first-read baseline" string "one\n" expected
-  | _ -> is_true ~msg:"divergence is a Mismatch" false
-
-(* Literal baselines *)
-
-let () =
-  reg "literal: flexible and exact comparison" @@ fun () ->
-  let root = temp_dir () in
-  let t = B.create ~root ~cwd:root ~mode:B.Check () in
-  expect_pass "flexible: indentation and blank edges are free" (fun () ->
-      B.check t (literal "\n    a\n      b\n  ") "a\n  b\n");
-  (match
-     expect_failure "flexible mismatch" (fun () ->
-         B.check t (literal "\n    a\n      b\n  ") "a\nb")
-   with
-  | Some
-      ( Failure.Literal { exact = false },
-        Failure.Mismatch
-          {
-            expected = { Failure.kept = expected; _ };
-            actual = { Failure.kept = actual; _ };
-          } ) ->
-      equal ~msg:"both sides in normalized form" string "a\n  b" expected;
-      equal ~msg:"the produced text, normalized" string "a\nb" actual
-  | _ -> is_true ~msg:"flexible mismatch: Literal/Mismatch payload" false);
-  expect_pass "exact: byte for byte" (fun () ->
-      B.check t (literal ~line:3 ~exact:true " a ") " a ");
-  match
-    expect_failure "exact mismatch" (fun () ->
-        B.check t (literal ~line:3 ~exact:true " a ") "a")
-  with
-  | Some
-      ( Failure.Literal { exact = true },
-        Failure.Mismatch
-          {
-            expected = { Failure.kept = expected; _ };
-            actual = { Failure.kept = actual; _ };
-          } ) ->
-      is_true ~msg:"exact keeps the bytes" (expected = " a " && actual = "a")
-  | _ -> is_true ~msg:"exact mismatch: Literal/Mismatch payload" false
-
-(* Unresolvable paths *)
-
-let () =
-  reg "a path that escapes the root is unresolvable in every mode" @@ fun () ->
-  let root = temp_dir () in
-  List.iter
-    (fun mode ->
-      let t = B.create ~root ~cwd:root ~mode () in
-      (match
-         expect_failure "escaping file" (fun () ->
-             B.check t (B.File "../x") "v")
-       with
-      | Some (Failure.File "../x", Failure.Unresolvable { candidate }) ->
-          is_true ~msg:"the candidate is reported" (candidate <> "")
-      | _ -> is_true ~msg:"escaping file: Unresolvable" false);
-      (match
-         expect_failure "escaping literal" (fun () ->
-             B.check t
-               (B.Literal
-                  { pos = ("../t.ml", 1, 0, 0); value = "v"; exact = true })
-               "w")
-       with
-      | Some (Failure.Literal { exact = true }, Failure.Unresolvable _) ->
-          is_true ~msg:"a literal outside the root cannot be corrected" true
-      | _ -> is_true ~msg:"escaping literal: Unresolvable" false);
-      B.write t;
-      is_true ~msg:"nothing written" (B.writes t = []))
-    [ B.Check; B.Corrected; B.Update ]
-
-(* Corrected mode *)
-
-let () =
-  reg "corrected: the check fails, the correction lands beside the file"
-  @@ fun () ->
-  let root = temp_dir () in
-  let t = B.create ~root ~cwd:root ~mode:B.Corrected () in
-  (match expect_failure "missing" (fun () -> B.check t file_help "hi") with
-  | Some (_, Failure.Missing _) -> is_true ~msg:"missing still fails" true
-  | _ -> is_true ~msg:"missing still fails" false);
-  equal ~msg:"settle keeps one correction" int 1 (B.settle t ~keep:true);
-  B.write t;
-  let corrected = Filename.concat root (help ^ ".corrected") in
-  equal ~msg:"the .corrected holds the canonical content" string "hi\n"
-    (read_raw corrected);
-  is_true ~msg:"the file itself is not created"
-    (not (exists (Filename.concat root help)));
-  is_true ~msg:"the write is reported"
-    (B.writes t = [ B.Written { path = corrected; literals = 0 } ])
-
-let () =
-  reg "the registry law: one content per key per run" @@ fun () ->
-  let root = temp_dir () in
-  let t = B.create ~root ~cwd:root ~mode:B.Corrected () in
-  ignore (expect_failure "first" (fun () -> B.check t file_help "hi"));
-  expect_pass "the same content again passes" (fun () ->
-      B.check t file_help "hi");
-  (match
-     expect_failure "another content" (fun () -> B.check t file_help "yo")
-   with
-  | Some
-      ( _,
-        Failure.Mismatch
-          {
-            expected = { Failure.kept = expected; _ };
-            actual = { Failure.kept = actual; _ };
-          } ) ->
-      is_true ~msg:"the mismatch is against the accepted content"
-        (expected = "hi\n" && actual = "yo\n")
-  | _ -> is_true ~msg:"another content: Mismatch" false);
-  equal ~msg:"only the first check recorded a correction" int 1
-    (B.settle t ~keep:true)
-
-let () =
-  reg "gating: a dropped correction unaccepts its key" @@ fun () ->
-  let root = temp_dir () in
-  let t = B.create ~root ~cwd:root ~mode:B.Corrected () in
-  ignore (expect_failure "first" (fun () -> B.check t file_help "hi"));
-  equal ~msg:"settle without keep drops it" int 0 (B.settle t ~keep:false);
-  (match expect_failure "next test" (fun () -> B.check t file_help "yo") with
-  | Some (_, Failure.Missing { proposed = { Failure.kept = proposed; _ } }) ->
-      equal ~msg:"the next test records its own content" string "yo\n" proposed
-  | _ -> is_true ~msg:"next test: Missing again, not a Mismatch" false);
-  equal ~msg:"and that one is kept" int 1 (B.settle t ~keep:true);
-  B.write t;
-  equal ~msg:"the kept content is what is written" string "yo\n"
-    (read_raw (Filename.concat root (help ^ ".corrected")))
-
-(* Update mode *)
-
-let () =
-  reg "update: the check accepts silently and writes in place" @@ fun () ->
-  let root = temp_dir () in
-  let t = B.create ~root ~cwd:root ~mode:B.Update () in
-  expect_pass "a missing file is accepted" (fun () ->
-      B.check t file_help "hello\r\nworld");
-  (match
-     expect_failure "another content" (fun () -> B.check t file_help "x")
-   with
-  | Some (_, Failure.Mismatch { expected = { Failure.kept = expected; _ }; _ })
-    ->
-      equal ~msg:"never last-write-wins" string "hello\nworld\n" expected
-  | _ -> is_true ~msg:"another content: Mismatch" false);
-  ignore (B.settle t ~keep:true);
-  is_true ~msg:"nothing is written before write"
-    (not (exists (Filename.concat root help)));
-  B.write t;
-  equal ~msg:"the file holds the canonical content" string "hello\nworld\n"
-    (read_raw (Filename.concat root help));
-  is_true ~msg:"no .corrected beside it"
-    (not (exists (Filename.concat root (help ^ ".corrected"))));
-  is_true ~msg:"the write is reported"
-    (B.writes t
-    = [ B.Written { path = Filename.concat root help; literals = 0 } ])
-
-let () =
-  reg "update: an equal baseline writes nothing" @@ fun () ->
-  let root = temp_dir () in
-  write_raw (Filename.concat root help) "keep\r\n";
-  let t = B.create ~root ~cwd:root ~mode:B.Update () in
-  expect_pass "equal after canonicalization" (fun () ->
-      B.check t file_help "keep");
-  ignore (B.settle t ~keep:true);
-  B.write t;
-  is_true ~msg:"no write recorded" (B.writes t = []);
-  equal ~msg:"bytes untouched on disk" string "keep\r\n"
-    (read_raw (Filename.concat root help))
-
-(* Literal corrections *)
-
-let () =
-  reg "literal correction: corrected file beside the source" @@ fun () ->
-  let root = temp_dir () in
-  write_raw (Filename.concat root "test/t.ml") source;
-  let t = B.create ~root ~cwd:root ~mode:B.Corrected () in
-  ignore
-    (expect_failure "mismatch" (fun () -> B.check t (literal " old ") "new"));
-  ignore (B.settle t ~keep:true);
-  B.write t;
-  let corrected = Filename.concat root "test/t.ml.corrected" in
-  equal ~msg:"the literal is rewritten in the copy" string
-    "let () =\n  expect (f ()) @@ __POS_OF__ {| new |}\n" (read_raw corrected);
-  equal ~msg:"the source is untouched" string source
-    (read_raw (Filename.concat root "test/t.ml"));
-  is_true ~msg:"one literal reported"
-    (B.writes t = [ B.Written { path = corrected; literals = 1 } ])
-
-let () =
-  reg "literal correction: in place under Update, several per file" @@ fun () ->
-  let root = temp_dir () in
-  let two =
+(* Two literals at column 14, of lines 2 and 3. *)
+let two x y =
+  strf
     "let () =\n\
-    \  expect a @@ __POS_OF__ {| x |};\n\
-    \  expect b @@ __POS_OF__ {| y |}\n"
+    \  expect a @@ __POS_OF__ {| %s |};\n\
+    \  expect b @@ __POS_OF__ {| %s |}\n"
+    x y
+
+(* An expect test whose body ends 38 bytes after the start of its head's
+   line. *)
+let expect_test = "let%expect_test _ =\n  print_string \"x\"\n"
+let trailing = Baseline.Trailing { pos = ("test/t.ml", 1, 0, 38) }
+let drift = Source_patch.error_message (Drifted ("test/t.ml", 2, 19, 40))
+
+let unreadable =
+  "the source file cannot be read: " ^ Unix.error_message Unix.ENOENT
+
+(* The correction that baseline.mli names for a subject: Source_patch's
+   rewrite of the literal to the text, or its insertion after the body. *)
+let corrected source corrections =
+  let patch = function
+    | Baseline.Literal { pos; value; exact }, actual ->
+        let style = if exact then Source_patch.Exact else Flexible in
+        Source_patch.patch ~site:pos ~literal:value ~style actual
+    | Trailing { pos }, actual -> Source_patch.trailing ~site:pos actual
+    | File path, _ -> failf "a file baseline has no patch: %s" path
   in
-  write_raw (Filename.concat root "test/t.ml") two;
-  let t = B.create ~root ~cwd:root ~mode:B.Update () in
-  let lit line value =
-    B.Literal { pos = ("test/t.ml", line, 14, 0); value; exact = false }
-  in
-  expect_pass "first literal accepted" (fun () -> B.check t (lit 2 " x ") "one");
-  expect_pass "second literal accepted" (fun () ->
-      B.check t (lit 3 " y ") "two");
-  ignore (B.settle t ~keep:true);
-  B.write t;
-  equal ~msg:"both literals rewritten in the file" string
-    "let () =\n\
-    \  expect a @@ __POS_OF__ {| one |};\n\
-    \  expect b @@ __POS_OF__ {| two |}\n"
-    (read_raw (Filename.concat root "test/t.ml"));
-  is_true ~msg:"two literals in one write"
-    (B.writes t
-    = [ B.Written { path = Filename.concat root "test/t.ml"; literals = 2 } ])
+  require_ok (Source_patch.apply source (List.map patch corrections))
 
-(* A refused mismatch, as ["line N: reason"]. *)
-let refused label f =
-  match f () with
-  | () -> fail (label ^ ": the check passed")
-  | exception Failure.Check_failure fl -> (
-      match fl.Failure.kind with
-      | Failure.Baseline
-          {
-            state = Failure.Mismatch _;
-            withheld = Some (Failure.Refused { line; reason });
-            _;
-          } ->
-          Printf.sprintf "line %d: %s" line reason
-      | _ -> fail (label ^ ": not a refused mismatch"))
+(* The reason that [write] gives for a file it cannot write at [path]. *)
+let write_refusal path =
+  match Os.atomic_write ~path "" with
+  | () -> "the write succeeded"
+  | exception e -> Os.failure_reason ~path e
 
-let () =
-  reg "literal correction: a drifted source fails the check, under Update too"
-  @@ fun () ->
-  let edited = "let () =\n  expect (f ()) @@ __POS_OF__ {| edited |}\n" in
-  List.iter
-    (fun mode ->
-      let root = temp_dir () in
-      write_raw (Filename.concat root "test/t.ml") edited;
-      let t = B.create ~root ~cwd:root ~mode () in
-      equal ~msg:"the literal's line and the reason, naming no file" string
-        "line 2: the literal differs from the value the binary was compiled \
-         with; rebuild and rerun"
-        (refused "drifted" (fun () -> B.check t (literal " old ") "new"));
-      equal ~msg:"no correction is recorded" int 0 (B.settle t ~keep:true);
-      B.write t;
-      is_true ~msg:"nothing is attempted" (B.writes t = []);
-      equal ~msg:"the file is left alone" string edited
-        (read_raw (Filename.concat root "test/t.ml")))
-    [ B.Corrected; B.Update ]
+(* Modes *)
 
-let () =
-  reg "literal correction: an unreadable source fails the check" @@ fun () ->
-  let root = temp_dir () in
-  let t = B.create ~root ~cwd:root ~mode:B.Corrected () in
-  equal ~msg:"the literal's line and the reason, naming no file" string
-    "line 2: the source file cannot be read: No such file or directory"
-    (refused "missing source" (fun () -> B.check t (literal " old ") "new"));
-  is_true ~msg:"Check mode reads no source"
-    (match
-       B.check
-         (B.create ~root ~cwd:root ~mode:B.Check ())
-         (literal " old ") "new"
-     with
-    | () -> false
-    | exception Failure.Check_failure { Failure.kind; _ } -> (
-        match kind with
-        | Failure.Baseline { withheld = None; _ } -> true
-        | _ -> false))
+let by_mode claim ~files ~steps rows =
+  cases claim rows
+    ~name:(fun (mode, _) -> mode_name mode)
+    (fun (mode, trace) ->
+      let root = project files in
+      equal traced trace (scenario ~mode root (steps root)))
 
-let () =
-  reg "literal correction: an edit between the check and the write is refused"
-  @@ fun () ->
-  let root = temp_dir () in
-  let path = Filename.concat root "test/t.ml" in
-  write_raw path source;
-  let t = B.create ~root ~cwd:root ~mode:B.Update () in
-  expect_pass "accepted" (fun () -> B.check t (literal " old ") "new");
-  ignore (B.settle t ~keep:true);
-  let edited = "let () =\n  expect (f ()) @@ __POS_OF__ {| edited |}\n" in
-  write_raw path edited;
-  B.write t;
-  (match B.writes t with
-  | [ B.Refused { path = refused; reason } ] ->
-      equal ~msg:"the refusal names the file" string path refused;
-      equal ~msg:"and says it changed" string
-        "it changed during the run: the literal differs from the value the \
-         binary was compiled with; rebuild and rerun"
-        reason
-  | _ -> fail "one refusal and nothing written");
-  equal ~msg:"the file is left alone" string edited (read_raw path)
+let differing =
+  "file test/help.expected: mismatch \"new\\n\" against \"old\\n\""
 
-let () =
-  reg "literal correction: a source unreadable at the write is refused"
-  @@ fun () ->
-  let root = temp_dir () in
-  let path = Filename.concat root "test/t.ml" in
-  write_raw path source;
-  let t = B.create ~root ~cwd:root ~mode:B.Update () in
-  expect_pass "accepted" (fun () -> B.check t (literal " old ") "new");
-  ignore (B.settle t ~keep:true);
-  (* A directory in the source's place: the open succeeds and the read
-     fails, with a message that does not name the file. *)
-  Sys.remove path;
-  Unix.mkdir path 0o700;
-  B.write t;
-  match B.writes t with
-  | [ B.Refused { path = refused; reason } ] ->
-      equal ~msg:"the refusal names the file" string path refused;
-      starts_with ~msg:"and says it cannot be read"
-        ~affix:"the source file cannot be read: " reason;
-      not_contains ~msg:"without repeating the path" ~sub:path reason
-  | _ -> fail "one refusal and nothing written"
+let modes =
+  group "Modes"
+    [
+      by_mode
+        "a missing file fails and is not created under Check, fails and gets a \
+         .corrected file under Corrected, and is created under Update"
+        ~files:[]
+        ~steps:(fun root ->
+          [
+            check file_help "hello\r\nworld";
+            settle ~keep:true;
+            on_disk root;
+            write;
+            writes root;
+            on_disk root;
+          ])
+        [
+          ( Baseline.Check,
+            [
+              "file test/help.expected: missing \"hello\\nworld\\n\"";
+              "kept 0";
+              disk [];
+              disk [];
+            ] );
+          ( Corrected,
+            [
+              "file test/help.expected: missing \"hello\\nworld\\n\"";
+              "kept 1";
+              disk [];
+              "wrote test/help.expected.corrected, 0 literals";
+              disk [ file "test/help.expected.corrected" "hello\nworld\n" ];
+            ] );
+          ( Update,
+            [
+              "pass";
+              "kept 1";
+              disk [];
+              "wrote test/help.expected, 0 literals";
+              disk [ file help "hello\nworld\n" ];
+            ] );
+        ];
+      by_mode
+        "a differing file fails and is kept under Check, fails and gets a \
+         .corrected file under Corrected, and is replaced under Update"
+        ~files:[ (help, "old\n") ]
+        ~steps:(fun root ->
+          [ check file_help "new"; commit root; on_disk root ])
+        [
+          (Baseline.Check, [ differing; "kept 0"; disk [ file help "old\n" ] ]);
+          ( Corrected,
+            [
+              differing;
+              "kept 1";
+              "wrote test/help.expected.corrected, 0 literals";
+              disk
+                [
+                  file help "old\n"; file "test/help.expected.corrected" "new\n";
+                ];
+            ] );
+          ( Update,
+            [
+              "pass";
+              "kept 1";
+              "wrote test/help.expected, 0 literals";
+              disk [ file help "new\n" ];
+            ] );
+        ];
+    ]
 
-let () =
-  reg "literal correction: a check tries its patch on the source as first read"
-  @@ fun () ->
-  let root = temp_dir () in
-  let path = Filename.concat root "test/t.ml" in
-  let two x y =
-    Printf.sprintf
-      "let () =\n\
-      \  expect a @@ __POS_OF__ {| %s |};\n\
-      \  expect b @@ __POS_OF__ {| %s |}\n"
-      x y
-  in
-  write_raw path (two "x" "y");
-  let t = B.create ~root ~cwd:root ~mode:B.Update () in
-  let lit line value =
-    B.Literal { pos = ("test/t.ml", line, 14, 0); value; exact = false }
-  in
-  expect_pass "the first check reads the source" (fun () ->
-      B.check t (lit 2 " x ") "one");
-  write_raw path (two "x" "edited");
-  expect_pass "the second tries its patch on the same bytes" (fun () ->
-      B.check t (lit 3 " y ") "two");
-  ignore (B.settle t ~keep:true);
-  B.write t;
-  match B.writes t with
-  | [ B.Refused { reason; _ } ] ->
-      starts_with ~msg:"the write reads the source again"
-        ~affix:"it changed during the run: " reason
-  | _ -> fail "one refusal and nothing written"
+(* Subjects *)
 
-let () =
-  reg "literal correction: a source unreadable at its first check stays so"
-  @@ fun () ->
-  let root = temp_dir () in
-  let t = B.create ~root ~cwd:root ~mode:B.Update () in
-  ignore
-    (refused "missing source" (fun () -> B.check t (literal " old ") "new"));
-  write_raw (Filename.concat root "test/t.ml") source;
-  equal ~msg:"the source created since is not read" string
-    "line 2: the source file cannot be read: No such file or directory"
-    (refused "created since" (fun () -> B.check t (literal " old ") "new"))
+let compares claim rows =
+  cases claim rows
+    ~name:(fun (name, _, _, _) -> name)
+    (fun (_, subject, actual, row) ->
+      equal traced [ row ]
+        (scenario ~mode:Check (project []) [ check subject actual ]))
 
-(* Build-copy placement *)
+let file_compares (_, on_disk, actual, row) =
+  let root = project [ (help, on_disk) ] in
+  equal traced [ row ] (scenario ~mode:Check root [ check file_help actual ])
 
-let () =
-  reg "a build action reads and corrects dune's copy" @@ fun () ->
-  let root = temp_dir () in
-  let build = Filename.concat root "_build/default" in
-  let cwd = Filename.concat build "test" in
-  write_raw (Filename.concat build help) "copy\n";
-  let t = B.create ~root ~cwd ~mode:B.Corrected () in
-  expect_pass "the copy is the baseline read" (fun () ->
-      B.check t file_help "copy");
-  is_true ~msg:"the source-tree file need not exist"
-    (not (exists (Filename.concat root help)));
-  ignore
-    (expect_failure "a mismatch" (fun () ->
-         B.check t (B.File "test/other.expected") "x"));
-  ignore (B.settle t ~keep:true);
-  B.write t;
-  let corrected = Filename.concat build "test/other.expected.corrected" in
-  is_true ~msg:".corrected lands beside the copy" (exists corrected);
-  is_true ~msg:"and nowhere near the source tree"
-    (not (exists (Filename.concat root "test/other.expected.corrected")));
-  (* Sandboxed actions run under _build/.sandbox/<hash>/<context>/. *)
-  let sandbox = Filename.concat root "_build/.sandbox/3f/default" in
-  write_raw (Filename.concat sandbox help) "sandboxed\n";
-  let t =
-    B.create ~root ~cwd:(Filename.concat sandbox "test") ~mode:B.Check ()
-  in
-  expect_pass "the sandbox copy is the baseline read" (fun () ->
-      B.check t file_help "sandboxed")
+let subjects =
+  group "Subjects"
+    [
+      cases
+        "a file compares as canonical lines, where CR LF and CR are LF and a \
+         final newline is added"
+        ~name:(fun (name, _, _, _) -> name)
+        [
+          ("CR LF on disk", "hello\r\nworld", "hello\nworld\n", "pass");
+          ("CR on disk", "a\rb", "a\nb\n", "pass");
+          ("no final newline produced", "hello\nworld\n", "hello\nworld", "pass");
+          ("an empty file and an empty text", "", "", "pass");
+          ( "a difference",
+            "hello\n",
+            "bye",
+            "file test/help.expected: mismatch \"bye\\n\" against \"hello\\n\""
+          );
+        ]
+        file_compares;
+      compares
+        "a flexible literal compares through normalize on both sides, an exact \
+         one byte for byte"
+        [
+          ( "flexible, the same lines indented otherwise",
+            literal "\n    a\n      b\n  ",
+            "a\n  b\n",
+            "pass" );
+          ( "flexible, another relative indentation",
+            literal "\n    a\n      b\n  ",
+            "a\nb",
+            "literal: mismatch \"a\\nb\" against \"a\\n  b\"" );
+          ("exact, the same bytes", literal ~exact:true " a ", " a ", "pass");
+          ( "exact, the bytes trimmed",
+            literal ~exact:true " a ",
+            "a",
+            "exact literal: mismatch \"a\" against \" a \"" );
+        ];
+      compares
+        "a trailing node's baseline is the empty text, compared as a flexible \
+         literal's, and a difference is Missing"
+        [
+          ("no output", trailing, "", "pass");
+          ("blank output", trailing, " \n\t\n", "pass");
+          ("output", trailing, "  x\n", "literal: missing \"x\"");
+        ];
+      test
+        "two spellings of one file are two keys, and write writes the later \
+         content" (fun () ->
+          let root = project [] in
+          equal traced
+            [
+              "pass";
+              "pass";
+              "kept 2";
+              "wrote a/b.txt, 0 literals";
+              disk [ file "a/b.txt" "two\n" ];
+            ]
+            (scenario ~mode:Update root
+               [
+                 check (File "a/b.txt") "one";
+                 check (File "a/./b.txt") "two";
+                 commit root;
+                 on_disk root;
+               ]));
+    ]
 
-let () =
-  reg "update inside a build action rewrites the source, not the copy"
-  @@ fun () ->
-  let root = temp_dir () in
-  let build = Filename.concat root "_build/default" in
-  write_raw (Filename.concat build "test/t.ml") source;
-  write_raw (Filename.concat root "test/t.ml") source;
-  let t =
-    B.create ~root ~cwd:(Filename.concat build "test") ~mode:B.Update ()
-  in
-  expect_pass "accepted" (fun () -> B.check t (literal " old ") "new");
-  ignore (B.settle t ~keep:true);
-  B.write t;
-  is_true ~msg:"the source is rewritten"
-    (Text.contains_substring ~pattern:"{| new |}"
-       (read_raw (Filename.concat root "test/t.ml")));
-  equal ~msg:"the copy is untouched" string source
-    (read_raw (Filename.concat build "test/t.ml"))
+(* Registries *)
 
-let () =
-  reg "a build context of another root is not this run's build action"
-  @@ fun () ->
-  let root = temp_dir () in
-  let other = temp_dir () in
-  write_raw (Filename.concat root help) "source\n";
-  write_raw (Filename.concat other ("_build/default/" ^ help)) "elsewhere\n";
-  let t =
-    B.create ~root
-      ~cwd:(Filename.concat other "_build/default/test")
-      ~mode:B.Check ()
-  in
-  expect_pass "the file under the root is read" (fun () ->
-      B.check t file_help "source")
+let written_a = [ "pass"; "kept 1"; "wrote a.txt, 0 literals" ]
 
-(* The registry's edges *)
-
-let () =
-  reg "mode is the mode of create" @@ fun () ->
-  List.iter
-    (fun mode ->
-      is_true ~msg:"mode" (B.mode (B.create ~root:"/" ~cwd:"/" ~mode ()) = mode))
-    [ B.Check; B.Corrected; B.Update ]
-
-let () =
-  reg "two spellings of one file are two keys, and the later content is written"
-  @@ fun () ->
-  let root = temp_dir () in
-  let t = B.create ~root ~cwd:root ~mode:B.Update () in
-  expect_pass "the first spelling records" (fun () ->
-      B.check t (B.File "a/b.txt") "one");
-  expect_pass "the second spelling is another key" (fun () ->
-      B.check t (B.File "a/./b.txt") "two");
-  equal ~msg:"two corrections" int 2 (B.settle t ~keep:true);
-  B.write t;
-  equal ~msg:"the later content, no mismatch between them" string "two\n"
-    (read_raw (Filename.concat root "a/b.txt"))
-
-let () =
-  reg "a relative root is made absolute when the registry is created"
-  @@ fun () ->
-  let top = temp_dir () in
+let relative_root () =
+  let top = project [] in
   chdir top;
-  let t = B.create ~root:"proj" ~cwd:"proj" ~mode:B.Update () in
+  let t = Baseline.create ~root:"proj" ~cwd:"proj" ~mode:Update () in
   chdir (temp_dir ());
-  expect_pass "accepted" (fun () -> B.check t (B.File "a.txt") "x");
-  ignore (B.settle t ~keep:true);
-  B.write t;
-  equal ~msg:"written under the root as it stood at create" string "x\n"
-    (read_raw (Filename.concat top "proj/a.txt"));
-  is_true ~msg:"and reported absolute"
-    (List.for_all
-       (function
-         | B.Written { path; _ } | B.Refused { path; _ } ->
-             not (Filename.is_relative path))
-       (B.writes t))
+  let root = Filename.concat (Unix.realpath top) "proj" in
+  equal traced written_a (play t [ check (File "a.txt") "x"; commit root ]);
+  equal traced [ file "proj/a.txt" "x\n" ] (tree top)
 
-let () =
-  reg "a root that ends in a slash is never a build action" @@ fun () ->
-  let root = temp_dir () in
-  write_raw (Filename.concat root help) "source\n";
-  write_raw (Filename.concat root ("_build/default/" ^ help)) "copy\n";
-  let t =
-    B.create ~root:(root ^ "/")
-      ~cwd:(Filename.concat root "_build/default/test")
-      ~mode:B.Check ()
+let relative_cwd () =
+  let top =
+    project
+      [
+        ("proj/" ^ help, "source\n"); ("proj/_build/default/" ^ help, "copy\n");
+      ]
   in
-  expect_pass "the file under the root is read, not dune's copy" (fun () ->
-      B.check t file_help "source")
+  chdir top;
+  let cwd = "proj/_build/default/test" in
+  let t = Baseline.create ~root:"proj" ~cwd ~mode:Check () in
+  chdir (temp_dir ());
+  equal traced [ "pass" ] (play t [ check file_help "copy" ])
 
-let () =
-  reg "create raises Sys_error when the root needs an unreadable directory"
-  @@ fun () ->
+let default_root () =
+  let root = project [] in
+  setenv "WINDTRAP_PROJECT_ROOT" (Some root);
+  let t = Baseline.create ~cwd:root ~mode:Update () in
+  equal traced written_a (play t [ check (File "a.txt") "x"; commit root ])
+
+let default_cwd () =
+  let root =
+    Unix.realpath
+      (project [ (help, "source\n"); ("_build/default/" ^ help, "copy\n") ])
+  in
+  chdir (Filename.concat root "_build/default/test");
+  let t = Baseline.create ~root ~mode:Check () in
+  equal traced [ "pass" ] (play t [ check file_help "copy" ])
+
+let gone_cwd () =
   if Sys.win32 then skip ~reason:"POSIX only" ();
   let gone = Filename.concat (temp_dir ()) "gone" in
   Unix.mkdir gone 0o700;
@@ -606,187 +386,613 @@ let () =
   | _ -> skip ~reason:"this system reads a removed working directory" ()
   | exception Sys_error _ -> ());
   setenv "WINDTRAP_PROJECT_ROOT" (Some "relative");
-  raises_match ~msg:"Os.project_root's Sys_error passes" Check.Exn.sys_error
-    (fun () -> B.create ~cwd:"/" ~mode:B.Check ())
+  raises_match Exn.sys_error (fun () -> Baseline.create ~cwd:"/" ~mode:Check ())
+
+let mode_witness =
+  Testable.make ~equal:( = ) ~pp:(fun ppf mode ->
+      Format.pp_print_string ppf (mode_name mode))
+
+let registries =
+  group "Registries"
+    [
+      cases "mode is the mode of create" ~name:mode_name
+        [ Baseline.Check; Corrected; Update ] (fun mode ->
+          equal mode_witness mode
+            (Baseline.mode (Baseline.create ~root:"/" ~cwd:"/" ~mode ())));
+      test "a relative root is made absolute against the current directory"
+        relative_root;
+      test "a relative cwd is made absolute against the current directory"
+        relative_cwd;
+      test "root defaults to Os.project_root ()" default_root;
+      test "cwd defaults to the current directory" default_cwd;
+      cases
+        "a run whose cwd lies in a build context under the root reads dune's \
+         copy"
+        ~name:Fun.id [ "_build/default"; "_build/.sandbox/3f/default" ]
+        (fun context ->
+          let root =
+            project [ (help, "source\n"); (context ^ "/" ^ help, "copy\n") ]
+          in
+          let cwd = Filename.concat root (context ^ "/test") in
+          equal traced [ "pass" ]
+            (scenario ~mode:Check ~cwd root [ check file_help "copy" ]));
+      test "a build context under another root is no build action of the run"
+        (fun () ->
+          let root = project [ (help, "source\n") ] in
+          let other = project [ ("_build/default/" ^ help, "elsewhere\n") ] in
+          let cwd = Filename.concat other "_build/default/test" in
+          equal traced [ "pass" ]
+            (scenario ~mode:Check ~cwd root [ check file_help "source" ]));
+      test "create raises Sys_error as Os.project_root does" gone_cwd;
+    ]
 
 (* Checking *)
 
-let () =
-  reg "a check computes no location and carries the one given" @@ fun () ->
-  let root = temp_dir () in
-  let t = B.create ~root ~cwd:root ~mode:B.Check () in
-  let loc_of ?loc () =
-    match B.check t ?loc (B.File "x") "v" with
-    | () -> failf "the check passed"
-    | exception Failure.Check_failure f -> f.Failure.loc
+let unresolvable (mode, (_, subject, path, compared)) =
+  let root = project [] in
+  let candidate =
+    match Os.reconstruct ~root path with
+    | Error candidate -> candidate
+    | Ok proven -> "proven " ^ proven
   in
-  is_true ~msg:"no location without one" (loc_of () = None);
-  let loc = { Loc.file = "test/t.ml"; line = 7; column = 2 } in
-  is_true ~msg:"the given location" (loc_of ~loc () = Some loc)
+  equal traced
+    [ strf "%s: unresolvable %S" compared candidate; "kept 0" ]
+    (scenario ~mode root [ check subject "v"; commit root ])
 
-let () =
-  reg "~correct:false checks whatever the mode" @@ fun () ->
-  let root = temp_dir () in
-  List.iter
-    (fun mode ->
-      let t = B.create ~root ~cwd:root ~mode () in
-      ignore
-        (expect_failure "a mismatch fails" (fun () ->
-             B.check t ~correct:false (B.File "x") "v"));
-      equal ~msg:"and records no correction" int 0 (B.settle t ~keep:true))
-    [ B.Corrected; B.Update ]
+let unproven =
+  [
+    ("a file", Baseline.File "../x", "../x", "file ../x");
+    ( "a literal",
+      Baseline.Literal
+        { pos = ("../t.ml", 1, 0, 0); value = "v"; exact = false },
+      "../t.ml",
+      "literal" );
+    ( "a trailing node",
+      Baseline.Trailing { pos = ("../t.ml", 1, 0, 0) },
+      "../t.ml",
+      "literal" );
+  ]
 
-let () =
-  reg "the failure bounds its texts, the correction holds actual whole"
-  @@ fun () ->
-  let root = temp_dir () in
+let located () =
+  let t = Baseline.create ~root:(project []) ~cwd:"/" ~mode:Check () in
+  let at ?loc () =
+    match Baseline.check t ?loc (File "x") "v" with
+    | () -> "pass"
+    | exception Failure.Check_failure { loc = None; _ } -> "no location"
+    | exception Failure.Check_failure { loc = Some l; _ } ->
+        strf "%s:%d:%d" l.file l.line l.column
+  in
+  let without = at () in
+  let given = at ~loc:{ Loc.file = "test/t.ml"; line = 7; column = 2 } () in
+  equal traced [ "no location"; "test/t.ml:7:2" ] [ without; given ]
+
+let bounded () =
+  let root = project [] in
   let big =
     String.concat "" (List.init 20_000 (fun i -> string_of_int i ^ "\n"))
   in
-  let t = B.create ~root ~cwd:root ~mode:B.Corrected () in
-  (match expect_failure "missing" (fun () -> B.check t file_help big) with
-  | Some (_, Failure.Missing { proposed = { Failure.kept = proposed; _ } }) ->
-      is_true ~msg:"the proposal is bounded"
-        (String.length proposed < String.length big)
-  | _ -> is_true ~msg:"missing: Missing payload" false);
-  ignore (B.settle t ~keep:true);
-  B.write t;
-  equal ~msg:"the .corrected holds every byte" string big
-    (read_raw (Filename.concat root (help ^ ".corrected")))
+  equal traced
+    [
+      "file test/help.expected: missing " ^ text (Failure.text big);
+      "kept 1";
+      "wrote test/help.expected.corrected, 0 literals";
+    ]
+    (scenario ~mode:Corrected root [ check file_help big; commit root ]);
+  equal string big (read (Filename.concat root (help ^ ".corrected")))
 
-let () =
-  reg "check raises Sys_error on an existing file it cannot read" @@ fun () ->
-  let root = temp_dir () in
-  Unix.mkdir (Filename.concat root "dir.expected") 0o700;
-  let t = B.create ~root ~cwd:root ~mode:B.Check () in
-  raises_match ~msg:"a directory where the baseline is" Check.Exn.sys_error
-    (fun () -> B.check t (B.File "dir.expected") "v")
+let refused_literal (_, mode, files, reason) =
+  let root = project files in
+  let before = tree root in
+  equal traced
+    [
+      strf "literal: mismatch \"new\" against \"old\", refused at line 2: %s"
+        reason;
+      "kept 0";
+      disk before;
+    ]
+    (scenario ~mode root [ check old "new"; commit root; on_disk root ])
 
-(* Settling and writing *)
+let first_read () =
+  let root = project [ ("test/t.ml", two "x" "y") ] in
+  equal traced
+    [
+      "pass";
+      "pass";
+      "kept 2";
+      "refused test/t.ml: it changed during the run: " ^ drift;
+    ]
+    (scenario ~mode:Update root
+       [
+         check (literal ~column:14 " x ") "one";
+         edit root "test/t.ml" (two "x" "edited");
+         check (literal ~line:3 ~column:14 " y ") "two";
+         commit root;
+       ])
 
-let () =
-  reg "settle ~keep:false returns 0 whatever the attempt recorded" @@ fun () ->
-  let root = temp_dir () in
-  let t = B.create ~root ~cwd:root ~mode:B.Update () in
-  expect_pass "one" (fun () -> B.check t (B.File "a") "1");
-  expect_pass "two" (fun () -> B.check t (B.File "b") "2");
-  equal ~msg:"two dropped, 0 returned" int 0 (B.settle t ~keep:false)
+let checking =
+  group "Checking"
+    [
+      cases
+        "a path that cannot be proven under the root is Unresolvable in every \
+         mode, and records nothing"
+        ~name:(fun (mode, (name, _, _, _)) ->
+          strf "%s, %s" name (mode_name mode))
+        (List.concat_map
+           (fun mode -> List.map (fun subject -> (mode, subject)) unproven)
+           [ Baseline.Check; Corrected; Update ])
+        unresolvable;
+      test "a file is read at the first check of its key, and not again"
+        (fun () ->
+          let root = project [ (help, "one\n") ] in
+          equal traced
+            [
+              "pass";
+              "pass";
+              "file test/help.expected: mismatch \"two\\n\" against \"one\\n\"";
+            ]
+            (scenario ~mode:Check root
+               [
+                 check file_help "one";
+                 edit root help "two\n";
+                 check file_help "one";
+                 check file_help "two";
+               ]));
+      cases
+        "an accepted key compares with its accepted content alone, and another \
+         content is a conflict that records nothing"
+        ~name:(fun (mode, _) -> mode_name mode)
+        [
+          (Baseline.Corrected, "file test/help.expected: missing \"hi\\n\"");
+          (Update, "pass");
+        ]
+        (fun (mode, first) ->
+          equal traced
+            [
+              first;
+              "pass";
+              "file test/help.expected: mismatch \"yo\\n\" against \"hi\\n\", \
+               conflict";
+              "kept 1";
+            ]
+            (scenario ~mode (project [])
+               [
+                 check file_help "hi";
+                 check file_help "hi";
+                 check file_help "yo";
+                 settle ~keep:true;
+               ]));
+      cases
+        "a check with ~correct:false fails as under Check, whatever the mode"
+        ~name:mode_name [ Baseline.Corrected; Update ] (fun mode ->
+          equal traced
+            [ "file x: missing \"v\\n\""; "kept 0" ]
+            (scenario ~mode (project [])
+               [ check ~correct:false (File "x") "v"; settle ~keep:true ]));
+      test "a check computes no location and carries the one given" located;
+      test "a failure bounds its texts, and the correction holds actual whole"
+        bounded;
+      test "a check raises Sys_error on a file that exists and cannot be read"
+        (fun () ->
+          let root = project [ ("dir.expected/x", "") ] in
+          let t = Baseline.create ~root ~cwd:root ~mode:Check () in
+          raises_match Exn.sys_error (fun () ->
+              Baseline.check t (File "dir.expected") "v"));
+      cases
+        "a literal whose source cannot take its correction fails, refused, \
+         whatever the mode, and records nothing"
+        ~name:(fun (name, _, _, _) -> name)
+        [
+          ( "a drifted source under Corrected",
+            Baseline.Corrected,
+            [ ("test/t.ml", edited) ],
+            drift );
+          ( "a drifted source under Update",
+            Update,
+            [ ("test/t.ml", edited) ],
+            drift );
+          ("a missing source under Corrected", Corrected, [], unreadable);
+          ("a missing source under Update", Update, [], unreadable);
+        ]
+        refused_literal;
+      test "under Check a literal's source is not read" (fun () ->
+          equal traced
+            [ "literal: mismatch \"new\" against \"old\"" ]
+            (scenario ~mode:Check (project []) [ check old "new" ]));
+      test "a source unreadable at its first check stays so for the run"
+        (fun () ->
+          let root = project [] in
+          let refusal =
+            "literal: mismatch \"new\" against \"old\", refused at line 2: "
+            ^ unreadable
+          in
+          equal traced [ refusal; refusal ]
+            (scenario ~mode:Update root
+               [
+                 check old "new"; edit root "test/t.ml" source; check old "new";
+               ]));
+      test "a check tries its patch on the source as first read" first_read;
+    ]
 
-let () =
-  reg "a second write writes nothing" @@ fun () ->
-  let root = temp_dir () in
-  let t = B.create ~root ~cwd:root ~mode:B.Update () in
-  expect_pass "accepted" (fun () -> B.check t file_help "first");
-  ignore (B.settle t ~keep:true);
-  B.write t;
-  let path = Filename.concat root help in
-  write_raw path "edited\n";
-  B.write t;
-  equal ~msg:"the file keeps the edit" string "edited\n" (read_raw path);
-  equal ~msg:"one write reported" int 1 (List.length (B.writes t))
+(* Settling *)
 
-let () =
-  reg "update replaces a file baseline whatever happened to it" @@ fun () ->
-  let root = temp_dir () in
-  let path = Filename.concat root help in
-  write_raw path "old\n";
-  let t = B.create ~root ~cwd:root ~mode:B.Update () in
-  expect_pass "accepted" (fun () -> B.check t file_help "new");
-  write_raw path "edited since\n";
-  ignore (B.settle t ~keep:true);
-  B.write t;
-  equal ~msg:"the correction replaces the edit" string "new\n" (read_raw path)
+let settling =
+  group "Settling"
+    [
+      test
+        "settle ~keep:true is the number of corrections of the attempt, which \
+         it closes" (fun () ->
+          equal traced
+            [ "pass"; "pass"; "kept 2"; "kept 0" ]
+            (scenario ~mode:Update (project [])
+               [
+                 check (File "a") "1";
+                 check (File "b") "2";
+                 settle ~keep:true;
+                 settle ~keep:true;
+               ]));
+      test
+        "settle ~keep:false is 0, and a key it drops takes the next attempt's \
+         correction" (fun () ->
+          let root = project [] in
+          equal traced
+            [
+              "file test/help.expected: missing \"hi\\n\"";
+              "kept 0";
+              "file test/help.expected: missing \"yo\\n\"";
+              "kept 1";
+              "wrote test/help.expected.corrected, 0 literals";
+            ]
+            (scenario ~mode:Corrected root
+               [
+                 check file_help "hi";
+                 settle ~keep:false;
+                 check file_help "yo";
+                 commit root;
+               ]));
+      test
+        "settle ~keep:false drops every correction of the attempt, and the \
+         next attempt compares with the baselines as first read" (fun () ->
+          let root = project [ (help, "one\n") ] in
+          equal traced
+            [
+              "pass";
+              "pass";
+              "kept 0";
+              "pass";
+              "kept 0";
+              disk [ file help "one\n" ];
+            ]
+            (scenario ~mode:Update root
+               [
+                 check file_help "two";
+                 check (File "b") "2";
+                 settle ~keep:false;
+                 check file_help "one";
+                 commit root;
+                 on_disk root;
+               ]));
+      test "settle ~keep:false leaves the attempts kept before" (fun () ->
+          let root = project [] in
+          equal traced
+            [ "pass"; "kept 1"; "pass"; "kept 0"; "wrote a, 0 literals" ]
+            (scenario ~mode:Update root
+               [
+                 check (File "a") "1";
+                 settle ~keep:true;
+                 check (File "b") "2";
+                 settle ~keep:false;
+                 write;
+                 writes root;
+               ]));
+    ]
 
-let () =
-  reg "a file baseline whose write fails is a refusal" @@ fun () ->
-  let root = temp_dir () in
-  let t = B.create ~root ~cwd:root ~mode:B.Update () in
-  expect_pass "accepted" (fun () -> B.check t (B.File "out/x") "v");
-  ignore (B.settle t ~keep:true);
-  (* A directory where the file goes: the rename over it fails. *)
-  Os.mkdir_p (Filename.concat root "out/x");
-  B.write t;
-  match B.writes t with
-  | [ B.Refused { path; reason } ] ->
-      equal ~msg:"the refusal names the file" string
-        (Filename.concat root "out/x")
-        path;
-      is_true ~msg:"with the Sys_error's message" (reason <> "")
-  | _ -> fail "one refusal and nothing written"
+(* Writing *)
 
-let () =
-  reg "a directory that cannot be created refuses its file alone" @@ fun () ->
+let build = "_build/default/"
+let new_ = corrected source [ (old, "new") ]
+
+let corrected_in_build () =
+  let root =
+    project
+      [
+        (help, "source\n");
+        ("test/t.ml", edited);
+        (build ^ help, "copy\n");
+        (build ^ "test/t.ml", source);
+      ]
+  in
+  equal traced
+    [
+      "pass";
+      "file test/other.expected: missing \"x\\n\"";
+      "literal: mismatch \"new\" against \"old\"";
+      "kept 2";
+      "wrote _build/default/test/other.expected.corrected, 0 literals";
+      "wrote _build/default/test/t.ml.corrected, 1 literals";
+      disk
+        [
+          file (build ^ help) "copy\n";
+          file (build ^ "test/other.expected.corrected") "x\n";
+          file (build ^ "test/t.ml") source;
+          file (build ^ "test/t.ml.corrected") new_;
+          file help "source\n";
+          file "test/t.ml" edited;
+        ];
+    ]
+    (scenario ~mode:Corrected
+       ~cwd:(Filename.concat root (build ^ "test"))
+       root
+       [
+         check file_help "copy";
+         check (File "test/other.expected") "x";
+         check old "new";
+         commit root;
+         on_disk root;
+       ])
+
+let refused_alone () =
   if Sys.win32 then skip ~reason:"POSIX only" ();
   if Unix.geteuid () = 0 then
     skip ~reason:"root writes a read-only directory" ();
-  let root = temp_dir () in
-  write_raw (Filename.concat root "test/t.ml") source;
+  let root = project [ ("test/t.ml", source); ("ro/.keep", "") ] in
   let read_only = Filename.concat root "ro" in
-  Unix.mkdir read_only 0o700;
-  let t = B.create ~root ~cwd:root ~mode:B.Update () in
-  expect_pass "a literal" (fun () -> B.check t (literal " old ") "new");
-  expect_pass "a file under the read-only directory" (fun () ->
-      B.check t (B.File "ro/sub/x") "v");
-  expect_pass "a file after it" (fun () -> B.check t (B.File "z.txt") "z");
-  ignore (B.settle t ~keep:true);
-  Unix.chmod read_only 0o500;
-  Fun.protect
-    ~finally:(fun () -> Unix.chmod read_only 0o700)
-    (fun () -> B.write t);
-  (match B.writes t with
-  | [
-   B.Refused { path = refused; reason };
-   B.Written { path = source; literals = 1 };
-   B.Written { path = after; literals = 0 };
-  ] ->
-      equal ~msg:"the file under the read-only directory is refused" string
-        (Filename.concat root "ro/sub/x")
-        refused;
-      equal ~msg:"because its directory cannot be created" string
-        (Printf.sprintf "cannot create directory %s: %s"
-           (Os.display_path (Filename.concat root "ro/sub"))
-           (Unix.error_message Unix.EACCES))
-        reason;
-      equal ~msg:"the source is written" string
-        (Filename.concat root "test/t.ml")
-        source;
-      equal ~msg:"and so is the file after the refusal" string
-        (Filename.concat root "z.txt")
-        after
-  | _ -> fail "one refusal and two writes, in path order");
-  is_true ~msg:"the literal is rewritten"
-    (Text.contains_substring ~pattern:"{| new |}"
-       (read_raw (Filename.concat root "test/t.ml")));
-  equal ~msg:"the file after the refusal holds its content" string "z\n"
-    (read_raw (Filename.concat root "z.txt"))
+  let lock _t =
+    Unix.chmod read_only 0o500;
+    []
+  in
+  let trace =
+    Fun.protect
+      ~finally:(fun () -> Unix.chmod read_only 0o700)
+      (fun () ->
+        scenario ~mode:Update root
+          [
+            check old "new";
+            check (File "ro/sub/x") "v";
+            check (File "z.txt") "z";
+            settle ~keep:true;
+            lock;
+            write;
+            writes root;
+          ])
+  in
+  equal traced
+    [
+      "pass";
+      "pass";
+      "pass";
+      "kept 3";
+      strf "refused ro/sub/x: cannot create directory %s: %s"
+        (Os.display_path (Filename.concat read_only "sub"))
+        (Unix.error_message EACCES);
+      "wrote test/t.ml, 1 literals";
+      "wrote z.txt, 0 literals";
+    ]
+    trace;
+  equal traced
+    [ file "ro/.keep" ""; file "test/t.ml" new_; file "z.txt" "z\n" ]
+    (tree root)
+
+let path_order () =
+  let root = project [ ("test/b.ml", source) ] in
+  let a = Filename.concat root "test/a.ml" in
+  let c = Filename.concat root "test/c.ml" in
+  let occupy _t =
+    Os.mkdir_p a;
+    Os.mkdir_p c;
+    []
+  in
+  let b =
+    Baseline.Literal
+      { pos = ("test/b.ml", 2, 19, 40); value = " old "; exact = false }
+  in
+  let trace =
+    scenario ~mode:Update root
+      [
+        check (File "test/c.ml") "c";
+        check b "new";
+        check (File "test/a.ml") "a";
+        settle ~keep:true;
+        occupy;
+        write;
+        writes root;
+      ]
+  in
+  equal traced
+    [
+      "pass";
+      "pass";
+      "pass";
+      "kept 3";
+      "refused test/a.ml: " ^ write_refusal a;
+      "wrote test/b.ml, 1 literals";
+      "refused test/c.ml: " ^ write_refusal c;
+    ]
+    trace
+
+let writing =
+  group "Writing"
+    [
+      test
+        "under Corrected a literal's correction goes to a .corrected copy of \
+         its source" (fun () ->
+          let root = project [ ("test/t.ml", source) ] in
+          equal traced
+            [
+              "literal: mismatch \"new\" against \"old\"";
+              "kept 1";
+              "wrote test/t.ml.corrected, 1 literals";
+              disk [ file "test/t.ml" source; file "test/t.ml.corrected" new_ ];
+            ]
+            (scenario ~mode:Corrected root
+               [ check old "new"; commit root; on_disk root ]));
+      test
+        "under Update the literals of one source are patched together, in place"
+        (fun () ->
+          let root = project [ ("test/t.ml", two "x" "y") ] in
+          let x = literal ~column:14 " x " in
+          let y = literal ~line:3 ~column:14 " y " in
+          equal traced
+            [
+              "pass";
+              "pass";
+              "kept 2";
+              "wrote test/t.ml, 2 literals";
+              disk
+                [
+                  file "test/t.ml"
+                    (corrected (two "x" "y") [ (x, "one"); (y, "two") ]);
+                ];
+            ]
+            (scenario ~mode:Update root
+               [ check x "one"; check y "two"; commit root; on_disk root ]));
+      cases
+        "a correction is Source_patch's rewrite of the literal, or insertion \
+         of the node, to the produced text"
+        ~name:(fun (name, _, _, _) -> name)
+        [
+          ("a flexible literal", source, old, "a\n  b");
+          ("an exact literal", source, literal ~exact:true " old ", "a\n b");
+          ( "an exact literal with a CR",
+            source,
+            literal ~exact:true " old ",
+            "a\r\nb" );
+          ("a trailing node", expect_test, trailing, "x\n");
+        ]
+        (fun (_, text, subject, actual) ->
+          let root = project [ ("test/t.ml", text) ] in
+          equal traced
+            [
+              "pass";
+              "kept 1";
+              "wrote test/t.ml, 1 literals";
+              disk [ file "test/t.ml" (corrected text [ (subject, actual) ]) ];
+            ]
+            (scenario ~mode:Update root
+               [ check subject actual; commit root; on_disk root ]));
+      test
+        "under a build action Corrected writes beside dune's copies, patched \
+         from the copy"
+        corrected_in_build;
+      test "under a build action Update writes the source, and never the copy"
+        (fun () ->
+          let root =
+            project [ (build ^ "test/t.ml", source); ("test/t.ml", source) ]
+          in
+          equal traced
+            [
+              "pass";
+              "kept 1";
+              "wrote test/t.ml, 1 literals";
+              disk [ file (build ^ "test/t.ml") source; file "test/t.ml" new_ ];
+            ]
+            (scenario ~mode:Update
+               ~cwd:(Filename.concat root (build ^ "test"))
+               root
+               [ check old "new"; commit root; on_disk root ]));
+      test "an equal baseline writes nothing" (fun () ->
+          let root = project [ (help, "keep\r\n") ] in
+          equal traced
+            [ "pass"; "kept 0"; disk [ file help "keep\r\n" ] ]
+            (scenario ~mode:Update root
+               [ check file_help "keep"; commit root; on_disk root ]));
+      test "a second write writes nothing" (fun () ->
+          let root = project [] in
+          equal traced
+            [
+              "pass";
+              "kept 1";
+              "wrote test/help.expected, 0 literals";
+              disk [ file help "edited\n" ];
+            ]
+            (scenario ~mode:Update root
+               [
+                 check file_help "first";
+                 settle ~keep:true;
+                 write;
+                 edit root help "edited\n";
+                 write;
+                 writes root;
+                 on_disk root;
+               ]));
+      test
+        "under Update a file is replaced whatever happened to it since its \
+         check" (fun () ->
+          let root = project [ (help, "old\n") ] in
+          equal traced
+            [
+              "pass";
+              "kept 1";
+              "wrote test/help.expected, 0 literals";
+              disk [ file help "new\n" ];
+            ]
+            (scenario ~mode:Update root
+               [
+                 check file_help "new";
+                 edit root help "edited since\n";
+                 commit root;
+                 on_disk root;
+               ]));
+      test "a source changed since its check is refused and left as it is"
+        (fun () ->
+          let root = project [ ("test/t.ml", source) ] in
+          equal traced
+            [
+              "pass";
+              "kept 1";
+              "refused test/t.ml: it changed during the run: " ^ drift;
+              disk [ file "test/t.ml" edited ];
+            ]
+            (scenario ~mode:Update root
+               [
+                 check old "new";
+                 edit root "test/t.ml" edited;
+                 commit root;
+                 on_disk root;
+               ]));
+      (* A directory in the source's place: opening it succeeds and reading
+         it fails. *)
+      test
+        "a source that cannot be read at the write is refused, for a reason \
+         that names no path" (fun () ->
+          let root = project [ ("test/t.ml", source) ] in
+          let replace _t =
+            Sys.remove (Filename.concat root "test/t.ml");
+            Unix.mkdir (Filename.concat root "test/t.ml") 0o700;
+            []
+          in
+          equal traced
+            [
+              "pass";
+              "kept 1";
+              "refused test/t.ml: the source file cannot be read: "
+              ^ Unix.error_message EISDIR;
+            ]
+            (scenario ~mode:Update root
+               [ check old "new"; replace; commit root ]));
+      (* A directory where the file goes: the rename over it fails. *)
+      test "a file whose write fails is refused" (fun () ->
+          let root = project [] in
+          let path = Filename.concat root "out/x" in
+          let occupy _t =
+            Os.mkdir_p path;
+            []
+          in
+          let trace =
+            scenario ~mode:Update root
+              [ check (File "out/x") "v"; occupy; commit root ]
+          in
+          equal traced
+            [ "pass"; "kept 1"; "refused out/x: " ^ write_refusal path ]
+            trace);
+      test
+        "a directory that cannot be created refuses its file alone, and the \
+         files after it are written"
+        refused_alone;
+      test "writes lists written and refused files in the order of their paths"
+        path_order;
+    ]
 
 let () =
-  reg "refused and written files are in one list, in path order" @@ fun () ->
-  let root = temp_dir () in
-  write_raw (Filename.concat root "test/b.ml") source;
-  let t = B.create ~root ~cwd:root ~mode:B.Update () in
-  expect_pass "c first" (fun () -> B.check t (B.File "test/c.ml") "c");
-  expect_pass "then b" (fun () ->
-      B.check t
-        (B.Literal
-           { pos = ("test/b.ml", 2, 19, 40); value = " old "; exact = false })
-        "new");
-  expect_pass "then a" (fun () -> B.check t (B.File "test/a.ml") "a");
-  ignore (B.settle t ~keep:true);
-  (* Directories where the two files go: their renames fail. *)
-  Os.mkdir_p (Filename.concat root "test/a.ml");
-  Os.mkdir_p (Filename.concat root "test/c.ml");
-  B.write t;
-  let file name = Filename.concat root ("test/" ^ name) in
-  equal ~msg:"sorted by path, whatever their outcome" (list string)
-    [
-      "refused " ^ file "a.ml"; "wrote " ^ file "b.ml"; "refused " ^ file "c.ml";
-    ]
-    (List.map
-       (function
-         | B.Written { path; _ } -> "wrote " ^ path
-         | B.Refused { path; _ } -> "refused " ^ path)
-       (B.writes t))
-
-let tests = List.rev !registered
-let () = exit @@ Windtrap.run "baseline" tests
+  exit
+    (run "baseline"
+       [ modes; subjects; registries; checking; settling; writing ])
