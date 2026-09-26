@@ -16,10 +16,11 @@ non-obvious.
   block that exists for them and for `bin/`; never named by user code).
   `Report_sections` is pinned through `test_report` and
   `test_report_junit`, `Mutate_loop` in `instr/loop/`, and
-  `test_ppx_runtime` pins `ppx/runtime` and `ppx/config`. `test_run`,
+  `test_ppx_runtime` pins `ppx/runtime` and `ppx/config`.
   `test_ppx_runtime` and `test_windtrap` drive `Run.execute` in process,
   which refuses to nest inside a run, so they are plain executables over
-  `harness.ml`. `render_fixtures.ml` is the synthetic run data the report
+  `harness.ml`; `test_run` records its runs as it initialises, before its
+  own run. `render_fixtures.ml` is the synthetic run data the report
   suites render, `xml_check.ml` checks a JUnit document for
   well-formedness, and `expect_config/` is an `(inline_tests)` library
   that shadows `Expect_test_config`. Address one suite by running it:
@@ -350,10 +351,11 @@ A change that breaks one of these tests reopens the design first.
 7. Seeds: `test_seed.ml` ("stream frozen literals", "derivation frozen
    literals") and `test_report.ml` ("seed token consistency").
 8. Callbacks inside a test's boundary, resources released: `test_run.ml`
-   ("release fails", "fixtures release under bail", and the removal of
-   scratch directories on every path).
-9. The exit codes: `test_run.ml`, `test_windtrap.ml` (an all-skipped
-   selection exits 0) and `cli.t` (usage errors exit 2).
+   ("each raising release is a release failure, in release order", "the
+   fixtures are released under bail", "the directory is removed when the
+   attempt ends, however it ends").
+9. The exit codes: `test_run.ml` ("the exit code is"), `test_windtrap.ml`
+   (an all-skipped selection exits 0) and `cli.t` (usage errors exit 2).
 10. Coverage never changes meaning: `ppx/coverage/semantics/` and
     `test_coverage_cmd.ml` ("the run prints no number, and the dump is
     the report").

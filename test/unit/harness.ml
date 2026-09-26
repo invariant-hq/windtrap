@@ -3,8 +3,8 @@
    SPDX-License-Identifier: ISC
   ---------------------------------------------------------------------------*)
 
-(* Minimal hand-rolled harness for the meta suites (test_run,
-   test_ppx_runtime, test_windtrap). Those suites drive the ambient slot
+(* Minimal hand-rolled harness for the meta suites (test_ppx_runtime,
+   test_windtrap). Those suites drive the ambient slot
    and Run.execute in-process with synthetic configs (the sanctioned
    way to test runner behavior with windtrap itself) and [execute]
    refuses to nest inside an active run, so they cannot host their own

@@ -62,6 +62,15 @@
  (modules test_check)
  (libraries windtrap))
 
+(test
+ (name test_run)
+ (modules test_run)
+ (libraries windtrap recorded windtrap_test_support unix)
+ (action
+  (progn
+   (run %{test} --corrected)
+   (diff? test_run.ml test_run.ml.corrected))))
+
 (library
  (name render_fixtures)
  (modules render_fixtures)
@@ -77,8 +86,8 @@
  (libraries windtrap windtrap_test_support unix))
 
 (tests
- (names test_run test_ppx_runtime test_windtrap)
- (modules test_run test_ppx_runtime test_windtrap)
+ (names test_ppx_runtime test_windtrap)
+ (modules test_ppx_runtime test_windtrap)
  (libraries
   windtrap
   ppx_windtrap.runtime

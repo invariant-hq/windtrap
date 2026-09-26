@@ -1,3 +1,9 @@
 (library
  (name windtrap_test_support)
+ (modules windtrap_test_support)
  (libraries unix))
+
+(library
+ (name recorded)
+ (modules recorded)
+ (libraries windtrap windtrap_test_support unix))
