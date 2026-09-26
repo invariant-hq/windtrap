@@ -64,6 +64,21 @@ module Child = struct
 
   let read_file path = In_channel.with_open_bin path In_channel.input_all
 
+  (* A child's standard channels are in text mode on Windows, which ends each
+     line with CRLF; the streams are read back as a POSIX child writes them. *)
+  let read_output path =
+    let s = read_file path in
+    if not Sys.win32 then s
+    else
+      let n = String.length s in
+      let b = Buffer.create n in
+      String.iteri
+        (fun i c ->
+          if not (c = '\r' && i + 1 < n && s.[i + 1] = '\n') then
+            Buffer.add_char b c)
+        s;
+      Buffer.contents b
+
   (* The streams go to files, not pipes: a child that fills one pipe while
      the parent reads the other would block them both. [cwd] is entered by
      the parent around the spawn, since [create_process_env] has no
@@ -95,7 +110,7 @@ module Child = struct
     in
     let _, status = Unix.waitpid [] pid in
     let result =
-      { status; out = read_file out_path; err = read_file err_path }
+      { status; out = read_output out_path; err = read_output err_path }
     in
     Sys.remove out_path;
     Sys.remove err_path;

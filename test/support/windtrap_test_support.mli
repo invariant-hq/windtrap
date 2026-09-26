@@ -48,7 +48,8 @@ module Child : sig
   (** [run ?cwd ?env exe args] runs [exe] with [args] in [environment env]
       ([env] defaults to [[]]), from [cwd] (default: this process's working
       directory), and waits for it. Its standard input is empty; its two output
-      streams are kept apart. [exe] is a path, not looked up in [PATH]. Raises
+      streams are kept apart, each line ending as on POSIX (a Windows child's
+      CRLF reads as LF). [exe] is a path, not looked up in [PATH]. Raises
       [Unix.Unix_error] if the child cannot be started. *)
 
   val exit_code : result -> int
