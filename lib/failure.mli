@@ -353,11 +353,12 @@ val backtrace_to_string : Printexc.raw_backtrace -> string
     convert with it, and never with [Printexc.raw_backtrace_to_string].
 
     The result is the text of [Printexc.raw_backtrace_to_string] without the
-    trailing run of windtrap's own frames ({!Loc.own_unit}). Only a trailing run
-    is dropped, so a callback of the user that windtrap called keeps its frame
-    and the frames below it, and a backtrace that never crossed code of the user
-    is kept whole. An empty backtrace gives [""], which {!raised} stores as no
-    backtrace. *)
+    trailing run of windtrap's own frames ({!Loc.own_unit}), and with the prefix
+    [Dune__exe__] removed from each name that starts with it, as
+    {!exn_to_string} removes it. Only a trailing run is dropped, so a callback
+    of the user that windtrap called keeps its frame and the frames below it,
+    and a backtrace that never crossed code of the user is kept whole. An empty
+    backtrace gives [""], which {!raised} stores as no backtrace. *)
 
 (** {1:constructors Constructors}
 

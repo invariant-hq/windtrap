@@ -236,7 +236,8 @@ let entries =
     row "--junit"
       (value "PATH" any (fun p path -> { p with junit = Some path }))
       ~mirror:(mirrored "WINDTRAP_JUNIT" (fun p -> p.junit = None))
-      "Also write a JUnit XML report to PATH.";
+      "Also write a JUnit XML report to PATH, or to PATH/<suite>.xml when PATH \
+       does not end in .xml.";
     color_entry;
     row ~short:"-o" "--output"
       (value "DIR" any (fun p dir -> { p with log_dir = Some dir }))

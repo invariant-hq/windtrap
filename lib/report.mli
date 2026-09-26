@@ -157,7 +157,8 @@ val selection_description : focused:bool -> Run.config -> string option
 val empty_selection_reason :
   declared:int -> selection:string option -> string option
 (** [empty_selection_reason ~declared ~selection] is why a run has no test to
-    run, as the clause that follows [no tests ran: ]. It is
+    run, as the clause that follows [no tests ran: ] in a run's summary and
+    [no tests selected: ] in a listing ([-l]). It is
     [Some "the suite declares none"] when [declared] is [0], and otherwise
     [Some "<selection> matched none of <declared> tests"] when [selection] is
     given, with [test] for one. It is [None] for a suite that declares tests and

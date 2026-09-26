@@ -173,7 +173,7 @@ let list_selection ~suite config tests =
       let focused = Test_tree.focus_sites tests <> [] in
       let selection = Report.selection_description ~focused config in
       Option.iter
-        (fun reason -> Os.say ("no tests ran: " ^ reason ^ "."))
+        (fun reason -> Os.say ("no tests selected: " ^ reason ^ "."))
         (Report.empty_selection_reason ~declared ~selection);
       0
   | Ok paths ->

@@ -202,15 +202,33 @@ let catching =
 
 (* Backtraces *)
 
+(* This suite is an executable, so dune prefixes the names of its frames. *)
+let unwrapped s =
+  let prefix = "Dune__exe__" in
+  let n = String.length prefix in
+  let b = Buffer.create (String.length s) in
+  let rec copy i =
+    if i < String.length s then
+      if i + n <= String.length s && String.sub s i n = prefix then copy (i + n)
+      else begin
+        Buffer.add_char b s.[i];
+        copy (i + 1)
+      end
+  in
+  copy 0;
+  Buffer.contents b
+
 (* [catch] handles the raise, so the trace ends in windtrap's frame. *)
 let trailing_run_dropped () =
   let raw = require_match exception_backtrace (Failure.catch raise_not_found) in
   let whole = Printexc.raw_backtrace_to_string raw in
   let trimmed = Failure.backtrace_to_string raw in
   contains ~sub:"Windtrap__Failure.catch" whole;
-  starts_with ~affix:"Raised at Dune__exe__Test_failure.raise_not_found" trimmed;
-  starts_with ~affix:trimmed whole;
-  not_contains ~sub:"Windtrap__" trimmed
+  starts_with ~affix:"Raised at Dune__exe__Test_failure.raise_not_found" whole;
+  starts_with ~affix:"Raised at Test_failure.raise_not_found" trimmed;
+  starts_with ~affix:trimmed (unwrapped whole);
+  not_contains ~sub:"Windtrap__" trimmed;
+  not_contains ~sub:"Dune__exe__" trimmed
 
 (* The raise passes two windtrap frames and is handled here, below them. *)
 let interior_frames_kept () =
@@ -221,7 +239,7 @@ let interior_frames_kept () =
   in
   let whole = Printexc.raw_backtrace_to_string raw in
   contains ~sub:"Windtrap__Loc.delimit" whole;
-  equal string whole (Failure.backtrace_to_string raw)
+  equal string (unwrapped whole) (Failure.backtrace_to_string raw)
 
 (* A raise in [reraise], handled in [catch]: no frame of the reader's. *)
 let windtrap_frames_kept () =
@@ -241,7 +259,8 @@ let windtrap_frames_kept () =
 let backtraces =
   group "Backtraces"
     [
-      test "a trailing run of windtrap's frames is dropped" trailing_run_dropped;
+      test "a trailing run of windtrap's frames is dropped, and Dune__exe__"
+        trailing_run_dropped;
       test "windtrap's frames above the reader's are kept" interior_frames_kept;
       test "a backtrace of windtrap's frames alone is kept whole"
         windtrap_frames_kept;

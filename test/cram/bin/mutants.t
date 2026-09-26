@@ -147,7 +147,7 @@ exit code 0, and there is no command to reproduce:
   $ mkdata mutants _build/_mutants/all.mutants "$add=killed" "$sub=killed" "$or=unreached"
   $ run windtrap mutants
   ─────────────────── never reached (1) ────────────────────
-    1  lib/util.ml   lines 1
+    1  lib/util.ml   line 1
   ──────────────────────────────────────────────────────────
   
   mutants: 2 reached, 2 killed, 1 never reached, 1 executable
@@ -160,12 +160,12 @@ and a test's verdict in another executable outranks it:
   $ mkdata mutants _build/_mutants/b.mutants "$sub=killed" "$or=unreached" "$and=unreached"
   $ run windtrap mutants
   ─────────────────── never reached (1) ────────────────────
-    1  lib/util.ml   lines 3
+    1  lib/util.ml   line 3
   ──────────────────────────────────────────────────────────
   
   ────────────── evaluated outside tests (1) ───────────────
     These sites ran outside every test, at module initialization or in a fixture release.
-    1  lib/util.ml   lines 1
+    1  lib/util.ml   line 1
   ──────────────────────────────────────────────────────────
   
   mutants: 1 reached, 1 killed, 1 never reached, 1 evaluated outside tests, 2 executables
@@ -267,7 +267,7 @@ executable through dune:
   ──────────────────────────────────────────────────────────
   
   ─────────────────── never reached (3) ────────────────────
-    1  lib/calc.ml   lines 2
+    1  lib/calc.ml   line 2
     2  lib/util.ml   lines 1, 3
   ──────────────────────────────────────────────────────────
   
@@ -295,7 +295,7 @@ once:
   ──────────────────────────────────────────────────────────
   
   ─────────────────── never reached (3) ────────────────────
-    1  lib/calc.ml   lines 2
+    1  lib/calc.ml   line 2
     2  lib/util.ml   lines 1, 3
   ──────────────────────────────────────────────────────────
   

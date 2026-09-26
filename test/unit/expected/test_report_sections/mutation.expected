@@ -58,8 +58,8 @@
 «d|──────────────────────────────────────────────────────────»
 
 «d|─────────────────── never reached (7) ────────────────────»
-  «y|1»  lib/report.ml   lines 61
-  «y|2»  lib/run.ml      lines 40
+  «y|1»  lib/report.ml   line 61
+  «y|2»  lib/run.ml      line 40
   «y|4»  lib/text.ml     lines 12-14, 32
 «d|──────────────────────────────────────────────────────────»
 
@@ -84,8 +84,8 @@ mutants: «r|2 survived» of 18 reached, «g|16 killed», «y|7 never reached»,
 ──────────────────────────────────────────────────────────
 
 ─────────────────── never reached (7) ────────────────────
-  1  lib/report.ml   lines 61
-  2  lib/run.ml      lines 40
+  1  lib/report.ml   line 61
+  2  lib/run.ml      line 40
   4  lib/text.ml     lines 12-14, 32
 ──────────────────────────────────────────────────────────
 
@@ -94,8 +94,8 @@ mutants: 2 survived of 18 reached, 16 killed, 7 never reached, 3 executables
 
 === never reached alone: its rule, its rows, the outcome
 ─────────────────── never reached (7) ────────────────────
-  1  lib/report.ml   lines 61
-  2  lib/run.ml      lines 40
+  1  lib/report.ml   line 61
+  2  lib/run.ml      line 40
   4  lib/text.ml     lines 12-14, 32
 ──────────────────────────────────────────────────────────
 
@@ -127,7 +127,7 @@ mutants: 16 reached, 16 killed, 3 executables
 === never reached: one row per file, the count right-aligned
 «d|────────────────── never reached (124) ───────────────────»
   «y|  3»  lib/a.ml        lines 7-8
-  «y|  1»  lib/b.ml        lines 1
+  «y|  1»  lib/b.ml        line 1
   «y|120»  lib/report.ml   lines 10, 13, 16, 19, 22, 25, 28, 31 (+52 more)
 «d|──────────────────────────────────────────────────────────»
 
@@ -154,7 +154,7 @@ mutants: 4 reached by this suite, «g|3 killed», «y|1 not evaluated», «y|2 n
 ────────────── evaluated outside tests (3) ───────────────
   These sites ran outside every test, at module initialization or in a fixture release.
   2  lib/calc.ml    lines 1-2
-  1  lib/table.ml   lines 7
+  1  lib/table.ml   line 7
 ──────────────────────────────────────────────────────────
 
 mutants: 3 reached by this suite, 3 killed, 2 never reached, 3 evaluated outside tests
@@ -187,7 +187,7 @@ mutants: 4 reached by this suite, 3 killed, 1 not evaluated, 2 never reached
 
 ────────────── evaluated outside tests (1) ───────────────
   These sites ran outside every test, at module initialization or in a fixture release.
-  1  lib/table.ml   lines 7
+  1  lib/table.ml   line 7
 ──────────────────────────────────────────────────────────
 
 mutants: 3 reached by this suite, 3 killed, 1 evaluated outside tests

@@ -48,7 +48,7 @@ neither reached:
   ──────────────────────────────────────────────────────────
   
   ─────────────────── never reached (1) ────────────────────
-    1  test/cram/bin/calc.ml   lines 15
+    1  test/cram/bin/calc.ml   line 15
   ──────────────────────────────────────────────────────────
   
   reproduce: dune exec --instrument-with ppx_windtrap.mutate test/pins_add.exe -- --arm test/cram/bin/calc.ml:14:17:sub

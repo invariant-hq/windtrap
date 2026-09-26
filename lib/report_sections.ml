@@ -1520,13 +1520,16 @@ let by_file ~title ~lead sites =
   let file_width = List.fold_left (fun w file -> max w (cols file)) 0 files in
   let row file =
     let lines = lines_of file in
+    let distinct = List.sort_uniq Int.compare lines in
     Line
       [
         plain "  ";
         styled `Yellow (strf "%*d" count_width (List.length lines));
         plain
-          (strf "  %s   lines %s" (pad file_width file)
-             (ranges (List.sort_uniq Int.compare lines)));
+          (strf "  %s   %s %s" (pad file_width file)
+             (if List.compare_length_with distinct 1 = 0 then "line"
+              else "lines")
+             (ranges distinct));
       ]
   in
   match files with

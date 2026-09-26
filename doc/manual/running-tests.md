@@ -312,7 +312,8 @@ OPTIONS:
       One status line per test.
 
   --junit=PATH (env WINDTRAP_JUNIT)
-      Also write a JUnit XML report to PATH.
+      Also write a JUnit XML report to PATH, or to PATH/<suite>.xml when PATH
+      does not end in .xml.
 
   --color=MODE (env WINDTRAP_COLOR)
       Color output: always, never or auto.

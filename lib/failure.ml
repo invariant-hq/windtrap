@@ -170,11 +170,11 @@ let reraise c =
   | c -> raise (to_exn c)
 
 (* Dune compiles an executable's modules under [Dune__exe]. The prefix is cut
-   wherever a name starts with it, in a printer's text too. *)
+   wherever a name starts with it: in an exception's text, a printer's
+   included, and in a backtrace's frames. *)
 let exe_wrapper = "Dune__exe__"
 
-let exn_to_string exn =
-  let s = Printexc.to_string exn in
+let unwrapped s =
   let buf = Buffer.create (String.length s) in
   let starts_name i =
     i = 0
@@ -196,6 +196,7 @@ let exn_to_string exn =
   scan 0;
   Buffer.contents buf
 
+let exn_to_string exn = unwrapped (Printexc.to_string exn)
 let caught_to_string c = exn_to_string (to_exn c)
 
 (* Backtraces *)
@@ -203,7 +204,7 @@ let caught_to_string c = exn_to_string (to_exn c)
 (* Windtrap's own frames below the deepest frame of the reader's code name
    none of it: that trailing run is dropped, unless every frame is
    windtrap's. A frame without a name is not proven ours and ends the run. *)
-let backtrace_to_string raw =
+let trimmed raw =
   let whole () = Printexc.raw_backtrace_to_string raw in
   match Printexc.backtrace_slots raw with
   | None -> whole ()
@@ -230,6 +231,8 @@ let backtrace_to_string raw =
         done;
         Buffer.contents buffer
       end
+
+let backtrace_to_string raw = unwrapped (trimmed raw)
 
 (* Constructors *)
 

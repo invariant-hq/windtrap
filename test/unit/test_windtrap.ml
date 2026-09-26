@@ -935,7 +935,7 @@ let running =
           equal (pair int text) (0, "") (listed_nothing.code, listed_nothing.out);
           expect_exact listed_nothing.err
           @@ __POS_OF__
-               {|windtrap: no tests ran: filter "zzznope" matched none of 2 tests.
+               {|windtrap: no tests selected: filter "zzznope" matched none of 2 tests.
 |});
       test "an empty selection says why, then how to list the suite" (fun () ->
           equal (pair int string) (2, "") (emptied_pair.code, emptied_pair.err);

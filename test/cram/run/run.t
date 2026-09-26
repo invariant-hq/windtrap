@@ -93,7 +93,7 @@ fallback for every other byte below space and for DEL.
   $ filter=$(printf 'a"b\\c\nd\te\rf\001g\177h')
   $ run ./suite_main.exe -l -f "$filter"
   --- stderr
-  windtrap: no tests ran: filter "a\"b\\c\nd\te\rf\x01g\x7fh" matched none of 5 tests.
+  windtrap: no tests selected: filter "a\"b\\c\nd\te\rf\x01g\x7fh" matched none of 5 tests.
 
 A suite the runner refuses to start exits 1 with nothing on standard
 output, the refusal on standard error. A listing makes the same checks
