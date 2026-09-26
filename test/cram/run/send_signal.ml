@@ -3,16 +3,20 @@
    SPDX-License-Identifier: ISC
   ---------------------------------------------------------------------------*)
 
-(* [send_signal.exe SIGNAL EXE ARG...] starts EXE with ARGs, its standard
-   output in [out] and its standard error in [err], waits until EXE
-   creates [ready] in the working directory, sends it SIGNAL (INT, TERM or
-   HUP), and prints how it ended.
+(* [send_signal.exe [--ignore SIGNAL] PLAN EXE ARG...] starts EXE with ARGs,
+   its standard output in [out] and its standard error in [err], follows
+   PLAN, and prints how EXE ended. PLAN is [-] (send nothing) or a
+   comma-separated list of steps [SIGNAL] or [SIGNAL@FILE]: wait until EXE
+   creates FILE ([ready] by default) in the working directory, then send it
+   SIGNAL (INT, TERM or HUP). After each step but the last, EXE is given
+   0.2 s, and the program prints whether it is still running. [--ignore]
+   starts EXE with SIGNAL ignored.
 
    A shell cannot do this job: a command it starts in the background
    ignores SIGINT, and the runner keeps a signal its process was started
    ignoring ignored. This program starts EXE with the dispositions it has
-   itself and holds EXE's pid, so the signal reaches the process it
-   names. EXE's environment is this program's. *)
+   itself and holds EXE's pid, so the signal reaches the process it names.
+   EXE's environment is this program's. *)
 
 let signal_of_name = function
   | "INT" -> Sys.sigint
@@ -27,43 +31,77 @@ let name_of_signal signal =
   else if signal = Sys.sigkill then "SIGKILL"
   else string_of_int signal
 
+let step text =
+  match String.index_opt text '@' with
+  | None -> (signal_of_name text, "ready")
+  | Some i ->
+      ( signal_of_name (String.sub text 0 i),
+        String.sub text (i + 1) (String.length text - i - 1) )
+
+let plan = function
+  | "-" -> []
+  | text -> List.map step (String.split_on_char ',' text)
+
 let file name =
   Unix.openfile name
     [ Unix.O_WRONLY; Unix.O_CREAT; Unix.O_TRUNC; Unix.O_CLOEXEC ]
     0o644
 
+let ended = function
+  | Unix.WSIGNALED s -> "killed by " ^ name_of_signal s
+  | Unix.WEXITED code -> "exited " ^ string_of_int code
+  | Unix.WSTOPPED s -> "stopped by " ^ name_of_signal s
+
 (* A gate, not a clock: the child is signalled the moment it says it is
-   ready. The bound only turns a child that never gets there into a
-   visible verdict instead of a session that hangs. *)
-let rec await_ready tries =
-  if Sys.file_exists "ready" then true
-  else if tries = 0 then false
-  else begin
-    Unix.sleepf 0.01;
-    await_ready (tries - 1)
-  end
+   ready, however long its first launch takes. [Some status] is a child
+   that ended before it got there. *)
+let rec await pid name =
+  match Unix.waitpid [ Unix.WNOHANG ] pid with
+  | 0, _ ->
+      if Sys.file_exists name then None
+      else begin
+        Unix.sleepf 0.01;
+        await pid name
+      end
+  | _, status -> Some status
+
+let rec follow pid = function
+  | [] -> snd (Unix.waitpid [] pid)
+  | (signal, name) :: rest -> (
+      match await pid name with
+      | Some status ->
+          Printf.printf "ended before %s\n" name;
+          status
+      | None -> (
+          Unix.kill pid signal;
+          match rest with
+          | [] -> snd (Unix.waitpid [] pid)
+          | _ :: _ -> (
+              Unix.sleepf 0.2;
+              match Unix.waitpid [ Unix.WNOHANG ] pid with
+              | 0, _ ->
+                  Printf.printf "running after %s\n" (name_of_signal signal);
+                  follow pid rest
+              | _, status -> status)))
+
+let start ~ignored steps exe args =
+  List.iter (fun s -> Sys.set_signal s Sys.Signal_ignore) ignored;
+  List.iter
+    (fun (_, name) -> if Sys.file_exists name then Sys.remove name)
+    steps;
+  let out = file "out" and err = file "err" in
+  let pid =
+    Unix.create_process exe (Array.of_list (exe :: args)) Unix.stdin out err
+  in
+  Unix.close out;
+  Unix.close err;
+  print_endline (ended (follow pid steps))
 
 let () =
-  match Array.to_list Sys.argv with
-  | _ :: signal :: exe :: args ->
-      let signal = signal_of_name signal in
-      if Sys.file_exists "ready" then Sys.remove "ready";
-      let out = file "out" and err = file "err" in
-      let pid =
-        Unix.create_process exe (Array.of_list (exe :: args)) Unix.stdin out err
-      in
-      Unix.close out;
-      Unix.close err;
-      if await_ready 6000 then Unix.kill pid signal
-      else begin
-        print_endline "never ready";
-        Unix.kill pid Sys.sigkill
-      end;
-      (match snd (Unix.waitpid [] pid) with
-      | Unix.WSIGNALED s -> Printf.printf "killed by %s\n" (name_of_signal s)
-      | Unix.WEXITED code -> Printf.printf "exited %d\n" code
-      | Unix.WSTOPPED s -> Printf.printf "stopped by %s\n" (name_of_signal s));
-      exit 0
-  | _ ->
-      prerr_endline "usage: send_signal.exe SIGNAL EXE [ARG]...";
+  match List.tl (Array.to_list Sys.argv) with
+  | "--ignore" :: signal :: steps :: exe :: args ->
+      start ~ignored:[ signal_of_name signal ] (plan steps) exe args
+  | steps :: exe :: args -> start ~ignored:[] (plan steps) exe args
+  | [] | [ _ ] ->
+      prerr_endline "usage: send_signal.exe [--ignore SIGNAL] PLAN EXE [ARG]...";
       exit 2
