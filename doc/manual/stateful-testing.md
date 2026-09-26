@@ -148,8 +148,8 @@ bounded_queue: 1 test (seed s1:c26eddaeb764a645)
 ## Reading a failing program
 
 A failure prints the shrunk program as a table of calls, with the model
-before each, then the call that failed and its failure. The `replay:`
-line and `--seed` work as for a [property](property-testing.md).
+before each, then the call that failed and its failure. The report's
+`replay:` line and `--seed` work as for a [property](property-testing.md).
 `~steps` sets the number of calls drawn per program, 20 by default, and
 `~count` the number of programs.
 
@@ -177,10 +177,10 @@ bounded_queue: 1 test (seed s1:c26eddaeb764a645)
       call 5 of 5: push when full
       expected exception  Bounded_queue.Full
       but no exception was raised
-    replay: dune exec examples/04-stateful-testing/test_bounded_queue.exe -- --seed s1:c26eddaeb764a645 -f 'queue › behaves like a list'
 ──────────────────────────────────────────────────────────
 
-1 failed in 0.8ms.
+replay: dune exec examples/04-stateful-testing/test_bounded_queue.exe -- --seed s1:c26eddaeb764a645 -f 'behaves' --failed
+1 failed in 1.5ms.
 ```
 
 ## Keeping a failing program as a regression

@@ -307,24 +307,6 @@ let arm_mirror = function
   | Some id -> strf "WINDTRAP_MUTATE_ARM=%s " (shell_word id)
   | None -> ""
 
-(* A late case replays only under at least as many cases as the failing run
-   generated, so a run's [count] is restated. *)
-let replay_line ?count ~armed invocation ~seed ~filter =
-  let seed = Seed.to_string seed in
-  match invocation with
-  | `Exe cmd ->
-      strf "replay: %s%s --seed %s%s%s" cmd (arm_flag armed) seed
-        (match count with Some n -> strf " --prop-count %d" n | None -> "")
-        (filter_flag filter)
-  | `Mirrors ->
-      strf "replay: %sWINDTRAP_SEED=%s %s%sdune runtest" (arm_mirror armed) seed
-        (match count with
-        | Some n -> strf "WINDTRAP_PROP_COUNT=%d " n
-        | None -> "")
-        (match filter with
-        | Some f -> strf "WINDTRAP_FILTER=%s " (shell_quote f)
-        | None -> "")
-
 (* Promotion fills a file and never creates one: a missing file must exist
    before dune's [diff?] registers its correction. *)
 let accept_line invocation ~filter (f : Failure.t) =
@@ -381,17 +363,6 @@ let withheld_fact (f : Failure.t) =
     ->
       None
 
-let replay_of ~armed invocation ~filter (f : Failure.t) =
-  match f.kind with
-  | Failure.Property { examples = false; root; count; _ }
-  | Failure.Timeout { case = Some { examples = false; root; count; _ }; _ } ->
-      Some (replay_line ?count ~armed invocation ~seed:root ~filter)
-  | Failure.Property { examples = true; _ }
-  | Failure.Timeout { case = Some { examples = true; _ } | None; _ }
-  | Failure.Equality _ | Failure.Containment _ | Failure.Raise _
-  | Failure.Baseline _ | Failure.Message _ ->
-      None
-
 let hints ?armed ?(invocation = `Mirrors) ~filter failures =
   let distinct lines =
     List.rev
@@ -399,15 +370,107 @@ let hints ?armed ?(invocation = `Mirrors) ~filter failures =
          (fun acc line -> if List.mem line acc then acc else line :: acc)
          [] lines)
   in
-  let replays =
-    List.filter_map (replay_of ~armed invocation ~filter) failures
-  in
   match armed with
-  | Some _ -> distinct replays
+  | Some _ -> []
   | None ->
       distinct (List.filter_map withheld_fact failures)
-      @ distinct
-          (List.filter_map (accept_line invocation ~filter) failures @ replays)
+      @ distinct (List.filter_map (accept_line invocation ~filter) failures)
+
+(* A command that runs a narrowed run's tests again restates the run's
+   selection. [--failed] has no mirror and a pattern's mirror holds one
+   pattern: under the mirrors those are left out, and the command runs more
+   tests, never fewer. *)
+let selection_words invocation (c : Run.config) =
+  let flag name var = function [] -> [] | values -> [ (name, var, values) ] in
+  let patterns name var values =
+    match invocation with
+    | `Mirrors when List.compare_length_with values 1 > 0 -> []
+    | `Mirrors | `Exe _ -> flag name var (List.map shell_quote values)
+  in
+  let flags =
+    patterns "-f" "WINDTRAP_FILTER" c.filter
+    @ patterns "-e" "WINDTRAP_EXCLUDE" c.exclude
+    @ flag "--tag" "WINDTRAP_TAG" (List.map shell_word c.tags)
+    @ flag "--exclude-tag" "WINDTRAP_EXCLUDE_TAG"
+        (List.map shell_word c.exclude_tags)
+    @ flag "--shard" "WINDTRAP_SHARD"
+        (Option.to_list (Option.map (fun (k, n) -> strf "%d/%d" k n) c.shard))
+  in
+  match invocation with
+  | `Exe _ ->
+      String.concat ""
+        (List.concat_map
+           (fun (name, _, values) -> List.map (strf " %s %s" name) values)
+           flags)
+      ^ if c.failed_only then " --failed" else ""
+  | `Mirrors ->
+      String.concat ""
+        (List.map
+           (fun (_, var, values) ->
+             strf "%s=%s " var (String.concat "," values))
+           flags)
+
+(* The seed and the case count of a failure whose case was generated. *)
+let drawn (f : Failure.t) =
+  match f.kind with
+  | Failure.Property { examples = false; root; count; _ }
+  | Failure.Timeout { case = Some { examples = false; root; count; _ }; _ } ->
+      Some (root, count)
+  | Failure.Property { examples = true; _ }
+  | Failure.Timeout { case = Some { examples = true; _ } | None; _ }
+  | Failure.Equality _ | Failure.Containment _ | Failure.Raise _
+  | Failure.Baseline _ | Failure.Message _ ->
+      None
+
+(* A late case replays only under at least as many cases as the failing run
+   generated, so the largest count is restated. [--failed] reads the store
+   under the run's [-o]. The store keeps the entries of the tests a run did
+   not execute, so the selection is restated, and [-x] for the tests it did
+   not reach. Dune runs again the actions that failed,
+   which is what [--failed] asks under the mirrors, and an armed action
+   exists only in the instrumented build. *)
+let replay ?armed ?(invocation = `Mirrors) ~tests failures =
+  match List.filter_map drawn failures with
+  | [] -> None
+  | (root, _) :: _ as cases ->
+      let count =
+        List.fold_left
+          (fun acc (_, count) ->
+            match (acc, count) with
+            | Some a, Some c -> Some (max a c)
+            | None, c | c, None -> c)
+          None cases
+      in
+      let seed = Seed.to_string root in
+      Some
+        (match invocation with
+        | `Exe cmd ->
+            strf "replay: %s%s --seed %s%s%s" cmd (arm_flag armed) seed
+              (match count with
+              | Some n -> strf " --prop-count %d" n
+              | None -> "")
+              (match tests with
+              | `Failed (config : Run.config) ->
+                  (if String.equal config.log_dir (Os.default_log_dir ()) then
+                     ""
+                   else " -o " ^ shell_word (Os.display_artifact config.log_dir))
+                  ^ (if config.bail then " -x" else "")
+                  ^ selection_words invocation
+                      { config with failed_only = true }
+              | `Filter filter -> filter_flag filter)
+        | `Mirrors ->
+            strf "replay: %sWINDTRAP_SEED=%s %s%sdune runtest%s"
+              (arm_mirror armed) seed
+              (match count with
+              | Some n -> strf "WINDTRAP_PROP_COUNT=%d " n
+              | None -> "")
+              (match tests with
+              | `Failed config -> selection_words invocation config
+              | `Filter (Some f) -> strf "WINDTRAP_FILTER=%s " (shell_quote f)
+              | `Filter None -> "")
+              (match armed with
+              | Some _ -> " --instrument-with ppx_windtrap.mutate"
+              | None -> ""))
 
 (* Entries *)
 
@@ -1003,7 +1066,11 @@ let pp_failure ~ansi ?(terminal = false) ?(excerpt = false)
   let hint_lines =
     if not hinted then []
     else
-      List.map (fun h -> [ plain h ]) (hints ?armed ~invocation ~filter [ f ])
+      List.map
+        (fun h -> [ plain h ])
+        (hints ?armed ~invocation ~filter [ f ]
+        @ Option.to_list
+            (replay ?armed ~invocation ~tests:(`Filter filter) [ f ]))
   in
   List.iter
     (fun line -> Pp.pf ppf "%s@\n" (render ~ansi (indented indent line)))
@@ -1293,40 +1360,6 @@ let reproduce_line ~invocation ~selection id =
         "reproduce: %s%sdune runtest --force --instrument-with \
          ppx_windtrap.mutate"
         (arm_mirror (Some id)) selection
-
-(* A survivor of a narrowed run survived that selection only, so the command
-   restates the run's selection. [--failed] has no mirror and a pattern's
-   mirror holds one pattern: under the mirrors those are left out, and the
-   command runs more tests, never fewer. *)
-let selection_words invocation (c : Run.config) =
-  let flag name var = function [] -> [] | values -> [ (name, var, values) ] in
-  let patterns name var values =
-    match invocation with
-    | `Mirrors when List.compare_length_with values 1 > 0 -> []
-    | `Mirrors | `Exe _ -> flag name var (List.map shell_quote values)
-  in
-  let flags =
-    patterns "-f" "WINDTRAP_FILTER" c.filter
-    @ patterns "-e" "WINDTRAP_EXCLUDE" c.exclude
-    @ flag "--tag" "WINDTRAP_TAG" (List.map shell_word c.tags)
-    @ flag "--exclude-tag" "WINDTRAP_EXCLUDE_TAG"
-        (List.map shell_word c.exclude_tags)
-    @ flag "--shard" "WINDTRAP_SHARD"
-        (Option.to_list (Option.map (fun (k, n) -> strf "%d/%d" k n) c.shard))
-  in
-  match invocation with
-  | `Exe _ ->
-      String.concat ""
-        (List.concat_map
-           (fun (name, _, values) -> List.map (strf " %s %s" name) values)
-           flags)
-      ^ if c.failed_only then " --failed" else ""
-  | `Mirrors ->
-      String.concat ""
-        (List.map
-           (fun (_, var, values) ->
-             strf "%s=%s " var (String.concat "," values))
-           flags)
 
 (* A survivor is drawn as a failure block is: it is a defect report about the
    tests it names. *)

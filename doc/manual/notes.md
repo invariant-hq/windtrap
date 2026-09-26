@@ -63,8 +63,8 @@ by a function with no printer prints the input it was computed from.
 
 Every generated value derives from the run's root seed, the test's path
 and the case's index. Adding, removing or reordering other tests changes
-no property's values, and a `replay:` line reproduces a failure from its
-seed alone. The derivation is frozen under the `s1` prefix of the seed,
+no property's values, and the `replay:` line of a report reproduces its
+failures from the seed alone. The derivation is frozen under the `s1` prefix of the seed,
 and what a generator draws from it is fixed within one version of
 windtrap. The shrink budget is fixed too, with no option to change it,
 so a replay descends to the same counterexample.
@@ -146,8 +146,10 @@ says about itself, a refusal, a warning or a usage error, goes to
 standard error behind `windtrap:`, so a log keeps the two apart.
 
 A block ends with a command only when the command says something the
-block does not: the seed in `replay:`, the file in `accept:`, the mutant
-in `reproduce:`. Running the tests again is the ordinary next step and
+block does not: the file in `accept:`, the mutant in `reproduce:`. The
+seed is the run's, not a block's, so a report states it once: one
+`replay:` line above the summary reruns the failed tests, each on the
+values it drew. Running the tests again is the ordinary next step and
 needs no line.
 
 ## Three exit codes

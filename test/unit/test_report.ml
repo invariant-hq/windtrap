@@ -832,10 +832,9 @@ let test_verbose_commits_blocks () =
       ("  \027[31mFAIL\027[0m  \027[1mfirst\027[0m" ^ String.make 38 ' '
      ^ "\027[2m0.2ms\027[0m \027[2m(mutant armed)\027[0m")
     armed;
-  contains ~msg:"its hints are the block's, and the blank line closes it"
-    ~sub:
-      "    replay: ./t.exe --arm lib/calc.ml:9:12:add --seed \
-       s1:7be1d2c904aa31f5 -f 'first'\n\n"
+  contains ~msg:"no block carries a replay, and the blank line closes it"
+    ~sub:"\027[2mactual\027[0m    \027[31mfalse\027[0m\n\n" armed;
+  not_contains ~msg:"the replay is the report's, not the block's" ~sub:"replay:"
     armed;
   (* A missing baseline is the row's qualifier, sharing the slot. *)
   let missing ?armed () =
@@ -3445,8 +3444,9 @@ let test_hints_per_invocation () =
     ~sub:"    accept: dune promote\n" missing
 
 (* A block ends on a command only when the command says what the block
-   does not: one line per distinct command line, in the order accept,
-   replay, and none at all otherwise. No block prints a [rerun:]. *)
+   does not: one line per distinct command line, and none at all
+   otherwise. No block prints a [rerun:] or a [replay:]; an entry printed
+   alone (an annotation, a JUnit failure) carries its test's replay. *)
 let test_hint_lines () =
   let plain = Failure.message "b" in
   equal ~msg:"a block with nothing to accept or replay ends on its facts" string
@@ -3477,10 +3477,14 @@ let test_hint_lines () =
        s1:7be1d2c904aa31f5 -f 'mod7'\n"
     (failure_block ~invocation:(`Exe "./t.exe") ~armed ~filter:"mod7"
        Fixtures.prop_failure);
-  contains ~msg:"an armed run's replay carries the mirror under a build action"
+  contains
+    ~msg:
+      "an armed run's replay carries the mirror under a build action, and the \
+       backend that builds the mutant"
     ~sub:
       "    replay: WINDTRAP_MUTATE_ARM=lib/calc.ml:9:12:add \
-       WINDTRAP_SEED=s1:7be1d2c904aa31f5 WINDTRAP_FILTER='mod7' dune runtest\n"
+       WINDTRAP_SEED=s1:7be1d2c904aa31f5 WINDTRAP_FILTER='mod7' dune runtest \
+       --instrument-with ppx_windtrap.mutate\n"
     (failure_block ~armed ~filter:"mod7" Fixtures.prop_failure);
   is_true
     ~msg:"an armed run's baseline failure is never accepted: no hint at all"
@@ -3498,13 +3502,10 @@ let test_hint_lines () =
     (hints [ plain ] = []
     && hints [ plain; Fixtures.snap_mismatch ] = [ "accept: ./t.exe -u -f 't'" ]
     );
-  is_true ~msg:"one line per distinct command line, accept before replay"
+  is_true ~msg:"one line per distinct command line, and no replay"
     (hints
        [ Fixtures.prop_failure; Fixtures.snap_mismatch; Fixtures.snap_missing ]
-    = [
-        "accept: ./t.exe -u -f 't'";
-        "replay: ./t.exe --seed s1:7be1d2c904aa31f5 -f 't'";
-      ]);
+    = [ "accept: ./t.exe -u -f 't'" ]);
   is_true ~msg:"two files under a build action are two acceptances"
     (Sections.hints ~filter:(Some "t")
        [ Fixtures.snap_mismatch; Fixtures.snap_missing ]
@@ -3514,7 +3515,7 @@ let test_hint_lines () =
          test/help.expected";
       ]);
   (* In the transcript the hints close the block, once for the whole test,
-     after the captured tail. *)
+     after the captured tail, and the replay sits on the summary. *)
   let two =
     Fixtures.result [ "cli"; "both" ]
       (Failure.Fail
@@ -3529,15 +3530,138 @@ let test_hint_lines () =
     with_renderer ~invocation:(`Exe "./t.exe") (fun r ->
         Report.finish r ~release_failures:[] ~results:[ two ] ~duration:0.1 ())
   in
-  contains ~msg:"the block's hints follow the tail, accept then replay"
+  contains ~msg:"the block's hints follow the tail, the replay the rule"
     ~sub:
-      ("      log line\n\
-       \    accept: ./t.exe -u -f 'cli › both'\n\
-       \    replay: ./t.exe --seed s1:7be1d2c904aa31f5 -f 'cli › both'\n"
-     ^ closing_rule ^ "\n\n1 failed in 100ms.\n")
+      ("      log line\n    accept: ./t.exe -u -f 'cli › both'\n" ^ closing_rule
+     ^ "\n\n\
+        replay: ./t.exe --seed s1:7be1d2c904aa31f5 --failed\n\
+        1 failed in 100ms.\n")
     t;
   is_true ~msg:"a hint prints once per block"
     (occurrences_of ~sub:"accept:" t = 1)
+
+(* The replay line: one for the whole report, right above the summary,
+   over every counted failure that drew generated values. [--failed] reads
+   the store, so the line restates what shapes the store's entries: the
+   output directory, the selection and [-x]. *)
+let test_replay_line () =
+  let exe = `Exe "./t.exe" in
+  let ending ?(config = config ~invocation:exe ()) ?interrupted results =
+    let buf = Buffer.create 256 in
+    let ppf = Format.formatter_of_buffer buf in
+    let r = Report.create ~out:ppf ~ansi:false config in
+    (match interrupted with
+    | None -> Report.finish r ~results ~release_failures:[] ~duration:0.1 ()
+    | Some () -> Report.interrupted r ~running:None ~results ~duration:0.1 ());
+    Format.pp_print_flush ppf ();
+    Buffer.contents buf
+  in
+  let failing ?xfail name failures =
+    Fixtures.result ?xfail [ name ] (Failure.Fail failures)
+  in
+  let counted count =
+    Failure.property ~count ~rendered:"0" ~case_index:499 ~shrink_steps:1
+      ~root:Fixtures.root ~examples:false ()
+  in
+  let two =
+    [
+      failing "even" [ Fixtures.prop_failure ];
+      failing "small" [ Fixtures.prop_failure ];
+    ]
+  in
+  let t = ending two in
+  is_true ~msg:"two properties, one replay line"
+    (occurrences_of ~sub:"replay:" t = 1);
+  is_true ~msg:"it sits on the summary, which stays last"
+    (String.ends_with
+       ~suffix:
+         (closing_rule
+        ^ "\n\n\
+           replay: ./t.exe --seed s1:7be1d2c904aa31f5 --failed\n\
+           2 failed in 100ms.\n")
+       t);
+  contains ~msg:"the largest count a failure needs"
+    ~sub:
+      "replay: ./t.exe --seed s1:7be1d2c904aa31f5 --prop-count 1000 --failed\n"
+    (ending
+       [
+         failing "late" [ counted 1000 ];
+         failing "early" [ counted 500 ];
+         failing "plain" [ Failure.message "b" ];
+       ]);
+  contains ~msg:"a property's timeout drew its case"
+    ~sub:"replay: ./t.exe --seed s1:7be1d2c904aa31f5 --failed\n"
+    (ending
+       [
+         failing "slow"
+           [
+             Failure.timeout
+               ~case:
+                 {
+                   Failure.case_index = 7;
+                   examples = false;
+                   passed = 7;
+                   root = Fixtures.root;
+                   count = None;
+                 }
+               0.5;
+           ];
+       ]);
+  let narrowed =
+    {
+      (config ~invocation:exe ()) with
+      Run.filter = [ "geo" ];
+      exclude = [ "slow" ];
+      tags = [ "prop" ];
+      exclude_tags = [ "flaky" ];
+      shard = Some (1, 2);
+      bail = true;
+      log_dir = "/nowhere/logs";
+    }
+  in
+  contains ~msg:"a narrowed run restates its store and its selection"
+    ~sub:
+      "replay: ./t.exe --seed s1:7be1d2c904aa31f5 -o /nowhere/logs -x -f 'geo' \
+       -e 'slow' --tag prop --exclude-tag flaky --shard 1/2 --failed\n"
+    (ending ~config:narrowed two);
+  contains ~msg:"an armed run arms the mutant"
+    ~sub:
+      "replay: ./t.exe --arm lib/calc.ml:9:12:add --seed s1:7be1d2c904aa31f5 \
+       --failed\n"
+    (ending
+       ~config:(config ~invocation:exe ~armed:"lib/calc.ml:9:12:add" ())
+       two);
+  contains
+    ~msg:
+      "under a build action: the mirrors, and dune's rerun of the failed \
+       actions for --failed"
+    ~sub:
+      "replay: WINDTRAP_SEED=s1:7be1d2c904aa31f5 WINDTRAP_FILTER='geo' dune \
+       runtest\n"
+    (ending ~config:{ (config ()) with Run.filter = [ "geo" ] } two);
+  contains ~msg:"an armed build action names the backend"
+    ~sub:
+      "replay: WINDTRAP_MUTATE_ARM=lib/calc.ml:9:12:add \
+       WINDTRAP_SEED=s1:7be1d2c904aa31f5 dune runtest --instrument-with \
+       ppx_windtrap.mutate\n"
+    (ending ~config:(config ~armed:"lib/calc.ml:9:12:add" ()) two);
+  let example =
+    Failure.property ~rendered:"0" ~case_index:0 ~shrink_steps:0
+      ~root:Fixtures.root ~examples:true ()
+  in
+  not_contains ~msg:"an example or a plain failure drew nothing" ~sub:"replay:"
+    (ending
+       [ failing "ex" [ example ]; failing "plain" [ Fixtures.snap_mismatch ] ]);
+  not_contains ~msg:"an expected failure is no failure to replay" ~sub:"replay:"
+    (ending
+       [
+         failing ~xfail:Fixtures.xfail_reason "known" [ Fixtures.prop_failure ];
+       ]);
+  not_contains ~msg:"a signal leaves the store as it was: no replay"
+    ~sub:"replay:"
+    (ending ~interrupted:() two);
+  equal ~msg:"and says on stderr what it stopped" string
+    "windtrap: interrupted between tests\n" (output ())
 
 (* A withheld correction (Run, Corrections): the run kept none of the
    attempt's corrections, so no command accepts the block's baselines. The
@@ -3589,15 +3713,13 @@ let test_withheld_correction () =
     ~sub:"touch" (action missing);
   contains ~msg:"a missing file: the proposed text still prints"
     ~sub:"    proposed (3 lines):\n" (action missing);
-  (* The reason is a fact line: it opens the block's closing lines, once,
-     before a replay when the block has one. *)
+  (* The reason is a fact line: it opens the block's closing lines, once. *)
   let plain = Failure.message "boom" in
   let hints = Sections.hints ~invocation:(`Exe "./t.exe") ~filter:(Some "t") in
   is_true ~msg:"a block's closing lines: the reason once, and nothing after it"
     (hints [ plain; literal; missing ] = [ kept_none ]);
-  is_true ~msg:"a property beside it keeps its replay"
-    (hints [ Fixtures.prop_failure; literal ]
-    = [ kept_none; "replay: ./t.exe --seed s1:7be1d2c904aa31f5 -f 't'" ]);
+  is_true ~msg:"a property beside it adds no line: the report replays it"
+    (hints [ Fixtures.prop_failure; literal ] = [ kept_none ]);
   is_true ~msg:"a kept correction beside nothing else is accepted as before"
     (hints [ Fixtures.snap_mismatch ] = [ "accept: ./t.exe -u -f 't'" ]);
   not_contains ~msg:"and draws no reason" ~sub:"no correction was kept"
@@ -3772,13 +3894,10 @@ let test_name_sanitization () =
     "  FAIL  first\\x0ahalf                              0.2ms\n    b\n\n"
     verbose;
   contains ~msg:"and so does a hint that spells the path"
-    ~sub:
-      "      actual    false\n\
-      \    replay: WINDTRAP_SEED=s1:7be1d2c904aa31f5 \
-       WINDTRAP_FILTER=$'first\\nhalf' dune runtest\n\n"
-    (with_renderer ~mode:`Verbose (fun r ->
+    ~sub:"      line three\n    accept: ./t.exe -u -f $'first\\nhalf'\n\n"
+    (with_renderer ~mode:`Verbose ~invocation:(`Exe "./t.exe") (fun r ->
          Report.result r
-           (Fixtures.result hostile (Failure.Fail [ Fixtures.prop_failure ]))));
+           (Fixtures.result hostile (Failure.Fail [ Fixtures.snap_mismatch ]))));
   let block =
     with_renderer (fun r ->
         Report.finish r ~release_failures:[] ~results:[ failing ] ~duration:0.1
@@ -6179,6 +6298,7 @@ let tests =
     test "hints: accept and replay per invocation" test_hints_per_invocation;
     test "hints: armed runs, one line per command line, no rerun"
       test_hint_lines;
+    test "the replay line: one, on the summary" test_replay_line;
     test "a withheld correction: no accept, the reason, nothing after it"
       test_withheld_correction;
     test "an armed run's FAIL titles" test_armed_titles;

@@ -183,9 +183,12 @@ Read the whole block before editing anything. It holds:
 - `captured output`, the last lines the test printed, and `full log:`,
   the file with all of them. `[setup]` or `[teardown]` before the
   location when the failure is in one.
-- A last command when it says something new: `replay:` reruns a
-  property under its seed, `accept:` accepts a baseline, `reproduce:`
-  arms a mutant.
+- A last command when it says something new: `accept:` accepts a
+  baseline, `reproduce:` arms a mutant.
+
+A report whose failures include a property or a stateful test has one
+`replay:` line, right above the summary: it reruns the failed tests
+with the run's seed, so each draws the values it failed on.
 
 Then:
 

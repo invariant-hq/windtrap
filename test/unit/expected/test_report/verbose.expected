@@ -42,7 +42,6 @@ mylib: 12 tests (seed s1:7be1d2c904aa31f5)
       test/test_geo.ml:18
       expected  true
       actual    false
-    replay: dune exec test/main.exe -- --seed s1:7be1d2c904aa31f5 -f 'geo › area non-negative'
 
   FAIL  db › insert                                0.2ms
     test/test_db.ml:21
@@ -67,4 +66,5 @@ slow tests (2, over 1s):
 flaky tests (1):
   passed on attempt 3  flaky › eventually
 
+replay: dune exec test/main.exe -- --seed s1:7be1d2c904aa31f5 --failed
 5 passed (1 flaky), 1 skipped, 7 failed in 6.5s.

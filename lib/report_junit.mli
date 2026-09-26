@@ -31,7 +31,9 @@
       failures. The [message] of the element is {!Report_sections.headline}. Its
       text is the entry of {!Report_sections.pp_failure} under [ansi:false] and
       without excerpt. The entry ends with its hint lines
-      ({!Report_sections.hints}), whose filter is the full path of the test.
+      ({!Report_sections.hints}) and its [replay:] line
+      ({!Report_sections.replay}), whose filter is the full path of the test: a
+      [failure] is read alone, away from the run's last-failed store.
     - A [system-out] follows these elements when a failure of the test, that of
       a subtest included, has a captured tail. It holds the whole text of the
       first such {!Failure.type-tail}.

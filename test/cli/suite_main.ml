@@ -127,9 +127,18 @@ let exits =
     test "after" (fun () -> equal ~msg:"deliberate" int 1 2);
   ]
 
-(* A property that fails on its first case: its block ends on the replay
+(* A property that fails on its first case: its report ends on the replay
    line, the command a report spells for the way the run was started. *)
 let property = [ prop "boom" Gen.int (fun _ -> equal int 1 2) ]
+
+(* Two properties that fail on a case the seed picks, beside a test that
+   passes: one replay line reruns the two, each on its own case. *)
+let properties =
+  [
+    test "passes" (fun () -> is_true true);
+    prop "even" Gen.int (fun n -> is_true (n mod 2 = 0));
+    prop "small" Gen.int (fun n -> is_true (abs n < 1000));
+  ]
 
 (* An expected failure whose own message is the sentence the runner
    writes for an unexpected pass: the report must still read it as the
@@ -180,6 +189,7 @@ let () =
     | Some "stops" -> (Sys.argv, stops)
     | Some "exits" -> (Sys.argv, exits)
     | Some "property" -> (Sys.argv, property)
+    | Some "properties" -> (Sys.argv, properties)
     | Some "no-argv" -> ([||], property)
     | Some "collide" -> (Sys.argv, collide)
     | Some "release" -> (Sys.argv, release)

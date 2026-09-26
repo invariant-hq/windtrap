@@ -42,7 +42,6 @@ mylib: 12 tests (seed s1:7be1d2c904aa31f5)
       «d|test/test_geo.ml:18»
       «d|expected»  «g|true»
       «d|actual»    «r|false»
-    replay: dune exec test/main.exe -- --seed s1:7be1d2c904aa31f5 -f 'geo › area non-negative'
 
   «r|FAIL»  «b|db › insert»                                «d|0.2ms»
     «d|test/test_db.ml:21»
@@ -67,4 +66,5 @@ mylib: 12 tests (seed s1:7be1d2c904aa31f5)
 «y|flaky tests (1):»
 «y|  passed on attempt 3  flaky › eventually»
 
+replay: dune exec test/main.exe -- --seed s1:7be1d2c904aa31f5 --failed
 5 passed «y|(1 flaky)», «y|1 skipped», «r|7 failed» in 6.5s.

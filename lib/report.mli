@@ -187,6 +187,10 @@ val finish :
       compact run that has printed no header prints it before the first.
     - what [before_summary ()] writes. It runs after [out] is flushed and
       defaults to doing nothing.
+    - the {!Report_sections.replay} line of the failures of the counted failed
+      results, over the run's selection ([`Failed config]), when one of them
+      drew generated values. It reruns every failed test, so no block carries
+      one.
     - the summary. It is the last line of the transcript, save the one hint of
       an empty run. The verdict of an armed run and the report of a loop follow
       it (see {{!section-mutation}mutation lines}).
@@ -228,9 +232,11 @@ val interrupted :
     that a signal is stopping. It first says on standard error ({!Os.say}) what
     the signal interrupted: the test at [running], or when [running] is [None]
     the release of the fixture [releasing], or else the gap between two tests.
-    It then calls {!finish} over [results], with [before_summary], without
-    [baselines] and with no failed release, since a signal stops the release
-    before it returns any failure. *)
+    It then ends as {!finish} does over [results], with [before_summary],
+    without [baselines] and with no failed release, since a signal stops the
+    release before it returns any failure. No [replay:] line prints: the signal
+    leaves the last-failed store as it was, and [--failed] would select the
+    failures of an earlier run. *)
 
 (** {1:github The GitHub Actions envelope}
 
@@ -261,9 +267,10 @@ val annotation :
     at [path]. Its [file] and [line] are those of the location of [f], when it
     has one, and its title is [Test failure: <path>]. The message is the
     {!Report_sections.pp_failure} entry of [f] without styling and without the
-    source line, hint lines included, with [path] as their filter. [invocation]
-    and [armed] are those of {!Report_sections.hints}, and [invocation] defaults
-    to [`Mirrors]. *)
+    source line, hint lines included, with [path] as their filter. An annotation
+    is read alone, away from the run's last-failed store, so its [replay:] names
+    the test. [invocation] and [armed] are those of {!Report_sections.hints},
+    and [invocation] defaults to [`Mirrors]. *)
 
 val annotations :
   ?invocation:Run.invocation ->

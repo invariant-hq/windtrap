@@ -320,9 +320,9 @@ let failure_block t (r : Run.result) =
   block_body t ~hints:true r failures
 
 (* An expected failure's block is a counted one's, dim past each line's
-   indent, so it reads as evidence. It has no hints: an [accept:] or a
-   [replay:] would act on a failure the test expects. The text is escaped
-   already, and escaping is idempotent. *)
+   indent, so it reads as evidence. It has no hints: an [accept:] would act
+   on a failure the test expects. The text is escaped already, and escaping
+   is idempotent. *)
 let excused_block t (r : Run.result) =
   let buffer = Buffer.create 256 in
   let out = Format.formatter_of_buffer buffer in
@@ -645,7 +645,10 @@ let corrections_section ~accepted t rows =
 
 let rec drop n = function _ :: rest when n > 0 -> drop (n - 1) rest | l -> l
 
-let finish t ~results ~release_failures ~duration ?baselines
+(* The replay line sits on the summary, as a loop's [reproduce:] sits on its
+   outcome, so the last line still says how the run ended. A signal leaves
+   the last-failed store as it was, so an interrupted run has none. *)
+let close t ~replay ~results ~release_failures ~duration ?baselines
     ?(before_summary = ignore) () =
   sync t;
   clear_live t;
@@ -715,8 +718,16 @@ let finish t ~results ~release_failures ~duration ?baselines
   Pp.flush t.out ();
   before_summary ();
   if owed then put t [];
+  if replay then
+    Option.iter
+      (fun line -> put t [ plain line ])
+      (Sections.replay ?armed:t.armed ~invocation:t.config.invocation
+         ~tests:(`Failed t.config)
+         (List.concat_map failures failed));
   summary_line t summary ~duration;
   Pp.flush t.out ()
+
+let finish = close ~replay:true
 
 (* A path is one line of the diagnostic, whatever it holds. *)
 let interrupted t ?before_summary ?releasing ~running ~results ~duration () =
@@ -730,7 +741,8 @@ let interrupted t ?before_summary ?releasing ~running ~results ~duration () =
     | None, Some fixture ->
         "interrupted while releasing " ^ Text.escape_controls fixture
     | None, None -> "interrupted between tests");
-  finish t ~results ~release_failures:[] ~duration ?before_summary ()
+  close t ~replay:false ~results ~release_failures:[] ~duration ?before_summary
+    ()
 
 let observe t ~seed ~selection = function
   | Run.Run_started { suite; total; selected; properties } ->
