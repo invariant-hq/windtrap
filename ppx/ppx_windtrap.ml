@@ -138,6 +138,18 @@ let registration ~loc fn args =
   let fn = evar ~loc ("Ppx_windtrap_runtime.Ppx_runtime." ^ fn) in
   [%stri let () = [%e pexp_apply ~loc fn (library @ args)]]
 
+(* [body] out of tail position: the frame of the test's function stays on the
+   stack while [body]'s last call runs, so an assertion that ends [body]
+   captures its own line. The constraint types [body] against [unit] as the
+   tail position did, and [raise_notrace] leaves the backtrace that [body]
+   recorded as it is. *)
+let out_of_tail body =
+  let loc = { body.pexp_loc with loc_ghost = true } in
+  [%expr
+    match ([%e body] : unit) with
+    | () -> ()
+    | exception __windtrap_e -> Stdlib.raise_notrace __windtrap_e]
+
 let add_test ~ctxt ~tags name body =
   let at = Expansion_context.Extension.extension_point_loc ctxt in
   let loc = { at with loc_ghost = true } in
@@ -267,7 +279,7 @@ let expect_test =
                 ~nodes:[%e elist ~loc nodes]
                 (fun () ->
                   (Expect_test_config.run : (unit -> unit) -> unit) (fun () ->
-                      [%e body]))
+                      [%e out_of_tail body]))
                 (fun () -> [%e sanitized_output ~loc])]
           in
           when_enabled [ add_test ~ctxt ~tags name body ]
@@ -283,7 +295,7 @@ let test =
       match items with
       | [ { pstr_desc = Pstr_value (Nonrecursive, [ vb ]); _ } ] ->
           let name, tags, body = test_of_binding ~extension:"test" ~loc:at vb in
-          when_enabled [ add_test ~ctxt ~tags name body ]
+          when_enabled [ add_test ~ctxt ~tags name (out_of_tail body) ]
       | [
        {
          pstr_desc =

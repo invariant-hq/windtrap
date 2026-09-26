@@ -137,8 +137,9 @@ shop: 2 tests
 The assertion above is the last expression of its body, in tail
 position, and its failure is located at the test's declaration line. To
 locate a failure at the assertion's own line, pass the assertion
-`~__POS__`. A helper that wraps a verb takes `?__POS__` and passes it on
-(see `Windtrap.pos`).
+`~__POS__`. An assertion that ends a `let%test` or `let%expect_test`
+body is located at its own line without it. A helper that wraps a verb
+takes `?__POS__` and passes it on (see `Windtrap.pos`).
 
 `test/test_assertions.ml`:
 

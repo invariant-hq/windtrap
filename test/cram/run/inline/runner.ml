@@ -12,6 +12,7 @@ module _ = Masked
 module _ = Release
 module _ = Sanitized
 module _ = Stale
+module _ = Tail
 module _ = Trailing
 module _ = Unreached
 

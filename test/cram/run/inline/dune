@@ -11,6 +11,7 @@
   release
   sanitized
   stale
+  tail
   trailing
   unreached)
  (libraries windtrap ppx_windtrap.runtime)

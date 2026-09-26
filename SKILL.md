@@ -174,7 +174,8 @@ Read the whole block before editing anything. It holds:
 
 - `FAIL` and the test's path, then its location and source line. An
   assertion in tail position reports the test's declaration line; add
-  `~__POS__` to the assertion for its own line.
+  `~__POS__` to the assertion for its own line. An assertion that ends a
+  `let%test` or `let%expect_test` body reports its own line.
 - `expected` then `actual`, or a diff marked `-` for the expected text
   and `+` for the actual; for a property, `counterexample (case K,
   shrunk N steps):` with the value, `which failed at:` and the

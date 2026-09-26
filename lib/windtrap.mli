@@ -60,7 +60,9 @@ type pos = string * int * int * int
 
     The capture finds nothing for an assertion in tail position, whose frame is
     gone when it raises. The failure then reports the [file:line] of the test's
-    declaration. [~__POS__] on the assertion gives the assertion's line.
+    declaration. [~__POS__] on the assertion gives the assertion's line. An
+    assertion that ends a [let%test] or [let%expect_test] body is not in tail
+    position once [ppx_windtrap] has expanded the body, and gives its own line.
 
     A helper that wraps a verb or a constructor reports a line of its own. *)
 

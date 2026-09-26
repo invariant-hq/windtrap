@@ -26,6 +26,11 @@
     test its tags; every other attribute of [NAME] or of the binding is dropped,
     [[@@tags]] included. [BODY] has type [unit].
 
+    [BODY] is evaluated out of tail position, as by
+    [match (BODY : unit) with () -> () | exception e -> raise_notrace e], so an
+    assertion that ends it is located at its own line. An exception from [BODY]
+    keeps the backtrace that [BODY] recorded.
+
     [Expect_test_config.run], applied at the type [(unit -> unit) -> unit],
     receives [fun () -> BODY]. The name is not qualified: the definition of
     [Expect_test_config] in scope where the test is written governs it, and a

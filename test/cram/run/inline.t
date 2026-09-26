@@ -4,7 +4,8 @@ and `-list-partitions` names the files. runner.exe is the main that the
 inline_tests backend generates, over the fixtures of inline/, which
 belong to no library. The report's suites pin what a report prints; this
 session pins what only a process shows: the exit status, the stream,
-the files a run leaves and the tests a runner runs.
+the files a run leaves, the tests a runner runs and the line that the
+call stack gives a failure.
 
 A run's environment is stated, and its logs stay in this directory:
 
@@ -29,6 +30,7 @@ test, sorted, and exits 0:
   release.ml
   sanitized.ml
   stale.ml
+  tail.ml
   trailing.ml
   unreached.ml
 
@@ -199,3 +201,17 @@ and each functor instance is a test of its own:
       the body returned without reaching this node
   $ test -e inline/unreached.ml.corrected || echo 'no correction'
   no correction
+
+Locations
+
+The assertion that ends a let%test or a let%expect_test body is
+located at its own line, not at the test's declaration:
+
+  $ partition tail.ml
+  [1]
+  $ grep -E -A1 'tail\.ml:[0-9]' out
+      test/cram/run/inline/tail.ml:10
+        10 │ Windtrap.(equal int 1 two)
+  --
+      test/cram/run/inline/tail.ml:15
+        15 │ Windtrap.is_true false

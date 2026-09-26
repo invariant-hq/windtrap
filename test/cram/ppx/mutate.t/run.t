@@ -506,7 +506,10 @@ after, and the reason of a dismissed site.
   let () =
     Ppx_windtrap_runtime.Ppx_runtime.add_test ~file:"./fixture_inline_tests.ml"
       ~pos:("./fixture_inline_tests.ml", 8, 0, 60) ~tags:[] "sums"
-      (fun () -> if (sum 1 2) = 3 then () else failwith "sum")
+      (fun () ->
+         match (if (sum 1 2) = 3 then () else failwith "sum" : unit) with
+         | () -> ()
+         | exception __windtrap_e -> Stdlib.raise_notrace __windtrap_e)
   let () =
     Ppx_windtrap_runtime.Ppx_runtime.enter_group
       ~file:"./fixture_inline_tests.ml" ~tags:[] "Grouped"
@@ -517,7 +520,12 @@ after, and the reason of a dismissed site.
         Ppx_windtrap_runtime.Ppx_runtime.add_test
           ~file:"./fixture_inline_tests.ml"
           ~pos:("./fixture_inline_tests.ml", 12, 2, 78) ~tags:[] "orders"
-          (fun () -> if (ordered 1 (twice 1)) > 0 then () else failwith "order")
+          (fun () ->
+             match (if (ordered 1 (twice 1)) > 0 then () else failwith "order" : 
+               unit)
+             with
+             | () -> ()
+             | exception __windtrap_e -> Stdlib.raise_notrace __windtrap_e)
     end
   let () = Ppx_windtrap_runtime.Ppx_runtime.leave_group ()
   let () =
@@ -531,12 +539,17 @@ after, and the reason of a dismissed site.
            (fun () ->
               (Expect_test_config.run : (unit -> unit) -> unit)
                 (fun () ->
-                   print_int ((sum 1 2) - 1);
-                   Ppx_windtrap_runtime.Ppx_runtime.reach
-                     ("./fixture_inline_tests.ml", 17, 2, 19);
-                   Windtrap.expect
-                     (Expect_test_config.sanitize (Windtrap.output ()))
-                     (("./fixture_inline_tests.ml", 17, 2, 19), {| 2 |})))
+                   match (print_int ((sum 1 2) - 1);
+                          Ppx_windtrap_runtime.Ppx_runtime.reach
+                            ("./fixture_inline_tests.ml", 17, 2, 19);
+                          Windtrap.expect
+                            (Expect_test_config.sanitize (Windtrap.output ()))
+                            (("./fixture_inline_tests.ml", 17, 2, 19), {| 2 |}) : 
+                     unit)
+                   with
+                   | () -> ()
+                   | exception __windtrap_e ->
+                       Stdlib.raise_notrace __windtrap_e))
            (fun () -> Expect_test_config.sanitize (Windtrap.output ())))
 
   $ mut --impl ./fixture_lazy.ml | ../elide.exe
