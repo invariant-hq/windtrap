@@ -677,6 +677,112 @@ let reach_tests =
           err);
   ]
 
+(* A test marked xfail reaches no mutant. The [known] suite pairs each of
+   [sub] and [widen] with an ordinary test that pins nothing and an xfail
+   test, and gives [orphan] an xfail test alone. [sub adds] passes where
+   [sub]'s mutant is armed: counted as a reaching test, it would kill that
+   mutant, and [orphan] would survive with an xfail test named as one that
+   did not fail. *)
+let known_loop =
+  lazy
+    ((try Sys.remove verdict_path with Sys_error _ -> ());
+     let code, out, err =
+       spawn ~args:[ mutate ] [ ("MUTATE_FIXTURE", "known") ]
+     in
+     { code; out; err; saved = read_file verdict_path })
+
+let known_armed index =
+  spawn
+    ~args:[ "--arm"; List.nth (Lazy.force catalogue) index ]
+    [ ("MUTATE_FIXTURE", "known") ]
+
+let xfail_tests =
+  [
+    test "no survivor names an xfail test, and no xfail test kills a mutant"
+      (fun () ->
+        let { code; out; err; _ } = Lazy.force known_loop in
+        equal ~msg:"exit code" int 0 code;
+        equal ~msg:"stderr" text "" err;
+        let summary, report =
+          match String.index_opt out '\n' with
+          | Some i ->
+              (String.sub out 0 i, String.sub out i (String.length out - i))
+          | None -> (out, "")
+        in
+        is_true ~msg:"the dry run counts the xfail tests as expected failures"
+          (String.starts_with ~prefix:"calc: 2 passed, 3 expected failures in "
+             summary);
+        equal ~msg:"the report after the summary, whole" text
+          ("\n\n\
+            ─────────────────────── survivors ────────────────────────\n\
+           \  SURVIVED  " ^ mutant_named "add"
+         ^ "  a - b \u{2192} a + b\n\
+           \      15 \u{2502} let sub a b = a - b\n\n\
+           \    1 test ran this line and did not fail:\n\
+           \      known \u{203a} watches sub without pinning it  \
+            test/instr/loop/suite_main.ml:<line>\n\n\
+           \  SURVIVED  " ^ mutant_named "sub"
+         ^ "  a + b \u{2192} a - b\n\
+           \      18 \u{2502} let widen a b = a + b\n\n\
+           \    1 test ran this line and did not fail:\n\
+           \      known \u{203a} widen is nonzero  \
+            test/instr/loop/suite_main.ml:<line>\n\
+            ──────────────────────────────────────────────────────────\n\n\
+            ─────────────────── never reached (2) ────────────────────\n\
+           \  2  test/instr/loop/subject.ml   lines 21, 27\n\
+            ──────────────────────────────────────────────────────────\n\n\
+            reproduce: " ^ suite_exe ^ " --arm " ^ mutant_named "add"
+         ^ "\nmutants: 2 survived of 2 reached by this suite, 2 never reached\n"
+          )
+          (masked report));
+    test "the verdict file names no xfail test" (fun () ->
+        let { saved; _ } = Lazy.force known_loop in
+        match load_saved saved with
+        | Error e -> failf "verdict file unreadable: %a" V.pp_error e
+        | Ok (verdicts, _) ->
+            equal ~msg:"sub and widen survive their ordinary tests alone"
+              (list string)
+              [
+                "15 survived by known > watches sub without pinning it";
+                "18 survived by known > widen is nonzero";
+                "21 unreached";
+                "27 unreached";
+              ]
+              (List.map
+                 (fun (r : V.record) ->
+                   Format.asprintf "%d %a" r.V.id.M.line pp_verdict r.V.verdict)
+                 (V.records verdicts)));
+    test "an armed mutant that only an xfail test runs is not reached"
+      (fun () ->
+        let code, out, _ = known_armed 2 in
+        equal ~msg:"the xfail test failed as expected" int 0 code;
+        contains ~msg:"the closing line names the xfail tests"
+          ~sub:"\nmutant not reached: only xfail tests ran the site.\n" out;
+        not_contains ~msg:"no survivor claim" ~sub:"mutant survived" out);
+    test "an armed mutant that an xfail test passes on survives" (fun () ->
+        let code, out, _ = known_armed 0 in
+        equal ~msg:"the unexpected pass fails the run" int 1 code;
+        contains ~msg:"and prints as the failure it is"
+          ~sub:"expected to fail (sub subtracts), but the test passed" out;
+        contains ~msg:"the closing line says only xfail tests failed"
+          ~sub:
+            "\n\
+             mutant survived: the site was evaluated 2 times and only xfail \
+             tests failed.\n"
+          out;
+        not_contains ~msg:"no kill" ~sub:"mutant killed." out);
+    test "an armed mutant an xfail test also runs counts every evaluation"
+      (fun () ->
+        let code, out, _ = known_armed 1 in
+        equal ~msg:"exit code" int 0 code;
+        contains ~msg:"the closing line"
+          ~sub:
+            "\n\
+             mutant survived: the armed site was evaluated 2 times and no test \
+             failed.\n"
+          out);
+  ]
+
 (* Child hygiene: a mutation child leaves through [Unix._exit] and nothing
    else, so no [at_exit] handler of the parent's image ever runs in one,
    which is what stops a crashing child overwriting the parent's
@@ -2229,6 +2335,7 @@ let () =
          group "scope" scope_tests;
          group "loop" loop_tests;
          group "reach map" reach_tests;
+         group "xfail" xfail_tests;
          group "dry run and children" dry_run_tests;
          group "no trace outside the pipe" no_trace_tests;
          group "verdict file" verdict_file_tests;

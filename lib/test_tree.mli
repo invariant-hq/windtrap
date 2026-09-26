@@ -235,8 +235,9 @@ val focus : t -> t
 val xfail : ?reason:string -> t -> t
 (** [xfail ?reason t] is [t] marked as expected to fail. The mark is inert here,
     and the runner inverts what counts as failed for such a test (see
-    {!Run.result.counted}). [reason] is the known defect, and without it the
-    annotation is [{ reason = None }].
+    {!Run.result.counted}). Such a test reaches no mutant (see {!Mutate_loop}).
+    [reason] is the known defect, and without it the annotation is
+    [{ reason = None }].
 
     The annotation nearest a test is the one that its {!type-case} carries. On
     one node the first one applied stays, so

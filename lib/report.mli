@@ -290,9 +290,9 @@ val annotations :
     An armed process announces its mutant before any other output and ends on
     one verdict line (guarantee 12 of [doc/dev/architecture.md]). The order is
     the client's: a client must call {!mutation_armed} before {!run} and at most
-    one of the three verdict functions after it.
+    one of the four verdict functions after it.
 
-    These four functions erase the live line and write their line, and do not
+    These five functions erase the live line and write their line, and do not
     flush: a client must flush [out] and the standard descriptors after the
     announcement and after the verdict. *)
 
@@ -303,16 +303,22 @@ val mutation_armed : t -> id:string -> before:string -> after:string -> unit
 
 val mutation_killed : t -> unit
 (** [mutation_killed t] prints the verdict of an armed run in which the mutant
-    made a test fail. *)
+    made a test fail, tests marked xfail aside. *)
 
-val mutation_survived : t -> hits:int -> unit
-(** [mutation_survived t ~hits] prints the verdict of an armed run in which no
-    test failed although the armed site was evaluated. The line states [hits],
-    the number of evaluations. *)
+val mutation_survived : t -> hits:int -> xfail_failed:bool -> unit
+(** [mutation_survived t ~hits ~xfail_failed] prints the verdict of an armed run
+    in which no test failed although the armed site was evaluated, tests marked
+    xfail aside. The line states [hits], the number of evaluations. When
+    [xfail_failed] is [true], a test marked xfail passed, which fails it, and
+    the line says that only such tests failed. *)
 
 val mutation_not_evaluated : t -> unit
 (** [mutation_not_evaluated t] prints the verdict of an armed run in which no
     selected test evaluated the armed site. *)
+
+val mutation_not_reached : t -> unit
+(** [mutation_not_reached t] prints the verdict of an armed run in which only
+    tests marked xfail evaluated the armed site. *)
 
 (** {2:loop The report of a loop}
 

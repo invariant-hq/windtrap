@@ -261,7 +261,8 @@ val xfail : ?reason:string -> test -> test
 (** [xfail ?reason t] is [t] expected to fail. The test still runs. A failure
     counts as an expected failure in the summary and leaves the exit code, [-x]
     and the last failed tests alone. A test that passes fails. A skip stays a
-    skip. Prefer {!skip} when the body must not run. *)
+    skip. In mutation testing it reaches no mutant and kills none. Prefer
+    {!skip} when the body must not run. *)
 
 (** {1:assertions Assertions}
 

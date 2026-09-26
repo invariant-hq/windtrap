@@ -237,6 +237,17 @@ run exits 0 whatever it finds. A run whose selection narrows the suite
 saves no verdict, since its partial answer would stand for the whole
 suite in the merge.
 
+## A known bug tests no mutant
+
+A test marked `xfail` asserts what the code does not do yet, so its
+failure is normal and tells nothing of a mutant. Named in a survivor's
+block, it would send a reader to strengthen a test meant to fail. A
+mutant that makes it pass reads as a fix of the bug. Rewriting `&&` to
+`||` in a slug's letter test keeps every byte, which breaks the
+separators and passes a test of accented letters. An `xfail` test
+therefore reaches no mutant, and a line that only such tests run is
+never reached.
+
 ## Equivalent mutants are dismissed in the source
 
 Some mutants cannot be killed: `n >= 0` and `n > 0` agree wherever both

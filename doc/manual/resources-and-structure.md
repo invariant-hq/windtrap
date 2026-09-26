@@ -404,7 +404,9 @@ let clock =
 
 `xfail ~reason t` runs the test or group `t` and counts its failure as
 expected, so the run stays green. It fails when `t` passes, and the
-report says it was expected to fail. Under `-v` the failure prints dim
+report says it was expected to fail. In
+[mutation testing](mutation.md#what-a-mutation-run-runs) it reaches no
+mutant. Under `-v` the failure prints dim
 under its `XFAIL` line:
 
 <!-- run examples/06-resources-and-structure -->

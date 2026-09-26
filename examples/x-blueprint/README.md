@@ -113,9 +113,12 @@ suite, and `--force` reruns the suites dune has cached:
 WINDTRAP_MUTATE=1 dune build @mutate --force
 ```
 
-Each suite prints its mutation report as it ends. The known-bug suite and
-the expect library reach mutants in `lib/slug.ml` that only `test/unit`
-pins, and list them. The merge counts a mutant killed when any
+Each suite prints its mutation report as it ends. The expect library
+reaches mutants in `lib/slug.ml` that only `test/unit` pins, and lists
+them. The known-bug suite's one test is under `xfail`, which reaches no
+mutant, so its report lists the lines of `lib/slug.ml` as never reached
+(see [What a mutation run runs](../../doc/manual/mutation.md#what-a-mutation-run-runs)).
+The merge counts a mutant killed when any
 executable killed it, and prints the alias's last line. `windtrap
 mutants` prints the merge again:
 

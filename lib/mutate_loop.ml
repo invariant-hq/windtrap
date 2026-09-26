@@ -98,7 +98,8 @@ let is_skip (r : Run.result) =
   | Failure.Pass | Failure.Fail _ -> false
 
 (* The drain at [Test_started] precedes the epoch bump: what it collects ran
-   outside any test, and a warm-forked child cannot arm it. *)
+   outside any test, and a warm-forked child cannot arm it. A test marked
+   xfail reaches no mutant, so what it evaluated is drained and dropped. *)
 let observe reach (event : Run.event) =
   match event with
   | Run.Run_started _ | Run.Fixture_release _ | Run.Interrupted _ -> ()
@@ -117,7 +118,8 @@ let observe reach (event : Run.event) =
               (if site.hits > max_int - reached.hits then max_int
                else site.hits + reached.hits)
       in
-      List.iter add (Mutate.drain ());
+      let reached = Mutate.drain () in
+      if Option.is_none result.xfail then List.iter add reached;
       reach.executed <- result.path :: reach.executed;
       Hashtbl.replace reach.durations
         (Test_tree.path_to_string result.path)
@@ -447,10 +449,14 @@ let probe loop =
 (* Verdicts *)
 
 (* Read off the outcome and never off its exit code, which is [2] for a
-   selection that ran nothing: a fact about a filter, not about a mutant. *)
+   selection that ran nothing: a fact about a filter, not about a mutant.
+   The unexpected pass of a test marked xfail counts as a failure of the run
+   and kills no mutant. *)
 let killed_by (outcome : Run.outcome) =
   outcome.release_failures <> []
-  || List.exists counted_failure (Run.results outcome.run)
+  || List.exists
+       (fun (r : Run.result) -> Option.is_none r.xfail && counted_failure r)
+       (Run.results outcome.run)
 
 (* A child that recorded no test did not test its mutant: a survivor would
    send the reader to strengthen tests that never ran. *)
@@ -742,6 +748,26 @@ let loop renderer ~scope ~suite (config : Run.config) tests =
 
 (* The armed run *)
 
+(* The evaluations of the armed site inside tests marked xfail, which reach
+   no mutant, saturating at [max_int]. *)
+type xfail_hits = { mutable at_start : int; mutable hits : int }
+
+let count_xfail_hits counter (event : Run.event) =
+  match event with
+  | Run.Test_started _ -> counter.at_start <- Mutate.armed_hits ()
+  | Run.Test_finished { xfail = Some _; _ } ->
+      let hits = Mutate.armed_hits () - counter.at_start in
+      counter.hits <-
+        (if counter.hits > max_int - hits then max_int else counter.hits + hits)
+  | Run.Test_finished { xfail = None; _ }
+  | Run.Run_started _ | Run.Fixture_release _ | Run.Interrupted _ ->
+      ()
+
+let xfail_failed (outcome : Run.outcome) =
+  List.exists
+    (fun (r : Run.result) -> Option.is_some r.xfail && counted_failure r)
+    (Run.results outcome.run)
+
 let armed renderer ~spec ~suite (config : Run.config) tests =
   match Result.bind (Mutate.id_of_string spec) Mutate.arm with
   | Error (Mutate.Uncatalogued _ as error) ->
@@ -757,13 +783,20 @@ let armed renderer ~spec ~suite (config : Run.config) tests =
         ~after:mutant.after;
       flush_descriptors ();
       Mutate.reset_reach ();
-      let result = Report.run ~suite config tests in
+      let xfail = { at_start = 0; hits = 0 } in
+      let result =
+        Report.run ~on_event:(count_xfail_hits xfail) ~suite config tests
+      in
       (match result with
       | Ok outcome when killed_by outcome -> Report.mutation_killed renderer
       | Ok outcome when outcome.exit_code <> 2 -> (
-          match Mutate.armed_hits () with
-          | 0 -> Report.mutation_not_evaluated renderer
-          | hits -> Report.mutation_survived renderer ~hits)
+          let hits = Mutate.armed_hits () in
+          match (hits - xfail.hits, xfail.hits) with
+          | 0, 0 -> Report.mutation_not_evaluated renderer
+          | 0, _ -> Report.mutation_not_reached renderer
+          | _ ->
+              Report.mutation_survived renderer ~hits
+                ~xfail_failed:(xfail_failed outcome))
       | Ok _ | Error _ -> ());
       flush_descriptors ();
       Ran result

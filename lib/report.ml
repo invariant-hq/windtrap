@@ -812,21 +812,30 @@ let mutation_killed t =
   clear_live t;
   put t [ styled `Green "mutant killed." ]
 
-let mutation_survived t ~hits =
+let mutation_survived t ~hits ~xfail_failed =
   clear_live t;
-  put t
-    [
-      styled `Red
-        (strf
-           "mutant survived: the armed site was evaluated %d time%s and no \
-            test failed."
-           hits (plural hits));
-    ]
+  let line =
+    if xfail_failed then
+      strf
+        "mutant survived: the site was evaluated %d time%s and only xfail \
+         tests failed."
+        hits (plural hits)
+    else
+      strf
+        "mutant survived: the armed site was evaluated %d time%s and no test \
+         failed."
+        hits (plural hits)
+  in
+  put t [ styled `Red line ]
 
 let mutation_not_evaluated t =
   clear_live t;
   put t
     [ styled `Yellow "mutant not evaluated: no selected test ran the site." ]
+
+let mutation_not_reached t =
+  clear_live t;
+  put t [ styled `Yellow "mutant not reached: only xfail tests ran the site." ]
 
 let mutation_testing t ~index ~total ~id =
   progress t (strf "[%d/%d] %s\u{2026}" index total id)

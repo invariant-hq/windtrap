@@ -384,6 +384,21 @@ let focused =
     test "widen is not 99" (fun () -> is_true (Subject.widen 1 2 <> 99));
   ]
 
+(* Tests marked xfail beside ordinary ones that pin nothing. [sub adds]
+   asserts what [sub]'s mutant computes, so it passes where that mutant is
+   armed; [widen is 99] fails armed or not; [orphan is 99] is the only test
+   that runs [orphan]. None of the three reaches a mutant. *)
+let known =
+  [
+    test "watches sub without pinning it" (fun () ->
+        is_true (Subject.sub 10 4 < 100));
+    xfail ~reason:"sub subtracts"
+      (test "sub adds" (fun () -> equal int 7 (Subject.sub 3 4)));
+    test "widen is nonzero" (fun () -> is_true (Subject.widen 3 4 <> 0));
+    xfail (test "widen is 99" (fun () -> equal int 99 (Subject.widen 1 2)));
+    xfail (test "orphan is 99" (fun () -> equal int 99 (Subject.orphan 1 2)));
+  ]
+
 let retried = ref 0
 let handle = fixture ~teardown:(fun () -> ignore (Subject.crasher 3 1)) Fun.id
 
@@ -423,6 +438,7 @@ let () =
   | "budget" -> exit @@ run "calc" [ group "budget" budget ]
   | "flip" -> exit @@ run "calc" [ group "flip" flip ]
   | "focused" -> exit @@ run "calc" [ group "focused" focused ]
+  | "known" -> exit @@ run "calc" [ group "known" known ]
   | "crash" ->
       exit
       @@ run "calc"

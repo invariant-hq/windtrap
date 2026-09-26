@@ -54,7 +54,8 @@ val execute_and_report : suite:string -> Run.config -> Test_tree.t list -> run
       cleared. Every other field is that of [config], [baseline] included, so
       the dry run of a [--mutate -u] run accepts what a [-u] run accepts. A site
       that the dry run evaluated only outside a test, at module initialization
-      or in a fixture release, counts as unreached.
+      or in a fixture release, counts as unreached. So does a site that only
+      tests marked xfail evaluated.
     + It runs the determinism probe, which is one unarmed child over the tests
       that the dry run executed. The probe agrees iff it executed as many tests,
       skipped as many and counted no failure.
@@ -72,6 +73,10 @@ val execute_and_report : suite:string -> Run.config -> Test_tree.t list -> run
     counted a failure, that of a fixture release included. It is also killed
     when its child reported no survivor, because the child recorded no test,
     passed its deadline, did not exit with [0], or left no complete line.
+
+    {b Tests marked xfail.} A test marked xfail ({!Test_tree.val-xfail}) reaches
+    no mutant and kills none. The dry run and the probe run it, no child runs
+    it, and no survivor names it.
 
     {b Limits.} Nothing bounds a whole run. A child that passes its deadline has
     its process group killed, and the loop goes on. The deadline is the time
@@ -140,6 +145,10 @@ val execute_and_report : suite:string -> Run.config -> Test_tree.t list -> run
       the ordinary run under {!Run.No_mutation}.
     - With the mutant armed, it runs {!Report.run} with [baseline] set to
       {!Baseline.Check}, so it records no correction.
+    - Its verdict leaves out the tests marked xfail, as the loop does. The
+      unexpected pass of such a test fails the run and kills no mutant, and a
+      site that only such tests evaluated is not reached
+      ({!Report.mutation_not_reached}).
 
     The result of an armed run is [Ran], so its exit code is that of the
     ordinary run, [2] included, and it writes its JUnit file. *)

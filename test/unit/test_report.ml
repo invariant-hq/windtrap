@@ -5012,15 +5012,22 @@ let test_mutation_escapes () =
   not_contains ~msg:"never raw" ~sub:"\027[31ma" out
 
 let test_mutation_armed_verdict () =
-  let survived hits =
-    with_renderer (fun r -> Report.mutation_survived r ~hits)
+  let survived ?(xfail_failed = false) hits =
+    with_renderer (fun r -> Report.mutation_survived r ~hits ~xfail_failed)
   in
   equal ~msg:"evaluated once" string
     "mutant survived: the armed site was evaluated 1 time and no test failed.\n"
     (survived 1);
   equal ~msg:"evaluated twice" string
     "mutant survived: the armed site was evaluated 2 times and no test failed.\n"
-    (survived 2)
+    (survived 2);
+  equal ~msg:"an xfail test passed" string
+    "mutant survived: the site was evaluated 2 times and only xfail tests \
+     failed.\n"
+    (survived ~xfail_failed:true 2);
+  equal ~msg:"only xfail tests ran the site" string
+    "mutant not reached: only xfail tests ran the site.\n"
+    (with_renderer Report.mutation_not_reached)
 
 (* The GitHub Actions envelope: golden ::error annotation, %0A/%25
    data encoding, %3A/%2C property encoding, ANSI stripping, group folding
@@ -6016,8 +6023,10 @@ let test_armed_lines_do_not_flush () =
       ( "mutation_armed",
         fun r -> Report.mutation_armed r ~id:"x" ~before:"a" ~after:"b" );
       ("mutation_killed", Report.mutation_killed);
-      ("mutation_survived", fun r -> Report.mutation_survived r ~hits:2);
+      ( "mutation_survived",
+        fun r -> Report.mutation_survived r ~hits:2 ~xfail_failed:false );
       ("mutation_not_evaluated", Report.mutation_not_evaluated);
+      ("mutation_not_reached", Report.mutation_not_reached);
     ]
 
 let test_mutation_refused () =

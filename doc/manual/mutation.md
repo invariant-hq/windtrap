@@ -224,6 +224,10 @@ the withheld-correction warning:
   or evaluates its site more than `hits * 8 + 1000` times, `hits` being
   the dry run's count, is killed, and its mutant counts as killed.
 
+A test marked `xfail` reaches no mutant. The dry run and the probe run
+it, and no child does. A line that only such tests run is never
+reached, and an `--arm` run of its mutant ends on `mutant not reached`.
+
 The mutation run exits 0 whatever it finds. It exits 1, with a sentence
 on standard error, when a pass fails or no mutant is left to test.
 
