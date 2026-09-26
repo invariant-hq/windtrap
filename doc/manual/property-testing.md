@@ -141,7 +141,7 @@ geo: 1 test (seed s1:5b58964be30f69a8)
     examples/03-property-testing/test_geo.ml:27
       27 │ prop "is read back by of_string" gen_shape (fun s ->
 
-    counterexample (case 0, shrunk 6 steps): Rect (0, 1)
+    counterexample (case 0, shrunk 7 steps): Rect (0, 1)
     which failed at:
       examples/03-property-testing/test_geo.ml:28
         28 │ equal ~__POS__ (option shape) (Some s)
@@ -152,7 +152,7 @@ geo: 1 test (seed s1:5b58964be30f69a8)
 ──────────────────────────────────────────────────────────
 
 replay: dune exec examples/03-property-testing/test_geo.exe -- --seed s1:5b58964be30f69a8 -f 'to_string'
-1 failed in 1.6ms.
+1 failed in 2.1ms.
 ```
 
 ## Keeping a counterexample as a regression
@@ -233,11 +233,11 @@ label:
 ```
 $ dune exec examples/03-property-testing/test_geo.exe -- -v --seed s1:5b58964be30f69a8 --prop-count 1000 -f inverse
 geo: 1 test (seed s1:5b58964be30f69a8)
-  PASS  inverse › undoes scale by k                1.5ms
+  PASS  inverse › undoes scale by k                1.0ms
     labels (1000 passing cases):
        50.0%  circle
        50.0%  rect
-1 passed in 2.3ms.
+1 passed in 1.5ms.
 ```
 
 ## Generating a recursive type
@@ -304,7 +304,7 @@ geo: 1 test (seed s1:5b58964be30f69a8)
     examples/03-property-testing/test_geo.ml:72
       72 │ prop "is never negative"
 
-    counterexample (case 1, shrunk 8 steps): Group [Circle 1]
+    counterexample (case 6, shrunk 7 steps): Group [Circle 1]
     which failed at:
       examples/03-property-testing/test_geo.ml:77
         77 │ (fun d -> at_least ~__POS__ float_exact ~than:0. (Geo.total_area d));
@@ -313,5 +313,5 @@ geo: 1 test (seed s1:5b58964be30f69a8)
 ──────────────────────────────────────────────────────────
 
 replay: dune exec examples/03-property-testing/test_geo.exe -- --seed s1:5b58964be30f69a8 -f 'total_area'
-1 failed in 0.7ms.
+1 failed in 26ms.
 ```

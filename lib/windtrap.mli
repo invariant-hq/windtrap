@@ -625,11 +625,17 @@ module Gen : sig
   (** The type for generators of ['a] values. The equation is not part of the
       contract. *)
 
-  (** {1:numeric Numbers} *)
+  (** {1:numeric Numbers}
+
+      {!int}, {!int_range}, {!int32}, {!int64} and {!nativeint} draw a corner
+      case with probability 0.1 and draw uniformly otherwise. The corners of a
+      range are its bounds, the point closest to [0] and that point's neighbours
+      inside the range. The corners of a whole type are [0], [1], [-1] and the
+      type's two extremes. *)
 
   val int : int t
-  (** [int] generates an integer uniformly over the whole [int] range. It
-      shrinks toward [0]. *)
+  (** [int] generates an integer over the whole [int] range. It shrinks toward
+      [0]. *)
 
   val nat : int t
   (** [nat] generates a natural number below [10_000], small values more often:
@@ -641,8 +647,8 @@ module Gen : sig
       {!nat}, so a value in \[[-9_999];[9_999]\]. It shrinks toward [0]. *)
 
   val int_range : int -> int -> int t
-  (** [int_range low high] generates an integer in \[[low];[high]\], uniformly.
-      It shrinks toward the point of the range closest to [0]. Sampling raises
+  (** [int_range low high] generates an integer in \[[low];[high]\]. It shrinks
+      toward the point of the range closest to [0]. Sampling raises
       [Invalid_argument] if [high < low]. *)
 
   val int32 : int32 t

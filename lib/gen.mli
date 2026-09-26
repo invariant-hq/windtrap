@@ -50,6 +50,12 @@ type 'a t
     The nine generators print OCaml literals ([3], [3l], [3L], [3n]). A float
     prints as the shortest decimal that round-trips.
 
+    {!int}, {!int_range}, {!int32}, {!int64} and {!nativeint} draw a corner case
+    with probability 0.1, each corner equally likely, and draw uniformly
+    otherwise. The corners of a range are its bounds, its origin and the
+    origin's neighbours inside the range. The corners of a whole type are [0],
+    [1], [-1] and the type's two extremes.
+
     The candidates of an integer [x] with origin [o] are [o] first, then values
     that each close half of the remaining gap to [x], which is not a candidate
     itself. Every candidate lies between [o] and [x]. A candidate's own
@@ -58,8 +64,7 @@ type 'a t
     the same scheme, cut at [15] candidates per node. *)
 
 val int : int t
-(** [int] generates an [int] uniformly over the whole range. It shrinks toward
-    [0]. *)
+(** [int] generates an [int] over the whole range. It shrinks toward [0]. *)
 
 val nat : int t
 (** [nat] generates a natural number below [10_000], small values more often:
@@ -72,9 +77,9 @@ val small_int : int t
     0.5. It shrinks toward [0]. *)
 
 val int_range : int -> int -> int t
-(** [int_range low high] generates an integer in \[[low];[high]\], uniformly.
-    Its origin is the point of the range closest to [0]. Sampling raises
-    [Invalid_argument] if [high < low]. *)
+(** [int_range low high] generates an integer in \[[low];[high]\]. Its origin is
+    the point of the range closest to [0]. Sampling raises [Invalid_argument] if
+    [high < low]. *)
 
 val int32 : int32 t
 (** [int32] is {!int} for the whole [int32] range. It shrinks toward [0l]. *)

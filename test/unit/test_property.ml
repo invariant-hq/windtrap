@@ -471,8 +471,10 @@ let shrink_runs_do_not_pollute_tables () =
     Property.collect ctx "ran";
     Check.is_true (x < 5)
   in
+  (* The examples pass, so the table holds a label whatever case 0 draws. *)
   let outcome =
-    Property.run ~root ~path:"shrink labels" (Gen.int_range 0 100) body
+    Property.run ~root ~path:"shrink labels" ~examples:[ 0; 1; 2 ]
+      (Gen.int_range 0 100) body
   in
   let _, stats = expect_fail outcome in
   is_true ~msg:"shrink re-runs must accumulate into a scratch context only"
@@ -1332,15 +1334,16 @@ let examples_draw_no_seed () =
   (* Two passing examples, then the law fails on the first generated case:
      that case is index 0, the seed the examples would have drawn. *)
   let path = "examples draw nothing" in
+  let first = value_at Gen.int ~root ~path ~index:0 in
   let failure, _ =
     expect_fail
-      (Property.run ~root ~path ~examples:[ -1; -2 ] Gen.int (fun _ v ->
-           Check.is_true (v < 0)))
+      (Property.run ~root ~path
+         ~examples:[ first - 1; first + 1 ]
+         Gen.int
+         (fun _ v -> Check.is_true (v <> first)))
   in
   let _, case_index, _, _, _, examples, _ = property_payload failure in
   is_false ~msg:"a generated case" examples;
-  is_true ~msg:"premise: case 0 fails"
-    (value_at Gen.int ~root ~path ~index:0 >= 0);
   equal ~msg:"the first generated case is index 0" int 0 case_index
 
 let a_timeout_while_formatting_does_not_leave_run () =

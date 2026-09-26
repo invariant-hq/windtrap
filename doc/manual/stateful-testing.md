@@ -141,9 +141,9 @@ capacity:
 ```
 $ dune exec examples/04-stateful-testing/test_bounded_queue.exe -- -v --seed s1:c26eddaeb764a645 -f behaves
 bounded_queue: 1 test (seed s1:c26eddaeb764a645)
-  PASS  queue › behaves like a list                1.3ms
+  PASS  queue › behaves like a list                0.8ms
     labels (100 passing cases):
-       33.0%  reached capacity
+       38.0%  reached capacity
 1 passed in 1.7ms.
 ```
 
@@ -166,7 +166,7 @@ bounded_queue: 1 test (seed s1:c26eddaeb764a645)
     examples/04-stateful-testing/test_bounded_queue.ml:29
       29 │ stateful "behaves like a list" ~model:[]
 
-    counterexample (case 0, shrunk 10 steps): 5 calls, last: push when full
+    counterexample (case 5, shrunk 8 steps): 5 calls, last: push when full
        #  model before  call
        1  []            push 0
        2  [0]           push 0
@@ -179,10 +179,12 @@ bounded_queue: 1 test (seed s1:c26eddaeb764a645)
       call 5 of 5: push when full
       expected exception  Bounded_queue.Full
       but no exception was raised
+    labels (5 passing cases):
+       20.0%  reached capacity
 ──────────────────────────────────────────────────────────
 
 replay: dune exec examples/04-stateful-testing/test_bounded_queue.exe -- --seed s1:c26eddaeb764a645 -f 'behaves'
-1 failed in 1.8ms.
+1 failed in 3.4ms.
 ```
 
 ## Keeping a failing program as a regression

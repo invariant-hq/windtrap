@@ -286,18 +286,37 @@ let primitive pp shrink draw =
 
 (* Numbers *)
 
+(* One draw in ten is one of [corners], each with equal probability; the
+   others are [draw]'s. *)
+let with_corners corners draw state =
+  let pick, state = Seed.below ~bound:10L state in
+  if Int64.equal pick 0L then
+    let count = Int64.of_int (List.length corners) in
+    let index, state = Seed.below ~bound:count state in
+    (List.nth corners (Int64.to_int index), state)
+  else draw state
+
 let int_range low high =
   let low64 = Int64.of_int low in
   let span = Int64.sub (Int64.of_int high) low64 in
-  primitive Pp.int
-    (int_towards (Int.max low (Int.min high 0)))
-    (fun state ->
+  let origin = Int.max low (Int.min high 0) in
+  (* The neighbours stay inside the range, where they cannot overflow. *)
+  let corners =
+    List.sort_uniq Int.compare
+      ([ low; high; origin ]
+      @ (if origin > low then [ origin - 1 ] else [])
+      @ if origin < high then [ origin + 1 ] else [])
+  in
+  let uniform state =
+    (* The whole [int] range counts one value more than [Int64.max_int]. *)
+    if Int64.equal span Int64.max_int then word Int64.to_int state
+    else
+      let offset, state = Seed.below ~bound:(Int64.succ span) state in
+      (Int64.to_int (Int64.add low64 offset), state)
+  in
+  primitive Pp.int (int_towards origin) (fun state ->
       if high < low then invalid_arg "Gen.int_range: high < low";
-      (* The whole [int] range counts one value more than [Int64.max_int]. *)
-      if Int64.equal span Int64.max_int then word Int64.to_int state
-      else
-        let offset, state = Seed.below ~bound:(Int64.succ span) state in
-        (Int64.to_int (Int64.add low64 offset), state))
+      with_corners corners uniform state)
 
 let int = int_range min_int max_int
 
@@ -323,13 +342,24 @@ let small_int =
       let magnitude, state = draw_nat state in
       ((if Int64.equal sign 1L then -magnitude else magnitude), state))
 
-let int32 = primitive pp_int32 (towards (module Int32) 0l) (word Int64.to_int32)
-let int64 = primitive pp_int64 (towards (module Int64) 0L) (word Fun.id)
+let int32 =
+  primitive pp_int32
+    (towards (module Int32) 0l)
+    (with_corners
+       [ Int32.min_int; -1l; 0l; 1l; Int32.max_int ]
+       (word Int64.to_int32))
+
+let int64 =
+  primitive pp_int64
+    (towards (module Int64) 0L)
+    (with_corners [ Int64.min_int; -1L; 0L; 1L; Int64.max_int ] (word Fun.id))
 
 let nativeint =
   primitive pp_nativeint
     (towards (module Nativeint) 0n)
-    (word Int64.to_nativeint)
+    (with_corners
+       [ Nativeint.min_int; -1n; 0n; 1n; Nativeint.max_int ]
+       (word Int64.to_nativeint))
 
 (* Rejection keeps the bit-pattern distribution; about 0.05% of the patterns
    are not finite. *)

@@ -301,6 +301,10 @@ Each one is also listed under its area below.
 - `Gen.list`, `Gen.array`, `Gen.string_of` and `Gen.bytes_of` without
   `~size` draw a length below 64 and about 5 on average; `~size` sets a
   longer one.
+- `Gen.int`, `Gen.int_range`, `Gen.int32`, `Gen.int64` and
+  `Gen.nativeint` draw a corner case with probability 0.1: a range's
+  bounds, its point closest to 0 and that point's neighbours, or a
+  type's 0, 1, -1 and extremes.
 
 ### Stateful testing
 

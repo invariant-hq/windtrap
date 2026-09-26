@@ -1330,16 +1330,16 @@ let sized root candidates =
    that is a change to every recorded seed, and this is where it shows. *)
 let a_recorded_seed_replays_these_values () =
   let replay gen index = render (Gen_engine.sample gen (state index)) in
-  equal ~msg:"int" string "2683476424248205541" (replay Gen.int 0);
+  equal ~msg:"int" string "3814646949886580551" (replay Gen.int 0);
   equal ~msg:"nat" string "254" (replay Gen.nat 1);
   equal ~msg:"float" string "9.32137030625773e+307" (replay Gen.float 2);
-  equal ~msg:"string" string "\"dpsagx\""
+  equal ~msg:"string" string "\"evmm\""
     (replay Gen.(string_of ~size:(int_range 0 6) (char_range 'a' 'z')) 3);
-  equal ~msg:"list of small_int" string "[2657; -902; -6188; 566; 2]"
+  equal ~msg:"list of small_int" string "[1809; 5; -31; -839; 0]"
     (replay Gen.(list ~size:(int_range 0 5) small_int) 4);
   equal ~msg:"list of the default length" string "[false; true]"
     (replay Gen.(list bool) 6);
-  equal ~msg:"option, one_of and frequency" string "(Some (false), 7, 4)"
+  equal ~msg:"option, one_of and frequency" string "(Some (false), 9, 8)"
     (replay
        Gen.(
          triple (option bool)
@@ -1444,6 +1444,38 @@ let default_length_strata_are_50_25_20_5 () =
   is_true
     ~msg:(Printf.sprintf "the mean length is about 5, got %.2f" mean)
     (mean > 4.4 && mean < 5.0)
+
+(* One draw in ten is a corner, uniform among the corners, so each corner
+   of [int] comes about once in 50 draws; 2000 draws miss one with
+   probability below 1e-17. *)
+let integers_reach_their_corners () =
+  let reaches name gen corners =
+    let values = samples gen 2_000 in
+    List.iteri
+      (fun i corner ->
+        is_true
+          ~msg:(Printf.sprintf "%s reaches its corner number %d" name i)
+          (List.mem corner values))
+      corners
+  in
+  reaches "int" Gen.int [ 0; 1; -1; min_int; max_int ];
+  reaches "int_range 0 1000" Gen.(int_range 0 1000) [ 0; 1; 1000 ];
+  reaches "int_range (-5) 5" Gen.(int_range (-5) 5) [ -5; -1; 0; 1; 5 ];
+  reaches "int_range 3 9" Gen.(int_range 3 9) [ 3; 4; 9 ];
+  reaches "int32" Gen.int32 [ 0l; 1l; -1l; Int32.min_int; Int32.max_int ];
+  reaches "int64" Gen.int64 [ 0L; 1L; -1L; Int64.min_int; Int64.max_int ];
+  reaches "nativeint" Gen.nativeint
+    [ 0n; 1n; -1n; Nativeint.min_int; Nativeint.max_int ];
+  (* In a wide range the uniform draws almost never hit a corner, so the
+     corners' share is the tenth. *)
+  let values = samples Gen.(int_range (-1_000_000) 1_000_000) 20_000 in
+  let corners =
+    List.filter (fun v -> List.mem v [ -1_000_000; -1; 0; 1; 1_000_000 ]) values
+  in
+  let share = float_of_int (List.length corners) /. 20_000. in
+  is_true
+    ~msg:(Printf.sprintf "a tenth of the draws are corners, got %.4f" share)
+    (Float.abs (share -. 0.1) < 0.01)
 
 let float_is_uniform_over_bit_patterns () =
   (* Half the finite bit patterns are negative, and half have a magnitude of
@@ -1774,6 +1806,7 @@ let contract_suite =
     ("nat strata are 50, 25, 20 and 5 percent", nat_strata_are_50_25_20_5);
     ( "default length strata are 50, 25, 20 and 5 percent",
       default_length_strata_are_50_25_20_5 );
+    ("integers reach their corners", integers_reach_their_corners);
     ( "float is uniform over the finite bit patterns",
       float_is_uniform_over_bit_patterns );
     ( "argument checks run in their stated order",
