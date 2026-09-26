@@ -231,13 +231,21 @@
  (modules harness)
  (libraries windtrap windtrap_test_support unix))
 
-(tests
- (names test_ppx_runtime test_windtrap)
- (modules test_ppx_runtime test_windtrap)
+(test
+ (name test_windtrap)
+ (modules test_windtrap)
+ (libraries windtrap windtrap_test_support unix harness))
+
+(test
+ (name test_ppx_runtime)
+ (modules test_ppx_runtime)
  (libraries
   windtrap
   ppx_windtrap.runtime
   ppx_windtrap.config
   windtrap_test_support
-  unix
-  harness))
+  unix)
+ (action
+  (progn
+   (run %{test} --corrected)
+   (diff? test_ppx_runtime.ml test_ppx_runtime.ml.corrected))))

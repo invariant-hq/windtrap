@@ -3,498 +3,579 @@
    SPDX-License-Identifier: ISC
   ---------------------------------------------------------------------------*)
 
-(* Tests for Ppx_runtime: the module-load registry generated code fills,
-   the inline-test-runner protocol, and the undriven-registration guard.
-   The PPX is not involved; registrations are made by hand, exactly as
-   generated code makes them. The registry and the protocol's parsing are
-   checked in-process through [collect]; what [exit] does is checked on a
-   re-exec'd child, since it ends the process. The transcripts and
-   corrections of real generated runners are pinned by the fixture
-   directories under test/cli/inline_runner. *)
-
-open Harness
-module Ppx_runtime = Ppx_windtrap_runtime.Ppx_runtime
+open Windtrap
+module Os = Windtrap.Private.Os
 module Test_tree = Windtrap.Private.Test_tree
 module Tag = Windtrap.Private.Test_tree.Tag
+module Ppx_runtime = Ppx_windtrap_runtime.Ppx_runtime
+module Scratch = Windtrap_test_support.Scratch
 
+let strf = Printf.sprintf
 let pos file = (file, 1, 0, 0)
 
 let add ?library ?(tags = []) ~file name fn =
   Ppx_runtime.add_test ?library ~file ~pos:(pos file) ~tags name fn
 
-(* The children: [--child SCENARIO ARG...] registers as generated code
-   would, speaks the protocol, and lets [exit] (or, for the undriven
-   scenario, a normal termination) end the process. Logs go where the
-   parent says, through the mirror the fixed argv leaves open. *)
-let () =
-  match Array.to_list Sys.argv with
-  | _ :: "--child" :: scenario :: args -> (
-      clear_env ();
-      let run_protocol argv =
-        Ppx_runtime.init (Array.of_list ("child" :: argv));
-        Ppx_runtime.exit ()
-      in
-      match (scenario, args) with
-      | "list", [] ->
-          add ~file:"src/b.ml" "b" ignore;
-          add ~file:"src/a.ml" "a" ignore;
-          add ~file:"src/a.ml" "a2" ignore;
-          add ~library:"lib" ~file:"src/c.ml" "c" ignore;
-          add ~library:"dep" ~file:"src/d.ml" "d" ignore;
-          run_protocol [ "inline-test-runner"; "lib"; "-list-partitions" ]
-      | "list-files", [] ->
-          (* One basename from two directories, a name with two dots, a
-             group's file and the file of a test inside it, and a file
-             whose registrations were collected before the listing. *)
-          add ~file:"src/dup.ml" "one" ignore;
-          add ~file:"test/dup.ml" "two" ignore;
-          add ~file:"gen/x.pp.ml" "three" ignore;
-          Ppx_runtime.enter_group ~file:"host.ml" ~tags:[] "G";
-          add ~file:"guest.ml" "t" ignore;
-          Ppx_runtime.leave_group ();
-          add ~file:"kept.ml" "t" ignore;
-          ignore (Ppx_runtime.collect ());
-          run_protocol [ "inline-test-runner"; "lib"; "-list-partitions" ]
-      | "run", [ log_dir ] ->
-          Unix.putenv "WINDTRAP_OUTPUT" log_dir;
-          add ~file:"a.ml" "passes" ignore;
-          add ~file:"a.ml" "fails" (fun () -> Windtrap.equal Windtrap.int 1 2);
-          add ~file:"b.ml" "other partition" (fun () -> Windtrap.fail "unrun");
-          run_protocol [ "inline-test-runner"; "lib"; "-partition"; "a.ml" ]
-      | "undriven", [] ->
-          (* Registered, then a normal exit with nothing driving it: the
-             guard's [at_exit] handler turns this [0] into a [2]. *)
-          add ~file:"a.ml" "never driven" ignore;
-          Stdlib.exit 0
-      | "undriven-files", [] ->
-          (* The diagnostic names each file of no library once, sorted,
-             whether a test or a group registered it. *)
-          add ~file:"src/b.ml" "one" ignore;
-          add ~file:"a.ml" "two" ignore;
-          add ~file:"a.ml" "three" ignore;
-          add ~library:"lib" ~file:"c.ml" "the library's" ignore;
-          Ppx_runtime.enter_group ~file:"g.ml" ~tags:[] "G";
-          Ppx_runtime.leave_group ();
-          Stdlib.exit 0
-      | "undriven-exit-1", [] ->
-          add ~file:"a.ml" "never driven" ignore;
-          Stdlib.exit 1
-      | "drained", [] ->
-          (* A hand-written main that drains the registry owns it. *)
-          add ~file:"a.ml" "drained" ignore;
-          ignore (Ppx_runtime.collect ());
-          Stdlib.exit 0
-      | "drain-raises", [] ->
-          add ~file:"a.ml" "drained" ignore;
-          Ppx_runtime.enter_group ~file:"a.ml" ~tags:[] "Open";
-          (try ignore (Ppx_runtime.collect ()) with Invalid_argument _ -> ());
-          Stdlib.exit 0
-      | "no-init", [] -> Ppx_runtime.exit ()
-      | "list-by-hand", [] ->
-          add ~file:"a.ml" "t" ignore;
-          run_protocol [ "-list-partitions" ]
-      | "bad-mirror", [] ->
-          Unix.putenv "WINDTRAP_TIMEOUT" "banana";
-          add ~file:"a.ml" "t" ignore;
-          run_protocol [ "inline-test-runner"; "lib"; "-partition"; "a.ml" ]
-      | "empty-partition", [ log_dir ] ->
-          Unix.putenv "WINDTRAP_OUTPUT" log_dir;
-          add ~file:"a.ml" "t" ignore;
-          run_protocol [ "inline-test-runner"; "lib"; "-partition"; "c.ml" ]
-      | "junit", [ log_dir; junit ] ->
-          Unix.putenv "WINDTRAP_OUTPUT" log_dir;
-          Unix.putenv "WINDTRAP_JUNIT" junit;
-          add ~file:"a.ml" "passes" ignore;
-          run_protocol [ "inline-test-runner"; "lib"; "-partition"; "a.ml" ]
-      | "linked-library", [ log_dir ] ->
-          (* A black-box suite over a library whose tests registered. *)
-          Unix.putenv "WINDTRAP_OUTPUT" log_dir;
-          add ~library:"lib" ~file:"a.ml" "the library's" ignore;
-          Ppx_runtime.enter_group ~library:"lib" ~file:"a.ml" ~tags:[] "G";
-          add ~library:"lib" ~file:"a.ml" "in a group" ignore;
-          Ppx_runtime.leave_group ();
-          Stdlib.exit
-            (Windtrap.run ~argv:[| "suite" |] "suite"
-               [ Windtrap.test "ran" ignore ])
-      | "own-suite", [ log_dir ] ->
-          (* Runs a suite of its own and never drains what it registered. *)
-          Unix.putenv "WINDTRAP_OUTPUT" log_dir;
-          add ~file:"a.ml" "undrained" ignore;
-          Stdlib.exit
-            (Windtrap.run ~argv:[| "own" |] "own"
-               [ Windtrap.test "ran" ignore ])
-      | "fork", [] ->
-          add ~file:"a.ml" "never driven" ignore;
-          (match Unix.fork () with
-          | 0 -> Stdlib.exit 0
-          | pid -> (
-              match Unix.waitpid [] pid with
-              | _, Unix.WEXITED n ->
-                  Printf.printf "forked child exited %d\n%!" n
-              | _ -> print_endline "forked child died"));
-          run_protocol []
-      | "at-exit", [] ->
-          (* Registered before the guard, so it runs after it. *)
-          at_exit (fun () ->
-              print_endline "the earlier at_exit function ran";
-              flush stdout);
-          add ~file:"a.ml" "never driven" ignore;
-          Stdlib.exit 0
-      | _ ->
-          prerr_endline "unknown child scenario";
-          exit 3)
-  | _ -> ()
+let read path = In_channel.with_open_bin path In_channel.input_all
 
-let () = init "ppx_runtime"
+(* Children *)
 
-(* Re-exec this executable with [args] in a stated environment, returning
-   its exit code, standard output and standard error, apart. *)
-let spawn_child args =
-  let module Child = Windtrap_test_support.Child in
-  let r = Child.run Sys.executable_name args in
-  (Child.exit_code r, r.Child.out, r.Child.err)
+(* [exit] ends the process, so what it does is judged on a forked child. Every
+   child is forked as the module initialises, before this process registers
+   anything, so it starts with an empty registry and no guard installed. *)
+
+type child = { dir : string; status : string; out : string; err : string }
+
+let status = function
+  | Unix.WEXITED code -> strf "exit %d" code
+  | Unix.WSIGNALED signal -> strf "killed by %d" signal
+  | Unix.WSTOPPED signal -> strf "stopped by %d" signal
+
+let redirect path fd =
+  let file = Unix.openfile path [ Unix.O_WRONLY; O_CREAT; O_TRUNC ] 0o600 in
+  Unix.dup2 file fd;
+  Unix.close file
+
+(* The stated environment: every [WINDTRAP_*] variable, [CI],
+   [GITHUB_ACTIONS], [INSIDE_DUNE], [NO_COLOR] and [TERM] unset. *)
+let state_the_environment () =
+  let windtrap binding =
+    match String.index_opt binding '=' with
+    | Some i when String.starts_with ~prefix:"WINDTRAP_" binding ->
+        Some (String.sub binding 0 i)
+    | Some _ | None -> None
+  in
+  List.iter
+    (fun name -> Os.setenv name None)
+    ([ "CI"; "GITHUB_ACTIONS"; "INSIDE_DUNE"; "NO_COLOR"; "TERM" ]
+    @ List.filter_map windtrap (Array.to_list (Unix.environment ())))
+
+(* The buffers are flushed before the fork, so the child does not write them
+   again. A scenario ends the child itself; one that returns exits 3. *)
+let child scenario =
+  if Sys.win32 then None
+  else begin
+    let dir = Scratch.dir "windtrap-inline-" in
+    let out = Filename.concat dir "out" and err = Filename.concat dir "err" in
+    flush_all ();
+    match Unix.fork () with
+    | 0 ->
+        state_the_environment ();
+        redirect out Unix.stdout;
+        redirect err Unix.stderr;
+        scenario dir;
+        exit 3
+    | pid ->
+        let _, ended = Unix.waitpid [] pid in
+        Some { dir; status = status ended; out = read out; err = read err }
+  end
+
+let ended = function
+  | Some child -> child
+  | None -> skip ~reason:"no fork on Windows" ()
+
+let speak argv =
+  Ppx_runtime.init (Array.of_list ("child" :: argv));
+  Ppx_runtime.exit ()
+
+let logs dir = Filename.concat dir "logs"
+let output_to dir = Os.setenv "WINDTRAP_OUTPUT" (Some (logs dir))
+
+let listing =
+  child (fun _ ->
+      add ~file:"src/b.ml" "b" ignore;
+      add ~file:"src/a.ml" "a" ignore;
+      add ~file:"src/a.ml" "a2" ignore;
+      add ~library:"lib" ~file:"src/c.ml" "c" ignore;
+      add ~library:"dep" ~file:"src/d.ml" "d" ignore;
+      speak [ "inline-test-runner"; "lib"; "-list-partitions" ])
+
+let listing_files =
+  child (fun _ ->
+      add ~file:"src/dup.ml" "one" ignore;
+      add ~file:"test/dup.ml" "two" ignore;
+      add ~file:"gen/x.pp.ml" "three" ignore;
+      Ppx_runtime.enter_group ~file:"host.ml" ~tags:[] "G";
+      add ~file:"guest.ml" "t" ignore;
+      Ppx_runtime.leave_group ();
+      add ~file:"kept.ml" "t" ignore;
+      ignore (Ppx_runtime.collect ());
+      speak [ "inline-test-runner"; "lib"; "-list-partitions" ])
+
+let partition =
+  child (fun dir ->
+      output_to dir;
+      add ~file:"a.ml" "passes" ignore;
+      add ~file:"a.ml" "fails" (fun () -> equal int 1 2);
+      add ~file:"b.ml" "other partition" (fun () -> fail "unrun");
+      speak [ "inline-test-runner"; "lib"; "-partition"; "a.ml" ])
+
+let junit =
+  child (fun dir ->
+      output_to dir;
+      Os.setenv "WINDTRAP_JUNIT" (Some (Filename.concat dir "junit"));
+      add ~file:"a.ml" "passes" ignore;
+      speak [ "inline-test-runner"; "lib"; "-partition"; "a.ml" ])
+
+let never_initialised = child (fun _ -> Ppx_runtime.exit ())
+
+let listed_by_hand =
+  child (fun _ ->
+      add ~file:"a.ml" "t" ignore;
+      speak [ "-list-partitions" ])
+
+let bad_mirror =
+  child (fun _ ->
+      Os.setenv "WINDTRAP_TIMEOUT" (Some "banana");
+      add ~file:"a.ml" "t" ignore;
+      speak [ "inline-test-runner"; "lib"; "-partition"; "a.ml" ])
+
+let empty_partition =
+  child (fun dir ->
+      output_to dir;
+      add ~file:"a.ml" "t" ignore;
+      speak [ "inline-test-runner"; "lib"; "-partition"; "c.ml" ])
+
+let undriven =
+  child (fun _ ->
+      add ~file:"a.ml" "never driven" ignore;
+      Stdlib.exit 0)
+
+let undriven_files =
+  child (fun _ ->
+      add ~file:"src/b.ml" "one" ignore;
+      add ~file:"a.ml" "two" ignore;
+      add ~file:"a.ml" "three" ignore;
+      add ~library:"lib" ~file:"c.ml" "the library's" ignore;
+      Ppx_runtime.enter_group ~file:"g.ml" ~tags:[] "G";
+      Ppx_runtime.leave_group ();
+      Stdlib.exit 0)
+
+let undriven_failing =
+  child (fun _ ->
+      add ~file:"a.ml" "never driven" ignore;
+      Stdlib.exit 1)
+
+let drained =
+  child (fun _ ->
+      add ~file:"a.ml" "drained" ignore;
+      ignore (Ppx_runtime.collect ());
+      Stdlib.exit 0)
+
+let drain_raised =
+  child (fun _ ->
+      add ~file:"a.ml" "drained" ignore;
+      Ppx_runtime.enter_group ~file:"a.ml" ~tags:[] "Open";
+      (try ignore (Ppx_runtime.collect ()) with Invalid_argument _ -> ());
+      Stdlib.exit 0)
+
+let own_suite =
+  child (fun dir ->
+      output_to dir;
+      add ~file:"a.ml" "undrained" ignore;
+      Stdlib.exit (run ~argv:[| "own" |] "own" [ test "ran" ignore ]))
+
+let linked_library =
+  child (fun dir ->
+      output_to dir;
+      add ~library:"lib" ~file:"a.ml" "the library's" ignore;
+      Ppx_runtime.enter_group ~library:"lib" ~file:"a.ml" ~tags:[] "G";
+      add ~library:"lib" ~file:"a.ml" "in a group" ignore;
+      Ppx_runtime.leave_group ();
+      Stdlib.exit (run ~argv:[| "suite" |] "suite" [ test "ran" ignore ]))
+
+let forks =
+  child (fun _ ->
+      add ~file:"a.ml" "never driven" ignore;
+      (match Unix.fork () with
+      | 0 -> Stdlib.exit 0
+      | pid ->
+          let _, ended = Unix.waitpid [] pid in
+          print_endline ("forked child: " ^ status ended));
+      speak [])
+
+(* Registered before the guard, so it runs after it. *)
+let earlier_at_exit =
+  child (fun _ ->
+      at_exit (fun () -> print_endline "the earlier at_exit function ran");
+      add ~file:"a.ml" "never driven" ignore;
+      Stdlib.exit 0)
+
+(* Registration *)
+
+(* The registry is the process's: each test starts from a drained registry,
+   outside the runner mode and with no partition. *)
+let reset () =
+  Ppx_runtime.init [| "test_ppx_runtime" |];
+  ignore (Ppx_runtime.collect ())
 
 let paths tests =
   List.map
     (fun (case : Test_tree.case) -> Test_tree.path_to_string case.path)
     (Test_tree.flatten tests)
 
-let check_paths name ~expected tests =
-  check_string name
-    ~expected:(String.concat "\n" expected)
-    ~actual:(String.concat "\n" (paths tests))
+let collected () = paths (Ppx_runtime.collect ())
 
-(* Registration and collection *)
+let in_a_group ?library ~file ?(tags = []) name register =
+  Ppx_runtime.enter_group ?library ~file ~tags name;
+  register ();
+  Ppx_runtime.leave_group ()
 
-let () =
-  (* Files group under their module name, in first-registration order;
-     a second collection is empty until new registrations arrive. *)
+let files_group_under_their_module () =
+  reset ();
   add ~file:"src/parser.ml" "first" ignore;
   add ~file:"src/lexer.ml" "second" ignore;
   add ~file:"src/parser.ml" "third" ignore;
-  check_paths "files group under their module, first-registration order"
-    ~expected:[ "Parser › first"; "Parser › third"; "Lexer › second" ]
-    (Ppx_runtime.collect ());
-  check "a second collection is empty" (Ppx_runtime.collect () = [])
+  equal (list string)
+    [ "Parser › first"; "Parser › third"; "Lexer › second" ]
+    (collected ())
 
-let () =
-  (* A functor instantiated twice registers one name twice: later
-     duplicates are renamed, at the top level and inside a group. *)
-  add ~file:"f.ml" "instance" ignore;
-  add ~file:"f.ml" "instance" ignore;
-  add ~file:"f.ml" "instance" ignore;
-  Ppx_runtime.enter_group ~file:"f.ml" ~tags:[] "G";
-  add ~file:"f.ml" "instance" ignore;
-  add ~file:"f.ml" "instance" ignore;
-  Ppx_runtime.leave_group ();
-  check_paths "duplicate names are renamed per scope"
-    ~expected:
-      [
-        "F › instance";
-        "F › instance (2)";
-        "F › instance (3)";
-        "F › G › instance";
-        "F › G › instance (2)";
-      ]
-    (Ppx_runtime.collect ())
-
-let () =
-  (* Groups nest, and a group's tags reach its descendants, as do a
-     test's own. *)
-  Ppx_runtime.enter_group ~file:"n.ml" ~tags:[ "outer" ] "Outer";
-  add ~file:"n.ml" "in outer" ignore;
-  Ppx_runtime.enter_group ~file:"n.ml" ~tags:[] "Inner";
-  add ~tags:[ "own" ] ~file:"n.ml" "in inner" ignore;
-  Ppx_runtime.leave_group ();
-  Ppx_runtime.leave_group ();
-  add ~file:"n.ml" "after" ignore;
-  let tests = Ppx_runtime.collect () in
-  check_paths "groups nest under the file's module"
-    ~expected:
-      [ "N › Outer › in outer"; "N › Outer › Inner › in inner"; "N › after" ]
-    tests;
-  let cases = Test_tree.flatten tests in
-  let tags_of path =
-    (List.find
-       (fun (case : Test_tree.case) ->
-         Test_tree.path_to_string case.path = path)
-       cases)
-      .tags
-  in
-  check "a group's tags reach its tests"
-    (Tag.mem "outer" (tags_of "N › Outer › in outer"));
-  check "an inner test unions its own tags with its groups'"
-    (Tag.mem "outer" (tags_of "N › Outer › Inner › in inner")
-    && Tag.mem "own" (tags_of "N › Outer › Inner › in inner"));
-  check "a test after the group carries none of its tags"
-    (not (Tag.mem "outer" (tags_of "N › after")))
-
-let () =
-  expect_invalid_arg "leave_group with no open group" (fun () ->
-      Ppx_runtime.leave_group ());
-  Ppx_runtime.enter_group ~file:"u.ml" ~tags:[] "Open";
-  expect_invalid_arg "collect with a group still open" (fun () ->
-      Ppx_runtime.collect ());
-  Ppx_runtime.leave_group ();
-  check "the unclosed group collects once closed"
-    (List.length (Ppx_runtime.collect ()) = 1)
-
-(* The protocol: partitions and the -partition filter *)
-
-let () =
-  add ~file:"src/zeta.ml" "z" ignore;
-  add ~file:"src/alpha.ml" "a" ignore;
-  add ~file:"src/alpha.ml" "a2" ignore;
-  Ppx_runtime.init
-    [| "runner"; "inline-test-runner"; "lib"; "-partition"; "alpha.ml" |];
-  check_paths "-partition keeps one file's registrations"
-    ~expected:[ "Alpha › a"; "Alpha › a2" ]
-    (Ppx_runtime.collect ());
-  (* A later init parses afresh: the partition is gone with it. *)
-  Ppx_runtime.init [| "runner"; "inline-test-runner"; "lib"; "--unknown" |];
-  add ~file:"src/zeta.ml" "z" ignore;
-  add ~file:"src/alpha.ml" "a" ignore;
-  check_paths "init without -partition collects every file"
-    ~expected:[ "Zeta › z"; "Alpha › a" ]
-    (Ppx_runtime.collect ())
-
-let () =
-  (* A library's registrations are its runner's. One name in two
-     libraries is two tests, not a duplicate. *)
-  add ~library:"dep" ~file:"src/shared.ml" "same" ignore;
-  add ~library:"lib" ~file:"src/shared.ml" "same" ignore;
-  add ~file:"src/own.ml" "own" ignore;
-  Ppx_runtime.init [| "runner"; "inline-test-runner"; "lib" |];
-  check_paths
-    "a runner keeps its library's registrations and those of no library"
-    ~expected:[ "Shared › same"; "Own › own" ]
-    (Ppx_runtime.collect ());
-  add ~library:"lib" ~file:"src/shared.ml" "same" ignore;
-  add ~file:"src/own.ml" "own" ignore;
-  Ppx_runtime.init [| "main" |];
-  check_paths "outside a runner only the registrations of no library are kept"
-    ~expected:[ "Own › own" ] (Ppx_runtime.collect ())
-
-let () =
-  (* -partition filters outside the runner mode too, and a group of a
-     library lands at its library's top level whatever is open around the
-     tests it holds. *)
-  add ~file:"src/alpha.ml" "a" ignore;
-  add ~file:"src/beta.ml" "b" ignore;
-  Ppx_runtime.init [| "main"; "-partition"; "beta.ml" |];
-  check_paths "-partition without a runner keeps one file's registrations"
-    ~expected:[ "Beta › b" ] (Ppx_runtime.collect ());
-  Ppx_runtime.enter_group ~library:"dep" ~file:"dep.ml" ~tags:[] "G";
-  add ~file:"own.ml" "in dep's group" ignore;
-  Ppx_runtime.leave_group ();
-  add ~file:"own.ml" "own" ignore;
-  Ppx_runtime.init [| "runner"; "inline-test-runner"; "lib" |];
-  check_paths "a group registers under the library enter_group named"
-    ~expected:[ "Own › own" ] (Ppx_runtime.collect ())
-
-(* exit, on a child *)
-
-let () =
-  let code, out, err = spawn_child [ "--child"; "list" ] in
-  check_int "-list-partitions exits 0" ~expected:0 ~actual:code;
-  check_string
-    "-list-partitions prints the sorted basenames of no library and of the \
-     runner's library, each once"
-    ~expected:"a.ml\nb.ml\nc.ml\n" ~actual:out;
-  check_string "and nothing on stderr" ~expected:"" ~actual:err;
-  let _, out, _ = spawn_child [ "--child"; "list-files" ] in
-  check_string
-    "a partition per basename, a group's file and its tests' files are \
-     partitions, and collect keeps them"
-    ~expected:"dup.ml\nguest.ml\nhost.ml\nkept.ml\nx.pp.ml\n" ~actual:out
-
-let () =
-  with_temp_root (fun log_dir ->
-      let code, out, err = spawn_child [ "--child"; "run"; log_dir ] in
-      check_string "the transcript is all on stdout" ~expected:"" ~actual:err;
-      check_int "a partition with a failing test exits 1" ~expected:1
-        ~actual:code;
-      (* The suite is named per partition: dune runs a library's
-         partitions concurrently, and a suite named for the library alone
-         would have every partition share one JUnit file, one capture log
-         directory and one last-failed store. *)
-      check_contains "the transcript names the library and the partition"
-        ~sub:"lib/a.ml: 2 tests" out;
-      check_contains "the failure names the test under its module"
-        ~sub:"FAIL  A › fails" out;
-      check "the other partition did not run"
-        (not (contains "other partition" out));
-      check "the capture logs are keyed by the partition's suite name"
-        (Sys.file_exists
-           (Filename.concat log_dir
-              (Windtrap.Private.Os.sanitize_component "lib/a.ml"))))
-
-let () =
-  let code, out, err = spawn_child [ "--child"; "undriven" ] in
-  check_int "registrations nothing drives exit 2" ~expected:2 ~actual:code;
-  check_string "the guard writes nothing on stdout" ~expected:"" ~actual:out;
-  check_contains "the guard names the registered file, on stderr"
-    ~sub:
-      "never driven: this executable links ppx_windtrap-preprocessed test code \
-       of no library (a.ml)"
-    err;
-  check_contains "the guard names the remedy"
-    ~sub:"move the tests into a library stanza with (inline_tests)" err
-
-(* Registration: files, groups and their names *)
-
-let () =
-  (* One basename, one partition and one group; the module name stops at
-     the first dot. *)
+let a_basename_is_one_module () =
+  reset ();
   add ~file:"src/dup.ml" "one" ignore;
   add ~file:"test/dup.ml" "two" ignore;
   add ~file:"gen/x.pp.ml" "three" ignore;
-  check_paths "one basename is one group, named up to its first dot"
-    ~expected:[ "Dup \u{203a} one"; "Dup \u{203a} two"; "X \u{203a} three" ]
-    (Ppx_runtime.collect ())
+  equal (list string) [ "Dup › one"; "Dup › two"; "X › three" ] (collected ())
 
-let () =
-  Ppx_runtime.enter_group ~file:"twice.ml" ~tags:[] "G";
-  add ~file:"twice.ml" "t" ignore;
+let a_taken_name_is_numbered () =
+  reset ();
+  add ~file:"f.ml" "instance" ignore;
+  add ~file:"f.ml" "instance" ignore;
+  add ~file:"f.ml" "instance" ignore;
+  in_a_group ~file:"f.ml" "G" (fun () ->
+      add ~file:"f.ml" "instance" ignore;
+      add ~file:"f.ml" "instance" ignore);
+  equal (list string)
+    [
+      "F › instance";
+      "F › instance (2)";
+      "F › instance (3)";
+      "F › G › instance";
+      "F › G › instance (2)";
+    ]
+    (collected ())
+
+let a_taken_group_name_is_numbered () =
+  reset ();
+  in_a_group ~file:"twice.ml" "G" (fun () -> add ~file:"twice.ml" "t" ignore);
+  in_a_group ~file:"twice.ml" "G" (fun () -> add ~file:"twice.ml" "t" ignore);
+  equal (list string) [ "Twice › G › t"; "Twice › G (2) › t" ] (collected ())
+
+let nested () =
+  in_a_group ~file:"n.ml" ~tags:[ "outer" ] "Outer" (fun () ->
+      add ~file:"n.ml" "in outer" ignore;
+      in_a_group ~file:"n.ml" "Inner" (fun () ->
+          add ~tags:[ "own" ] ~file:"n.ml" "in inner" ignore));
+  add ~file:"n.ml" "after" ignore
+
+let groups_nest () =
+  reset ();
+  nested ();
+  equal (list string)
+    [ "N › Outer › in outer"; "N › Outer › Inner › in inner"; "N › after" ]
+    (collected ())
+
+let tags_reach_the_tests_below () =
+  reset ();
+  nested ();
+  let row (case : Test_tree.case) =
+    let carried =
+      List.filter (fun t -> Tag.mem t case.tags) [ "outer"; "own" ]
+    in
+    (Test_tree.path_to_string case.path, carried)
+  in
+  equal
+    (list (pair string (list string)))
+    [
+      ("N › Outer › in outer", [ "outer" ]);
+      ("N › Outer › Inner › in inner", [ "outer"; "own" ]);
+      ("N › after", []);
+    ]
+    (List.map row (Test_tree.flatten (Ppx_runtime.collect ())))
+
+let a_group_holds_its_tests_whatever_their_file () =
+  reset ();
+  in_a_group ~file:"host.ml" "G" (fun () -> add ~file:"guest.ml" "t" ignore);
+  equal (list string) [ "Host › G › t" ] (collected ())
+
+let a_group_lands_in_its_own_library () =
+  reset ();
+  in_a_group ~library:"dep" ~file:"dep.ml" "G" (fun () ->
+      add ~file:"own.ml" "in dep's group" ignore);
+  add ~file:"own.ml" "own" ignore;
+  Ppx_runtime.init [| "runner"; "inline-test-runner"; "lib" |];
+  equal (list string) [ "Own › own" ] (collected ())
+
+let registration =
+  group "Registration"
+    [
+      test "a file's tests group under its module, in first-registration order"
+        files_group_under_their_module;
+      test
+        "the module is the basename up to its first dot, whatever the directory"
+        a_basename_is_one_module;
+      test "a name its scope holds is numbered, at the top level and in a group"
+        a_taken_name_is_numbered;
+      test "a group name its scope holds is numbered"
+        a_taken_group_name_is_numbered;
+      test "groups nest under the file's module" groups_nest;
+      test "a group's tags reach the tests under it, beside their own"
+        tags_reach_the_tests_below;
+      test "a test lands in the open group whatever its file"
+        a_group_holds_its_tests_whatever_their_file;
+      test "a group lands in the library that enter_group named"
+        a_group_lands_in_its_own_library;
+      test "leave_group raises Invalid_argument when no group is open"
+        (fun () ->
+          reset ();
+          raises_match Exn.invalid_arg Ppx_runtime.leave_group);
+    ]
+
+(* Collecting *)
+
+let a_second_collection_is_empty () =
+  reset ();
+  add ~file:"a.ml" "t" ignore;
+  ignore (Ppx_runtime.collect ());
+  equal (list string) [] (collected ());
+  add ~file:"a.ml" "t" ignore;
+  equal (list string) [ "A › t" ] (collected ())
+
+let an_open_group_refuses_collect () =
+  reset ();
+  Ppx_runtime.enter_group ~file:"u.ml" ~tags:[] "Open";
+  add ~file:"u.ml" "t" ignore;
+  let refused =
+    match Ppx_runtime.collect () with _ -> None | exception e -> Some e
+  in
   Ppx_runtime.leave_group ();
-  Ppx_runtime.enter_group ~file:"twice.ml" ~tags:[] "G";
-  add ~file:"twice.ml" "t" ignore;
-  Ppx_runtime.leave_group ();
-  check_paths "a group name its scope holds is renamed"
-    ~expected:
-      [ "Twice \u{203a} G \u{203a} t"; "Twice \u{203a} G (2) \u{203a} t" ]
-    (Ppx_runtime.collect ())
+  raises_match Exn.invalid_arg (fun () -> Option.iter raise refused);
+  equal (list string) [ "U › Open › t" ] (collected ())
+
+let untagged_name_of_a_module =
+  [ "Plain"; "plain"; "plain.ml"; "src/plain.ml"; "prop"; "slow"; "" ]
+
+let the_module_adds_no_tag name =
+  reset ();
+  add ~file:"src/plain.ml" "untagged" ignore;
+  let only = function [ case ] -> Some case | _ -> None in
+  let case = require_match only (Test_tree.flatten (Ppx_runtime.collect ())) in
+  is_false (Tag.mem name case.Test_tree.tags)
+
+let libraries () =
+  add ~library:"dep" ~file:"src/shared.ml" "same" ignore;
+  add ~library:"lib" ~file:"src/shared.ml" "same" ignore;
+  add ~file:"src/own.ml" "own" ignore
+
+let a_runner_keeps_its_library () =
+  reset ();
+  libraries ();
+  Ppx_runtime.init [| "runner"; "inline-test-runner"; "lib" |];
+  equal (list string) [ "Shared › same"; "Own › own" ] (collected ())
+
+let outside_a_runner_no_library () =
+  reset ();
+  libraries ();
+  Ppx_runtime.init [| "main" |];
+  equal (list string) [ "Own › own" ] (collected ())
+
+let files () =
+  add ~file:"src/zeta.ml" "z" ignore;
+  add ~file:"src/alpha.ml" "a" ignore;
+  add ~file:"src/alpha.ml" "a2" ignore
+
+let a_partition_keeps_its_file argv () =
+  reset ();
+  files ();
+  Ppx_runtime.init argv;
+  equal (list string) [ "Alpha › a"; "Alpha › a2" ] (collected ())
+
+let a_later_init_drops_the_partition () =
+  reset ();
+  Ppx_runtime.init
+    [| "runner"; "inline-test-runner"; "lib"; "-partition"; "alpha.ml" |];
+  Ppx_runtime.init [| "runner"; "inline-test-runner"; "lib"; "--unknown" |];
+  files ();
+  equal (list string) [ "Zeta › z"; "Alpha › a"; "Alpha › a2" ] (collected ())
+
+let collecting =
+  group "Collecting"
+    [
+      test "a second collection is empty until new registrations arrive"
+        a_second_collection_is_empty;
+      test "collect raises while a group is open, and collects it once closed"
+        an_open_group_refuses_collect;
+      prop "the module's group adds no tag" ~examples:untagged_name_of_a_module
+        Gen.string the_module_adds_no_tag;
+      test "a runner keeps its library's registrations and those of no library"
+        a_runner_keeps_its_library;
+      test "outside a runner only the registrations of no library are kept"
+        outside_a_runner_no_library;
+      test "-partition keeps one file's registrations"
+        (a_partition_keeps_its_file
+           [| "runner"; "inline-test-runner"; "lib"; "-partition"; "alpha.ml" |]);
+      test "-partition keeps one file's registrations outside the runner mode"
+        (a_partition_keeps_its_file [| "main"; "-partition"; "alpha.ml" |]);
+      test "a later init reads argv afresh, and drops the partition"
+        a_later_init_drops_the_partition;
+    ]
+
+(* The runner protocol *)
+
+let a_partition_runs_under_its_suite () =
+  let c = ended partition in
+  equal string "exit 1" c.status;
+  contains ~sub:"lib/a.ml: 2 tests" c.out;
+  equal string "" c.err
+
+let a_partition_runs_its_file_alone () =
+  let c = ended partition in
+  contains ~sub:"FAIL  A › fails" c.out;
+  not_contains ~sub:"other partition" c.out
+
+let the_logs_are_keyed_by_the_partition () =
+  let c = ended partition in
+  let keyed = Filename.concat (logs c.dir) (Os.sanitize_component "lib/a.ml") in
+  is_true (Sys.file_exists keyed)
+
+let a_junit_directory_has_a_file_per_partition () =
+  let c = ended junit in
+  let file = Os.sanitize_component "lib/a.ml" ^ ".xml" in
+  equal string "exit 0" c.status;
+  equal (list string) [ file ]
+    (Array.to_list (Sys.readdir (Filename.concat c.dir "junit")))
+
+let runner_protocol =
+  group "The runner protocol"
+    [
+      test
+        "-list-partitions prints the sorted basenames of no library and of the \
+         runner's library" (fun () ->
+          let c = ended listing in
+          equal string "exit 0" c.status;
+          equal text "a.ml\nb.ml\nc.ml\n" c.out;
+          equal string "" c.err);
+      test
+        "-list-partitions prints a basename once, a group's file and its \
+         tests' files, drained ones included" (fun () ->
+          equal text "dup.ml\nguest.ml\nhost.ml\nkept.ml\nx.pp.ml\n"
+            (ended listing_files).out);
+      test "a partition exits with the code of its run, the report on stdout"
+        a_partition_runs_under_its_suite;
+      test "a partition runs its file's tests alone, under the module's group"
+        a_partition_runs_its_file_alone;
+      test "the capture logs are keyed by the partition's suite"
+        the_logs_are_keyed_by_the_partition;
+      test "a JUnit directory gets a file per partition"
+        a_junit_directory_has_a_file_per_partition;
+      cases "outside the runner mode exit exits 0 and prints nothing" ~name:fst
+        [
+          ("init never called", never_initialised);
+          ("-list-partitions by hand", listed_by_hand);
+        ]
+        (fun (_, c) ->
+          let c = ended c in
+          equal
+            (triple string string string)
+            ("exit 0", "", "") (c.status, c.out, c.err));
+      test "a malformed mirror exits 2 under --corrected, with argv.(0)'s usage"
+        (fun () ->
+          let c = ended bad_mirror in
+          equal string "exit 2" c.status;
+          contains ~sub:"usage: child [OPTIONS] [PATTERN...]" c.err);
+      test "a partition that declares no test exits 2" (fun () ->
+          equal string "exit 2" (ended empty_partition).status);
+    ]
+
+(* The undriven guard *)
+
+let the_diagnostic_names_the_files () =
+  expect_exact (ended undriven_files).err
+  @@ __POS_OF__
+       {|windtrap: registered inline tests were never driven: this executable links ppx_windtrap-preprocessed test code of no library (a.ml, b.ml, g.ml) and nothing ran it.
+windtrap: move the tests into a library stanza with (inline_tests), whose inline runner dune builds and drives, or drive the runner protocol yourself (Ppx_windtrap_runtime.Ppx_runtime.init/exit). Exiting 2: nothing ran.
+|}
+
+let a_suite_that_never_drains () =
+  let c = ended own_suite in
+  equal string "exit 2" c.status;
+  contains ~sub:"own: 1 passed" c.out;
+  contains ~sub:"never driven" c.err
+
+let a_suite_over_a_library () =
+  let c = ended linked_library in
+  equal string "exit 0" c.status;
+  starts_with ~affix:"suite: 1 passed" c.out;
+  equal string "" c.err
+
+let a_forked_child_is_silent () =
+  let c = ended forks in
+  equal
+    (triple string string string)
+    ("exit 0", "forked child: exit 0\n", "")
+    (c.status, c.out, c.err)
+
+let guard =
+  group "The undriven guard"
+    [
+      cases "registrations that nothing drives exit 2, nothing on stdout"
+        ~name:fst
+        [ ("one file", undriven); ("several files", undriven_files) ]
+        (fun (_, c) ->
+          let c = ended c in
+          equal (pair string string) ("exit 2", "") (c.status, c.out));
+      test "the diagnostic names the one file that registered" (fun () ->
+          contains ~sub:"of no library (a.ml)" (ended undriven).err);
+      test "the diagnostic names the files of no library once, sorted"
+        the_diagnostic_names_the_files;
+      cases "a main that drained the registry exits as it chose, silently"
+        ~name:fst
+        [ ("collect returned", drained); ("collect raised", drain_raised) ]
+        (fun (_, c) ->
+          let c = ended c in
+          equal
+            (triple string string string)
+            ("exit 0", "", "") (c.status, c.out, c.err));
+      test "an unclaimed registry turns an exit 1 into 2" (fun () ->
+          let c = ended undriven_failing in
+          equal string "exit 2" c.status;
+          contains ~sub:"never driven" c.err);
+      test "a suite that never drains its registry reports, then exits 2"
+        a_suite_that_never_drains;
+      test "a suite that links a library's registrations runs its own alone"
+        a_suite_over_a_library;
+      test "a forked child that leaves through exit is silent"
+        a_forked_child_is_silent;
+      test
+        "the guard exits through Stdlib.exit, so the other at_exit functions \
+         run" (fun () ->
+          let c = ended earlier_at_exit in
+          equal string "exit 2" c.status;
+          contains ~sub:"the earlier at_exit function ran" c.out);
+    ]
+
+(* The default Expect_test_config *)
+
+module Shadowed = struct
+  include Expect_test_config
+
+  let sanitize = String.map (fun c -> if c = 'a' then 'b' else c)
+end
+
+let config =
+  group "The default Expect_test_config"
+    [
+      prop "sanitize is the identity" Gen.string (fun s ->
+          equal string s (Expect_test_config.sanitize s));
+      test "run applies its function once" (fun () ->
+          let calls = ref 0 in
+          Expect_test_config.run (fun () -> incr calls);
+          equal int 1 !calls);
+      test "a module that includes it and overrides sanitize compiles"
+        (fun () -> equal string "bb" (Shadowed.sanitize "ab"));
+    ]
 
 let () =
-  Ppx_runtime.enter_group ~file:"host.ml" ~tags:[] "G";
-  add ~file:"guest.ml" "t" ignore;
-  Ppx_runtime.leave_group ();
-  check_paths "inside a group the test lands in the group, whatever its file"
-    ~expected:[ "Host \u{203a} G \u{203a} t" ]
-    (Ppx_runtime.collect ())
-
-let () =
-  add ~file:"plain.ml" "untagged" ignore;
-  match Test_tree.flatten (Ppx_runtime.collect ()) with
-  | [ case ] -> check "the module's group adds no tag" (case.tags = Tag.empty)
-  | _ -> check "one case" false
-
-(* exit and the guard, on children *)
-
-let () =
-  let code, out, err = spawn_child [ "--child"; "drained" ] in
-  check_int "a main that drains the registry exits as it chose" ~expected:0
-    ~actual:code;
-  check_string "and the guard is silent" ~expected:"" ~actual:(out ^ err);
-  let code, out, err = spawn_child [ "--child"; "drain-raises" ] in
-  check_int "a collect that raised still claimed" ~expected:0 ~actual:code;
-  check_string "silently" ~expected:"" ~actual:(out ^ err)
-
-let () =
-  let code, out, err = spawn_child [ "--child"; "no-init" ] in
-  check_int "exit without init exits 0" ~expected:0 ~actual:code;
-  check_string "and prints nothing" ~expected:"" ~actual:(out ^ err)
-
-let () =
-  let code, _, err = spawn_child [ "--child"; "bad-mirror" ] in
-  check_int "a malformed mirror exits 2 under --corrected" ~expected:2
-    ~actual:code;
-  check_contains "the usage line names argv.(0)"
-    ~sub:"usage: child [OPTIONS] [PATTERN...]" err;
-  with_temp_root (fun log_dir ->
-      let code, _, _ = spawn_child [ "--child"; "empty-partition"; log_dir ] in
-      check_int "a partition that declares no test exits 2" ~expected:2
-        ~actual:code)
-
-let () =
-  with_temp_root (fun log_dir ->
-      let junit = Filename.concat log_dir "junit" in
-      let code, _, _ = spawn_child [ "--child"; "junit"; log_dir; junit ] in
-      check_int "the partition passes" ~expected:0 ~actual:code;
-      check "a JUnit directory holds one file per partition"
-        (Sys.file_exists
-           (Filename.concat junit
-              (Windtrap.Private.Os.sanitize_component "lib/a.ml" ^ ".xml"))))
-
-let () =
-  let code, out, err = spawn_child [ "--child"; "undriven-files" ] in
-  check_int "an unclaimed registry of several files exits 2" ~expected:2
-    ~actual:code;
-  check_string "the guard writes nothing on stdout" ~expected:"" ~actual:out;
-  check_string "the diagnostic names the files of no library, once"
-    ~expected:
-      "windtrap: registered inline tests were never driven: this executable \
-       links ppx_windtrap-preprocessed test code of no library (a.ml, b.ml, \
-       g.ml) and nothing ran it.\n\
-       windtrap: move the tests into a library stanza with (inline_tests), \
-       whose inline runner dune builds and drives, or drive the runner \
-       protocol yourself (Ppx_windtrap_runtime.Ppx_runtime.init/exit). Exiting \
-       2: nothing ran.\n"
-    ~actual:err
-
-let () =
-  let code, out, err = spawn_child [ "--child"; "list-by-hand" ] in
-  check_int "-list-partitions outside the runner mode exits 0" ~expected:0
-    ~actual:code;
-  check_string "and lists nothing" ~expected:"" ~actual:(out ^ err)
-
-let () =
-  let code, _, err = spawn_child [ "--child"; "undriven-exit-1" ] in
-  check_int "an unclaimed registry turns an exit 1 into 2" ~expected:2
-    ~actual:code;
-  check_contains "with the diagnostic" ~sub:"never driven" err
-
-let () =
-  with_temp_root (fun log_dir ->
-      let code, out, err = spawn_child [ "--child"; "own-suite"; log_dir ] in
-      check_int "a suite that leaves the registry undrained exits 2" ~expected:2
-        ~actual:code;
-      check_contains "after its report" ~sub:"own: 1 passed" out;
-      check_contains "and the diagnostic" ~sub:"never driven" err);
-  with_temp_root (fun log_dir ->
-      let code, out, err =
-        spawn_child [ "--child"; "linked-library"; log_dir ]
-      in
-      check_int "a suite that links a library's tests exits with its own code"
-        ~expected:0 ~actual:code;
-      check_string "and runs its own suite alone" ~expected:"suite: 1 passed"
-        ~actual:(String.sub out 0 (min 15 (String.length out)));
-      check_string "silently on stderr" ~expected:"" ~actual:err)
-
-let () =
-  if Sys.win32 then skip_scenario ~reason:"POSIX only" __POS__
-  else
-    let code, out, err = spawn_child [ "--child"; "fork" ] in
-    check_string "a forked child leaves through exit, silent" ~expected:""
-      ~actual:err;
-    check_string "with its own code" ~expected:"forked child exited 0\n"
-      ~actual:out;
-    check_int "and the parent claims and exits 0" ~expected:0 ~actual:code
-
-let () =
-  let code, out, _ = spawn_child [ "--child"; "at-exit" ] in
-  check_int "the guard exits 2" ~expected:2 ~actual:code;
-  check_contains "through Stdlib.exit: the earlier at_exit function runs"
-    ~sub:"the earlier at_exit function ran" out
-
-(* The ambient config module *)
-
-let () =
-  (* The default config is the identity in both components generated code
-     consumes; its shape must keep include-and-override configs compiling. *)
-  check_string "Expect_test_config.sanitize is the identity" ~expected:"x"
-    ~actual:(Expect_test_config.sanitize "x");
-  let ran = ref false in
-  Expect_test_config.run (fun () -> ran := true);
-  check "Expect_test_config.run applies the body" !ran;
-  let module Shadow = struct
-    include Expect_test_config
-
-    let sanitize s = String.map (fun c -> if c = 'a' then 'b' else c) s
-  end in
-  check_string "include-and-override shadowing compiles and overrides"
-    ~expected:"bb" ~actual:(Shadow.sanitize "ab")
-
-(* Summary *)
-
-let () = finish ()
+  exit
+    (run "ppx_runtime"
+       [ registration; collecting; runner_protocol; guard; config ])
