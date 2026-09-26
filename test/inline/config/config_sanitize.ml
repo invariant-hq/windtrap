@@ -35,7 +35,7 @@ module Never_runs = struct
   end
 
   (* A body with a node fails, as that node is never reached; see
-     ../correction/unreached.ml. *)
+     test/cram/run/inline/unreached.ml. *)
   let%expect_test "a run that never calls a body without a node checks nothing"
       =
     print_string "anything"
