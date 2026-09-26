@@ -77,8 +77,7 @@
     - [`Exe] of [dune exec --instrument-with ppx_windtrap.mutate <target> --]
       when the identity is relative, which means an executable below a build
       directory. [<target>] is the identity without its first component, the
-      build context, as one word of
-      {!Windtrap.Private.Report_sections.shell_word}.
+      build context, spelled by {!Windtrap.Private.Report_sections.dune_exec}.
     - [`Exe] of the path of the executable, as one such word, when the identity
       is absolute. *)
 

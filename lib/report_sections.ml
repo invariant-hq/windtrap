@@ -95,6 +95,15 @@ let shell_word s =
   in
   if s <> "" && String.for_all bare s then s else shell_quote s
 
+(* [dune exec] looks a word without a [/] up as a program name. The [/] is
+   the separator of every path [Os.display_path] prints. *)
+let dune_exec ~mutate path : Run.invocation =
+  let backend =
+    if mutate then "--instrument-with ppx_windtrap.mutate " else ""
+  in
+  let path = if String.contains path '/' then path else "./" ^ path in
+  `Exe (strf "dune exec %s%s --" backend (shell_word path))
+
 (* Failure facts *)
 
 let shown_text (t : Failure.text) =

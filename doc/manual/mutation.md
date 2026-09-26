@@ -133,7 +133,7 @@ calc: 10 passed in 1.3ms.
       sign › is -1 for a negative  test_calc.ml:32
 ──────────────────────────────────────────────────────────
 
-reproduce: dune exec --instrument-with ppx_windtrap.mutate test_calc.exe -- --arm calc.ml:10:16:ge
+reproduce: dune exec --instrument-with ppx_windtrap.mutate ./test_calc.exe -- --arm calc.ml:10:16:ge
 mutants: 2 survived of 5 reached by this suite, 3 killed
 ```
 
@@ -193,7 +193,7 @@ calc: 1 passed in 0.5ms.
   4  calc.ml   lines 5, 8, 10
 ──────────────────────────────────────────────────────────
 
-reproduce: dune exec --instrument-with ppx_windtrap.mutate test_calc.exe -- --arm calc.ml:6:11:add -f 'stays positive'
+reproduce: dune exec --instrument-with ppx_windtrap.mutate ./test_calc.exe -- --arm calc.ml:6:11:add -f 'stays positive'
 windtrap: verdicts not saved: this run's selection narrows the suite, and a partial run's verdicts would stand in the project merge as the whole.
 mutants: 1 survived of 1 reached by the 1 selected test, 4 never reached
 ```
@@ -251,7 +251,7 @@ every suite:
 
 ```
 $ WINDTRAP_MUTATE=1 dune runtest --force --instrument-with ppx_windtrap.mutate
-calc: 10 passed in 0.9ms.
+calc: 10 passed in 1.0ms.
 
 ─────────────────────── survivors ────────────────────────
   SURVIVED  calc.ml:10:16:ge  n > 0 → n >= 0
@@ -268,7 +268,7 @@ calc: 10 passed in 0.9ms.
       sign › is -1 for a negative  test_calc.ml:32
 ──────────────────────────────────────────────────────────
 
-reproduce: dune exec --instrument-with ppx_windtrap.mutate test_calc.exe -- --arm calc.ml:10:16:ge
+reproduce: dune exec --instrument-with ppx_windtrap.mutate ./test_calc.exe -- --arm calc.ml:10:16:ge
 mutants: 2 survived of 5 reached by this suite, 3 killed
 $ dune exec windtrap -- mutants
 ───────────────────── survivors (2) ──────────────────────
@@ -286,7 +286,7 @@ $ dune exec windtrap -- mutants
       test_calc.exe  sign › is -1 for a negative
 ──────────────────────────────────────────────────────────
 
-reproduce: dune exec --instrument-with ppx_windtrap.mutate test_calc.exe -- --arm calc.ml:10:16:ge
+reproduce: dune exec --instrument-with ppx_windtrap.mutate ./test_calc.exe -- --arm calc.ml:10:16:ge
 mutants: 2 survived of 5 reached, 3 killed, 1 executable
 ```
 

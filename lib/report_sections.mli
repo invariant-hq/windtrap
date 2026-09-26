@@ -171,6 +171,14 @@ val shell_word : string -> string
     Whoever spells the [cmd] of an [`Exe] invocation passes the path of the
     executable through it, so a printed command runs as pasted. *)
 
+val dune_exec : mutate:bool -> string -> Run.invocation
+(** [dune_exec ~mutate path] is the [`Exe] invocation [dune exec <path> --] of
+    the executable at [path], relative to the project root. [<path>] is [path]
+    as one word of {!shell_word}, and [./path] when [path] has no [/]. When
+    [mutate] is [true], [--instrument-with ppx_windtrap.mutate] precedes
+    [<path>], and the command runs the build with the mutants. Every [dune exec]
+    command of a report is one of these. *)
+
 (** {1:sections The section vocabulary}
 
     Adding a constructor to {!section} is a design amendment, as adding one to

@@ -176,10 +176,32 @@ program's path from the project root, with no ./ left in it. A core built
 with the mutation backend adds that backend's flag, which the loop's
 suite pins; this session masks it so it reads the same in either build.
 
-  $ run INSIDE_DUNE=1 FACADE_FIXTURE=property ./suite_main.exe > out 2> err
+  $ mkdir sub && cp ./suite_main.exe sub/
+  $ run INSIDE_DUNE=1 FACADE_FIXTURE=property ./sub/suite_main.exe > out 2> err
   [1]
   $ grep 'replay:' out | sed -E 's/s1:[0-9a-f]+/SEED/; s/--instrument-with ppx_windtrap\.mutate //'
-      replay: dune exec suite_main.exe -- --seed SEED -f 'boom'
+      replay: dune exec sub/suite_main.exe -- --seed SEED -f 'boom'
+  $ rm -r sub
+
+dune exec takes a word without a slash for the name of a program to
+look up, so a program at the project root keeps its ./. At the root of
+a project that holds the program, the line runs as pasted and fails
+again on the same case. INSIDE_DUNE keeps the pasted dune at this root,
+and the backend's flag is masked as above:
+
+  $ mkdir proj && cp ./suite_main.exe proj/ && cd proj
+  $ echo '(lang dune 3.0)' > dune-project
+  $ run INSIDE_DUNE=1 FACADE_FIXTURE=property ./suite_main.exe > out 2> err
+  [1]
+  $ sed -n 's/^ *replay: //p' out | sed -E 's/--instrument-with ppx_windtrap\.mutate //' > replay
+  $ sed -E 's/s1:[0-9a-f]+/SEED/' replay
+  dune exec ./suite_main.exe -- --seed SEED -f 'boom'
+  $ eval "run INSIDE_DUNE=1 FACADE_FIXTURE=property $(cat replay)" > again 2>&1
+  [1]
+  $ grep -e 'counterexample' -e 'replay:' again | sed -E 's/s1:[0-9a-f]+/SEED/; s/--instrument-with ppx_windtrap\.mutate //'
+      counterexample (case 0, shrunk 1 step): 0
+      replay: dune exec ./suite_main.exe -- --seed SEED -f 'boom'
+  $ cd .. && rm -r proj
 
 A host that passes run no command line gives no program to restate, so
 the line spells the run through the mirrors:

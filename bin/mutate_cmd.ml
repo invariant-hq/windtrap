@@ -61,9 +61,7 @@ let invocation = function
           | Some i -> String.sub exe (i + 1) (String.length exe - i - 1)
           | None -> exe
         in
-        `Exe
-          ("dune exec --instrument-with ppx_windtrap.mutate "
-         ^ Sections.shell_word target ^ " --")
+        Sections.dune_exec ~mutate:true target
       else `Exe (Sections.shell_word exe)
 
 let no_data =

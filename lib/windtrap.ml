@@ -155,15 +155,9 @@ let invocation ~corrected argv0 : Run.invocation =
       if Filename.is_relative argv0 then Filename.concat (Sys.getcwd ()) argv0
       else argv0
     in
-    let backend =
-      if Windtrap_runtime.Mutate.catalogue () <> [] then
-        "--instrument-with ppx_windtrap.mutate "
-      else ""
-    in
-    `Exe
-      ("dune exec " ^ backend
-      ^ Report_sections.shell_word (Os.display_path exe)
-      ^ " --")
+    Report_sections.dune_exec
+      ~mutate:(Windtrap_runtime.Mutate.catalogue () <> [])
+      (Os.display_path exe)
 
 (* [-l] is refused as a run would be, and its standard output holds the
    paths alone. *)

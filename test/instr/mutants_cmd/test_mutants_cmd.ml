@@ -1201,23 +1201,30 @@ let edge_tests =
         let code, _, err = mutate [ "-" ] in
         equal ~msg:"a lone dash is an option" int 2 code;
         contains ~msg:"and an unknown one" ~sub:"unknown option '-'\n" err);
-    test "a relative identity of one component is the target as it is"
+    test "a target without a directory is spelled from the current one"
       (fun () ->
-        let root = scratch "one-component" in
-        plant_sources root;
-        let identity = plant_exe root "t.exe" "a suite" in
-        save ~identity
-          (Filename.concat root "_build/_mutants/t.mutants")
-          (collection [ m_add (V.survived [ [ "calc"; "adds" ] ]) ]);
-        let code, out, err = mutate ~cwd:root [] in
-        equal ~msg:"the survivor exits 1" int 1 code;
-        equal ~msg:"the file is fresh" text "" err;
-        contains ~msg:"the target is the whole identity"
-          ~sub:
-            "\n\
-             reproduce: dune exec --instrument-with ppx_windtrap.mutate t.exe \
-             -- --arm lib/calc.ml:1:14:add\n"
-          out);
+        (* [dune exec t.exe] looks for a program named [t.exe]. An
+           executable at the project root, and an identity of one component,
+           take [./]. *)
+        List.iter
+          (fun (name, exe) ->
+            let root = scratch name in
+            plant_sources root;
+            let identity = plant_exe root exe "a suite" in
+            save ~identity
+              (Filename.concat root "_build/_mutants/t.mutants")
+              (collection [ m_add (V.survived [ [ "calc"; "adds" ] ]) ]);
+            let code, out, err = mutate ~cwd:root [] in
+            equal ~msg:(exe ^ ": the survivor exits 1") int 1 code;
+            equal ~msg:(exe ^ ": the file is fresh") text "" err;
+            contains
+              ~msg:(exe ^ ": the target names its directory")
+              ~sub:
+                "\n\
+                 reproduce: dune exec --instrument-with ppx_windtrap.mutate \
+                 ./t.exe -- --arm lib/calc.ml:1:14:add\n"
+              out)
+          [ ("root-exe", "default/t.exe"); ("one-component", "t.exe") ]);
     test "reaching tests sort by their spelled path" (fun () ->
         (* By the path as a list, [a; b] comes before [a b]; spelled, the
            space sorts before the separator. *)
