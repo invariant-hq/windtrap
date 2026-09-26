@@ -17,6 +17,3 @@ let sum n =
     total := !total + i
   done;
   !total
-
-(* Rules pinned here, by id in RULES.md and interface line: C12, cov:40;
-   C13, cov:41. *)

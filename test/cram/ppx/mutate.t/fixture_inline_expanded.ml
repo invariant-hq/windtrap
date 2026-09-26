@@ -8,5 +8,3 @@ let sum a b = a + b
 let () =
   Ppx_windtrap_runtime.Ppx_runtime.add_test ~file:"fixture_inline_expanded.ml"
     ~tags:[] "sums" (fun () -> assert (sum 1 2 = 3))
-
-(* Rules pinned here, by id in RULES.md and interface line: M28, mut:106-108. *)

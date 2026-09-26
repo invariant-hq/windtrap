@@ -24,7 +24,3 @@ let%expect_test _ =
 let%expect_test ("tagged" [@tags "slow"]) =
   print_string "x";
   [%expect {x| x |x}]
-
-(* Rules pinned here, by id in RULES.md and interface line: E1, pwt:20-23;
-   E2, pwt:23-25; E5, pwt:25-26; E8, pwt:23; E9, pwt:35-38; E10, pwt:38;
-   E12, pwt:39; E23, pwt:70-74. *)

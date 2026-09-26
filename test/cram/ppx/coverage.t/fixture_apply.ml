@@ -1,4 +1,4 @@
-(* Application out-edges (Law 14 as amended): a non-tail application is
+(* Application out-edges: a non-tail application is
    wrapped in [___windtrap_post_visit___], so its point fires only when
    the call returns - a raising call reports uncovered. The point's
    extent is the application; its attribution offset is the donor's (end
@@ -23,6 +23,3 @@ let sequenced () =
   print_string "a";
   print_string "b";
   print_newline ()
-
-(* Rules pinned here, by id in RULES.md and interface line: C31, cov:69-72;
-   C32, cov:74; C51, cov:111-114; C53, cov:115; C73, cov:185-186. *)

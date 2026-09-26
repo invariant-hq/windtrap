@@ -26,7 +26,7 @@
    toolchain this project does not otherwise need.
 
    The checks below are a smoke check that the instrumented code still
-   computes, including its registration at module load, and one guarantee 12
+   computes, including its registration at module load, and one semantics
    claim that needs no baseline to state: with nothing armed, the
    fixture's own witnesses evaluate their operands right to left, which
    is the order the uninstrumented twin uses in test_mutate_semantics.ml. *)

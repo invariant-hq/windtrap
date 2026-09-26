@@ -1,4 +1,3 @@
-let%test name = ()
+(* A [let%test] name is refused with [let%expect_test]'s message. *)
 
-(* E3, pwt:69-71: a [let%test] name that is neither a string literal nor [_]
-   is refused, with the same message. *)
+let%test name = ()

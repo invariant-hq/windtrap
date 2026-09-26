@@ -7,31 +7,31 @@ ppx_windtrap's expansions and refusals, as pp.exe prints them (see
   $ expand --impl ./expect_attributes.ml
   let () =
     Ppx_windtrap_runtime.Ppx_runtime.add_test ~file:"./expect_attributes.ml"
-      ~pos:("./expect_attributes.ml", 7, 0, 75) ~tags:["kept"] "dropped"
+      ~pos:("./expect_attributes.ml", 6, 0, 75) ~tags:["kept"] "dropped"
       (fun () ->
          Ppx_windtrap_runtime.Ppx_runtime.expect_test
-           ~pos:("./expect_attributes.ml", 7, 0, 56)
-           ~body_end:("./expect_attributes.ml", 7, 56, 56) ~nodes:[]
+           ~pos:("./expect_attributes.ml", 6, 0, 56)
+           ~body_end:("./expect_attributes.ml", 6, 56, 56) ~nodes:[]
            (fun () ->
               (Expect_test_config.run : (unit -> unit) -> unit) (fun () -> ()))
            (fun () -> Expect_test_config.sanitize (Windtrap.output ())))
   let () =
     Ppx_windtrap_runtime.Ppx_runtime.add_test ~file:"./expect_attributes.ml"
-      ~pos:("./expect_attributes.ml", 11, 0, 125) ~tags:[] "carried"
+      ~pos:("./expect_attributes.ml", 9, 0, 125) ~tags:[] "carried"
       (fun () ->
          Ppx_windtrap_runtime.Ppx_runtime.expect_test
-           ~pos:("./expect_attributes.ml", 11, 0, 125)
-           ~body_end:("./expect_attributes.ml", 14, 45, 45)
-           ~nodes:[("./expect_attributes.ml", 13, 2, 19)]
+           ~pos:("./expect_attributes.ml", 9, 0, 125)
+           ~body_end:("./expect_attributes.ml", 12, 45, 45)
+           ~nodes:[("./expect_attributes.ml", 11, 2, 19)]
            (fun () ->
               (Expect_test_config.run : (unit -> unit) -> unit)
                 (fun () ->
                    print_string "x";
                    (((Ppx_windtrap_runtime.Ppx_runtime.reach
-                        ("./expect_attributes.ml", 13, 2, 19);
+                        ("./expect_attributes.ml", 11, 2, 19);
                       Windtrap.expect
                         (Expect_test_config.sanitize (Windtrap.output ()))
-                        (("./expect_attributes.ml", 13, 2, 19), {| x |})))
+                        (("./expect_attributes.ml", 11, 2, 19), {| x |})))
                    [@carried ]);
                    ignore ((Expect_test_config.sanitize (Windtrap.output ()))
                      [@carried_output ])))
@@ -169,22 +169,22 @@ ppx_windtrap's expansions and refusals, as pp.exe prints them (see
 A refusal is an error located at the node, and the driver exits 1:
 
   $ expand --impl ./reject_bad_payload.ml
-  File "./reject_bad_payload.ml", line 5, characters 2-14:
-  5 |   [%expect 42]
+  File "./reject_bad_payload.ml", line 3, characters 2-14:
+  3 |   [%expect 42]
         ^^^^^^^^^^^^
   Error: Expected a string literal payload
   [1]
 
   $ expand --impl ./reject_dropped_body.ml
-  File "./reject_dropped_body.ml", line 6, characters 33-43:
-  6 | let%test "dropped" = ignore (1 [@expect.foo])
+  File "./reject_dropped_body.ml", line 3, characters 33-43:
+  3 | let%test "dropped" = ignore (1 [@expect.foo])
                                        ^^^^^^^^^^
   Error: [@@expect.foo] is not supported by ppx_windtrap
   [1]
 
   $ expand --impl ./reject_expect_outside.ml
-  File "./reject_expect_outside.ml", line 4, characters 13-19:
-  4 | let f () = [%expect {| nothing |}]
+  File "./reject_expect_outside.ml", line 1, characters 13-19:
+  1 | let f () = [%expect {| nothing |}]
                    ^^^^^^
   Error: [%expect] must appear inside a let%expect_test body
   [1]
@@ -197,8 +197,8 @@ A refusal is an error located at the node, and the driver exits 1:
   [1]
 
   $ expand --impl ./reject_expectation.ml
-  File "./reject_expectation.ml", line 5, characters 24-35:
-  5 | let check () = ignore [%expectation {| x |}]
+  File "./reject_expectation.ml", line 1, characters 24-35:
+  1 | let check () = ignore [%expectation {| x |}]
                               ^^^^^^^^^^^
   Error: [%expectation] is not supported by ppx_windtrap
   [1]
@@ -211,15 +211,15 @@ A refusal is an error located at the node, and the driver exits 1:
   [1]
 
   $ expand --impl ./reject_if_reached.ml
-  File "./reject_if_reached.ml", line 5, characters 18-35:
-  5 |   if false then [%expect.if_reached {| never |}];
+  File "./reject_if_reached.ml", line 2, characters 18-35:
+  2 |   if false then [%expect.if_reached {| never |}];
                         ^^^^^^^^^^^^^^^^^
   Error: [%expect.if_reached] is not supported by ppx_windtrap
   [1]
 
   $ expand --impl ./reject_leftover_attr.ml
-  File "./reject_leftover_attr.ml", line 1, characters 13-25:
-  1 | let x = (1 [@expect_exact])
+  File "./reject_leftover_attr.ml", line 3, characters 13-25:
+  3 | let x = (1 [@expect_exact])
                    ^^^^^^^^^^^^
   Error: [@@expect_exact] is not supported by ppx_windtrap
   [1]
@@ -239,8 +239,8 @@ A refusal is an error located at the node, and the driver exits 1:
   [1]
 
   $ expand --impl ./reject_module_attr.ml
-  File "./reject_module_attr.ml", line 8, characters 3-22:
-  8 | [@@expect.uncaught_exn {| (Failure boom) |}]
+  File "./reject_module_attr.ml", line 4, characters 3-22:
+  4 | [@@expect.uncaught_exn {| (Failure boom) |}]
          ^^^^^^^^^^^^^^^^^^^
   Error: [@@expect.uncaught_exn] is not supported by ppx_windtrap
   [1]
@@ -260,8 +260,8 @@ A refusal is an error located at the node, and the driver exits 1:
   [1]
 
   $ expand --impl ./reject_pattern_attr.ml
-  File "./reject_pattern_attr.ml", line 5, characters 27-46:
-  5 | let%expect_test ("named" [@expect.uncaught_exn {| boom |}]) =
+  File "./reject_pattern_attr.ml", line 1, characters 27-46:
+  1 | let%expect_test ("named" [@expect.uncaught_exn {| boom |}]) =
                                  ^^^^^^^^^^^^^^^^^^^
   Error: [@@expect.uncaught_exn] is not supported by ppx_windtrap
   [1]
@@ -295,8 +295,8 @@ A refusal is an error located at the node, and the driver exits 1:
   [1]
 
   $ expand --impl ./reject_test_name_pattern.ml
-  File "./reject_test_name_pattern.ml", line 1, characters 0-18:
-  1 | let%test name = ()
+  File "./reject_test_name_pattern.ml", line 3, characters 0-18:
+  3 | let%test name = ()
       ^^^^^^^^^^^^^^^^^^
   Error: Expected let%expect_test "name" = ... or let%expect_test _ = ...
   [1]
@@ -316,15 +316,15 @@ A refusal is an error located at the node, and the driver exits 1:
   [1]
 
   $ expand --impl ./reject_uncaught_exn.ml
-  File "./reject_uncaught_exn.ml", line 7, characters 3-22:
-  7 | [@@expect.uncaught_exn {| (Failure boom) |}]
+  File "./reject_uncaught_exn.ml", line 4, characters 3-22:
+  4 | [@@expect.uncaught_exn {| (Failure boom) |}]
          ^^^^^^^^^^^^^^^^^^^
   Error: [@@expect.uncaught_exn] is not supported by ppx_windtrap
   [1]
 
   $ expand --impl ./reject_unreachable.ml
-  File "./reject_unreachable.ml", line 5, characters 18-36:
-  5 |   if false then [%expect.unreachable];
+  File "./reject_unreachable.ml", line 2, characters 18-36:
+  2 |   if false then [%expect.unreachable];
                         ^^^^^^^^^^^^^^^^^^
   Error: [%expect.unreachable] is not supported by ppx_windtrap
   [1]

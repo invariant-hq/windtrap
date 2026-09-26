@@ -11,6 +11,3 @@ let deep a b c d = a || (b && (c || d))
 let by_cmp a b = if a < b then 1 else 0
 let by_con a b = if a && b then 1 else 0
 let by_neg a = if a then 1 else 0
-
-(* Rules pinned here, by id in RULES.md and interface line: M2, mut:56-58;
-   M16, mut:81-83; M17, mut:84-86. *)

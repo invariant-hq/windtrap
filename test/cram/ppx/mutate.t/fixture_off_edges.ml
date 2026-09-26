@@ -37,6 +37,3 @@ let local a b =
 type t = int [@@mutate off]
 
 let after a b = a + b
-
-(* Rules pinned here, by id in RULES.md and interface line: M38, mut:126-129;
-   M40, mut:129-131; M42, mut:133-135. *)

@@ -59,16 +59,16 @@ module of any other shape as it is.
 
   $ cov --impl ./fixture_and_or.ml | ../elide.exe
   coverage points of "./fixture_and_or.ml" in Windtrap_cov_________fixture_and_or___ml, with ___windtrap_post_visit___:
-    0: 479-480
-    1: 474-480
-    2: 498-499
-    3: 503-504
-    4: 523-524
-    5: 528-529
-    6: 533-534
-    7: 590-593
-    8: 590-593
-    9: 563-574
+    0: 459-460
+    1: 454-460
+    2: 478-479
+    3: 483-484
+    4: 503-504
+    5: 508-509
+    6: 513-514
+    7: 570-573
+    8: 570-573
+    9: 543-554
   let both x y = ___windtrap_visit___ 1; x && ((___windtrap_visit___ 0; y))
   let either x y =
     ___windtrap_visit___ 2;
@@ -94,16 +94,16 @@ module of any other shape as it is.
 
   $ cov --impl ./fixture_apply.ml | ../elide.exe
   coverage points of "./fixture_apply.ml" in Windtrap_cov_________fixture_apply___ml, with ___windtrap_post_visit___:
-    0: 432-437
-    1: 537-547
-    2: 530-547
-    3: 638-646
-    4: 630-657
-    5: 749-757
-    6: 739-757
-    7: 874-890
-    8: 854-870
-    9: 854-910
+    0: 412-417
+    1: 517-527
+    2: 510-527
+    3: 618-626
+    4: 610-637
+    5: 729-737
+    6: 719-737
+    7: 854-870
+    8: 834-850
+    9: 834-890
   let helper x = ___windtrap_visit___ 0; x + 1
   let nested x =
     ___windtrap_visit___ 2; helper (___windtrap_post_visit___ 1 (helper x))
@@ -120,14 +120,14 @@ module of any other shape as it is.
 
   $ cov --impl ./fixture_class.ml | ../elide.exe
   coverage points of "./fixture_class.ml" in Windtrap_cov_________fixture_class___ml, with ___windtrap_post_visit___:
-    0: 378-391
-    1: 411-412
-    2: 429-435
-    3: 321-322
-    4: 466-480
-    5: 486-492
-    6: 458-503
-    7: 584-591
+    0: 358-371
+    1: 391-392
+    2: 409-415
+    3: 301-302
+    4: 446-460
+    5: 466-472
+    6: 438-483
+    7: 564-571
   class counter ?(step= ___windtrap_visit___ 3; 1)  () =
     object
       val mutable n = 0
@@ -154,22 +154,22 @@ module of any other shape as it is.
 
   $ cov --impl ./fixture_entries.ml | ../elide.exe
   coverage points of "./fixture_entries.ml" in Windtrap_cov_________fixture_entries___ml, with ___windtrap_post_visit___:
-    0: 271-272
-    1: 439-450
-    2: 426-465
-    3: 569-580
-    4: 556-613
-    5: 852-853
-    6: 848-853
-    7: 975-976
-    8: 980-981
-    9: 1146-1147
-    10: 1316-1317
-    11: 1321-1326
-    12: 1481-1497
-    13: 1453-1477
-    14: 1453-1477
-    15: 1440-1497
+    0: 159-160
+    1: 311-322
+    2: 298-337
+    3: 428-439
+    4: 415-472
+    5: 679-680
+    6: 675-680
+    7: 786-787
+    8: 791-792
+    9: 941-942
+    10: 1095-1096
+    11: 1100-1105
+    12: 1241-1257
+    13: 1213-1237
+    14: 1213-1237
+    15: 1200-1257
   let widen (x : [ `A ]) = (___windtrap_visit___ 0; x :> [ `A  | `B ])
   type empty = |
   let refute (x : (int, empty) Either.t) =
@@ -365,25 +365,25 @@ module of any other shape as it is.
 
   $ cov --impl ./fixture_keys.ml | ../elide.exe
   coverage points of "./fixture_keys.ml" in Windtrap_cov_________fixture_keys___ml, with ___windtrap_post_visit___:
-    0: 655-658
-    1: 635-671
-    2: 711-714
-    3: 723-726
-    4: 735-740
-    5: 691-741
-    6: 913-917
-    7: 925-931
-    8: 907-938
-    9: 1270-1276
-    10: 1280-1281
-    11: 1270-1281
-    12: 1304-1312
-    13: 1316-1317
-    14: 1304-1312
-    15: 1304-1317
-    16: 1547-1548
-    17: 1552-1557
-    18: 1539-1558
+    0: 543-546
+    1: 523-559
+    2: 599-602
+    3: 611-614
+    4: 623-628
+    5: 579-629
+    6: 787-791
+    7: 799-805
+    8: 781-812
+    9: 1123-1129
+    10: 1133-1134
+    11: 1123-1134
+    12: 1157-1165
+    13: 1169-1170
+    14: 1157-1165
+    15: 1157-1170
+    16: 1382-1383
+    17: 1387-1392
+    18: 1374-1393
   let one f h =
     ___windtrap_visit___ 1;
     ignore
@@ -425,8 +425,8 @@ module of any other shape as it is.
 
   $ cov --impl ./fixture_lazy.ml | ../elide.exe
   coverage points of "./fixture_lazy.ml" in Windtrap_cov_________fixture_lazy___ml:
-    0: 228-235
-    1: 327-328
+    0: 220-227
+    1: 319-320
   let computed = lazy (___windtrap_visit___ 0; 1 + 2)
   let const = lazy 42
   let alias = lazy const
@@ -452,15 +452,15 @@ module of any other shape as it is.
 
   $ cov --impl ./fixture_match.ml | ../elide.exe
   coverage points of "./fixture_match.ml" in Windtrap_cov_________fixture_match___ml, with ___windtrap_post_visit___:
-    0: 150-161
-    1: 173-178
-    2: 166-192
-    3: 204-209
-    4: 197-223
-    5: 133-245
-    6: 284-304
-    7: 269-278
-    8: 265-304
+    0: 127-138
+    1: 150-155
+    2: 143-169
+    3: 181-186
+    4: 174-200
+    5: 110-222
+    6: 261-281
+    7: 246-255
+    8: 242-281
   let classify n =
     ___windtrap_visit___ 5;
     (match n with
@@ -508,27 +508,27 @@ module of any other shape as it is.
 
   $ cov --impl ./fixture_off_structure.ml | ../elide.exe
   coverage points of "./fixture_off_structure.ml" in Windtrap_cov_________fixture_off_structure___ml, with ___windtrap_post_visit___:
-    0: 627-628
-    1: 620-621
-    2: 610-628
-    3: 678-679
-    4: 671-672
-    5: 661-679
-    6: 704-707
-    7: 710-713
-    8: 600-713
-    9: 1110-1111
-    10: 1103-1104
-    11: 1089-1111
-    12: 1211-1212
-    13: 1204-1205
-    14: 1190-1212
-    15: 1405-1406
-    16: 1398-1399
-    17: 1384-1406
-    18: 1507-1508
-    19: 1500-1501
-    20: 1486-1508
+    0: 498-499
+    1: 491-492
+    2: 481-499
+    3: 549-550
+    4: 542-543
+    5: 532-550
+    6: 575-578
+    7: 581-584
+    8: 471-584
+    9: 963-964
+    10: 956-957
+    11: 942-964
+    12: 1064-1065
+    13: 1057-1058
+    14: 1043-1065
+    15: 1240-1241
+    16: 1233-1234
+    17: 1219-1241
+    18: 1342-1343
+    19: 1335-1336
+    20: 1321-1343
   module rec Dark:sig val f : int -> int end =
     struct let f n = if n > 0 then 1 else 0 end[@@coverage off]
   
@@ -685,34 +685,34 @@ module of any other shape as it is.
 
   $ cov --impl ./fixture_out_edges.ml | ../elide.exe
   coverage points of "./fixture_out_edges.ml" in Windtrap_cov_________fixture_out_edges___ml, with ___windtrap_post_visit___:
-    0: 299-300
-    1: 382-393
-    2: 493-504
-    3: 485-515
-    4: 647-661
-    5: 647-661
-    6: 686-700
-    7: 686-705
-    8: 860-876
-    9: 852-883
-    10: 902-922
-    11: 1030-1037
-    12: 1040-1051
-    13: 1008-1051
-    14: 1160-1161
-    15: 1153-1154
-    16: 1132-1161
-    17: 1336-1342
-    18: 1313-1342
-    19: 1305-1349
-    20: 1437-1455
-    21: 1429-1462
-    22: 1611-1614
-    23: 1641-1659
-    24: 1633-1666
-    25: 1688-1706
-    26: 1875-1882
-    27: 1867-1889
+    0: 205-206
+    1: 275-286
+    2: 373-384
+    3: 365-395
+    4: 503-517
+    5: 503-517
+    6: 542-556
+    7: 542-561
+    8: 703-719
+    9: 695-726
+    10: 745-765
+    11: 857-864
+    12: 867-878
+    13: 835-878
+    14: 974-975
+    15: 967-968
+    16: 946-975
+    17: 1137-1143
+    18: 1114-1143
+    19: 1106-1150
+    20: 1225-1243
+    21: 1217-1250
+    22: 1378-1381
+    23: 1408-1426
+    24: 1400-1433
+    25: 1455-1473
+    26: 1626-1633
+    27: 1618-1640
   class counter = object method get = ___windtrap_visit___ 0; 0 end
   let make () = ___windtrap_visit___ 1; new counter
   let kept () =
@@ -756,10 +756,10 @@ module of any other shape as it is.
 
   $ cov --impl ./fixture_primitives.ml | ../elide.exe
   coverage points of "./fixture_primitives.ml" in Windtrap_cov_________fixture_primitives___ml, with ___windtrap_post_visit___:
-    0: 320-321
-    1: 339-340
-    2: 1110-1113
-    3: 307-1121
+    0: 290-291
+    1: 309-310
+    2: 1080-1083
+    3: 277-1091
   let primitives a b x y r l s e f =
     ___windtrap_visit___ 3;
     (let _ = a && (___windtrap_visit___ 0; b) in
@@ -803,12 +803,12 @@ module of any other shape as it is.
 
   $ cov --impl ./fixture_scope.ml | ../elide.exe
   coverage points of "./fixture_scope.ml" in Windtrap_cov_________fixture_scope___ml:
-    0: 679-684
-    1: 703-723
-    2: 742-767
-    3: 793-814
-    4: 834-841
-    5: 857-869
+    0: 659-664
+    1: 683-703
+    2: 722-747
+    3: 773-794
+    4: 814-821
+    5: 837-849
   let top_level = 1
   let greeting = "hello"
   let add a b = ___windtrap_visit___ 0; a + b
@@ -820,22 +820,22 @@ module of any other shape as it is.
 
   $ cov --impl ./fixture_tmc.ml | ../elide.exe
   coverage points of "./fixture_tmc.ml" in Windtrap_cov_________fixture_tmc___ml, with ___windtrap_post_visit___:
-    0: 395-403
-    1: 408-438
-    2: 492-500
-    3: 505-540
-    4: 602-610
-    5: 617-647
-    6: 558-659
-    7: 700-701
-    8: 833-841
-    9: 795-809
-    10: 789-861
-    11: 779-781
-    12: 765-861
-    13: 914-917
-    14: 921-933
-    15: 890-898
+    0: 379-387
+    1: 392-422
+    2: 476-484
+    3: 489-524
+    4: 586-594
+    5: 601-631
+    6: 542-643
+    7: 684-685
+    8: 817-825
+    9: 779-793
+    10: 773-845
+    11: 763-765
+    12: 749-845
+    13: 898-901
+    14: 905-917
+    15: 874-882
   let rec map f =
     function
     | [] -> (___windtrap_visit___ 0; [])
@@ -879,13 +879,13 @@ Over code a deriver generated, for which generated.ml stands in:
 
   $ ../pp.exe -apply windtrap_test_generated,windtrap_coverage --impl ./fixture_generated.ml | ../elide.exe
   coverage points of "./fixture_generated.ml" in Windtrap_cov_________fixture_generated___ml, with ___windtrap_post_visit___:
-    0: 461-491
-    1: 515-523
-    2: 508-523
-    3: 782-783
-    4: 810-811
-    5: 840-855
-    6: 858-867
+    0: 343-373
+    1: 397-405
+    2: 390-405
+    3: 647-648
+    4: 675-676
+    5: 705-720
+    6: 723-732
   let entry x = ((print_int x)[@generated ])
   let edge x = ___windtrap_visit___ 0; ignore (((succ)[@generated ]) x)
   let written x =
@@ -904,26 +904,26 @@ dune builds for a stanza naming both backends:
 
   $ ../pp.exe -apply windtrap_mutate,windtrap_coverage --impl ./fixture_guards.ml | ../elide.exe
   coverage points of "./fixture_guards.ml" in Windtrap_cov_________fixture_guards___ml, with ___windtrap_post_visit___:
-    0: 492-497
-    1: 510-511
-    2: 503-504
-    3: 489-511
-    4: 526-531
-    5: 782-783
-    6: 715-734
-    7: 739-765
-    8: 770-792
-    9: 797-809
-    10: 698-809
-    11: 843-844
-    12: 850-855
-    13: 828-855
-    14: 995-1003
-    15: 995-1003
-    16: 978-1010
-    17: 1044-1047
-    18: 1029-1048
-    19: 1179-1180
+    0: 456-461
+    1: 474-475
+    2: 467-468
+    3: 453-475
+    4: 490-495
+    5: 746-747
+    6: 679-698
+    7: 703-729
+    8: 734-756
+    9: 761-773
+    10: 662-773
+    11: 807-808
+    12: 814-819
+    13: 792-819
+    14: 959-967
+    15: 959-967
+    16: 942-974
+    17: 1008-1011
+    18: 993-1012
+    19: 1143-1144
   mutation sites of "./fixture_guards.ml" in Windtrap_mut_________fixture_guards___ml, with type 'a operands:
     0: 9:16 "le" "a < b" -> "a <= b"
     1: 10:14 "sub" "a + b" -> "a - b"
@@ -1017,9 +1017,9 @@ an input name that is not a source file's:
 
   $ cov --impl ./fixture_input_name.ml | ../elide.exe
   coverage points of "./fixture_input_name.ml" in Windtrap_cov_________fixture_input_name___ml:
-    0: 295-296
-    1: 288-289
-    2: 274-296
+    0: 277-278
+    1: 270-271
+    2: 256-278
   let sign n =
     ___windtrap_visit___ 2;
     if n > 0 then (___windtrap_visit___ 1; 1) else (___windtrap_visit___ 0; 0)

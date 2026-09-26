@@ -1,4 +1,3 @@
-let x = (1 [@expect_exact])
+(* The refusal spells the attribute with [@@] whatever its placement. *)
 
-(* E19, pwt:87-89: a family attribute anywhere else is refused, spelled
-   with [@@] whatever its placement. *)
+let x = (1 [@expect_exact])

@@ -3,10 +3,10 @@
    SPDX-License-Identifier: ISC
   ---------------------------------------------------------------------------*)
 
-(* Instrumented by ppx_windtrap.coverage (see dune): every Law-14 form in
-   this file carries visit calls when the semantics tests run. Each fixture
-   makes one observable promise the instrumentation must not disturb
-   (guarantee 10): tail calls stay tail calls - including through the out-edge
+(* Instrumented by ppx_windtrap.coverage (see dune): every instrumented form
+   in this file carries visit calls when the semantics tests run. Each
+   fixture makes one observable promise the instrumentation must not
+   disturb: tail calls stay tail calls - including through the out-edge
    machinery, whose post-visit wrapping is exactly what could break them -
    evaluation order is untouched, lazy stays lazy, trivial lazy stays a
    value, raising calls raise as before, and results are the ones an

@@ -3,7 +3,7 @@
    SPDX-License-Identifier: ISC
   ---------------------------------------------------------------------------*)
 
-(* Semantics preservation of the coverage instrumentation (guarantee 10),
+(* Semantics preservation of the coverage instrumentation,
    checked by running the instrumented Covsem_fixtures library. This is the
    mandatory suite of the frozen expression-grade scope: the out-edge
    machinery - post-visit wrapping under tail-position analysis - is

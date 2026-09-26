@@ -1,8 +1,8 @@
 correction: 12 tests
 ──────────────────────── failures ────────────────────────
   FAIL  Sanitized › a correction writes the sanitized text
-    test/ppx/expect/correction/sanitized.ml:14
-      14 │ [%expect {| stale |}];
+    test/ppx/expect/correction/sanitized.ml:13
+      13 │ [%expect {| stale |}];
 
     expect: mismatch
     @@ -1,1 +1,1 @@
@@ -11,8 +11,8 @@ correction: 12 tests
     accept: dune promote test/ppx/expect/correction/sanitized.ml
 
   FAIL  Trailing › output after the last node
-    test/ppx/expect/correction/trailing.ml:10
-      10 │ print_string "goodbye\n"
+    test/ppx/expect/correction/trailing.ml:9
+      9 │ print_string "goodbye\n"
 
     expect: no baseline
     proposed (1 line):
@@ -20,8 +20,8 @@ correction: 12 tests
     accept: dune promote test/ppx/expect/correction/trailing.ml
 
   FAIL  Trailing › a body with no node
-    test/ppx/expect/correction/trailing.ml:14
-      14 │ print_endline "two"
+    test/ppx/expect/correction/trailing.ml:13
+      13 │ print_endline "two"
 
     expect: no baseline
     proposed (2 lines):
@@ -30,8 +30,8 @@ correction: 12 tests
     accept: dune promote test/ppx/expect/correction/trailing.ml
 
   FAIL  Trailing › Nested › a nested test's node is indented under its head
-    test/ppx/expect/correction/trailing.ml:23
-      23 │ print_string "inner"
+    test/ppx/expect/correction/trailing.ml:22
+      22 │ print_string "inner"
 
     expect: no baseline
     proposed (1 line):
@@ -39,8 +39,8 @@ correction: 12 tests
     accept: dune promote test/ppx/expect/correction/trailing.ml
 
   FAIL  Trailing › a body that raises checks nothing after it
-    test/ppx/expect/correction/trailing.ml:26
-      26 │ let%expect_test "a body that raises checks nothing after it" =
+    test/ppx/expect/correction/trailing.ml:25
+      25 │ let%expect_test "a body that raises checks nothing after it" =
 
     stop
     captured output (1 line):
@@ -66,8 +66,8 @@ correction: 12 tests
     the body returned without reaching this node
 
   FAIL  Unreached › an override that never calls the body fails
-    test/ppx/expect/correction/unreached.ml:51
-      51 │ [%expect {| printed |}]
+    test/ppx/expect/correction/unreached.ml:50
+      50 │ [%expect {| printed |}]
 
     the body returned without reaching this node
 ──────────────────────────────────────────────────────────

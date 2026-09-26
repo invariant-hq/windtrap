@@ -1,7 +1,6 @@
-(* C40, cov:80-85: an application of a trivial primitive carries no
-   out-edge. Each is bound by a [let], a position where any other
-   application is wrapped, as [f] is at the end; the [&&] and [&] bodies
-   keep the entry point of their right operand (C20, C21). *)
+(* An application of a trivial primitive carries no out-edge. Each is bound by a
+   [let], a position where any other application is wrapped, as [f] is at the
+   end; the [&&] and [&] bodies keep the entry point of their right operand. *)
 
 let primitives a b x y r l s e f =
   let _ = a && b in

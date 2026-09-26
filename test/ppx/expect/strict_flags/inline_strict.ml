@@ -17,7 +17,7 @@ let%expect_test "quoted payload" =
   print_string "quoted";
   [%expect "quoted"]
 
-(* E26, pwt:15-16: the anonymous names and a nested group too. *)
+(* The anonymous names and a nested group too. *)
 let%test _ = assert (String.length "ok" = 2)
 
 let%expect_test _ =

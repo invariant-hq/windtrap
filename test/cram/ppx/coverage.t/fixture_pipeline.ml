@@ -9,6 +9,3 @@ let staged x = x |> double |> double
 let bound x =
   let y = x |> double in
   y + 1
-
-(* Rules pinned here, by id in RULES.md and interface line: C33, cov:74;
-   C51, cov:111-114. *)

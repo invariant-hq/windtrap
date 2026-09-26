@@ -16,5 +16,3 @@ let move a b = Vec.( + ) a b
 let ordered a b = if a < b then 1 else 0
 let both a b = a && b
 let untouched a b = a - b
-
-(* Rules pinned here, by id in RULES.md and interface line: M32, mut:34-40. *)

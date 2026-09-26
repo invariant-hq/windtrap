@@ -1,4 +1,4 @@
-(* Class bodies (Law 14 as amended): concrete method bodies,
+(* Class bodies: concrete method bodies,
    initializers, and optional-argument defaults are entry points; a
    virtual method has no body to mark. Method calls are out-edges - a
    [send] with a known successor is attributed to it, one in tail
@@ -22,6 +22,3 @@ class virtual shape =
     method virtual area : int
     method name = "shape"
   end
-
-(* Rules pinned here, by id in RULES.md and interface line: C5, cov:36-37;
-   C16, cov:46; C18, cov:46; C19, cov:46; C34, cov:74; C36, cov:72. *)

@@ -6,5 +6,3 @@ type t = A | B
 
 let x = 1
 let s = "hello"
-
-(* Rules pinned here, by id in RULES.md and interface line: C71, cov:202-203. *)

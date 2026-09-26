@@ -25,7 +25,3 @@ let window lo hi x = x >= lo && x <= hi
    carries a mutant. *)
 let ok a b = a < b
 let count a b = List.length (List.filter (fun x -> x < a) b)
-
-(* Rules pinned here, by id in RULES.md and interface line: M3, mut:59-62;
-   M4, mut:74-75; M5, mut:62; M48, mut:159; M49, mut:161-164;
-   M55, mut:186-187. *)

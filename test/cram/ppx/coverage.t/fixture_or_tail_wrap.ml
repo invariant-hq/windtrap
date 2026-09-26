@@ -13,5 +13,3 @@ let rec or_seq n =
 
 let rec or_constraint n = n = 0 || (or_constraint (n - 1) : bool)
 let rec or_coerce n = n = 0 || (or_coerce (n - 1) :> bool)
-
-(* Rules pinned here, by id in RULES.md and interface line: C27, cov:62-65. *)

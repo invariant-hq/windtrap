@@ -90,5 +90,3 @@ let clip_collide rect x0 y0 box_w box_h =
   + max 0 (x0 + box_w - (rect.x + rect.width))
   + max 0 (rect.y - y0)
   + max 0 (y0 + box_h - (rect.y + rect.height))
-
-(* Rules pinned here, by id in RULES.md and interface line: M37, mut:186-187. *)

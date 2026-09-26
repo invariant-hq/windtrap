@@ -1,7 +1,7 @@
-(* E36, pwt:51-55: a node that a run of its test never reaches fails the
-   test when the body returns, located at the first such node, and the
-   failure names the lines of the others. A node reached once passes, and
-   each functor instance is a test of its own. *)
+(* A node that a run of its test never reaches fails the test when the body
+   returns, located at the first such node, and the failure names the lines of
+   the others. A node reached once passes, and each functor instance is a test
+   of its own. *)
 
 let%expect_test "a node behind a branch not taken" =
   print_string "x";
@@ -37,8 +37,7 @@ module _ = Per_instance (struct
   let reach = false
 end)
 
-(* E33, etc:37-39: an override of run that never calls the body reaches
-   none of its nodes. *)
+(* An override of run that never calls the body reaches none of its nodes. *)
 module Never = struct
   module Expect_test_config = struct
     include Expect_test_config

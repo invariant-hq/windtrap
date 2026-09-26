@@ -9,6 +9,3 @@ let both a b = a && b
 let either a b = a || b
 let gate ready x = if ready && x then 1 else 0
 let rec search p = function [] -> false | x :: rest -> p x || search p rest
-
-(* Rules pinned here, by id in RULES.md and interface line: M2, mut:56-58;
-   M9, mut:63-64. *)

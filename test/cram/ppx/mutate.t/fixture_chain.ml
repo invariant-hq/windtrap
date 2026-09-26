@@ -46,7 +46,3 @@ let mixed a b c = a + b - c
    fires in a boolean context, and a comparison's operand never is one.
    Only the outer comparison carries a site here. *)
 let chained a b c = if a < b < c then 1 else 0
-
-(* Rules pinned here, by id in RULES.md and interface line: M17, mut:84-86;
-   M20, mut:89-93; M22, mut:68-72; M23, mut:94-95; M48, mut:159;
-   M49, mut:161-164. *)

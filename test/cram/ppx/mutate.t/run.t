@@ -23,7 +23,7 @@ in full. The file is mutated under its own name:
       let ___windtrap_armed___ =
         Windtrap_runtime.Mutate.register ~file:"./fixture_input_name.ml"
           ~sites:[|{
-                     line = 6;
+                     line = 5;
                      col = 16;
                      rewrite = "ge";
                      before = "n > 0";
@@ -354,16 +354,16 @@ after, and the reason of a dismissed site.
 
   $ mut --impl ./fixture_contexts.ml | ../elide.exe
   mutation sites of "./fixture_contexts.ml" in Windtrap_mut_________fixture_contexts___ml, with type 'a operands:
-    0: 7:19 "and" "(a < b) || c" -> "(a < b) && c"
-    1: 7:19 "le" "a < b" -> "a <= b"
-    2: 14:4 "not" "let x = a in x < b" -> "not (let x = a in x < b)"
-    3: 19:32 "not" "(a < b : bool)" -> "not (a < b : bool)"
-    4: 20:25 "not" "not (a < b)" -> "not (not (a < b))"
-    5: 25:34 "and" "c || d" -> "c && d"
-    6: 25:25 "le" "a < b" -> "a <= b"
-    7: 31:27 "not" "a & b" -> "not (a & b)"
-    8: 36:33 "not" "Float.(<) a b" -> "not (Float.(<) a b)"
-    9: 42:16 "sub" "a + b" -> "a - b"
+    0: 5:19 "and" "(a < b) || c" -> "(a < b) && c"
+    1: 5:19 "le" "a < b" -> "a <= b"
+    2: 12:4 "not" "let x = a in x < b" -> "not (let x = a in x < b)"
+    3: 17:32 "not" "(a < b : bool)" -> "not (a < b : bool)"
+    4: 18:25 "not" "not (a < b)" -> "not (not (a < b))"
+    5: 23:34 "and" "c || d" -> "c && d"
+    6: 23:25 "le" "a < b" -> "a <= b"
+    7: 29:27 "not" "a & b" -> "not (a & b)"
+    8: 34:33 "not" "Float.(<) a b" -> "not (Float.(<) a b)"
+    9: 40:16 "sub" "a + b" -> "a - b"
   let either a b c =
     let __windtrap_mut_0_p =
       let (__windtrap_mut_1_l, __windtrap_mut_1_r) =
@@ -517,10 +517,10 @@ after, and the reason of a dismissed site.
 
   $ mut --impl ./fixture_lost_cmp.ml | ../elide.exe
   mutation sites of "./fixture_lost_cmp.ml" in Windtrap_mut_________fixture_lost_cmp___ml:
-    0: 13:43 "add" "a - b" -> "a + b"
-    1: 13:32 "sub" "a + b" -> "a - b"
-    2: 13:21 "not" "a < b" -> "not (a < b)"
-    3: 14:18 "or" "a && b" -> "a || b"
+    0: 10:43 "add" "a - b" -> "a + b"
+    1: 10:32 "sub" "a + b" -> "a - b"
+    2: 10:21 "not" "a < b" -> "not (a < b)"
+    3: 11:18 "or" "a && b" -> "a || b"
   let (<=) a b = (compare a b) <= 0
   let not b = b
   let ordered a b =
@@ -552,12 +552,12 @@ after, and the reason of a dismissed site.
 
   $ mut --impl ./fixture_lost_con.ml | ../elide.exe
   mutation sites of "./fixture_lost_con.ml" in Windtrap_mut_________fixture_lost_con___ml, with type 'a operands:
-    0: 14:18 "not" "a && b" -> "not (a && b)"
-    1: 15:20 "not" "a || b" -> "not (a || b)"
-    2: 16:24 "not" "(a < b) && c" -> "not ((a < b) && c)"
-    3: 17:43 "add" "a - b" -> "a + b"
-    4: 17:32 "sub" "a + b" -> "a - b"
-    5: 17:21 "le" "a < b" -> "a <= b"
+    0: 11:18 "not" "a && b" -> "not (a && b)"
+    1: 12:20 "not" "a || b" -> "not (a || b)"
+    2: 13:24 "not" "(a < b) && c" -> "not ((a < b) && c)"
+    3: 14:43 "add" "a - b" -> "a + b"
+    4: 14:32 "sub" "a + b" -> "a - b"
+    5: 14:21 "le" "a < b" -> "a <= b"
   external (&&) : bool -> bool -> bool = "%sequand"
   let both a b =
     if
@@ -764,9 +764,9 @@ after, and the reason of a dismissed site.
 
   $ mut --impl ./fixture_off_structure.ml | ../elide.exe
   mutation sites of "./fixture_off_structure.ml" in Windtrap_mut_________fixture_off_structure___ml:
-    0: 18:12 "add" "x - 1" -> "x + 1"
-    1: 43:23 "sub" "a + b" -> "a - b"
-    2: 50:14 "sub" "a + b" -> "a - b"
+    0: 16:12 "add" "x - 1" -> "x + 1"
+    1: 41:23 "sub" "a + b" -> "a - b"
+    2: 48:14 "sub" "a + b" -> "a - b"
   module rec Dark:sig val f : int -> int end = struct let f n = n + 1 end
   [@@mutate off]
   
@@ -819,7 +819,7 @@ after, and the reason of a dismissed site.
 
   $ mut --impl ./fixture_payloads.ml | ../elide.exe
   mutation sites of "./fixture_payloads.ml" in Windtrap_mut_________fixture_payloads___ml:
-    0: 7:18 "sub" "a + b" -> "a - b"
+    0: 6:18 "sub" "a + b" -> "a - b"
   let extended = [%ext a + b]
   let attributed = ((0)[@attr a + b])
   let written a b =
@@ -860,9 +860,9 @@ after, and the reason of a dismissed site.
 
   $ mut --impl ./fixture_texts.ml | ../elide.exe
   mutation sites of "./fixture_texts.ml" in Windtrap_mut_________fixture_texts___ml, with type 'a operands:
-    0: 8:18 "neq" "s = \"a b\"" -> "s <> \"a b\""
-    1: 12:15 "sub" "a + b" -> "a - b"
-    2: 13:22 "le" "a < b" -> "a <= b"
+    0: 6:18 "neq" "s = \"a b\"" -> "s <> \"a b\""
+    1: 10:15 "sub" "a + b" -> "a - b"
+    2: 11:22 "le" "a < b" -> "a <= b"
   let spaced s =
     if
       let __windtrap_mut_0_p = s = "a   b" in
@@ -890,8 +890,8 @@ Over code a deriver generated, for which generated.ml stands in:
 
   $ ../pp.exe -apply windtrap_test_generated,windtrap_mutate --impl ./fixture_generated.ml | ../elide.exe
   mutation sites of "./fixture_generated.ml" in Windtrap_mut_________fixture_generated___ml:
-    0: 7:18 "add" "a - b" -> "a + b"
-    1: 13:21 "sub" "a + b" -> "a - b"
+    0: 6:18 "add" "a - b" -> "a + b"
+    1: 11:21 "sub" "a + b" -> "a - b"
   let generated a b = ((a + b)[@generated ])
   let written a b =
     let (__windtrap_mut_0_l, __windtrap_mut_0_r) = (a, b) in
@@ -908,7 +908,7 @@ Over code a deriver generated, for which generated.ml stands in:
 
   $ ../pp.exe -apply windtrap_test_generated,windtrap_mutate --impl ./fixture_generated_chain.ml | ../elide.exe
   mutation sites of "./fixture_generated_chain.ml" in Windtrap_mut_________fixture_generated_chain___ml:
-    0: 7:23 "sub" "(a + b) + c" -> "(a + b) - c"
+    0: 6:23 "sub" "(a + b) + c" -> "(a + b) - c"
   let generated a b c = (((a + b) + c)[@generated ])
   let copied f a b c =
     f
@@ -930,13 +930,13 @@ driver, coverage_first.exe:
     1: 7:17 "not" "a" -> "not a"
     2: 10:18 "le" "(___windtrap_post_visit___ 2 (f x)) < (___windtrap_post_visit___ 3 (g x))" -> "(___windtrap_post_visit___ 2 (f x)) <= (___windtrap_post_visit___ 3 (g x))"
   coverage points of "./fixture_visits.ml" in Windtrap_cov_________fixture_visits___ml, with ___windtrap_post_visit___:
-    0: 280-281
-    1: 285-286
-    2: 380-383
-    3: 386-389
-    4: 402-403
-    5: 395-396
-    6: 377-403
+    0: 262-263
+    1: 267-268
+    2: 362-365
+    3: 368-371
+    4: 384-385
+    5: 377-378
+    6: 359-385
   let either a b =
     ___windtrap_visit___ 0;
     if
@@ -1036,8 +1036,8 @@ A refusal is an error located at the attribute, and the driver exits 1:
   [1]
 
   $ mut --impl ./reject_off_rewrite.ml
-  File "./reject_off_rewrite.ml", line 1, characters 18-51:
-  1 | let f n = (n + 1) [@mutate off sub "equal at zero"]
+  File "./reject_off_rewrite.ml", line 3, characters 18-51:
+  3 | let f n = (n + 1) [@mutate off sub "equal at zero"]
                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
   Error: Bad payload in mutate attribute.
   [1]

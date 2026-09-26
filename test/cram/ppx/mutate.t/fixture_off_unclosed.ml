@@ -20,5 +20,3 @@ let visible a b = a + b
 
 let suppressed a b = a + b
 let also_suppressed a b = if a && b then 1 else 0
-
-(* Rules pinned here, by id in RULES.md and interface line: M43, mut:136-140. *)

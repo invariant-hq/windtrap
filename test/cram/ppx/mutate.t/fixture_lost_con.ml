@@ -1,13 +1,10 @@
-(* A file that rebinds [&&] through an [external]. Each rule is named by its
-   id in ../RULES.md and the line of instrument.mli that states it.
+(* A file that rebinds [&&] through an [external].
 
-   M33, mut:39-40: a value description named after an operator removes its
-   family, as a variable pattern does.
-   M34, mut:36-37: the family is [con], [||] included.
-   M19, mut:87-88: a condition that is a connective is then no longer one,
-   and carries [neg]; M6, mut:68-69: its operands are no boolean context,
-   so [a < b] in [compared] carries nothing. [cmp] on a condition and [ari]
-   are untouched. *)
+   A value description named after an operator removes its family, as a
+   variable pattern does, and the family is [con], [||] included. A
+   condition that is a connective is then no longer one, and carries [neg].
+   Its operands are no boolean context, so [a < b] in [compared] carries
+   nothing. [cmp] on a condition and [ari] are untouched. *)
 
 external ( && ) : bool -> bool -> bool = "%sequand"
 

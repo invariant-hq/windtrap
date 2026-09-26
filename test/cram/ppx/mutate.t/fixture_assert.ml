@@ -26,6 +26,3 @@ let sequenced a b =
     a > b
   then 1
   else 0
-
-(* Rules pinned here, by id in RULES.md and interface line: M7, mut:70;
-   M24, mut:99. *)

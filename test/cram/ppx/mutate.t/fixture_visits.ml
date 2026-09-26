@@ -1,5 +1,5 @@
-(* M58, mut:199-205: the mutation rewriter over a file that holds the
-   coverage rewriter's visits. *)
+(* The mutation rewriter over a file that holds the coverage rewriter's
+   visits. *)
 
 (* [a || b] reaches the rewriter as the [if] of the coverage rewriter: it
    carries no [con] mutant, and each operand, now a condition, carries

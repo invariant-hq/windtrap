@@ -3,11 +3,10 @@
    SPDX-License-Identifier: ISC
   ---------------------------------------------------------------------------*)
 
-(* Guarantee 12: with nothing armed, a mutation-instrumented program is
-   observationally identical to an uninstrumented one - same evaluation
-   order, tail-call status, laziness, outcomes, counts and exit code.
-   This is the mandatory suite that guarantee names, and it is enforced by
-   it or not at all.
+(* With nothing armed, a mutation-instrumented program is observationally
+   identical to an uninstrumented one - same evaluation order, tail-call
+   status, laziness, outcomes, counts and exit code. This suite is the
+   check of that promise, and nothing else enforces it.
 
    Two fixture libraries, one source tree. [Mutsem_fixtures] is
    covsem_fixtures.ml (shared with the coverage semantics suite by

@@ -38,6 +38,3 @@ let below a b = if a < b then 1 else 0
 (* [ari]: the one arm that names an unqualified operator, which is why it
    is gated on the file not rebinding one. *)
 let sum a b = a + b
-
-(* Rules pinned here, by id in RULES.md and interface line: M35, mut:37-38;
-   M36, mut:28-30. *)

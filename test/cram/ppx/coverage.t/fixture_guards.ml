@@ -1,7 +1,7 @@
-(* C61, cov:138-151: the coverage rewriter over a file that holds the
-   mutation rewriter's guards. A guard is generated code and takes no mark;
-   M56, mut:193-195: every node of a guard is ghost but its disarmed arm,
-   which keeps its site's location, so that arm alone is marked. *)
+(* The coverage rewriter over a file that holds the mutation rewriter's guards.
+   A guard is generated code and takes no mark: every node of a guard is
+   ghost but its disarmed arm, which keeps its site's location, so that arm
+   alone is marked. *)
 
 (* The disarmed arm of an ordering or [ari] guard is marked as the branch of
    an [if], whether or not the site is a block: [a < b] is a condition, and

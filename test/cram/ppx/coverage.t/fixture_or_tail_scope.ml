@@ -37,5 +37,3 @@ let rec or_letop n =
   ||
   let* m = n - 1 in
   or_letop m
-
-(* Rules pinned here, by id in RULES.md and interface line: C27, cov:62-65. *)

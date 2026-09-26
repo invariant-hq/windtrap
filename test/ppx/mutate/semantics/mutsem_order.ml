@@ -3,7 +3,7 @@
    SPDX-License-Identifier: ISC
   ---------------------------------------------------------------------------*)
 
-(* The mutation-specific half of the guarantee 12 corpus. This file is
+(* The mutation-specific half of the semantics corpus. This file is
    compiled TWICE from one source (see dune and baseline/dune): once
    through [ppx_windtrap.mutate], as [Mutsem_fixtures.Mutsem_order], and
    once untouched, as [Mutsem_baseline.Mutsem_order]. Every observable

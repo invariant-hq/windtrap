@@ -19,7 +19,3 @@ module%test Tagged = struct
   let%test "in tagged group" = ()
 end
 [@@tags "group-tag"] [@@warning "-60"]
-
-(* Rules pinned here, by id in RULES.md and interface line: E2, pwt:23-25;
-   E5, pwt:25-26; E8, pwt:23; E20, pwt:59-61; E21, pwt:63-66; E23, pwt:70-74;
-   E24, pwt:70-71; E25, pwt:70-71; E35, pwt:76-83. *)

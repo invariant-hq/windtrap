@@ -1,4 +1,3 @@
-let f n = (n + 1) [@mutate off sub "equal at zero"]
+(* A bare [off] dismisses every mutant, so [off] takes no rewrite name. *)
 
-(* M66, mut:146-148: [off] that names a rewrite is refused, so a bare [off]
-   keeps dismissing every mutant of its expression. *)
+let f n = (n + 1) [@mutate off sub "equal at zero"]

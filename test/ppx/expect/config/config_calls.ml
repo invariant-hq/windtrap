@@ -1,6 +1,6 @@
-(* E33, etc:37-39: an override of run must call f once. One that calls it
-   twice runs every expectation of the body twice. The one that never calls
-   it is in ../correction/unreached.ml. *)
+(* An override of run must call f once. One that calls it twice runs every
+   expectation of the body twice. The one that never calls it is in
+   ../correction/unreached.ml. *)
 
 module Twice = struct
   let sanitized = ref 0

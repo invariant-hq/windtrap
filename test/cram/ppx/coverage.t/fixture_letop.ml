@@ -12,5 +12,3 @@ let sum =
 let pair =
   let* a = 1 and* b = 2 in
   (a, b)
-
-(* Rules pinned here, by id in RULES.md and interface line: C17, cov:45. *)
