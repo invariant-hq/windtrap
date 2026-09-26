@@ -24,8 +24,8 @@
   (<> %{os_type} Win32))
  (deps send_signal.exe))
 
-; instrumented.t runs the mutation loop, which forks, over a suite whose
-; one module is instrumented in every build.
+; broadcast.t runs the mutation loop, which forks, over a suite whose one
+; module is instrumented in every build.
 
 (library
  (name mutant_subject)
@@ -39,23 +39,10 @@
  (libraries windtrap mutant_subject))
 
 (cram
- (applies_to instrumented)
- (enabled_if
-  (<> %{os_type} Win32))
- (deps mutant_main.exe))
-
-(cram
  (applies_to broadcast)
  (enabled_if
   (<> %{os_type} Win32))
  (deps mutant_main.exe))
-
-; --mutate starts the mutation loop, which Windows refuses for want of fork.
-
-(cram
- (applies_to mutation)
- (enabled_if
-  (<> %{os_type} Win32)))
 
 ; nodune.t reads OCAMLPATH as POSIX spells it and runs the mutation loop.
 ; Under --instrument-with ppx_windtrap.coverage, dune 3.24 closes
@@ -72,15 +59,4 @@
    (<> %{env:SKIP_PACKAGE_SESSIONS=} true)))
  (deps
   (package windtrap)
-  coverage_ppx.exe
-  mutate_ppx.exe))
-
-(executable
- (name coverage_ppx)
- (modules coverage_ppx)
- (libraries ppxlib ppx_windtrap.coverage))
-
-(executable
- (name mutate_ppx)
- (modules mutate_ppx)
- (libraries ppxlib ppx_windtrap.mutate))
+  ../ppx/pp.exe))

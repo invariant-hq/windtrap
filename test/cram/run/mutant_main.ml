@@ -3,8 +3,9 @@
    SPDX-License-Identifier: ISC
   ---------------------------------------------------------------------------*)
 
-(* The suite instrumented.t drives: one test over an instrumented module,
-   so that a mutation run and an armed run happen in a real process. *)
+(* The second stanza of broadcast.t: one test over a module instrumented in
+   every build, so that WINDTRAP_MUTATE finds a mutant in this suite and
+   none in the other. *)
 
 open Windtrap
 

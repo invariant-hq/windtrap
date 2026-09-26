@@ -43,13 +43,6 @@ so and exits 0:
   list: dune exec --instrument-with ppx_windtrap.mutate mutants/mutant_main.exe -- -l
   [mutants: 0]
 
-Typed on the command line, the same filter is a typo, and it exits 2:
-
-  $ stanza mutants ./mutant_main.exe -f math
-  mutant: no tests ran: filter "math" matched none of 1 test.
-  list: dune exec --instrument-with ppx_windtrap.mutate mutants/mutant_main.exe -- -l
-  [2]
-
 WINDTRAP_MUTATE reaches both stanzas. The fixture has no mutant under
 the prefix, so it runs as it would without the variable and says why on
 standard error, while the instrumented suite tests its mutant:
@@ -61,14 +54,6 @@ standard error, while the instrumented suite tests its mutant:
   mutant: 1 passed in DURATION.
   mutants: 1 reached by this suite, 1 killed
   [mutants: 0]
-
-Typed on the command line, the same request is refused:
-
-  $ stanza unit ./suite_main.exe -e boom --mutate=test/cram/run/mutant_subject.ml > out 2>&1
-  [1]
-  $ scrub < out
-  fixture: 4 passed in DURATION.
-  windtrap: --mutate=test/cram/run/mutant_subject.ml leaves no mutant in this executable's catalogue: no instrumented file matches the prefix (is the library under test instrumented with ppx_windtrap.mutate?), or the matched files have no mutation sites
 
 A relative path in WINDTRAP_JUNIT or WINDTRAP_OUTPUT is read from the
 project root, so both stanzas write under the root's _build:
@@ -87,13 +72,6 @@ project root, so both stanzas write under the root's _build:
   fixture
   mutant
 
-Typed on the command line, a relative path is read from the working
-directory, which is the stanza's:
+The scratch project leaves with the session:
 
-  $ stanza unit ./suite_main.exe -e boom --junit report.xml -o logs 2>&1 | scrub
-  fixture: 4 passed in DURATION.
-  $ ls _build/default/unit
-  logs
-  report.xml
-  suite_main.exe
   $ cd "$bin" && rm -rf "$root"

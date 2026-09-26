@@ -1,8 +1,9 @@
 Coverage and mutation without dune: the toolchain's compiler, the
 installed windtrap, and nothing else (no dune and no ocamlfind in this
-session). The two driver executables are what a findlib user builds
-once (a Ppxlib standalone linked against the backend); everything
-after that is ocamlopt.
+session). A findlib user builds a ppxlib standalone driver linked
+against the backends once (here test/cram/ppx's pp.exe, whose -apply
+names the backend a compilation applies); everything after that is
+ocamlopt.
 
 The installed windtrap is found the way findlib finds it, on OCAMLPATH
 or beside the compiler's own library. The scratch project lives in a
@@ -16,6 +17,7 @@ a developer's INSIDE_DUNE or WINDTRAP_* setting must not reshape it.
   >   if [ -f "$d/windtrap/META" ]; then echo "$d"; break; fi; done)
   $ test -f "$lib/windtrap/windtrap.cmxa" && test -f "$lib/windtrap/runtime/windtrap_runtime.cmxa"
   $ here=$PWD
+  $ pp="$here/../ppx/pp.exe --as-ppx -apply"
   $ proj=$(cd "$(mktemp -d "${TMPDIR:-/tmp}/nodune.XXXXXX")" && pwd -P)
   $ cd "$proj"
   $ run() {
@@ -51,7 +53,7 @@ suite that leaves them:
 Coverage. The library is instrumented through -ppx; the test file is
 not, and links windtrap as any test does:
 
-  $ ocamlopt -ppx "$here/coverage_ppx.exe --as-ppx" -I "$lib/windtrap/runtime" -c calc.ml
+  $ ocamlopt -ppx "$pp windtrap_coverage" -I "$lib/windtrap/runtime" -c calc.ml
   $ ocamlopt -I +unix -I "$lib/windtrap/runtime" -I "$lib/windtrap" \
   >   unix.cmxa windtrap_runtime.cmxa windtrap.cmxa calc.cmx test_calc.ml -o test_calc.exe
 
@@ -76,6 +78,23 @@ where any other executable would:
   ./_windtrap/coverage/windtrap-HASH/DIGEST-TOKEN.coverage
   $ cd "$proj"
 
+A run whose tests fail exits 1 and still writes its dump:
+
+  $ cat > test_fails.ml <<'ML'
+  > let () =
+  >   exit Windtrap.(run "fails" [ test "add" (fun () -> equal int 6 (Calc.add 2 3)) ])
+  > ML
+  $ ocamlopt -I +unix -I "$lib/windtrap/runtime" -I "$lib/windtrap" \
+  >   unix.cmxa windtrap_runtime.cmxa windtrap.cmxa calc.cmx test_fails.ml -o test_fails.exe
+  $ mkdir failing && cd failing
+  $ run ../test_fails.exe > log
+  [1]
+  $ tail -1 log
+  1 failed in TIME.
+  $ find . -type f -name '*.coverage' | sed -E 's|windtrap-[0-9a-f]+|windtrap-HASH|; s|/[0-9a-f]+-[0-9a-f]+\.coverage|/DIGEST-TOKEN.coverage|'
+  ./_windtrap/coverage/windtrap-HASH/DIGEST-TOKEN.coverage
+  $ cd "$proj"
+
 The installed binary finds it from the working directory and merges;
 the untested arm is the uncovered line. Only the library's row is
 pinned: when windtrap's own tree is built under the coverage backend,
@@ -91,7 +110,7 @@ because the table aligns to its widest row:
 Mutation. The same library through the other backend, then the survey
 scoped to the file, with --mutate:
 
-  $ ocamlopt -ppx "$here/mutate_ppx.exe --as-ppx" -I "$lib/windtrap/runtime" -c calc.ml
+  $ ocamlopt -ppx "$pp windtrap_mutate" -I "$lib/windtrap/runtime" -c calc.ml
   $ ocamlopt -I +unix -I "$lib/windtrap/runtime" -I "$lib/windtrap" \
   >   unix.cmxa windtrap_runtime.cmxa windtrap.cmxa calc.cmx test_calc.ml -o test_calc.exe
   $ run ./test_calc.exe --mutate=calc.ml

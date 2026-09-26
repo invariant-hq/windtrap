@@ -3,7 +3,7 @@
    SPDX-License-Identifier: ISC
   ---------------------------------------------------------------------------*)
 
-(* The code instrumented.t mutates: one site, so the session can spell its
-   one identifier. *)
+(* The code broadcast.t mutates: one site, so that the session counts one
+   mutant. *)
 
 let add a b = a + b
