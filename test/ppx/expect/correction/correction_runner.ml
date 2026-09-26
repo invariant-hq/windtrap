@@ -9,6 +9,7 @@
 
 module _ = Sanitized
 module _ = Trailing
+module _ = Unreached
 
 let () = Ppx_windtrap_runtime.Ppx_runtime.init Sys.argv
 let () = Ppx_windtrap_runtime.Ppx_runtime.exit ()

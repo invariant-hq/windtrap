@@ -192,8 +192,8 @@ elsewhere),
 
 **Expected observable is itself a rejected-family construct** — 2 files:
 `negative-tests/expect_output.ml` (upstream corrects the unreached
-nodes to `[%expect.unreachable]`; in windtrap an unreached node is no
-failure, a ruling in `RESULTS.md`),
+nodes to `[%expect.unreachable]`; in windtrap an unreached node fails
+with no correction, a ruling in `RESULTS.md`),
 `negative-tests/nesting/nested.ml` (upstream splices
 `[@@expect.uncaught_exn]` with the collector's nested-test error;
 windtrap's behavior on nested expect tests is its own failure path).

@@ -32,7 +32,7 @@ let%expect_test "below the override, its sanitizer" =
 let%expect_test "below the override, its run" =
   assert !Expect_test_config.running
 
-(* E20, pwt:54-56, etc:34-35: the body of a let%test does not go through
+(* E20, pwt:59-61, etc:34-35: the body of a let%test does not go through
    run. *)
 let%test "a let%test body runs outside the override's run" =
   assert (not !Expect_test_config.running)
@@ -42,7 +42,3 @@ let%test "a let%test body runs outside the override's run" =
 let%expect_test "Windtrap.output reads the output unsanitized" =
   print_string "abc";
   assert (Windtrap.output () = "abc")
-
-(* E36, pwt:49-50: a node the body never reaches fails nothing. *)
-let%expect_test "an unreached node fails nothing" =
-  if Sys.opaque_identity false then [%expect {| never |}]

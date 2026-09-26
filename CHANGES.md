@@ -363,7 +363,6 @@ Each one is also listed under its area below.
   library.
 - (breaking) `[%expect]`, `[%expect_exact]` and `[%expect.output]`
   compile only inside a `let%expect_test` body.
-- (breaking) A node the body never reaches is no longer checked.
 - (breaking) The ppx_expect forms windtrap lacks are compile errors, as
   `[%expect.unreachable]` was in 0.1; an attribute such as
   `[@@expect.uncaught_exn]`, which 0.1 dropped silently, fails with
@@ -393,6 +392,12 @@ Each one is also listed under its area below.
   `[%expect]` node that holds it, as ppx_expect does; blank output
   passes (see
   [Writing expect tests inside a library](https://github.com/invariant-hq/windtrap/blob/main/doc/manual/baselines.md#writing-expect-tests-inside-a-library)).
+- An `[%expect]` or `[%expect_exact]` node that a run of its test never
+  reaches fails the test with
+  `the body returned without reaching this node`, and the test keeps no
+  correction; each functor instance is judged alone, and an
+  `Expect_test_config.run` that never calls the body fails at the body's
+  first node.
 - The ppx_expect conformance corpus corrects
   `negative-tests/trailing.ml` byte for byte as upstream (15
   corrections, 8 byte-identical), and the corrected

@@ -175,9 +175,12 @@ let group ~ctxt name (mb : module_binding) =
 let sanitized_output ~loc =
   [%expr Expect_test_config.sanitize (Windtrap.output ())]
 
-(* [body] with each expect node lexically inside it replaced. An unsupported
-   node is refused here too, so that a dropped test refuses it. *)
+(* [body] with each expect node lexically inside it replaced, and the
+   positions of the nodes in source order. A node marks itself reached, then
+   checks. An unsupported node is refused here too, so that a dropped test
+   refuses it. *)
 let expect_body body =
+  let nodes = ref [] in
   let map =
     object
       inherit Ast_traverse.map as super
@@ -209,8 +212,10 @@ let expect_body body =
             in
             let verb = evar ~loc ("Windtrap." ^ verb) in
             let pos = pos_expr ~loc e.pexp_loc in
+            nodes := pos :: !nodes;
             replace
               [%expr
+                Ppx_windtrap_runtime.Ppx_runtime.reach [%e pos];
                 [%e verb] [%e sanitized_output ~loc] ([%e pos], [%e literal])]
         | Pexp_extension ({ txt = "expect.output"; _ }, PStr []) ->
             replace (sanitized_output ~loc)
@@ -221,7 +226,8 @@ let expect_body body =
         | _ -> super#expression e
     end
   in
-  map#expression body
+  let body = map#expression body in
+  (body, List.rev !nodes)
 
 (* Extensions *)
 
@@ -234,7 +240,7 @@ let expect_test =
       | [ { pstr_desc = Pstr_value (Nonrecursive, [ vb ]); _ } ] ->
           let name, tags, body = test_of_binding ~loc:at vb in
           let stop = body.pexp_loc.loc_end in
-          let body = expect_body body in
+          let body, nodes = expect_body body in
           let loc = { at with loc_ghost = true } in
           (* At the synchronous type, a monadic config's [run], which would
              drop the body's effects, is a type error at the test. *)
@@ -245,6 +251,7 @@ let expect_test =
                 ~body_end:
                   [%e
                     pos_expr ~loc { at with loc_start = stop; loc_end = stop }]
+                ~nodes:[%e elist ~loc nodes]
                 (fun () ->
                   (Expect_test_config.run : (unit -> unit) -> unit) (fun () ->
                       [%e body]))

@@ -50,11 +50,18 @@ position as the baseline, and `let%expect_test` into a `test` run by
 the one runner under `--corrected`. The output a body writes after its
 last node is checked when the body returns, as ppx_expect checks it
 (`negative-tests/trailing.ml`, the first test of
-`negative-tests/missing.ml`), and its correction appends a node. One
-consequence is a ruling, not a defect:
+`negative-tests/missing.ml`), and its correction appends a node. A node
+the body never reaches fails its test, as in ppx_expect. Two
+consequences are rulings, not defects:
 
-- **An unreached node is not a failure.** A node is a call, checked
-  when the code around it runs.
+- **An unreached node gets no correction.** ppx_expect corrects it to
+  `[%expect.unreachable]`, a form windtrap refuses, so the failure names
+  the node and the test keeps no correction until the node is reached
+  or removed.
+- **Each functor instance is judged alone.** ppx_expect passes a node
+  that one instance of a functor reaches and another does not; windtrap
+  registers a test per instance, and the instance that does not reach
+  the node fails.
 
 A mismatch is a checkpoint, not an assertion: the failure is recorded
 and the call returns, so a body with several stale nodes reports and

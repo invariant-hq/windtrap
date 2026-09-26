@@ -32,9 +32,9 @@
     [run] of another type is a type error located at the test.
 
     Inside [BODY]:
-    - [[%expect LIT]] and [[%expect_exact LIT]], [LIT] a string literal, are
-      [Windtrap.expect] and [Windtrap.expect_exact] of
-      [Expect_test_config.sanitize (Windtrap.output ())] against [LIT] at the
+    - [[%expect LIT]] and [[%expect_exact LIT]], [LIT] a string literal, mark
+      the node reached, then are [Windtrap.expect] and [Windtrap.expect_exact]
+      of [Expect_test_config.sanitize (Windtrap.output ())] against [LIT] at the
       node's position. A bare [[%expect]] is the empty literal.
     - [[%expect.output]] is [Expect_test_config.sanitize (Windtrap.output ())].
 
@@ -46,8 +46,13 @@
     ([Ppx_windtrap_runtime.Ppx_runtime.expect_test]). Blank output passes. Other
     output fails the test, and a correcting run appends [;] and an [[%expect]]
     node that holds it to [BODY]. When [BODY] raises, the exception is the
-    test's failure and nothing more is checked. A node that [BODY] never reaches
-    fails nothing.
+    test's failure and nothing more is checked.
+
+    Then every [[%expect]] and [[%expect_exact]] node of [BODY] must have been
+    reached by this run of the test. A node that was not fails the test, located
+    at the first such node, and the test then keeps no correction. Each
+    application of an enclosing functor registers a test of its own, which
+    reaches its nodes or fails alone.
 
     {1:test Tests and groups}
 

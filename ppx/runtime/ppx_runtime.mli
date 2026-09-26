@@ -21,8 +21,8 @@
     {b Generated code.} The rewriter and this library are one package, so
     generated code and this interface always have the same version. That is why
     generated code may name {!add_test}, {!enter_group}, {!leave_group},
-    {!expect_test}, {!init} and {!exit}. No stability of these names is promised
-    from one version to the next. *)
+    {!expect_test}, {!reach}, {!init} and {!exit}. No stability of these names
+    is promised from one version to the next. *)
 
 (** {1:registration Registration}
 
@@ -84,12 +84,13 @@ val leave_group : unit -> unit
 val expect_test :
   pos:Windtrap.pos ->
   body_end:Windtrap.pos ->
+  nodes:Windtrap.pos list ->
   (unit -> unit) ->
   (unit -> string) ->
   unit
-(** [expect_test ~pos ~body_end body output] runs [body ()], the body of the
-    [let%expect_test] at [pos], and then checks the text [output ()], the output
-    that the body wrote after its last node. [pos] is the position of the
+(** [expect_test ~pos ~body_end ~nodes body output] runs [body ()], the body of
+    the [let%expect_test] at [pos], and then checks the text [output ()], the
+    output that the body wrote after its last node. [pos] is the position of the
     extension point, whose end column is the end of the body counted from the
     start of its line. [body_end] is the position of the end of the body.
 
@@ -100,7 +101,18 @@ val expect_test :
     [let%expect_test]. When [body] raises, nothing is checked and the exception
     is the test's.
 
+    [nodes] are the positions of the body's [[%expect]] and [[%expect_exact]]
+    nodes, in source order. After the check of the output, a node that this run
+    of [body] did not {!reach} fails the test, located at the first such node,
+    with the message [the body returned without reaching this node], followed by
+    [, nor the node of line L] or [, nor the nodes of lines L1, L2] when there
+    are more.
+
     Raises [Invalid_argument] if no test is running. *)
+
+val reach : Windtrap.pos -> unit
+(** [reach node] marks the node at [node] reached by the running expect test.
+    The generated code calls it before each node's check. *)
 
 (** {1:collecting Collecting} *)
 

@@ -4,7 +4,7 @@ let () =
     (fun () ->
        Ppx_windtrap_runtime.Ppx_runtime.expect_test
          ~pos:("./expect_attributes.ml", 7, 0, 56)
-         ~body_end:("./expect_attributes.ml", 7, 56, 56)
+         ~body_end:("./expect_attributes.ml", 7, 56, 56) ~nodes:[]
          (fun () ->
             (Expect_test_config.run : (unit -> unit) -> unit) (fun () -> ()))
          (fun () -> Expect_test_config.sanitize (Windtrap.output ())))
@@ -15,13 +15,16 @@ let () =
        Ppx_windtrap_runtime.Ppx_runtime.expect_test
          ~pos:("./expect_attributes.ml", 11, 0, 125)
          ~body_end:("./expect_attributes.ml", 14, 45, 45)
+         ~nodes:[("./expect_attributes.ml", 13, 2, 19)]
          (fun () ->
             (Expect_test_config.run : (unit -> unit) -> unit)
               (fun () ->
                  print_string "x";
-                 ((Windtrap.expect
-                     (Expect_test_config.sanitize (Windtrap.output ()))
-                     (("./expect_attributes.ml", 13, 2, 19), {| x |}))
+                 (((Ppx_windtrap_runtime.Ppx_runtime.reach
+                      ("./expect_attributes.ml", 13, 2, 19);
+                    Windtrap.expect
+                      (Expect_test_config.sanitize (Windtrap.output ()))
+                      (("./expect_attributes.ml", 13, 2, 19), {| x |})))
                  [@carried ]);
                  ignore ((Expect_test_config.sanitize (Windtrap.output ()))
                    [@carried_output ])))

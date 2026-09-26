@@ -1,4 +1,4 @@
-correction: 6 tests
+correction: 12 tests
 ──────────────────────── failures ────────────────────────
   FAIL  Sanitized › a correction writes the sanitized text
     test/ppx/expect/correction/sanitized.ml:14
@@ -46,12 +46,36 @@ correction: 6 tests
     captured output (1 line):
       before
     full log: <log>
+
+  FAIL  Unreached › a node behind a branch not taken
+    test/ppx/expect/correction/unreached.ml:9
+      9 │ if Sys.opaque_identity false then [%expect {| never |}]
+
+    the body returned without reaching this node
+
+  FAIL  Unreached › every node not reached is named
+    test/ppx/expect/correction/unreached.ml:13
+      13 │ [%expect {| a |}];
+
+    the body returned without reaching this node, nor the nodes of lines 14, 15
+
+  FAIL  Unreached › a node is judged in each instance (2)
+    test/ppx/expect/correction/unreached.ml:29
+      29 │ if B.reach then [%expect {| |}]
+
+    the body returned without reaching this node
+
+  FAIL  Unreached › an override that never calls the body fails
+    test/ppx/expect/correction/unreached.ml:51
+      51 │ [%expect {| printed |}]
+
+    the body returned without reaching this node
 ──────────────────────────────────────────────────────────
 
 corrections (2):
   wrote test/ppx/expect/correction/sanitized.ml.corrected (1 expectation)
   wrote test/ppx/expect/correction/trailing.ml.corrected (3 expectations)
 
-1 passed, 5 failed, 2 corrections written in <duration>.
+3 passed, 9 failed, 2 corrections written in <duration>.
 --- stderr ---
 windtrap: warning: dune registers a correction for promotion only when the run that wrote it exits 0, so the failures above withhold the corrections written here. Fix the failures, rerun, then 'dune promote'.

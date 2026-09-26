@@ -1,5 +1,5 @@
-File "hello_async_pp.ml", line 11, characters 13-35:
-11 |             (Expect_test_config.run : (unit -> unit) -> unit)
+File "hello_async_pp.ml", line 12, characters 13-35:
+12 |             (Expect_test_config.run : (unit -> unit) -> unit)
                   ^^^^^^^^^^^^^^^^^^^^^^
 Error: The value Expect_test_config.run has type
          (unit -> unit Expect_test_config.IO.t) -> unit

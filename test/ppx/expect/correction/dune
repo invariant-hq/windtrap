@@ -1,6 +1,6 @@
 (executable
  (name correction_runner)
- (modules correction_runner sanitized trailing)
+ (modules correction_runner sanitized trailing unreached)
  (libraries ppx_windtrap.runtime)
  (preprocess
   (pps ppx_windtrap)))
@@ -10,8 +10,9 @@
   runner-log
   runner-exit
   sanitized.ml.corrected
-  trailing.ml.corrected)
- (deps sanitized.ml trailing.ml)
+  trailing.ml.corrected
+  unreached.ml.corrected)
+ (deps sanitized.ml trailing.ml unreached.ml)
  (action
   (run
    %{dep:../../../cli/inline_runner/drive/drive.exe}
@@ -21,6 +22,8 @@
    sanitized.ml
    --placeholder
    trailing.ml
+   --placeholder
+   unreached.ml
    --run
    runner
    %{dep:correction_runner.exe}
@@ -46,3 +49,8 @@
  (alias runtest)
  (action
   (diff trailing.ml.corrected.expected trailing.ml.corrected)))
+
+(rule
+ (alias runtest)
+ (action
+  (diff unreached.ml.corrected.expected unreached.ml.corrected)))

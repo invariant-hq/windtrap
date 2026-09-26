@@ -1,18 +1,6 @@
-(* E33, etc:37-39: an override of run must call f once. One that never calls
-   it passes its test with nothing checked; one that calls it twice runs
-   every expectation of the body twice. *)
-
-module Never = struct
-  module Expect_test_config = struct
-    include Expect_test_config
-
-    let run _ = ()
-  end
-
-  let%expect_test "an override that never calls the body checks nothing" =
-    print_string "printed";
-    [%expect {| never matches |}]
-end
+(* E33, etc:37-39: an override of run must call f once. One that calls it
+   twice runs every expectation of the body twice. The one that never calls
+   it is in ../correction/unreached.ml. *)
 
 module Twice = struct
   let sanitized = ref 0

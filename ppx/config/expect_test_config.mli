@@ -34,8 +34,9 @@ val run : (unit -> unit) -> unit
     what a running test may call. The body of a [let%test] does not go through
     [run].
 
-    An override must call [f] once. If it never calls [f] the test passes with
-    nothing checked. *)
+    An override must call [f] once. If it never calls [f], the test fails at the
+    first node of the body, which it never reached, and a body without a node
+    passes with nothing checked. *)
 
 val sanitize : string -> string
 (** [sanitize s] is [s]. The generated code applies [sanitize] to the captured

@@ -124,13 +124,33 @@ module Baseline = Windtrap.Private.Baseline
 module Loc = Windtrap.Private.Loc
 module Run = Windtrap.Private.Run
 
+(* The nodes that the running expect test reached. Tests do not nest, so
+   one table serves them all. *)
+let reached : (Windtrap.pos, unit) Hashtbl.t = Hashtbl.create 16
+let reach node = Hashtbl.replace reached node ()
+
+let unreached_message others =
+  let line (_, line, _, _) = string_of_int line in
+  let head = "the body returned without reaching this node" in
+  match others with
+  | [] -> head
+  | [ other ] -> Printf.sprintf "%s, nor the node of line %s" head (line other)
+  | others ->
+      Printf.sprintf "%s, nor the nodes of lines %s" head
+        (String.concat ", " (List.map line others))
+
 (* The delimiter keeps a failure raised in the body's tail position from
-   being located in this function. *)
-let expect_test ~pos ~body_end body output =
+   being located in this function. The table is reset first: an attempt
+   that raised leaves its marks behind. *)
+let expect_test ~pos ~body_end ~nodes body output =
+  Hashtbl.reset reached;
   Loc.delimit body;
   Run.check_baseline ~loc:(Loc.of_pos body_end)
     (Baseline.Trailing { pos })
-    (output ())
+    (output ());
+  match List.filter (fun node -> not (Hashtbl.mem reached node)) nodes with
+  | [] -> ()
+  | first :: others -> Windtrap.fail ~__POS__:first (unreached_message others)
 
 (* The runner protocol *)
 

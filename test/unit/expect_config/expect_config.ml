@@ -39,9 +39,11 @@ module Never_runs = struct
     let run _ = ()
   end
 
-  let%expect_test "a run that never calls the body passes it unchecked" =
-    print_string "anything";
-    [%expect {| never compared |}]
+  (* A body with a node fails, as that node is never reached; see
+     test/ppx/expect/correction/unreached.ml. *)
+  let%expect_test "a run that never calls a body without a node checks nothing"
+      =
+    print_string "anything"
 end
 
 module Raising_run = struct
