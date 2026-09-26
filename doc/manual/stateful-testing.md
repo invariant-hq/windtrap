@@ -75,7 +75,7 @@ argument. `~next` gives the model after the call, and the body calls the
 system and asserts on what it returns, given the model before the call.
 `~pre` restricts an operation to the models where it is legal, which
 also selects the state it needs, as `push when full` does. A command
-listed twice is drawn twice as often. An argument that names something
+listed twice is drawn more often. An argument that names something
 the program created, such as a handle, is drawn as an index the body
 resolves in the model, as `List.nth m (i mod List.length m)` under a
 `~pre` that keeps `m` non-empty.
@@ -152,7 +152,7 @@ bounded_queue: 1 test (seed s1:c26eddaeb764a645)
 A failure prints the shrunk program as a table of calls, with the model
 before each, then the call that failed and its failure. The report's
 `replay:` line and `--seed` work as for a [property](property-testing.md).
-`~steps` sets the number of calls drawn per program, 20 by default, and
+`~steps` sets the most calls a program makes, 20 by default, and
 `~count` the number of programs.
 
 If `push` let one element too many in, shrinking would reduce the

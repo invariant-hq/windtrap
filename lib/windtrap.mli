@@ -935,16 +935,16 @@ val stateful :
     - [invariant m sut] runs on the fresh system before the first call and after
       every call. The last assertion of an invariant is in tail position.
       Without [~__POS__] its failure is located at the test's declaration.
-    - [steps] is the number of calls drawn per case. Defaults to [20]. A drawn
-      call whose [pre] fails is dropped, so a program has at most [steps] calls.
+    - [steps] is the most calls a program makes. Defaults to [20].
     - [pp_model] adds a column to the printed program: the model before each
       call.
     - [count] and [timeout] are {!prop}'s. So are [--prop-count], the seed and
       the bound on shrinking.
 
-    Each drawn call picks its command with equal probability. A command listed
-    twice is drawn twice as often. Shrinking removes calls and shrinks
-    arguments, and never replaces one operation by another.
+    A command listed twice is drawn more often than one listed once. Shrinking
+    removes calls and shrinks arguments. The calls that a seed draws and the
+    counterexample that shrinking reaches can change between versions of
+    windtrap, as every generator's draws can (see {{!section-properties}Seeds}).
 
     {b Commands never called.} When every case has passed, a command that no
     passing program called fails the test with a message that starts

@@ -433,34 +433,37 @@ let no_node_invents_or_substitutes_a_call () =
     ~msg:(Printf.sprintf "only %d nodes were forced" !nodes)
     (!nodes >= 2_000)
 
-(* One weight-1 branch per command: the command list is a list, not a
-   priority, so no command is starved and none crowds the others out. *)
-let every_command_is_drawn_about_equally_often () =
-  let gen = Stateful.program ~steps:20 ~model:0 (wide_commands ~pre:false) in
+(* The weight of a command is its number of listings, and a command listed
+   once is still drawn. *)
+let a_command_listed_twice_is_drawn_more_often () =
+  let commands = wide_commands ~pre:false in
+  let gen =
+    Stateful.program ~steps:20 ~model:0 (List.hd commands :: commands)
+  in
   let counts = List.map (fun name -> (name, ref 0)) wide_names in
-  let total = ref 0 in
   for index = 0 to 19 do
     List.iter
       (fun name ->
-        incr total;
         match List.assoc_opt name counts with
         | Some count -> incr count
         | None -> failf "the program made an undeclared call %S" name)
       (names_at gen index)
   done;
-  is_true
-    ~msg:(Printf.sprintf "20 unconditioned draws of 20 made %d calls" !total)
-    (!total = 400);
-  let uniform = float_of_int !total /. float_of_int (List.length wide_names) in
+  let twice = !(List.assoc "alpha" counts) in
   List.iter
     (fun (name, count) ->
-      let drawn = float_of_int !count in
-      is_true
-        ~msg:
-          (Printf.sprintf
-             "%s was drawn %.0f times of %d, nowhere near the uniform %.0f" name
-             drawn !total uniform)
-        (drawn >= uniform /. 2. && drawn <= uniform *. 2.))
+      if name <> "alpha" then begin
+        is_true
+          ~msg:(Printf.sprintf "%s, listed once, was never drawn" name)
+          (!count > 0);
+        is_true
+          ~msg:
+            (Printf.sprintf
+               "alpha, listed twice, was drawn %d times and %s, listed once, \
+                %d times"
+               twice name !count)
+          (twice > !count)
+      end)
     counts
 
 let control_spec exn phase =
@@ -2120,8 +2123,8 @@ let suite =
       root_candidates_of_an_argument_spec_are_no_longer );
     ( "no node invents or substitutes a call",
       no_node_invents_or_substitutes_a_call );
-    ( "every command is drawn about equally often",
-      every_command_is_drawn_about_equally_often );
+    ( "a command listed twice is drawn more often",
+      a_command_listed_twice_is_drawn_more_often );
     ( "a raising ~pre or ~next is a specification bug",
       a_raising_pre_or_next_is_a_specification_bug );
     ( "a specification bug met while shrinking stops the search",

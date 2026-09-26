@@ -96,8 +96,7 @@ val program :
     - [pp_model] adds a column to the printed program, the model before each
       call.
 
-    Every call picks its command with equal probability, whatever the order of
-    [commands].
+    A command listed twice is drawn more often than one listed once.
 
     {b Shrinking.} The shrink tree is [Gen.Engine.Shrink_tree.list] over the
     trees of the kept calls, with repair applied again at every node. A
