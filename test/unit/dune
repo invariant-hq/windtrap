@@ -1,14 +1,12 @@
 (tests
  (names
   test_os
-  test_property
   test_stateful
   test_report
   test_report_junit
   test_cli)
  (modules
   test_os
-  test_property
   test_stateful
   test_report
   test_report_junit
@@ -101,6 +99,11 @@
 (test
  (name test_test_tree)
  (modules test_test_tree)
+ (libraries windtrap))
+
+(test
+ (name test_property)
+ (modules test_property)
  (libraries windtrap))
 
 (test
