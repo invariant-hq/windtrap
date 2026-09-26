@@ -76,4 +76,4 @@ jobs:
       - name: Coverage
         run: opam exec -- dune build @self-cover --instrument-with ppx_windtrap.coverage
         env:
-          SKIP_NODUNE_SESSION: true
+          SKIP_PACKAGE_SESSIONS: true

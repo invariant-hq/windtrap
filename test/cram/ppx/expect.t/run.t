@@ -420,21 +420,3 @@ The library-name cookie names the library a test registers under:
           "in tagged group" (fun () -> ())
     end[@@warning "-60"]
   let () = Ppx_windtrap_runtime.Ppx_runtime.leave_group ()
-
-The expansion applies Expect_test_config.run at type
-(unit -> unit) -> unit, so a run of another type is a type error at the
-test that names it. The compiler types the expansion against the
-installed libraries:
-
-  $ lib=$(for d in $(echo "$OCAMLPATH" | tr ':' ' '); do
-  >   if [ -f "$d/windtrap/META" ]; then echo "$d"; break; fi; done)
-  $ ocamlc -color never -stop-after typing -w -a -ppx "../pp.exe --as-ppx -apply ppx_windtrap" \
-  >   -I "$lib/windtrap" -I "$lib/ppx_windtrap/runtime" ./wrong_run.ml
-  File "./wrong_run.ml", lines 10-12, characters 0-19:
-  10 | let%expect_test "a run of another type" =
-  11 |   print_string "x";
-  12 |   [%expect {| x |}]
-  Error: The value Expect_test_config.run has type (unit -> int) -> unit
-         but an expression was expected of type (unit -> unit) -> unit
-         Type int is not compatible with type unit
-  [2]

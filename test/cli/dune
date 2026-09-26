@@ -61,14 +61,15 @@
 ; Under --instrument-with ppx_windtrap.coverage, dune 3.24 closes
 ; (package windtrap) over ppx_windtrap, whose runtime depends on windtrap,
 ; and reports a dependency cycle; a dune built from main does not. CI's
-; coverage job, on dune 3.24, sets SKIP_NODUNE_SESSION for that reason.
+; coverage job, on dune 3.24, sets SKIP_PACKAGE_SESSIONS for that reason,
+; and every session that depends on a package is left out under it.
 
 (cram
  (applies_to nodune)
  (enabled_if
   (and
    (<> %{os_type} Win32)
-   (<> %{env:SKIP_NODUNE_SESSION=} true)))
+   (<> %{env:SKIP_PACKAGE_SESSIONS=} true)))
  (deps
   (package windtrap)
   coverage_ppx.exe
