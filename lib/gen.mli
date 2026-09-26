@@ -140,10 +140,12 @@ val list : ?size:int t -> 'a t -> 'a list t
 (** [list ?size gen] generates a list of [gen] values whose length follows
     [size]. It prints as [[a; b; c]].
 
-    With the default [size], the length is drawn as {!nat} draws its value and
-    the elements are drawn in order. The tree is {!Engine.Shrink_tree.list} of
-    the element trees, so the structure shrinks first, then the elements from
-    the left.
+    With the default [size], the length is below [4] in 50% of the draws, below
+    [8] in 25%, below [16] in 20% and below [64] in 5%, uniformly within each
+    stratum. The mean is about 5, so a [list (list int)] holds about 22 integers
+    and a case draws in microseconds. The elements are drawn in order. The tree
+    is {!Engine.Shrink_tree.list} of the element trees, so the structure shrinks
+    first, then the elements from the left.
 
     With an explicit [size], the length shrinks as [size] does and no chunk is
     removed. A state is split off at sampling and the elements of every

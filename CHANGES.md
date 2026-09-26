@@ -298,6 +298,9 @@ Each one is also listed under its area below.
   then discards the case.
 - `Gen.with_pp pp gen` gives a generator its printer.
 - `Gen.array` takes `?size`, and `Gen.bytes_of` generates `bytes`.
+- `Gen.list`, `Gen.array`, `Gen.string_of` and `Gen.bytes_of` without
+  `~size` draw a length below 64 and about 5 on average; `~size` sets a
+  longer one.
 
 ### Stateful testing
 

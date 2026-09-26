@@ -690,10 +690,10 @@ module Gen : sig
 
   val string_of : ?size:int t -> char t -> string t
   (** [string_of ?size char] generates a string whose length follows [size] and
-      whose characters follow [char]. [size] defaults to {!nat}. It shrinks as
-      {!list} does. It always prints, as a quoted string, even when [char] has
-      no printer. Sampling raises [Invalid_argument] if [size] generates a
-      negative length. *)
+      whose characters follow [char]. [size] defaults to the length of {!list}.
+      It shrinks as {!list} does. It always prints, as a quoted string, even
+      when [char] has no printer. Sampling raises [Invalid_argument] if [size]
+      generates a negative length. *)
 
   val bytes : bytes t
   (** [bytes] is [bytes_of char]. *)
@@ -705,7 +705,7 @@ module Gen : sig
 
   val list : ?size:int t -> 'a t -> 'a list t
   (** [list ?size gen] generates a list of [gen] values whose length follows
-      [size]. [size] defaults to {!nat}.
+      [size]. Without [size], the length is below [64] and about 5 on average.
 
       With the default [size] a list shrinks by structure first: to the empty
       list, then by the removal of chunks of halving length. It then shrinks

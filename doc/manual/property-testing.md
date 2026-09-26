@@ -244,8 +244,8 @@ geo: 1 test (seed s1:5b58964be30f69a8)
 
 A generator of a recursive type takes a depth and draws a leaf at depth
 zero. `let*` draws the depth first, from a small range. `~size` bounds the
-length of a list, and without it a length follows `Gen.nat`, the
-generator of sizes, lengths and counts. `Geo` groups shapes in drawings.
+length of a list, which is otherwise below 64 and about 5 on average.
+`Geo` groups shapes in drawings.
 
 `test/geo.ml`:
 

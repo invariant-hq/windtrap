@@ -301,18 +301,20 @@ let int_range low high =
 
 let int = int_range min_int max_int
 
-(* 50% below 10, 25% below 100, 20% below 1_000, 5% below 10_000. *)
-let draw_nat state =
+(* 50% below [b0], 25% below [b1], 20% below [b2], 5% below [b3]. *)
+let draw_strata (b0, b1, b2, b3) state =
   let stratum, state = Seed.below ~bound:100L state in
   let bound =
-    if stratum < 50L then 10L
-    else if stratum < 75L then 100L
-    else if stratum < 95L then 1_000L
-    else 10_000L
+    if stratum < 50L then b0
+    else if stratum < 75L then b1
+    else if stratum < 95L then b2
+    else b3
   in
   let value, state = Seed.below ~bound state in
   (Int64.to_int value, state)
 
+let draw_nat = draw_strata (10L, 100L, 1_000L, 10_000L)
+let draw_length = draw_strata (4L, 8L, 16L, 64L)
 let nat = primitive Pp.int (int_towards 0) draw_nat
 
 let small_int =
@@ -399,7 +401,7 @@ let elements ?size gen state =
   in
   match size with
   | None ->
-      let length, state = draw_nat state in
+      let length, state = draw_length state in
       let trees, state = draw length [] state in
       (Shrink_tree.list trees, state)
   | Some size ->

@@ -1337,6 +1337,8 @@ let a_recorded_seed_replays_these_values () =
     (replay Gen.(string_of ~size:(int_range 0 6) (char_range 'a' 'z')) 3);
   equal ~msg:"list of small_int" string "[2657; -902; -6188; 566; 2]"
     (replay Gen.(list ~size:(int_range 0 5) small_int) 4);
+  equal ~msg:"list of the default length" string "[false; true]"
+    (replay Gen.(list bool) 6);
   equal ~msg:"option, one_of and frequency" string "(Some (false), 7, 4)"
     (replay
        Gen.(
@@ -1417,6 +1419,32 @@ let nat_strata_are_50_25_20_5 () =
   within "100 to 999" 0.1845 (share 100 1_000);
   within "1000 to 9999" 0.045 (share 1_000 10_000)
 
+let default_length_strata_are_50_25_20_5 () =
+  (* The strata of [nat] over the bounds 4, 8, 16 and 64; each is uniform
+     below its bound, so the bands overlap as [nat]'s do. *)
+  let lengths = List.map List.length (samples Gen.(list unit) 20_000) in
+  List.iter (fun n -> less ~msg:"a default length" int ~than:64 n) lengths;
+  let share low high =
+    float_of_int
+      (List.length (List.filter (fun n -> low <= n && n < high) lengths))
+    /. 20_000.
+  in
+  let within name expected v =
+    is_true
+      ~msg:(Printf.sprintf "%s: %.4f, expected about %.4f" name v expected)
+      (Float.abs (v -. expected) < 0.015)
+  in
+  within "below 4" 0.678125 (share 0 4);
+  within "4 to 7" 0.178125 (share 4 8);
+  within "8 to 15" 0.10625 (share 8 16);
+  within "16 to 63" 0.0375 (share 16 64);
+  let mean =
+    float_of_int (List.fold_left ( + ) 0 lengths) /. float_of_int 20_000
+  in
+  is_true
+    ~msg:(Printf.sprintf "the mean length is about 5, got %.2f" mean)
+    (mean > 4.4 && mean < 5.0)
+
 let float_is_uniform_over_bit_patterns () =
   (* Half the finite bit patterns are negative, and half have a magnitude of
      at least 1; a float uniform over the reals would have nearly none below
@@ -1490,14 +1518,6 @@ let list_and_array_print_their_brackets () =
     equal ~msg:"array" string
       ("[|" ^ items (Array.to_list (root_value tree)) ^ "|]")
       (render tree)
-  done
-
-let default_length_is_drawn_as_nat_draws () =
-  for index = 0 to 99 do
-    equal int
-      (root_value (Gen_engine.sample Gen.nat (state index)))
-      (List.length
-         (root_value (Gen_engine.sample Gen.(list unit) (state index))))
   done
 
 let sized_list_candidates_are_prefixes_then_element_reductions () =
@@ -1752,6 +1772,8 @@ let contract_suite =
     ( "a float node has at most 15 candidates",
       a_float_node_has_at_most_15_candidates );
     ("nat strata are 50, 25, 20 and 5 percent", nat_strata_are_50_25_20_5);
+    ( "default length strata are 50, 25, 20 and 5 percent",
+      default_length_strata_are_50_25_20_5 );
     ( "float is uniform over the finite bit patterns",
       float_is_uniform_over_bit_patterns );
     ( "argument checks run in their stated order",
@@ -1763,8 +1785,6 @@ let contract_suite =
     ("char prints with %C", char_prints_with_percent_c);
     ("bytes prints as Bytes.of_string", bytes_prints_as_bytes_of_string);
     ("list and array print their brackets", list_and_array_print_their_brackets);
-    ( "the default length is drawn as nat draws",
-      default_length_is_drawn_as_nat_draws );
     ( "a sized list offers prefixes, then element reductions from the left",
       sized_list_candidates_are_prefixes_then_element_reductions );
     ( "a rejected sized-list candidate is skipped",
