@@ -172,8 +172,11 @@ and every promoted diff is reviewed as a code change.
 
 ## Windtrap under its own instrumentation
 
-`lib/` carries both instrumentation stanzas, inert without the flag: a
-plain `dune runtest` is uninstrumented and free. Two aliases in
+`lib/` carries both instrumentation stanzas and `bin/` the coverage one,
+inert without the flag: a plain `dune runtest` is uninstrumented and free.
+`bin/` is the `windtrap` executable, which no suite links, so it carries
+no mutation stanza; the command suites run it as a child, and its
+coverage counts what those children executed. Two aliases in
 `test/dune`, `self-cover` and `self-mutate`, measure windtrap with
 windtrap. They are maintainers' tooling: the manual, the examples and
 the skill teach no alias, and show a user the instrumented

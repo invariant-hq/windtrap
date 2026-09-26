@@ -2,4 +2,6 @@
  (name main)
  (public_name windtrap)
  (package windtrap)
- (libraries windtrap windtrap_runtime))
+ (libraries windtrap windtrap_runtime)
+ (instrumentation
+  (backend ppx_windtrap.coverage)))
