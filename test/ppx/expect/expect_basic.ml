@@ -27,4 +27,4 @@ let%expect_test ("tagged" [@tags "slow"]) =
 
 (* Rules pinned here, by id in RULES.md and interface line: E1, pwt:20-23;
    E2, pwt:23-25; E5, pwt:25-26; E8, pwt:23; E9, pwt:35-38; E10, pwt:38;
-   E12, pwt:39; E23, pwt:58-62. *)
+   E12, pwt:39; E23, pwt:65-69. *)

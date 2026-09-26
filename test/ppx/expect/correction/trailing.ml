@@ -1,0 +1,28 @@
+(* E29, pwt:43-49: the output a body writes after its last node is checked
+   as the payload of an absent node. Blank output passes, other output
+   fails, and the correction appends [;] and a node to the body, two
+   columns right of the test's head. A body that raises checks nothing
+   more. *)
+
+let%expect_test "output after the last node" =
+  print_string "hello";
+  [%expect {| hello |}];
+  print_string "goodbye\n"
+
+let%expect_test "a body with no node" =
+  print_endline "one";
+  print_endline "two"
+
+let%expect_test "blank output after the last node passes" =
+  print_string "x";
+  [%expect {| x |}];
+  print_string "  \n"
+
+module%test Nested = struct
+  let%expect_test "a nested test's node is indented under its head" =
+    print_string "inner"
+end
+
+let%expect_test "a body that raises checks nothing after it" =
+  print_string "before";
+  Windtrap.fail "stop"

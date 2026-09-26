@@ -325,7 +325,9 @@ let%expect_test "repeated spaces are skipped" =
 
 `dune runtest` runs them. A stale `[%expect]` fails as a stale `expect`
 does, and `dune promote` accepts it. A node is checked when the body
-reaches it, and nothing checks what the test prints after its last node.
+reaches it. What the test prints after its last node fails the test when
+the body returns, and its correction appends a node that holds it, so a
+new test can start with no node at all.
 The rewriter's forms are stated in
 [`ppx/ppx_windtrap.mli`](../../ppx/ppx_windtrap.mli).
 

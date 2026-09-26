@@ -4,10 +4,11 @@
   ---------------------------------------------------------------------------*)
 
 (* The runner main of this directory, as the inline_tests backend generates
-   it. The alias links Sanitized, which registers its tests, before the
+   it. The aliases link the fixtures, which register their tests, before the
    protocol runs. *)
 
 module _ = Sanitized
+module _ = Trailing
 
 let () = Ppx_windtrap_runtime.Ppx_runtime.init Sys.argv
 let () = Ppx_windtrap_runtime.Ppx_runtime.exit ()

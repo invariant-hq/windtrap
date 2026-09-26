@@ -49,6 +49,11 @@ type subject =
           {!Source_patch.val-patch} accepts: the position that [__POS_OF__]
           recorded for the literal, or that of an [[%expect]] node, with the
           payload of the node as [value]. *)
+  | Trailing of { pos : Loc.pos }
+      (** The absent node after the body of the expect test at [pos], a site
+          that {!Source_patch.trailing} accepts. Its baseline is the empty text,
+          compared as a flexible literal's, and a difference is a
+          {!Failure.Missing} baseline whose correction inserts the node. *)
   | File of string
       (** The file at this path, which {!check} proves under the project root
           ({!Os.reconstruct}). A file that {!Os.file_exists} does not find is a
@@ -108,12 +113,13 @@ val check : t -> ?loc:Loc.t -> ?correct:bool -> subject -> string -> unit
       content is a {!Failure.Mismatch} against it, in every mode, marked
       {!Failure.Conflict}, and records no correction.
     + Otherwise a difference is a {!Failure.Mismatch} of both texts in their
-      comparison form, and a missing file a {!Failure.Missing} of the canonical
-      content that the check would accept. Under {!Corrected} and {!Update} the
-      check then records a correction, which holds [actual] whole where the
-      failure bounds it: the literal as {!Source_patch.val-patch} rewrites it to
-      [actual], or the file holding the canonical [actual]. The key is accepted
-      with that content from then on, unless a {!settle} drops the attempt.
+      comparison form, and a missing file or a {!Trailing} text a
+      {!Failure.Missing} of the canonical content that the check would accept.
+      Under {!Corrected} and {!Update} the check then records a correction,
+      which holds [actual] whole where the failure bounds it: the literal as
+      {!Source_patch.val-patch} rewrites it to [actual], or the file holding the
+      canonical [actual]. The key is accepted with that content from then on,
+      unless a {!settle} drops the attempt.
     + Before it records the correction of a literal, the check reads the source
       file that {!val-write} will patch, once per run, and tries the patch on it
       alone. When the file cannot be read or the patch is refused, no correction

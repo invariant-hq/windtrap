@@ -43,7 +43,8 @@ type style =
           patch as given, inside the delimiter of the literal. *)
 
 type patch
-(** The type for the rewrite of one literal. *)
+(** The type for the rewrite of one literal, or for the insertion of an expect
+    node after the body of an expect test ({!trailing}). *)
 
 val patch : site:Loc.pos -> literal:string -> style:style -> string -> patch
 (** [patch ~site ~literal ~style content] is the rewrite of the literal at
@@ -57,6 +58,18 @@ val patch : site:Loc.pos -> literal:string -> style:style -> string -> patch
       decodes to ({!Drifted}). A node without payload, [[%expect]], compiles to
       [""]. *)
 
+val trailing : site:Loc.pos -> string -> patch
+(** [trailing ~site content] is the insertion of an [[%expect]] node that holds
+    [content], laid out as a {!Flexible} patch's, after the body of the expect
+    test at [site]. It checks nothing. The file, line and start column of [site]
+    are those of the test's [let%expect_test] or [[%%expect_test]], and its end
+    column is the end of the body, counted from the start of that line.
+
+    {!apply} writes [;], a newline, and the node indented two columns right of
+    the test's head, at the end of the body. It refuses the patch as {!Drifted}
+    when the test's head is not at [site] or the body does not end on a token
+    there. *)
+
 (** The type for refused patches. The payload is the [site] of the patch. *)
 type error =
   | No_literal of Loc.pos
@@ -67,7 +80,8 @@ type error =
   | Drifted of Loc.pos
       (** The literal at the position decodes to another value than the
           [literal] of the patch, or the node has no payload and that [literal]
-          is not [""]. The file changed since the build. *)
+          is not [""], or the test of a {!trailing} patch is not at its site.
+          The file changed since the build. *)
 
 val error_message : error -> string
 (** [error_message e] is one sentence on [e], on one line, naming neither file

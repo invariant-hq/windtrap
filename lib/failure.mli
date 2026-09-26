@@ -62,8 +62,9 @@ type tail = {
 (** The type for what a baseline check compared against. *)
 type baseline =
   | Literal of { exact : bool }
-      (** The literal at the location of the failure, compared byte for byte iff
-          [exact]. A renderer takes its source file from [loc]. *)
+      (** The literal at the location of the failure, or the node that a
+          correction inserts after an expect test's body there, compared byte
+          for byte iff [exact]. A renderer takes its source file from [loc]. *)
   | File of string
       (** The file at this path, stored as the expectation spelled it and never
           bounded. *)

@@ -62,8 +62,6 @@ Each one is also listed under its area below.
   every float.
 - A mismatched `expect` or `[%expect]` records the failure and returns,
   where 0.1 raised, so the rest of the test runs.
-- Output that a test writes after its last `[%expect]` node is no longer
-  checked.
 - A call to `exit` inside a test fails that test, and the run continues.
 - `output ()` fails the test under `--stream` and raises
   `Invalid_argument` outside a test, where 0.1 returned `""`.
@@ -365,8 +363,7 @@ Each one is also listed under its area below.
   library.
 - (breaking) `[%expect]`, `[%expect_exact]` and `[%expect.output]`
   compile only inside a `let%expect_test` body.
-- (breaking) Output that a test writes after its last `[%expect]` node
-  is no longer checked, and neither is a node the body never reaches.
+- (breaking) A node the body never reaches is no longer checked.
 - (breaking) The ppx_expect forms windtrap lacks are compile errors, as
   `[%expect.unreachable]` was in 0.1; an attribute such as
   `[@@expect.uncaught_exn]`, which 0.1 dropped silently, fails with
@@ -381,8 +378,8 @@ Each one is also listed under its area below.
 - A correction is kept only for a test whose every failure is a baseline
   mismatch and whose source is unchanged since the build; the block says
   why when none is kept.
-- A baseline failure opens on `expect: mismatch` or
-  `expect_file "<path>": no baseline`. Under dune its block ends on
+- A baseline failure opens on `expect: mismatch`, `expect: no baseline`
+  or `expect_file "<path>": no baseline`. Under dune its block ends on
   `accept: dune promote <file>`; a run by hand ends on one
   `accept: <command> -u` line above the summary, over the run's
   selection.
@@ -391,6 +388,16 @@ Each one is also listed under its area below.
   text like ppx_expect, and a bare `[%expect]` keeps its node.
 - An `expect_exact` correction whose text holds a CR is a quoted literal
   with the CR written `\r`, so it passes once promoted.
+- Output a `let%expect_test` body writes after its last node fails the
+  test as `expect: no baseline`, and its correction appends `;` and an
+  `[%expect]` node that holds it, as ppx_expect does; blank output
+  passes (see
+  [Writing expect tests inside a library](https://github.com/invariant-hq/windtrap/blob/main/doc/manual/baselines.md#writing-expect-tests-inside-a-library)).
+- The ppx_expect conformance corpus corrects
+  `negative-tests/trailing.ml` byte for byte as upstream (15
+  corrections, 8 byte-identical), and the corrected
+  `negative-tests/escaped_strings.ml` passes (see
+  [`test/conformance/RESULTS.md`](https://github.com/invariant-hq/windtrap/blob/main/test/conformance/RESULTS.md)).
 - The inline runner runs each partition as `run --corrected` under the
   suite `<lib>/<file>`, and exits 1 when a test failed outside its kept
   corrections.

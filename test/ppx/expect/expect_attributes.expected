@@ -2,17 +2,27 @@ let () =
   Ppx_windtrap_runtime.Ppx_runtime.add_test ~file:"./expect_attributes.ml"
     ~pos:("./expect_attributes.ml", 7, 0, 75) ~tags:["kept"] "dropped"
     (fun () ->
-       (Expect_test_config.run : (unit -> unit) -> unit) (fun () -> ()))
+       Ppx_windtrap_runtime.Ppx_runtime.expect_test
+         ~pos:("./expect_attributes.ml", 7, 0, 56)
+         ~body_end:("./expect_attributes.ml", 7, 56, 56)
+         (fun () ->
+            (Expect_test_config.run : (unit -> unit) -> unit) (fun () -> ()))
+         (fun () -> Expect_test_config.sanitize (Windtrap.output ())))
 let () =
   Ppx_windtrap_runtime.Ppx_runtime.add_test ~file:"./expect_attributes.ml"
     ~pos:("./expect_attributes.ml", 11, 0, 125) ~tags:[] "carried"
     (fun () ->
-       (Expect_test_config.run : (unit -> unit) -> unit)
+       Ppx_windtrap_runtime.Ppx_runtime.expect_test
+         ~pos:("./expect_attributes.ml", 11, 0, 125)
+         ~body_end:("./expect_attributes.ml", 14, 45, 45)
          (fun () ->
-            print_string "x";
-            ((Windtrap.expect
-                (Expect_test_config.sanitize (Windtrap.output ()))
-                (("./expect_attributes.ml", 13, 2, 19), {| x |}))
-            [@carried ]);
-            ignore ((Expect_test_config.sanitize (Windtrap.output ()))
-              [@carried_output ])))
+            (Expect_test_config.run : (unit -> unit) -> unit)
+              (fun () ->
+                 print_string "x";
+                 ((Windtrap.expect
+                     (Expect_test_config.sanitize (Windtrap.output ()))
+                     (("./expect_attributes.ml", 13, 2, 19), {| x |}))
+                 [@carried ]);
+                 ignore ((Expect_test_config.sanitize (Windtrap.output ()))
+                   [@carried_output ])))
+         (fun () -> Expect_test_config.sanitize (Windtrap.output ())))

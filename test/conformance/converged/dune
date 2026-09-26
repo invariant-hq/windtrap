@@ -23,6 +23,9 @@
  (copy ../corpus/negative-tests/string_padding.ml.corrected.expected string_padding.ml))
 
 (rule
+ (copy ../corpus/negative-tests/trailing.ml.corrected.expected trailing.ml))
+
+(rule
  (copy ../corpus/negative-tests/unidiomatic_syntax.ml.corrected.expected unidiomatic_syntax.ml))
 
 (rule
@@ -50,6 +53,7 @@
   spacing
   string_extension_syntax
   string_padding
+  trailing
   unidiomatic_syntax
   similar_distinct_outputs
   foo
@@ -69,6 +73,7 @@
   spacing.ml
   string_extension_syntax.ml
   string_padding.ml
+  trailing.ml
   unidiomatic_syntax.ml
   similar_distinct_outputs.ml
   foo.ml

@@ -1254,9 +1254,10 @@ val run : ?argv:string array -> string -> test list -> int
 
 (** {1:private Private} *)
 
-(** Windtrap's own composition surface, for its test suite and its command-line
-    tool. It is not part of the public interface and carries no stability
-    guarantee. [open Windtrap] brings none of it into scope. *)
+(** Windtrap's own composition surface, for its test suite, its command-line
+    tool and the runtime of [ppx_windtrap]. It is not part of the public
+    interface and carries no stability guarantee. [open Windtrap] brings none of
+    it into scope. *)
 module Private : sig
   module Baseline = Baseline
   module Capture = Capture

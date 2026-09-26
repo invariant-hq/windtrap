@@ -13,15 +13,16 @@
     any run exists, so the registry is global to the process.
 
     This module keeps what those calls register and hands it to [Windtrap.run].
-    It is a client of the [windtrap] library as any suite is, so matching,
+    It is a client of the [windtrap] library, and of its [Private] baseline
+    registry for the output after an expect test's last node, so matching,
     corrections and exit codes are [Windtrap.run]'s. The main that dune's
     [inline_tests] backend generates is [init Sys.argv] and then [exit ()].
 
     {b Generated code.} The rewriter and this library are one package, so
     generated code and this interface always have the same version. That is why
-    generated code may name {!add_test}, {!enter_group}, {!leave_group}, {!init}
-    and {!exit}. No stability of these names is promised from one version to the
-    next. *)
+    generated code may name {!add_test}, {!enter_group}, {!leave_group},
+    {!expect_test}, {!init} and {!exit}. No stability of these names is promised
+    from one version to the next. *)
 
 (** {1:registration Registration}
 
@@ -77,6 +78,29 @@ val leave_group : unit -> unit
     registration. It lands in the enclosing group, or at the top level of the
     library and the file that {!enter_group} named. Raises [Invalid_argument] if
     no group is open. *)
+
+(** {1:expect_tests Expect tests} *)
+
+val expect_test :
+  pos:Windtrap.pos ->
+  body_end:Windtrap.pos ->
+  (unit -> unit) ->
+  (unit -> string) ->
+  unit
+(** [expect_test ~pos ~body_end body output] runs [body ()], the body of the
+    [let%expect_test] at [pos], and then checks the text [output ()], the output
+    that the body wrote after its last node. [pos] is the position of the
+    extension point, whose end column is the end of the body counted from the
+    start of its line. [body_end] is the position of the end of the body.
+
+    The text passes when it is blank. Otherwise the test fails, located at
+    [body_end], with the headline [expect: no baseline] and the text as the
+    proposed baseline. A correcting run then inserts [;] and a node that holds
+    the text after the body, on a line of its own, two columns right of the
+    [let%expect_test]. When [body] raises, nothing is checked and the exception
+    is the test's.
+
+    Raises [Invalid_argument] if no test is running. *)
 
 (** {1:collecting Collecting} *)
 

@@ -387,6 +387,16 @@ conformance: 41 tests
     + two
     accept: dune promote test/conformance/corpus/negative-tests/flexible.ml
 
+  FAIL  Missing › line_5
+    test/conformance/corpus/negative-tests/missing.ml:7
+      7 │ print_string "goodbye\n"
+
+    expect: no baseline
+    proposed (2 lines):
+      + hello
+      + goodbye
+    accept: dune promote test/conformance/corpus/negative-tests/missing.ml
+
   FAIL  Missing › line_12
     test/conformance/corpus/negative-tests/missing.ml:15
       15 │ [%expect];
@@ -523,6 +533,24 @@ conformance: 41 tests
     + hello
     accept: dune promote test/conformance/corpus/negative-tests/string_padding.ml
 
+  FAIL  Trailing › line_5
+    test/conformance/corpus/negative-tests/trailing.ml:8
+      8 │ print_string "goodbye\n"
+
+    expect: no baseline
+    proposed (1 line):
+      + goodbye
+    accept: dune promote test/conformance/corpus/negative-tests/trailing.ml
+
+  FAIL  Trailing › line_11
+    test/conformance/corpus/negative-tests/trailing.ml:14
+      14 │ print_string "bar"
+
+    expect: no baseline
+    proposed (1 line):
+      + bar
+    accept: dune promote test/conformance/corpus/negative-tests/trailing.ml
+
   FAIL  Unidiomatic_syntax › line_1
     test/conformance/corpus/negative-tests/unidiomatic_syntax.ml:4
       4 │ [%expect {| Good night, moon. |}]
@@ -534,17 +562,18 @@ conformance: 41 tests
     accept: dune promote test/conformance/corpus/negative-tests/unidiomatic_syntax.ml
 ──────────────────────────────────────────────────────────
 
-corrections (10):
+corrections (11):
   wrote test/conformance/corpus/negative-tests/escaped_strings.ml.corrected (21 expectations)
   wrote test/conformance/corpus/negative-tests/exact.ml.corrected (3 expectations)
   wrote test/conformance/corpus/negative-tests/flexible.ml.corrected (17 expectations)
-  wrote test/conformance/corpus/negative-tests/missing.ml.corrected (1 expectation)
+  wrote test/conformance/corpus/negative-tests/missing.ml.corrected (2 expectations)
   wrote test/conformance/corpus/negative-tests/normal_strings.ml.corrected (4 expectations)
   wrote test/conformance/corpus/negative-tests/semicolon.ml.corrected (1 expectation)
   wrote test/conformance/corpus/negative-tests/spacing.ml.corrected (3 expectations)
   wrote test/conformance/corpus/negative-tests/string_extension_syntax.ml.corrected (2 expectations)
   wrote test/conformance/corpus/negative-tests/string_padding.ml.corrected (1 expectation)
+  wrote test/conformance/corpus/negative-tests/trailing.ml.corrected (2 expectations)
   wrote test/conformance/corpus/negative-tests/unidiomatic_syntax.ml.corrected (1 expectation)
 
-5 passed, 36 failed, 10 corrections written in <duration>.
+2 passed, 39 failed, 11 corrections written in <duration>.
 --- stderr ---

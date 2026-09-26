@@ -3,42 +3,59 @@ let () =
   Ppx_windtrap_runtime.Ppx_runtime.add_test ~file:"./expect_basic.ml"
     ~pos:("./expect_basic.ml", 7, 0, 268) ~tags:[] "greetings"
     (fun () ->
-       (Expect_test_config.run : (unit -> unit) -> unit)
+       Ppx_windtrap_runtime.Ppx_runtime.expect_test
+         ~pos:("./expect_basic.ml", 7, 0, 268)
+         ~body_end:("./expect_basic.ml", 18, 11, 11)
          (fun () ->
-            greet "world";
-            Windtrap.expect
-              (Expect_test_config.sanitize (Windtrap.output ()))
-              (("./expect_basic.ml", 9, 2, 35), {|
+            (Expect_test_config.run : (unit -> unit) -> unit)
+              (fun () ->
+                 greet "world";
+                 Windtrap.expect
+                   (Expect_test_config.sanitize (Windtrap.output ()))
+                   (("./expect_basic.ml", 9, 2, 35), {|
     hello world
   |});
-            greet "again";
-            (let noise = Expect_test_config.sanitize (Windtrap.output ()) in
-             Printf.printf "captured %d bytes\n" (String.length noise);
-             Windtrap.expect_exact
-               (Expect_test_config.sanitize (Windtrap.output ()))
-               (("./expect_basic.ml", 15, 2, 40), {|captured 12 bytes
+                 greet "again";
+                 (let noise =
+                    Expect_test_config.sanitize (Windtrap.output ()) in
+                  Printf.printf "captured %d bytes\n" (String.length noise);
+                  Windtrap.expect_exact
+                    (Expect_test_config.sanitize (Windtrap.output ()))
+                    (("./expect_basic.ml", 15, 2, 40),
+                      {|captured 12 bytes
 |});
-             print_string "";
-             Windtrap.expect
-               (Expect_test_config.sanitize (Windtrap.output ()))
-               (("./expect_basic.ml", 18, 2, 11), ""))))
+                  print_string "";
+                  Windtrap.expect
+                    (Expect_test_config.sanitize (Windtrap.output ()))
+                    (("./expect_basic.ml", 18, 2, 11), ""))))
+         (fun () -> Expect_test_config.sanitize (Windtrap.output ())))
 let () =
   Ppx_windtrap_runtime.Ppx_runtime.add_test ~file:"./expect_basic.ml"
     ~pos:("./expect_basic.ml", 20, 0, 65) ~tags:[] "line_20"
     (fun () ->
-       (Expect_test_config.run : (unit -> unit) -> unit)
+       Ppx_windtrap_runtime.Ppx_runtime.expect_test
+         ~pos:("./expect_basic.ml", 20, 0, 65)
+         ~body_end:("./expect_basic.ml", 22, 20, 20)
          (fun () ->
-            print_string "quoted";
-            Windtrap.expect
-              (Expect_test_config.sanitize (Windtrap.output ()))
-              (("./expect_basic.ml", 22, 2, 20), "quoted")))
+            (Expect_test_config.run : (unit -> unit) -> unit)
+              (fun () ->
+                 print_string "quoted";
+                 Windtrap.expect
+                   (Expect_test_config.sanitize (Windtrap.output ()))
+                   (("./expect_basic.ml", 22, 2, 20), "quoted")))
+         (fun () -> Expect_test_config.sanitize (Windtrap.output ())))
 let () =
   Ppx_windtrap_runtime.Ppx_runtime.add_test ~file:"./expect_basic.ml"
     ~pos:("./expect_basic.ml", 24, 0, 85) ~tags:["slow"] "tagged"
     (fun () ->
-       (Expect_test_config.run : (unit -> unit) -> unit)
+       Ppx_windtrap_runtime.Ppx_runtime.expect_test
+         ~pos:("./expect_basic.ml", 24, 0, 85)
+         ~body_end:("./expect_basic.ml", 26, 21, 21)
          (fun () ->
-            print_string "x";
-            Windtrap.expect
-              (Expect_test_config.sanitize (Windtrap.output ()))
-              (("./expect_basic.ml", 26, 2, 21), {x| x |x})))
+            (Expect_test_config.run : (unit -> unit) -> unit)
+              (fun () ->
+                 print_string "x";
+                 Windtrap.expect
+                   (Expect_test_config.sanitize (Windtrap.output ()))
+                   (("./expect_basic.ml", 26, 2, 21), {x| x |x})))
+         (fun () -> Expect_test_config.sanitize (Windtrap.output ())))

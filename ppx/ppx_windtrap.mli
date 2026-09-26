@@ -39,8 +39,15 @@
     - [[%expect.output]] is [Expect_test_config.sanitize (Windtrap.output ())].
 
     Each node's attributes are carried onto the expression that replaces it.
-    Nothing is checked after [BODY]: output written after its last node, and a
-    node it never reaches, fail nothing.
+
+    When [BODY] returns, the output that it wrote after its last node, or after
+    its last [Windtrap.output] call, is read as [[%expect.output]] reads it and
+    checked as the payload of an absent [[%expect]] node
+    ([Ppx_windtrap_runtime.Ppx_runtime.expect_test]). Blank output passes. Other
+    output fails the test, and a correcting run appends [;] and an [[%expect]]
+    node that holds it to [BODY]. When [BODY] raises, the exception is the
+    test's failure and nothing more is checked. A node that [BODY] never reaches
+    fails nothing.
 
     {1:test Tests and groups}
 

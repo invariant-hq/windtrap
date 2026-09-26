@@ -47,15 +47,12 @@ corrected source again to show that it passes.
 `ppx_windtrap` rewrites `[%expect {|…|}]` into a call of the library's
 own `expect` over the sanitized captured output, with the node's
 position as the baseline, and `let%expect_test` into a `test` run by
-the one runner under `--corrected`. Two consequences are rulings, not
-defects:
+the one runner under `--corrected`. The output a body writes after its
+last node is checked when the body returns, as ppx_expect checks it
+(`negative-tests/trailing.ml`, the first test of
+`negative-tests/missing.ml`), and its correction appends a node. One
+consequence is a ruling, not a defect:
 
-- **Trailing output is not checked.** ppx_expect fails a test whose
-  body prints after its last node and inserts a node for it
-  (`negative-tests/trailing.ml`, the first test of
-  `negative-tests/missing.ml`). A desugaring has nothing after the body
-  to check with: the tests pass and no correction is written. End a
-  test with the node that pins what it printed.
 - **An unreached node is not a failure.** A node is a call, checked
   when the code around it runs.
 

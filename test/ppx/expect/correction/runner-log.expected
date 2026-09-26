@@ -1,4 +1,4 @@
-correction: 1 test
+correction: 6 tests
 ──────────────────────── failures ────────────────────────
   FAIL  Sanitized › a correction writes the sanitized text
     test/ppx/expect/correction/sanitized.ml:14
@@ -9,10 +9,49 @@ correction: 1 test
     - stale
     + pid NNNN
     accept: dune promote test/ppx/expect/correction/sanitized.ml
+
+  FAIL  Trailing › output after the last node
+    test/ppx/expect/correction/trailing.ml:10
+      10 │ print_string "goodbye\n"
+
+    expect: no baseline
+    proposed (1 line):
+      + goodbye
+    accept: dune promote test/ppx/expect/correction/trailing.ml
+
+  FAIL  Trailing › a body with no node
+    test/ppx/expect/correction/trailing.ml:14
+      14 │ print_endline "two"
+
+    expect: no baseline
+    proposed (2 lines):
+      + one
+      + two
+    accept: dune promote test/ppx/expect/correction/trailing.ml
+
+  FAIL  Trailing › Nested › a nested test's node is indented under its head
+    test/ppx/expect/correction/trailing.ml:23
+      23 │ print_string "inner"
+
+    expect: no baseline
+    proposed (1 line):
+      + inner
+    accept: dune promote test/ppx/expect/correction/trailing.ml
+
+  FAIL  Trailing › a body that raises checks nothing after it
+    test/ppx/expect/correction/trailing.ml:26
+      26 │ let%expect_test "a body that raises checks nothing after it" =
+
+    stop
+    captured output (1 line):
+      before
+    full log: <log>
 ──────────────────────────────────────────────────────────
 
-corrections (1):
+corrections (2):
   wrote test/ppx/expect/correction/sanitized.ml.corrected (1 expectation)
+  wrote test/ppx/expect/correction/trailing.ml.corrected (3 expectations)
 
-1 failed, 1 correction written in <duration>.
+1 passed, 5 failed, 2 corrections written in <duration>.
 --- stderr ---
+windtrap: warning: dune registers a correction for promotion only when the run that wrote it exits 0, so the failures above withhold the corrections written here. Fix the failures, rerun, then 'dune promote'.

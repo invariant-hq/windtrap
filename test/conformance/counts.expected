@@ -1,10 +1,10 @@
 pass set: 16 files pass unchanged
   13 under dune's inline_tests backend
   3 through a runner: control_chars, functor, unflushed_stubs_output
-corrections: 14 files corrected
-  7 byte-identical to upstream's: chdir, foo, semicolon, similar_distinct_outputs, string_extension_syntax, string_padding, unidiomatic_syntax
+corrections: 15 files corrected
+  8 byte-identical to upstream's: chdir, foo, semicolon, similar_distinct_outputs, string_extension_syntax, string_padding, trailing, unidiomatic_syntax
   7 not: escaped_strings, exact, flexible, missing, nine, normal_strings, spacing
-  1 not corrected where upstream corrects: trailing
+  0 not corrected where upstream corrects: 
 refused: 20 files
   19 at expansion
   1 by the compiler: hello_async

@@ -250,36 +250,37 @@ a rule whose row does not name it, and when a rule is unpinned without a
 | --- | --- | --- | --- |
 | E1 | `let%expect_test "n"` registers `add_test`, its body under `Expect_test_config.run` constrained to the synchronous type. | pwt:20-23, pwt:29-30 | `expect/expect_basic` |
 | E2 | A `_` name becomes `line_<N>`. | pwt:23-25 | `expect/expect_basic`, `expect/test_basic` |
-| E3 | Any other name pattern is refused. | pwt:78-80 | `expect/reject_name_pattern`, `expect/reject_test_name_pattern` |
-| E4 | Anything but one non-recursive binding is refused. | pwt:81-82 | `expect/reject_two_bindings`, `expect/reject_rec_binding` |
+| E3 | Any other name pattern is refused. | pwt:85-87 | `expect/reject_name_pattern`, `expect/reject_test_name_pattern` |
+| E4 | Anything but one non-recursive binding is refused. | pwt:88-89 | `expect/reject_two_bindings`, `expect/reject_rec_binding` |
 | E5 | `[@tags "s"]` and `[@tags "a", "b"]` on the name pattern. | pwt:25-26 | `expect/expect_basic`, `expect/test_basic` |
-| E6 | A malformed `[@tags]` is refused. | pwt:86-87 | `expect/reject_malformed_tags`, `expect/reject_malformed_tags_tuple` |
+| E6 | A malformed `[@tags]` is refused. | pwt:93-94 | `expect/reject_malformed_tags`, `expect/reject_malformed_tags_tuple` |
 | E7 | A `[@@tags]` on the binding, not the pattern, is ignored. | pwt:26-27 | `expect/expect_attributes` |
 | E8 | `pos` is file, line, and both columns from the start line. | pwt:23 (the shape: `Windtrap.pos`) | `expect/expect_basic`, `expect/test_basic` |
 | E9 | `[%expect lit]` and `[%expect_exact lit]` become core calls, the literal kept with its delimiters. | pwt:35-38 | `expect/expect_basic`; `expect/config/config_shadow.ml` (`{%expect_exact\|...\|}`) |
 | E10 | A bare `[%expect]` has the literal `""`. | pwt:38 | `expect/expect_basic`; `expect/inline/inline_expect.ml` "bare expect" |
 | E11 | A node's attributes are carried onto its call. | pwt:41 | `expect/expect_attributes` |
 | E12 | `[%expect.output]` is the sanitized read. | pwt:39 | `expect/expect_basic`; `expect/inline/inline_expect.ml` "output is consumed, not matched" |
-| E13 | `[%expect.output]` with a payload is refused. | pwt:89-90 | `expect/reject_output_payload` |
-| E14 | A payload that is not a string literal is refused. | pwt:88-89 | `expect/reject_bad_payload` |
-| E15 | An unimplemented family node inside a body is refused. | pwt:93-95 | `expect/reject_unreachable`, `expect/reject_if_reached` |
-| E16 | An implemented node outside a body is refused. | pwt:91-92 | `expect/reject_expect_outside` |
-| E17 | An unimplemented node outside a body is refused. | pwt:93-95 | `expect/reject_expectation`, `expect/reject_expect_prefix`, `expect/reject_expectation_prefix` |
-| E18 | A family attribute on the binding, the name pattern or a `module%test` is refused. | pwt:96-98 | `expect/reject_uncaught_exn`, `expect/reject_pattern_attr`, `expect/reject_module_attr`, `expect/reject_test_binding_attr`, `expect/reject_test_pattern_attr` |
-| E19 | A family attribute anywhere else is refused by the leftover scan. | pwt:96-98 | `expect/reject_leftover_attr`, `expect/reject_dropped_body` |
-| E20 | `let%test` registers `add_test` without `run`. | pwt:47-49 | `expect/test_basic`; `expect/config/config_shadow.ml` (at run time) |
-| E21 | `module%test M` becomes `enter_group`, the module, `leave_group`; `[@@tags]` consumed, other attributes kept. | pwt:51-54 | `expect/test_basic` |
-| E22 | `module%test _` or another item is refused. | pwt:82-85 | `expect/reject_test_anonymous_module`, `expect/reject_test_item` |
-| E23 | The cookie `inline_tests`: `enabled` keeps, `disabled` drops, another value is refused. | pwt:58-62, pwt:99-101 | the cookie rules of expect/dune over `expect/expect_basic` and `expect/test_basic` (cookie_enabled, cookie_disabled, cookie_invalid) |
-| E24 | The cookie value `ignored` drops. | pwt:58-59 | the rule cookie_ignored of expect/dune over `expect/test_basic` |
-| E25 | The drop applies to `let%test` and `module%test`. | pwt:58-59 | the rule cookie_ignored of expect/dune over `expect/test_basic` |
+| E13 | `[%expect.output]` with a payload is refused. | pwt:96-97 | `expect/reject_output_payload` |
+| E14 | A payload that is not a string literal is refused. | pwt:95-96 | `expect/reject_bad_payload` |
+| E15 | An unimplemented family node inside a body is refused. | pwt:100-102 | `expect/reject_unreachable`, `expect/reject_if_reached` |
+| E16 | An implemented node outside a body is refused. | pwt:98-99 | `expect/reject_expect_outside` |
+| E17 | An unimplemented node outside a body is refused. | pwt:100-102 | `expect/reject_expectation`, `expect/reject_expect_prefix`, `expect/reject_expectation_prefix` |
+| E18 | A family attribute on the binding, the name pattern or a `module%test` is refused. | pwt:103-105 | `expect/reject_uncaught_exn`, `expect/reject_pattern_attr`, `expect/reject_module_attr`, `expect/reject_test_binding_attr`, `expect/reject_test_pattern_attr` |
+| E19 | A family attribute anywhere else is refused by the leftover scan. | pwt:103-105 | `expect/reject_leftover_attr`, `expect/reject_dropped_body` |
+| E20 | `let%test` registers `add_test` without `run`. | pwt:54-56 | `expect/test_basic`; `expect/config/config_shadow.ml` (at run time) |
+| E21 | `module%test M` becomes `enter_group`, the module, `leave_group`; `[@@tags]` consumed, other attributes kept. | pwt:58-61 | `expect/test_basic` |
+| E22 | `module%test _` or another item is refused. | pwt:89-92 | `expect/reject_test_anonymous_module`, `expect/reject_test_item` |
+| E23 | The cookie `inline_tests`: `enabled` keeps, `disabled` drops, another value is refused. | pwt:65-69, pwt:106-108 | the cookie rules of expect/dune over `expect/expect_basic` and `expect/test_basic` (cookie_enabled, cookie_disabled, cookie_invalid) |
+| E24 | The cookie value `ignored` drops. | pwt:65-66 | the rule cookie_ignored of expect/dune over `expect/test_basic` |
+| E25 | The drop applies to `let%test` and `module%test`. | pwt:65-66 | the rule cookie_ignored of expect/dune over `expect/test_basic` |
 | E26 | Generated code is warning-free under `-w +a -warn-error +a`. | pwt:15-16 | build of `expect/strict_flags/inline_strict.ml` |
 | E27 | `Expect_test_config` is named unqualified, so a local module shadows it. | pwt:30-32; expect_test_config.mli:15-16 | `expect/config/config_shadow.ml`; `examples/05-baselines/timing.ml` |
 | E28 | A monadic `run` fails to compile at the reference. | pwt:31-32 | `expect/wrong_run/wrong_run.ml` (located at the test); `test/conformance`, `hello_async.compile-rejected.expected` |
-| E29 | Nothing is checked after the body: output written after its last node, and a node it never reaches, fail nothing. | pwt:41-43 | `expect/config/config_shadow.ml`; `test/conformance`, `negative-tests/trailing.ml` |
-| E30 | A dropped form is still refused for a bad name, shape or `[@tags]`, and a `let%expect_test` for a bad node; the rest of a dropped body is not checked. | pwt:60-61 | the cookie_disabled rules of expect/dune over `expect/reject_name_pattern`, `expect/reject_two_bindings`, `expect/reject_malformed_tags`, `expect/reject_bad_payload`, `expect/reject_unreachable`, `expect/reject_dropped_body` |
+| E29 | The output a body writes after its last node is checked as an absent node's payload: blank output passes, other output fails, and the correction appends `;` and a node two columns right of the test's head; a body that raises checks nothing more. | pwt:43-49 | `expect/correction/trailing.ml` (its correction and transcript); `test/conformance`, `negative-tests/trailing.ml`, `negative-tests/missing.ml` |
+| E30 | A dropped form is still refused for a bad name, shape or `[@tags]`, and a `let%expect_test` for a bad node; the rest of a dropped body is not checked. | pwt:67-68 | the cookie_disabled rules of expect/dune over `expect/reject_name_pattern`, `expect/reject_two_bindings`, `expect/reject_malformed_tags`, `expect/reject_bad_payload`, `expect/reject_unreachable`, `expect/reject_dropped_body` |
 | E31 | A test registers when the structure that holds it is evaluated: at module load, or at each application of an enclosing functor. | pwt:20-22 | STATED-NOT-TESTED: a consequence of E1 (the registration is a `let () =` item in place of the test) |
 | E32 | A body that calls `Windtrap.output` itself reads the output unsanitized. | expect_test_config.mli:50 | `expect/config/config_shadow.ml` |
 | E33 | An override of `run` that never calls `f` passes its test with nothing checked; one that calls it twice runs every expectation of the body twice. | expect_test_config.mli:37-39 | `expect/config/config_calls.ml` |
 | E34 | The sanitized text is the text compared and the text a correction writes. | expect_test_config.mli:48-49 | `expect/correction/sanitized.ml` (its correction and transcript) |
-| E35 | Under the cookie `library-name` a registration names its library, and only that library's runner runs it; without the cookie it belongs to no library. | pwt:64-71 | the rule cookie_library of expect/dune over `expect/test_basic`; the fixture test/cli/inline_runner/linked (list-log, runner-log, suite-exit); `test_ppx_runtime.ml` "a runner keeps its library's registrations and those of no library" |
+| E35 | Under the cookie `library-name` a registration names its library, and only that library's runner runs it; without the cookie it belongs to no library. | pwt:71-78 | the rule cookie_library of expect/dune over `expect/test_basic`; the fixture test/cli/inline_runner/linked (list-log, runner-log, suite-exit); `test_ppx_runtime.ml` "a runner keeps its library's registrations and those of no library" |
+| E36 | A node the body never reaches fails nothing. | pwt:49-50 | `expect/config/config_shadow.ml` |

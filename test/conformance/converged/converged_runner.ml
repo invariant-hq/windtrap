@@ -11,6 +11,7 @@ module _ = Semicolon
 module _ = Spacing
 module _ = String_extension_syntax
 module _ = String_padding
+module _ = Trailing
 module _ = Unidiomatic_syntax
 module _ = Similar_distinct_outputs
 module _ = Foo

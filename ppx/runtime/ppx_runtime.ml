@@ -118,6 +118,20 @@ let leave_group () =
       register frame.origin
         (Windtrap.group ~tags:frame.tags frame.name (List.rev frame.children))
 
+(* Expect tests *)
+
+module Baseline = Windtrap.Private.Baseline
+module Loc = Windtrap.Private.Loc
+module Run = Windtrap.Private.Run
+
+(* The delimiter keeps a failure raised in the body's tail position from
+   being located in this function. *)
+let expect_test ~pos ~body_end body output =
+  Loc.delimit body;
+  Run.check_baseline ~loc:(Loc.of_pos body_end)
+    (Baseline.Trailing { pos })
+    (output ())
+
 (* The runner protocol *)
 
 (* [runner] is the library of [inline-test-runner <lib>], and [None]

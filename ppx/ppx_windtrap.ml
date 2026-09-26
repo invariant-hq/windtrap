@@ -233,14 +233,22 @@ let expect_test =
       match items with
       | [ { pstr_desc = Pstr_value (Nonrecursive, [ vb ]); _ } ] ->
           let name, tags, body = test_of_binding ~loc:at vb in
+          let stop = body.pexp_loc.loc_end in
           let body = expect_body body in
           let loc = { at with loc_ghost = true } in
           (* At the synchronous type, a monadic config's [run], which would
              drop the body's effects, is a type error at the test. *)
           let body =
             [%expr
-              (Expect_test_config.run : (unit -> unit) -> unit) (fun () ->
-                  [%e body])]
+              Ppx_windtrap_runtime.Ppx_runtime.expect_test
+                ~pos:[%e pos_expr ~loc { at with loc_end = stop }]
+                ~body_end:
+                  [%e
+                    pos_expr ~loc { at with loc_start = stop; loc_end = stop }]
+                (fun () ->
+                  (Expect_test_config.run : (unit -> unit) -> unit) (fun () ->
+                      [%e body]))
+                (fun () -> [%e sanitized_output ~loc])]
           in
           when_enabled [ add_test ~ctxt ~tags name body ]
       | _ ->

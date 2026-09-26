@@ -69,7 +69,7 @@ the single-line source tweak listed under [Source tweaks](#source-tweaks).
 | `negative-tests/export_test.ml` | `negative-tests/` | passes; no correction (the runner's transcript) |
 | `negative-tests/flexible.ml` (T) | `negative-tests/` | conforms |
 | `negative-tests/import_test.ml` | `negative-tests/` | passes; cross-file functor instantiation |
-| `negative-tests/missing.ml` (T) | `negative-tests/` | second test conforms (bare node materialized, on the node's line); first test **diverges**: trailing output not checked (ruling in `RESULTS.md`) |
+| `negative-tests/missing.ml` (T) | `negative-tests/` | conforms (bare node materialized on the node's line, the trailing node's payload on its head's line) |
 | `negative-tests/nine.ml` | not vendored | **diverges** (reformat-on-match: windtrap leaves a matching payload alone) |
 | `negative-tests/normal_strings.ml` | `negative-tests/` | conforms; a long quoted payload stays on its line (formatting, `RESULTS.md`) |
 | `negative-tests/semicolon.ml` | `negative-tests/` | conforms |
@@ -78,7 +78,7 @@ the single-line source tweak listed under [Source tweaks](#source-tweaks).
 | `negative-tests/string_extension_syntax.ml` | `negative-tests/` | conforms (retag keeps `%expect`) |
 | `negative-tests/string_padding.ml` | `negative-tests/` | conforms |
 | `negative-tests/three.ml` | not vendored | **diverges** (reformat-on-match: windtrap leaves a matching payload alone) |
-| `negative-tests/trailing.ml` (T) | `negative-tests/` | **diverges** since 2026-09-15: trailing output not checked, no correction (ruling in `RESULTS.md`) |
+| `negative-tests/trailing.ml` (T) | `negative-tests/` | conforms |
 | `negative-tests/unidiomatic_syntax.ml` | `negative-tests/` | conforms |
 | `negative-tests/unusual_payload_location.ml` | not vendored | **diverges** (upstream golden inconsistent with its pinned source — unreachable) |
 | `negative-tests/for-mdx/foo.ml` (T) | `negative-tests/for-mdx/` | conforms |

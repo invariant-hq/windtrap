@@ -248,10 +248,11 @@ val check_baseline : ?loc:Loc.t -> Baseline.subject -> string -> unit
     is labelled as {!subtest} labels one. A {!Failure.Unresolvable} failure is
     raised as {!Failure.Check_failure}.
 
-    [loc] is the location of the failure: the position of a literal, or the site
-    of the call for a file. Without it the failure takes the declaration site
-    (see {{!section-attempts}attempts}). Under {!Baseline.Update} a baseline
-    that differs records its correction and nothing fails.
+    [loc] is the location of the failure: the position of a literal, the end of
+    the body for a {!Baseline.Trailing} text, or the site of the call for a
+    file. Without it the failure takes the declaration site (see
+    {{!section-attempts}attempts}). Under {!Baseline.Update} a baseline that
+    differs records its correction and nothing fails.
 
     Raises [Sys_error] as {!Baseline.check} does, and [Invalid_argument] if no
     test is running. *)

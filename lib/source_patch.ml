@@ -55,14 +55,23 @@ let normalize s = String.concat "\n" (pretty_lines s)
 
 type style = Flexible | Exact
 
-type patch = {
+type rewrite = {
   site : Loc.pos;
   literal : string;
   style : style;
   content : string;
 }
 
-let patch ~site ~literal ~style content = { site; literal; style; content }
+(* A [Trailing] site is an expect test's head, its line and start column,
+   with the end of its body as end column, counted from the head's line. *)
+type patch =
+  | Rewrite of rewrite
+  | Trailing of { site : Loc.pos; content : string }
+
+let patch ~site ~literal ~style content =
+  Rewrite { site; literal; style; content }
+
+let trailing ~site content = Trailing { site; content }
 
 type error = No_literal of Loc.pos | Drifted of Loc.pos
 
@@ -303,7 +312,7 @@ let rec find_literal source i =
 (* Applying *)
 
 (* The span that the patch replaces in [source], and its new text. *)
-let locate source (p : patch) =
+let locate_rewrite source (p : rewrite) =
   let _, line, column, _ = p.site in
   match line_offset source line with
   | None -> Error (No_literal p.site)
@@ -341,6 +350,36 @@ let locate source (p : patch) =
                 (* A [{%ext|…|}] node has no quoted spelling. *)
                 let node = literal ~delimiter:Quote (contents Quote) in
                 Ok (start, stop, "[" ^ ext ^ " " ^ node ^ "]")))
+
+let test_heads = [ "let%expect_test"; "[%%expect_test" ]
+
+(* The node goes after the body, on a line of its own two columns right of
+   the test's head, as ppx_expect inserts it. The head must still be at the
+   site and the body must end on a token. *)
+let locate_trailing source ~site content =
+  let _, line, column, stop = site in
+  match line_offset source line with
+  | None -> Error (No_literal site)
+  | Some bol ->
+      let head = bol + column and at = bol + stop in
+      if
+        not
+          (List.exists (is_at source head) test_heads
+          && head < at
+          && at <= String.length source
+          && not (is_ws source.[at - 1]))
+      then Error (Drifted site)
+      else
+        let indent = column + 2 in
+        let delimiter = Tag "" in
+        let payload =
+          literal ~delimiter (format_flexible ~delimiter ~column:indent content)
+        in
+        Ok (at, at, ";\n" ^ spaces indent ^ "[%expect " ^ payload ^ "]")
+
+let locate source = function
+  | Rewrite p -> locate_rewrite source p
+  | Trailing { site; content } -> locate_trailing source ~site content
 
 (* [spans] are in the order of their starts. A span that starts before the
    cursor is the same literal patched twice, and is written once. *)

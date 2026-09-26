@@ -7,14 +7,18 @@ type mode = Check | Corrected | Update
 
 type subject =
   | Literal of { pos : Loc.pos; value : string; exact : bool }
+  | Trailing of { pos : Loc.pos }
   | File of string
 
 type key = Site of Loc.pos | Path of string
 
-let key_of = function Literal { pos; _ } -> Site pos | File path -> Path path
+let key_of = function
+  | Literal { pos; _ } | Trailing { pos } -> Site pos
+  | File path -> Path path
 
 let subject_file = function
-  | Literal { pos = file, _, _, _; _ } -> file
+  | Literal { pos = file, _, _, _; _ } | Trailing { pos = file, _, _, _ } ->
+      file
   | File path -> path
 
 (* A subject's file: [source] is under the project root, and [read] is the
@@ -99,7 +103,7 @@ let resolve t subject =
 let form subject text =
   match subject with
   | Literal { exact = true; _ } -> text
-  | Literal { exact = false; _ } -> Source_patch.normalize text
+  | Literal { exact = false; _ } | Trailing _ -> Source_patch.normalize text
   | File _ -> Text.ensure_trailing_newline (Text.normalize_newlines text)
 
 let read_file path = In_channel.with_open_bin path In_channel.input_all
@@ -107,6 +111,7 @@ let read_file path = In_channel.with_open_bin path In_channel.input_all
 let read_baseline subject where =
   match subject with
   | Literal { value; _ } -> Some (form subject value)
+  | Trailing _ -> Some ""
   | File _ ->
       if Os.file_exists where.read then
         Some (form subject (read_file where.read))
@@ -139,25 +144,30 @@ let cached table key make =
    original bytes, so one valid alone is valid with the others. *)
 let correction t subject where ~actual ~accepted =
   let input, output = destination t where in
+  let tried ~line patch =
+    let source = cached t.sources input (fun () -> read_source input) in
+    let apply text =
+      Result.map_error Source_patch.error_message
+        (Source_patch.apply text [ patch ])
+    in
+    match Result.bind source apply with
+    | Ok _ -> Ok (Patch { input; output; patch })
+    | Error reason -> Error (Failure.Refused { line; reason })
+  in
   match subject with
   | File _ -> Ok (Content { output; text = accepted })
-  | Literal { pos = (_, line, _, _) as pos; value; exact } -> (
+  | Literal { pos = (_, line, _, _) as pos; value; exact } ->
       let style = if exact then Source_patch.Exact else Source_patch.Flexible in
-      let patch = Source_patch.patch ~site:pos ~literal:value ~style actual in
-      let source = cached t.sources input (fun () -> read_source input) in
-      let apply text =
-        Result.map_error Source_patch.error_message
-          (Source_patch.apply text [ patch ])
-      in
-      match Result.bind source apply with
-      | Ok _ -> Ok (Patch { input; output; patch })
-      | Error reason -> Error (Failure.Refused { line; reason }))
+      tried ~line (Source_patch.patch ~site:pos ~literal:value ~style actual)
+  | Trailing { pos = (_, line, _, _) as pos } ->
+      tried ~line (Source_patch.trailing ~site:pos actual)
 
 let check t ?loc ?(correct = true) subject actual =
   let fail ?withheld state =
     let baseline =
       match subject with
       | Literal { exact; _ } -> Failure.Literal { exact }
+      | Trailing _ -> Failure.Literal { exact = false }
       | File path -> Failure.File path
     in
     let failure = Failure.baseline ?loc baseline state in
@@ -187,10 +197,12 @@ let check t ?loc ?(correct = true) subject actual =
             fail ~withheld:Failure.Conflict (mismatch accepted)
       | None, Some expected when String.equal expected actual' -> ()
       | None, baseline -> (
+          (* Output after a test's last node has no node to differ from. *)
           let state =
-            match baseline with
-            | Some expected -> mismatch expected
-            | None -> Failure.Missing { proposed = Failure.text actual' }
+            match (subject, baseline) with
+            | (Literal _ | File _), Some expected -> mismatch expected
+            | Trailing _, _ | (Literal _ | File _), None ->
+                Failure.Missing { proposed = Failure.text actual' }
           in
           match if correct then t.mode else Check with
           | Check -> fail state

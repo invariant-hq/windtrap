@@ -506,6 +506,80 @@ let () =
     "  [%expect_exact \"z\"]\n"
     (apply quoted [ exact ~site:(pos_of quoted "[%") ~literal:"a\r\nb" "z" ])
 
+(* Trailing nodes *)
+
+(* The [P.trailing] site of the test whose head is the first occurrence of
+   [head] in [source] and whose body ends at the end of [body]'s first
+   occurrence. *)
+let trailing_site source ~head ~body =
+  let file, line, column, _ = pos_of source head in
+  let offset pattern = Option.get (Text.first_occurrence ~pattern source) in
+  let bol = offset head - column in
+  (file, line, column, offset body + String.length body - bol)
+
+let () =
+  reg "a trailing node goes after the body, two columns right of the head"
+  @@ fun () ->
+  let source = "let%expect_test _ =\n  print_string \"x\"\n\nlet () = ()\n" in
+  let site = trailing_site source ~head:"let%" ~body:"print_string \"x\"" in
+  equal ~msg:"one line" string
+    "let%expect_test _ =\n\
+    \  print_string \"x\";\n\
+    \  [%expect {| x |}]\n\n\
+     let () = ()\n"
+    (apply source [ P.trailing ~site "x\n" ]);
+  let nested = "module M = struct\n  let%expect_test _ =\n    f ()\nend\n" in
+  let site = trailing_site nested ~head:"let%" ~body:"f ()" in
+  equal ~msg:"several lines, under a nested head" string
+    "module M = struct\n\
+    \  let%expect_test _ =\n\
+    \    f ();\n\
+    \    [%expect {|\n\
+    \      a\n\
+    \        b\n\
+    \      |}]\n\
+     end\n"
+    (apply nested [ P.trailing ~site "a\n  b\n" ]);
+  let long = "[%%expect_test let _ = f ()]\n" in
+  let site = trailing_site long ~head:"[%%" ~body:"f ()" in
+  equal ~msg:"the long form of the extension" string
+    "[%%expect_test let _ = f ();\n  [%expect {| y |}]]\n"
+    (apply long [ P.trailing ~site "y" ]);
+  let last = "let%expect_test _ = f ()" in
+  let site = trailing_site last ~head:"let%" ~body:"f ()" in
+  equal ~msg:"a body that ends the file" string
+    "let%expect_test _ = f ();\n  [%expect {| z |}]"
+    (apply last [ P.trailing ~site "z" ])
+
+let () =
+  reg "a trailing node whose test is not at its site is refused" @@ fun () ->
+  let source = "let%expect_test _ =\n  f ()\n" in
+  let ((file, line, column, stop) as site) =
+    trailing_site source ~head:"let%" ~body:"f ()"
+  in
+  let refused why site =
+    match P.apply source [ P.trailing ~site "x" ] with
+    | Error (P.Drifted p) -> is_true ~msg:why (p = site)
+    | Ok _ | Error (P.No_literal _) -> failf "not refused: %s" why
+  in
+  refused "no head at the column" (file, line, column + 1, stop);
+  refused "the body ends on a blank" (file, line, column, stop + 1);
+  refused "the body ends past the file" (file, line, column, stop + 100);
+  refused "the body ends at the head" (file, line, column, column);
+  (match P.apply source [ P.trailing ~site:(file, 9, column, stop) "x" ] with
+  | Error (P.No_literal _) -> ()
+  | Ok _ | Error (P.Drifted _) -> fail "a line past the file has no test");
+  let other = "let () = expect x @@ __POS_OF__ {|old|}\n" in
+  let both = source ^ other in
+  let literal = pos_of both "__POS_OF__" in
+  equal ~msg:"with a literal of the same file" string
+    "let%expect_test _ =\n\
+    \  f ();\n\
+    \  [%expect {| x |}]\n\
+     let () = expect x @@ __POS_OF__ {| new |}\n"
+    (apply both
+       [ P.trailing ~site "x"; flexible ~site:literal ~literal:"old" "new" ])
+
 (* The layout's law *)
 
 let () =
