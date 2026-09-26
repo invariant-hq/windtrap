@@ -25,7 +25,7 @@ code.
   fixture: 4 tests
   ──────────────────────── failures ────────────────────────
     FAIL  fails
-      test/cli/suite_main.ml:LINE
+      test/cram/run/suite_main.ml:LINE
       deliberate
       expected  1
       actual    2

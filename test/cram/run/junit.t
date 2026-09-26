@@ -65,11 +65,11 @@ and the report's parent is the regular file from above. The exit code
 is the correction's: a correction the run could not write fails it, the
 report does not.
 
-  $ mkdir -p test/cli/greeting.expected.corrected
+  $ mkdir -p test/cram/run/greeting.expected.corrected
   $ run ./suite_main.exe -f greeting --corrected --junit blocked/r.xml > out 2> err
   [1]
   $ grep -A1 '^corrections' out | sed -E 's/(could not write [^:]+): .*/\1: REASON/'
   corrections (1):
-    could not write test/cli/greeting.expected.corrected: REASON
+    could not write test/cram/run/greeting.expected.corrected: REASON
   $ sed -E 's/(could not write [^:]+): .*/\1: REASON/' err
   windtrap: warning: could not write JUnit report to blocked/r.xml: REASON

@@ -47,7 +47,7 @@ at the end.
     PASS  math › adds  TIME
     PASS  math › subtracts  TIME
     FAIL  boom  TIME
-      test/cli/suite_main.ml:LINE
+      test/cram/run/suite_main.ml:LINE
       deliberate
       expected  1
       actual    2
@@ -71,7 +71,7 @@ run is therefore its tests' bytes and the one line.
   fixture: 4 tests
   ──────────────────────── failures ────────────────────────
     FAIL  fails
-      test/cli/suite_main.ml:LINE
+      test/cram/run/suite_main.ml:LINE
       deliberate
       expected  1
       actual    2
@@ -98,13 +98,13 @@ titled by the test's path and carries the block's lines below its title.
   fixture: 1 test
   ──────────────────────── failures ────────────────────────
     FAIL  boom
-      test/cli/suite_main.ml:LINE
+      test/cram/run/suite_main.ml:LINE
       deliberate
       expected  1
       actual    2
   ──────────────────────────────────────────────────────────
   ::endgroup::
-  ::error file=test/cli/suite_main.ml,line=LINE,title=Test failure%3A boom::    test/cli/suite_main.ml:LINE%0A    deliberate%0A    expected  1%0A    actual    2
+  ::error file=test/cram/run/suite_main.ml,line=LINE,title=Test failure%3A boom::    test/cram/run/suite_main.ml:LINE%0A    deliberate%0A    expected  1%0A    actual    2
   
   1 failed in DURATION.
 
@@ -133,7 +133,7 @@ temporary directory, keyed by suite, and never grow a _build.
   fixture: 1 test
   ──────────────────────── failures ────────────────────────
     FAIL  noisy
-      test/cli/suite_main.ml:LINE
+      test/cram/run/suite_main.ml:LINE
       deliberate
       expected  1
       actual    2
@@ -162,7 +162,7 @@ number of shrink steps is masked:
   fixture: 1 test (seed SEED)
   ──────────────────────── failures ────────────────────────
     FAIL  boom
-      test/cli/suite_main.ml:LINE
+      test/cram/run/suite_main.ml:LINE
       counterexample (case 0, STEPS): 0
       which failed with:
         expected  1
@@ -283,7 +283,7 @@ pass for the known defect:
   $ scrub < out | sed -E 's/  +[0-9.]+m?s /  TIME /'
   fixture: 1 test
     XFAIL  collide  TIME (expected failure)
-      test/cli/suite_main.ml:LINE
+      test/cram/run/suite_main.ml:LINE
       expected to fail, but the test passed
   
   1 expected failure in DURATION.
@@ -299,8 +299,8 @@ JUnit report alike, rather than an exit code nothing explains.
   fixture: 1 test
   ──────────────────────── failures ────────────────────────
     FAIL  fixture release
-      [release] test/cli/suite_main.ml:LINE
-      fixture (test/cli/suite_main.ml:LINE): release raised Failure("release-boom")
+      [release] test/cram/run/suite_main.ml:LINE
+      fixture (test/cram/run/suite_main.ml:LINE): release raised Failure("release-boom")
   ──────────────────────────────────────────────────────────
   
   1 passed, 1 failed in DURATION.
@@ -311,8 +311,8 @@ JUnit report alike, rather than an exit code nothing explains.
     <testsuite name="fixture" tests="2" failures="1" errors="0" skipped="0" time="TIME">
       <testcase name="touches the fixture" classname="fixture" time="TIME"/>
       <testcase name="fixture release" classname="fixture" time="TIME">
-        <failure message="fixture (test/cli/suite_main.ml:LINE): release raised Failure(&quot;release-boom&quot;)">    [release] test/cli/suite_main.ml:LINE
-      fixture (test/cli/suite_main.ml:LINE): release raised Failure("release-boom")
+        <failure message="fixture (test/cram/run/suite_main.ml:LINE): release raised Failure(&quot;release-boom&quot;…">    [release] test/cram/run/suite_main.ml:LINE
+      fixture (test/cram/run/suite_main.ml:LINE): release raised Failure("release-boom")
   </failure>
       </testcase>
     </testsuite>
@@ -328,8 +328,8 @@ raises, and the raise is the release's failure.
   fixture: 1 test
   ──────────────────────── failures ────────────────────────
     FAIL  fixture release
-      [release] test/cli/suite_main.ml:LINE
-      fixture (test/cli/suite_main.ml:LINE): release raised Invalid_argument("windtrap: a run is already executing; nothing inside it can start another run")
+      [release] test/cram/run/suite_main.ml:LINE
+      fixture (test/cram/run/suite_main.ml:LINE): release raised Invalid_argument("windtrap: a run is already executing; nothing inside it can start another run")
   ──────────────────────────────────────────────────────────
   
   1 passed, 1 failed in DURATION.

@@ -20,11 +20,11 @@ through the run's own exit code.
   fixture: 3 tests
   ──────────────────────── failures ────────────────────────
     FAIL  bomb
-      test/cli/suite_main.ml:LINE
+      test/cram/run/suite_main.ml:LINE
       the test called exit and was intercepted; a test must return or raise, never exit the process
   
     FAIL  after
-      test/cli/suite_main.ml:LINE
+      test/cram/run/suite_main.ml:LINE
       deliberate
       expected  1
       actual    2

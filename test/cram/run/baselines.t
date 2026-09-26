@@ -1,5 +1,5 @@
 How a run accepts what it produced. The fixture's "greeting" test compares
-against test/cli/greeting.expected under WINDTRAP_PROJECT_ROOT; the
+against test/cram/run/greeting.expected under WINDTRAP_PROJECT_ROOT; the
 blocks below leave it missing, accept it in place, make it stale, and
 record the correction the way a dune action would. They are one
 sequence, down to the -u run that ignores other failures: each starts
@@ -25,15 +25,15 @@ summary: -u, over the run's selection.
   fixture: 1 test
   ──────────────────────── failures ────────────────────────
     FAIL  greeting
-      test/cli/suite_main.ml:LINE
-      expect_file "test/cli/greeting.expected": no baseline
+      test/cram/run/suite_main.ml:LINE
+      expect_file "test/cram/run/greeting.expected": no baseline
       proposed (1 line):
         + hello from the fixture
   ──────────────────────────────────────────────────────────
   
   accept: ./suite_main.exe -u -f 'greeting'
   1 failed in DURATION.
-  $ test -e test/cli/greeting.expected || echo 'nothing written'
+  $ test -e test/cram/run/greeting.expected || echo 'nothing written'
   nothing written
 
 -u accepts in place: the check passes, the run names what it accepted,
@@ -43,10 +43,10 @@ and the file holds the produced text.
   $ scrub < out
   fixture: 1 test
   corrections (1):
-    accepted test/cli/greeting.expected
+    accepted test/cram/run/greeting.expected
   
   1 passed, 1 correction accepted in DURATION.
-  $ cat test/cli/greeting.expected
+  $ cat test/cram/run/greeting.expected
   hello from the fixture
   $ run ./suite_main.exe -f greeting > out 2>&1
   $ scrub < out
@@ -57,29 +57,29 @@ its diff and dune's acceptance, the correction lands beside the file as
 <file>.corrected, and a run whose only failures are recorded corrections
 exits 0 so that the action's diff? is the verdict.
 
-  $ echo 'stale' > test/cli/greeting.expected
+  $ echo 'stale' > test/cram/run/greeting.expected
   $ run ./suite_main.exe -f greeting --corrected > out 2>&1
   $ scrub < out
   fixture: 1 test
   ──────────────────────── failures ────────────────────────
     FAIL  greeting
-      test/cli/suite_main.ml:LINE
-      expect_file "test/cli/greeting.expected": mismatch
+      test/cram/run/suite_main.ml:LINE
+      expect_file "test/cram/run/greeting.expected": mismatch
       @@ -1,1 +1,1 @@
       - stale
       + hello from the fixture
-      accept: dune promote test/cli/greeting.expected
+      accept: dune promote test/cram/run/greeting.expected
   ──────────────────────────────────────────────────────────
   
   corrections (1):
-    wrote test/cli/greeting.expected.corrected
+    wrote test/cram/run/greeting.expected.corrected
   
   1 failed, 1 correction written in DURATION.
-  $ cat test/cli/greeting.expected.corrected
+  $ cat test/cram/run/greeting.expected.corrected
   hello from the fixture
-  $ cat test/cli/greeting.expected
+  $ cat test/cram/run/greeting.expected
   stale
-  $ rm test/cli/greeting.expected.corrected
+  $ rm test/cram/run/greeting.expected.corrected
 
 Any other failure still fails the run. The correction beside it is still
 written, since it belongs to a test that is otherwise clean, and its
@@ -94,29 +94,29 @@ summary, once, on standard error.
   fixture: 3 tests
   ──────────────────────── failures ────────────────────────
     FAIL  boom
-      test/cli/suite_main.ml:LINE
+      test/cram/run/suite_main.ml:LINE
       deliberate
       expected  1
       actual    2
   
     FAIL  greeting
-      test/cli/suite_main.ml:LINE
-      expect_file "test/cli/greeting.expected": mismatch
+      test/cram/run/suite_main.ml:LINE
+      expect_file "test/cram/run/greeting.expected": mismatch
       @@ -1,1 +1,1 @@
       - stale
       + hello from the fixture
-      accept: dune promote test/cli/greeting.expected
+      accept: dune promote test/cram/run/greeting.expected
   ──────────────────────────────────────────────────────────
   
   corrections (1):
-    wrote test/cli/greeting.expected.corrected
+    wrote test/cram/run/greeting.expected.corrected
   
   1 passed, 2 failed, 1 correction written in DURATION.
   $ cat err
   windtrap: warning: dune registers a correction for promotion only when the run that wrote it exits 0, so the failures above withhold the correction written here. Fix the failures, rerun, then 'dune promote'.
-  $ cat test/cli/greeting.expected.corrected
+  $ cat test/cram/run/greeting.expected.corrected
   hello from the fixture
-  $ rm test/cli/greeting.expected.corrected
+  $ rm test/cram/run/greeting.expected.corrected
 
 The warning is for that run alone. A --corrected run whose corrections
 dune will promote (the session above, exit 0) printed none; nor does -u,
@@ -128,7 +128,7 @@ writes nothing.
   $ tail -1 out | scrub
   2 passed, 1 failed, 1 correction accepted in DURATION.
   $ cat err
-  $ echo 'stale' > test/cli/greeting.expected
+  $ echo 'stale' > test/cram/run/greeting.expected
   $ run ./suite_main.exe -e math > out 2> err
   [1]
   $ tail -1 out | scrub
@@ -142,7 +142,7 @@ the report would call a deterministic test flaky. The run is the one the
 test has without ~retries. The three runs of the fixture below read the
 one stale file planted here, in turn.
 
-  $ echo 'stale' > test/cli/retried.expected
+  $ echo 'stale' > test/cram/run/retried.expected
   $ retried() {
   >   run env FACADE_FIXTURE=retried ./suite_main.exe "$@" > out 2>&1
   >   echo "[$?]"
@@ -153,19 +153,19 @@ one stale file planted here, in turn.
   fixture: 1 test
   ──────────────────────── failures ────────────────────────
     FAIL  retried
-      test/cli/suite_main.ml:LINE
-      expect_file "test/cli/retried.expected": mismatch
+      test/cram/run/suite_main.ml:LINE
+      expect_file "test/cram/run/retried.expected": mismatch
       @@ -1,1 +1,1 @@
       - stale
       + fresh from the fixture
-      accept: dune promote test/cli/retried.expected
+      accept: dune promote test/cram/run/retried.expected
   ──────────────────────────────────────────────────────────
   
   corrections (1):
-    wrote test/cli/retried.expected.corrected
+    wrote test/cram/run/retried.expected.corrected
   
   1 failed, 1 correction written in DURATION.
-  $ rm test/cli/retried.expected.corrected
+  $ rm test/cram/run/retried.expected.corrected
 
 Plain checking records nothing, so it retries as declared: an output that
 differs from one attempt to the next is what ~retries is for.
@@ -175,8 +175,8 @@ differs from one attempt to the next is what ~retries is for.
   fixture: 1 test
   ──────────────────────── failures ────────────────────────
     FAIL  retried (2 attempts)
-      test/cli/suite_main.ml:LINE
-      expect_file "test/cli/retried.expected": mismatch
+      test/cram/run/suite_main.ml:LINE
+      expect_file "test/cram/run/retried.expected": mismatch
       @@ -1,1 +1,1 @@
       - stale
       + fresh from the fixture
@@ -191,42 +191,42 @@ differs from one attempt to the next is what ~retries is for.
   [0]
   fixture: 1 test
   corrections (1):
-    accepted test/cli/retried.expected
+    accepted test/cram/run/retried.expected
   
   1 passed, 1 correction accepted in DURATION.
-  $ cat test/cli/retried.expected
+  $ cat test/cram/run/retried.expected
   fresh from the fixture
 
 A kept correction leaves the exit code alone and nothing else: the test
 it belongs to still failed. Under -x it stops the run, so the test after
 it does not run, and the run still exits 0.
 
-  $ echo 'stale' > test/cli/stops.expected
+  $ echo 'stale' > test/cram/run/stops.expected
   $ run env FACADE_FIXTURE=stops ./suite_main.exe --corrected -x > out 2>&1
   $ scrub < out
   fixture: 2 tests
   ──────────────────────── failures ────────────────────────
     FAIL  stale
-      test/cli/suite_main.ml:LINE
-      expect_file "test/cli/stops.expected": mismatch
+      test/cram/run/suite_main.ml:LINE
+      expect_file "test/cram/run/stops.expected": mismatch
       @@ -1,1 +1,1 @@
       - stale
       + fresh from the fixture
-      accept: dune promote test/cli/stops.expected
+      accept: dune promote test/cram/run/stops.expected
   ──────────────────────────────────────────────────────────
   
   corrections (1):
-    wrote test/cli/stops.expected.corrected
+    wrote test/cram/run/stops.expected.corrected
   
   1 failed, 1 not run, 1 correction written in DURATION.
-  $ rm test/cli/stops.expected.corrected
+  $ rm test/cram/run/stops.expected.corrected
 
 And it enters the record of the last failed tests, which --failed reads:
 the next -l --failed lists the test whose correction was kept, not the
 one that passed.
 
   $ run env FACADE_FIXTURE=stops ./suite_main.exe --corrected -o store > out 2>&1
-  $ rm test/cli/stops.expected.corrected
+  $ rm test/cram/run/stops.expected.corrected
   $ run env FACADE_FIXTURE=stops ./suite_main.exe -l --failed -o store
   stale
 
@@ -236,7 +236,7 @@ offers no acceptance, which would promote or rewrite nothing, and ends
 on the sentence that says why. The same holds by hand, under --corrected
 and under -u, where the stale baseline is no failure and is left alone.
 
-  $ mkdir -p test/cli && echo 'stale' > test/cli/masked.expected
+  $ mkdir -p test/cram/run && echo 'stale' > test/cram/run/masked.expected
   $ masked() {
   >   run env FACADE_FIXTURE=masked ./suite_main.exe "$@" > out 2>&1
   >   echo "[$?]"
@@ -247,13 +247,13 @@ and under -u, where the stale baseline is no failure and is left alone.
   fixture: 1 test
   ──────────────────────── failures ────────────────────────
     FAIL  masked
-      test/cli/suite_main.ml:LINE
-      expect_file "test/cli/masked.expected": mismatch
+      test/cram/run/suite_main.ml:LINE
+      expect_file "test/cram/run/masked.expected": mismatch
       @@ -1,1 +1,1 @@
       - stale
       + fresh from the fixture
   
-      test/cli/suite_main.ml:LINE
+      test/cram/run/suite_main.ml:LINE
       deliberate
       expected  1
       actual    2
@@ -266,13 +266,13 @@ and under -u, where the stale baseline is no failure and is left alone.
   fixture: 1 test
   ──────────────────────── failures ────────────────────────
     FAIL  masked
-      test/cli/suite_main.ml:LINE
-      expect_file "test/cli/masked.expected": mismatch
+      test/cram/run/suite_main.ml:LINE
+      expect_file "test/cram/run/masked.expected": mismatch
       @@ -1,1 +1,1 @@
       - stale
       + fresh from the fixture
   
-      test/cli/suite_main.ml:LINE
+      test/cram/run/suite_main.ml:LINE
       deliberate
       expected  1
       actual    2
@@ -280,21 +280,21 @@ and under -u, where the stale baseline is no failure and is left alone.
   ──────────────────────────────────────────────────────────
   
   1 failed in DURATION.
-  $ test -e test/cli/masked.expected.corrected || echo 'nothing to promote'
+  $ test -e test/cram/run/masked.expected.corrected || echo 'nothing to promote'
   nothing to promote
   $ masked -u
   [1]
   fixture: 1 test
   ──────────────────────── failures ────────────────────────
     FAIL  masked
-      test/cli/suite_main.ml:LINE
+      test/cram/run/suite_main.ml:LINE
       deliberate
       expected  1
       actual    2
   ──────────────────────────────────────────────────────────
   
   1 failed in DURATION.
-  $ cat test/cli/masked.expected
+  $ cat test/cram/run/masked.expected
   stale
 
 One accept: line serves every block of a run by hand. The fixture holds
@@ -303,8 +303,8 @@ failing property, which the replay: line under the accept: line reruns.
 The source of the literals is the fixture's own, copied where their
 locations point:
 
-  $ rm -f test/cli/suite_main.ml && cp suite_main.ml test/cli/
-  $ echo 'stale' > test/cli/accepts.expected
+  $ rm -f test/cram/run/suite_main.ml && cp suite_main.ml test/cram/run/
+  $ echo 'stale' > test/cram/run/accepts.expected
   $ run env FACADE_FIXTURE=accepts ./suite_main.exe > out 2>&1
   [1]
   $ grep -c 'accept:' out
@@ -321,56 +321,56 @@ literal that holds is left as it is.
   [1]
   $ tail -1 again | scrub
   3 passed, 1 failed, 2 corrections accepted in DURATION.
-  $ diff suite_main.ml test/cli/suite_main.ml | grep '^[<>]'
+  $ diff suite_main.ml test/cram/run/suite_main.ml | grep '^[<>]'
   <     test "stale literal" (fun () -> expect "fresh" @@ __POS_OF__ "stale");
   >     test "stale literal" (fun () -> expect "fresh" @@ __POS_OF__ "fresh");
-  $ cat test/cli/accepts.expected
+  $ cat test/cram/run/accepts.expected
   fresh from the fixture
 
 The line restates the run's selection, so a baseline the run did not
 select is not accepted:
 
-  $ rm -f test/cli/suite_main.ml && cp suite_main.ml test/cli/
-  $ echo 'stale' > test/cli/accepts.expected
+  $ rm -f test/cram/run/suite_main.ml && cp suite_main.ml test/cram/run/
+  $ echo 'stale' > test/cram/run/accepts.expected
   $ run env FACADE_FIXTURE=accepts ./suite_main.exe -e file > out 2>&1
   [1]
   $ grep 'accept:' out
   accept: ./suite_main.exe -u -e 'file'
   $ eval "run env FACADE_FIXTURE=accepts $(sed -n 's/^accept: //p' out)" > again 2>&1
   [1]
-  $ diff suite_main.ml test/cli/suite_main.ml | grep '^[<>]'
+  $ diff suite_main.ml test/cram/run/suite_main.ml | grep '^[<>]'
   <     test "stale literal" (fun () -> expect "fresh" @@ __POS_OF__ "stale");
   >     test "stale literal" (fun () -> expect "fresh" @@ __POS_OF__ "fresh");
-  $ cat test/cli/accepts.expected
+  $ cat test/cram/run/accepts.expected
   stale
 
 -x stops a run on its first failure, and -u passes the test it accepts,
 so over the selection it would run on and accept what the report never
 showed. A run stopped by -x accepts the test it stopped on, by name:
 
-  $ rm -f test/cli/suite_main.ml && cp suite_main.ml test/cli/
+  $ rm -f test/cram/run/suite_main.ml && cp suite_main.ml test/cram/run/
   $ run env FACADE_FIXTURE=accepts ./suite_main.exe -x > out 2>&1
   [1]
   $ grep -e 'accept:' -e 'replay:' out
   accept: ./suite_main.exe -u -f 'stale literal'
   $ eval "run env FACADE_FIXTURE=accepts $(sed -n 's/^accept: //p' out)" > again 2>&1
-  $ diff suite_main.ml test/cli/suite_main.ml | grep '^[<>]'
+  $ diff suite_main.ml test/cram/run/suite_main.ml | grep '^[<>]'
   <     test "stale literal" (fun () -> expect "fresh" @@ __POS_OF__ "stale");
   >     test "stale literal" (fun () -> expect "fresh" @@ __POS_OF__ "fresh");
-  $ cat test/cli/accepts.expected
+  $ cat test/cram/run/accepts.expected
   stale
-  $ rm test/cli/suite_main.ml
+  $ rm test/cram/run/suite_main.ml
 
 In-place acceptance is a developer's edit: refused under CI, before
 anything runs, so a stale baseline stays as it was.
 
-  $ echo 'stale' > test/cli/greeting.expected
+  $ echo 'stale' > test/cram/run/greeting.expected
   $ run env CI=1 ./suite_main.exe -f greeting -u > out 2> err
   [1]
   $ cat out
   $ cat err
   windtrap: baseline update refused: CI is set. -u rewrites baselines in place, which is a developer's edit; under CI run with --corrected and accept with dune promote.
-  $ cat test/cli/greeting.expected
+  $ cat test/cram/run/greeting.expected
   stale
 
 A listing is refused the same way, with the same code: -l makes the

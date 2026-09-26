@@ -77,7 +77,7 @@ transcript byte for byte.
   fixture: 1 test
   ──────────────────────── failures ────────────────────────
     FAIL  boom
-      test/cli/suite_main.ml:LINE
+      test/cram/run/suite_main.ml:LINE
       deliberate
       expected  1
       actual    2
@@ -99,8 +99,8 @@ failing test is excluded, baseline and slow-tagged test included). The
 baseline is planted where WINDTRAP_PROJECT_ROOT sends the child's
 lookup:
 
-  $ mkdir -p test/cli
-  $ echo 'hello from the fixture' > test/cli/greeting.expected
+  $ mkdir -p test/cram/run
+  $ echo 'hello from the fixture' > test/cram/run/greeting.expected
   $ run ./suite_main.exe -e boom > out 2> err
   $ sed -E 's/ in [0-9.]+m?s\./ in DURATION./' out
   fixture: 4 passed in DURATION.

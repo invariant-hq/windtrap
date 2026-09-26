@@ -49,7 +49,7 @@ remove:
   [1]
   $ cat out
   $ sed -E 's/suite_main\.ml:[0-9]+/suite_main.ml:LINE/' err
-  windtrap: focused tests committed (focus at test/cli/suite_main.ml:LINE); remove focus to run under CI
+  windtrap: focused tests committed (focus at test/cram/run/suite_main.ml:LINE); remove focus to run under CI
 
 A listing makes the startup checks a real run makes: -l over either
 refused suite is the same refusal, with the same code, and lists
@@ -66,4 +66,4 @@ nothing.
   [1]
   $ cat out
   $ sed -E 's/suite_main\.ml:[0-9]+/suite_main.ml:LINE/' err
-  windtrap: focused tests committed (focus at test/cli/suite_main.ml:LINE); remove focus to run under CI
+  windtrap: focused tests committed (focus at test/cram/run/suite_main.ml:LINE); remove focus to run under CI

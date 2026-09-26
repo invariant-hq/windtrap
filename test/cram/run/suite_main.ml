@@ -36,7 +36,7 @@ let default =
     slow "crawls" (fun () -> is_true true);
     (* The baseline the sessions plant, at a path both files agree on. *)
     test "greeting" (fun () ->
-        expect_file "hello from the fixture\n" "test/cli/greeting.expected");
+        expect_file "hello from the fixture\n" "test/cram/run/greeting.expected");
   ]
 
 let focused =
@@ -97,7 +97,7 @@ let streamed =
 let masked =
   [
     test "masked" (fun () ->
-        expect_file "fresh from the fixture\n" "test/cli/masked.expected";
+        expect_file "fresh from the fixture\n" "test/cram/run/masked.expected";
         equal ~msg:"deliberate" int 1 2);
   ]
 
@@ -106,7 +106,7 @@ let masked =
 let retried =
   [
     test ~retries:1 "retried" (fun () ->
-        expect_file "fresh from the fixture\n" "test/cli/retried.expected");
+        expect_file "fresh from the fixture\n" "test/cram/run/retried.expected");
   ]
 
 (* A stale baseline, then a test that passes: under [--corrected] the
@@ -115,7 +115,7 @@ let retried =
 let stops =
   [
     test "stale" (fun () ->
-        expect_file "fresh from the fixture\n" "test/cli/stops.expected");
+        expect_file "fresh from the fixture\n" "test/cram/run/stops.expected");
     test "after" (fun () -> is_true true);
   ]
 
@@ -149,7 +149,7 @@ let accepts =
     test "holds" (fun () -> expect "same" @@ __POS_OF__ "same");
     test "stale literal" (fun () -> expect "fresh" @@ __POS_OF__ "stale");
     test "stale file" (fun () ->
-        expect_file "fresh from the fixture\n" "test/cli/accepts.expected");
+        expect_file "fresh from the fixture\n" "test/cram/run/accepts.expected");
     prop "small" Gen.int (fun n -> is_true (abs n < 1000));
   ]
 

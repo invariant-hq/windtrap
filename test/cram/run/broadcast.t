@@ -15,10 +15,10 @@ planted in the build context, where a run under dune reads it.
   $ bin=$PWD
   $ root=$(cd "$(mktemp -d)" && pwd -P)
   $ cd "$root"
-  $ mkdir -p _build/default/unit _build/default/mutants _build/default/test/cli
+  $ mkdir -p _build/default/unit _build/default/mutants _build/default/test/cram/run
   $ cp "$bin/suite_main.exe" _build/default/unit/
   $ cp "$bin/mutant_main.exe" _build/default/mutants/
-  $ echo 'hello from the fixture' > _build/default/test/cli/greeting.expected
+  $ echo 'hello from the fixture' > _build/default/test/cram/run/greeting.expected
   $ stanza() {
   >   dir=$1; shift
   >   (cd "_build/default/$dir" && env -i PATH="$PATH" \
@@ -54,8 +54,8 @@ WINDTRAP_MUTATE reaches both stanzas. The fixture has no mutant under
 the prefix, so it runs as it would without the variable and says why on
 standard error, while the instrumented suite tests its mutant:
 
-  $ runtest WINDTRAP_MUTATE=test/cli/mutant_subject.ml 2>&1 | scrub
-  windtrap: WINDTRAP_MUTATE is set, but no mutant of this executable's catalogue is under test/cli/mutant_subject.ml, so the suite runs without mutation
+  $ runtest WINDTRAP_MUTATE=test/cram/run/mutant_subject.ml 2>&1 | scrub
+  windtrap: WINDTRAP_MUTATE is set, but no mutant of this executable's catalogue is under test/cram/run/mutant_subject.ml, so the suite runs without mutation
   fixture: 4 passed in DURATION.
   [unit: 0]
   mutant: 1 passed in DURATION.
@@ -64,11 +64,11 @@ standard error, while the instrumented suite tests its mutant:
 
 Typed on the command line, the same request is refused:
 
-  $ stanza unit ./suite_main.exe -e boom --mutate=test/cli/mutant_subject.ml > out 2>&1
+  $ stanza unit ./suite_main.exe -e boom --mutate=test/cram/run/mutant_subject.ml > out 2>&1
   [1]
   $ scrub < out
   fixture: 4 passed in DURATION.
-  windtrap: --mutate=test/cli/mutant_subject.ml leaves no mutant in this executable's catalogue: no instrumented file matches the prefix (is the library under test instrumented with ppx_windtrap.mutate?), or the matched files have no mutation sites
+  windtrap: --mutate=test/cram/run/mutant_subject.ml leaves no mutant in this executable's catalogue: no instrumented file matches the prefix (is the library under test instrumented with ppx_windtrap.mutate?), or the matched files have no mutation sites
 
 A relative path in WINDTRAP_JUNIT or WINDTRAP_OUTPUT is read from the
 project root, so both stanzas write under the root's _build:
