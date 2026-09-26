@@ -1,21 +1,21 @@
 ## Unreleased
 
-Windtrap 0.2.0 is a rewrite of 0.1.0, and a 0.1 suite needs changes to
-build. The interface, the runner, the ppx and the coverage backend are
-new, and stateful and mutation testing are added. Every line below
-compares with 0.1.0, and
+Windtrap 0.2.0 is about two questions a test suite should answer. When
+a test fails: why? A failed comparison prints both values and marks what
+changed, a failing property prints the command that replays it, and a
+stale expectation is corrected for you and accepted with `dune promote`.
+When the suite passes: would it catch a bug? Coverage shows the code no
+test runs, and mutation testing, new in this release, shows the changes
+to the code that no test notices. Stateful testing is new too: it checks
+a system against a model with generated sequences of calls.
+
+Getting there took a rewrite, so a 0.1 suite needs changes to build: the
+interface, the runner, the ppx and the coverage backend are new. Every
+line below compares with 0.1.0, and
 [`doc/manual/migrating-from-0.1.md`](doc/manual/migrating-from-0.1.md)
 maps each 0.1 spelling to its replacement.
 
 ### Highlights
-
-`run` returns the exit code, and a suite's main passes it to `exit`.
-`run` takes no configuration arguments, so the command-line flags and
-their `WINDTRAP_*` mirrors are the whole configuration.
-
-```ocaml
-let () = exit (run "mylib" [ parsing; printing ])
-```
 
 A failed assertion prints both values with its witness's printer and
 marks what changed, for every witness: the changed span of a one-line
@@ -66,6 +66,14 @@ prints every mutant that no test failed on.
 
 ```
 $ dune exec --instrument-with ppx_windtrap.mutate test/test_calc.exe -- --mutate
+```
+
+`run` returns the exit code, and a suite's main passes it to `exit`.
+`run` takes no configuration arguments, so the command-line flags and
+their `WINDTRAP_*` mirrors are the whole configuration.
+
+```ocaml
+let () = exit (run "mylib" [ parsing; printing ])
 ```
 
 ### Declaring tests
