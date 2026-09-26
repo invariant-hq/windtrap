@@ -152,16 +152,18 @@ temporary directory, keyed by suite, and never grow a _build.
 A report whose failures include a property's closes on the replay line,
 right above the summary: the command that reruns the run's tests, each
 failed test on the case it drew, spelled for the way the run was started.
-Run by hand, it restates the program as it was typed, then the seed:
+Run by hand, it restates the program as it was typed, then the seed.
+The seed is drawn, and the first case is 0 for some seeds, so the
+number of shrink steps is masked:
 
   $ run FACADE_FIXTURE=property ./suite_main.exe > out 2> err
   [1]
-  $ scrub < out | sed -E 's/s1:[0-9a-f]+/SEED/'
+  $ scrub < out | sed -E 's/s1:[0-9a-f]+/SEED/; s/\(case 0(, shrunk [0-9]+ steps?)?\)/(case 0, STEPS)/'
   fixture: 1 test (seed SEED)
   ──────────────────────── failures ────────────────────────
     FAIL  boom
       test/cli/suite_main.ml:LINE
-      counterexample (case 0, shrunk 1 step): 0
+      counterexample (case 0, STEPS): 0
       which failed with:
         expected  1
         actual    2
@@ -199,8 +201,8 @@ and the backend's flag is masked as above:
   dune exec ./suite_main.exe -- --seed SEED
   $ eval "run INSIDE_DUNE=1 FACADE_FIXTURE=property $(cat replay)" > again 2>&1
   [1]
-  $ grep -e 'counterexample' -e 'replay:' again | sed -E 's/s1:[0-9a-f]+/SEED/; s/--instrument-with ppx_windtrap\.mutate //'
-      counterexample (case 0, shrunk 1 step): 0
+  $ grep -e 'counterexample' -e 'replay:' again | sed -E 's/s1:[0-9a-f]+/SEED/; s/--instrument-with ppx_windtrap\.mutate //; s/\(case 0(, shrunk [0-9]+ steps?)?\)/(case 0, STEPS)/'
+      counterexample (case 0, STEPS): 0
   replay: dune exec ./suite_main.exe -- --seed SEED
   $ cd .. && rm -r proj
 
