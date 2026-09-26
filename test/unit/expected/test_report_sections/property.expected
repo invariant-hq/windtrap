@@ -1,0 +1,85 @@
+=== the counterexample with its case and steps, the inner failure at its location, the replay
+    test/test_geo.ml:17
+    counterexample (case 12, shrunk 4 steps): Rect (2, 0)
+    which failed at:
+      test/test_geo.ml:18
+      expected  true
+      actual    false
+    replay: WINDTRAP_SEED=s1:7be1d2c904aa31f5 dune runtest
+
+=== one shrink step is singular
+    counterexample (case 0, shrunk 1 step): 0
+    replay: WINDTRAP_SEED=s1:7be1d2c904aa31f5 dune runtest
+
+=== an example is numbered from one and has no replay
+    counterexample (example 1): Rect (2, 0)
+
+=== a pre-image is marked on the head and explained under it
+    counterexample (case 19, shrunk 9 steps): computed from [2; 3] -> ([1.; 2.], [0.; 0.])
+      (the value has no printer, so this is the input that map and bind
+       computed it from; attach a printer with Gen.with_pp to see the value)
+    replay: WINDTRAP_SEED=s1:7be1d2c904aa31f5 dune runtest
+
+=== and the explanation is faint, line by line
+    counterexample (case 19, shrunk 9 steps): computed from [2; 3] -> ([1.; 2.], [0.; 0.])
+      «d|(the value has no printer, so this is the input that map and bind»
+      «d| computed it from; attach a printer with Gen.with_pp to see the value)»
+    replay: WINDTRAP_SEED=s1:7be1d2c904aa31f5 dune runtest
+
+=== a multi-line pre-image
+    counterexample (case 3): computed from
+      1 ->
+        [2; 3]
+      (the value has no printer, so this is the input that map and bind
+       computed it from; attach a printer with Gen.with_pp to see the value)
+    replay: WINDTRAP_SEED=s1:7be1d2c904aa31f5 dune runtest
+
+=== a multi-line counterexample is a block under its head
+    counterexample (case 3):
+      Rect
+        (2, 0)
+    replay: WINDTRAP_SEED=s1:7be1d2c904aa31f5 dune runtest
+
+=== a summarized counterexample: the summary on the head, the table under it
+    counterexample (case 0, shrunk 2 steps): 2 calls, last: get
+       #  model before  call
+       1  0             inc 3
+       2  3             get
+    replay: WINDTRAP_SEED=s1:7be1d2c904aa31f5 dune runtest
+
+=== and only the table's header row is faint
+    counterexample (case 0, shrunk 2 steps): 2 calls, last: get
+      «d| #  model before  call»
+       1  0             inc 3
+       2  3             get
+    replay: WINDTRAP_SEED=s1:7be1d2c904aa31f5 dune runtest
+
+=== a timed-out search says so under the counterexample
+    counterexample (case 4, shrunk 2 steps): 9
+    timed out after 0.3s while shrinking; counterexample may not be minimal
+    replay: WINDTRAP_SEED=s1:7be1d2c904aa31f5 dune runtest
+
+=== a spent budget says so under the counterexample
+    counterexample (case 4, shrunk 50 steps): 9
+    shrinking stopped after 50 steps; counterexample may not be minimal
+    replay: WINDTRAP_SEED=s1:7be1d2c904aa31f5 dune runtest
+
+=== a candidate that raised is named, then the search's stop
+    counterexample (case 4, shrunk 3 steps): 9
+    shrinking stopped after 3 steps: a candidate raised Failure("no small values")
+    counterexample may not be minimal
+    replay: WINDTRAP_SEED=s1:7be1d2c904aa31f5 dune runtest
+
+=== an inner failure without a location is which failed with
+    counterexample (case 0): 7
+    which failed with:
+      expected  true
+      actual    false
+    replay: WINDTRAP_SEED=s1:7be1d2c904aa31f5 dune runtest
+
+=== an uncaught exception inside a property
+    counterexample (case 3, shrunk 2 steps): 50
+    which failed with:
+      uncaught exception:
+        Dune__exe__V.Boom(50)
+    replay: WINDTRAP_SEED=s1:7be1d2c904aa31f5 dune runtest

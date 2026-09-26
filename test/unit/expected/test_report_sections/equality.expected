@@ -1,0 +1,285 @@
+=== a pair that refines marks each changed span under its side
+    expected  the quick brown fox
+                          ~
+    actual    the quick brawn fox
+                          ~
+
+=== on a terminal, colour marks the changed spans in bold and no ~ line prints
+    «d|expected»  the quick br«G|o»wn fox
+    «d|actual»    the quick br«R|a»wn fox
+
+=== off a terminal, the ~ lines print under colour too
+    «d|expected»  the quick br«G|o»wn fox
+                          «G|~»
+    «d|actual»    the quick br«R|a»wn fox
+                          «R|~»
+
+=== a changed span of spaces keeps its ~ line under colour
+    «d|expected»  a long enough «G| »value
+                            «G|~»
+    «d|actual»    a long enough value
+
+=== a pair the refinement declines prints each side whole
+    expected  true
+    actual    false
+
+=== and under colour each side whole in its colour
+    «d|expected»  «g|true»
+    «d|actual»    «r|false»
+
+=== the ~ line counts code points, not bytes
+    expected  the café is brown today
+                            ~
+    actual    the café is brawn today
+                            ~
+
+=== a tab on a side: both values, no ~ line
+    expected  the	quick brown fox
+    actual    the	quick brawn fox
+
+=== a span at the start
+    expected  Xbcdefghij
+              ~
+    actual    Ybcdefghij
+              ~
+
+=== a span at the end
+    expected  abcdefghiX
+                       ~
+    actual    abcdefghiY
+                       ~
+
+=== a pure insertion is marked under actual only
+    expected  user:alice
+    actual    user:alice:admin
+                        ~~~~~~
+
+=== a pure deletion is marked under expected only
+    expected  user:alice:admin
+                        ~~~~~~
+    actual    user:alice
+
+=== two changed spans on one line
+    expected  a1b2c
+               ~ ~
+    actual    a9b8c
+               ~ ~
+
+=== the last code point of fixed width is marked
+    expected  ɏabc1
+                  ~
+    actual    ɏabc2
+                  ~
+
+=== one side without fixed widths draws no ~ line
+    expected  ab日
+    actual    abc
+
+=== a value's escape sequences print as text, an OSC one too
+    expected  \x1b[31mred\x1b[0m one
+    actual    \x1b]0;title\x07 two
+
+=== a value's control bytes print escaped, the ~ lines under the escapes
+    expected  \x1b[31mred\x1b[0m
+                    ~
+    actual    \x1b[32mred\x1b[0m
+                    ~
+
+=== a marked control byte widens its ~ to its four columns
+    expected  plain text here
+                   ~
+    actual    plain\x1btext here
+                   ~~~~
+
+=== a deleted control byte is marked under expected, as wide
+    expected  plain\x1btext here
+                   ~~~~
+    actual    plaintext here
+
+=== under colour the changed byte of an escaped value is bold, and the value's own sequence is text
+    «d|expected»  \x1b[3«G|1»mred\x1b[0m
+    «d|actual»    \x1b[3«R|2»mred\x1b[0m
+
+=== one side elided, coloured, prints each side whole in its colour
+    «d|expected»  «g|xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx… (10 bytes elided)xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx»
+    «d|actual»    «r|xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx»
+
+=== a ?msg prints above the values
+    context note
+    expected  1
+    actual    2
+
+=== multi-line values are a unified diff under --- expected and +++ actual
+    --- expected
+    +++ actual
+    @@ -1,3 +1,3 @@
+      a
+    - b
+    + B
+      c
+
+=== a side that spans lines against one that does not
+    --- expected
+    +++ actual
+    @@ -1,2 +1,1 @@
+    - a
+    - b
+    + c
+
+=== a side with no lines
+    --- expected
+    +++ actual
+    @@ -0,0 +1,2 @@
+    + a
+    + b
+
+=== an empty - line answered by a + line
+    --- expected
+    +++ actual
+    @@ -1,3 +1,3 @@
+      a
+    - 
+    + x
+      c
+
+=== a difference in a trailing newline is said, its side named: actual
+    values differ only by a trailing newline (on the actual side)
+
+=== a difference in a trailing newline is said, its side named: expected
+    values differ only by a trailing newline (on the expected side)
+
+=== identical renderings print once, then say that the printer shows less
+    both sides render as: nan
+    the printer shows less than the equality compares
+
+=== identical multi-line renderings print once, indented
+    both sides render as:
+      line a
+      line b
+    the printer shows less than the equality compares
+
+=== a - and a + line that differ in a trailing blank: a ~ under the blank
+    --- expected
+    +++ actual
+    @@ -1,2 +1,2 @@
+    - line one 
+              ~
+    + line one
+      line two
+
+=== an inserted trailing run is marked at its columns
+    --- expected
+    +++ actual
+    @@ -1,2 +1,2 @@
+    - ab
+        ~~
+    + ab  
+      line two
+
+=== a trailing tab: the ~ line repeats the line's tabs, context keeps its blanks
+    --- expected
+    +++ actual
+    @@ -1,3 +1,3 @@
+    - a	x	
+       	 ~
+    + a	x
+      common 
+      y
+
+=== a visible difference draws no mark
+    --- expected
+    +++ actual
+    @@ -1,2 +1,2 @@
+    - foo 
+    + bar
+      line two
+
+=== a run of changes is no pair and draws no mark
+    --- expected
+    +++ actual
+    @@ -1,3 +1,3 @@
+    - a 
+    - b 
+    + a
+    + b
+      z
+
+=== blanks shared past the stem
+    --- expected
+    +++ actual
+    @@ -1,2 +1,2 @@
+    - x  
+        ~
+    + x 
+      y
+
+=== under colour the trailing blank's ~ is red, outside the line's style
+    «d|--- expected»
+    «d|+++ actual»
+    «d|@@ -1,2 +1,2 @@»
+    «g|- line one »
+              «r|~»
+    «r|+ line one»
+      line two
+
+=== under colour a diff's expected lines are green and its actual lines red
+    «d|--- expected»
+    «d|+++ actual»
+    «d|@@ -1,2 +1,2 @@»
+      keep
+    «g|- expected»
+    «r|+ actual»
+
+=== every line of a diff prints escaped
+    --- expected
+    +++ actual
+    @@ -1,3 +1,3 @@
+      header
+    - \x1b[31malert\x1b[0m
+    + \x1b[32malert\x1b[0m
+      footer
+
+=== a carriage return prints as its escape
+    --- expected
+    +++ actual
+    @@ -1,3 +1,3 @@
+      one
+    - two\x0d
+    + two
+      three
+
+=== a claim takes the expected side and is never refined
+    expected  value satisfying the predicate
+    actual    -3
+
+=== a multi-line value against a claim prints as a block
+    expected  value satisfying the predicate
+    actual:
+      [0; 1;
+       2]
+
+=== under colour each line of that block is red, no style spans two
+    «d|expected»  «g|value satisfying the predicate»
+    «d|actual:»
+      «r|[0; 1;»
+      «r| 2]»
+
+=== a match's claim is not refined either
+    expected  a match
+    actual    Error "boom"
+
+=== every C0 byte and DEL print as \xNN
+    expected  a clean value
+    actual    a\x00b\x07c\x0dd\x7fe\x1ff
+
+=== TAB stays inside a line and LF breaks the block
+    expected  a clean value
+    actual:
+      one	two
+      three
+
+=== two single-line sides cut to the same kept bytes say what they agree on
+    the sides agree on the 65536 bytes a failure keeps of each (expected 65537 bytes, actual 65537 bytes)
+
+=== so do two multi-line sides
+    the sides agree on the 65536 bytes a failure keeps of each (expected 88001 bytes, actual 88001 bytes)

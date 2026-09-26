@@ -1,0 +1,203 @@
+=== a survivor's block: its rewrite, its source line, the tests that ran it
+  «r|SURVIVED»  «b|lib/calc.ml:21:16:ge»  n > 0 → n >= 0
+      «d|21 │» let sign n = if n > 0 then 1 else 0
+
+    2 tests ran this line and none failed:
+      sign of a negative  «d|test/test_calc.ml:31»
+      sign of a positive  «d|test/test_calc.ml:30»
+
+=== a survivor on line 1
+  SURVIVED  a.ml:1:8:add  1 → 2
+      1 │ let x = 1
+
+    1 test ran this line and did not fail:
+      t
+
+=== an executable column at least exe_width wide, empty for a test that names none
+  SURVIVED  lib/calc.ml:13:11:add  a - b → a + b
+      13 │ | Sub -> a - b
+
+    2 tests ran this line and none failed:
+      a.exe         with an executable
+                    without one
+
+=== a source line's control bytes print as text
+  «r|SURVIVED»  «b|lib/calc.ml:13:11:add»  a - b → a + b
+      «d|13 │» | Sub -> \x1b[31ma\x0d - b
+
+    1 test ran this line and did not fail:
+      subtraction › stays positive  «d|test/test_calc.ml:19»
+
+=== an unreadable source drops the source line and nothing else
+  SURVIVED  lib/parser.ml:102:9:not  at_end p → not (at_end p)
+
+    1 test ran this line and did not fail:
+      errors › unexpected end of input
+
+=== a line past the end of the source prints no source line
+  SURVIVED  lib/parser.ml:102:9:not  at_end p → not (at_end p)
+
+    1 test ran this line and did not fail:
+      errors › unexpected end of input
+
+=== a merge's report: survivors counted, the executables one column
+«d|───────────────────── survivors (2) ──────────────────────»
+  «r|SURVIVED»  «b|lib/eval.ml:60:24:eq»  eval env b = Int 0 → eval env b <> Int 0
+      «d|60 │» if eval env b = Int 0 then raise Division_by_zero
+
+    3 tests in 2 executables ran this line and none failed:
+      test_eval.exe     division › divides
+      test_eval.exe     division › rounds toward zero
+      test_printer.exe  round trip › arithmetic
+
+  «r|SURVIVED»  «b|lib/parser.ml:102:9:not»  at_end p → not (at_end p)
+      «d|102 │» if at_end p then Error (Unexpected_eof p.pos)
+
+    1 test ran this line and did not fail:
+      test_parser.exe   errors › unexpected end of input
+«d|──────────────────────────────────────────────────────────»
+
+«d|─────────────────── never reached (7) ────────────────────»
+  «y|1»  lib/report.ml   lines 61
+  «y|2»  lib/run.ml      lines 40
+  «y|4»  lib/text.ml     lines 12-14, 32
+«d|──────────────────────────────────────────────────────────»
+
+reproduce: dune exec --instrument-with ppx_windtrap.mutate test/test_eval.exe -- --arm lib/eval.ml:60:24:eq
+mutants: «r|2 survived» of 18 reached, «g|16 killed», «y|7 never reached», 3 executables
+
+=== and without colour
+───────────────────── survivors (2) ──────────────────────
+  SURVIVED  lib/eval.ml:60:24:eq  eval env b = Int 0 → eval env b <> Int 0
+      60 │ if eval env b = Int 0 then raise Division_by_zero
+
+    3 tests in 2 executables ran this line and none failed:
+      test_eval.exe     division › divides
+      test_eval.exe     division › rounds toward zero
+      test_printer.exe  round trip › arithmetic
+
+  SURVIVED  lib/parser.ml:102:9:not  at_end p → not (at_end p)
+      102 │ if at_end p then Error (Unexpected_eof p.pos)
+
+    1 test ran this line and did not fail:
+      test_parser.exe   errors › unexpected end of input
+──────────────────────────────────────────────────────────
+
+─────────────────── never reached (7) ────────────────────
+  1  lib/report.ml   lines 61
+  2  lib/run.ml      lines 40
+  4  lib/text.ml     lines 12-14, 32
+──────────────────────────────────────────────────────────
+
+reproduce: dune exec --instrument-with ppx_windtrap.mutate test/test_eval.exe -- --arm lib/eval.ml:60:24:eq
+mutants: 2 survived of 18 reached, 16 killed, 7 never reached, 3 executables
+
+=== never reached alone: its rule, its rows, the outcome
+─────────────────── never reached (7) ────────────────────
+  1  lib/report.ml   lines 61
+  2  lib/run.ml      lines 40
+  4  lib/text.ml     lines 12-14, 32
+──────────────────────────────────────────────────────────
+
+mutants: 16 reached, 16 killed, 7 never reached, 3 executables
+
+=== survivors alone
+───────────────────── survivors (2) ──────────────────────
+  SURVIVED  lib/eval.ml:60:24:eq  eval env b = Int 0 → eval env b <> Int 0
+      60 │ if eval env b = Int 0 then raise Division_by_zero
+
+    3 tests in 2 executables ran this line and none failed:
+      test_eval.exe     division › divides
+      test_eval.exe     division › rounds toward zero
+      test_printer.exe  round trip › arithmetic
+
+  SURVIVED  lib/parser.ml:102:9:not  at_end p → not (at_end p)
+      102 │ if at_end p then Error (Unexpected_eof p.pos)
+
+    1 test ran this line and did not fail:
+      test_parser.exe   errors › unexpected end of input
+──────────────────────────────────────────────────────────
+
+reproduce: WINDTRAP_MUTATE_ARM=lib/eval.ml:60:24:eq dune runtest --force --instrument-with ppx_windtrap.mutate
+mutants: 2 survived of 18 reached, 16 killed, 3 executables
+
+=== neither: the outcome alone
+mutants: 16 reached, 16 killed, 3 executables
+
+=== never reached: one row per file, the count right-aligned
+«d|────────────────── never reached (124) ───────────────────»
+  «y|  3»  lib/a.ml        lines 7-8
+  «y|  1»  lib/b.ml        lines 1
+  «y|120»  lib/report.ml   lines 10, 13, 16, 19, 22, 25, 28, 31 (+52 more)
+«d|──────────────────────────────────────────────────────────»
+
+mutants: 1 reached, «g|1 killed», «y|124 never reached», 1 executable
+
+=== not evaluated: each mutant with the command that arms it
+«d|─────────────────── not evaluated (1) ────────────────────»
+  Each site ran in the dry run and not in its mutant's child.
+  «b|lib/memo.ml:4:17:sub»  a + b → a - b
+    arm: ./test_memo.exe --arm lib/memo.ml:4:17:sub
+«d|──────────────────────────────────────────────────────────»
+
+«d|─────────────────── never reached (2) ────────────────────»
+  «y|2»  lib/calc.ml   lines 40-41
+«d|──────────────────────────────────────────────────────────»
+
+mutants: 4 reached by this suite, «g|3 killed», «y|1 not evaluated», «y|2 never reached»
+
+=== evaluated outside tests follows never reached
+─────────────────── never reached (2) ────────────────────
+  2  lib/calc.ml   lines 40-41
+──────────────────────────────────────────────────────────
+
+────────────── evaluated outside tests (3) ───────────────
+  These sites ran outside every test, at module initialization or in a fixture release.
+  2  lib/calc.ml    lines 1-2
+  1  lib/table.ml   lines 7
+──────────────────────────────────────────────────────────
+
+mutants: 3 reached by this suite, 3 killed, 2 never reached, 3 evaluated outside tests
+
+=== a loop's closing: the rule, the sections, the command, the outcome
+«d|──────────────────────────────────────────────────────────»
+
+«d|─────────────────── never reached (2) ────────────────────»
+  «y|2»  lib/calc.ml   lines 40-41
+«d|──────────────────────────────────────────────────────────»
+
+reproduce: dune exec --instrument-with ppx_windtrap.mutate test/test_calc.exe -- --arm lib/calc.ml:13:11:add
+mutants: «r|2 survived» of 5 reached by this suite, «g|3 killed», «y|2 never reached»
+
+=== a loop's not-evaluated section keeps the run's selection
+
+─────────────────── not evaluated (1) ────────────────────
+  Each site ran in the dry run and not in its mutant's child.
+  lib/memo.ml:4:17:sub  a + b → a - b
+    arm: ./test_memo.exe --arm lib/memo.ml:4:17:sub -f 'memoized'
+──────────────────────────────────────────────────────────
+
+─────────────────── never reached (2) ────────────────────
+  2  lib/calc.ml   lines 40-41
+──────────────────────────────────────────────────────────
+
+mutants: 4 reached by this suite, 3 killed, 1 not evaluated, 2 never reached
+
+=== outside tests alone, in a loop: a blank line opens it
+
+────────────── evaluated outside tests (1) ───────────────
+  These sites ran outside every test, at module initialization or in a fixture release.
+  1  lib/table.ml   lines 7
+──────────────────────────────────────────────────────────
+
+mutants: 3 reached by this suite, 3 killed, 1 evaluated outside tests
+
+=== an interrupted loop counts what it did not test
+──────────────────────────────────────────────────────────
+
+─────────────────── never reached (2) ────────────────────
+  2  lib/calc.ml   lines 40-41
+──────────────────────────────────────────────────────────
+
+reproduce: dune exec --instrument-with ppx_windtrap.mutate test/test_calc.exe -- --arm lib/calc.ml:13:11:add
+mutants: 1 survived of 3 reached by this suite, 2 never reached, 2 not tested

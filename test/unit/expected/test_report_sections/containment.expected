@@ -1,0 +1,137 @@
+=== a found needle: its offset, and a ~ line under the occurrence
+    needle    "secret": found at byte 10
+    haystack  0123456789secret-end
+                        ~~~~~~
+
+=== on a terminal, colour marks the occurrence in bold red and no ~ line prints
+    «d|needle»    "secret": found at byte 10
+    «d|haystack»  0123456789«R|secret»-end
+
+=== off a terminal, the ~ line prints under colour too
+    «d|needle»    "secret": found at byte 10
+    «d|haystack»  0123456789«R|secret»-end
+                        «R|~~~~~~»
+
+=== a multi-line haystack prints as a block
+    needle    "user=bob": not found
+    haystack:
+      line one
+      line two user=alice
+      line three
+
+=== an occurrence in a block is marked under its line
+    needle    "secret": found at byte 14
+    haystack:
+      line one
+      the1 secret here
+           ~~~~~~
+      line three
+
+=== and under colour on its line, unmarked
+    «d|needle»    "secret": found at byte 14
+    «d|haystack:»
+      line one
+      the1 «R|secret» here
+      line three
+
+=== a missing needle shows the first ten lines, and says which bytes
+    needle    "NOPE": not found
+    haystack:
+      line 00 filler filler
+      line 01 filler filler
+      line 02 filler filler
+      line 03 filler filler
+      line 04 filler filler
+      line 05 filler filler
+      line 06 filler filler
+      line 07 filler filler
+      line 08 filler filler
+      line 09 filler filler
+    (excerpt: bytes 0-219 of a 879-byte haystack)
+
+=== an absent prefix
+    prefix    "users/": not found
+    haystack  sessions/ghost/session.json
+
+=== a prefix found elsewhere
+    prefix    "ghost": found at byte 9, not at the start
+    haystack  sessions/ghost/session.json
+                       ~~~~~
+
+=== a suffix found elsewhere
+    suffix    "session": found at byte 0, not at the end
+    haystack  sessions/ghost/session.json
+              ~~~~~~~
+
+=== an absent suffix shows the end of the haystack
+    suffix    "END": not found
+    haystack:
+      line 30 filler filler
+      line 31 filler filler
+      line 32 filler filler
+      line 33 filler filler
+      line 34 filler filler
+      line 35 filler filler
+      line 36 filler filler
+      line 37 filler filler
+      line 38 filler filler
+      line 39 filler filler
+    (excerpt: bytes 660-878 of a 879-byte haystack)
+
+=== an element out of order: its index, both offsets, its occurrence marked
+    element   2
+    needle    "disconnect": found at byte 13, before the search resumed at byte 36
+    haystack  connect send disconnect authenticate
+                           ~~~~~~~~~~
+
+=== and under colour its occurrence in bold red
+    «d|element»   2
+    «d|needle»    "disconnect": found at byte 13, before the search resumed at byte 36
+    «d|haystack»  connect send «R|disconnect» authenticate
+
+=== a missing element names the cursor alone
+    element   2
+    needle    "teardown": not found at or after byte 36
+    haystack  connect send disconnect authenticate
+
+=== a haystack's control bytes print escaped
+    needle    "NOPE": not found
+    haystack  \x1b[31mred\x1b[0m text
+
+=== the ~ line sits under the escaped occurrence, the needle keeps its escapes
+    needle    "red": found at byte 5
+    haystack  \x1b[31mred\x1b[0m text
+                      ~~~
+
+=== under colour the occurrence is bold inside the escaped haystack
+    «d|needle»    "red": found at byte 5
+    «d|haystack»  \x1b[31m«R|red»\x1b[0m text
+
+=== an occurrence at byte 0
+    needle    "ab": found at byte 0
+    haystack  abc
+              ~~
+
+=== an empty needle
+    needle    "": found at byte 0
+    haystack  abc
+
+=== an occurrence at a line's start
+    needle    "b": found at byte 2
+    haystack:
+      a
+      b
+      ~
+
+=== an occurrence at a newline
+    needle    "\nb": found at byte 1
+    haystack:
+      a
+      b
+
+=== an occurrence across lines
+    needle    "a\nb": found at byte 1
+    haystack:
+      xa
+       ~
+      b

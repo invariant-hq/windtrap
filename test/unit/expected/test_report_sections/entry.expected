@@ -1,0 +1,192 @@
+=== a location opens the entry, bare
+    test/test_users.ml:88
+    expected  1
+    actual    2
+
+=== under colour the location is faint
+    «d|test/test_users.ml:88»
+    «d|expected»  «g|1»
+    «d|actual»    «r|2»
+
+=== a located file baseline
+    test/test_users.ml:88
+    expect_file "test/help.expected": no baseline
+    proposed (3 lines):
+      + Usage: mytool [OPTIONS] COMMAND
+      + Commands:
+      +   run
+    accept: touch 'test/help.expected' && dune runtest; dune promote test/help.expected
+
+=== a located literal
+    test/test_users.ml:88
+    expect: mismatch
+    @@ -1,3 +1,3 @@
+      line one
+    - line two
+    + line 2
+      line three
+    accept: dune promote test/test_users.ml
+
+=== a located message
+    test/test_users.ml:88
+    boom
+
+=== a located raise
+    test/test_users.ml:88
+    expected exception  Parse_error("empty")
+    raised              Not_found
+    Raised at Parser.parse in file "lib/parser.ml", line 40
+
+=== a located property
+    test/test_users.ml:88
+    counterexample (case 12, shrunk 4 steps): Rect (2, 0)
+    which failed at:
+      test/test_geo.ml:18
+      expected  true
+      actual    false
+    replay: WINDTRAP_SEED=s1:7be1d2c904aa31f5 dune runtest
+
+=== a located uncaught exception
+    test/test_users.ml:88
+    uncaught exception:
+      Not_found
+    Raised at Parser.parse in file "lib/parser.ml", line 40
+
+=== a recorded location
+    test/test_users.ml:31
+    expected  [("alice", [1; 2; 3]); ("bob", [4])]
+    actual    [("alice", [1; 2; 3]); ("bob", [4; 5]); ("carol", [])]
+                                               ~~~~~~~~~~~~~~~~~~
+
+=== a timeout: the location, then the fact
+    test/test_users.ml:88
+    timed out after 0.2s
+
+=== a property's timeout names its case and the passes, and replays
+    test/test_users.ml:88
+    timed out after 0.5s in case 7 (7 passed)
+    replay: ./t.exe --seed s1:7be1d2c904aa31f5 --prop-count 500 -f 'p'
+
+=== an example's timeout has no replay
+    test/test_users.ml:88
+    timed out after 0.5s in example 2 (1 passed)
+
+=== no location: the entry opens on its facts
+    expected  1
+    actual    2
+
+=== a phase is its tag before the location
+    [teardown] test/test_users.ml:88
+    uncaught exception:
+      Not_found
+    Raised at Parser.parse in file "lib/parser.ml", line 40
+
+=== before a failure in tail position
+    [setup] test/test_users.ml:88
+    expected  1
+    actual    2
+
+=== before a recorded line
+    [teardown] test/test_users.ml:88
+    could not restore
+
+=== a fixture release names the fixture's site
+    [release] test/test_users.ml:88
+    db: release raised Exit
+
+=== under colour the tag is yellow and the location faint
+    «y|[teardown]» «d|test/test_users.ml:88»
+    could not restore
+
+=== a phase without a location stands alone
+    [teardown]
+    x
+
+=== a source line under its location, dedented, a blank line after it
+    excerpt_src.ml:2
+      2 │ let two = 2
+
+    expected  1
+    actual    2
+
+=== under colour its gutter is faint
+    «d|excerpt_src.ml:2»
+      «d|2 │» let two = 2
+
+    «d|expected»  «g|1»
+    «d|actual»    «r|2»
+
+=== without ~excerpt, no source line
+    excerpt_src.ml:2
+    expected  1
+    actual    2
+
+=== an inner failure keeps its source line, with no blank line after it
+    excerpt_src.ml:1
+      1 │ let one = 1
+
+    counterexample (case 0): 0
+    which failed at:
+      excerpt_src.ml:2
+        2 │ let two = 2
+      expected  1
+      actual    2
+    replay: WINDTRAP_SEED=s1:7be1d2c904aa31f5 dune runtest
+
+=== a source line's control bytes print escaped, and a CRLF line ends at its text
+    excerpt_wild.ml:1
+      1 │ let red = "\x1b[31mred\x1b[0m" (* \x0d \x07 *)
+
+    expected  1
+    actual    2
+
+=== and under colour
+    «d|excerpt_wild.ml:1»
+      «d|1 │» let red = "\x1b[31mred\x1b[0m" (* \x0d \x07 *)
+
+    «d|expected»  «g|1»
+    «d|actual»    «r|2»
+
+=== an empty source line is its gutter alone
+    excerpt_wild.ml:3
+      3 │
+
+    expected  1
+    actual    2
+
+=== an unreadable file prints neither the line nor the blank line
+    does_not_exist.ml:2
+    expected  1
+    actual    2
+
+=== a subtest's name, in the column of the values under it
+    test/test_backend.ml:40
+    subtest   shape [0]
+    expected  [1; 2]
+                  ~
+    actual    [1; 3]
+                  ~
+
+=== a ?msg keeps its lines, control bytes escaped
+    first
+    second\x07
+    expected  1
+    actual    2
+
+=== an empty message is named
+    (empty failure message)
+
+=== an entry with nothing to accept or replay ends on its facts
+    b
+
+=== under a build action too
+    b
+
+=== and in an armed run
+    b
+
+=== a message's escape prints as text
+    \x1b[31mred\x1b[0m boom
+
+=== and under colour as text too
+    \x1b[31mred\x1b[0m boom

@@ -1,0 +1,106 @@
+=== a raise of another exception: both, then the backtrace
+    test/test_parser.ml:12
+    expected exception  Parse_error("empty")
+    raised              Not_found
+    Raised at Parser.parse in file "lib/parser.ml", line 40
+
+=== a wrong message names the constructor once, the messages marked
+    test/test_bounds.ml:8
+    raised Invalid_argument with the wrong message:
+    expected  "index 3 out of bounds"
+                     ~
+    actual    "index 4 out of bounds"
+                     ~
+
+=== and under colour its changed spans in bold
+    «d|test/test_bounds.ml:8»
+    raised Invalid_argument with the wrong message:
+    «d|expected»  "index «G|3» out of bounds"
+    «d|actual»    "index «R|4» out of bounds"
+
+=== the same constructor without a recorded diff prints both whole
+    expected exception  Failure("boom")
+    raised              Failure("boom!")
+
+=== a predicate's miss prints the exception under its sentence
+    raised exception does not satisfy the predicate:
+      Invalid_argument("nope")
+
+=== nothing raised against an expectation
+    expected exception  Failure("boom")
+    but no exception was raised
+
+=== nothing raised against a predicate
+    expected an exception, but none was raised
+
+=== a multi-line expectation that nothing met
+    expected exception:
+      Parse_error(
+        line 3)
+    but no exception was raised
+
+=== a multi-line exception is a block under its anchor
+    expected exception  Failure("boom")
+    raised:
+      Parse_error(
+        line 3)
+
+=== an uncaught exception: the sentence, the exception under it
+    uncaught exception:
+      Not_found
+
+=== a multi-line uncaught exception is a block under the sentence
+    uncaught exception:
+      Parse_error(
+        line 3)
+
+=== nothing raised and nothing expected
+    expected an exception, but none was raised
+
+=== ten frames of a backtrace, then the count of the rest
+    uncaught exception:
+      Not_found
+    frame 1
+    frame 2
+    frame 3
+    frame 4
+    frame 5
+    frame 6
+    frame 7
+    frame 8
+    frame 9
+    frame 10
+    … (+3 more frames)
+
+=== the count line is faint as the frames
+    uncaught exception:
+      «r|Not_found»
+    «d|frame 1»
+    «d|frame 2»
+    «d|frame 3»
+    «d|frame 4»
+    «d|frame 5»
+    «d|frame 6»
+    «d|frame 7»
+    «d|frame 8»
+    «d|frame 9»
+    «d|frame 10»
+    «d|… (+3 more frames)»
+
+=== ten frames print whole
+    uncaught exception:
+      Not_found
+    frame 1
+    frame 2
+    frame 3
+    frame 4
+    frame 5
+    frame 6
+    frame 7
+    frame 8
+    frame 9
+    frame 10
+
+=== two messages cut to the same kept bytes say what they agree on
+    raised Failure with the wrong message:
+    the sides agree on the 65536 bytes a failure keeps of each (expected 65537 bytes, actual 65537 bytes)

@@ -1,0 +1,145 @@
+=== the table under a gate it misses
+«d|   cover    points   file             uncovered lines (-u shows the source)»
+   96.2%    50/52    lib/env.ml       88-89
+  «r| 58.0%»    69/119   lib/eval.ml      41-47, 60, 93-104, 131, 140-152, 160-170, 180, 190-195 (+3 more)
+  100.0%    38/38    lib/lexer.ml
+  «r| 64.1%»    91/142   lib/parser.ml    17, 52-58, 77, 102-119, 140, 151-160, 170, 180 (+2 more)
+  «r| 74.4%»    64/86    lib/printer.ml   23-31, 70-74, 90
+coverage: «r|71.4%» (312/437 points), minimum 80%: «r|FAILED»
+
+=== the table under a gate it meets
+«d|   cover    points   file             uncovered lines (-u shows the source)»
+   96.2%    50/52    lib/env.ml       88-89
+  «r| 58.0%»    69/119   lib/eval.ml      41-47, 60, 93-104, 131, 140-152, 160-170, 180, 190-195 (+3 more)
+  100.0%    38/38    lib/lexer.ml
+  «r| 64.1%»    91/142   lib/parser.ml    17, 52-58, 77, 102-119, 140, 151-160, 170, 180 (+2 more)
+   74.4%    64/86    lib/printer.ml   23-31, 70-74, 90
+coverage: 71.4% (312/437 points), minimum 70%: «g|ok»
+
+=== the table without colour
+   cover    points   file             uncovered lines (-u shows the source)
+   96.2%    50/52    lib/env.ml       88-89
+   58.0%    69/119   lib/eval.ml      41-47, 60, 93-104, 131, 140-152, 160-170, 180, 190-195 (+3 more)
+  100.0%    38/38    lib/lexer.ml
+   64.1%    91/142   lib/parser.ml    17, 52-58, 77, 102-119, 140, 151-160, 170, 180 (+2 more)
+   74.4%    64/86    lib/printer.ml   23-31, 70-74, 90
+coverage: 71.4% (312/437 points), minimum 80%: FAILED
+
+=== the source view, under a gate
+«d|   cover    points   file          uncovered lines»
+   96.2%    50/52    lib/env.ml    88-89
+  «r| 58.0%»    69/119   lib/eval.ml   41-42, 60
+
+«b|lib/env.ml»: 96.2% (50/52)
+
+     87 │   | Some frame ->
+«r|  ▌»  88 │       if frame.sealed then invalid_arg "Env.set: sealed frame"
+«r|  ▌»  89 │       else Hashtbl.replace frame.vars name v
+     90 │   | None -> raise Not_found
+
+«b|lib/eval.ml»: «r|58.0%» (69/119)
+
+     40 │   | Let (x, e, body) ->
+«r|  ▌»  41 │       let v = eval env e in
+«r|  ▌»  42 │       eval (Env.bind env x v) body
+     43 │   | If (c, t, e) ->
+«d|   ·····»
+     59 │   | Div (a, b) ->
+«r|  ▌»  60 │       if eval env b = Int 0 then raise Division_by_zero
+     61 │       else div (eval env a) (eval env b)
+
+coverage: «r|69.6%» (119/171 points), minimum 80%: «r|FAILED»
+
+=== the source view without colour
+   cover    points   file          uncovered lines
+   96.2%    50/52    lib/env.ml    88-89
+   58.0%    69/119   lib/eval.ml   41-42, 60
+
+lib/env.ml: 96.2% (50/52)
+
+     87 │   | Some frame ->
+  ▌  88 │       if frame.sealed then invalid_arg "Env.set: sealed frame"
+  ▌  89 │       else Hashtbl.replace frame.vars name v
+     90 │   | None -> raise Not_found
+
+lib/eval.ml: 58.0% (69/119)
+
+     40 │   | Let (x, e, body) ->
+  ▌  41 │       let v = eval env e in
+  ▌  42 │       eval (Env.bind env x v) body
+     43 │   | If (c, t, e) ->
+   ·····
+     59 │   | Div (a, b) ->
+  ▌  60 │       if eval env b = Int 0 then raise Division_by_zero
+     61 │       else div (eval env a) (eval env b)
+
+coverage: 69.6% (119/171 points), minimum 80%: FAILED
+
+=== a region at the top of a file has no line above it
+   cover    points   file     uncovered lines
+   50.0%    1/2      top.ml   1
+
+top.ml: 50.0% (1/2)
+
+  ▌   1 │ let a = 1
+      2 │ let b = 2
+
+coverage: 50.0% (1/2 points)
+
+=== a long path keeps the header's hint
+   cover    points   file                                    uncovered lines (-u shows the source)
+   50.0%    1/2      examples/07-coverage/a_long_module.ml   9
+coverage: 50.0% (1/2 points)
+
+=== a label is a floor on its column's width
+   cover    points   file   uncovered lines (-u shows the source)
+   50.0%    4/8      a.ml   3
+coverage: 50.0% (4/8 points)
+
+=== points wider than their header
+   cover    points    file   uncovered lines (-u shows the source)
+   50.0%    100/200   a.ml   (source not found)
+coverage: 50.0% (100/200 points)
+
+=== unvisited points without a line say why, and a stale file what to do
+   cover    points   file                             uncovered lines (-u shows the source)
+   50.0%    1/2      examples/07-coverage/half_a.ml   (source not found)
+   50.0%    1/2      examples/07-coverage/half_b.ml   stale: the source changed; re-run the instrumented tests
+coverage: 50.0% (2/4 points)
+
+=== a row at the gate is plain and one under it red
+«d|   cover    points   file       uncovered lines (-u shows the source)»
+   50.0%    5/10     at.ml      (source not found)
+  «r| 40.0%»    4/10     under.ml   (source not found)
+coverage: «r|45.0%» (9/20 points), minimum 50%: «r|FAILED»
+
+=== without a gate a row below 80 is red and no row is green or yellow
+«d|   cover    points   file      uncovered lines (-u shows the source)»
+  100.0%    10/10    full.ml
+   80.0%     8/10    most.ml   (source not found)
+  «r| 60.0%»     6/10    some.ml   (source not found)
+coverage: 80.0% (24/30 points)
+
+=== a source's control bytes print as text
+   cover    points   file     uncovered lines
+   50.0%    1/2      esc.ml   2
+
+esc.ml: 50.0% (1/2)
+
+      1 │ let plain = 1
+  ▌   2 │ let red = "\x1b[31mred\x0d"
+      3 │ let c = 3
+
+coverage: 50.0% (1/2 points)
+
+=== and under colour
+«d|   cover    points   file     uncovered lines»
+  «r| 50.0%»    1/2      esc.ml   2
+
+«b|esc.ml»: «r|50.0%» (1/2)
+
+      1 │ let plain = 1
+«r|  ▌»   2 │ let red = "\x1b[31mred\x0d"
+      3 │ let c = 3
+
+coverage: «r|50.0%» (1/2 points)

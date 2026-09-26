@@ -127,6 +127,48 @@
    (run %{test} --corrected)
    (diff? test_run.ml test_run.ml.corrected))))
 
+(test
+ (name test_report_sections)
+ (modules test_report_sections)
+ (libraries windtrap render_fixtures gallery)
+ (deps
+  (glob_files expected/test_report_sections/*.expected))
+ (action
+  (progn
+   (run %{test} --corrected)
+   (diff?
+    expected/test_report_sections/baseline.expected
+    expected/test_report_sections/baseline.expected.corrected)
+   (diff?
+    expected/test_report_sections/containment.expected
+    expected/test_report_sections/containment.expected.corrected)
+   (diff?
+    expected/test_report_sections/coverage.expected
+    expected/test_report_sections/coverage.expected.corrected)
+   (diff?
+    expected/test_report_sections/entry.expected
+    expected/test_report_sections/entry.expected.corrected)
+   (diff?
+    expected/test_report_sections/equality.expected
+    expected/test_report_sections/equality.expected.corrected)
+   (diff?
+    expected/test_report_sections/mutation.expected
+    expected/test_report_sections/mutation.expected.corrected)
+   (diff?
+    expected/test_report_sections/print.expected
+    expected/test_report_sections/print.expected.corrected)
+   (diff?
+    expected/test_report_sections/property.expected
+    expected/test_report_sections/property.expected.corrected)
+   (diff?
+    expected/test_report_sections/raise.expected
+    expected/test_report_sections/raise.expected.corrected))))
+
+(library
+ (name gallery)
+ (modules gallery)
+ (libraries windtrap))
+
 (library
  (name render_fixtures)
  (modules render_fixtures)

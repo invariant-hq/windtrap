@@ -1,0 +1,13 @@
+=== a row of empty cells
+
+
+=== marked lines three apart share a region
+  ▌   1 │ 1
+      2 │ 2
+      3 │ 3
+  ▌   4 │ 4
+      5 │ 5
+
+=== marked lines at and past the edges
+      2 │ b
+  ▌   3 │ c
