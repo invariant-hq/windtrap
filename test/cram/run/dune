@@ -60,3 +60,15 @@
  (deps
   (package windtrap)
   ../ppx/pp.exe))
+
+; inline.t reads the fixtures' sources, as a run under dune reads the
+; build's copy, and writes their corrections beside them.
+
+(cram
+ (applies_to inline)
+ (deps
+  inline/runner.exe
+  inline/undriven.exe
+  inline/test_shapes.exe
+  inline/scene_runner.exe
+  (glob_files inline/*.ml)))

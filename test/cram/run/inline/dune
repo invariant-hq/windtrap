@@ -1,0 +1,42 @@
+; The fixtures of inline.t. runner.exe drives the fixtures of no library;
+; undriven.exe links one and drives nothing.
+
+(executables
+ (names runner undriven)
+ (modules
+  runner
+  undriven
+  crash
+  masked
+  release
+  sanitized
+  stale
+  trailing
+  unreached)
+ (libraries windtrap ppx_windtrap.runtime)
+ (preprocess
+  (pps ppx_windtrap)))
+
+; Two libraries with inline tests, one linking the other, and the two
+; executables that link them: a suite over linked_shapes and the runner of
+; linked_scene.
+
+(library
+ (name linked_shapes)
+ (modules shapes)
+ (inline_tests)
+ (preprocess
+  (pps ppx_windtrap)))
+
+(library
+ (name linked_scene)
+ (modules scene)
+ (libraries linked_shapes)
+ (inline_tests)
+ (preprocess
+  (pps ppx_windtrap)))
+
+(executables
+ (names test_shapes scene_runner)
+ (modules test_shapes scene_runner)
+ (libraries windtrap ppx_windtrap.runtime linked_shapes linked_scene))

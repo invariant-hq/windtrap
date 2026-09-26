@@ -21,7 +21,7 @@
  (deps unflushed_stubs_output.ml)
  (action
   (run
-   %{dep:../../../../cli/inline_runner/drive/drive.exe}
+   %{dep:../../../../support/drive/drive.exe}
    --mask
    full-log
    --env

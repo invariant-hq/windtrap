@@ -1,9 +1,0 @@
-(library
- (name drive_harness)
- (modules drive_harness)
- (libraries unix windtrap_test_support))
-
-(executable
- (name drive)
- (modules drive)
- (libraries drive_harness windtrap_test_support unix))

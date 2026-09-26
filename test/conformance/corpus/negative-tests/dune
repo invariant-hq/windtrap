@@ -65,7 +65,7 @@
   unidiomatic_syntax.ml)
  (action
   (run
-   %{dep:../../../cli/inline_runner/drive/drive.exe}
+   %{dep:../../../support/drive/drive.exe}
    --mask
    full-log
    --env
@@ -127,7 +127,7 @@
  (deps escaped_strings.ml)
  (action
   (run
-   %{dep:../../../cli/inline_runner/drive/drive.exe}
+   %{dep:../../../support/drive/drive.exe}
    --mask
    full-log
    --env
@@ -180,7 +180,7 @@
  (deps chdir.ml)
  (action
   (run
-   %{dep:../../../cli/inline_runner/drive/drive.exe}
+   %{dep:../../../support/drive/drive.exe}
    --mask
    full-log
    --env

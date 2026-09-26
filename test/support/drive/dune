@@ -1,0 +1,3 @@
+(executable
+ (name drive)
+ (libraries windtrap_test_support unix))

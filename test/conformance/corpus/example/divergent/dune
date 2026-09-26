@@ -23,7 +23,7 @@
  (deps functor.ml)
  (action
   (run
-   %{dep:../../../../cli/inline_runner/drive/drive.exe}
+   %{dep:../../../../support/drive/drive.exe}
    --mask
    full-log
    --env
@@ -63,7 +63,7 @@
  (deps control_chars.ml)
  (action
   (run
-   %{dep:../../../../cli/inline_runner/drive/drive.exe}
+   %{dep:../../../../support/drive/drive.exe}
    --mask
    full-log
    --env
