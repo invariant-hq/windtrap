@@ -17,6 +17,7 @@
      (run ../../pp.exe --impl %{dep:passing_tests.ml}))))))
 
 (rule
+ (package ppx_windtrap)
  (alias runtest)
  (action
   (diff passing_tests.rejected.expected passing_tests.rejected)))
@@ -34,6 +35,7 @@
      (run ../../pp.exe --impl %{dep:expect_if_reacheds_are_corrected.ml}))))))
 
 (rule
+ (package ppx_windtrap)
  (alias runtest)
  (action
   (diff
@@ -53,6 +55,7 @@
      (run ../../pp.exe --impl %{dep:expects_still_must_be_reached.ml}))))))
 
 (rule
+ (package ppx_windtrap)
  (alias runtest)
  (action
   (diff

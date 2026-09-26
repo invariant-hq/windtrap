@@ -11,6 +11,7 @@
 ; Each claim reads the dump of a forked child, and Windows has no fork.
 
 (test
+ (package ppx_windtrap)
  (name test_coverage_semantics)
  (modules test_coverage_semantics)
  (enabled_if
@@ -29,6 +30,7 @@
 ; runtime, and nothing pulls the core in.
 
 (test
+ (package ppx_windtrap)
  (name test_coverage_linkonly)
  (modules test_coverage_linkonly)
  (libraries covsem_fixtures)

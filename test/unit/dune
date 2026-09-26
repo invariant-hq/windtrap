@@ -226,6 +226,7 @@
    (diff? test_windtrap.ml test_windtrap.ml.corrected))))
 
 (test
+ (package ppx_windtrap)
  (name test_ppx_runtime)
  (modules test_ppx_runtime)
  (libraries

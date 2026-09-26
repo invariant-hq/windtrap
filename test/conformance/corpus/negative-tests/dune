@@ -97,11 +97,13 @@
    conformance)))
 
 (rule
+ (package ppx_windtrap)
  (alias runtest)
  (action
   (diff runner-exit.expected runner-exit)))
 
 (rule
+ (package ppx_windtrap)
  (alias runtest)
  (action
   (diff runner-log.expected runner-log)))
@@ -141,6 +143,7 @@
    conformance)))
 
 (rule
+ (package ppx_windtrap)
  (alias runtest)
  (enabled_if
   (>= %{ocaml_version} 5.2))
@@ -148,6 +151,7 @@
   (diff escaped_strings-exit.expected escaped_strings-exit)))
 
 (rule
+ (package ppx_windtrap)
  (alias runtest)
  (enabled_if
   (>= %{ocaml_version} 5.2))
@@ -155,6 +159,7 @@
   (diff escaped_strings-log.expected escaped_strings-log)))
 
 (rule
+ (package ppx_windtrap)
  (alias runtest)
  (enabled_if
   (>= %{ocaml_version} 5.2))
@@ -194,6 +199,7 @@
    conformance)))
 
 (rule
+ (package ppx_windtrap)
  (alias runtest)
  (enabled_if
   (<> %{os_type} Win32))
@@ -201,6 +207,7 @@
   (diff chdir-exit.expected chdir-exit)))
 
 (rule
+ (package ppx_windtrap)
  (alias runtest)
  (enabled_if
   (<> %{os_type} Win32))
@@ -208,6 +215,7 @@
   (diff chdir-log.expected chdir-log)))
 
 (rule
+ (package ppx_windtrap)
  (alias runtest)
  (enabled_if
   (<> %{os_type} Win32))
@@ -216,36 +224,43 @@
 
 
 (rule
+ (package ppx_windtrap)
  (alias runtest)
  (action
   (diff exact.ml.corrected.expected exact.ml.corrected)))
 
 (rule
+ (package ppx_windtrap)
  (alias runtest)
  (action
   (diff flexible.ml.corrected.expected flexible.ml.corrected)))
 
 (rule
+ (package ppx_windtrap)
  (alias runtest)
  (action
   (diff missing.ml.corrected.expected missing.ml.corrected)))
 
 (rule
+ (package ppx_windtrap)
  (alias runtest)
  (action
   (diff normal_strings.ml.corrected.expected normal_strings.ml.corrected)))
 
 (rule
+ (package ppx_windtrap)
  (alias runtest)
  (action
   (diff semicolon.ml.corrected.expected semicolon.ml.corrected)))
 
 (rule
+ (package ppx_windtrap)
  (alias runtest)
  (action
   (diff spacing.ml.corrected.expected spacing.ml.corrected)))
 
 (rule
+ (package ppx_windtrap)
  (alias runtest)
  (action
   (diff
@@ -253,16 +268,19 @@
    string_extension_syntax.ml.corrected)))
 
 (rule
+ (package ppx_windtrap)
  (alias runtest)
  (action
   (diff string_padding.ml.corrected.expected string_padding.ml.corrected)))
 
 (rule
+ (package ppx_windtrap)
  (alias runtest)
  (action
   (diff trailing.ml.corrected.expected trailing.ml.corrected)))
 
 (rule
+ (package ppx_windtrap)
  (alias runtest)
  (action
   (diff unidiomatic_syntax.ml.corrected.expected unidiomatic_syntax.ml.corrected)))
@@ -284,6 +302,7 @@
      (run ../../pp.exe --impl %{dep:comment.ml}))))))
 
 (rule
+ (package ppx_windtrap)
  (alias runtest)
  (action
   (diff comment.rejected.expected comment.rejected)))
@@ -301,6 +320,7 @@
      (run ../../pp.exe --impl %{dep:exn.ml}))))))
 
 (rule
+ (package ppx_windtrap)
  (alias runtest)
  (action
   (diff exn.rejected.expected exn.rejected)))
@@ -318,6 +338,7 @@
      (run ../../pp.exe --impl %{dep:exn_and_trailing.ml}))))))
 
 (rule
+ (package ppx_windtrap)
  (alias runtest)
  (action
   (diff exn_and_trailing.rejected.expected exn_and_trailing.rejected)))
@@ -335,6 +356,7 @@
      (run ../../pp.exe --impl %{dep:exn_missing.ml}))))))
 
 (rule
+ (package ppx_windtrap)
  (alias runtest)
  (action
   (diff exn_missing.rejected.expected exn_missing.rejected)))
@@ -352,6 +374,7 @@
      (run ../../pp.exe --impl %{dep:expectation.ml}))))))
 
 (rule
+ (package ppx_windtrap)
  (alias runtest)
  (action
   (diff expectation.rejected.expected expectation.rejected)))
@@ -369,6 +392,7 @@
      (run ../../pp.exe --impl %{dep:function_with_distinct_outputs.ml}))))))
 
 (rule
+ (package ppx_windtrap)
  (alias runtest)
  (action
   (diff
@@ -388,6 +412,7 @@
      (run ../../pp.exe --impl %{dep:functor.ml}))))))
 
 (rule
+ (package ppx_windtrap)
  (alias runtest)
  (action
   (diff functor.rejected.expected functor.rejected)))
@@ -405,6 +430,7 @@
      (run ../../pp.exe --impl %{dep:tag.ml}))))))
 
 (rule
+ (package ppx_windtrap)
  (alias runtest)
  (action
   (diff tag.rejected.expected tag.rejected)))
@@ -422,6 +448,7 @@
      (run ../../pp.exe --impl %{dep:zero_alloc.ml}))))))
 
 (rule
+ (package ppx_windtrap)
  (alias runtest)
  (action
   (diff zero_alloc.rejected.expected zero_alloc.rejected)))

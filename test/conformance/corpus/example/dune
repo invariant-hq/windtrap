@@ -5,6 +5,7 @@
 ; shims in shim/.
 
 (library
+ (enabled_if %{lib-available:ppx_windtrap})
  (name conformance_example)
  (modules
   chdir
@@ -25,7 +26,9 @@
 ; with pp.exe, then typechecked with ocamlc against the shim and
 ; runtime cmis; exit 2 (type error) is required and the error text is
 ; goldened. (sandbox none): the -I paths reach library .objs dirs in
-; _build that the declared .cma deps guarantee are built. The golden is
+; _build that the declared .cma deps guarantee are built. Under opam's
+; dune build -p ppx_windtrap, windtrap is the installed library, which
+; the second -I names; the in-tree one comes first when it is built. The golden is
 ; the compiler's wording of a type error, settled in OCaml 5.4, so the
 ; rules hold from 5.4 on.
 
@@ -44,7 +47,7 @@
   (sandbox none)
   hello_async_pp.ml
   shim/conformance_js_shims.cma
-  ../../../../lib/windtrap.cma
+  %{lib:windtrap:windtrap.cma}
   ../../../../ppx/runtime/ppx_windtrap_runtime.cma)
  (action
   (with-outputs-to
@@ -68,10 +71,13 @@
      -I
      ../../../../lib/.windtrap.objs/byte
      -I
+     %{ocaml_where}/../windtrap
+     -I
      ../../../../ppx/runtime/.ppx_windtrap_runtime.objs/byte
      hello_async_pp.ml)))))
 
 (rule
+ (package ppx_windtrap)
  (alias runtest)
  (enabled_if
   (>= %{ocaml_version} 5.4))

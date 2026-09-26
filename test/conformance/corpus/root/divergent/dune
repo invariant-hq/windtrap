@@ -35,16 +35,19 @@
    conformance)))
 
 (rule
+ (package ppx_windtrap)
  (alias runtest)
  (action
   (diff runner-exit.expected runner-exit)))
 
 (rule
+ (package ppx_windtrap)
  (alias runtest)
  (action
   (diff runner-log.expected runner-log)))
 
 (rule
+ (package ppx_windtrap)
  (alias runtest)
  (action
   (diff

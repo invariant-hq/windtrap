@@ -14,6 +14,7 @@
 ; overflows (OCaml 5's default bound of 1 GiB absorbs it).
 
 (test
+ (package ppx_windtrap)
  (name test_mutate_semantics)
  (modules test_mutate_semantics)
  (libraries
@@ -32,6 +33,7 @@
 ; runtime, and nothing pulls the core in.
 
 (test
+ (package ppx_windtrap)
  (name test_mutate_linkonly)
  (modules test_mutate_linkonly)
  (libraries mutsem_fixtures))
@@ -65,11 +67,13 @@
     (run %{dep:baseline/mutsem_exit_plain.exe})))))
 
 (rule
+ (package ppx_windtrap)
  (alias runtest)
  (action
   (diff mutsem_exit.expected exit_instrumented.actual)))
 
 (rule
+ (package ppx_windtrap)
  (alias runtest)
  (action
   (diff mutsem_exit.expected exit_plain.actual)))

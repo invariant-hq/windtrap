@@ -22,6 +22,7 @@
 ; linked_scene.
 
 (library
+ (enabled_if %{lib-available:ppx_windtrap})
  (name linked_shapes)
  (modules shapes)
  (inline_tests)
@@ -29,6 +30,7 @@
   (pps ppx_windtrap)))
 
 (library
+ (enabled_if %{lib-available:ppx_windtrap})
  (name linked_scene)
  (modules scene)
  (libraries linked_shapes)

@@ -5,6 +5,7 @@
 ; in this build layer.
 
 (library
+ (enabled_if %{lib-available:ppx_windtrap})
  (name conformance_esf)
  (modules nine)
  (inline_tests)

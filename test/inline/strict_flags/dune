@@ -2,6 +2,7 @@
 ; regression is the build.
 
 (library
+ (enabled_if %{lib-available:ppx_windtrap})
  (name windtrap_test_inline_strict)
  (inline_tests)
  (flags

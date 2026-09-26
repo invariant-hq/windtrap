@@ -39,6 +39,7 @@
  (libraries windtrap mutant_subject))
 
 (cram
+ (package ppx_windtrap)
  (applies_to broadcast)
  (enabled_if
   (<> %{os_type} Win32))
@@ -53,6 +54,7 @@
 
 (cram
  (applies_to nodune)
+ (package ppx_windtrap)
  (enabled_if
   (and
    (<> %{os_type} Win32)
@@ -65,6 +67,7 @@
 ; build's copy, and writes their corrections beside them.
 
 (cram
+ (package ppx_windtrap)
  (applies_to inline)
  (deps
   inline/runner.exe

@@ -28,16 +28,19 @@
    conformance)))
 
 (rule
+ (package ppx_windtrap)
  (alias runtest)
  (action
   (diff runner-exit.expected runner-exit)))
 
 (rule
+ (package ppx_windtrap)
  (alias runtest)
  (action
   (diff runner-log.expected runner-log)))
 
 (rule
+ (package ppx_windtrap)
  (alias runtest)
  (action
   (diff foo.ml.corrected.expected foo.ml.corrected)))
@@ -57,6 +60,7 @@
      (run ../../../pp.exe --impl %{dep:mdx_cases.ml}))))))
 
 (rule
+ (package ppx_windtrap)
  (alias runtest)
  (action
   (diff mdx_cases.rejected.expected mdx_cases.rejected)))

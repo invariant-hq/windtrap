@@ -1,9 +1,11 @@
 (test
+ (package ppx_windtrap)
  (name test_storage)
  (modules :standard \ keys)
  (libraries windtrap))
 
 (library
+ (enabled_if %{lib-available:ppx_windtrap})
  (name keys)
  (modules keys)
  (inline_tests)

@@ -24,6 +24,7 @@
    (run ./count.exe corpus))))
 
 (rule
+ (package ppx_windtrap)
  (alias runtest)
  (action
   (diff counts.expected counts)))

@@ -2,6 +2,7 @@
 ; containing "(regexp)" is matched literally, never as a pattern.
 
 (library
+ (enabled_if %{lib-available:ppx_windtrap})
  (name conformance_nop)
  (modules test)
  (inline_tests)

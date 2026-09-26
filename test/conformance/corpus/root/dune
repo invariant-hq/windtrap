@@ -5,6 +5,7 @@
 ; promotable diff.
 
 (library
+ (enabled_if %{lib-available:ppx_windtrap})
  (name conformance_root)
  (modules
   escaped_strings
@@ -35,6 +36,7 @@
      (run ../../pp.exe --impl %{dep:test_expectation.ml}))))))
 
 (rule
+ (package ppx_windtrap)
  (alias runtest)
  (action
   (diff test_expectation.rejected.expected test_expectation.rejected)))
@@ -52,6 +54,7 @@
      (run ../../pp.exe --impl %{dep:test_sanitize.ml}))))))
 
 (rule
+ (package ppx_windtrap)
  (alias runtest)
  (action
   (diff test_sanitize.rejected.expected test_sanitize.rejected)))
@@ -69,6 +72,7 @@
      (run ../../pp.exe --impl %{dep:uncaught_exn.ml}))))))
 
 (rule
+ (package ppx_windtrap)
  (alias runtest)
  (action
   (diff uncaught_exn.rejected.expected uncaught_exn.rejected)))
@@ -86,6 +90,7 @@
      (run ../../pp.exe --impl %{dep:unreachable.ml}))))))
 
 (rule
+ (package ppx_windtrap)
  (alias runtest)
  (action
   (diff unreachable.rejected.expected unreachable.rejected)))
@@ -103,6 +108,7 @@
      (run ../../pp.exe --impl %{dep:warning_40.ml}))))))
 
 (rule
+ (package ppx_windtrap)
  (alias runtest)
  (action
   (diff warning_40.rejected.expected warning_40.rejected)))
@@ -120,6 +126,7 @@
      (run ../../pp.exe --impl %{dep:zero_alloc_attr.ml}))))))
 
 (rule
+ (package ppx_windtrap)
  (alias runtest)
  (action
   (diff zero_alloc_attr.rejected.expected zero_alloc_attr.rejected)))

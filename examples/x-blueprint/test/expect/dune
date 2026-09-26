@@ -1,4 +1,5 @@
 (library
+ (enabled_if %{lib-available:ppx_windtrap})
  (name windtrap_example_blueprint_expect)
  (inline_tests)
  (libraries windtrap_example_blueprint)

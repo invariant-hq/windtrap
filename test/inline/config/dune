@@ -1,4 +1,5 @@
 (library
+ (enabled_if %{lib-available:ppx_windtrap})
  (name windtrap_test_inline_config)
  (inline_tests)
  (libraries windtrap)

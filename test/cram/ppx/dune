@@ -33,6 +33,7 @@
   (pps ppxlib.metaquot)))
 
 (cram
+ (package ppx_windtrap)
  (applies_to coverage mutate)
  (deps pp.exe coverage_first.exe elide.exe))
 
@@ -41,12 +42,14 @@
 ; 5.2; expect_typing.t pins the wording of a type error, settled in 5.4.
 
 (cram
+ (package ppx_windtrap)
  (applies_to coverage_functions)
  (enabled_if
   (>= %{ocaml_version} 5.2))
  (deps pp.exe elide.exe))
 
 (cram
+ (package ppx_windtrap)
  (applies_to expect)
  (deps pp.exe))
 
@@ -55,6 +58,7 @@
 
 (cram
  (applies_to expect_typing)
+ (package ppx_windtrap)
  (enabled_if
   (and
    (>= %{ocaml_version} 5.4)

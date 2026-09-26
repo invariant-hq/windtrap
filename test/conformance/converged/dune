@@ -92,11 +92,13 @@
    conformance)))
 
 (rule
+ (package ppx_windtrap)
  (alias runtest)
  (action
   (diff converged-exit.expected converged-exit)))
 
 (rule
+ (package ppx_windtrap)
  (alias runtest)
  (action
   (diff converged-log.expected converged-log)))
@@ -133,6 +135,7 @@
    conformance)))
 
 (rule
+ (package ppx_windtrap)
  (alias runtest)
  (enabled_if
   (<> %{os_type} Win32))
@@ -140,6 +143,7 @@
   (diff chdir-exit.expected chdir-exit)))
 
 (rule
+ (package ppx_windtrap)
  (alias runtest)
  (enabled_if
   (<> %{os_type} Win32))
@@ -182,6 +186,7 @@
    conformance)))
 
 (rule
+ (package ppx_windtrap)
  (alias runtest)
  (enabled_if
   (>= %{ocaml_version} 5.2))
@@ -189,6 +194,7 @@
   (diff escaped_strings-exit.expected escaped_strings-exit)))
 
 (rule
+ (package ppx_windtrap)
  (alias runtest)
  (enabled_if
   (>= %{ocaml_version} 5.2))

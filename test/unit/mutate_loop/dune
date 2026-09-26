@@ -21,6 +21,7 @@
 ; The mutation loop forks, and Windows has no fork: the loop refuses there.
 
 (test
+ (package ppx_windtrap)
  (name test_mutate_loop)
  (modules test_mutate_loop)
  (enabled_if

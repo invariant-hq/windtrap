@@ -25,6 +25,7 @@
  (libraries windtrap bin_calc))
 
 (cram
+ (package ppx_windtrap)
  (applies_to data)
  (deps pins_add.exe calc.ml))
 
@@ -32,6 +33,7 @@
 ; of fork.
 
 (cram
+ (package ppx_windtrap)
  (applies_to two_executables)
  (enabled_if
   (<> %{os_type} Win32))

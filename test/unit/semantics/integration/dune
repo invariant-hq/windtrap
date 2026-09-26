@@ -27,6 +27,7 @@
   (backend ppx_windtrap.mutate)))
 
 (test
+ (package ppx_windtrap)
  (name test_registration)
  (modules test_registration)
  (libraries

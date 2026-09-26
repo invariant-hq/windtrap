@@ -37,16 +37,19 @@
    conformance)))
 
 (rule
+ (package ppx_windtrap)
  (alias runtest)
  (action
   (diff functor-exit.expected functor-exit)))
 
 (rule
+ (package ppx_windtrap)
  (alias runtest)
  (action
   (diff functor-log.expected functor-log)))
 
 (rule
+ (package ppx_windtrap)
  (alias runtest)
  (action
   (diff functor.ml.corrected.expected functor.ml.corrected)))
@@ -77,16 +80,19 @@
    conformance)))
 
 (rule
+ (package ppx_windtrap)
  (alias runtest)
  (action
   (diff control_chars-exit.expected control_chars-exit)))
 
 (rule
+ (package ppx_windtrap)
  (alias runtest)
  (action
   (diff control_chars-log.expected control_chars-log)))
 
 (rule
+ (package ppx_windtrap)
  (alias runtest)
  (action
   (diff control_chars.ml.corrected.expected control_chars.ml.corrected)))
