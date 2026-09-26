@@ -3,64 +3,106 @@
 Windtrap runs unit, property, stateful and expect tests from one flat
 interface, with coverage and mutation testing in the companion ppx. A
 suite is an ordinary executable that `dune runtest` builds and runs.
-Windtrap needs OCaml 5.0 or later, the ppx adds ppxlib, and both are
-distributed under the ISC license.
 
 ## A first suite
-
-A suite is declared by a `(test)` stanza, here for a module `Calc` of
-two functions (the tutorial's example, `examples/01-getting-started/`).
-
-`test/dune`:
-
-```lisp
-(test
- (name test_mylib)
- (modules test_mylib calc)
- (libraries windtrap))
-```
-
-`test/test_mylib.ml`:
 
 ```ocaml
 open Windtrap
 
-let add =
-  group "add"
-    [ test "adds two integers" (fun () -> equal int 5 (Calc.add 2 3)) ]
-
-let parse =
-  group "parse"
+let basics =
+  group "basics"
     [
-      test "rejects the empty string" (fun () ->
-          raises (Calc.Parse_error "empty") (fun () -> Calc.parse ""));
+      test "evicts the oldest entry when full" (fun () ->
+          let c = Lru.create 2 in
+          List.iter (fun k -> Lru.add c k k) [ 1; 2; 3 ];
+          equal (option int) None (Lru.find c 1));
+      test "lists its keys, most recent first" (fun () ->
+          let c = Lru.create 3 in
+          List.iter (fun k -> Lru.add c k k) [ 1; 2; 3 ];
+          ignore (Lru.find c 1);
+          expect (Lru.to_string c) @@ __POS_OF__ {|1 3 2|});
     ]
 
-let () = exit (run "mylib" [ add; parse ])
+let bounded =
+  prop "never holds more than its capacity" Gen.(list int) (fun keys ->
+      let c = Lru.create 3 in
+      List.iter (fun k -> Lru.add c k k) keys;
+      at_most int ~than:3 (Lru.size c))
+
+let () = exit (run "lru" [ basics; bounded ])
 ```
 
 A run with nothing to report prints one line:
 
 ```
 $ dune runtest
-mylib: 2 passed in 0.5ms.
+mylib: 3 passed in 1.0ms (seed s1:b02192cebcec40d2).
 ```
 
-## What it does
+## Features
 
-- A failing assertion prints both values it compared, and a diff for text.
-- Every generator shrinks, and a failing property prints its smallest
-  counterexample and a `replay:` command.
-- `stateful` checks a system against a model over generated programs of
-  calls.
-- A baseline is the literal at an `expect` call or the file an
-  `expect_file` call names; `dune promote` accepts a change to it, and to
-  a `let%expect_test`, which runs on the same runner.
-- `windtrap coverage` merges the coverage of every suite into one
-  report, and each mutant that survives the tests names the tests that
-  ran its line.
-- `run` returns `0`, `1` or `2`, and `2` means that no test ran, so a
-  mistyped `-f` fails the command.
+### Unit tests
+
+`test` and `group` declare a suite, and `run` runs it. Assertions such
+as `equal`, `less`, `contains`, `raises` and `require_some` take a
+witness, for example `int` or `list string`, and a failure prints the
+values it compared.
+
+```ocaml
+test "splits on commas" (fun () ->
+    equal (list string) [ "a"; "b" ] (String.split_on_char ',' "a,b"))
+```
+
+### Property tests
+
+`prop` checks a law over values generated with `Gen`. A failing input is
+reduced to a smaller one that still fails.
+
+```ocaml
+prop "rev is an involution" Gen.(list int) (fun l ->
+    equal (list int) l (List.rev (List.rev l)))
+```
+
+### Stateful tests
+
+`stateful` checks a system against a model of its state on generated
+sequences of calls. A failing sequence is reduced to a shorter one and
+printed with the model before each call.
+
+```ocaml
+call "pop" ~pre:(fun m -> m <> []) ~next:List.tl (fun m q ->
+    equal int (List.hd m) (Queue.pop q))
+```
+
+### Expect tests
+
+`expect` compares a string with a literal in the test's source, and
+`expect_file` with a file. `ppx_windtrap` provides `let%expect_test` and
+`[%expect]`. `dune promote` accepts a change.
+
+```ocaml
+expect (Printf.sprintf "%d items" (List.length cart)) @@ __POS_OF__ {|3 items|}
+```
+
+### Coverage
+
+`ppx_windtrap.coverage` instruments a library, and `windtrap coverage`
+reports the expressions that the tests did not run.
+
+```
+dune runtest --instrument-with ppx_windtrap.coverage
+dune exec windtrap -- coverage
+```
+
+### Mutation testing
+
+`ppx_windtrap.mutate` compiles mutants of a library, small changes such
+as `>=` into `>`, into its test executables. `--mutate` runs the tests
+on each mutant and reports the mutants that no test fails on.
+
+```
+dune exec --instrument-with ppx_windtrap.mutate test/test_calc.exe -- --mutate
+```
 
 ## Installation
 
@@ -83,23 +125,15 @@ The manual, [`doc/manual/`](doc/manual/), has one page per need:
   - [Mutation testing](doc/manual/mutation.md): the changes no test notices.
   - [Migrating from 0.1](doc/manual/migrating-from-0.1.md): each 0.1 spelling and its replacement.
 - Explanation: [Design notes](doc/manual/notes.md), why windtrap is shaped as it is.
-- Reference: [`lib/windtrap.mli`](lib/windtrap.mli), also read with `odig doc windtrap`, and
+- Reference: [`lib/windtrap.mli`](lib/windtrap.mli), and
   [`ppx/ppx_windtrap.mli`](ppx/ppx_windtrap.mli) for the inline test forms.
 
-A coding agent starts with the skill
-[`SKILL.md`](SKILL.md).
-[`CHANGES.md`](CHANGES.md) lists the changes of each release. Questions
-are welcome on the [OCaml forum](https://discuss.ocaml.org/).
+Questions are welcome on the [OCaml forum](https://discuss.ocaml.org/).
 
 ## Examples
 
 [`examples/`](examples/) holds the project of each manual page, run by
 `dune runtest`; [its README](examples/README.md) lists them.
-
-## Contributing
-
-[`doc/dev/`](doc/dev/) describes the architecture, how windtrap tests
-itself, the changelog discipline and the release checklist.
 
 ## Acknowledgments
 
