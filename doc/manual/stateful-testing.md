@@ -179,8 +179,8 @@ bounded_queue: 1 test (seed s1:c26eddaeb764a645)
       but no exception was raised
 ──────────────────────────────────────────────────────────
 
-replay: dune exec examples/04-stateful-testing/test_bounded_queue.exe -- --seed s1:c26eddaeb764a645 -f 'behaves' --failed
-1 failed in 1.5ms.
+replay: dune exec examples/04-stateful-testing/test_bounded_queue.exe -- --seed s1:c26eddaeb764a645 -f 'behaves'
+1 failed in 1.8ms.
 ```
 
 ## Keeping a failing program as a regression

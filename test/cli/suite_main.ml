@@ -15,10 +15,11 @@
    the tests every other scenario selects from; a flaky test, a noisy
    failing test, the streamed tests, a test that fails beside a stale
    baseline, a retried test over a stale baseline, a stale baseline
-   before a passing test, a test that calls
-   [exit], a failing property, an expected failure, two fixtures whose
-   release fails and a test that waits for a signal likewise stand alone, so the transcripts every
-   other session pins stay exactly what they are. *)
+   before a passing test, a test that calls [exit], a failing property,
+   stale baselines beside a failing property, an expected failure, two
+   fixtures whose release fails and a test that waits for a signal
+   likewise stand alone, so the transcripts every other session pins stay
+   exactly what they are. *)
 
 open Windtrap
 
@@ -140,6 +141,18 @@ let properties =
     prop "small" Gen.int (fun n -> is_true (abs n < 1000));
   ]
 
+(* A literal that holds, a stale literal and a stale file baseline, beside
+   a failing property: the one accept: line of the report, pasted, rewrites
+   the two stale baselines and no other. *)
+let accepts =
+  [
+    test "holds" (fun () -> expect "same" @@ __POS_OF__ "same");
+    test "stale literal" (fun () -> expect "fresh" @@ __POS_OF__ "stale");
+    test "stale file" (fun () ->
+        expect_file "fresh from the fixture\n" "test/cli/accepts.expected");
+    prop "small" Gen.int (fun n -> is_true (abs n < 1000));
+  ]
+
 (* An expected failure whose own message is the sentence the runner
    writes for an unexpected pass: the report must still read it as the
    expected failure it is. *)
@@ -190,6 +203,7 @@ let () =
     | Some "exits" -> (Sys.argv, exits)
     | Some "property" -> (Sys.argv, property)
     | Some "properties" -> (Sys.argv, properties)
+    | Some "accepts" -> (Sys.argv, accepts)
     | Some "no-argv" -> ([||], property)
     | Some "collide" -> (Sys.argv, collide)
     | Some "release" -> (Sys.argv, release)

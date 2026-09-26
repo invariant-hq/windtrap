@@ -335,8 +335,10 @@ A change that breaks one of these tests reopens the design first.
    computes no location and carries the one given") and
    `test_source_patch.ml` ("drift refusal").
 3. Every mismatch prints its acceptance: `baselines.t` (`accept: dune
-   promote`), `test_report.ml` ("hints: accept and replay per
-   invocation") and `test_report_junit.ml` ("bodies carry the
+   promote`, and one `accept:` line that rewrites the stale baselines
+   and no other), `test_report.ml` ("hints: accept and replay per
+   invocation", "the accept and replay lines: one each, on the
+   summary") and `test_report_junit.ml` ("bodies carry the
    invocation-spelled hints").
 4. Renderers are projections: `junit.t` (a JUnit file that cannot be
    written is a warning and changes no exit code) and `test_report.ml`

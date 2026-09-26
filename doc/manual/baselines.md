@@ -211,8 +211,9 @@ accepted and the tests run again.
 
 ## Accepting without dune promote
 
-A suite run by hand writes no correction, and its `accept:` line reruns
-the test with `-u`:
+A suite run by hand writes no correction. Its report closes on one
+`accept:` line, above the summary, which reruns the run's tests with
+`-u`:
 
 ```
 $ dune exec examples/05-baselines/test_mytool.exe
@@ -227,23 +228,23 @@ mytool: 3 tests
     - processed 42 rows
     + read 42 rows
       status: ok
-    accept: dune exec examples/05-baselines/test_mytool.exe -- -u -f 'messages › the report counts the rows'
 ──────────────────────────────────────────────────────────
 
-2 passed, 1 failed in 0.7ms.
+accept: dune exec examples/05-baselines/test_mytool.exe -- -u
+2 passed, 1 failed in 1.6ms.
 ```
 
-To accept, run the line. `-u` rewrites the literal in place, and its
-row under `corrections` says to build the executable again before the
+To accept, run the line. `-u` rewrites every stale literal in place, and
+its row under `corrections` says to build the executable again before the
 next run:
 
 ```
-$ dune exec examples/05-baselines/test_mytool.exe -- -u -f 'messages › the report counts the rows'
-mytool: 1 test
+$ dune exec examples/05-baselines/test_mytool.exe -- -u
+mytool: 3 tests
 corrections (1):
   accepted examples/05-baselines/test_mytool.ml (1 expectation; rebuild before the tests see it)
 
-1 passed, 1 correction accepted in 0.9ms.
+3 passed, 1 correction accepted in 2.2ms.
 ```
 
 Review the change with `git diff`. `-u` is refused under CI (see

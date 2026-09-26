@@ -3488,34 +3488,43 @@ let test_hint_lines () =
     (failure_block ~armed ~filter:"mod7" Fixtures.prop_failure);
   is_true
     ~msg:"an armed run's baseline failure is never accepted: no hint at all"
-    (Sections.hints ~armed ~invocation:(`Exe "./t.exe") ~filter:(Some "t")
-       [ Fixtures.snap_mismatch; Fixtures.snap_missing ]
-    = []);
+    (Sections.hints ~armed [ Fixtures.snap_mismatch; Fixtures.snap_missing ]
+     = []
+    && Sections.accept ~armed ~invocation:(`Exe "./t.exe")
+         ~tests:(`Filter (Some "t")) [ Fixtures.snap_mismatch ]
+       = None);
   contains ~msg:"a control byte in a path never breaks the hint's line"
     ~sub:
       "    replay: ./t.exe --seed s1:7be1d2c904aa31f5 -f \
        $'it\\'s\\ttwo\\nlines\\x1b[0m'\n"
     (failure_block ~invocation:(`Exe "./t.exe")
        ~filter:"it's\ttwo\nlines\027[0m" Fixtures.prop_failure);
-  let hints = Sections.hints ~invocation:(`Exe "./t.exe") ~filter:(Some "t") in
-  is_true ~msg:"a failure with no command of its own adds none"
-    (hints [ plain ] = []
-    && hints [ plain; Fixtures.snap_mismatch ] = [ "accept: ./t.exe -u -f 't'" ]
-    );
-  is_true ~msg:"one line per distinct command line, and no replay"
-    (hints
-       [ Fixtures.prop_failure; Fixtures.snap_mismatch; Fixtures.snap_missing ]
-    = [ "accept: ./t.exe -u -f 't'" ]);
+  let all =
+    [
+      plain;
+      Fixtures.prop_failure;
+      Fixtures.snap_mismatch;
+      Fixtures.snap_missing;
+    ]
+  in
+  is_true ~msg:"by hand a block carries no command: the report accepts once"
+    (Sections.hints ~invocation:(`Exe "./t.exe") all = []);
+  let accept = Sections.accept ~invocation:(`Exe "./t.exe") in
+  is_true ~msg:"one acceptance for every baseline, none without one"
+    (accept ~tests:(`Filter (Some "t")) [ plain; Fixtures.prop_failure ] = None
+    && accept ~tests:(`Filter (Some "t")) all = Some "accept: ./t.exe -u -f 't'"
+    && accept ~tests:(`Filter None) all = Some "accept: ./t.exe -u");
+  is_true ~msg:"no acceptance under a build action: each block names its file"
+    (Sections.accept ~tests:(`Filter (Some "t")) all = None);
   is_true ~msg:"two files under a build action are two acceptances"
-    (Sections.hints ~filter:(Some "t")
-       [ Fixtures.snap_mismatch; Fixtures.snap_missing ]
+    (Sections.hints [ Fixtures.snap_mismatch; Fixtures.snap_missing ]
     = [
         "accept: dune promote test/test_cli.ml";
         "accept: touch 'test/help.expected' && dune runtest; dune promote \
          test/help.expected";
       ]);
-  (* In the transcript the hints close the block, once for the whole test,
-     after the captured tail, and the replay sits on the summary. *)
+  (* In the transcript the block ends on its captured tail, and the
+     acceptance and the replay sit on the summary. *)
   let two =
     Fixtures.result [ "cli"; "both" ]
       (Failure.Fail
@@ -3530,21 +3539,21 @@ let test_hint_lines () =
     with_renderer ~invocation:(`Exe "./t.exe") (fun r ->
         Report.finish r ~release_failures:[] ~results:[ two ] ~duration:0.1 ())
   in
-  contains ~msg:"the block's hints follow the tail, the replay the rule"
+  contains ~msg:"the tail closes the block, the commands the report"
     ~sub:
-      ("      log line\n    accept: ./t.exe -u -f 'cli › both'\n" ^ closing_rule
+      ("      log line\n" ^ closing_rule
      ^ "\n\n\
-        replay: ./t.exe --seed s1:7be1d2c904aa31f5 --failed\n\
+        accept: ./t.exe -u\n\
+        replay: ./t.exe --seed s1:7be1d2c904aa31f5\n\
         1 failed in 100ms.\n")
     t;
-  is_true ~msg:"a hint prints once per block"
+  is_true ~msg:"one acceptance in the report"
     (occurrences_of ~sub:"accept:" t = 1)
 
-(* The replay line: one for the whole report, right above the summary,
-   over every counted failure that drew generated values. [--failed] reads
-   the store, so the line restates what shapes the store's entries: the
-   output directory, the selection and [-x]. *)
-let test_replay_line () =
+(* The accept and replay lines: one each for the whole report, right above
+   the summary, over the counted failures. Each restates the run's
+   selection. *)
+let test_run_lines () =
   let exe = `Exe "./t.exe" in
   let ending ?(config = config ~invocation:exe ()) ?interrupted results =
     let buf = Buffer.create 256 in
@@ -3576,13 +3585,28 @@ let test_replay_line () =
     (String.ends_with
        ~suffix:
          (closing_rule
-        ^ "\n\n\
-           replay: ./t.exe --seed s1:7be1d2c904aa31f5 --failed\n\
-           2 failed in 100ms.\n")
+        ^ "\n\nreplay: ./t.exe --seed s1:7be1d2c904aa31f5\n2 failed in 100ms.\n"
+         )
+       t);
+  let stale =
+    [
+      failing "cli" [ Fixtures.snap_mismatch ];
+      failing "geo" [ Fixtures.prop_failure; Fixtures.snap_missing ];
+    ]
+  in
+  let t = ending stale in
+  is_true ~msg:"two tests with baselines, one accept line"
+    (occurrences_of ~sub:"accept:" t = 1);
+  is_true ~msg:"it sits above the replay line"
+    (String.ends_with
+       ~suffix:
+         "\n\n\
+          accept: ./t.exe -u\n\
+          replay: ./t.exe --seed s1:7be1d2c904aa31f5\n\
+          2 failed in 100ms.\n"
        t);
   contains ~msg:"the largest count a failure needs"
-    ~sub:
-      "replay: ./t.exe --seed s1:7be1d2c904aa31f5 --prop-count 1000 --failed\n"
+    ~sub:"replay: ./t.exe --seed s1:7be1d2c904aa31f5 --prop-count 1000\n"
     (ending
        [
          failing "late" [ counted 1000 ];
@@ -3590,7 +3614,7 @@ let test_replay_line () =
          failing "plain" [ Failure.message "b" ];
        ]);
   contains ~msg:"a property's timeout drew its case"
-    ~sub:"replay: ./t.exe --seed s1:7be1d2c904aa31f5 --failed\n"
+    ~sub:"replay: ./t.exe --seed s1:7be1d2c904aa31f5\n"
     (ending
        [
          failing "slow"
@@ -3615,30 +3639,68 @@ let test_replay_line () =
       tags = [ "prop" ];
       exclude_tags = [ "flaky" ];
       shard = Some (1, 2);
-      bail = true;
       log_dir = "/nowhere/logs";
     }
   in
-  contains ~msg:"a narrowed run restates its store and its selection"
+  let t = ending ~config:narrowed stale in
+  contains ~msg:"a narrowed run's acceptance restates its selection"
     ~sub:
-      "replay: ./t.exe --seed s1:7be1d2c904aa31f5 -o /nowhere/logs -x -f 'geo' \
-       -e 'slow' --tag prop --exclude-tag flaky --shard 1/2 --failed\n"
-    (ending ~config:narrowed two);
+      "accept: ./t.exe -u -f 'geo' -e 'slow' --tag prop --exclude-tag flaky \
+       --shard 1/2\n"
+    t;
+  contains ~msg:"and so does its replay, with no -o the selection does not read"
+    ~sub:
+      "replay: ./t.exe --seed s1:7be1d2c904aa31f5 -f 'geo' -e 'slow' --tag \
+       prop --exclude-tag flaky --shard 1/2\n"
+    t;
+  let failed = { narrowed with Run.filter = []; failed_only = true } in
+  let t = ending ~config:failed stale in
+  contains ~msg:"a run given --failed restates it, after the -o it reads under"
+    ~sub:
+      "accept: ./t.exe -u -e 'slow' --tag prop --exclude-tag flaky --shard 1/2 \
+       -o /nowhere/logs --failed\n"
+    t;
+  contains ~msg:"in its replay too"
+    ~sub:
+      "replay: ./t.exe --seed s1:7be1d2c904aa31f5 -e 'slow' --tag prop \
+       --exclude-tag flaky --shard 1/2 -o /nowhere/logs --failed\n"
+    t;
+  contains ~msg:"and without -o when the store lies where it defaults to"
+    ~sub:"replay: ./t.exe --seed s1:7be1d2c904aa31f5 --failed\n"
+    (ending
+       ~config:{ (config ~invocation:exe ()) with Run.failed_only = true }
+       two);
+  (* [-x] stops a run on its one counted failure, and [-u] passes what it
+     accepts: over the selection it would run on. *)
+  let bail = { narrowed with Run.bail = true } in
+  contains ~msg:"-x: the acceptance names the test the run stopped on"
+    ~sub:"accept: ./t.exe -u -f 'geo › area'\n"
+    (ending ~config:bail [ failing "geo › area" [ Fixtures.snap_mismatch ] ]);
+  contains ~msg:"-x: the replay runs the selection, with no -x"
+    ~sub:
+      "replay: ./t.exe --seed s1:7be1d2c904aa31f5 -f 'geo' -e 'slow' --tag \
+       prop --exclude-tag flaky --shard 1/2\n"
+    (ending ~config:bail [ failing "geo › area" [ Fixtures.prop_failure ] ]);
+  let t =
+    ending
+      ~config:(config ~invocation:exe ~armed:"lib/calc.ml:9:12:add" ())
+      (two @ stale)
+  in
   contains ~msg:"an armed run arms the mutant"
     ~sub:
-      "replay: ./t.exe --arm lib/calc.ml:9:12:add --seed s1:7be1d2c904aa31f5 \
-       --failed\n"
-    (ending
-       ~config:(config ~invocation:exe ~armed:"lib/calc.ml:9:12:add" ())
-       two);
-  contains
-    ~msg:
-      "under a build action: the mirrors, and dune's rerun of the failed \
-       actions for --failed"
+      "replay: ./t.exe --arm lib/calc.ml:9:12:add --seed s1:7be1d2c904aa31f5\n"
+    t;
+  not_contains ~msg:"and accepts nothing: the failures are the mutant's"
+    ~sub:"accept:" t;
+  let t = ending ~config:{ (config ()) with Run.filter = [ "geo" ] } stale in
+  contains ~msg:"under a build action: the mirrors in front of dune runtest"
     ~sub:
       "replay: WINDTRAP_SEED=s1:7be1d2c904aa31f5 WINDTRAP_FILTER='geo' dune \
        runtest\n"
-    (ending ~config:{ (config ()) with Run.filter = [ "geo" ] } two);
+    t;
+  is_true ~msg:"and each block promotes its own file, with none at the end"
+    (occurrences_of ~sub:"    accept: " t = 2
+    && occurrences_of ~sub:"\naccept:" t = 0);
   contains ~msg:"an armed build action names the backend"
     ~sub:
       "replay: WINDTRAP_MUTATE_ARM=lib/calc.ml:9:12:add \
@@ -3652,14 +3714,33 @@ let test_replay_line () =
   not_contains ~msg:"an example or a plain failure drew nothing" ~sub:"replay:"
     (ending
        [ failing "ex" [ example ]; failing "plain" [ Fixtures.snap_mismatch ] ]);
-  not_contains ~msg:"an expected failure is no failure to replay" ~sub:"replay:"
+  not_contains ~msg:"a failure with no kept correction accepts nothing"
+    ~sub:"accept:"
     (ending
        [
-         failing ~xfail:Fixtures.xfail_reason "known" [ Fixtures.prop_failure ];
+         failing "plain" [ Failure.message "b" ];
+         failing "outside"
+           [
+             Failure.with_withheld Failure.Failed_outside Fixtures.snap_mismatch;
+             Failure.message "b";
+           ];
        ]);
-  not_contains ~msg:"a signal leaves the store as it was: no replay"
-    ~sub:"replay:"
-    (ending ~interrupted:() two);
+  let known =
+    ending
+      [
+        failing ~xfail:Fixtures.xfail_reason "known"
+          [ Fixtures.prop_failure; Fixtures.snap_mismatch ];
+      ]
+  in
+  not_contains ~msg:"an expected failure is no failure to replay" ~sub:"replay:"
+    known;
+  not_contains ~msg:"nor one to accept" ~sub:"accept:" known;
+  let t = ending ~interrupted:() (two @ stale) in
+  not_contains
+    ~msg:"a signal kept tests from running: no replay, which would run them"
+    ~sub:"replay:" t;
+  not_contains ~msg:"and no acceptance, which would accept theirs"
+    ~sub:"accept:" t;
   equal ~msg:"and says on stderr what it stopped" string
     "windtrap: interrupted between tests\n" (output ())
 
@@ -3715,13 +3796,18 @@ let test_withheld_correction () =
     ~sub:"    proposed (3 lines):\n" (action missing);
   (* The reason is a fact line: it opens the block's closing lines, once. *)
   let plain = Failure.message "boom" in
-  let hints = Sections.hints ~invocation:(`Exe "./t.exe") ~filter:(Some "t") in
+  let hints = Sections.hints ~invocation:(`Exe "./t.exe") in
   is_true ~msg:"a block's closing lines: the reason once, and nothing after it"
     (hints [ plain; literal; missing ] = [ kept_none ]);
   is_true ~msg:"a property beside it adds no line: the report replays it"
     (hints [ Fixtures.prop_failure; literal ] = [ kept_none ]);
+  let accept =
+    Sections.accept ~invocation:(`Exe "./t.exe") ~tests:(`Filter (Some "t"))
+  in
+  is_true ~msg:"no acceptance for a withheld correction"
+    (accept [ plain; literal; missing ] = None);
   is_true ~msg:"a kept correction beside nothing else is accepted as before"
-    (hints [ Fixtures.snap_mismatch ] = [ "accept: ./t.exe -u -f 't'" ]);
+    (accept [ Fixtures.snap_mismatch ] = Some "accept: ./t.exe -u -f 't'");
   not_contains ~msg:"and draws no reason" ~sub:"no correction was kept"
     (exe Fixtures.snap_mismatch);
   (* A test that failed an expectation and skipped keeps none either, and
@@ -3733,20 +3819,20 @@ let test_withheld_correction () =
         "no correction was kept: the test also skipped; skip before the \
          expectation or not at all, and rerun";
       ]);
-  (* A correction the source refused names its literal's line, beside the
-     accept of a correction the attempt kept; each refused literal has its
-     line, and a fact of the attempt follows them. *)
+  (* A correction the source refused names its literal's line in the block,
+     beside a correction the attempt kept, which the report's accept line
+     takes; each refused literal has its line, and a fact of the attempt
+     follows them. *)
   let refused line =
     Failure.with_withheld
       (Failure.Refused { line; reason = "the source file cannot be read: x" })
       Fixtures.snap_mismatch
   in
-  is_true ~msg:"a refused literal beside a kept one: its fact, then the accept"
+  is_true ~msg:"a refused literal beside a kept one: its fact, and an accept"
     (hints [ refused 4; Fixtures.snap_mismatch ]
-    = [
-        "correction refused (line 4): the source file cannot be read: x";
-        "accept: ./t.exe -u -f 't'";
-      ]);
+     = [ "correction refused (line 4): the source file cannot be read: x" ]
+    && accept [ refused 4; Fixtures.snap_mismatch ]
+       = Some "accept: ./t.exe -u -f 't'");
   is_true ~msg:"two refused literals, then a failure outside: three facts"
     (hints [ plain; outside (refused 4); outside (refused 9); literal ]
     = [
@@ -3773,9 +3859,7 @@ let test_withheld_correction () =
      about corrections: the difference is the mutant's. *)
   let armed = "lib/calc.ml:9:12:add" in
   is_true ~msg:"an armed run: no line at all"
-    (Sections.hints ~armed ~invocation:(`Exe "./t.exe") ~filter:(Some "t")
-       [ plain; literal ]
-    = []);
+    (Sections.hints ~armed ~invocation:(`Exe "./t.exe") [ plain; literal ] = []);
   (* In the transcript the reason sits after the captured tail and closes
      the block. *)
   let both =
@@ -3893,11 +3977,20 @@ let test_name_sanitization () =
   equal ~msg:"the row and the message stay one line each" string
     "  FAIL  first\\x0ahalf                              0.2ms\n    b\n\n"
     verbose;
-  contains ~msg:"and so does a hint that spells the path"
-    ~sub:"      line three\n    accept: ./t.exe -u -f $'first\\nhalf'\n\n"
-    (with_renderer ~mode:`Verbose ~invocation:(`Exe "./t.exe") (fun r ->
-         Report.result r
-           (Fixtures.result hostile (Failure.Fail [ Fixtures.snap_mismatch ]))));
+  contains ~msg:"and so does a command that spells the path"
+    ~sub:"\naccept: ./t.exe -u -f $'first\\nhalf'\n"
+    (let buf = Buffer.create 256 in
+     let ppf = Format.formatter_of_buffer buf in
+     let r =
+       Report.create ~out:ppf ~ansi:false
+         { (config ~invocation:(`Exe "./t.exe") ()) with Run.bail = true }
+     in
+     Report.finish r ~release_failures:[]
+       ~results:
+         [ Fixtures.result hostile (Failure.Fail [ Fixtures.snap_mismatch ]) ]
+       ~duration:0.1 ();
+     Format.pp_print_flush ppf ();
+     Buffer.contents buf);
   let block =
     with_renderer (fun r ->
         Report.finish r ~release_failures:[] ~results:[ failing ] ~duration:0.1
@@ -6298,7 +6391,7 @@ let tests =
     test "hints: accept and replay per invocation" test_hints_per_invocation;
     test "hints: armed runs, one line per command line, no rerun"
       test_hint_lines;
-    test "the replay line: one, on the summary" test_replay_line;
+    test "the accept and replay lines: one each, on the summary" test_run_lines;
     test "a withheld correction: no accept, the reason, nothing after it"
       test_withheld_correction;
     test "an armed run's FAIL titles" test_armed_titles;

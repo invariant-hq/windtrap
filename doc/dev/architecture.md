@@ -224,8 +224,9 @@ the guarantees"; changing one is a design decision, recorded here first.
    position, which the compiler recomputes on every build, or a file at
    the path the call names; nothing is derived from a test's name or
    declaration site, so no edit can orphan a baseline.
-3. **Every mismatch prints its own acceptance command**: `dune promote`
-   under a stanza that diffs, `-u` otherwise.
+3. **Every mismatch prints an acceptance command**: `dune promote` and
+   its file in its block under a stanza that diffs, otherwise one `-u`
+   over the run's selection above the summary.
 4. **Failures are data; renderers are projections** and cannot alter
    status, counts or scheduling.
 5. **A failing test's captured output is in its report**, bounded, with

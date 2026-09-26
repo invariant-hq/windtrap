@@ -289,9 +289,7 @@ let block_body t ~hints (r : Run.result) failures =
   if hints then
     List.iter
       (fun hint -> put t [ plain (indent ^ hint) ])
-      (Sections.hints ?armed:t.armed ~invocation:t.config.invocation
-         ~filter:(Some (Test_tree.path_to_string r.path))
-         failures)
+      (Sections.hints ?armed:t.armed ~invocation:t.config.invocation failures)
 
 (* A counted failure's block. Under verbose its title is the test's row. *)
 let failure_block t (r : Run.result) =
@@ -645,10 +643,11 @@ let corrections_section ~accepted t rows =
 
 let rec drop n = function _ :: rest when n > 0 -> drop (n - 1) rest | l -> l
 
-(* The replay line sits on the summary, as a loop's [reproduce:] sits on its
-   outcome, so the last line still says how the run ended. A signal leaves
-   the last-failed store as it was, so an interrupted run has none. *)
-let close t ~replay ~results ~release_failures ~duration ?baselines
+(* The commands that act on the whole run sit on the summary, as a loop's
+   [reproduce:] sits on its outcome, so the last line still says how the run
+   ended. An interrupted run's would run the tests the signal kept from
+   running, and [-u] would accept baselines the report does not show. *)
+let close t ~commands ~results ~release_failures ~duration ?baselines
     ?(before_summary = ignore) () =
   sync t;
   clear_live t;
@@ -718,16 +717,29 @@ let close t ~replay ~results ~release_failures ~duration ?baselines
   Pp.flush t.out ();
   before_summary ();
   if owed then put t [];
-  if replay then
-    Option.iter
+  if commands then begin
+    let armed = t.armed and invocation = t.config.invocation in
+    let run = `Run t.config and failures = List.concat_map failures failed in
+    (* [-x] stops a run on its one counted failure, and [-u] passes an
+       accepted test: over the selection it would accept baselines of tests
+       this run did not reach. *)
+    let accepted =
+      match failed with
+      | [ r ] when t.config.bail ->
+          `Filter (Some (Test_tree.path_to_string r.path))
+      | _ -> run
+    in
+    List.iter
       (fun line -> put t [ plain line ])
-      (Sections.replay ?armed:t.armed ~invocation:t.config.invocation
-         ~tests:(`Failed t.config)
-         (List.concat_map failures failed));
+      (Option.to_list
+         (Sections.accept ?armed ~invocation ~tests:accepted failures)
+      @ Option.to_list (Sections.replay ?armed ~invocation ~tests:run failures)
+      )
+  end;
   summary_line t summary ~duration;
   Pp.flush t.out ()
 
-let finish = close ~replay:true
+let finish = close ~commands:true
 
 (* A path is one line of the diagnostic, whatever it holds. *)
 let interrupted t ?before_summary ?releasing ~running ~results ~duration () =
@@ -741,8 +753,8 @@ let interrupted t ?before_summary ?releasing ~running ~results ~duration () =
     | None, Some fixture ->
         "interrupted while releasing " ^ Text.escape_controls fixture
     | None, None -> "interrupted between tests");
-  close t ~replay:false ~results ~release_failures:[] ~duration ?before_summary
-    ()
+  close t ~commands:false ~results ~release_failures:[] ~duration
+    ?before_summary ()
 
 let observe t ~seed ~selection = function
   | Run.Run_started { suite; total; selected; properties } ->

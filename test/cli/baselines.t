@@ -15,8 +15,9 @@ what they read.
   >   sed -E 's/ in [0-9.]+m?s\./ in DURATION./; s/suite_main\.ml:[0-9]+/suite_main.ml:LINE/'
   > }
 
-A missing baseline fails with the proposed content and, for an executable
-run by hand, the in-place acceptance: -u, narrowed to the block's test.
+A missing baseline fails with the proposed content. An executable run by
+hand closes its report on the in-place acceptance, right above the
+summary: -u, over the run's selection.
 
   $ run ./suite_main.exe -f greeting > out 2>&1
   [1]
@@ -28,9 +29,9 @@ run by hand, the in-place acceptance: -u, narrowed to the block's test.
       expect_file "test/cli/greeting.expected": no baseline
       proposed (1 line):
         + hello from the fixture
-      accept: ./suite_main.exe -u -f 'greeting'
   ──────────────────────────────────────────────────────────
   
+  accept: ./suite_main.exe -u -f 'greeting'
   1 failed in DURATION.
   $ test -e test/cli/greeting.expected || echo 'nothing written'
   nothing written
@@ -179,9 +180,9 @@ differs from one attempt to the next is what ~retries is for.
       @@ -1,1 +1,1 @@
       - stale
       + fresh from the fixture
-      accept: ./suite_main.exe -u -f 'retried'
   ──────────────────────────────────────────────────────────
   
+  accept: ./suite_main.exe -u
   1 failed in DURATION.
 
 -u accepts on the first attempt, which passes.
@@ -295,6 +296,70 @@ and under -u, where the stale baseline is no failure and is left alone.
   1 failed in DURATION.
   $ cat test/cli/masked.expected
   stale
+
+One accept: line serves every block of a run by hand. The fixture holds
+a literal that holds, a stale literal, a stale file baseline and a
+failing property, which the replay: line under the accept: line reruns.
+The source of the literals is the fixture's own, copied where their
+locations point:
+
+  $ rm -f test/cli/suite_main.ml && cp suite_main.ml test/cli/
+  $ echo 'stale' > test/cli/accepts.expected
+  $ run env FACADE_FIXTURE=accepts ./suite_main.exe > out 2>&1
+  [1]
+  $ grep -c 'accept:' out
+  1
+  $ tail -3 out | scrub | sed -E 's/s1:[0-9a-f]+/SEED/'
+  accept: ./suite_main.exe -u
+  replay: ./suite_main.exe --seed SEED
+  1 passed, 3 failed in DURATION.
+
+Pasted, the line rewrites the two stale baselines and nothing else: the
+literal that holds is left as it is.
+
+  $ eval "run env FACADE_FIXTURE=accepts $(sed -n 's/^accept: //p' out)" > again 2>&1
+  [1]
+  $ tail -1 again | scrub
+  3 passed, 1 failed, 2 corrections accepted in DURATION.
+  $ diff suite_main.ml test/cli/suite_main.ml | grep '^[<>]'
+  <     test "stale literal" (fun () -> expect "fresh" @@ __POS_OF__ "stale");
+  >     test "stale literal" (fun () -> expect "fresh" @@ __POS_OF__ "fresh");
+  $ cat test/cli/accepts.expected
+  fresh from the fixture
+
+The line restates the run's selection, so a baseline the run did not
+select is not accepted:
+
+  $ rm -f test/cli/suite_main.ml && cp suite_main.ml test/cli/
+  $ echo 'stale' > test/cli/accepts.expected
+  $ run env FACADE_FIXTURE=accepts ./suite_main.exe -e file > out 2>&1
+  [1]
+  $ grep 'accept:' out
+  accept: ./suite_main.exe -u -e 'file'
+  $ eval "run env FACADE_FIXTURE=accepts $(sed -n 's/^accept: //p' out)" > again 2>&1
+  [1]
+  $ diff suite_main.ml test/cli/suite_main.ml | grep '^[<>]'
+  <     test "stale literal" (fun () -> expect "fresh" @@ __POS_OF__ "stale");
+  >     test "stale literal" (fun () -> expect "fresh" @@ __POS_OF__ "fresh");
+  $ cat test/cli/accepts.expected
+  stale
+
+-x stops a run on its first failure, and -u passes the test it accepts,
+so over the selection it would run on and accept what the report never
+showed. A run stopped by -x accepts the test it stopped on, by name:
+
+  $ rm -f test/cli/suite_main.ml && cp suite_main.ml test/cli/
+  $ run env FACADE_FIXTURE=accepts ./suite_main.exe -x > out 2>&1
+  [1]
+  $ grep -e 'accept:' -e 'replay:' out
+  accept: ./suite_main.exe -u -f 'stale literal'
+  $ eval "run env FACADE_FIXTURE=accepts $(sed -n 's/^accept: //p' out)" > again 2>&1
+  $ diff suite_main.ml test/cli/suite_main.ml | grep '^[<>]'
+  <     test "stale literal" (fun () -> expect "fresh" @@ __POS_OF__ "stale");
+  >     test "stale literal" (fun () -> expect "fresh" @@ __POS_OF__ "fresh");
+  $ cat test/cli/accepts.expected
+  stale
+  $ rm test/cli/suite_main.ml
 
 In-place acceptance is a developer's edit: refused under CI, before
 anything runs, so a stale baseline stays as it was.

@@ -23,7 +23,6 @@ mylib: 12 tests (seed s1:7be1d2c904aa31f5)
       «r|+ Usage: mytool [OPTIONS] COMMAND»
       «r|+ Commands:»
       «r|+   run»
-    accept: dune exec test/main.exe -- -u -f 'cli › cli help'
 
   «r|FAIL»  «b|cli › version drift»                        «d|0.2ms»
     «d|test/test_cli.ml:14»
@@ -33,7 +32,6 @@ mylib: 12 tests (seed s1:7be1d2c904aa31f5)
     «g|- line two»
     «r|+ line 2»
       line three
-    accept: dune exec test/main.exe -- -u -f 'cli › version drift'
 
   «r|FAIL»  «b|geo › area non-negative»                    «d|18ms»
     «d|test/test_geo.ml:17»
@@ -66,5 +64,6 @@ mylib: 12 tests (seed s1:7be1d2c904aa31f5)
 «y|flaky tests (1):»
 «y|  passed on attempt 3  flaky › eventually»
 
-replay: dune exec test/main.exe -- --seed s1:7be1d2c904aa31f5 --failed
+accept: dune exec test/main.exe -- -u
+replay: dune exec test/main.exe -- --seed s1:7be1d2c904aa31f5
 5 passed «y|(1 flaky)», «y|1 skipped», «r|7 failed» in 6.5s.

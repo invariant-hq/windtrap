@@ -482,8 +482,7 @@ let test_armed_hints () =
   in
   List.iter
     (fun line -> contains ~msg:"the armed run's hint line" ~sub:line doc)
-    (Report_sections.hints ~armed ~filter:(Some "geo › area non-negative")
-       [ Fixtures.prop_failure ]);
+    (Report_sections.hints ~armed [ Fixtures.prop_failure ]);
   contains ~msg:"the replay arms the mutant" ~sub:armed doc;
   not_contains ~msg:"an armed run accepts nothing" ~sub:"accept:" doc
 

@@ -117,7 +117,8 @@ val result : t -> Run.result -> unit
     - the label table of a property.
     - the captured output of the first failure of [r] that carries a
       {!type:Failure.tail}.
-    - {!Report_sections.hints} for the whole test.
+    - {!Report_sections.hints} for the whole test. The {!Report_sections.accept}
+      line of a run started by hand is the run's (see {!finish}).
 
     [result] reads the record, [r.outcome] and [r.counted], and never a message.
 *)
@@ -187,10 +188,12 @@ val finish :
       compact run that has printed no header prints it before the first.
     - what [before_summary ()] writes. It runs after [out] is flushed and
       defaults to doing nothing.
-    - the {!Report_sections.replay} line of the failures of the counted failed
-      results, over the run's selection ([`Failed config]), when one of them
-      drew generated values. It reruns every failed test, so no block carries
-      one.
+    - the {!Report_sections.accept} line and then the {!Report_sections.replay}
+      line of the failures of the counted failed results, each when it is
+      [Some _]. They act on the whole run, so no block carries them. Both are
+      over the run's selection ([`Run config]), save the [accept:] of a
+      [config.bail] run, which is over the path of its one counted failed
+      result.
     - the summary. It is the last line of the transcript, save the one hint of
       an empty run. The verdict of an armed run and the report of a loop follow
       it (see {{!section-mutation}mutation lines}).
@@ -234,9 +237,9 @@ val interrupted :
     the release of the fixture [releasing], or else the gap between two tests.
     It then ends as {!finish} does over [results], with [before_summary],
     without [baselines] and with no failed release, since a signal stops the
-    release before it returns any failure. No [replay:] line prints: the signal
-    leaves the last-failed store as it was, and [--failed] would select the
-    failures of an earlier run. *)
+    release before it returns any failure. No [accept:] or [replay:] line
+    prints: each would run the tests that the signal kept from running, and [-u]
+    would accept baselines that the transcript does not show. *)
 
 (** {1:github The GitHub Actions envelope}
 
@@ -268,9 +271,9 @@ val annotation :
     has one, and its title is [Test failure: <path>]. The message is the
     {!Report_sections.pp_failure} entry of [f] without styling and without the
     source line, hint lines included, with [path] as their filter. An annotation
-    is read alone, away from the run's last-failed store, so its [replay:] names
-    the test. [invocation] and [armed] are those of {!Report_sections.hints},
-    and [invocation] defaults to [`Mirrors]. *)
+    is read alone, away from the transcript, so its [accept:] and its [replay:]
+    name the test. [invocation] and [armed] are those of
+    {!Report_sections.hints}, and [invocation] defaults to [`Mirrors]. *)
 
 val annotations :
   ?invocation:Run.invocation ->

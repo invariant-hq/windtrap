@@ -273,9 +273,9 @@ Each one is also listed under its area below.
 - A failing property's block reads
   `counterexample (case N, shrunk K steps): <value>` and shows the law's
   own failure with its diff. A report whose failures include a property
-  or a stateful test has one `replay: <command> --seed <token> --failed`
-  line above the summary, which reruns the failed tests on the values
-  they drew.
+  or a stateful test has one `replay: <command> --seed <token>` line
+  above the summary, which reruns the run's selection on the values it
+  drew.
 - A counterexample prints with its generator's printer, and a value
   computed by `Gen.map` or `Gen.bind` prints as
   `computed from <pre-image>`.
@@ -370,7 +370,10 @@ Each one is also listed under its area below.
   mismatch and whose source is unchanged since the build; the block says
   why when none is kept.
 - A baseline failure opens on `expect: mismatch` or
-  `expect_file "<path>": no baseline` and ends on an `accept:` line.
+  `expect_file "<path>": no baseline`. Under dune its block ends on
+  `accept: dune promote <file>`; a run by hand ends on one
+  `accept: <command> -u` line above the summary, over the run's
+  selection.
 - A correcting run lists its files under `corrections (N):`.
 - A correction keeps its literal's delimiter and lays out a multi-line
   text like ppx_expect, and a bare `[%expect]` keeps its node.

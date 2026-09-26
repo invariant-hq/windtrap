@@ -150,11 +150,9 @@ temporary directory, keyed by suite, and never grow a _build.
   $ rm -rf "$dir"
 
 A report whose failures include a property's closes on the replay line,
-right above the summary: the command that reruns the failed tests on the
-cases they drew, spelled for the way the run was started. Run by hand,
-it restates the program as it was typed, then the seed, the directory
-that holds the record of failed tests when the run moved it (here
-through WINDTRAP_OUTPUT), and --failed:
+right above the summary: the command that reruns the run's tests, each
+failed test on the case it drew, spelled for the way the run was started.
+Run by hand, it restates the program as it was typed, then the seed:
 
   $ run FACADE_FIXTURE=property ./suite_main.exe > out 2> err
   [1]
@@ -169,7 +167,7 @@ through WINDTRAP_OUTPUT), and --failed:
         actual    2
   ──────────────────────────────────────────────────────────
   
-  replay: ./suite_main.exe --seed SEED -o _logs --failed
+  replay: ./suite_main.exe --seed SEED
   1 failed in DURATION.
   $ cat err
 
@@ -183,7 +181,7 @@ suite pins; this session masks it so it reads the same in either build.
   $ run INSIDE_DUNE=1 FACADE_FIXTURE=property ./sub/suite_main.exe > out 2> err
   [1]
   $ grep 'replay:' out | sed -E 's/s1:[0-9a-f]+/SEED/; s/--instrument-with ppx_windtrap\.mutate //'
-  replay: dune exec sub/suite_main.exe -- --seed SEED -o _logs --failed
+  replay: dune exec sub/suite_main.exe -- --seed SEED
   $ rm -r sub
 
 dune exec takes a word without a slash for the name of a program to
@@ -198,17 +196,16 @@ and the backend's flag is masked as above:
   [1]
   $ sed -n 's/^ *replay: //p' out | sed -E 's/--instrument-with ppx_windtrap\.mutate //' > replay
   $ sed -E 's/s1:[0-9a-f]+/SEED/' replay
-  dune exec ./suite_main.exe -- --seed SEED -o _logs --failed
+  dune exec ./suite_main.exe -- --seed SEED
   $ eval "run INSIDE_DUNE=1 FACADE_FIXTURE=property $(cat replay)" > again 2>&1
   [1]
   $ grep -e 'counterexample' -e 'replay:' again | sed -E 's/s1:[0-9a-f]+/SEED/; s/--instrument-with ppx_windtrap\.mutate //'
       counterexample (case 0, shrunk 1 step): 0
-  replay: dune exec ./suite_main.exe -- --seed SEED -o _logs --failed
+  replay: dune exec ./suite_main.exe -- --seed SEED
   $ cd .. && rm -r proj
 
 A host that passes run no command line gives no program to restate, so
-the line spells the run through the mirrors. --failed has none: dune
-runs again only the actions that failed.
+the line spells the run through the mirrors.
 
   $ run FACADE_FIXTURE=no-argv ./suite_main.exe > out 2> err
   [1]
@@ -217,41 +214,58 @@ runs again only the actions that failed.
 
 Two properties fail beside a test that passes. No block carries a
 replay line: the report closes on one, right above the summary, which
-reruns the failed tests alone with the run's seed:
+reruns the suite with the run's seed:
 
   $ run FACADE_FIXTURE=properties ./suite_main.exe > out 2> err
   [1]
   $ grep -c 'replay:' out
   1
   $ tail -2 out | scrub | sed -E 's/s1:[0-9a-f]+/SEED/'
-  replay: ./suite_main.exe --seed SEED -o _logs --failed
+  replay: ./suite_main.exe --seed SEED
   1 passed, 2 failed in DURATION.
 
-Pasted, the line runs the two properties and no other test, and each
-fails again on the case it failed on, shrunk to the same counterexample:
+Pasted, the line runs the three tests again, and each property fails
+again on the case it failed on, shrunk to the same counterexample:
 
   $ eval "run FACADE_FIXTURE=properties $(sed -n 's/^replay: //p' out)" > again 2>&1
   [1]
   $ head -1 again | sed -E 's/s1:[0-9a-f]+/SEED/'
-  fixture: 2 tests (seed SEED)
+  fixture: 3 tests (seed SEED)
   $ grep 'counterexample' out > before && grep 'counterexample' again > after
   $ wc -l < before | tr -d ' '
   2
   $ diff before after && echo same counterexamples
   same counterexamples
 
-The record keeps the entries of the tests a run did not select, so a
-narrowed run's line restates its selection: after the runs above, one
-that selects the first property alone reruns that one alone.
+A narrowed run's line restates its selection: one that selects the
+first property alone reruns that one alone.
 
   $ run FACADE_FIXTURE=properties ./suite_main.exe -f even > out 2> err
   [1]
   $ grep 'replay:' out | sed -E 's/s1:[0-9a-f]+/SEED/'
-  replay: ./suite_main.exe --seed SEED -o _logs -f 'even' --failed
+  replay: ./suite_main.exe --seed SEED -f 'even'
   $ eval "run FACADE_FIXTURE=properties $(sed -n 's/^replay: //p' out)" > again 2>&1
   [1]
   $ head -1 again | sed -E 's/s1:[0-9a-f]+/SEED/'
   fixture: 1 test (seed SEED)
+
+A run given --failed selected the record of the last failed tests, which
+lies under its -o, so its line restates both. A run of the whole suite
+records the two properties, and the line reruns them:
+
+  $ run FACADE_FIXTURE=properties ./suite_main.exe > /dev/null 2>&1
+  [1]
+  $ run FACADE_FIXTURE=properties ./suite_main.exe --failed > out 2> err
+  [1]
+  $ grep 'replay:' out | sed -E 's/s1:[0-9a-f]+/SEED/'
+  replay: ./suite_main.exe --seed SEED -o _logs --failed
+  $ eval "run FACADE_FIXTURE=properties $(sed -n 's/^replay: //p' out)" > again 2>&1
+  [1]
+  $ head -1 again | sed -E 's/s1:[0-9a-f]+/SEED/'
+  fixture: 2 tests (seed SEED)
+  $ grep 'counterexample' out > before && grep 'counterexample' again > after
+  $ diff before after && echo same counterexamples
+  same counterexamples
 
 An expected failure is the run's record of the test, never a reading of
 its message: a test expected to fail, whose own failure is the sentence

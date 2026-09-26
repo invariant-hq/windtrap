@@ -7,6 +7,12 @@
  (applies_to :whole_subtree)
  (deps suite_main.exe))
 
+; baselines.t accepts literals in a copy of the suite's source.
+
+(cram
+ (applies_to baselines)
+ (deps suite_main.ml))
+
 (executable
  (name send_signal)
  (modules send_signal)

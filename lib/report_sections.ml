@@ -307,35 +307,37 @@ let arm_mirror = function
   | Some id -> strf "WINDTRAP_MUTATE_ARM=%s " (shell_word id)
   | None -> ""
 
-(* Promotion fills a file and never creates one: a missing file must exist
-   before dune's [diff?] registers its correction. *)
-let accept_line invocation ~filter (f : Failure.t) =
-  let accept baseline ~missing =
-    match (invocation, baseline) with
-    | `Exe cmd, (Failure.Literal _ | Failure.File _) ->
-        strf "accept: %s -u%s" cmd (filter_flag filter)
-    | `Mirrors, Failure.File path when missing ->
-        let file = Os.display_path path in
-        strf "accept: touch %s && dune runtest; dune promote %s"
-          (shell_quote file) (shell_word file)
-    | `Mirrors, Failure.File path ->
-        "accept: dune promote " ^ shell_word (Os.display_path path)
-    | `Mirrors, Failure.Literal _ -> (
-        match f.loc with
-        | Some loc -> "accept: dune promote " ^ shell_word loc.Loc.file
-        | None -> "accept: dune promote")
-  in
+(* A baseline failure whose correction a command accepts, with whether its
+   baseline is missing. A withheld correction accepts nothing. *)
+let acceptable (f : Failure.t) =
   match f.kind with
   | Failure.Baseline { baseline; state = Failure.Missing _; withheld = None } ->
-      Some (accept baseline ~missing:true)
+      Some (baseline, true)
   | Failure.Baseline { baseline; state = Failure.Mismatch _; withheld = None }
     ->
-      Some (accept baseline ~missing:false)
+      Some (baseline, false)
   | Failure.Baseline { withheld = Some _; _ }
   | Failure.Baseline { state = Failure.Unresolvable _; _ }
   | Failure.Equality _ | Failure.Containment _ | Failure.Raise _
   | Failure.Property _ | Failure.Timeout _ | Failure.Message _ ->
       None
+
+(* Promotion fills a file and never creates one: a missing file must exist
+   before dune's [diff?] registers its correction. *)
+let promote_line (f : Failure.t) =
+  match acceptable f with
+  | None -> None
+  | Some (Failure.File path, true) ->
+      let file = Os.display_path path in
+      Some
+        (strf "accept: touch %s && dune runtest; dune promote %s"
+           (shell_quote file) (shell_word file))
+  | Some (Failure.File path, false) ->
+      Some ("accept: dune promote " ^ shell_word (Os.display_path path))
+  | Some (Failure.Literal _, _) -> (
+      match f.loc with
+      | Some loc -> Some ("accept: dune promote " ^ shell_word loc.Loc.file)
+      | None -> Some "accept: dune promote")
 
 let withheld_fact (f : Failure.t) =
   let kept_none reason = Some ("no correction was kept: " ^ reason) in
@@ -363,7 +365,7 @@ let withheld_fact (f : Failure.t) =
     ->
       None
 
-let hints ?armed ?(invocation = `Mirrors) ~filter failures =
+let hints ?armed ?(invocation = `Mirrors) failures =
   let distinct lines =
     List.rev
       (List.fold_left
@@ -372,14 +374,17 @@ let hints ?armed ?(invocation = `Mirrors) ~filter failures =
   in
   match armed with
   | Some _ -> []
-  | None ->
+  | None -> (
       distinct (List.filter_map withheld_fact failures)
-      @ distinct (List.filter_map (accept_line invocation ~filter) failures)
+      @
+      match invocation with
+      | `Mirrors -> distinct (List.filter_map promote_line failures)
+      | `Exe _ -> [])
 
-(* A command that runs a narrowed run's tests again restates the run's
-   selection. [--failed] has no mirror and a pattern's mirror holds one
-   pattern: under the mirrors those are left out, and the command runs more
-   tests, never fewer. *)
+(* A command that runs a run's tests again restates the run's selection.
+   [--failed] reads the last-failed store under the run's [-o]. It has no
+   mirror, and a pattern's mirror holds one pattern: under the mirrors those
+   are left out, and the command runs more tests, never fewer. *)
 let selection_words invocation (c : Run.config) =
   let flag name var = function [] -> [] | values -> [ (name, var, values) ] in
   let patterns name var values =
@@ -402,13 +407,30 @@ let selection_words invocation (c : Run.config) =
         (List.concat_map
            (fun (name, _, values) -> List.map (strf " %s %s" name) values)
            flags)
-      ^ if c.failed_only then " --failed" else ""
+      ^
+      if not c.failed_only then ""
+      else if String.equal c.log_dir (Os.default_log_dir ()) then " --failed"
+      else strf " -o %s --failed" (shell_word (Os.display_artifact c.log_dir))
   | `Mirrors ->
       String.concat ""
         (List.map
            (fun (_, var, values) ->
              strf "%s=%s " var (String.concat "," values))
            flags)
+
+(* A build action's corrections are dune's to promote, file by file. *)
+let accept ?armed ?(invocation = `Mirrors) ~tests failures =
+  match (armed, invocation) with
+  | Some _, _ | None, `Mirrors -> None
+  | None, `Exe cmd ->
+      if not (List.exists (fun f -> Option.is_some (acceptable f)) failures)
+      then None
+      else
+        Some
+          (strf "accept: %s -u%s" cmd
+             (match tests with
+             | `Run config -> selection_words invocation config
+             | `Filter filter -> filter_flag filter))
 
 (* The seed and the case count of a failure whose case was generated. *)
 let drawn (f : Failure.t) =
@@ -423,12 +445,8 @@ let drawn (f : Failure.t) =
       None
 
 (* A late case replays only under at least as many cases as the failing run
-   generated, so the largest count is restated. [--failed] reads the store
-   under the run's [-o]. The store keeps the entries of the tests a run did
-   not execute, so the selection is restated, and [-x] for the tests it did
-   not reach. Dune runs again the actions that failed,
-   which is what [--failed] asks under the mirrors, and an armed action
-   exists only in the instrumented build. *)
+   generated, so the largest count is restated. An armed action exists only
+   in the instrumented build. *)
 let replay ?armed ?(invocation = `Mirrors) ~tests failures =
   match List.filter_map drawn failures with
   | [] -> None
@@ -450,13 +468,7 @@ let replay ?armed ?(invocation = `Mirrors) ~tests failures =
               | Some n -> strf " --prop-count %d" n
               | None -> "")
               (match tests with
-              | `Failed (config : Run.config) ->
-                  (if String.equal config.log_dir (Os.default_log_dir ()) then
-                     ""
-                   else " -o " ^ shell_word (Os.display_artifact config.log_dir))
-                  ^ (if config.bail then " -x" else "")
-                  ^ selection_words invocation
-                      { config with failed_only = true }
+              | `Run config -> selection_words invocation config
               | `Filter filter -> filter_flag filter)
         | `Mirrors ->
             strf "replay: %sWINDTRAP_SEED=%s %s%sdune runtest%s"
@@ -465,7 +477,7 @@ let replay ?armed ?(invocation = `Mirrors) ~tests failures =
               | Some n -> strf "WINDTRAP_PROP_COUNT=%d " n
               | None -> "")
               (match tests with
-              | `Failed config -> selection_words invocation config
+              | `Run config -> selection_words invocation config
               | `Filter (Some f) -> strf "WINDTRAP_FILTER=%s " (shell_quote f)
               | `Filter None -> "")
               (match armed with
@@ -1068,7 +1080,9 @@ let pp_failure ~ansi ?(terminal = false) ?(excerpt = false)
     else
       List.map
         (fun h -> [ plain h ])
-        (hints ?armed ~invocation ~filter [ f ]
+        (hints ?armed ~invocation [ f ]
+        @ Option.to_list
+            (accept ?armed ~invocation ~tests:(`Filter filter) [ f ])
         @ Option.to_list
             (replay ?armed ~invocation ~tests:(`Filter filter) [ f ]))
   in

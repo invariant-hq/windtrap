@@ -106,8 +106,8 @@ geo: 5 passed in 2.0ms (seed s1:2517c1601bf6fe73).
 When the law fails, the property shrinks the value to a counterexample
 and prints it with the case that found it, the number of shrink steps,
 and the assertion that failed. The report closes on one `replay:` line,
-above the summary, which runs the failed tests again under the run's
-seed, and each finds the same counterexample with the same version of
+above the summary, which runs the run's tests again under its seed, and
+each failed test finds the same counterexample with the same version of
 windtrap. The counterexample transcripts of this page pass
 that seed with `--seed`. A run without it draws a new seed, and the case
 and the number of shrink steps change. Renaming or regrouping the property changes the
@@ -151,8 +151,8 @@ geo: 1 test (seed s1:5b58964be30f69a8)
                            ~  ~
 ──────────────────────────────────────────────────────────
 
-replay: dune exec examples/03-property-testing/test_geo.exe -- --seed s1:5b58964be30f69a8 -f 'to_string' --failed
-1 failed in 1.4ms.
+replay: dune exec examples/03-property-testing/test_geo.exe -- --seed s1:5b58964be30f69a8 -f 'to_string'
+1 failed in 1.6ms.
 ```
 
 ## Keeping a counterexample as a regression
@@ -312,6 +312,6 @@ geo: 1 test (seed s1:5b58964be30f69a8)
       actual    -3.141592653589793
 ──────────────────────────────────────────────────────────
 
-replay: dune exec examples/03-property-testing/test_geo.exe -- --seed s1:5b58964be30f69a8 -f 'total_area' --failed
-1 failed in 1.0ms.
+replay: dune exec examples/03-property-testing/test_geo.exe -- --seed s1:5b58964be30f69a8 -f 'total_area'
+1 failed in 0.7ms.
 ```

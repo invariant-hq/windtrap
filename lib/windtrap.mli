@@ -577,8 +577,9 @@ val pass : 'a testable
     under another OCaml version and whatever else the suite holds.
 
     A report whose failed tests include a generated case of a property ends on
-    one line, [replay: <command> --seed <token> --failed], which runs the failed
-    tests again with the values they drew. No failure block carries its own.
+    one line, [replay: <command> --seed <token>] and the run's selection, which
+    runs the selected tests again, each failed test on the values it drew. No
+    failure block carries its own.
 
     A law must be deterministic, because the search for a counterexample runs it
     again on candidate inputs.

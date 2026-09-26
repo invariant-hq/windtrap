@@ -7,9 +7,9 @@
 
     The module holds the one projection of a {!Failure.t} that every transport
     of a run shares, and the section vocabulary of the coverage and mutation
-    reports. {!pp_failure} formats the entry of a failure, {!hints} the commands
-    that close its block and {!replay} the command that ends a report.
-    {!coverage_report}, {!survivor_block}, {!mutation_closing} and
+    reports. {!pp_failure} formats the entry of a failure, {!hints} the lines
+    that close its block, and {!accept} and {!replay} the commands that end a
+    report. {!coverage_report}, {!survivor_block}, {!mutation_closing} and
     {!mutation_report} build {!section} lists, which {!print} writes.
 
     Everything printed here derives from data: a {!Failure.t}, a
@@ -71,8 +71,8 @@ val pp_failure :
     - [f.msg], line by line.
     - the facts of [f.kind], as the paragraphs below list them.
     - under [~hints:true], the lines of {!hints} for [f] alone, then its
-      {!replay} line for the test at [filter]. A transport that shows one
-      failure at a time, away from the report, carries these.
+      {!accept} and {!replay} lines for the test at [filter]. A transport that
+      shows one failure at a time, away from the report, carries these.
 
     The captured output of the test is no part of an entry, because it belongs
     to the test and each transport places it.
@@ -84,8 +84,9 @@ val pp_failure :
       relative path is tried under {!Os.project_root} first and then as given.
       The line is bounded and escaped as a single-line value is.
     - [hints] defaults to [true].
-    - [filter], [invocation] and [armed] are the arguments of {!hints} and of
-      {!replay}. Without [filter] a command carries no filter.
+    - [invocation] and [armed] are the arguments of {!hints}, {!accept} and
+      {!replay}, and [filter] is the path of their [`Filter]. Without [filter] a
+      command carries no filter.
 
     {b Equality.} Two single-line renderings print as the expected side over the
     actual side, and the spans of {!Diff.refine} mark what changed. A line of
@@ -122,38 +123,49 @@ val max_lines : int
     {!Report} at most that many lines of captured output in a failure block. *)
 
 val hints :
-  ?armed:string ->
-  ?invocation:Run.invocation ->
-  filter:string option ->
-  Failure.t list ->
-  string list
-(** [hints ~filter failures] is the hint lines of a block whose entries are
-    [failures], unindented and unstyled. A hint line is a word and a command
-    that runs as pasted and says what the block does not.
+  ?armed:string -> ?invocation:Run.invocation -> Failure.t list -> string list
+(** [hints failures] is the hint lines of a block whose entries are [failures],
+    unindented and unstyled. A hint line says what the block does not: a fact,
+    or a word and a command that runs as pasted.
 
-    The lines are one [accept:] for each baseline failure that is missing or
-    mismatched. Equal lines print once, and the result is [[]] when no failure
-    has a command. A baseline failure whose correction is withheld
-    ([withheld = Some _]) has no [accept:], since the command would accept
-    nothing. The lines then open with one fact line per such failure, in their
-    order, equal lines once. A block has no [replay:]: the report has one
-    ({!replay}).
+    The lines open with one fact line per baseline failure whose correction is
+    withheld ([withheld = Some _]), in their order, since no command accepts it.
+    Under [`Mirrors] one [accept:] follows for each other baseline failure that
+    is missing or mismatched: [dune promote] and the file that holds the
+    baseline. Under [`Exe _] none does: the report ends on one {!accept} for the
+    whole run. Equal lines print once, and the result is [[]] when no failure
+    has a line. A block has no [replay:] either: the report has one ({!replay}).
 
-    - [filter] is the path of the block's test as a string. It is single-quoted
-      into each command, in the [$'…'] form when it holds a control byte, so a
-      hint is one line whatever the path holds. [None] spells the commands
-      without a filter.
     - [invocation] is how the run was started ({!type:Run.invocation}) and
-      defaults to [`Mirrors]. Under [`Exe cmd] an [accept:] is [cmd] as given,
-      [-u] and the filter. Under [`Mirrors] it is [dune promote] and the file
-      that holds the baseline.
+      defaults to [`Mirrors].
     - [armed] is the identifier of the armed mutant. The result is then [[]],
       because the baseline failures of an armed run are the mutant's. *)
+
+val accept :
+  ?armed:string ->
+  ?invocation:Run.invocation ->
+  tests:[ `Run of Run.config | `Filter of string option ] ->
+  Failure.t list ->
+  string option
+(** [accept ~tests failures] is the [accept:] line that runs the [tests] again
+    under [-u], unindented and unstyled. It is [None] under [`Mirrors], where
+    each block names its file ({!hints}), in an armed run, whose baseline
+    failures are the mutant's, and when no failure is a baseline failure that is
+    missing or mismatched and whose correction is kept. A test that passed has
+    no correction, so the line accepts those of [failures] when every test
+    produces the text it produced in the run.
+
+    - [tests] selects what runs, as for {!replay}. [`Run config] is the
+      selection of a run that executed all of it: an accepted test passes, so
+      the new run would go past a test where [-x] stopped the old one.
+    - [invocation] defaults to [`Mirrors]. Under [`Exe cmd] the line is [cmd] as
+      given, [-u] and then the flags of [tests].
+    - [armed] is the identifier of the armed mutant. *)
 
 val replay :
   ?armed:string ->
   ?invocation:Run.invocation ->
-  tests:[ `Failed of Run.config | `Filter of string option ] ->
+  tests:[ `Run of Run.config | `Filter of string option ] ->
   Failure.t list ->
   string option
 (** [replay ~tests failures] is the [replay:] line that runs the [tests] again
@@ -162,22 +174,20 @@ val replay :
     {!Failure.Timeout} of a property's case, whose case was generated. The line
     carries the armed mutant, the seed of the first such failure (a run has one
     root) and, when a failure's [count] is [Some _] (see {!type:Failure.kind}),
-    the largest such count.
+    the largest such count. A test draws its values from the seed and its path,
+    so each failed test draws what it failed on.
 
-    - [tests] selects what runs. [`Failed config] is the tests that failed in
-      the run that [config] configured: the line restates the run's [-o] when
+    - [tests] selects what runs. [`Run config] is the tests of the run that
+      [config] configured: the line restates its [-f], [-e], [--tag],
+      [--exclude-tag] and [--shard], and its [--failed] after its [-o] when
       [config.log_dir] is not {!Os.default_log_dir}, since the last-failed store
-      lies under it, then its [-f], [-e], [--tag], [--exclude-tag] and
-      [--shard], and [-x] when [config.bail] holds, then [--failed], so the
-      store adds no test that the run did not select or reach. [`Filter filter]
-      is the test at the path [filter], or every test when it is [None].
+      lies under it. [`Filter filter] is the test at the path [filter], or every
+      test when it is [None].
     - [invocation] defaults to [`Mirrors]. Under [`Exe cmd] the line is [cmd] as
       given and then its flags. Under [`Mirrors] it is the mirrors of those
-      flags in front of [dune runtest], without [-o]. [-x] and [--failed] have
-      no mirror: dune runs again only the actions that failed, which stands for
-      [--failed] and reads no store. A filter or an exclusion of several
-      patterns, which no mirror holds, is left out, so the line runs more tests,
-      never fewer.
+      flags in front of [dune runtest]. [--failed] has no mirror, and a filter
+      or an exclusion of several patterns, which no mirror holds, is left out,
+      so the line runs more tests, never fewer.
     - [armed] is the identifier of the armed mutant, passed through
       {!shell_word}. The line arms it, and under [`Mirrors] names the mutation
       backend, since the armed action exists only in that build. *)
@@ -423,12 +433,11 @@ val mutation_closing : config:Run.config -> mutation -> section list
       opening rule that carries the number of mutants and a closing rule.
     - when [m.survivors] is not empty, the [reproduce:] command, which arms the
       first survivor of [m] under the selection of [config]. Under [`Exe cmd],
-      the invocation of [config], it is [cmd], [--arm] and the run's [-f], [-e],
-      [--tag], [--exclude-tag], [--shard] and [--failed], a repeatable flag once
-      per value. Under [`Mirrors] it is the mirrors of the same flags in front
-      of a forced [dune runtest] that names the mutation backend, except
-      [--failed] and a filter or an exclusion of several patterns, which no
-      mirror can hold.
+      the invocation of [config], it is [cmd], [--arm] and the run's selection
+      as {!replay} restates it, a repeatable flag once per value. Under
+      [`Mirrors] it is the mirrors of the same flags in front of a forced
+      [dune runtest] that names the mutation backend, except [--failed] and a
+      filter or an exclusion of several patterns, which no mirror can hold.
     - the outcome line, always last. *)
 
 val mutation_report : invocation:Run.invocation -> mutation -> section list

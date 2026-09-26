@@ -183,12 +183,15 @@ Read the whole block before editing anything. It holds:
 - `captured output`, the last lines the test printed, and `full log:`,
   the file with all of them. `[setup]` or `[teardown]` before the
   location when the failure is in one.
-- A last command when it says something new: `accept:` accepts a
-  baseline, `reproduce:` arms a mutant.
+- A last command when it says something new: under dune, `accept:`
+  promotes a baseline's file; `reproduce:` arms a mutant.
 
-A report whose failures include a property or a stateful test has one
-`replay:` line, right above the summary: it reruns the failed tests
-with the run's seed, so each draws the values it failed on.
+Two commands act on the whole run and sit right above the summary. Run
+by hand, a report whose failures include a stale baseline has one
+`accept:` line: it reruns the run's tests with `-u`. A report whose
+failures include a property or a stateful test has one `replay:` line:
+it reruns the run's tests with the run's seed, so each failed test draws
+the values it failed on.
 
 Then:
 
@@ -213,9 +216,9 @@ block in
   keeps none from a suite where another test failed. Dune holds one
   correction per stanza per run, so with two stale files, promote, run
   the tests, promote again.
-- Without such a stanza, `accept:` reruns the test with `-u`, which
-  rewrites the literal or the file in place. Build again before the next
-  run. `-u` is refused under CI.
+- Without such a stanza, the report's `accept:` line reruns the run's
+  tests with `-u`, which rewrites every stale literal and file in place.
+  Build again before the next run. `-u` is refused under CI.
 - A block with `no correction was kept:` has another failure to fix
   first. `correction refused (line N):` says why the source cannot take
   the correction.
