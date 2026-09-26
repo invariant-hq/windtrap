@@ -1,13 +1,11 @@
 (tests
  (names
   test_os
-  test_stateful
   test_report
   test_report_junit
   test_cli)
  (modules
   test_os
-  test_stateful
   test_report
   test_report_junit
   test_cli)
@@ -41,6 +39,15 @@
   (progn
    (run %{test} --corrected)
    (diff? test_failure.ml test_failure.ml.corrected))))
+
+(test
+ (name test_stateful)
+ (modules test_stateful)
+ (libraries windtrap)
+ (action
+  (progn
+   (run %{test} --corrected)
+   (diff? test_stateful.ml test_stateful.ml.corrected))))
 
 (test
  (name test_check)
