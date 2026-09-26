@@ -1,4 +1,4 @@
 File "./mdx_cases.ml", line 153, characters 6-24:
 153 |     [%expect.unreachable])
             ^^^^^^^^^^^^^^^^^^
-Error: [%expect.unreachable] is not supported by ppx_windtrap
+Error: [%expect.unreachable] is not supported by ppx_windtrap; call Windtrap.fail at the point the body must not reach

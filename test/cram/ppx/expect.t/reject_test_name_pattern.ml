@@ -1,3 +1,3 @@
-(* A [let%test] name is refused with [let%expect_test]'s message. *)
+(* A [let%test] name is refused with a message that names [let%test]. *)
 
 let%test name = ()

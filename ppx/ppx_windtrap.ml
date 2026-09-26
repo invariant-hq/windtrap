@@ -51,25 +51,36 @@ let is_expect_family name =
   || String.starts_with ~prefix:"expect." name
   || String.starts_with ~prefix:"expectation." name
 
+(* What windtrap offers in place of a construct that has a counterpart. *)
+let instead = function
+  | "expect.unreachable" ->
+      "; call Windtrap.fail at the point the body must not reach"
+  | "expect.if_reached" -> "; use [%expect], which must be reached"
+  | "expect.uncaught_exn" ->
+      "; catch and print the exception before an [%expect]"
+  | _ -> ""
+
 let err_unsupported ~loc name =
-  Location.raise_errorf ~loc "[%%%s] is not supported by ppx_windtrap" name
+  Location.raise_errorf ~loc "[%%%s] is not supported by ppx_windtrap%s" name
+    (instead name)
 
 (* No attribute of the family is implemented, wherever it is placed. *)
 let reject_attribute attr =
   let name = attr.attr_name in
   if is_expect_family name.txt then
     Location.raise_errorf ~loc:name.loc
-      "[@@@@%s] is not supported by ppx_windtrap" name.txt
+      "attribute %s is not supported by ppx_windtrap%s" name.txt
+      (instead name.txt)
 
 (* Names and tags *)
 
-let test_name ~loc pat =
+let test_name ~extension ~loc pat =
   match pat.ppat_desc with
   | Ppat_constant (Pconst_string (name, _, _)) -> name
   | Ppat_any -> Printf.sprintf "line_%d" loc.loc_start.pos_lnum
   | _ ->
       Location.raise_errorf ~loc
-        "Expected let%%expect_test \"name\" = ... or let%%expect_test _ = ..."
+        "Expected let%%%s \"name\" = ... or let%%%s _ = ..." extension extension
 
 let is_tags attr = String.equal attr.attr_name.txt "tags"
 
@@ -93,13 +104,13 @@ let tags_of attr =
     | PStr [ { pstr_desc = Pstr_eval (e, _); _ } ] -> [ tag e ]
     | _ -> err ()
 
-(* The name, tags and body of the test [let NAME = BODY]. The tags are
-   [NAME]'s, and its other attributes and the binding's are dropped. *)
-let test_of_binding ~loc vb =
+(* The name, tags and body of the test [let%EXTENSION NAME = BODY]. The tags
+   are [NAME]'s, and its other attributes and the binding's are dropped. *)
+let test_of_binding ~extension ~loc vb =
   List.iter reject_attribute vb.pvb_attributes;
   List.iter reject_attribute vb.pvb_pat.ppat_attributes;
   let tags = List.concat_map tags_of vb.pvb_pat.ppat_attributes in
-  (test_name ~loc vb.pvb_pat, tags, vb.pvb_expr)
+  (test_name ~extension ~loc vb.pvb_pat, tags, vb.pvb_expr)
 
 (* Registrations *)
 
@@ -238,7 +249,9 @@ let expect_test =
       let at = Expansion_context.Extension.extension_point_loc ctxt in
       match items with
       | [ { pstr_desc = Pstr_value (Nonrecursive, [ vb ]); _ } ] ->
-          let name, tags, body = test_of_binding ~loc:at vb in
+          let name, tags, body =
+            test_of_binding ~extension:"expect_test" ~loc:at vb
+          in
           let stop = body.pexp_loc.loc_end in
           let body, nodes = expect_body body in
           let loc = { at with loc_ghost = true } in
@@ -269,7 +282,7 @@ let test =
       let at = Expansion_context.Extension.extension_point_loc ctxt in
       match items with
       | [ { pstr_desc = Pstr_value (Nonrecursive, [ vb ]); _ } ] ->
-          let name, tags, body = test_of_binding ~loc:at vb in
+          let name, tags, body = test_of_binding ~extension:"test" ~loc:at vb in
           when_enabled [ add_test ~ctxt ~tags name body ]
       | [
        {

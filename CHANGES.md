@@ -367,7 +367,7 @@ Each one is also listed under its area below.
 - (breaking) The ppx_expect forms windtrap lacks are compile errors, as
   `[%expect.unreachable]` was in 0.1; an attribute such as
   `[@@expect.uncaught_exn]`, which 0.1 dropped silently, fails with
-  `[@@expect.uncaught_exn] is not supported by ppx_windtrap`.
+  `attribute expect.uncaught_exn is not supported by ppx_windtrap; catch and print the exception before an [%expect]`.
 - (breaking) The cookie `inline-test=drop` is not read; dune's
   `inline_tests` cookie drops the test forms.
 - `-u` rewrites each literal and each `expect_file` file in place, and

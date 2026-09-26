@@ -179,7 +179,7 @@ A refusal is an error located at the node, and the driver exits 1:
   File "./reject_dropped_body.ml", line 3, characters 33-43:
   3 | let%test "dropped" = ignore (1 [@expect.foo])
                                        ^^^^^^^^^^
-  Error: [@@expect.foo] is not supported by ppx_windtrap
+  Error: attribute expect.foo is not supported by ppx_windtrap
   [1]
 
   $ expand --impl ./reject_expect_outside.ml
@@ -214,14 +214,14 @@ A refusal is an error located at the node, and the driver exits 1:
   File "./reject_if_reached.ml", line 2, characters 18-35:
   2 |   if false then [%expect.if_reached {| never |}];
                         ^^^^^^^^^^^^^^^^^
-  Error: [%expect.if_reached] is not supported by ppx_windtrap
+  Error: [%expect.if_reached] is not supported by ppx_windtrap; use [%expect], which must be reached
   [1]
 
   $ expand --impl ./reject_leftover_attr.ml
   File "./reject_leftover_attr.ml", line 3, characters 13-25:
   3 | let x = (1 [@expect_exact])
                    ^^^^^^^^^^^^
-  Error: [@@expect_exact] is not supported by ppx_windtrap
+  Error: attribute expect_exact is not supported by ppx_windtrap
   [1]
 
   $ expand --impl ./reject_malformed_tags.ml
@@ -242,7 +242,7 @@ A refusal is an error located at the node, and the driver exits 1:
   File "./reject_module_attr.ml", line 4, characters 3-22:
   4 | [@@expect.uncaught_exn {| (Failure boom) |}]
          ^^^^^^^^^^^^^^^^^^^
-  Error: [@@expect.uncaught_exn] is not supported by ppx_windtrap
+  Error: attribute expect.uncaught_exn is not supported by ppx_windtrap; catch and print the exception before an [%expect]
   [1]
 
   $ expand --impl ./reject_name_pattern.ml
@@ -263,7 +263,7 @@ A refusal is an error located at the node, and the driver exits 1:
   File "./reject_pattern_attr.ml", line 1, characters 27-46:
   1 | let%expect_test ("named" [@expect.uncaught_exn {| boom |}]) =
                                  ^^^^^^^^^^^^^^^^^^^
-  Error: [@@expect.uncaught_exn] is not supported by ppx_windtrap
+  Error: attribute expect.uncaught_exn is not supported by ppx_windtrap; catch and print the exception before an [%expect]
   [1]
 
   $ expand --impl ./reject_rec_binding.ml
@@ -284,7 +284,7 @@ A refusal is an error located at the node, and the driver exits 1:
   File "./reject_test_binding_attr.ml", line 1, characters 21-40:
   1 | let%test "n" = () [@@expect.uncaught_exn {| |}]
                            ^^^^^^^^^^^^^^^^^^^
-  Error: [@@expect.uncaught_exn] is not supported by ppx_windtrap
+  Error: attribute expect.uncaught_exn is not supported by ppx_windtrap; catch and print the exception before an [%expect]
   [1]
 
   $ expand --impl ./reject_test_item.ml
@@ -298,14 +298,14 @@ A refusal is an error located at the node, and the driver exits 1:
   File "./reject_test_name_pattern.ml", line 3, characters 0-18:
   3 | let%test name = ()
       ^^^^^^^^^^^^^^^^^^
-  Error: Expected let%expect_test "name" = ... or let%expect_test _ = ...
+  Error: Expected let%test "name" = ... or let%test _ = ...
   [1]
 
   $ expand --impl ./reject_test_pattern_attr.ml
   File "./reject_test_pattern_attr.ml", line 1, characters 16-26:
   1 | let%test ("n" [@expect.foo]) = ()
                       ^^^^^^^^^^
-  Error: [@@expect.foo] is not supported by ppx_windtrap
+  Error: attribute expect.foo is not supported by ppx_windtrap
   [1]
 
   $ expand --impl ./reject_two_bindings.ml
@@ -319,14 +319,14 @@ A refusal is an error located at the node, and the driver exits 1:
   File "./reject_uncaught_exn.ml", line 4, characters 3-22:
   4 | [@@expect.uncaught_exn {| (Failure boom) |}]
          ^^^^^^^^^^^^^^^^^^^
-  Error: [@@expect.uncaught_exn] is not supported by ppx_windtrap
+  Error: attribute expect.uncaught_exn is not supported by ppx_windtrap; catch and print the exception before an [%expect]
   [1]
 
   $ expand --impl ./reject_unreachable.ml
   File "./reject_unreachable.ml", line 2, characters 18-36:
   2 |   if false then [%expect.unreachable];
                         ^^^^^^^^^^^^^^^^^^
-  Error: [%expect.unreachable] is not supported by ppx_windtrap
+  Error: [%expect.unreachable] is not supported by ppx_windtrap; call Windtrap.fail at the point the body must not reach
   [1]
 
 Under the inline_tests cookie "enabled", the expansion is the one without

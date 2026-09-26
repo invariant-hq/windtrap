@@ -88,8 +88,8 @@
     the whole test, a bad cookie at the command line, and the others at the
     attribute, node or name at fault:
     - A [NAME] that is not a string literal or [_]:
-      [Expected let%expect_test "name" = ... or let%expect_test _ = ...], for a
-      [let%test] too.
+      [Expected let%expect_test "name" = ... or let%expect_test _ = ...], and
+      [let%test] in place of [let%expect_test] for a [let%test].
     - A [let%expect_test] that is not one non-recursive binding:
       [Expected let%expect_test <name> = <expr>]. A [%test] item that is not one
       non-recursive binding or one named module, [module%test _] included:
@@ -106,8 +106,14 @@
       than [expect.output], anywhere:
       [[%NAME] is not supported by ppx_windtrap].
     - An attribute named [expect], [expect_exact], [expectation], [expect.X] or
-      [expectation.X], anywhere: [[@@NAME] is not supported by ppx_windtrap],
-      spelled with [@@] whatever its placement.
+      [expectation.X], anywhere:
+      [attribute NAME is not supported by ppx_windtrap].
+    - Three of these refusals then name what to write instead:
+      [; call Windtrap.fail at the point the body must not reach] for
+      [[%expect.unreachable]], [; use [%expect], which must be reached] for
+      [[%expect.if_reached]], and
+      [; catch and print the exception before an [%expect]] for an
+      [expect.uncaught_exn] attribute.
     - An [inline_tests] cookie of another string value:
       [invalid 'inline_tests' cookie (VALUE), expected one of: enabled, disabled
        or ignored]. *)
