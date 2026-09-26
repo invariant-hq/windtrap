@@ -8,7 +8,8 @@ non-obvious.
 
 ## The five families
 
-`test/` has five families, the support library `support/` and one `dune`
+`test/` has five families, `cram/ppx/` (the rewriters' sessions,
+described under `ppx/`), the support library `support/` and one `dune`
 (the self-aliases, below).
 
 - `unit/`: windtrap suites over the library's modules, one executable
@@ -143,7 +144,7 @@ the child's row, not the padding of a table the core's rows widen.
 Every golden is accepted the way windtrap tells its users to accept one,
 and every promoted diff is reviewed as a code change.
 
-- Cram sessions (`test/cli`, `examples/x-blueprint/test/cram`) and rule
+- Cram sessions (`test/cli`, `test/cram/ppx`, `examples/x-blueprint/test/cram`) and rule
   goldens (the `.expected` files under `test/ppx`,
   `test/cli/inline_runner` and `test/conformance`): `dune promote` after
   the failing `dune runtest`.
