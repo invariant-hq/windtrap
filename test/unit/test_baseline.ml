@@ -954,6 +954,8 @@ let writing =
       test
         "a source that cannot be read at the write is refused, for a reason \
          that names no path" (fun () ->
+          if Sys.win32 then
+            skip ~reason:"a directory does not open as a file here" ();
           let root = project [ ("test/t.ml", source) ] in
           let replace _t =
             Sys.remove (Filename.concat root "test/t.ml");

@@ -91,6 +91,8 @@ let load_text text =
 let collection files =
   fst (ok "the fixture dump loads" (load_text (dump files)))
 
+let no_removed_cwd = "Windows cannot remove a process's working directory"
+
 let write_source root path contents =
   let path = Filename.concat root path in
   let rec mkdir_p dir =
@@ -614,6 +616,7 @@ let filename_tests =
           (I.output_file C.format ~exe:"/opt/t.exe"));
     test "what needs an unreadable current directory raises Sys_error"
       (fun () ->
+        if Sys.win32 then skip ~reason:no_removed_cwd ();
         let gone = Filename.concat (temp_dir ()) "gone" in
         Sys.mkdir gone 0o755;
         chdir gone;
@@ -1059,13 +1062,16 @@ let report_tests =
           (option string) (Some three_lines)
           (report ~roots:[ directory; whole ] t).C.source;
         (* An absolute recorded name, found as it is before any root is
-           tried, where a root holds a stale copy under the same name. *)
-        let recorded = Filename.concat (temp_dir ()) "recorded.ml" in
-        write_source "/" recorded three_lines;
-        write_source short recorded "short\n";
-        let t = collection [ (recorded, [ (pt 0 20, 0) ]) ] in
-        equal ~msg:"the recorded name comes before every root" (option string)
-          (Some three_lines) (report ~roots:[ short ] t).C.source);
+           tried, where a root holds a stale copy under the same name. No
+           directory holds a Windows absolute name, drive and all. *)
+        if not Sys.win32 then begin
+          let recorded = Filename.concat (temp_dir ()) "recorded.ml" in
+          write_source "/" recorded three_lines;
+          write_source short recorded "short\n";
+          let t = collection [ (recorded, [ (pt 0 20, 0) ]) ] in
+          equal ~msg:"the recorded name comes before every root" (option string)
+            (Some three_lines) (report ~roots:[ short ] t).C.source
+        end);
   ]
 
 (* The at_exit dump, end to end *)
@@ -1271,6 +1277,7 @@ let dump_tests =
           (list string) []
           (Array.to_list (Sys.readdir later)));
     test "a forked child that leaves through exit dumps too" (fun () ->
+        if Sys.win32 then skip ~reason:"POSIX only" ();
         (* Under the variable the two share one path, and the parent,
            which waits for the child, is the last writer. *)
         let dump = Filename.concat (temp_dir ()) "fork.coverage" in
@@ -1306,6 +1313,7 @@ let dump_tests =
     test
       "a first registration that needs an unreadable current directory warns \
        and writes no dump" (fun () ->
+        if Sys.win32 then skip ~reason:no_removed_cwd ();
         (* The child removes its directory, with the copy of itself in it,
            before it registers. A relative path needs the directory; an
            absolute one does not, and then only the identity is missing,

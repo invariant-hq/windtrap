@@ -272,6 +272,7 @@ let real_project () =
 
 let two_executables =
   test "two executables that disagree merge to the project's truth" @@ fun () ->
+  if Sys.win32 then skip ~reason:"mutation testing needs Unix.fork" ();
   let root = real_project () in
   let at binding =
     Printf.sprintf "test/instr/mutants_cmd/calc.ml:%d:" (calc_line binding)

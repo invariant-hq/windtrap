@@ -320,7 +320,10 @@ let standalone_layout =
   let exe = Filename.concat proj "bin/child.exe" in
   write_file exe (read_file child_exe);
   Unix.chmod exe 0o755;
-  write_file (Filename.concat proj child_src_path) child_source;
+  (* No directory holds a Windows absolute name, drive and all; the source is
+     read at its recorded name there. *)
+  if not Sys.win32 then
+    write_file (Filename.concat proj child_src_path) child_source;
   let code, out, _ =
     capture ~cwd:proj ~env:child_src_env exe [ "--color"; "never" ]
   in
@@ -1509,6 +1512,7 @@ let discovery_edge_tests =
           ~sub:"coverage: 60.0% (3/5 points)" out);
     test "what cannot be listed or inspected contributes nothing, silently"
       (fun () ->
+        if Sys.win32 then skip ~reason:"POSIX only" ();
         let root = proj () in
         let locked = Filename.concat root "_build/_coverage/locked" in
         write_file (Filename.concat locked "hidden.coverage") "not read\n";
@@ -1541,18 +1545,21 @@ let discovery_edge_tests =
           code;
         equal ~msg:"no warning" text "" err;
         contains ~msg:"and merged" ~sub:"coverage: 100.0% (3/3 points)" out;
-        (* An executable that exists and cannot be read. *)
-        let root = scratch "unreadable-exe" in
-        let identity = plant_exe root "default/test/a.exe" "another build" in
-        let exe = Filename.concat root "_build/default/test/a.exe" in
-        write_file exe "yet another build";
-        Unix.chmod exe 0o000;
-        write_dump root "a.coverage" ~identity
-          [ ("lib/foo.ml", foo_points, [| 1; 1; 1 |]) ];
-        let code, out, err = coverage_cmd ~cwd:root [] in
-        equal ~msg:"an unreadable executable: exit" int 0 code;
-        equal ~msg:"no warning" text "" err;
-        contains ~msg:"and merged" ~sub:"coverage: 100.0% (3/3 points)" out);
+        (* An executable that exists and cannot be read, which mode 0 does
+           not make on Windows. *)
+        if not Sys.win32 then begin
+          let root = scratch "unreadable-exe" in
+          let identity = plant_exe root "default/test/a.exe" "another build" in
+          let exe = Filename.concat root "_build/default/test/a.exe" in
+          write_file exe "yet another build";
+          Unix.chmod exe 0o000;
+          write_dump root "a.coverage" ~identity
+            [ ("lib/foo.ml", foo_points, [| 1; 1; 1 |]) ];
+          let code, out, err = coverage_cmd ~cwd:root [] in
+          equal ~msg:"an unreadable executable: exit" int 0 code;
+          equal ~msg:"no warning" text "" err;
+          contains ~msg:"and merged" ~sub:"coverage: 100.0% (3/3 points)" out
+        end);
   ]
 
 (* The command line, the gates and the merge at their edges *)
@@ -1671,6 +1678,7 @@ let command_edge_tests =
           \      \"uncovered_lines\": [] } ] }\n"
           out);
     test "--lcov says an omission between the records around it" (fun () ->
+        if Sys.win32 then skip ~reason:"no /bin/sh on Windows" ();
         let root = scratch "lcov-order" in
         write_file (Filename.concat root "lib/a.ml") "let a = 1\n";
         write_file (Filename.concat root "lib/c.ml") "let c = 1\n";

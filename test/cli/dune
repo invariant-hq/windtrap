@@ -50,6 +50,14 @@
   (<> %{os_type} Win32))
  (deps mutant_main.exe))
 
+; --mutate starts the mutation loop, which Windows refuses for want of fork.
+
+(cram
+ (applies_to mutation)
+ (enabled_if
+  (<> %{os_type} Win32)))
+
+; nodune.t reads OCAMLPATH as POSIX spells it and runs the mutation loop.
 ; Under --instrument-with ppx_windtrap.coverage, dune 3.24 closes
 ; (package windtrap) over ppx_windtrap, whose runtime depends on windtrap,
 ; and reports a dependency cycle; a dune built from main does not. CI's
@@ -58,7 +66,9 @@
 (cram
  (applies_to nodune)
  (enabled_if
-  (<> %{env:SKIP_NODUNE_SESSION=} true))
+  (and
+   (<> %{os_type} Win32)
+   (<> %{env:SKIP_NODUNE_SESSION=} true)))
  (deps
   (package windtrap)
   coverage_ppx.exe

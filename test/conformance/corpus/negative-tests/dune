@@ -113,7 +113,8 @@
 
 ; chdir.ml leaves its process in a directory it deleted, so it runs in a
 ; process of its own: a later fixture that read the working directory
-; would otherwise fail in its place.
+; would otherwise fail in its place. Windows cannot remove a process's
+; working directory, so the fixture's rules are POSIX only.
 
 (executable
  (name chdir_runner)
@@ -124,6 +125,8 @@
 
 (rule
  (targets chdir-log chdir-exit chdir.ml.corrected)
+ (enabled_if
+  (<> %{os_type} Win32))
  (deps chdir.ml)
  (action
   (run
@@ -142,16 +145,22 @@
 
 (rule
  (alias runtest)
+ (enabled_if
+  (<> %{os_type} Win32))
  (action
   (diff chdir-exit.expected chdir-exit)))
 
 (rule
  (alias runtest)
+ (enabled_if
+  (<> %{os_type} Win32))
  (action
   (diff chdir-log.expected chdir-log)))
 
 (rule
  (alias runtest)
+ (enabled_if
+  (<> %{os_type} Win32))
  (action
   (diff chdir.ml.corrected.expected chdir.ml.corrected)))
 

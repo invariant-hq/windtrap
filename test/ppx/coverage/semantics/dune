@@ -8,9 +8,13 @@
  (preprocess
   (pps ppx_windtrap.coverage)))
 
+; Each claim reads the dump of a forked child, and Windows has no fork.
+
 (test
  (name test_coverage_semantics)
  (modules test_coverage_semantics)
+ (enabled_if
+  (<> %{os_type} Win32))
  (libraries covsem_fixtures windtrap windtrap_runtime unix)
  (action
   (setenv

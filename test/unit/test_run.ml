@@ -108,7 +108,14 @@ let contents path =
 
 let touch path = close_out (open_out path)
 
+(* Windows enforces no timeout ([Run.with_timeout] arms none there), so a
+   body that only its limit ends skips there, and so does each test that
+   reads what such a body recorded. *)
+let needs_timeouts () =
+  if Sys.win32 then skip ~reason:"no timeout is enforced on Windows" ()
+
 let busy_forever () =
+  needs_timeouts ();
   let n = ref 1 in
   while !n > 0 do
     incr n;
@@ -116,6 +123,7 @@ let busy_forever () =
   done
 
 let spin seconds =
+  needs_timeouts ();
   let t0 = Unix.gettimeofday () in
   while Unix.gettimeofday () -. t0 < seconds do
     ignore (Sys.opaque_identity 1)
@@ -700,6 +708,7 @@ let the_running_test =
       test "a subtest failure in a law fails the test and no case"
         a_subtest_in_a_law_bypasses_the_engine;
       test "a timeout passes through a subtest, unlabelled" (fun () ->
+          needs_timeouts ();
           equal (list string) [ "body timeout 0.02s" ]
             (lines subtests [ "times out" ]));
       test "an assume in a subtest in a law discards the case" (fun () ->
@@ -908,7 +917,9 @@ let temporary_paths =
   group "Temporary paths"
     [
       test "temp_dir and temp_file make empty paths of mode 0o700 and 0o600"
-        makes_empty_private_paths;
+        (fun () ->
+          if Sys.win32 then skip ~reason:"POSIX only" ();
+          makes_empty_private_paths ());
       test "temp_dir makes a new directory at every call" (fun () ->
           not_equal string (scratch_name "dir") (scratch_name "repo"));
       test "temp_dir's prefix starts the directory's name" (fun () ->
@@ -920,6 +931,7 @@ let temporary_paths =
       test "an attempt's paths share one directory, hostile names included"
         every_path_is_in_one_directory;
       test "the directory of an attempt has mode 0o700" (fun () ->
+          if Sys.win32 then skip ~reason:"POSIX only" ();
           starts_with ~affix:"directory 700" (scratch_made ()).root);
       test "temp_dir raises Unix_error when no directory can be made" (fun () ->
           raises_match
@@ -1062,11 +1074,14 @@ let stranded, gone, stranded_site =
   (try Unix.chdir home with Unix.Unix_error _ -> ());
   (r, gone, !site)
 
+let no_removed_cwd = "Windows cannot remove a process's working directory"
+
 let unenterable, unreadable =
   let unenterable = ref None and unreadable = ref None in
   let home = Sys.getcwd () in
   let root = Scratch.dir "windtrap-cwd-" in
   let reads_a_removed_directory () =
+    if Sys.win32 then skip ~reason:no_removed_cwd ();
     let gone = Filename.concat root "gone" in
     Unix.mkdir gone 0o700;
     Unix.chdir gone;
@@ -1106,6 +1121,7 @@ let a_rejected_name_records_nothing () =
   equal string "pass" (Recorded.row environment [ "rejects" ])
 
 let the_first_chdir_reads_the_working_directory () =
+  if Sys.win32 then skip ~reason:no_removed_cwd ();
   let readable, raised = require_some unreadable in
   if readable then skip ~reason:"a removed directory reads here" ();
   raises_match Exn.sys_error (fun () -> replay raised)
@@ -1130,6 +1146,7 @@ let process_state =
         a_rejected_name_records_nothing;
       cases "a binding is restored after a test that" ~name:Fun.id
         [ "fails"; "skips"; "times out" ] (fun name ->
+          if name = "times out" then needs_timeouts ();
           equal (option string) (Some "before") (after_test name bound_var));
       test "chdir moves the process for the rest of the attempt" (fun () ->
           equal (list string) moved.targets moved.inside);
@@ -1287,6 +1304,7 @@ let fixtures =
         a_skipped_acquisition_fails_nothing;
       test "a timeout while acquiring is not kept, and the next call acquires"
         (fun () ->
+          needs_timeouts ();
           equal (pair string int) ("pass", 2)
             (Recorded.row cut_acquisition [ "acquires again" ], cut_acquisitions));
       test "a fixture is named after the site where fixture was applied"
@@ -1423,6 +1441,7 @@ let results =
           equal string "skip" (Recorded.row row_facts [ "skips" ]));
       test "a property that a timeout ended in a case has the cases before it"
         (fun () ->
+          needs_timeouts ();
           equal (option int) (Some 0)
             (cases_run row_facts [ "times out in a case" ]));
       test "an expected failure keeps its failures and does not count"
@@ -1584,6 +1603,7 @@ let timed_case r path =
     (failure r path)
 
 let a_limit_cut_before_a_failure_names_the_case () =
+  needs_timeouts ();
   let facts, case_index, passed =
     timed_case timed_props [ "cut before a failure" ]
   in
@@ -1658,6 +1678,7 @@ let a_negative_count_fails_the_body () =
     ]
 
 let a_limit_while_shrinking_keeps_the_counterexample () =
+  needs_timeouts ();
   equal (pair string string)
     ("fail body", "timed out after 0.1s")
     ( Recorded.row timed_props [ "cut while shrinking" ],
@@ -1703,10 +1724,12 @@ let properties =
       test "a limit that expires before a failure names the case it cut"
         a_limit_cut_before_a_failure_names_the_case;
       test "a declared limit covers the whole property" (fun () ->
+          needs_timeouts ();
           equal (list string)
             [ "body timeout 0.05s in a case" ]
             (lines timed_props [ "declares a limit" ]));
       test "the limit bounds the wall time of a property" (fun () ->
+          needs_timeouts ();
           less float_exact ~than:2.0 timed_wall);
       test "Run.prop adds no tag" run_prop_adds_no_tag;
     ]
@@ -2314,6 +2337,7 @@ let the_first_failure_carries_the_tail () =
          t.log_path))
 
 let each_phase_fails_on_its_own_limit () =
+  needs_timeouts ();
   equal
     (list (pair string (list string)))
     [
@@ -2327,11 +2351,13 @@ let each_phase_fails_on_its_own_limit () =
        [ "body"; "teardown"; "body, then a teardown"; "setup" ])
 
 let each_test_has_its_own_limit () =
+  needs_timeouts ();
   equal (list string) [ "body timeout 0.05s" ]
     (lines limits [ "table"; "slow" ]);
   equal string "pass" (Recorded.row limits [ "table"; "fast" ])
 
 let a_body_timeout_bounds_the_teardown_too () =
+  needs_timeouts ();
   equal (list string)
     [ "body timeout 0.02s"; "teardown timeout 0.02s" ]
     (lines both_phases_spin [ "spins" ]);
@@ -2403,11 +2429,13 @@ let attempts =
       test "a timeout is a failure of the phase it interrupted"
         each_phase_fails_on_its_own_limit;
       test "a body that timed out still has its teardown run" (fun () ->
+          needs_timeouts ();
           equal (list string) [ "teardown after a body timeout" ] limit_log);
       test "a teardown after a body timeout gets a limit of its own"
         a_body_timeout_bounds_the_teardown_too;
       test "the limit of a test is its own" each_test_has_its_own_limit;
       test "the configuration's limit applies when none is declared" (fun () ->
+          needs_timeouts ();
           equal (list string) [ "body timeout 0.02s" ]
             (lines configured_limit [ "slowpoke" ]));
       test "the Random state of a test is a function of its path"
@@ -2425,6 +2453,7 @@ let attempts =
         ~name:(fun (claim, _, _) -> claim)
         where_failures_are_located
         (fun (_, path, expected) ->
+          if path = "times out" then needs_timeouts ();
           equal (list (option string)) [ expected ] (locs located [ path ]));
       test "a failure away from tail position is located at its own line"
         a_failure_away_from_tail_position_is_at_its_line;
@@ -2538,6 +2567,7 @@ let steps_ending_with suffix =
   List.filter (fun step -> String.ends_with ~suffix step) scope_log
 
 let the_limit_is_armed_again () =
+  needs_timeouts ();
   equal (list string)
     [ "teardown timeout 0.02s" ]
     (lines scoped_limits [ "release times out" ]);
@@ -2548,6 +2578,7 @@ let scoped_tests =
     [
       cases "the phase of a failure is how far the callback got" ~name:fst
         scope_rows (fun (name, row) ->
+          if name = "a finally cut by the limit" then needs_timeouts ();
           equal string row (Recorded.row scopes [ name ]));
       test "a scope acquires, runs the body, then releases" (fun () ->
           equal (list string)
@@ -2572,10 +2603,12 @@ let scoped_tests =
                {| the scope called its callback 2 times and the test body ran on the first call only; a scope must call it exactly once |});
       test "a finally that the limit cut is a timeout of the teardown"
         (fun () ->
+          needs_timeouts ();
           equal (list string)
             [ "teardown timeout 0.02s" ]
             (lines scopes [ "a finally cut by the limit" ]));
       test "a body that timed out is reclaimed by its scope" (fun () ->
+          needs_timeouts ();
           equal (list string) [ "body timeout 0.02s" ]
             (lines scoped_limits [ "body times out" ]);
           is_true reclaimed);

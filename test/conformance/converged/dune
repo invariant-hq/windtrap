@@ -101,7 +101,8 @@
  (action
   (diff converged-log.expected converged-log)))
 
-; chdir.ml runs in a process of its own, as in the corpus.
+; chdir.ml runs in a process of its own, as in the corpus, and on POSIX
+; only, for the reason ../corpus/negative-tests/dune gives.
 
 (rule
  (copy ../corpus/negative-tests/chdir.ml.corrected.expected chdir.ml))
@@ -115,6 +116,8 @@
 
 (rule
  (targets chdir-log chdir-exit)
+ (enabled_if
+  (<> %{os_type} Win32))
  (deps chdir.ml)
  (action
   (run
@@ -131,11 +134,15 @@
 
 (rule
  (alias runtest)
+ (enabled_if
+  (<> %{os_type} Win32))
  (action
   (diff chdir-exit.expected chdir-exit)))
 
 (rule
  (alias runtest)
+ (enabled_if
+  (<> %{os_type} Win32))
  (action
   (diff chdir-log.expected chdir-log)))
 

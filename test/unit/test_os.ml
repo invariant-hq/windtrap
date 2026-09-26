@@ -393,6 +393,7 @@ let writer_contents writer round =
     (String.make (4096 + writer) (Char.chr (65 + writer)))
 
 let concurrent_writers () =
+  posix_only ();
   let dir = temp_dir () in
   let path = Filename.concat dir "target" in
   let writers = 6 and rounds = 24 in
@@ -519,6 +520,8 @@ let root_from (value, root) =
     (Os.project_root ())
 
 let in_a_removed_directory () =
+  if Sys.win32 then
+    skip ~reason:"Windows cannot remove a process's working directory" ();
   let gone = Filename.concat (temp_dir ()) "gone" in
   Unix.mkdir gone 0o700;
   chdir gone;
@@ -921,6 +924,7 @@ let redirect path fd =
 
 (* How a child that runs [f] ended, and what it wrote on each stream. *)
 let said f =
+  posix_only ();
   let dir = temp_dir () in
   let out = Filename.concat dir "out" and err = Filename.concat dir "err" in
   let child () =
