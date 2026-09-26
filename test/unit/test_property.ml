@@ -1019,6 +1019,38 @@ let spent_shrink_budget_is_marked () =
     ~msg:(Printf.sprintf "and reports the minimal node, got %s" rendered)
     (rendered = "0")
 
+(* A wide tree spends the budget on rejected candidates: every node offers
+   [wide] passing candidates before the one that fails, so the search runs
+   the law [wide + 1] times per accepted step. The budget counts every run,
+   so the search stops after [shrink_budget] runs, far above the leaf, and
+   says so. *)
+let the_shrink_budget_counts_rejected_candidates () =
+  let wide = 999 and depth = 50 in
+  let rec tree k =
+    let passing = Seq.init wide (fun i -> Shrink_tree.leaf (-i - 1)) in
+    let failing = if k = 0 then Seq.empty else Seq.return (tree (k - 1)) in
+    Shrink_tree.make ~root:k ~children:(Seq.append passing failing)
+  in
+  let gen =
+    Gen_engine.make ~pp:Format.pp_print_int (fun s -> (tree depth, s))
+  in
+  let runs = ref 0 in
+  let law _ n =
+    incr runs;
+    if n >= 0 then raise Exit
+  in
+  let failure, _ = expect_fail (Property.run ~root ~path:"wide" gen law) in
+  let rendered, _, shrink_steps, _, _, _, _ = property_payload failure in
+  (* The first run found the failing case; the rest belong to the search. *)
+  equal ~msg:"the law runs of the search" int Property.shrink_budget (!runs - 1);
+  is_true ~msg:"a truncated search is marked" (shrink_exhausted failure);
+  equal ~msg:"the steps the budget allowed" int
+    (Property.shrink_budget / (wide + 1))
+    shrink_steps;
+  equal ~msg:"the best node reached" string
+    (string_of_int (depth - shrink_steps))
+    rendered
+
 (* Forcing a candidate can raise (here a [map] whose function divides by
    the drawn value). The memoized cell caches the exception, so the siblings
    behind it are unreachable and the descent stops; what it must not do is
@@ -1439,6 +1471,8 @@ let suite =
     ("negative configuration is invalid", negative_configuration_is_invalid);
     ("assume and reject raise Discard", assume_and_reject_raise_discard);
     ("a spent shrink budget is distinguishable", spent_shrink_budget_is_marked);
+    ( "the shrink budget counts rejected candidates",
+      the_shrink_budget_counts_rejected_candidates );
     ( "a raising candidate stops the search visibly",
       a_raising_candidate_stops_the_search_visibly );
     ( "count provenance decides the payload",

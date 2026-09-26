@@ -85,15 +85,13 @@ let stats ctx =
 
 (* Shrinking *)
 
-(* Sized against the primitives' descent. An integer's candidates halve the
-   gap to its origin, so each accepted step at least halves the distance to
-   the smallest failing value. A 64-bit integer then takes at most 64 steps
-   under a threshold law (one that fails iff the value lies at least some
-   distance from the origin), a quad of them at most 256, and a list one step
-   per deleted chunk or shrunk element. 10_000 is about forty such quads, or a
-   list of a hundred and fifty full-range integers each shrunk bit by bit. A
-   law that is not a threshold can accept more steps per integer, each still
-   strictly nearer the origin. A change to a primitive's candidates reopens
+(* Sized by measurement against the integer descent. Under a threshold law
+   (one that fails iff the value lies at least some distance from the
+   origin) a quad of 64-bit integers converges in about 1_600 runs. A list
+   of twenty of them under a fixed length spends the budget, since every
+   step probes the converged elements before it again. A law over a list of
+   8_558 elements ran 280 times per second, so the budget ends even that
+   search in about 36 seconds. A change to a primitive's candidates reopens
    this sizing. *)
 let shrink_budget = 10_000
 let root_value tree = Gen.Engine.value (Gen.Engine.Shrink_tree.root tree)
@@ -105,17 +103,16 @@ let same_class (a : Failure.fault) (b : Failure.fault) =
   | `Assertion _, `Assertion _ | `Exception _, `Exception _ -> true
   | `Assertion _, `Exception _ | `Exception _, `Assertion _ -> false
 
-(* The search terminates: an accepted step descends one level of the sample's
-   tree, which is finite in depth for [Gen]'s generators, and [shrink_budget]
-   bounds the accepted steps on any other tree. Only the test's timeout bounds
-   the candidates probed at one node. *)
+(* The search terminates: [shrink_budget] bounds the runs of the law, and a
+   node's candidates that run no law (a discarding re-generation, a filtered
+   candidate) are finite for [Gen]'s generators. *)
 let shrink law tree fault =
   let scratch = make_context () in
   (* A timeout can fire at any poll point of the search, which then ends at
      the last accepted node. *)
   let best = ref (tree, 0, fault) in
-  let rec descend steps tree =
-    let rec first_accepted candidates =
+  let rec descend ~runs steps tree =
+    let rec first_accepted ~runs candidates =
       match Failure.catch candidates with
       | Error (`Timeout _ as timeout) -> Failure.reraise timeout
       | Error c ->
@@ -123,22 +120,20 @@ let shrink law tree fault =
              behind it are unreachable. *)
           Failure.Candidate_raised (Failure.text (Failure.caught_to_string c))
       | Ok Seq.Nil -> Failure.Converged
+      | Ok (Seq.Cons _) when runs >= shrink_budget -> Failure.Budget_spent
       | Ok (Seq.Cons (candidate, rest)) -> (
           match run_case scratch law (root_value candidate) with
           | Error (`Timeout _ as timeout) -> Failure.reraise timeout
           | Error (#Failure.fault as accepted) when same_class fault accepted ->
-              if steps >= shrink_budget then Failure.Budget_spent
-              else begin
-                best := (candidate, steps + 1, accepted);
-                descend (steps + 1) candidate
-              end
+              best := (candidate, steps + 1, accepted);
+              descend ~runs:(runs + 1) (steps + 1) candidate
           | Ok () | Error (#Failure.fault | #Failure.control) ->
-              first_accepted rest)
+              first_accepted ~runs:(runs + 1) rest)
     in
-    first_accepted (Gen.Engine.Shrink_tree.children tree)
+    first_accepted ~runs (Gen.Engine.Shrink_tree.children tree)
   in
   let shrink_end =
-    match Failure.catch (fun () -> descend 0 tree) with
+    match Failure.catch (fun () -> descend ~runs:0 0 tree) with
     | Ok shrink_end -> shrink_end
     | Error (`Timeout limit) -> Failure.Timed_out limit
     | Error c -> Failure.reraise c

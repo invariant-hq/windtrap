@@ -228,7 +228,9 @@ and timed_case = {
     that the counterexample may not be minimal. *)
 and shrink_end =
   | Converged  (** No candidate of the last node was accepted. *)
-  | Budget_spent  (** The search took its budget of accepted steps. *)
+  | Budget_spent
+      (** The search ran the law as many times as its budget allows, and a
+          candidate was left. *)
   | Candidate_raised of text
       (** Forcing a candidate raised the exception printed here, and the
           siblings behind it were unreachable. *)

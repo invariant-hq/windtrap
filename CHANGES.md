@@ -279,9 +279,9 @@ Each one is also listed under its area below.
 - A counterexample prints with its generator's printer, and a value
   computed by `Gen.map` or `Gen.bind` prints as
   `computed from <pre-image>`.
-- Shrinking stops after 10,000 steps, where 0.1's `max_shrink` defaulted
-  to 100.
-- A shrink cut by the step budget or by a timeout says
+- Shrinking runs the law at most 10,000 times, accepted and rejected
+  candidates alike, where 0.1's `max_shrink` defaulted to 100.
+- A shrink cut by its budget of law runs or by a timeout says
   `counterexample may not be minimal`.
 - A `skip` or timeout inside a law is no longer shrunk as a
   counterexample.

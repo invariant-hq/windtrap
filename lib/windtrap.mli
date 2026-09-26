@@ -584,9 +584,11 @@ val pass : 'a testable
     A law must be deterministic, because the search for a counterexample runs it
     again on candidate inputs.
 
-    Shrinking takes at most [10_000] steps. It also stops when a function of the
-    generator raises on a candidate. A function of the generator that raises
-    while a case is drawn fails the case. *)
+    Shrinking runs the law at most [10_000] times, accepted and rejected
+    candidates alike, and a search stopped there reports that the counterexample
+    may not be minimal. It also stops when a function of the generator raises on
+    a candidate. A function of the generator that raises while a case is drawn
+    fails the case. *)
 
 (**/**)
 

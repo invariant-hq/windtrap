@@ -137,15 +137,16 @@ type outcome =
 (** {1:running Running} *)
 
 val shrink_budget : int
-(** [shrink_budget] is the number of accepted steps that a shrink search may
-    take, [10_000]. It is fixed, so a replay under the same root seed descends
-    the same path to the same node, whatever the configuration of the run. It
-    bounds neither the time of a search nor the candidates probed at one node,
-    which only the test's timeout bounds.
+(** [shrink_budget] is the number of times a shrink search may run the law,
+    [10_000]. Every candidate probed counts, accepted or rejected, so the budget
+    bounds a search over any tree. It is fixed, so a replay under the same root
+    seed descends the same path to the same node, whatever the configuration of
+    the run.
 
-    A search that the budget stops ends its failure with [Failure.Budget_spent],
-    only when a further candidate would have been accepted, so a search that
-    converges on its last allowed step is [Failure.Converged]. *)
+    A search that has spent the budget ends its failure with
+    [Failure.Budget_spent] when it reaches a further candidate. A search that
+    reaches a node with no candidate left is [Failure.Converged], whatever it
+    spent. *)
 
 val run :
   ?loc:Loc.t ->
@@ -201,10 +202,10 @@ val run :
     other than [`Timeout] is rejected.
 
     The search ends at a node with no accepted candidate, [Failure.Converged].
-    It also ends after {!shrink_budget} steps, [Failure.Budget_spent], and when
-    the forcing of a candidate raises anything but a [`Timeout]:
-    [Failure.Candidate_raised] with that exception as [Failure.exn_to_string]
-    prints it.
+    It also ends when it has run [law] {!shrink_budget} times,
+    [Failure.Budget_spent], and when the forcing of a candidate raises anything
+    but a [`Timeout]: [Failure.Candidate_raised] with that exception as
+    [Failure.exn_to_string] prints it.
 
     A [`Timeout] raised anywhere in the search ends it as well,
     [Failure.Timed_out] with the limit. The failure then describes the last
