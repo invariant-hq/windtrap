@@ -4,7 +4,6 @@
   test_text
   test_os
   test_loc
-  test_diff
   test_gen
   test_capture
   test_property
@@ -20,7 +19,6 @@
   test_text
   test_os
   test_loc
-  test_diff
   test_gen
   test_capture
   test_property
@@ -67,6 +65,15 @@
  (name test_testable)
  (modules test_testable)
  (libraries windtrap))
+
+(test
+ (name test_diff)
+ (modules test_diff)
+ (libraries windtrap windtrap_runtime)
+ (action
+  (progn
+   (run %{test} --corrected)
+   (diff? test_diff.ml test_diff.ml.corrected))))
 
 (test
  (name test_run)
