@@ -42,3 +42,12 @@
   (progn
    (run %{test} --corrected)
    (diff? test_mutate.ml test_mutate.ml.corrected))))
+
+(test
+ (name test_verdicts)
+ (modules test_verdicts)
+ (libraries windtrap windtrap_runtime)
+ (action
+  (progn
+   (run %{test} --corrected)
+   (diff? test_verdicts.ml test_verdicts.ml.corrected))))
