@@ -1,14 +1,13 @@
 (tests
- (names test_os test_report_junit)
- (modules test_os test_report_junit)
+ (names test_os)
+ (modules test_os)
  (libraries
   windtrap
   windtrap_runtime
   windtrap_test_support
   unix
   harness
-  render_fixtures
-  xml_check)
+  render_fixtures)
  ; The goldens under expected/ are action inputs; accept a change with
  ; the suite's `-u`.
  (deps
@@ -201,6 +200,22 @@
     expected/test_report/verbose-ansi.expected
     expected/test_report/verbose-ansi.expected.corrected))))
 
+(test
+ (name test_report_junit)
+ (modules test_report_junit)
+ (libraries windtrap render_fixtures)
+ (deps
+  (glob_files expected/test_report_junit/*.expected))
+ (action
+  (progn
+   (run %{test} --corrected)
+   (diff?
+    expected/test_report_junit/document.expected
+    expected/test_report_junit/document.expected.corrected)
+   (diff?
+    expected/test_report_junit/subtests.expected
+    expected/test_report_junit/subtests.expected.corrected))))
+
 (library
  (name gallery)
  (modules gallery)
@@ -210,10 +225,6 @@
  (name render_fixtures)
  (modules render_fixtures)
  (libraries windtrap))
-
-(library
- (name xml_check)
- (modules xml_check))
 
 (library
  (name harness)

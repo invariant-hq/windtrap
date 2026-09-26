@@ -3,529 +3,796 @@
    SPDX-License-Identifier: ISC
   ---------------------------------------------------------------------------*)
 
-(* Tests for Report_junit: golden document over a small synthetic run,
-   well-formedness of the full fixture run (checked with the minimal
-   Xml_check parser), the flaky-pass note, the ANSI-in-JUnit
-   impossibility, control bytes escaped and the XML 1.0 range of hostile
-   payloads,
-   escaping, counts, the report's path, and the checker's own sanity. *)
-
 open Windtrap
-open Windtrap.Private
-module Fixtures = Render_fixtures
+module Failure = Windtrap.Private.Failure
+module Loc = Windtrap.Private.Loc
+module Pp = Windtrap.Private.Pp
+module Os = Windtrap.Private.Os
+module Report_junit = Windtrap.Private.Report_junit
+module Report_sections = Windtrap.Private.Report_sections
+module Run = Windtrap.Private.Run
+module Test_tree = Windtrap.Private.Test_tree
 
-let check_well_formed name doc =
-  match Xml_check.check doc with
-  | Ok () -> ()
-  | Error m -> failf "%s: %s\n  in:\n%s" name m doc
+(* The XML reader *)
 
-(* The golden document *)
+(* The document is read back as a tree by a reader of the XML 1.0 it uses: an
+   optional declaration and one element, attributes quoted and named once,
+   text and values made of XML characters and references to them. DOCTYPE,
+   CDATA and processing instructions are refused, since the document writes
+   none. A value reads back decoded, and a raw TAB, LF or CR in an attribute
+   reads as a space, as XML 1.0 normalizes it. *)
 
-let small_results =
-  [
-    Fixtures.result [ "math"; "addition" ] Failure.Pass ~duration:0.0001;
-    Fixtures.result
-      [ "users"; "sessions after login" ]
-      (Failure.Fail
-         [ Failure.with_output_tail Fixtures.tail Fixtures.eq_failure ]);
-    Fixtures.result
-      [ "platform"; "windows paths" ]
-      (Failure.Skip (Some "unix only"));
-    Fixtures.timed_result;
-  ]
+type element = {
+  tag : string;
+  attributes : (string * string) list;
+  children : node list;
+}
 
-let test_golden () =
-  let actual =
-    Report_junit.render ~suite:"mylib" ~results:small_results
-      ~release_failures:[ Fixtures.release_failure ]
-      ~duration:1.234 ()
+and node = Element of element | Text of string
+
+exception Malformed of string
+
+let malformed fmt = Printf.ksprintf (fun m -> raise (Malformed m)) fmt
+
+let is_xml_char u =
+  u = 0x9 || u = 0xA || u = 0xD
+  || (0x20 <= u && u <= 0xD7FF)
+  || (0xE000 <= u && u <= 0xFFFD)
+  || (0x10000 <= u && u <= 0x10FFFF)
+
+let number ~hex digits =
+  let digit = function
+    | '0' .. '9' -> true
+    | 'a' .. 'f' | 'A' .. 'F' -> hex
+    | _ -> false
   in
-  expect_file actual "test/unit/expected/test_report_junit/document.expected";
-  check_well_formed "golden document is well-formed" actual
+  if digits = "" || not (String.for_all digit digits) then None
+  else int_of_string_opt ((if hex then "0x" else "") ^ digits)
 
-(* The full fixture run *)
-
-let full () =
-  Report_junit.render ~suite:"mylib" ~results:Fixtures.results
-    ~release_failures:[ Fixtures.release_failure ]
-    ~duration:Fixtures.duration ()
-
-let test_full_run () =
-  let doc = full () in
-  check_well_formed "full fixture document is well-formed" doc;
-  contains ~msg:"counts derive from results"
-    ~sub:{|tests="13" failures="7" errors="0" skipped="1" time="6.500"|} doc;
-  contains ~msg:"acceptance command inside failure text"
-    ~sub:"accept: dune promote" doc;
-  contains ~msg:"replay line inside failure text"
-    ~sub:
-      "replay: WINDTRAP_SEED=s1:7be1d2c904aa31f5 WINDTRAP_FILTER='geo › area \
-       non-negative' dune runtest"
-    doc;
-  contains ~msg:"teardown failure is a second element"
-    ~sub:{|<failure message="teardown exploded">|} doc;
-  contains ~msg:"headline in message attribute"
-    ~sub:{|message="expect_file &quot;test/help.expected&quot;: no baseline"|}
-    doc
-
-(* The message attribute: the failure as one sentence, its headline. The
-   headline's forms are Report_sections', pinned in test_report; this pins
-   that each failure's attribute is its headline. *)
-
-let test_message_forms () =
-  let failures =
-    [
-      Failure.equality ~msg:"deliberate" ~expected:"1" ~actual:"2" ();
-      Failure.equality ~expected:"a\nb\nc" ~actual:"a\nB\nc" ();
-      Fixtures.snap_mismatch;
-      Failure.equality ~expected:(String.make 100 'x') ~actual:"y" ();
-    ]
+let read s =
+  let len = String.length s in
+  let pos = ref 0 in
+  let peek () = if !pos < len then Some s.[!pos] else None in
+  let looking_at p =
+    String.length p <= len - !pos && String.sub s !pos (String.length p) = p
   in
-  let doc =
-    Report_junit.render ~release_failures:[] ~suite:"s" ~duration:0.1
-      ~results:
-        (List.mapi
-           (fun i f -> Fixtures.result [ string_of_int i ] (Failure.Fail [ f ]))
-           failures)
-      ()
+  let skip p =
+    if looking_at p then pos := !pos + String.length p
+    else malformed "expected %S at byte %d" p !pos
   in
-  check_well_formed "the document is well-formed" doc;
-  List.iter
-    (fun f ->
-      contains ~msg:"the message attribute is the failure's headline"
-        ~sub:(Printf.sprintf {|<failure message="%s">|} (Report.headline f))
-        doc)
-    failures;
-  not_contains ~msg:"no em dash in the document" ~sub:"\u{2014}" doc;
-  not_contains ~msg:"no em dash in the full fixture's document" ~sub:"\u{2014}"
-    (full ());
-  (* The failure text is the block's lines below the title. *)
-  contains ~msg:"the failure text is the block's lines"
-    ~sub:"\">    deliberate\n    expected  1\n    actual    2\n</failure>" doc;
-  not_contains ~msg:"no failure text carries a rerun hint" ~sub:"rerun:" doc;
-  not_contains ~msg:"nor does the full fixture's document" ~sub:"rerun:"
-    (full ())
-
-(* A withheld correction is the failure's, so the document projects it as
-   the terminal block does. *)
-
-let test_withheld_correction () =
-  let doc =
-    Report_junit.render ~release_failures:[] ~suite:"s" ~duration:0.1
-      ~results:
-        [
-          Fixtures.result [ "both" ]
-            (Failure.Fail
-               [
-                 Failure.message "boom";
-                 Failure.with_withheld Failure.Failed_outside
-                   Fixtures.snap_mismatch;
-               ]);
-        ]
-      ()
+  let rec skip_space () =
+    match peek () with
+    | Some (' ' | '\t' | '\n' | '\r') ->
+        incr pos;
+        skip_space ()
+    | Some _ | None -> ()
   in
-  check_well_formed "the document is well-formed" doc;
-  not_contains ~msg:"no acceptance the run could not honour" ~sub:"accept:" doc;
-  contains ~msg:"the reason closes the failure text"
-    ~sub:
-      "    no correction was kept: the test also failed outside its \
-       expectations; fix that failure and rerun\n\
-       </failure>"
-    doc
-
-(* The invocation-spelled hints *)
-
-let test_invocation_hints () =
-  (* The JUnit body carries the same hint bytes as the terminal block:
-     both derive from the one startup-computed invocation. *)
-  let invocation = `Exe "dune exec qa/x/t.exe --" in
-  let doc =
-    Report_junit.render ~release_failures:[] ~invocation ~suite:"mylib"
-      ~results:
-        [
-          Fixtures.result [ "cli"; "cli help" ]
-            (Failure.Fail [ Fixtures.snap_missing ]);
-          Fixtures.result
-            [ "geo"; "area non-negative" ]
-            (Failure.Fail [ Fixtures.prop_failure ]);
-        ]
-      ~duration:0.1 ()
+  let character b =
+    let d = String.get_utf_8_uchar s !pos in
+    let u = Uchar.to_int (Uchar.utf_decode_uchar d) in
+    if not (Uchar.utf_decode_is_valid d) then
+      malformed "invalid UTF-8 at byte %d" !pos;
+    if not (is_xml_char u) then
+      malformed "U+%04X is no XML character at byte %d" u !pos;
+    Buffer.add_substring b s !pos (Uchar.utf_decode_length d);
+    pos := !pos + Uchar.utf_decode_length d
   in
-  check_well_formed "invocation document is well-formed" doc;
-  let terminal_line ~filter f =
-    let block =
-      Windtrap.Private.Pp.str "%a"
-        (fun ppf f -> Report.pp_failure ~ansi:false ~filter ~invocation ppf f)
-        f
+  let name () =
+    let start = !pos in
+    let rec loop () =
+      match peek () with
+      | Some ('a' .. 'z' | 'A' .. 'Z' | '0' .. '9' | '_' | '-' | '.' | ':') ->
+          incr pos;
+          loop ()
+      | Some _ | None -> ()
     in
-    List.find
-      (fun line ->
-        String.starts_with ~prefix:"    accept:" line
-        || String.starts_with ~prefix:"    replay:" line)
-      (String.split_on_char '\n' block)
+    loop ();
+    if !pos = start then malformed "no name at byte %d" start;
+    String.sub s start (!pos - start)
   in
-  let accept = terminal_line ~filter:"cli › cli help" Fixtures.snap_missing in
-  contains ~msg:"accept hint bytes equal the terminal block's" ~sub:accept doc;
-  equal ~msg:"accept hint completes the executable, scoped to the test" string
-    "    accept: dune exec qa/x/t.exe -- -u -f 'cli › cli help'" accept;
-  let replay =
-    terminal_line ~filter:"geo › area non-negative" Fixtures.prop_failure
+  let reference b =
+    let start = !pos in
+    let semi =
+      match String.index_from_opt s start ';' with
+      | Some i -> i
+      | None -> malformed "unterminated reference at byte %d" start
+    in
+    let body = String.sub s (start + 1) (semi - start - 1) in
+    let code =
+      if String.starts_with ~prefix:"#x" body then
+        number ~hex:true (String.sub body 2 (String.length body - 2))
+      else if String.starts_with ~prefix:"#" body then
+        number ~hex:false (String.sub body 1 (String.length body - 1))
+      else None
+    in
+    (match (body, code) with
+    | "lt", _ -> Buffer.add_char b '<'
+    | "gt", _ -> Buffer.add_char b '>'
+    | "amp", _ -> Buffer.add_char b '&'
+    | "quot", _ -> Buffer.add_char b '"'
+    | "apos", _ -> Buffer.add_char b '\''
+    | _, Some u when is_xml_char u -> Buffer.add_utf_8_uchar b (Uchar.of_int u)
+    | _ -> malformed "bad reference &%s; at byte %d" body start);
+    pos := semi + 1
   in
-  equal ~msg:"replay hint completes the executable" string
-    "    replay: dune exec qa/x/t.exe -- --seed s1:7be1d2c904aa31f5 -f 'geo › \
-     area non-negative'"
-    replay;
-  contains ~msg:"replay hint bytes equal the terminal block's" ~sub:replay doc
+  let rec value ~quote ~start b =
+    match peek () with
+    | None -> malformed "unterminated attribute at byte %d" start
+    | Some c when c = quote -> incr pos
+    | Some '<' -> malformed "raw '<' in an attribute at byte %d" !pos
+    | Some '&' ->
+        reference b;
+        value ~quote ~start b
+    | Some ('\t' | '\n' | '\r') ->
+        Buffer.add_char b ' ';
+        incr pos;
+        value ~quote ~start b
+    | Some _ ->
+        character b;
+        value ~quote ~start b
+  in
+  let rec attributes acc =
+    skip_space ();
+    match peek () with
+    | Some ('/' | '>') | None -> List.rev acc
+    | Some _ ->
+        let start = !pos in
+        let key = name () in
+        if List.mem_assoc key acc then
+          malformed "attribute %s repeated at byte %d" key start;
+        skip "=";
+        let quote =
+          match peek () with
+          | Some (('"' | '\'') as q) ->
+              incr pos;
+              q
+          | Some _ | None -> malformed "unquoted attribute at byte %d" !pos
+        in
+        let b = Buffer.create 16 in
+        value ~quote ~start b;
+        attributes ((key, Buffer.contents b) :: acc)
+  in
+  let rec element () =
+    skip "<";
+    let tag = name () in
+    let attributes = attributes [] in
+    if looking_at "/>" then begin
+      skip "/>";
+      { tag; attributes; children = [] }
+    end
+    else begin
+      skip ">";
+      let children = content [] (Buffer.create 64) in
+      skip "</";
+      let closing = name () in
+      if closing <> tag then malformed "</%s> closes <%s>" closing tag;
+      skip_space ();
+      skip ">";
+      { tag; attributes; children }
+    end
+  and content acc b =
+    let flush acc =
+      if Buffer.length b = 0 then acc
+      else begin
+        let t = Buffer.contents b in
+        Buffer.clear b;
+        Text t :: acc
+      end
+    in
+    if looking_at "</" then List.rev (flush acc)
+    else
+      match peek () with
+      | None -> List.rev (flush acc)
+      | Some '<' ->
+          let acc = flush acc in
+          let e = element () in
+          content (Element e :: acc) b
+      | Some '&' ->
+          reference b;
+          content acc b
+      | Some _ ->
+          character b;
+          content acc b
+  in
+  let rec declaration_end i =
+    if i + 1 >= len then malformed "unterminated declaration"
+    else if s.[i] = '?' && s.[i + 1] = '>' then i + 2
+    else declaration_end (i + 1)
+  in
+  match
+    skip_space ();
+    if looking_at "<?xml" then pos := declaration_end !pos;
+    skip_space ();
+    let root = element () in
+    skip_space ();
+    if !pos <> len then malformed "trailing content at byte %d" !pos;
+    root
+  with
+  | root -> Ok root
+  | exception Malformed m -> Error m
 
-(* Expected failures *)
+(* Projections of a document *)
 
-let test_excused_as_skipped () =
-  let results =
-    [
-      Fixtures.result [ "ok" ] Failure.Pass;
-      Fixtures.excused_result;
-      Fixtures.result [ "bad" ] (Failure.Fail [ Failure.message "boom" ]);
-    ]
-  in
-  let doc =
-    Report_junit.render ~release_failures:[] ~suite:"s" ~results ~duration:0.5
-      ()
-  in
-  check_well_formed "excused document is well-formed" doc;
-  contains ~msg:"excused failure maps to skipped-with-message"
-    ~sub:{|<skipped message="expected failure: issue #42"/>|} doc;
-  (* Alone, so the document's other failure cannot hide one. *)
-  not_contains ~msg:"excused failures emit no failure element" ~sub:"<failure"
-    (Report_junit.render ~release_failures:[] ~suite:"s"
-       ~results:[ Fixtures.excused_result ]
-       ~duration:0.1 ());
-  contains ~msg:"counts: excused is a skip, not a failure"
-    ~sub:{|tests="3" failures="1" errors="0" skipped="1"|} doc;
-  let no_reason =
-    Report_junit.render ~release_failures:[] ~suite:"s"
-      ~results:
-        [
-          {
-            Fixtures.excused_result with
-            Run.xfail = Some { Test_tree.reason = None };
-          };
-        ]
-      ~duration:0.1 ()
-  in
-  contains ~msg:"reasonless excused message"
-    ~sub:{|<skipped message="expected failure"/>|} no_reason;
-  (* The record's bit decides: an unexpected pass carries the annotation
-     but counted, so it emits a failure element, not a skip. *)
-  let xpass =
-    Report_junit.render ~release_failures:[] ~suite:"s"
-      ~results:[ Fixtures.xpass_result ] ~duration:0.1 ()
-  in
-  contains ~msg:"an unexpected pass still counts as a failure"
-    ~sub:{|failures="1"|} xpass;
-  not_contains ~msg:"an unexpected pass is not a skip" ~sub:"<skipped" xpass
+let parsed doc = require_ok ~pp:Format.pp_print_string (read doc)
 
-(* Subtests *)
+let elements e =
+  List.filter_map (function Element e -> Some e | Text _ -> None) e.children
 
-let test_subtests_as_testcases () =
-  let doc =
-    Report_junit.render ~release_failures:[] ~suite:"mylib"
-      ~results:[ Fixtures.subtest_result ]
-      ~duration:0.7 ()
+let text_of e =
+  String.concat ""
+    (List.filter_map
+       (function Text t -> Some t | Element _ -> None)
+       e.children)
+
+let attribute key e = List.assoc_opt key e.attributes
+let one = function [ x ] -> Some x | _ -> None
+let testcases_of doc = elements (require_match one (elements (parsed doc)))
+
+let children tag doc =
+  List.concat_map
+    (fun t -> List.filter (fun c -> c.tag = tag) (elements t))
+    (testcases_of doc)
+
+(* An element's tag and its attributes, in the order of the document. *)
+let heading e =
+  String.concat " " (e.tag :: List.map (fun (k, v) -> k ^ "=" ^ v) e.attributes)
+
+(* A testcase as its name, classname and time, then its children: each by its
+   tag, a skipped element with its message. *)
+let row t =
+  let child c =
+    match (c.tag, attribute "message" c) with
+    | "skipped", Some m -> "skipped: " ^ m
+    | tag, _ -> tag
   in
-  expect_file doc "test/unit/expected/test_report_junit/subtests.expected";
-  check_well_formed "subtest document is well-formed" doc;
-  (* Sibling subtests fail alike: the label is what tells their messages
-     apart. *)
-  contains ~msg:"a subtest's message opens with its label"
-    ~sub:
-      {|<failure message="contract › shape [0]: expected [1; 2], got [1; 3]">|}
-    doc;
-  contains ~msg:"and its sibling's with its own"
-    ~sub:
-      {|<failure message="contract › shape [2]: expected [1; 2], got [1; 3]">|}
-    doc
-
-let test_subtests_only () =
-  (* A test whose every failure is a subtest entry: the parent testcase
-     carries no failure element; the failures count comes from the subtest
-     testcases alone. *)
-  let doc =
-    Report_junit.render ~release_failures:[] ~suite:"s"
-      ~results:
-        [
-          Fixtures.result [ "backend"; "contract" ]
-            (Failure.Fail [ Fixtures.subtest_failure "shape [0]" ]);
-        ]
-      ~duration:0.1 ()
+  let fields =
+    List.map
+      (fun k -> Option.value ~default:"-" (attribute k t))
+      [ "name"; "classname"; "time" ]
   in
-  check_well_formed "subtests-only document is well-formed" doc;
-  contains ~msg:"subtests-only counts" ~sub:{|tests="2" failures="1"|} doc;
-  contains ~msg:"parent testcase closes without failure"
-    ~sub:
-      {|<testcase name="backend › contract" classname="s.backend" time="0.000">
-    </testcase>|}
-    doc
+  let inner = List.map child (elements t) in
+  String.concat " | "
+    (fields @ if inner = [] then [] else [ String.concat ", " inner ])
 
-let test_subtest_user_msg_name () =
-  (* A subtest entry whose assertion also carried a user [?msg]: the
-     testcase name is the displayed label, the sub-case components joined,
-     the user text appended after ": " (Report.labeled_msg). *)
-  let entry =
-    {
-      (Failure.equality ~msg:"user context" ~expected:"1" ~actual:"2" ()) with
-      Failure.subtest = [ "contract"; "shape [0]" ];
-    }
-  in
-  let doc =
-    Report_junit.render ~release_failures:[] ~suite:"s"
-      ~results:
-        [ Fixtures.result [ "backend"; "contract" ] (Failure.Fail [ entry ]) ]
-      ~duration:0.1 ()
-  in
-  check_well_formed "user-msg subtest document is well-formed" doc;
-  contains ~msg:"subtest testcase name is the displayed label"
-    ~sub:
-      {|<testcase name="contract › shape [0]: user context" classname="s.backend"|}
-    doc
+let rows doc = List.map row (testcases_of doc)
 
-(* Transport validity *)
+let counts_of doc =
+  let suite = require_match one (elements (parsed doc)) in
+  String.concat " "
+    (List.filter_map
+       (fun k -> Option.map (fun v -> k ^ "=" ^ v) (attribute k suite))
+       [ "tests"; "failures"; "errors"; "skipped" ])
 
-let fail_result path failure = Fixtures.result path (Failure.Fail [ failure ])
+let messages tag doc = List.filter_map (attribute "message") (children tag doc)
+let texts tag doc = List.map text_of (children tag doc)
 
-let test_ansi_impossible () =
-  let ansi = "\027[31mred\027[0m" in
-  let tail = Failure.tail ~log_path:"log" (ansi ^ " tail text\n") in
-  let f =
-    Failure.with_output_tail tail
-      (Failure.equality ~msg:ansi ~expected:(ansi ^ " expected")
-         ~actual:"\027]0;title\007 actual" ())
-  in
-  let results =
-    [
-      fail_result [ "suite"; ansi ^ " name" ] f;
-      Fixtures.result [ "s"; "skip" ] (Failure.Skip (Some (ansi ^ " reason")));
-    ]
-  in
-  let doc =
-    Report_junit.render ~release_failures:[] ~suite:ansi ~results ~duration:0.1
-      ()
-  in
-  not_contains ~msg:"no ESC byte anywhere in the document" ~sub:"\027" doc;
-  (* ESC is escaped as every control byte is, in every field, so a styled
-     value arrives readable instead of stripped down to its letters. *)
-  contains ~msg:"the captured tail keeps its bytes, escaped"
-    ~sub:{|\x1b[31mred\x1b[0m tail text|} doc;
-  contains ~msg:"the failure body carries the value's own bytes, escaped"
-    ~sub:{|\x1b[31mred\x1b[0m expected|} doc;
-  contains ~msg:"and the OSC-carrying side too" ~sub:{|\x1b]0;title\x07 actual|}
-    doc;
-  contains ~msg:"an attribute escapes them too"
-    ~sub:{|<skipped message="\x1b[31mred\x1b[0m reason"/>|} doc;
-  check_well_formed "escaped document is well-formed" doc
+(* Writing and reading back *)
 
-let test_xml_range () =
-  (* A control byte, a form feed, a malformed byte, and U+FFFE: valid
-     UTF-8, yet no XML character. The two control bytes are escaped
-     first; the other two are no XML character. *)
-  let hostile = "a\x01b\x0cc\xffd\u{FFFE}e" in
-  let doc =
-    Report_junit.render ~release_failures:[] ~suite:"s"
-      ~results:
-        [
-          fail_result [ hostile ]
-            (Failure.equality ~expected:hostile ~actual:"ok" ());
-        ]
-      ~duration:0.1 ()
-  in
-  not_contains ~msg:"control byte removed" ~sub:"\x01" doc;
-  not_contains ~msg:"form feed removed" ~sub:"\x0c" doc;
-  not_contains ~msg:"malformed UTF-8 byte removed" ~sub:"\xff" doc;
-  contains ~msg:"control bytes escaped, invalid characters become U+FFFD"
-    ~sub:"a\\x01b\\x0cc\u{FFFD}d\u{FFFD}e" doc;
-  check_well_formed "sanitized document is well-formed" doc
-
-(* The edges of XML 1.0's range: the scalar values beside the surrogates, the
-   two noncharacters and the planes beyond the first. *)
-let test_xml_range_edges () =
-  let edges = "\u{D7FF}\u{E000}\u{FFFD}\u{FFFE}\u{FFFF}\u{10000}\u{10FFFF}" in
-  let doc =
-    Report_junit.render ~release_failures:[] ~suite:edges
-      ~results:[ fail_result [ "t" ] (Failure.message edges) ]
-      ~duration:0.1 ()
-  in
-  let kept = "\u{D7FF}\u{E000}\u{FFFD}\u{FFFD}\u{FFFD}\u{10000}\u{10FFFF}" in
-  contains ~msg:"an attribute keeps the range and loses the noncharacters"
-    ~sub:(Printf.sprintf {|<testsuite name="%s"|} kept)
-    doc;
-  contains ~msg:"and so does element text" ~sub:(kept ^ "\n</failure>") doc;
-  check_well_formed "the document is well-formed" doc
-
-let test_escaping () =
-  let nasty = {|a<b>&"c'|} in
-  let doc =
-    Report_junit.render ~release_failures:[] ~suite:nasty
-      ~results:[ fail_result [ nasty ] (Failure.message ("text " ^ nasty)) ]
-      ~duration:0.1 ()
-  in
-  contains ~msg:"attribute escaping"
-    ~sub:{|name="a&lt;b&gt;&amp;&quot;c&apos;"|} doc;
-  contains ~msg:"text escaping" ~sub:"text a&lt;b&gt;&amp;\"c'" doc;
-  check_well_formed "escaped document is well-formed" doc
-
-(* A pass that needed a retry: JUnit has no state for it, so the fact
-   rides the one element every consumer allows on a testcase. *)
-let test_flaky_note () =
-  let doc =
-    Report_junit.render ~release_failures:[] ~suite:"s"
-      ~results:
-        [
-          Fixtures.result [ "flaky"; "eventually" ] Failure.Pass ~attempts:3;
-          Fixtures.result [ "steady" ] Failure.Pass;
-        ]
-      ~duration:0.1 ()
-  in
-  check_well_formed "flaky document is well-formed" doc;
-  contains ~msg:"a flaky pass carries the attempt count in system-out"
-    ~sub:
-      {|<testcase name="flaky › eventually" classname="s.flaky" time="0.000">
-      <system-out>passed on attempt 3</system-out>
-    </testcase>|}
-    doc;
-  contains ~msg:"a first-attempt pass stays a bare testcase"
-    ~sub:{|<testcase name="steady" classname="s" time="0.000"/>|} doc;
-  contains ~msg:"a flaky pass is not a failure"
-    ~sub:{|tests="2" failures="0" errors="0" skipped="0"|} doc
-
-(* One process per suite is the normal case under `dune runtest`, so a
-   single fixed path would have each suite overwrite the last. The [.xml]
-   suffix is what tells the two intents apart. *)
-let test_path () =
-  equal ~msg:"an .xml target is used verbatim" string "reports/r.xml"
-    (Report_junit.path ~suite:"mylib" "reports/r.xml");
-  equal ~msg:"a directory target gets one file per suite" string
-    (Filename.concat "reports" "mylib.xml")
-    (Report_junit.path ~suite:"mylib" "reports");
-  equal ~msg:"two suites, one directory, two files" string
-    (Filename.concat "reports" "parser.xml")
-    (Report_junit.path ~suite:"parser" "reports");
-  (* A suite name is not a filename until it is made one: an inline
-     partition's [lib/parser.ml] lands in the directory, not under it. *)
-  let partition = Report_junit.path ~suite:"lib/parser.ml" "reports" in
-  is_true ~msg:"a suite name never escapes its directory"
-    (Filename.dirname partition = "reports");
-  is_true ~msg:"and never keeps a path separator"
-    (not (String.contains (Filename.basename partition) '/'));
-  is_true ~msg:"two partitions of one library get two files"
-    (partition <> Report_junit.path ~suite:"lib/lexer.ml" "reports")
-
-let test_empty_run () =
-  let doc =
-    Report_junit.render ~release_failures:[] ~suite:"empty" ~results:[]
-      ~duration:0.0 ()
-  in
-  check_well_formed "empty run document is well-formed" doc;
-  contains ~msg:"empty run counts are zero"
-    ~sub:{|tests="0" failures="0" errors="0" skipped="0"|} doc
-
-let test_dotted_classname () =
-  let doc =
-    Report_junit.render ~release_failures:[] ~suite:"s"
-      ~results:[ Fixtures.result [ "a.b"; "t.c" ] Failure.Pass ]
-      ~duration:0.1 ()
-  in
-  contains ~msg:"a dot inside a group name stays a dot"
-    ~sub:{|<testcase name="a.b › t.c" classname="s.a.b" time="0.000"/>|} doc
-
-(* The captured output of a failing test: the first failure that carries a
-   tail, a subtest's included, and a line before or after it only when there
-   is something to say. *)
-let test_first_tail () =
-  let first = Failure.tail "first tail\n" in
-  let second =
-    Failure.tail ~log_path:"second.output" ~omitted_bytes:9 "second tail\n"
-  in
-  let doc =
-    Report_junit.render ~release_failures:[] ~suite:"s"
-      ~results:
-        [
-          Fixtures.result [ "t" ]
-            (Failure.Fail
-               [
-                 Failure.with_output_tail first
-                   {
-                     (Failure.message "in a subtest") with
-                     subtest = [ "t"; "u" ];
-                   };
-                 Failure.with_output_tail second (Failure.message "own");
-               ]);
-        ]
-      ~duration:0.1 ()
-  in
-  check_well_formed "tail document is well-formed" doc;
-  contains ~msg:"the first tail, whole, with neither line"
-    ~sub:"<system-out>first tail\n</system-out>" doc;
-  not_contains ~msg:"not the second" ~sub:"second tail" doc
-
-let test_armed_hints () =
-  let armed = "lib/a.ml:1:0:add" in
-  let doc =
-    Report_junit.render ~release_failures:[] ~armed ~suite:"s"
-      ~results:
-        [
-          Fixtures.result
-            [ "geo"; "area non-negative" ]
-            (Failure.Fail [ Fixtures.prop_failure ]);
-          Fixtures.result [ "cli"; "cli help" ]
-            (Failure.Fail [ Fixtures.snap_missing ]);
-        ]
-      ~duration:0.1 ()
-  in
-  List.iter
-    (fun line -> contains ~msg:"the armed run's hint line" ~sub:line doc)
-    (Report_sections.hints ~armed [ Fixtures.prop_failure ]);
-  contains ~msg:"the replay arms the mutant" ~sub:armed doc;
-  not_contains ~msg:"an armed run accepts nothing" ~sub:"accept:" doc
-
-(* Writing: the files [write] makes, as the file system shows them. *)
-
-let write ?(suite = "s") ?(results = [ Fixtures.timed_result ]) target =
-  Report_junit.write ~invocation:`Mirrors ~suite ~duration:0.1 ~results
-    ~release_failures:[] target
+let write ?(invocation = `Mirrors) ?armed ?(suite = "s") ?(duration = 0.1)
+    ?(releases = []) results target =
+  Report_junit.write ~invocation ?armed ~suite ~duration ~results
+    ~release_failures:releases target
 
 let read_file path = In_channel.with_open_bin path In_channel.input_all
 
-let test_write_files () =
-  let root = temp_dir () in
-  let shared = Filename.concat root "all.xml" in
-  write ~suite:"first" shared;
-  write ~suite:"second" shared;
-  contains ~msg:"two suites, one .xml: the last one wins"
-    ~sub:{|<testsuite name="second"|} (read_file shared);
-  not_contains ~msg:"whole" ~sub:{|name="first"|} (read_file shared);
-  let dir = Filename.concat root "a/b/c" in
-  write dir;
-  is_true ~msg:"a directory target is made with its parents"
-    (Sys.file_exists (Filename.concat dir "s.xml"));
-  let big = Filename.concat root "big.xml" in
-  write ~results:Fixtures.results big;
-  write big;
-  equal ~msg:"an existing report is replaced whole" string
-    (Report_junit.render ~release_failures:[] ~suite:"s"
-       ~results:[ Fixtures.timed_result ] ~duration:0.1 ())
-    (read_file big);
-  equal ~msg:"nothing of a document reaches the terminal" string "" (output ())
+let junit ?invocation ?armed ?suite ?duration ?releases results =
+  let file = Filename.concat (temp_dir ()) "report.xml" in
+  write ?invocation ?armed ?suite ?duration ?releases results file;
+  read_file file
 
-let test_write_failure () =
-  let root = temp_dir () in
-  let target = Filename.concat root "missing/r.xml" in
-  write target;
-  is_false ~msg:"the parent of an .xml target is never made"
-    (Sys.file_exists (Filename.concat root "missing"));
-  contains ~msg:"one warning on standard error, and write returns" ~sub:"JUnit"
-    (output ())
+let files dir = List.sort String.compare (Array.to_list (Sys.readdir dir))
 
-(* The paths a document prints: a file baseline's and a full log's. *)
-let test_project_root_paths () =
+(* Rows *)
+
+let result = Render_fixtures.result
+let fail path failures = result path (Failure.Fail failures)
+let label f = require_some (Report_sections.labeled_msg f)
+
+let subtest ?msg name =
+  {
+    (Failure.equality ?msg ~expected:"1" ~actual:"2" ()) with
+    Failure.subtest = [ "contract"; name ];
+  }
+
+(* Every kind of failure that the fixture run holds, and the headline forms
+   it does not: a message, sides of several lines, a long side, a withheld
+   correction and subtests. *)
+let failing =
+  Render_fixtures.results
+  @ [
+      fail [ "forms"; "a message" ]
+        [ Failure.equality ~msg:"deliberate" ~expected:"1" ~actual:"2" () ];
+      fail [ "forms"; "lines" ]
+        [ Failure.equality ~expected:"a\nb\nc" ~actual:"a\nB\nc" () ];
+      fail [ "forms"; "a long side" ]
+        [ Failure.equality ~expected:(String.make 100 'x') ~actual:"y" () ];
+      fail [ "withheld" ]
+        [
+          Failure.message "boom";
+          Failure.with_withheld Failure.Failed_outside
+            Render_fixtures.snap_mismatch;
+        ];
+      Render_fixtures.subtest_result;
+    ]
+
+let release_failures = [ Render_fixtures.release_failure ]
+
+(* The failures that a document writes, in its order, each with the path of
+   its test: a counted row's own failures, then its subtests', then those of
+   the releases. *)
+let written rows releases =
+  let row (r : Run.result) =
+    match r.outcome with
+    | Failure.Fail fs when r.counted ->
+        let subtests, own =
+          List.partition Report_sections.is_subtest_failure fs
+        in
+        let path = Test_tree.path_to_string r.path in
+        List.map (fun f -> (path, f)) (own @ subtests)
+    | Failure.Fail _ | Failure.Pass | Failure.Skip _ -> []
+  in
+  List.concat_map row rows
+  @ List.map (fun f -> (Report_sections.release_title, f)) releases
+
+(* The document *)
+
+let small_run () =
+  let doc =
+    junit ~suite:"mylib" ~duration:1.234 ~releases:release_failures
+      [
+        result [ "math"; "addition" ] Failure.Pass ~duration:0.0001;
+        fail
+          [ "users"; "sessions after login" ]
+          [
+            Failure.with_output_tail Render_fixtures.tail
+              Render_fixtures.eq_failure;
+          ];
+        result [ "platform"; "windows paths" ] (Failure.Skip (Some "unix only"));
+        Render_fixtures.timed_result;
+      ]
+  in
+  expect_file doc "test/unit/expected/test_report_junit/document.expected";
+  is_ok ~pp:Format.pp_print_string (read doc)
+
+let subtest_run () =
+  let doc =
+    junit ~suite:"mylib" ~duration:0.7 [ Render_fixtures.subtest_result ]
+  in
+  expect_file doc "test/unit/expected/test_report_junit/subtests.expected"
+
+let root_and_suite () =
+  let doc =
+    junit ~suite:"mylib" ~duration:Render_fixtures.duration
+      ~releases:release_failures Render_fixtures.results
+  in
+  let root = parsed doc in
+  equal (list string)
+    [
+      "testsuites name=windtrap tests=13 failures=7 errors=0 skipped=1 \
+       time=6.500";
+      "testsuite name=mylib tests=13 failures=7 errors=0 skipped=1 time=6.500";
+    ]
+    (List.map heading (root :: elements root))
+
+let document =
+  group "The document"
+    [
+      test "a small run's document" small_run;
+      test "a run with subtests" subtest_run;
+      test
+        "the root is testsuites named windtrap, holding one testsuite named \
+         after the suite, both with the counts and the run's duration"
+        root_and_suite;
+    ]
+
+(* Testcases *)
+
+let each_row () =
+  let doc =
+    junit ~suite:"mylib" ~releases:release_failures Render_fixtures.results
+  in
+  equal (list string)
+    [
+      "math › addition | mylib.math | 0.000";
+      "users › sessions after login | mylib.users | 0.000 | failure, system-out";
+      "parser › rejects empty | mylib.parser | 0.000 | failure";
+      "cli › cli help | mylib.cli | 0.000 | failure";
+      "cli › version drift | mylib.cli | 0.000 | failure";
+      "geo › area non-negative | mylib.geo | 0.018 | failure";
+      "db › insert | mylib.db | 0.000 | failure, failure";
+      "flaky › eventually | mylib.flaky | 0.000 | system-out";
+      "slow › big sort | mylib.slow | 2.500";
+      "slow › hash | mylib.slow | 3.000";
+      "platform › windows paths | mylib.platform | 0.000 | skipped: unix only";
+      "math › multiplication | mylib.math | 0.042";
+      "fixture release | mylib | 0.000 | failure";
+    ]
+    (rows doc)
+
+let retried_pass () =
+  let doc =
+    junit
+      [
+        result [ "flaky"; "eventually" ] Failure.Pass ~attempts:3;
+        result [ "steady" ] Failure.Pass;
+      ]
+  in
+  equal (list string)
+    [
+      "flaky › eventually | s.flaky | 0.000 | system-out"; "steady | s | 0.000";
+    ]
+    (rows doc);
+  equal (list string) [ "passed on attempt 3" ] (texts "system-out" doc)
+
+let messages_are_headlines () =
+  let doc = junit ~releases:release_failures failing in
+  equal (list string)
+    (List.map
+       (fun (_, f) -> Report_sections.headline f)
+       (written failing release_failures))
+    (messages "failure" doc)
+
+(* The failures of [failing], and one whose location names a readable line,
+   which an excerpt would print. *)
+let entries (_, invocation, armed) =
+  let source = Filename.concat (temp_dir ()) "t.ml" in
+  Out_channel.with_open_bin source (fun oc ->
+      Out_channel.output_string oc "let the_located_line = ()\n");
+  let located =
+    fail [ "located" ]
+      [ Failure.message ~loc:{ Loc.file = source; line = 1; column = 0 } "m" ]
+  in
+  let rows = failing @ [ located ] in
+  let doc = junit ~invocation ?armed ~releases:release_failures rows in
+  let entry (filter, f) =
+    Pp.str "%a"
+      (fun ppf ->
+        Report_sections.pp_failure ~ansi:false ~filter ~invocation ?armed ppf)
+      f
+  in
+  equal (list text)
+    (List.map entry (written rows release_failures))
+    (texts "failure" doc)
+
+let first_tail () =
+  let in_subtest =
+    { (Failure.message "in a subtest") with subtest = [ "t"; "u" ] }
+  in
+  let doc =
+    junit
+      [
+        fail [ "t" ]
+          [
+            Failure.with_output_tail (Failure.tail "first tail\n") in_subtest;
+            Failure.with_output_tail
+              (Failure.tail ~log_path:"second.output" ~omitted_bytes:9
+                 "second tail\n")
+              (Failure.message "own");
+          ];
+      ]
+  in
+  equal (list string)
+    [
+      "t | s | 0.000 | failure, system-out";
+      label in_subtest ^ " | s | 0.000 | failure";
+    ]
+    (rows doc);
+  equal (list string) [ "first tail\n" ] (texts "system-out" doc)
+
+let exe = `Exe "dune exec qa/x/t.exe --"
+let armed = "lib/a.ml:1:0:add"
+
+let testcases =
+  group "Testcases"
+    [
+      test
+        "each row is a testcase, in order, named by its path, classed by the \
+         suite and its groups, timed in seconds with three decimals"
+        each_row;
+      test "a dot inside a name is not escaped in the classname" (fun () ->
+          equal (list string)
+            [ "a.b › t.c | s.a.b | 0.000" ]
+            (rows (junit [ result [ "a.b"; "t.c" ] Failure.Pass ])));
+      test
+        "a pass is an empty testcase, and a pass on a retry holds a system-out \
+         that reads passed on attempt N"
+        retried_pass;
+      test "a skip holds a skipped element, whose message is its reason"
+        (fun () ->
+          equal (list string)
+            [ "a | s | 0.000 | skipped: unix only"; "b | s | 0.000 | skipped" ]
+            (rows
+               (junit
+                  [
+                    result [ "a" ] (Failure.Skip (Some "unix only"));
+                    result [ "b" ] (Failure.Skip None);
+                  ])));
+      test
+        "a counted failure holds one failure element for each of its own \
+         failures, whose message is its headline"
+        messages_are_headlines;
+      cases
+        "a failure's text is its entry without excerpt, ending in the hint, \
+         accept and replay lines of its test's path"
+        ~name:(fun (name, _, _) -> name)
+        [
+          ("dune's mirrors", `Mirrors, None);
+          ("an executable", exe, None);
+          ("an armed run", `Mirrors, Some armed);
+          ("an armed executable", exe, Some armed);
+        ]
+        entries;
+      test
+        "a system-out follows the failures and holds the first captured tail, \
+         a subtest's included"
+        first_tail;
+    ]
+
+(* Subtests *)
+
+let own_and_subtests () =
+  let first = subtest "shape [0]" in
+  let second = subtest ~msg:"user context" "shape [1]" in
+  let doc =
+    junit
+      [
+        result ~duration:0.5 [ "backend"; "contract" ]
+          (Failure.Fail [ first; Failure.message "final check"; second ]);
+      ]
+  in
+  equal (list string)
+    [
+      "backend › contract | s.backend | 0.500 | failure";
+      label first ^ " | s.backend | 0.000 | failure";
+      label second ^ " | s.backend | 0.000 | failure";
+    ]
+    (rows doc)
+
+let only_subtests () =
+  let only = subtest "shape [0]" in
+  let doc = junit [ fail [ "backend"; "contract" ] [ only ] ] in
+  equal (list string)
+    [
+      "backend › contract | s.backend | 0.000";
+      label only ^ " | s.backend | 0.000 | failure";
+    ]
+    (rows doc)
+
+let subtests =
+  group "Subtests"
+    [
+      test
+        "each subtest failure is a testcase after its test's, with its \
+         classname, named by its label, holding its failure, at time 0.000"
+        own_and_subtests;
+      test "a test whose every failure is a subtest's holds no failure"
+        only_subtests;
+    ]
+
+(* Fixture releases *)
+
+let failed_releases () =
+  let second =
+    Failure.with_phase Failure.Release (Failure.message "release raised")
+  in
+  let doc =
+    junit
+      ~releases:[ Render_fixtures.release_failure; second ]
+      [ Render_fixtures.timed_result ]
+  in
+  let release = Report_sections.release_title ^ " | s | 0.000 | failure" in
+  equal (list string)
+    [ "math › multiplication | s.math | 0.042"; release; release ]
+    (rows doc)
+
+let releases =
+  group "Fixture releases"
+    [
+      test
+        "each failed release is a testcase after the rows, named by the \
+         release title, classed by the suite, at time 0.000"
+        failed_releases;
+    ]
+
+(* Expected failures *)
+
+let no_reason =
+  { Render_fixtures.excused_result with xfail = Some { reason = None } }
+
+let expected_failures =
+  group "Expected failures"
+    [
+      test
+        "an uncounted Fail row holds only a skipped element: expected failure, \
+         and its reason" (fun () ->
+          equal (list string)
+            [
+              "known › broken carry | s.known | 0.000 | skipped: expected \
+               failure: issue #42";
+              "known › broken carry | s.known | 0.000 | skipped: expected \
+               failure";
+            ]
+            (rows (junit [ Render_fixtures.excused_result; no_reason ])));
+      test "a counted Fail row is a failure, an xfail annotation or not"
+        (fun () ->
+          equal (list string)
+            [ "known › fixed already | s.known | 0.000 | failure" ]
+            (rows (junit [ Render_fixtures.xpass_result ])));
+    ]
+
+(* Counts *)
+
+let counts =
+  group "Counts"
+    [
+      cases "tests, failures and skipped count the testcases; errors is 0"
+        ~name:(fun (name, _, _, _) -> name)
+        [
+          ("an empty run", [], [], "tests=0 failures=0 errors=0 skipped=0");
+          ( "a failing row counts one failure, however many elements",
+            [ fail [ "db"; "insert" ] Render_fixtures.body_teardown ],
+            [],
+            "tests=1 failures=1 errors=0 skipped=0" );
+          ( "a subtest failure counts one test and one failure",
+            [ Render_fixtures.subtest_result ],
+            [],
+            "tests=3 failures=3 errors=0 skipped=0" );
+          ( "a row whose failures are all subtests' counts no failure",
+            [ fail [ "backend"; "contract" ] [ subtest "shape [0]" ] ],
+            [],
+            "tests=2 failures=1 errors=0 skipped=0" );
+          ( "a failed release counts one test and one failure",
+            [ Render_fixtures.timed_result ],
+            release_failures,
+            "tests=2 failures=1 errors=0 skipped=0" );
+          ( "a skip and an expected failure count one skip each",
+            [
+              result [ "ok" ] Failure.Pass;
+              Render_fixtures.excused_result;
+              fail [ "bad" ] [ Failure.message "boom" ];
+              result [ "later" ] (Failure.Skip None);
+            ],
+            [],
+            "tests=4 failures=1 errors=0 skipped=2" );
+          ( "a pass on a retry counts no failure",
+            [ result [ "flaky" ] Failure.Pass ~attempts:3 ],
+            [],
+            "tests=1 failures=0 errors=0 skipped=0" );
+          ( "an unexpected pass counts one failure",
+            [ Render_fixtures.xpass_result ],
+            [],
+            "tests=1 failures=1 errors=0 skipped=0" );
+        ]
+        (fun (_, rows, releases, expected) ->
+          equal string expected (counts_of (junit ~releases rows)));
+    ]
+
+(* Validity *)
+
+(* [input] as the reason of a skip, an attribute, and as a captured tail,
+   element text. *)
+let reads_back (_, input, attribute, text) =
+  let doc =
+    junit
+      [
+        result [ "skipped" ] (Failure.Skip (Some input));
+        fail [ "failed" ]
+          [
+            Failure.with_output_tail (Failure.tail input) (Failure.message "m");
+          ];
+      ]
+  in
+  equal (list string) [ attribute ] (messages "skipped" doc);
+  equal (list string) [ text ] (texts "system-out" doc)
+
+let ansi = "\027[31mred\027[0m"
+let edges = "\u{D7FF}\u{E000}\u{FFFD}\u{10000}\u{10FFFF}"
+
+let payload =
+  let fragment =
+    Gen.of_list
+      [
+        "a";
+        "\u{e9}";
+        "<";
+        ">";
+        "&";
+        "\"";
+        "'";
+        "\t";
+        "\n";
+        "\r";
+        "\x00";
+        "\x1b";
+        "\x7f";
+        "\xc3";
+        "\xff";
+        "\u{D7FF}";
+        "\u{FFFE}";
+        "\u{FFFF}";
+        "\u{10FFFF}";
+        "]]>";
+      ]
+  in
+  Gen.with_pp
+    (fun ppf s -> Format.fprintf ppf "%S" s)
+    (Gen.one_of [ Gen.string; Gen.map (String.concat "") (Gen.list fragment) ])
+
+(* Each payload in every string that the rows and the releases supply. The
+   payloads of a case share one document, since each document is a file
+   written and read back. *)
+let well_formed payloads =
+  let rows s =
+    [
+      fail [ s; s ]
+        [
+          Failure.with_output_tail
+            (Failure.tail ~log_path:s s)
+            (Failure.message s);
+          { (Failure.message s) with subtest = [ s; s ] };
+        ];
+      result [ s ] (Failure.Skip (Some s));
+      { Render_fixtures.excused_result with xfail = Some { reason = Some s } };
+    ]
+  in
+  let release s = Failure.with_phase Failure.Release (Failure.message s) in
+  let doc =
+    junit
+      ~suite:(String.concat "" payloads)
+      ~releases:(List.map release payloads)
+      (List.concat_map rows payloads)
+  in
+  is_ok ~pp:Format.pp_print_string (read doc)
+
+let validity =
+  group "Validity"
+    [
+      cases
+        "a string reads back escaped, controls as \\xNN, and reduced to the \
+         Char range of XML 1.0"
+        ~name:(fun (name, _, _, _) -> name)
+        [
+          ("the markup characters", {|a<b>&"c'|}, {|a<b>&"c'|}, {|a<b>&"c'|});
+          ( "ESC, in an escape sequence",
+            ansi,
+            {|\x1b[31mred\x1b[0m|},
+            {|\x1b[31mred\x1b[0m|} );
+          ( "BEL, closing an OSC sequence",
+            "\027]0;title\007",
+            {|\x1b]0;title\x07|},
+            {|\x1b]0;title\x07|} );
+          ( "a control byte and a form feed",
+            "a\x01b\x0cc",
+            {|a\x01b\x0cc|},
+            {|a\x01b\x0cc|} );
+          ("a malformed byte", "c\xffd", "c\u{FFFD}d", "c\u{FFFD}d");
+          ( "the noncharacters U+FFFE and U+FFFF",
+            "\u{FFFE}\u{FFFF}",
+            "\u{FFFD}\u{FFFD}",
+            "\u{FFFD}\u{FFFD}" );
+          ("the edges of the Char range", edges, edges, edges);
+          ("TAB", "a\tb", "a\tb", "a\tb");
+          ("LF, kept in text only", "a\nb", {|a\x0ab|}, "a\nb");
+          ("CR", "a\rb", {|a\x0db|}, {|a\x0db|});
+        ]
+        reads_back;
+      prop "no payload makes the document malformed" ~count:25
+        (Gen.list payload) well_formed
+        ~examples:
+          [
+            [
+              "a\x01b\x0cc\xffd\u{FFFE}e";
+              ansi;
+              "\027]0;title\007";
+              {|a<b>&"c'|};
+              edges ^ "\u{FFFE}\u{FFFF}";
+            ];
+          ];
+    ]
+
+(* Determinism *)
+
+let under_the_root () =
   let root = temp_dir () in
   setenv "WINDTRAP_PROJECT_ROOT" (Some root);
   let failure =
@@ -537,68 +804,132 @@ let test_project_root_paths () =
          (Failure.File (Filename.concat root "test/help.expected"))
          (Failure.Missing { proposed = Failure.text "x\n" }))
   in
-  let doc =
-    Report_junit.render ~release_failures:[] ~suite:"s"
-      ~results:[ Fixtures.result [ "t" ] (Failure.Fail [ failure ]) ]
-      ~duration:0.1 ()
-  in
-  contains ~msg:"a file baseline prints under the root"
-    ~sub:"test/help.expected" doc;
-  contains ~msg:"a full log too" ~sub:"full log: _build/_tests/s/t.output" doc;
-  not_contains ~msg:"never absolute" ~sub:root doc
+  let doc = junit [ fail [ "t" ] [ failure ] ] in
+  contains ~sub:"full log: _build/_tests/s/t.output"
+    (String.concat "" (texts "system-out" doc));
+  contains ~sub:"test/help.expected" (String.concat "" (texts "failure" doc));
+  not_contains ~sub:root doc
 
-(* The checker itself *)
+let determinism =
+  group "Determinism"
+    [
+      test "the paths of a document are relative to the project root"
+        under_the_root;
+    ]
 
-let test_checker_sanity () =
-  let ok s = Xml_check.check s = Ok () in
-  let rejected s =
-    match Xml_check.check s with Error _ -> true | Ok () -> false
-  in
-  is_true ~msg:"checker accepts a minimal document" (ok "<a/>");
-  is_true ~msg:"checker accepts attributes, text, entities"
-    (ok "<a x='1' y=\"2\">t&amp;u<b/></a>");
-  is_true ~msg:"checker rejects mismatched tags" (rejected "<a><b></a>");
-  is_true ~msg:"checker rejects unquoted attributes" (rejected "<a x=1/>");
-  is_true ~msg:"checker rejects unknown entities" (rejected "<a>&nope;</a>");
-  is_true ~msg:"checker rejects raw ampersands" (rejected "<a>t & u</a>");
-  is_true ~msg:"checker rejects control bytes" (rejected "<a>\x01</a>");
-  is_true ~msg:"checker accepts multi-byte characters"
-    (ok "<a x='\u{e9}'>\u{20ac}\u{1d11e}</a>");
-  is_true ~msg:"checker rejects a repeated attribute"
-    (rejected "<a x='1' x='2'/>");
-  is_true ~msg:"checker rejects invalid UTF-8" (rejected "<a>\xff</a>");
-  is_true ~msg:"checker rejects a non-character" (rejected "<a>\u{fffe}</a>");
-  is_true ~msg:"checker rejects a control byte in an attribute"
-    (rejected "<a x='\x01'/>");
-  is_true ~msg:"checker rejects a reference to a non-character"
-    (rejected "<a>&#0;</a>");
-  is_true ~msg:"checker rejects trailing content" (rejected "<a/><b/>")
+(* Writing *)
 
-let tests =
-  [
-    test "golden document" test_golden;
-    test "full fixture run is well-formed" test_full_run;
-    test "the message attribute is the headline" test_message_forms;
-    test "bodies carry the invocation-spelled hints" test_invocation_hints;
-    test "excused failures report as skipped" test_excused_as_skipped;
-    test "a withheld correction offers no acceptance" test_withheld_correction;
-    test "subtests become testcases" test_subtests_as_testcases;
-    test "subtest-only failures" test_subtests_only;
-    test "subtest user msg naming" test_subtest_user_msg_name;
-    test "ANSI cannot reach a JUnit document" test_ansi_impossible;
-    test "XML 1.0 range sanitization" test_xml_range;
-    test "the edges of the XML 1.0 range" test_xml_range_edges;
-    test "escaping" test_escaping;
-    test "flaky pass note" test_flaky_note;
-    test "the report's path" test_path;
-    test "empty run" test_empty_run;
-    test "a dot in a group name is not escaped" test_dotted_classname;
-    test "system-out holds the first tail" test_first_tail;
-    test "an armed run's hints" test_armed_hints;
-    test "the files write makes" test_write_files;
-    test "a report that cannot be written warns" test_write_failure;
-    test "paths print against the project root" test_project_root_paths;
-    test "the checker's own sanity" test_checker_sanity;
-  ]
+let xml_target () =
+  let root = temp_dir () in
+  let shared = Filename.concat root "all.xml" in
+  write ~suite:"first" Render_fixtures.results shared;
+  write ~suite:"second" [ Render_fixtures.timed_result ] shared;
+  let alone = Filename.concat root "alone.xml" in
+  write ~suite:"second" [ Render_fixtures.timed_result ] alone;
+  equal (list string) [ "all.xml"; "alone.xml" ] (files root);
+  equal text (read_file alone) (read_file shared);
+  equal string "" (output ())
 
-let () = exit @@ Windtrap.run "report_junit" tests
+let directory_target () =
+  let dir = Filename.concat (temp_dir ()) "a/b/c" in
+  write ~suite:"mylib" [] dir;
+  write ~suite:"parser" [] dir;
+  equal (list string) [ "mylib.xml"; "parser.xml" ] (files dir)
+
+let partitions () =
+  let dir = temp_dir () in
+  write ~suite:"lib/parser.ml" [] dir;
+  write ~suite:"lib/lexer.ml" [] dir;
+  equal (list string)
+    (List.sort String.compare
+       [
+         Os.sanitize_component "lib/parser.ml" ^ ".xml";
+         Os.sanitize_component "lib/lexer.ml" ^ ".xml";
+       ])
+    (files dir)
+
+(* [root] holds one regular file, and [target root] cannot be written. *)
+let unwritable (_, target) =
+  let root = temp_dir () in
+  Out_channel.with_open_bin (Filename.concat root "file") ignore;
+  write [] (target root);
+  equal (list string) [ "file" ] (files root);
+  starts_with ~affix:"windtrap: warning: "
+    (require_match one (String.split_on_char '\n' (String.trim (output ()))))
+
+let writing =
+  group "Writing"
+    [
+      test
+        "a target that ends in .xml is that file, as given, and of two suites \
+         the last replaces it whole, printing nothing"
+        xml_target;
+      test
+        "any other target is a directory, made with its parents, holding a \
+         file per suite"
+        directory_target;
+      test "a suite's file is its name made one path component" partitions;
+      cases "a report that cannot be written is one warning, and write returns"
+        ~name:fst
+        [
+          ( "an .xml target whose directory is missing",
+            fun root -> Filename.concat root "missing/r.xml" );
+          ( "a directory target below a regular file",
+            fun root -> Filename.concat root "file/reports" );
+        ]
+        unwritable;
+    ]
+
+(* The reader *)
+
+let reader =
+  group "The reader"
+    [
+      cases "the reader accepts a well-formed document" ~name:Fun.id
+        [
+          "<a/>";
+          "<a x='1' y=\"2\">t&amp;u<b/></a>";
+          "<a x='\u{e9}'>\u{20ac}\u{1d11e}</a>";
+        ] (fun doc -> is_ok ~pp:Format.pp_print_string (read doc));
+      cases "the reader refuses a malformed document" ~name:fst
+        [
+          ("mismatched tags", "<a><b></a>");
+          ("an unquoted attribute", "<a x=1/>");
+          ("an unknown entity", "<a>&nope;</a>");
+          ("a raw ampersand", "<a>t & u</a>");
+          ("a control byte", "<a>\x01</a>");
+          ("a repeated attribute", "<a x='1' x='2'/>");
+          ("invalid UTF-8", "<a>\xff</a>");
+          ("a noncharacter", "<a>\u{fffe}</a>");
+          ("a control byte in an attribute", "<a x='\x01'/>");
+          ("a reference to no character", "<a>&#0;</a>");
+          ("trailing content", "<a/><b/>");
+        ]
+        (fun (_, doc) -> is_error (read doc));
+      test
+        "the reader decodes references, and reads a raw TAB, LF or CR in an \
+         attribute as a space" (fun () ->
+          let a =
+            require_ok (read "<a x='&#9;&#x41;&lt;\t\n\r'>&amp;&gt;</a>")
+          in
+          equal
+            (pair (option string) string)
+            (Some "\tA<   ", "&>")
+            (attribute "x" a, text_of a));
+    ]
+
+let () =
+  exit
+  @@ run "report_junit"
+       [
+         document;
+         testcases;
+         subtests;
+         releases;
+         expected_failures;
+         counts;
+         validity;
+         determinism;
+         writing;
+         reader;
+       ]
