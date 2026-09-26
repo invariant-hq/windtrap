@@ -1,5 +1,5 @@
 (*--------------------------------------------------------------------------
-  Copyright (c) 2026 Thibaut Mattio. All rights reserved.
+  Copyright (c) 2026 Invariant Systems. All rights reserved.
   SPDX-License-Identifier: ISC
   --------------------------------------------------------------------------*)
 
