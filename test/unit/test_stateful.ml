@@ -1668,6 +1668,40 @@ let stateful_runs_one_fresh_system_per_case_over_steps_calls () =
          !scopes (4 * !scopes))
     (!invariants = 4 * !scopes)
 
+(* A command that no passing program called fails the test once every case
+   has passed. The judgement is over the whole run, so a command called in
+   one program of many is alive, and a run of no case judges nothing. *)
+let declared_message tree =
+  match (flattened tree).Test_tree.body with
+  | Test_tree.Scoped _ ->
+      failf "the declared node scopes a resource, not a plain test"
+  | Test_tree.Body body -> (
+      match (expect_check_failure "the declared body" body).Failure.kind with
+      | Failure.Message { kept; _ } -> kept
+      | _ ->
+          failf "the declared body failed with something other than a message")
+
+let a_command_no_program_calls_fails_the_test () =
+  let never =
+    Windtrap.call "never" ~pre:(fun _ -> false) ~next:Fun.id (fun _ () -> ())
+  in
+  let tick = Windtrap.call "tick" ~next:(fun m -> m + 1) (fun _ () -> ()) in
+  (* Legal only before the first [tick], so some programs never call it. *)
+  let first =
+    Windtrap.call "first" ~pre:(fun m -> m = 0) ~next:Fun.id (fun _ () -> ())
+  in
+  let declare ?(count = 5) commands =
+    Windtrap.stateful ~count ~steps:3 "spec" ~model:0 ~scope:unit_scope commands
+  in
+  equal string ~msg:"every command dead: the programs are empty"
+    {|never called: "never" (over 5 passing cases); a command is called only where its ~pre holds|}
+    (declared_message (declare [ never; never ]));
+  equal string ~msg:"one dead command beside a live one"
+    {|never called: "never" (over 5 passing cases); a command is called only where its ~pre holds|}
+    (declared_message (declare [ tick; never ]));
+  run_declared_body (declare ~count:20 [ tick; first ]);
+  run_declared_body (declare ~count:0 [ never ])
+
 (* [?pp_model] reaches the printer the engine renders a counterexample
    with, and reaches it with the pre-states. *)
 let stateful_threads_pp_model_into_the_counterexample () =
@@ -2141,6 +2175,8 @@ let suite =
       stateful_declares_a_prop_node_with_its_tags_timeout_and_site );
     ( "stateful runs one fresh system per case over ?steps calls",
       stateful_runs_one_fresh_system_per_case_over_steps_calls );
+    ( "a command no program calls fails the test",
+      a_command_no_program_calls_fails_the_test );
     ( "stateful threads ~pp_model into the counterexample",
       stateful_threads_pp_model_into_the_counterexample );
     ( "the same seed reproduces the same counterexample",

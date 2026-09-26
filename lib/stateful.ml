@@ -37,6 +37,7 @@ let call ?__POS__ ?pre name ~next body =
    existential ends. [arg] is rendered on demand, since a program is drawn
    and run thousands of times per failing test and printed once. *)
 type ('model, 'sut) call = {
+  command : int; (* the command's first position in the list *)
   name : string;
   loc : Loc.t option;
   arg : string Lazy.t;
@@ -197,6 +198,15 @@ let summary program =
 
 (* Generating *)
 
+(* [first_positions commands] is, for each command, the position of its first
+   occurrence in [commands], so a command listed twice is one command. *)
+let first_positions commands =
+  let rec first i c = function
+    | [] -> assert false (* [c] is a member *)
+    | c' :: cs -> if c' == c then i else first (i + 1) c cs
+  in
+  List.map (fun c -> first 0 c commands) commands
+
 (* Repair runs on the drawn calls before the tree is assembled, so a dropped
    call contributes no subtree, and again at every node, so a call that a
    deletion elsewhere makes illegal goes in the same candidate. A candidate
@@ -205,11 +215,12 @@ let summary program =
    when the argument trees are. The length is fixed, since chunk deletion
    already shrinks it. *)
 let program ?(steps = 20) ?pp_model ~model commands =
-  let call_gen (Command { name; gen; pre; next; body; loc }) =
+  let call_gen command (Command { name; gen; pre; next; body; loc }) =
     let name = one_line name in
     Gen.map
       (fun arg ->
         {
+          command;
           name;
           loc;
           arg = lazy (Gen.Engine.render_value gen arg);
@@ -222,7 +233,10 @@ let program ?(steps = 20) ?pp_model ~model commands =
   (* [Gen.frequency]'s choice does not shrink, so a candidate never turns
      one command into another. *)
   let choice =
-    Gen.frequency (List.map (fun command -> (1, call_gen command)) commands)
+    Gen.frequency
+      (List.map2
+         (fun position command -> (1, call_gen position command))
+         (first_positions commands) commands)
   in
   Gen.Engine.make ~pp:(pp_program ?pp_model) (fun state ->
       (match commands with
@@ -344,14 +358,43 @@ let execute ?loc ?invariant ~scope program =
 
 (* Declaring *)
 
+let never_called ?loc ~cases names =
+  Failure.message ?loc
+    (Pp.str
+       "never called: %s (over %d passing cases); a command is called only \
+        where its ~pre holds"
+       (String.concat ", " (List.map (Pp.str "%S") names))
+       cases)
+
 (* [Test_tree.Tag.prop] because a stateful test is a property: [--tag prop]
-   selects it, and its report shows the root seed. *)
+   selects it, and its report shows the root seed. The law returns only on a
+   passing program, and [Run.property] returns only when every case passed, so
+   [called] then marks the commands of the passing programs. *)
 let stateful ?__POS__ ?tags ?timeout ?count ?steps ?pp_model ?invariant name
     ~model ~scope commands =
   let loc = Loc.resolve ?__POS__ () in
   let tags =
     Test_tree.Tag.prop :: "stateful" :: Option.value ~default:[] tags
   in
-  Run.prop ?__POS__ ~tags ?timeout ?count ~summary name
-    (program ?steps ?pp_model ~model commands) (fun program ->
-      execute ?loc ?invariant ~scope program)
+  let gen = program ?steps ?pp_model ~model commands in
+  let body () =
+    let called = Array.make (List.length commands) false in
+    let cases = ref 0 in
+    Run.property ?loc ?count ~summary gen (fun program ->
+        execute ?loc ?invariant ~scope program;
+        incr cases;
+        List.iter (fun call -> called.(call.command) <- true) program.calls);
+    let never =
+      List.filteri
+        (fun i position -> i = position && not called.(i))
+        (first_positions commands)
+    in
+    if !cases > 0 && never <> [] then
+      let name i =
+        match List.nth commands i with Command c -> one_line c.name
+      in
+      raise
+        (Failure.Check_failure
+           (never_called ?loc ~cases:!cases (List.map name never)))
+  in
+  Test_tree.test ?__POS__ ~tags ?timeout name body

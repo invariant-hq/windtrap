@@ -316,6 +316,11 @@ Each one is also listed under its area below.
   `?pp_model`.
 - A `~pre` or `~next` that raises while a program is drawn fails the
   case, reported as `call 3: close, ~pre raised <exn>`.
+- A stateful test fails with
+  `never called: "pop" (over 100 passing cases)` when no passing program
+  calls a command, as when its `~pre` never holds; a command listed
+  twice is one command, and `~count:0` judges nothing (see
+  [Writing a stateful test](https://github.com/invariant-hq/windtrap/blob/main/doc/manual/stateful-testing.md#writing-a-stateful-test)).
 
 ### Baselines and expect tests
 

@@ -946,6 +946,13 @@ val stateful :
     twice is drawn twice as often. Shrinking removes calls and shrinks
     arguments, and never replaces one operation by another.
 
+    {b Commands never called.} When every case has passed, a command that no
+    passing program called fails the test with a message that starts
+    [never called: "pop" (over 100 passing cases)]. This is a demand on presence
+    over the whole run, like {!cover}'s, so a [count] or [steps] too small can
+    miss a command that is legal. A command listed twice is one command. Under
+    [~count:0] nothing is judged.
+
     {b The scope.} [scope] takes a callback, calls it once with a fresh system,
     and releases the system whether the callback returns or raises. It runs once
     per case and once per shrink candidate.

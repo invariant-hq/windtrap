@@ -200,16 +200,25 @@ val stateful :
   ('model, 'sut) command list ->
   Test_tree.t
 (** [stateful name ~model ~scope commands] is the property test [name] over the
-    programs of [commands]. It is {!Run.prop} over
+    programs of [commands]. Its body is {!Run.property} over
     [program ?steps ?pp_model ~model commands], with
     [execute ?loc ?invariant ~scope] as its law and {!val-summary} as its
-    summary.
+    summary, then the judgement of the commands never called.
     - [timeout] and [count] are {!Run.prop}'s, and so is [--prop-count].
     - [steps] and [pp_model] are {!val-program}'s. [scope] and [invariant] are
       {!execute}'s.
     - [__POS__] is the declaration site, resolved once at this call. It is the
       site of the test and {!execute}'s [loc].
     - ["prop"] and ["stateful"] are always added to [tags].
+
+    {b Commands never called.} When {!Run.property} returns, every case has
+    passed. If at least one case passed, a command that no program of the run
+    called then fails the test with a [Failure.Check_failure] at the declaration
+    site, whose message names every such command in the order of [commands]:
+    [never called: "pop", "peek" (over 100 passing cases); a command is called
+     only where its ~pre holds]. A command is a value of [commands], compared
+    physically, so a command listed twice is one command, and two commands of
+    one name are two.
 
     It takes no [examples], since a program cannot be written by hand, no
     [max_discard], the budget being {!Property.run}'s default, and no [retries],

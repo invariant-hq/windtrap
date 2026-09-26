@@ -500,40 +500,40 @@ let gave_up_failure ?loc (stats : Property.stats) =
         cases passed)"
        stats.discards stats.cases)
 
+let property ?loc ?count ?max_discard ?examples ?summary gen law =
+  let frame = current_frame () in
+  let config = frame.run.config in
+  let count =
+    match count with
+    | Some n -> Some (`Declared n)
+    | None -> Option.map (fun n -> `Config n) config.prop_count
+  in
+  let run_law context value =
+    let enclosing = frame.prop in
+    frame.prop <- Some context;
+    Fun.protect
+      ~finally:(fun () -> frame.prop <- enclosing)
+      (fun () -> law value)
+  in
+  let fail stats failure =
+    frame.prop_stats <- Some stats;
+    raise (Failure.Check_failure failure)
+  in
+  match
+    Property.run ?loc ?count ?max_discard ?examples ?summary ~root:config.seed
+      ~path:(Test_tree.path_to_string frame.path)
+      gen run_law
+  with
+  | Pass stats -> frame.prop_stats <- Some stats
+  | Fail { failure; stats } -> fail stats failure
+  | Coverage_failed stats -> fail stats (coverage_failure ?loc:frame.loc stats)
+  | Gave_up stats -> fail stats (gave_up_failure ?loc:frame.loc stats)
+
 let prop ?__POS__ ?tags ?timeout ?count ?max_discard ?examples ?summary name gen
     law =
   let loc = Loc.resolve ?__POS__ () in
-  let body () =
-    let frame = current_frame () in
-    let config = frame.run.config in
-    let count =
-      match count with
-      | Some n -> Some (`Declared n)
-      | None -> Option.map (fun n -> `Config n) config.prop_count
-    in
-    let run_law context value =
-      let enclosing = frame.prop in
-      frame.prop <- Some context;
-      Fun.protect
-        ~finally:(fun () -> frame.prop <- enclosing)
-        (fun () -> law value)
-    in
-    let fail stats failure =
-      frame.prop_stats <- Some stats;
-      raise (Failure.Check_failure failure)
-    in
-    match
-      Property.run ?loc ?count ?max_discard ?examples ?summary ~root:config.seed
-        ~path:(Test_tree.path_to_string frame.path)
-        gen run_law
-    with
-    | Pass stats -> frame.prop_stats <- Some stats
-    | Fail { failure; stats } -> fail stats failure
-    | Coverage_failed stats ->
-        fail stats (coverage_failure ?loc:frame.loc stats)
-    | Gave_up stats -> fail stats (gave_up_failure ?loc:frame.loc stats)
-  in
-  Test_tree.test ?__POS__ ?tags ?timeout name body
+  Test_tree.test ?__POS__ ?tags ?timeout name (fun () ->
+      property ?loc ?count ?max_discard ?examples ?summary gen law)
 
 (* Events *)
 

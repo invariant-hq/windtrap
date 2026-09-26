@@ -367,6 +367,20 @@ val results : t -> result list
 
 (** {1:props Properties} *)
 
+val property :
+  ?loc:Loc.t ->
+  ?count:int ->
+  ?max_discard:int ->
+  ?examples:'a list ->
+  ?summary:('a -> string option) ->
+  'a Gen.t ->
+  ('a -> unit) ->
+  unit
+(** [property gen law] is the body of the test that {!prop} declares, [loc]
+    being its declaration site. It returns [()] on a [Pass] and raises the
+    failure of any other outcome as a [Failure.Check_failure] (see {!prop}).
+    Raises as {!current_frame} does. *)
+
 val prop :
   ?__POS__:Loc.pos ->
   ?tags:string list ->
@@ -379,10 +393,10 @@ val prop :
   'a Gen.t ->
   ('a -> unit) ->
   Test_tree.t
-(** [prop name gen law] is a {!Test_tree.test} whose body runs {!Property.run}
-    over [gen] and [law], then turns the {!Property.outcome} into the outcome of
-    the test. It takes no [retries] of its own, and those of an enclosing group
-    apply to it as to any test.
+(** [prop name gen law] is a {!Test_tree.test} whose body, {!property}, runs
+    {!Property.run} over [gen] and [law], then turns the {!Property.outcome}
+    into the outcome of the test. It takes no [retries] of its own, and those of
+    an enclosing group apply to it as to any test.
     - [__POS__], [tags] and [timeout] are {!Test_tree.test}'s. The property is
       one body, so [timeout] covers generation and shrinking together (see
       {!Property.run}).

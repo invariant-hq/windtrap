@@ -115,7 +115,9 @@ and `~pp_model` prints the model beside each call of a failing program.
 Keep the model persistent, such as a list or a `Map`, and `~pre` and
 `~next` pure (see `Windtrap.stateful`). A `cover` in the invariant fails
 the test when no program reaches the state it names, such as the full
-queue that `push when full` needs.
+queue that `push when full` needs. A command that no passing program
+calls fails the test with `never called:` and its name, as a `~pre`
+that never holds does.
 
 `test/test_bounded_queue.ml`:
 
