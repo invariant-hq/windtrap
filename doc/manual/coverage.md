@@ -260,6 +260,11 @@ LH:3
 end_of_record
 ```
 
+GitLab's merge-request coverage view reads Cobertura or JaCoCo XML and
+not LCOV, and windtrap writes neither. A GitLab job can still show the
+total: its `coverage` keyword with the regular expression
+`/coverage: \d+\.\d+%/` reads it from the report's last line.
+
 ## Where the dumps are
 
 A suite built by dune writes its dumps under `_build/_coverage`, in a
@@ -324,8 +329,8 @@ OPTIONS:
       Machine-readable report on standard output.
 
   --lcov
-      LCOV tracefile on standard output (genhtml, Codecov, Coveralls, GitLab,
-      editor gutters).
+      LCOV tracefile on standard output (genhtml, Codecov, Coveralls, editor
+      gutters).
 
   --expect=PATH
       Exit 1 unless every .ml/.mll/.mly under PATH (or PATH itself) has

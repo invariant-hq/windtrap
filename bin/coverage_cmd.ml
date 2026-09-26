@@ -281,8 +281,8 @@ OPTIONS:
       Machine-readable report on standard output.
 
   --lcov
-      LCOV tracefile on standard output (genhtml, Codecov, Coveralls, GitLab,
-      editor gutters).
+      LCOV tracefile on standard output (genhtml, Codecov, Coveralls, editor
+      gutters).
 
   --expect=PATH
       Exit 1 unless every .ml/.mll/.mly under PATH (or PATH itself) has

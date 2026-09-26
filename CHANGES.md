@@ -546,7 +546,9 @@ Each one is also listed under its area below.
   uncovered source.
 - `--min PCT` exits 1 below `PCT`, and the last line then reads
   `coverage: 71.4% (312/437 points), minimum 80%: FAILED`.
-- `--lcov` prints an LCOV tracefile.
+- `--lcov` prints an LCOV tracefile, which genhtml, Codecov, Coveralls
+  and editor gutters read; GitLab's merge-request view reads neither
+  format windtrap writes.
 - `--expect PATH` exits 1 unless every source under `PATH` has coverage
   data, and `--do-not-expect PATH` exempts a file or directory from it.
 - `[@@coverage off]` also excludes a module binding.

@@ -727,6 +727,13 @@ let loud_failures =
       \      Exit 1 unless every .ml/.mll/.mly under PATH (or PATH itself) has\n\
       \      coverage data; repeatable.\n"
     out;
+  contains ~msg:"--lcov names only tools that read an LCOV tracefile"
+    ~sub:
+      "  --lcov\n\
+      \      LCOV tracefile on standard output (genhtml, Codecov, Coveralls, \
+       editor\n\
+      \      gutters).\n"
+    out;
   contains ~msg:"coverage --help opens on the name line, then the usage line"
     ~sub:
       "windtrap coverage - merge .coverage files and report\n\n\
