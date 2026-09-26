@@ -30,6 +30,7 @@
  (name test_registration)
  (modules test_registration)
  (libraries
+  windtrap
   windtrap.runtime
   windtrap_mutate_forced
   windtrap_mutate_disambiguate

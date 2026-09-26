@@ -1,3 +1,8 @@
+(*---------------------------------------------------------------------------
+   Copyright (c) 2026 Invariant Systems. All rights reserved.
+   SPDX-License-Identifier: ISC
+  ---------------------------------------------------------------------------*)
+
 (* The typing-context corpus. OCaml types an application's arguments left
    to right, and type-directed record disambiguation leans on that order:
    one qualified access ([rect.Layout.x]) teaches the checker the
@@ -8,20 +13,19 @@
    before anything has said what [rect] is, and the whole file stops
    compiling with "Unbound record field".
 
-   Each shape below is a real site the mutate backend broke, copied from
-   the repositories that hit it; none of the field names is in scope
-   unqualified, so every function here compiles only while the guards
-   preserve the user's left-to-right typing context. That makes this
-   module the regression test: it is preprocessed with the instrumenter
-   directly (see dune), so an encoding that reorders type-checking is a
-   build failure on every ordinary [dune build], not a red test.
+   Each shape below comes from a real project, and none of the field
+   names is in scope unqualified, so every function here compiles only
+   while the guards preserve the user's left-to-right typing context.
+   That makes this module the regression test: it is preprocessed with
+   the instrumenter directly (see dune), so an encoding that reorders
+   type-checking is a build failure on every [dune build], not a red test.
 
    Unlike [forced], this library keeps dune's default warning set:
    type-directed disambiguation is warning 40's subject, so the [-w +a]
    battery would reject the UNinstrumented source and there would be
    nothing left to protect. *)
 
-(* matrix_charts.ml: an [ari] chain of [+] across applications. The
+(* An [ari] chain of [+] across applications. The
    chain rule guards only the outermost [+], so its right operand - the
    last [max], whose [rect.height] no scope resolves - must still be
    type-checked after the first, qualified [rect.Layout.x]. The inner
@@ -36,7 +40,7 @@ let clip rect x0 y0 box_w box_h =
   + max 0 (rect.y - y0)
   + max 0 (y0 + box_h - (rect.y + rect.height))
 
-(* coordinates.ml: one [-] site whose two operands are the teaching and
+(* One [-] site whose two operands are the teaching and
    the taught access - the smallest expression that can break. *)
 module Line = struct
   type t = { start : int; end_ : int }
@@ -49,7 +53,7 @@ let span line = max (line.Line.end_ - line.start) 0
    [ari] does, so it must preserve the same order. *)
 let inverted line = if line.Line.end_ < line.start then 1 else 0
 
-(* toffee_compute_flexbox.ml: a [+.] chain over nested projections, with
+(* A [+.] chain over nested projections, with
    a second record type sharing a field name. Here the first access
    pins [child]'s type through the uniquely-named [padding], and
    [child.border] then disambiguates against [overlay.border] - but only
@@ -70,7 +74,7 @@ let horizontal child =
   child.padding.left +. child.padding.right +. child.border.left
   +. child.border.right
 
-(* The matrix_charts.ml chain again, with a second record in scope that
+(* The first chain again, with a second record in scope that
    shares EVERY field name, declared last so that scope alone resolves
    [rect.x] to [frame]'s float field. Each unqualified access below then
    compiles only if the checker already knows [rect] is a [Rect.t] -

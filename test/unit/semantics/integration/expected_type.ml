@@ -1,3 +1,8 @@
+(*---------------------------------------------------------------------------
+   Copyright (c) 2026 Invariant Systems. All rights reserved.
+   SPDX-License-Identifier: ISC
+  ---------------------------------------------------------------------------*)
+
 (* The expected-type corpus, the twin of the typing-context corpus in
    disambiguate.ml (which is about ORDER). OCaml gives an application's
    arguments not only an order but an expected type: under

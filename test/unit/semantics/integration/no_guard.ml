@@ -1,3 +1,8 @@
+(*---------------------------------------------------------------------------
+   Copyright (c) 2026 Invariant Systems. All rights reserved.
+   SPDX-License-Identifier: ISC
+  ---------------------------------------------------------------------------*)
+
 (* Every site dismissed: the preamble registers the catalogue but binds
    nothing anything references, so it must not emit an [open] - warning
    33 is fatal here. *)

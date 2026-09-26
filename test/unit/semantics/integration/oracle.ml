@@ -1,3 +1,8 @@
+(*---------------------------------------------------------------------------
+   Copyright (c) 2026 Invariant Systems. All rights reserved.
+   SPDX-License-Identifier: ISC
+  ---------------------------------------------------------------------------*)
+
 (* The behaviour battery. A golden proves the instrumenter emits what it
    emits; it cannot prove that what it emits MEANS the mutant the report
    names. This module is the population that check runs against.

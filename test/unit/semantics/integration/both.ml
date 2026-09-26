@@ -1,3 +1,8 @@
+(*---------------------------------------------------------------------------
+   Copyright (c) 2026 Invariant Systems. All rights reserved.
+   SPDX-License-Identifier: ISC
+  ---------------------------------------------------------------------------*)
+
 (* A library that enables both instrumentation backends at once, which
    the manual's stanza shows side by side. Nothing calls it: its job is to
    be compiled under [--instrument-with ppx_windtrap.coverage

@@ -1,9 +1,14 @@
+(*---------------------------------------------------------------------------
+   Copyright (c) 2026 Invariant Systems. All rights reserved.
+   SPDX-License-Identifier: ISC
+  ---------------------------------------------------------------------------*)
+
 (* Compiled with the mutation instrumenter unconditionally, under the
    warnings the generated preamble is most likely to trip: an unused
    [open] (33), a field resolved by type-directed disambiguation (42),
-   and an unused module (60). The golden expansions in the parent
-   directory pin what the instrumenter emits; this module pins that what
-   it emits is well-typed OCaml. *)
+   and an unused module (60). test/cram/ppx/mutate.t pins what the
+   instrumenter emits; this module pins that what it emits is well-typed
+   OCaml. *)
 
 let pick flag x y = if flag then x else y
 

@@ -1,4 +1,9 @@
-(* The emission law, made falsifiable.
+(*---------------------------------------------------------------------------
+   Copyright (c) 2026 Invariant Systems. All rights reserved.
+   SPDX-License-Identifier: ISC
+  ---------------------------------------------------------------------------*)
+
+(* What a guard may name.
 
    Every arm of a guard must mention only identifiers already present in
    the original expression plus [Stdlib]-qualified names, because all of
