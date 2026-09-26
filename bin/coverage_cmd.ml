@@ -1,12 +1,6 @@
 (*---------------------------------------------------------------------------
    Copyright (c) 2026 Invariant Systems. All rights reserved.
    SPDX-License-Identifier: ISC
-
-   File discovery and the staleness pass live in Data_files, shared with
-   `windtrap mutants`; the table and excerpt rendering live in the
-   library's report sections (Report_sections, via Windtrap.Private) over
-   section data this command builds from what the runtime measured. This
-   is the one coverage reporter: a run prints no number of its own.
   ---------------------------------------------------------------------------*)
 
 module Coverage = Windtrap_runtime.Coverage

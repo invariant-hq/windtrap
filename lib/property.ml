@@ -1,10 +1,6 @@
 (*--------------------------------------------------------------------------
   Copyright (c) 2026 Invariant Systems. All rights reserved.
   SPDX-License-Identifier: ISC
-
-  The case loop structure and label bookkeeping derive from windtrap v1's
-  prop/prop.ml, rebuilt over Seed (per-case derivation), Gen (integrated
-  shrinking), and Failure (typed counterexamples).
   --------------------------------------------------------------------------*)
 
 (* Discarding *)

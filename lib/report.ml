@@ -1,11 +1,6 @@
 (*---------------------------------------------------------------------------
    Copyright (c) 2026 Invariant Systems. All rights reserved.
    SPDX-License-Identifier: ISC
-
-   The transcript layout (status lines, failure blocks) adapts windtrap
-   v1's progress.ml, rebuilt over typed Failure payloads and Diff data:
-   the report projects, never alters, run data.
-   The workflow-command emission adapts v1's emit_github_annotation.
   ---------------------------------------------------------------------------*)
 
 (* Not mutated: see [Mutate_loop]. *)

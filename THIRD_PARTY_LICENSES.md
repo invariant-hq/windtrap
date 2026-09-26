@@ -70,7 +70,7 @@ SOFTWARE.
 
 ## mtime (ISC License)
 
-Files: `lib/clock.ml`, `lib/clock.mli`, `lib/clock_stubs.c`
+Files: `lib/os.ml`, `lib/os.mli`, `lib/os_stubs.c`
 
 The monotonic clock is derived from
 [mtime](https://erratique.ch/software/mtime).

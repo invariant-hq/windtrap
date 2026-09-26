@@ -1,11 +1,10 @@
 (*--------------------------------------------------------------------------
   Copyright (c) 2026 Thibaut Mattio. All rights reserved.
   SPDX-License-Identifier: ISC
-
-  SplitMix64 constants, the s1: token codec, and the rejection-sampled
-  bounded draw. The split construction follows Steele, Lea and Vigna, "Fast
-  Splittable Pseudorandom Number Generators" (OOPSLA 2014).
   --------------------------------------------------------------------------*)
+
+(* The split construction follows Steele, Lea and Vigna, "Fast Splittable
+   Pseudorandom Number Generators" (OOPSLA 2014). *)
 
 (* Every definition here but [random] is frozen under the token prefix [s1],
    as seed.mli states. *)

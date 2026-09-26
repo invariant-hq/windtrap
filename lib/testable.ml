@@ -1,11 +1,6 @@
 (*---------------------------------------------------------------------------
    Copyright (c) 2026 Invariant Systems. All rights reserved.
    SPDX-License-Identifier: ISC
-
-   The witness follows Alcotest's testable vocabulary (instance names,
-   [slist], [pass], absolute float tolerance) but shares no code with it. v3
-   removes generators and diff hooks from the witness: diffs come from printed
-   values, generation lives in Gen, and the two witnesses never merge.
   ---------------------------------------------------------------------------*)
 
 (* [compare] is [None] wherever an order would be a guess, which the

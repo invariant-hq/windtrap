@@ -1,13 +1,6 @@
 (*---------------------------------------------------------------------------
    Copyright (c) 2026 Invariant Systems. All rights reserved.
    SPDX-License-Identifier: ISC
-
-   File discovery and the staleness pass live in Data_files, shared with
-   `windtrap coverage`: one rule for resolving the project root, one rule
-   for detecting a file whose executable is gone or was rebuilt. The
-   report layout lives in the library's report sections
-   (Report_sections.mutation_report, via Windtrap.Private), so the loop's
-   in-process report and this merged one cannot drift.
   ---------------------------------------------------------------------------*)
 
 module Instr = Windtrap_runtime.Instr

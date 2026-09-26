@@ -1,10 +1,6 @@
 (*---------------------------------------------------------------------------
    Copyright (c) 2026 Invariant Systems. All rights reserved.
    SPDX-License-Identifier: ISC
-
-   The flag inventory and the CLI > env > default precedence derive from
-   windtrap v1's lib/cli.ml, rebuilt as one declarative flag table that
-   generates parsing, --help, and the environment layer.
   ---------------------------------------------------------------------------*)
 
 (* Parsed flags *)

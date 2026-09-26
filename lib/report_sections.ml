@@ -1,10 +1,6 @@
 (*---------------------------------------------------------------------------
    Copyright (c) 2026 Invariant Systems. All rights reserved.
    SPDX-License-Identifier: ISC
-
-   The failure blocks adapt windtrap v1's progress.ml, rebuilt over typed
-   Failure payloads and Diff data. The report projects run data, never
-   alters it.
   ---------------------------------------------------------------------------*)
 
 let strf = Printf.sprintf

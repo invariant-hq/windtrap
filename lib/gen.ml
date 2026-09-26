@@ -1,13 +1,10 @@
 (*--------------------------------------------------------------------------
   Copyright (c) 2026 Invariant Systems. All rights reserved.
   SPDX-License-Identifier: ISC
-
-  Integrated shrinking in the QCheck2/Hedgehog design: generators produce
-  rose trees of candidates, so shrinking falls out of composition. The
-  distributions (stratified nat, float bit patterns) follow QCheck2's
-  tuning (https://github.com/c-cube/qcheck); the implementation is
-  windtrap's own, built over Seed (SplitMix64) and the shrink trees below.
   --------------------------------------------------------------------------*)
+
+(* The distributions (stratified nat, float bit patterns) follow QCheck2's
+   tuning (https://github.com/c-cube/qcheck). *)
 
 (* Shrink trees *)
 

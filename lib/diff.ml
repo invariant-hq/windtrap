@@ -2,14 +2,10 @@
    Copyright (c) 2020-2021 Craig Ferguson
    Copyright (c) 2026 Invariant Systems. All rights reserved.
    SPDX-License-Identifier: ISC
-
-   Line diffing adapts the Myers algorithm from windtrap v1's lib/myers;
-   refinement adapts the Wagner-Fischer edit script from v1's lib/distance.ml,
-   itself derived from Craig Ferguson's work on Alcotest
-   (https://github.com/mirage/alcotest/pull/247). v3 merges the two behind a
-   data-only interface (no styling, no truncation, renderers project the
-   data) and adds size guards against pathological inputs.
   ---------------------------------------------------------------------------*)
+
+(* The refinement's edit script derives from Craig Ferguson's work on
+   Alcotest (https://github.com/mirage/alcotest/pull/247). *)
 
 type line = Keep of string | Delete of string | Insert of string
 

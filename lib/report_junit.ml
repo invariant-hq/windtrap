@@ -1,10 +1,6 @@
 (*---------------------------------------------------------------------------
    Copyright (c) 2026 Invariant Systems. All rights reserved.
    SPDX-License-Identifier: ISC
-
-   The testsuites/testsuite/testcase structure adapts windtrap v1's
-   progress.ml write_junit_xml, rebuilt over typed Failure payloads with
-   XML 1.0 field sanitization. The renderer owns its transport's validity.
   ---------------------------------------------------------------------------*)
 
 let strf = Printf.sprintf
