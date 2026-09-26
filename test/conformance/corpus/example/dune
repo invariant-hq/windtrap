@@ -49,7 +49,7 @@
    (with-accepted-exit-codes
     2
     (run
-     %{ocaml_bin}/ocamlc
+     %{ocamlc}
      ; The golden is the compiler's diagnostic, so it must not depend on
      ; whether the compiler felt like colourising: with -color auto the
      ; captured bytes gain ANSI escapes under some build modes and not
