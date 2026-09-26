@@ -3,1247 +3,1136 @@
    SPDX-License-Identifier: ISC
   ---------------------------------------------------------------------------*)
 
-(* Tests for Os: the monotonic clock, the environment readers and the one
-   writer, atomic file publication, the project root, log root, sandbox
-   reconstruction and display paths, and the standard-error line. One
-   submodule per concern, each with its own helpers; the suite runs them
-   as five groups. *)
-
 open Windtrap
 module Os = Windtrap.Private.Os
 
+let strf = Printf.sprintf
+let read path = In_channel.with_open_bin path In_channel.input_all
+let write path s = Out_channel.with_open_bin path (fun oc -> output_string oc s)
+let entries dir = List.sort String.compare (Array.to_list (Sys.readdir dir))
+let posix_only () = if Sys.win32 then skip ~reason:"POSIX only" ()
+
+let permissions_honoured () =
+  posix_only ();
+  if Unix.geteuid () = 0 then
+    skip ~reason:"root ignores directory permissions" ()
+
+let shown = function None -> "unset" | Some v -> strf "%S" v
+
+(* Child processes *)
+
+(* A child leaves through [_exit], so the [at_exit] functions of this process,
+   the runner's among them, run once. The buffers are flushed before the fork,
+   so the child does not write them again. *)
+let fork f =
+  Format.pp_print_flush Format.std_formatter ();
+  Format.pp_print_flush Format.err_formatter ();
+  flush_all ();
+  match Unix.fork () with
+  | 0 -> (
+      match f () with
+      | () -> Unix._exit 0
+      | exception e ->
+          prerr_endline (Printexc.to_string e);
+          Unix._exit 2)
+  | pid -> pid
+
+let rec wait pid =
+  match Unix.waitpid [] pid with
+  | _, status -> status
+  | exception Unix.Unix_error (Unix.EINTR, _, _) -> wait pid
+
+let signal_name signal =
+  let names =
+    [
+      (Sys.sighup, "SIGHUP");
+      (Sys.sigint, "SIGINT");
+      (Sys.sigpipe, "SIGPIPE");
+      (Sys.sigterm, "SIGTERM");
+      (Sys.sigusr1, "SIGUSR1");
+      (Sys.sigusr2, "SIGUSR2");
+    ]
+  in
+  Option.value (List.assoc_opt signal names) ~default:(string_of_int signal)
+
+let ended = function
+  | Unix.WEXITED code -> strf "exited %d" code
+  | Unix.WSIGNALED signal -> "killed by " ^ signal_name signal
+  | Unix.WSTOPPED signal -> "stopped by " ^ signal_name signal
+
 (* Monotonic clock *)
 
-module Clock_suite = struct
-  let tests =
+let never_decreases () =
+  let c = Os.counter () in
+  let a = Os.count_s c in
+  at_least float_exact ~than:a (Os.count_s c)
+
+(* The wall clock brackets the reading, so a count in another unit falls
+   outside; the millisecond of slack absorbs the two clocks' resolutions. *)
+let in_seconds () =
+  let start = Unix.gettimeofday () in
+  let c = Os.counter () in
+  Unix.sleepf 0.005;
+  let elapsed = Os.count_s c in
+  let span = Unix.gettimeofday () -. start in
+  at_least float_exact ~than:0.001 elapsed;
+  at_most float_exact ~than:(span +. 0.001) elapsed
+
+let clock =
+  group "Monotonic clock"
     [
-      test "count is non-negative and monotonic" (fun () ->
-          let c = Os.counter () in
-          is_true ~msg:"count is non-negative" (Os.count c >= 0L);
-          let a = Os.count c in
-          let b = Os.count c in
-          is_true ~msg:"count is monotonic" (b >= a));
-      test "sleeping is measured" (fun () ->
-          (* 5ms of sleep reads as at least 1ms elapsed (loose bound to avoid
-             scheduler flakiness). *)
-          let c = Os.counter () in
-          Unix.sleepf 0.005;
-          is_true (Os.count c >= 1_000_000L));
-      test "count_s agrees with count within float rounding" (fun () ->
-          (* Read between two counts of the same counter, the seconds lie
-             between the two in nanoseconds: a unit slip either way (a
-             count in milliseconds, or in nanoseconds) falls outside, and
-             no wall-clock bound is involved. *)
-          let c = Os.counter () in
-          Unix.sleepf 0.001;
-          let before = Os.count c in
-          let s = Os.count_s c in
-          let after = Os.count c in
-          let seconds ns = Int64.to_float ns /. 1_000_000_000. in
-          is_true ~msg:"count_s is no less than the count before it"
-            (s >= seconds before);
-          is_true ~msg:"count_s is no more than the count after it"
-            (s <= seconds after));
       test "count_s is never negative" (fun () ->
           at_least float_exact ~than:0. (Os.count_s (Os.counter ())));
+      test "count_s of one counter never decreases" never_decreases;
+      test "count_s counts seconds" in_seconds;
     ]
-end
 
 (* Environment variables *)
 
-module Env_suite = struct
-  (* Every write goes through the runner's [setenv], which restores the
-     variable when the attempt ends, so no test hands its bindings to the
-     next. The readers treat the empty string as unset, and the tests clear
-     a variable by binding it to [""]: that reading is what makes them
-     deterministic whatever the ambient environment holds (INSIDE_DUNE under
-     dune runtest), and [Os.setenv]'s real unbinding is proven on its own
-     below. *)
+let var = "WINDTRAP_TEST_OS"
 
-  (* The reader is generic over the variable name (a mirror is named in
-     [Cli]'s flag table, not here) so each test names a real variable and
-     exercises the lookup its mirror uses; the vocabularies are pure
-     functions over the value. *)
-  let string_of = Os.getenv
+let set_then_unset () =
+  setenv var None;
+  Os.setenv var (Some "bound");
+  let bound = Sys.getenv_opt var in
+  Os.setenv var None;
+  equal
+    (pair (option string) (option string))
+    (Some "bound", None)
+    (bound, Sys.getenv_opt var)
 
-  let tests =
+let refused_name name =
+  setenv var None;
+  raises_match (Exn.invalid_arg ~substring:"environment variable name")
+    (fun () -> Os.setenv name (Some "v"));
+  equal (option string) None (Sys.getenv_opt var)
+
+let spellings () =
+  let words =
+    String.split_on_char ' '
+      (String.map (function '/' | ',' | ':' -> ' ' | c -> c) Os.bool_expected)
+  in
+  equal (list string)
+    [ "1"; "0"; "true"; "false"; "yes"; "no"; "on"; "off" ]
+    (List.filter (fun w -> Option.is_some (Os.bool_of_string w)) words)
+
+let environment =
+  group "Environment variables"
     [
-      test "set binds, and unbinds for real" (fun () ->
-          let var = "WINDTRAP_TEST_ENV_SET" in
-          (* The runner restores the variable's absence, whatever happens
-             to [Os.setenv] below. *)
-          setenv var None;
-          Os.setenv var (Some "bound");
-          equal ~msg:"the binding reaches the stdlib, not just Env's readers"
-            (option string) (Some "bound") (Sys.getenv_opt var);
-          Os.setenv var None;
-          equal ~msg:"unbinding removes the variable" (option string) None
-            (Sys.getenv_opt var);
-          (* The whole reason the unbinding half is a C stub: the spelling
-             [Unix] can manage leaves the variable set to the empty string,
-             which is a different fact to every program that asks. *)
-          Unix.putenv var "";
-          equal ~msg:"an empty binding is not an unbinding" (option string)
-            (Some "") (Sys.getenv_opt var);
-          Os.setenv var None);
-      test "set refuses the names POSIX refuses" (fun () ->
-          let refused =
-            Exn.invalid_arg ~substring:"environment variable name"
-          in
-          raises_match ~msg:"a name carrying '='" refused (fun () ->
-              Os.setenv "WINDTRAP=BAD" (Some "x"));
-          raises_match ~msg:"the empty name" refused (fun () ->
-              Os.setenv "" None));
-      test "set refuses a bad name before any change" (fun () ->
-          let var = "WINDTRAP_TEST_ENV_EQ" in
-          setenv var None;
-          raises_match Exn.invalid_arg (fun () ->
-              Os.setenv (var ^ "=x") (Some "v"));
-          equal ~msg:"no variable was bound" (option string) None
-            (Sys.getenv_opt var));
-      test "empty value reads as unset" (fun () ->
-          setenv "WINDTRAP_FILTER" (Some "");
-          equal (option string) None (string_of "WINDTRAP_FILTER");
-          setenv "WINDTRAP_FILTER" (Some "users");
-          equal ~msg:"set value is returned" (option string) (Some "users")
-            (string_of "WINDTRAP_FILTER");
-          setenv "WINDTRAP_FILTER" (Some "");
-          setenv "WINDTRAP_EXCLUDE" (Some "");
-          equal ~msg:"exclude unset" (option string) None
-            (string_of "WINDTRAP_EXCLUDE");
-          setenv "WINDTRAP_EXCLUDE" (Some "slow suite");
-          equal ~msg:"exclude set" (option string) (Some "slow suite")
-            (string_of "WINDTRAP_EXCLUDE");
-          setenv "WINDTRAP_EXCLUDE" (Some ""));
-      cases ~name:Fun.id "truthy bool spellings"
-        [ "1"; "true"; "TRUE"; "yes"; "Y"; "on" ] (fun v ->
-          equal (option bool) (Some true) (Os.bool_of_string v));
-      cases ~name:Fun.id "falsy bool spellings"
-        [ "0"; "false"; "no"; "N"; "off"; "OFF" ] (fun v ->
-          equal (option bool) (Some false) (Os.bool_of_string v));
-      test "bool vocabulary edges" (fun () ->
-          (* A value outside the vocabulary is [None], which every reader
-             refuses loudly rather than reading as unset: the CLI layer
-             names the variable ([Cli]'s tests pin that). *)
-          equal ~msg:"an unparseable bool is neither" (option bool) None
-            (Os.bool_of_string "bogus");
-          equal ~msg:"the value is trimmed" (option bool) (Some true)
-            (Os.bool_of_string " true ");
-          equal ~msg:"an empty value is neither" (option bool) None
-            (Os.bool_of_string "");
-          contains ~msg:"the expected clause names the spellings" ~sub:"1/0"
-            Os.bool_expected);
-      test "bool_expected names every spelling but y and n" (fun () ->
-          let words =
-            String.split_on_char ' '
-              (String.map
-                 (fun c -> if c = '/' || c = ',' || c = ':' then ' ' else c)
-                 Os.bool_expected)
-          in
-          List.iter
-            (fun w -> mem ~msg:w string w words)
-            [ "1"; "0"; "true"; "false"; "yes"; "no"; "on"; "off" ];
-          List.iter (fun w -> is_false ~msg:w (List.mem w words)) [ "y"; "n" ]);
-      test "comma lists split, trim, and drop empties" (fun () ->
-          equal ~msg:"tags split and trimmed" (list string) [ "a"; "b"; "c" ]
-            (Os.split_comma "a, b ,,c ");
-          equal ~msg:"a lone label is a one-item list" (list string) [ "slow" ]
-            (Os.split_comma "slow");
-          equal ~msg:"separators alone are no labels" (list string) []
-            (Os.split_comma " , "));
-      test "CI detection: CI must be set and not falsy" (fun () ->
-          setenv "CI" (Some "");
-          setenv "GITHUB_ACTIONS" (Some "");
-          is_false ~msg:"no CI" (Os.in_ci ());
-          is_false ~msg:"no GitHub Actions" (Os.in_github_actions ());
-          setenv "CI" (Some "true");
-          is_true ~msg:"in_ci true" (Os.in_ci ());
-          is_false ~msg:"CI alone is not GitHub Actions"
-            (Os.in_github_actions ());
-          setenv "GITHUB_ACTIONS" (Some "true");
-          is_true ~msg:"CI plus GITHUB_ACTIONS" (Os.in_github_actions ());
-          setenv "CI" (Some "false");
-          is_false ~msg:"CI=false does not count as CI" (Os.in_ci ());
-          is_false ~msg:"GITHUB_ACTIONS without CI is not GitHub Actions"
-            (Os.in_github_actions ());
-          setenv "CI" (Some "woodpecker");
-          is_true ~msg:"non-boolean CI value counts as set" (Os.in_ci ());
-          is_true ~msg:"a non-boolean CI still resolves GitHub Actions"
-            (Os.in_github_actions ()));
-      test "INSIDE_DUNE" (fun () ->
-          setenv "INSIDE_DUNE" (Some "");
-          is_false ~msg:"inside_dune false when cleared" (Os.inside_dune ());
-          setenv "INSIDE_DUNE" (Some "1");
-          is_true ~msg:"inside_dune true when set" (Os.inside_dune ());
-          setenv "INSIDE_DUNE" (Some "false");
-          is_false ~msg:"INSIDE_DUNE=false does not count" (Os.inside_dune ()));
-      test "color mode vocabulary and the resolution rule" (fun () ->
-          (* The vocabulary is [--color]'s; the flag's parser reads the
-             variable through it, so an unknown word is refused there, not
-             read as auto here. *)
-          is_true ~msg:"color always"
-            (Os.color_mode_of_string "always" = Some Os.Always);
-          is_true ~msg:"color parsing is case-insensitive"
-            (Os.color_mode_of_string "NEVER" = Some Os.Never);
-          is_true ~msg:"color auto"
-            (Os.color_mode_of_string "auto" = Some Os.Auto);
-          is_true ~msg:"an unknown word is neither"
-            (Os.color_mode_of_string "sometimes" = None);
-          is_true ~msg:"always ignores tty"
-            (Os.resolve_color Os.Always ~tty:false ~inside_dune:false
-               ~term_dumb:false);
-          is_false ~msg:"never ignores tty"
-            (Os.resolve_color Os.Never ~tty:true ~inside_dune:true
-               ~term_dumb:false);
-          is_true ~msg:"auto on tty"
-            (Os.resolve_color Os.Auto ~tty:true ~inside_dune:false
-               ~term_dumb:false);
-          is_true ~msg:"auto under dune"
-            (Os.resolve_color Os.Auto ~tty:false ~inside_dune:true
-               ~term_dumb:false);
-          is_false ~msg:"auto plain pipe"
-            (Os.resolve_color Os.Auto ~tty:false ~inside_dune:false
-               ~term_dumb:false);
-          (* TERM=dumb disables ANSI in Auto mode only: a dumb
-             terminal renders no escape sequences, but an explicit request
-             still wins. *)
-          is_false ~msg:"auto on a dumb tty"
-            (Os.resolve_color Os.Auto ~tty:true ~inside_dune:false
-               ~term_dumb:true);
-          is_false ~msg:"auto under dune with a dumb terminal"
-            (Os.resolve_color Os.Auto ~tty:false ~inside_dune:true
-               ~term_dumb:true);
-          is_true ~msg:"always beats a dumb terminal"
-            (Os.resolve_color Os.Always ~tty:true ~inside_dune:false
-               ~term_dumb:true);
-          (* NO_COLOR, the de-facto standard: any non-empty value, whatever
-             it says, and Auto only. An explicit request still wins. *)
-          setenv "NO_COLOR" (Some "1");
-          is_false ~msg:"NO_COLOR silences auto on a tty"
-            (Os.resolve_color Os.Auto ~tty:true ~inside_dune:false
-               ~term_dumb:false);
-          setenv "NO_COLOR" (Some "0");
-          is_false ~msg:"NO_COLOR counts by presence, not by value"
-            (Os.resolve_color Os.Auto ~tty:true ~inside_dune:false
-               ~term_dumb:false);
-          is_true ~msg:"always beats NO_COLOR"
-            (Os.resolve_color Os.Always ~tty:false ~inside_dune:false
-               ~term_dumb:false);
-          setenv "NO_COLOR" (Some "");
-          is_true ~msg:"an empty NO_COLOR is unset"
-            (Os.resolve_color Os.Auto ~tty:true ~inside_dune:false
-               ~term_dumb:false);
-          (* Composing the two (a mode read from the environment applied to
-             a named sink) is the caller's job, not this module's:
-             [Report.terminal] does it for the runner and [coverage_cmd] for
-             the coverage command, and both are pinned end to end by child
-             runs that pass --color and compare bytes. *)
-          ());
-      test "TERM=dumb detection" (fun () ->
-          setenv "TERM" (Some "dumb");
-          is_true ~msg:"TERM=dumb detected" (Os.term_dumb ());
-          setenv "TERM" (Some "xterm-256color");
-          is_false ~msg:"a capable TERM is not dumb" (Os.term_dumb ());
-          setenv "TERM" (Some "");
-          is_false ~msg:"unset TERM is not dumb" (Os.term_dumb ());
-          (* Compared as it is: no case folding, no trimming. *)
-          setenv "TERM" (Some "DUMB");
-          is_false ~msg:"another case is not dumb" (Os.term_dumb ());
-          setenv "TERM" (Some "dumb ");
-          is_false ~msg:"a padded value is not dumb" (Os.term_dumb ()));
-      test "color_mode_of_string does not trim" (fun () ->
-          is_none ~msg:"a leading space" (Os.color_mode_of_string " always");
-          is_none ~msg:"a trailing newline" (Os.color_mode_of_string "never\n"));
+      cases "getenv is the value as it is, and None when unset or empty"
+        ~name:(fun (value, _) -> shown value)
+        [
+          (None, None);
+          (Some "", None);
+          (Some "users", Some "users");
+          (Some " a, b ", Some " a, b ");
+        ]
+        (fun (value, read) ->
+          setenv var value;
+          equal (option string) read (Os.getenv var));
+      test "setenv binds a variable, and None unbinds it" set_then_unset;
+      cases "setenv refuses an empty name or one with =, before any change"
+        ~name:(strf "%S")
+        [ ""; var ^ "=x" ]
+        refused_name;
+      cases "bool_of_string reads a boolean in any case, after trimming"
+        ~name:(fun (s, _) -> strf "%S" s)
+        [
+          ("1", Some true);
+          ("true", Some true);
+          ("TRUE", Some true);
+          ("yes", Some true);
+          ("Y", Some true);
+          ("on", Some true);
+          (" true ", Some true);
+          ("0", Some false);
+          ("false", Some false);
+          ("no", Some false);
+          ("N", Some false);
+          ("off", Some false);
+          ("OFF", Some false);
+          ("\tno\n", Some false);
+          ("bogus", None);
+          ("2", None);
+          ("", None);
+        ]
+        (fun (s, b) -> equal (option bool) b (Os.bool_of_string s));
+      test "bool_expected names every spelling but y and n" spellings;
+      cases
+        "split_comma is the trimmed items between commas, without empty ones"
+        ~name:(fun (s, _) -> strf "%S" s)
+        [
+          ("a, b ,,c ", [ "a"; "b"; "c" ]);
+          ("slow", [ "slow" ]);
+          (" , ", []);
+          ("", []);
+        ]
+        (fun (s, items) -> equal (list string) items (Os.split_comma s));
     ]
-end
+
+(* Detecting dune, a CI and the terminal *)
+
+let ci_row (ci, github) =
+  setenv "CI" ci;
+  setenv "GITHUB_ACTIONS" github;
+  strf "%s, %s"
+    (if Os.in_ci () then "CI" else "no CI")
+    (if Os.in_github_actions () then "GitHub Actions" else "no GitHub Actions")
+
+let flag_cases name ~var read rows =
+  cases name
+    ~name:(fun (value, _) -> shown value)
+    rows
+    (fun (value, set) ->
+      setenv var value;
+      equal bool set (read ()))
+
+let platform =
+  group "Detecting dune, a CI and the terminal"
+    [
+      cases
+        "in_ci and in_github_actions count CI and GITHUB_ACTIONS as set unless \
+         unset, empty or false"
+        ~name:(fun (ci, github, _) ->
+          strf "CI %s, GITHUB_ACTIONS %s" (shown ci) (shown github))
+        [
+          (None, None, "no CI, no GitHub Actions");
+          (Some "", Some "", "no CI, no GitHub Actions");
+          (Some "true", None, "CI, no GitHub Actions");
+          (Some "true", Some "true", "CI, GitHub Actions");
+          (Some "true", Some "false", "CI, no GitHub Actions");
+          (Some "false", Some "true", "no CI, no GitHub Actions");
+          (Some "0", Some "true", "no CI, no GitHub Actions");
+          (Some "OFF", None, "no CI, no GitHub Actions");
+          (Some "woodpecker", Some "true", "CI, GitHub Actions");
+          (Some "true", Some "banana", "CI, GitHub Actions");
+        ]
+        (fun (ci, github, row) -> equal string row (ci_row (ci, github)));
+      flag_cases
+        "inside_dune counts INSIDE_DUNE as set unless unset, empty or false"
+        ~var:"INSIDE_DUNE" Os.inside_dune
+        [
+          (None, false);
+          (Some "", false);
+          (Some "1", true);
+          (Some "/w/_build/default", true);
+          (Some "false", false);
+          (Some "no", false);
+        ];
+      flag_cases "term_dumb is true iff TERM is dumb as it is spelled"
+        ~var:"TERM" Os.term_dumb
+        [
+          (Some "dumb", true);
+          (Some "xterm-256color", false);
+          (Some "", false);
+          (None, false);
+          (Some "DUMB", false);
+          (Some "dumb ", false);
+        ];
+    ]
+
+(* Colour *)
+
+let mode_name = function
+  | Some Os.Always -> "always"
+  | Some Never -> "never"
+  | Some Auto -> "auto"
+  | None -> "none"
+
+let resolved (mode, tty, inside_dune, term_dumb, no_color) =
+  setenv "NO_COLOR" no_color;
+  Os.resolve_color mode ~tty ~inside_dune ~term_dumb
+
+let colour =
+  group "Colour"
+    [
+      cases "color_mode_of_string reads a mode in any case, untrimmed"
+        ~name:(fun (s, _) -> strf "%S" s)
+        [
+          ("always", "always");
+          ("NEVER", "never");
+          ("auto", "auto");
+          ("Auto", "auto");
+          ("sometimes", "none");
+          (" always", "none");
+          ("never\n", "none");
+          ("", "none");
+        ]
+        (fun (s, mode) ->
+          equal string mode (mode_name (Os.color_mode_of_string s)));
+      cases
+        "resolve_color styles under Always, never under Never, and under Auto \
+         on a terminal or under dune unless TERM is dumb or NO_COLOR is set"
+        ~name:(fun (name, _, _) -> name)
+        [
+          ("always, on a pipe", (Os.Always, false, false, false, None), true);
+          ("always, on a dumb terminal", (Always, true, false, true, None), true);
+          ( "always, with NO_COLOR",
+            (Always, false, false, false, Some "1"),
+            true );
+          ( "never, on a terminal under dune",
+            (Never, true, true, false, None),
+            false );
+          ("auto, on a terminal", (Auto, true, false, false, None), true);
+          ("auto, under dune", (Auto, false, true, false, None), true);
+          ("auto, on a pipe", (Auto, false, false, false, None), false);
+          ("auto, on a dumb terminal", (Auto, true, false, true, None), false);
+          ("auto, dumb under dune", (Auto, false, true, true, None), false);
+          ("auto, NO_COLOR 1", (Auto, true, false, false, Some "1"), false);
+          ("auto, NO_COLOR 0", (Auto, true, false, false, Some "0"), false);
+          ( "auto, NO_COLOR under dune",
+            (Auto, false, true, false, Some "1"),
+            false );
+          ("auto, an empty NO_COLOR", (Auto, true, false, false, Some ""), true);
+        ]
+        (fun (_, input, styled) -> equal bool styled (resolved input));
+    ]
 
 (* Atomic file writes *)
 
-module Atomic_suite = struct
-  let contains text substring =
-    Windtrap.Private.Text.contains_substring ~pattern:substring text
+(* Every entry under [dir] with what it holds, in name order: a directory
+   ends in [/], a link shows its target and a file its bytes. *)
+let rec tree ?(under = "") dir =
+  List.concat_map
+    (fun name ->
+      let path = Filename.concat dir name and shown = under ^ name in
+      match (Unix.lstat path).st_kind with
+      | S_DIR -> (shown ^ "/") :: tree ~under:(shown ^ "/") path
+      | S_LNK -> [ shown ^ " -> " ^ Unix.readlink path ]
+      | S_REG -> [ shown ^ ": " ^ read path ]
+      | S_CHR | S_BLK | S_FIFO | S_SOCK -> [ shown ])
+    (entries dir)
 
-  let sorted_directory path =
-    Sys.readdir path |> Array.to_list |> List.sort String.compare
+let with_umask mask f =
+  let previous = Unix.umask mask in
+  Fun.protect ~finally:(fun () -> ignore (Unix.umask previous)) f
 
-  let with_umask mask callback =
-    let previous = Unix.umask mask in
-    Fun.protect ~finally:(fun () -> ignore (Unix.umask previous)) callback
+let permissions path = (Unix.stat path).st_perm land 0o777
 
-  let write_file path contents =
-    let channel = open_out_bin path in
-    Fun.protect
-      ~finally:(fun () -> close_out_noerr channel)
-      (fun () -> output_string channel contents)
+let fails_at ~path step = function
+  | Sys_error message -> String.starts_with ~prefix:(path ^ ": " ^ step) message
+  | _ -> false
 
-  let read_file path =
-    let channel = open_in_bin path in
-    Fun.protect
-      ~finally:(fun () -> close_in_noerr channel)
-      (fun () -> really_input_string channel (in_channel_length channel))
+let every_byte =
+  String.init ((256 * 1024) + 37) (fun i -> Char.chr (i land 0xff))
 
-  let expect_sys_error label ~path operation =
-    match operation () with
-    | _ -> failf "%s: expected Sys_error" label
-    | exception Sys_error message ->
-        is_true
-          ~msg:(label ^ " message starts with the target path")
-          (String.starts_with ~prefix:(path ^ ": ") message);
-        message
+let written (previous, contents) =
+  let dir = temp_dir () in
+  let path = Filename.concat dir "target" in
+  Option.iter
+    (fun (bytes, perm) ->
+      write path bytes;
+      Unix.chmod path perm)
+    previous;
+  Os.atomic_write ~path contents;
+  equal
+    (pair string (list string))
+    (contents, [ "target" ])
+    (read path, entries dir)
 
-  (* Reserved names *)
+let created (umask, perm, previous) =
+  posix_only ();
+  let path = Filename.concat (temp_dir ()) "target" in
+  Option.iter
+    (fun p ->
+      write path "old";
+      Unix.chmod path p)
+    previous;
+  with_umask umask (fun () -> Os.atomic_write ?perm ~path "x");
+  permissions path
 
-  let test_temp_prefix_is_reserved () =
-    equal ~msg:"temp_prefix" string ".tmp-" Os.temp_prefix;
-    is_true ~msg:"temp name is recognized" (Os.is_temp_name ".tmp-1a2b-0");
-    is_true ~msg:"bare prefix is recognized" (Os.is_temp_name ".tmp-");
-    is_true ~msg:"prefix elsewhere is not recognized"
-      (not (Os.is_temp_name "x.tmp-1"));
-    is_true ~msg:"shorter name is not recognized" (not (Os.is_temp_name ".tmp"));
-    is_true ~msg:"an expect_file name is not recognized"
-      (not (Os.is_temp_name "greeting.expected"))
+let refused_perm perm =
+  let dir = temp_dir () in
+  raises
+    (Invalid_argument
+       "Os.atomic_write: perm must contain only bits within 0o777") (fun () ->
+      Os.atomic_write ~perm ~path:(Filename.concat dir "target") "x");
+  equal (list string) [] (entries dir)
 
-  (* Writing *)
+let failed_write (setup, step) =
+  let root = temp_dir () in
+  let path = setup root in
+  let before = tree root in
+  raises_match (fails_at ~path step) (fun () ->
+      Os.atomic_write ~path "replacement");
+  equal (list string) before (tree root)
 
-  let test_creates_exact_binary_file () =
-    let directory = temp_dir () in
-    let path = Filename.concat directory "target" in
-    let contents =
-      String.init ((256 * 1024) + 37) (fun index -> Char.chr (index land 0xff))
-    in
-    Os.atomic_write ~path contents;
-    equal ~msg:"create binary bytes" string contents (read_file path);
-    equal ~msg:"create binary siblings" (list string) [ "target" ]
-      (sorted_directory directory)
+let missing_parent root = Filename.concat root "missing/target"
 
-  let test_replaces_existing_file () =
-    let directory = temp_dir () in
-    let path = Filename.concat directory "target" in
-    write_file path "old bytes that must disappear";
-    Os.atomic_write ~path "new\000bytes";
-    equal ~msg:"replace existing bytes" string "new\000bytes" (read_file path);
-    equal ~msg:"replace existing siblings" (list string) [ "target" ]
-      (sorted_directory directory)
+let directory_target root =
+  let path = Filename.concat root "target" in
+  Unix.mkdir path 0o700;
+  write (Filename.concat path "sentinel") "untouched";
+  path
 
-  let test_replaces_with_empty_file () =
-    let directory = temp_dir () in
-    let path = Filename.concat directory "target" in
-    write_file path "old";
-    Os.atomic_write ~path "";
-    equal ~msg:"replace empty bytes" string "" (read_file path);
-    equal ~msg:"replace empty size" int 0 (Unix.stat path).Unix.st_size
+let symbolic_link root =
+  posix_only ();
+  let referent = Filename.concat root "referent" in
+  let path = Filename.concat root "target" in
+  write referent "referent bytes";
+  Unix.symlink referent path;
+  path
 
-  let test_default_permissions_respect_the_umask () =
-    if Sys.win32 then skip ~reason:"POSIX only" ();
-    let directory = temp_dir () in
-    let path = Filename.concat directory "target" in
-    with_umask 0o022 (fun () -> Os.atomic_write ~path "x");
-    equal ~msg:"default permissions under umask 022" int 0o644
-      ((Unix.stat path).Unix.st_perm land 0o777)
+let read_only_parent () =
+  permissions_honoured ();
+  let root = temp_dir () in
+  let locked = Filename.concat root "locked" in
+  Unix.mkdir locked 0o700;
+  let path = Filename.concat locked "target" in
+  write path "previous contents";
+  Unix.chmod locked 0o500;
+  Fun.protect ~finally:(fun () -> Unix.chmod locked 0o700) @@ fun () ->
+  raises_match (fails_at ~path "cannot create temporary file") (fun () ->
+      Os.atomic_write ~path "replacement");
+  equal (list string)
+    [ "locked/"; "locked/target: previous contents" ]
+    (tree root)
 
-  let test_explicit_permissions_respect_the_umask () =
-    if Sys.win32 then skip ~reason:"POSIX only" ();
-    let directory = temp_dir () in
-    let strict = Filename.concat directory "strict" in
-    with_umask 0o022 (fun () -> Os.atomic_write ~perm:0o600 ~path:strict "x");
-    equal ~msg:"explicit 0o600 under umask 022" int 0o600
-      ((Unix.stat strict).Unix.st_perm land 0o777);
-    let masked = Filename.concat directory "masked" in
-    with_umask 0o077 (fun () -> Os.atomic_write ~perm:0o666 ~path:masked "x");
-    equal ~msg:"0o666 masked by umask 077" int 0o600
-      ((Unix.stat masked).Unix.st_perm land 0o777)
+let writer_contents writer round =
+  strf "writer=%d round=%d\000%s" writer round
+    (String.make (4096 + writer) (Char.chr (65 + writer)))
 
-  (* Failure paths *)
-
-  let test_invalid_permissions_do_no_io () =
-    let directory = temp_dir () in
-    let path = Filename.concat directory "target" in
-    List.iter
-      (fun perm ->
-        let raised =
-          try
-            Os.atomic_write ~perm ~path "contents";
-            false
-          with Invalid_argument message ->
-            equal ~msg:"invalid permission message" string
-              "Os.atomic_write: perm must contain only bits within 0o777"
-              message;
-            true
-        in
-        is_true ~msg:(Printf.sprintf "invalid permission %d raises" perm) raised)
-      [ -1; 0o1000 ];
-    equal ~msg:"invalid permission leaves directory empty" (list string) []
-      (sorted_directory directory)
-
-  let test_missing_parent_fails_and_creates_nothing () =
-    let directory = temp_dir () in
-    let missing = Filename.concat directory "missing" in
-    let path = Filename.concat missing "target" in
-    let message =
-      expect_sys_error "missing parent" ~path (fun () ->
-          Os.atomic_write ~path "x")
-    in
-    is_true ~msg:"missing parent names the failing step"
-      (contains message "cannot create temporary file");
-    is_true ~msg:"missing parent remains absent" (not (Sys.file_exists missing));
-    equal ~msg:"missing parent leaves root empty" (list string) []
-      (sorted_directory directory)
-
-  let test_directory_target_is_unchanged_and_temporary_is_removed () =
-    let directory = temp_dir () in
-    let path = Filename.concat directory "target" in
-    Unix.mkdir path 0o700;
-    write_file (Filename.concat path "sentinel") "untouched";
-    let message =
-      expect_sys_error "directory target" ~path (fun () ->
-          Os.atomic_write ~path "replacement")
-    in
-    is_true ~msg:"directory target fails at replace"
-      (contains message "cannot replace");
-    equal ~msg:"directory target sentinel" string "untouched"
-      (read_file (Filename.concat path "sentinel"));
-    equal ~msg:"directory target has no sibling temporary" (list string)
-      [ "target" ]
-      (sorted_directory directory)
-
-  let test_read_only_parent_directory_fails_cleanly () =
-    (* The portable failure-injection route: a read-only parent makes temporary
-       creation fail before the target is ever touched. Root ignores directory
-       permissions, so the check is skipped when running as root. *)
-    if Sys.win32 then skip ~reason:"POSIX only" ();
-    if Unix.geteuid () = 0 then
-      skip ~reason:"root ignores directory permissions" ();
-    let directory = temp_dir () in
-    let locked = Filename.concat directory "locked" in
-    Unix.mkdir locked 0o700;
-    let path = Filename.concat locked "target" in
-    write_file path "previous contents";
-    Unix.chmod locked 0o500;
-    Fun.protect
-      ~finally:(fun () -> Unix.chmod locked 0o700)
-      (fun () ->
-        (* The failing step's name is the missing parent's test's. *)
-        ignore
-          (expect_sys_error "read-only parent" ~path (fun () ->
-               Os.atomic_write ~path "replacement"));
-        equal ~msg:"read-only parent leaves the target untouched" string
-          "previous contents" (read_file path);
-        equal ~msg:"read-only parent gains no temporary" (list string)
-          [ "target" ] (sorted_directory locked))
-
-  let test_replacement_takes_the_temporary_permissions () =
-    (* Frozen documented behavior: rename replaces the target's previous
-       permission bits with the temporary's. *)
-    if Sys.win32 then skip ~reason:"POSIX only" ();
-    let directory = temp_dir () in
-    let path = Filename.concat directory "target" in
-    write_file path "read-only contents";
-    Unix.chmod path 0o444;
-    with_umask 0o022 (fun () -> Os.atomic_write ~path "replaced");
-    equal ~msg:"read-only target bytes replaced" string "replaced"
-      (read_file path);
-    equal ~msg:"read-only target permissions replaced" int 0o644
-      ((Unix.stat path).Unix.st_perm land 0o777)
-
-  let test_target_symlink_is_refused_not_followed () =
-    (* Refusal subsumes the two protections this test has pinned in turn:
-       writing through the link would modify a file the caller never named,
-       and replacing the link (the previous contract) silently substituted a
-       regular file for it while its referent kept the old bytes, reported
-       as success to the caller. Publication never changes what kind of
-       thing a path names; both sides survive byte-intact. *)
-    if Sys.win32 then skip ~reason:"POSIX only" ();
-    let directory = temp_dir () in
-    let referent = Filename.concat directory "referent" in
-    let path = Filename.concat directory "target" in
-    write_file referent "referent bytes";
-    Unix.symlink referent path;
-    (match Os.atomic_write ~path "new target" with
-    | () -> is_true ~msg:"a symlinked target must be refused" false
-    | exception Sys_error message ->
-        is_true ~msg:"the refusal names the linkness"
-          (contains message "symbolic link"));
-    is_true ~msg:"the link survives as a link"
-      ((Unix.lstat path).Unix.st_kind = Unix.S_LNK);
-    equal ~msg:"the referent keeps its bytes" string "referent bytes"
-      (read_file referent);
-    equal ~msg:"no temporary survives the refusal" (list string)
-      [ "referent"; "target" ]
-      (sorted_directory directory)
-
-  (* Atomicity under concurrency *)
-
-  let writer_contents writer round =
-    Printf.sprintf "writer=%d round=%d\000%s" writer round
-      (String.make (4096 + writer) (Char.chr (65 + writer)))
-
-  let child_replace path rounds writer =
+let concurrent_writers () =
+  let dir = temp_dir () in
+  let path = Filename.concat dir "target" in
+  let writers = 6 and rounds = 24 in
+  let writer w () =
     for round = 0 to rounds - 1 do
-      try Os.atomic_write ~path (writer_contents writer round)
-      with Sys_error message ->
-        prerr_endline ("child replacement failed: " ^ message);
-        exit 3
-    done;
-    exit 0
+      Os.atomic_write ~path (writer_contents w round)
+    done
+  in
+  let children = List.init writers (fun w -> fork (writer w)) in
+  equal (list string)
+    (List.init writers (fun _ -> "exited 0"))
+    (List.map (fun pid -> ended (wait pid)) children);
+  mem string (read path)
+    (List.init writers (fun w -> writer_contents w (rounds - 1)));
+  equal (list string) [ "target" ] (entries dir)
 
-  let wait_for_child label pid =
-    match snd (Unix.waitpid [] pid) with
-    | Unix.WEXITED 0 -> ()
-    | Unix.WEXITED code -> failf "%s: child exited %d" label code
-    | Unix.WSIGNALED signal -> failf "%s: child signaled %d" label signal
-    | Unix.WSTOPPED signal -> failf "%s: child stopped %d" label signal
+(* A temporary is named [.tmp-<pid>-<serial>], its serial counting the
+   temporaries its process made. The write runs in the test's own process,
+   where a mutant is armed and reach is measured; a process has made fewer
+   than 384 temporaries when the test starts, a mutation run's dry run
+   included, so every name the write can try is taken. *)
+let taken_names () =
+  let dir = temp_dir () in
+  let taken =
+    List.init 640 (fun serial -> strf ".tmp-%x-%x" (Unix.getpid ()) serial)
+  in
+  List.iter
+    (fun name ->
+      Unix.close (Unix.openfile (Filename.concat dir name) [ O_CREAT ] 0o600))
+    taken;
+  let path = Filename.concat dir "target" in
+  raises_match (fails_at ~path "cannot create temporary file: File exists")
+    (fun () -> Os.atomic_write ~path "x");
+  equal (list string) (List.sort String.compare taken) (entries dir)
 
-  let test_concurrent_processes_publish_only_whole_inputs () =
-    let directory = temp_dir () in
-    let path = Filename.concat directory "target" in
-    let writers = 6 in
-    let rounds = 24 in
-    let children =
-      List.init writers (fun writer ->
-          let arguments =
-            [|
-              Sys.executable_name;
-              "--atomic-file-child";
-              path;
-              string_of_int rounds;
-              string_of_int writer;
-            |]
-          in
-          Unix.create_process Sys.executable_name arguments Unix.stdin
-            Unix.stdout Unix.stderr)
-    in
-    List.iteri
-      (fun writer pid ->
-        wait_for_child (Printf.sprintf "concurrent writer %d" writer) pid)
-      children;
-    let actual = read_file path in
-    let candidates =
-      List.init writers (fun writer -> writer_contents writer (rounds - 1))
-    in
-    is_true ~msg:"concurrent final value is one complete final input"
-      (List.exists (String.equal actual) candidates);
-    equal ~msg:"concurrent writers leave no temporaries" (list string)
-      [ "target" ]
-      (sorted_directory directory)
-
-  (* Bounded retries on taken names *)
-
-  (* A fresh process numbers its temporaries from 0, so the child takes the
-     first 256 names of its own pid before it writes. *)
-  let child_collide directory =
-    for serial = 0 to 255 do
-      let name = Printf.sprintf ".tmp-%x-%x" (Unix.getpid ()) serial in
-      write_file (Filename.concat directory name) ""
-    done;
-    match Os.atomic_write ~path:(Filename.concat directory "target") "x" with
-    | () -> exit 0
-    | exception Sys_error message ->
-        prerr_string message;
-        exit 3
-
-  let test_taken_names_are_retried_a_bounded_number_of_times () =
-    let directory = temp_dir () in
-    let module Child = Windtrap_test_support.Child in
-    let r =
-      Child.run Sys.executable_name [ "--atomic-collide-child"; directory ]
-    in
-    equal ~msg:"the write fails" int 3 (Child.exit_code r);
-    is_true ~msg:"at the creation of its temporary"
-      (contains r.Child.err "cannot create temporary file: File exists");
-    is_false ~msg:"the target is not created"
-      (Sys.file_exists (Filename.concat directory "target"));
-    equal ~msg:"the taken names are left alone" int 256
-      (Array.length (Sys.readdir directory))
-
-  let suite =
+let atomic_writes =
+  group "Atomic file writes"
     [
-      ("temp prefix is reserved", test_temp_prefix_is_reserved);
-      ("creates exact binary file", test_creates_exact_binary_file);
-      ("replaces existing file", test_replaces_existing_file);
-      ("replaces with empty file", test_replaces_with_empty_file);
-      ( "default permissions respect the umask",
-        test_default_permissions_respect_the_umask );
-      ( "explicit permissions respect the umask",
-        test_explicit_permissions_respect_the_umask );
-      ("invalid permissions do no I/O", test_invalid_permissions_do_no_io);
-      ( "missing parent fails and creates nothing",
-        test_missing_parent_fails_and_creates_nothing );
-      ( "directory target is unchanged and temporary is removed",
-        test_directory_target_is_unchanged_and_temporary_is_removed );
-      ( "read-only parent directory fails cleanly",
-        test_read_only_parent_directory_fails_cleanly );
-      ( "replacement takes the temporary permissions",
-        test_replacement_takes_the_temporary_permissions );
-      ( "target symlink is refused, not followed",
-        test_target_symlink_is_refused_not_followed );
-      ( "concurrent processes publish only whole inputs",
-        test_concurrent_processes_publish_only_whole_inputs );
-      ( "taken names are retried a bounded number of times",
-        test_taken_names_are_retried_a_bounded_number_of_times );
+      cases
+        "atomic_write leaves the target holding its contents, and no other file"
+        ~name:fst
+        [
+          ("a new file of every byte value, past one write", (None, every_byte));
+          ( "a replaced file",
+            (Some ("old bytes that must disappear", 0o644), "new\000bytes") );
+          ("a file replaced by nothing", (Some ("old", 0o644), ""));
+          ("a read-only file", (Some ("read-only contents", 0o444), "replaced"));
+        ]
+        (fun (_, row) -> written row);
+      cases
+        "the file takes perm under the umask, whatever the replaced file had"
+        ~name:(fun (name, _, _) -> name)
+        [
+          ("the default under umask 022", (0o022, None, None), 0o644);
+          ("0o600 under umask 022", (0o022, Some 0o600, None), 0o600);
+          ("0o666 under umask 077", (0o077, Some 0o666, None), 0o600);
+          ("the default over a 0o444 file", (0o022, None, Some 0o444), 0o644);
+        ]
+        (fun (_, input, perm) -> equal int perm (created input));
+      cases "atomic_write refuses a perm beyond 0o777 before touching a file"
+        ~name:(fun (name, _) -> name)
+        [ ("-1", -1); ("0o1000", 0o1000); ("0o4755", 0o4755) ]
+        (fun (_, perm) -> refused_perm perm);
+      cases
+        "a failed write raises Sys_error naming the path and the step, and \
+         leaves the directory as it was"
+        ~name:(fun (name, _, _) -> name)
+        [
+          ("a missing parent", missing_parent, "cannot create temporary file");
+          ("a directory as target", directory_target, "cannot replace");
+          ("a symbolic link as target", symbolic_link, "is a symbolic link");
+        ]
+        (fun (_, setup, step) -> failed_write (setup, step));
+      test
+        "a write into a read-only directory raises Sys_error and leaves it as \
+         it was"
+        read_only_parent;
+      test "concurrent writers leave one whole contents and no temporary"
+        concurrent_writers;
+      test "a write whose temporary names are all taken fails, and leaves them"
+        taken_names;
     ]
 
-  let tests = List.map (fun (name, fn) -> test name fn) suite
+(* Project root and log root *)
 
-  let dispatch_child () =
-    match Array.to_list Sys.argv with
-    | [ _; "--atomic-file-child"; path; rounds; writer ] ->
-        child_replace path (int_of_string rounds) (int_of_string writer)
-    | [ _; "--atomic-collide-child"; directory ] -> child_collide directory
-    | _ -> ()
-end
+let roots () = (Os.project_root (), Os.default_log_dir ())
 
-(* Project root, reconstruction and display paths *)
+let under inside_dune =
+  setenv "WINDTRAP_PROJECT_ROOT" None;
+  setenv "INSIDE_DUNE" inside_dune;
+  roots ()
 
-module Path_suite = struct
-  let fst3 (a, _, _) = a
-  let is_hex = function '0' .. '9' | 'a' .. 'f' -> true | _ -> false
+(* The temporary directory lies outside every build tree, so the only build
+   directory in sight is the one a variable names. *)
+let outside_builds () =
+  chdir (temp_dir ());
+  Sys.getcwd ()
 
-  let tests =
+let relative_inside_dune (value, (root, logs)) =
+  let cwd = outside_builds () in
+  equal (pair string string)
+    (Filename.concat cwd root, Filename.concat cwd logs)
+    (under (Some value))
+
+let falls_through value =
+  ignore (outside_builds ());
+  let own = under None in
+  equal (pair string string) own (under value)
+
+let executable's_directory () =
+  let own = under None in
+  let dir = Filename.dirname Sys.executable_name in
+  let dir =
+    if Filename.is_relative dir then Filename.concat (Sys.getcwd ()) dir
+    else dir
+  in
+  equal (pair string string) (under (Some dir)) own
+
+let root_from (value, root) =
+  let cwd = outside_builds () in
+  setenv "WINDTRAP_PROJECT_ROOT" (Some value);
+  equal string
+    (if Filename.is_relative root then Filename.concat cwd root else root)
+    (Os.project_root ())
+
+let in_a_removed_directory () =
+  let gone = Filename.concat (temp_dir ()) "gone" in
+  Unix.mkdir gone 0o700;
+  chdir gone;
+  Unix.rmdir gone;
+  setenv "WINDTRAP_PROJECT_ROOT" None;
+  setenv "INSIDE_DUNE" (Some "w/_build/default")
+
+let root =
+  group "Project root and log root"
     [
-      test "reconstruct proves containment under the root" (fun () ->
-          let path = result string string in
-          let ok input = Os.reconstruct ~root:"/proj" input in
-          equal ~msg:"relative source resolves under root" path
-            (Ok "/proj/test/foo.ml") (ok "test/foo.ml");
-          equal ~msg:"sandbox path resolves under root" path
-            (Ok "/proj/test/foo.ml")
-            (ok "_build/default/test/foo.ml");
-          equal ~msg:"absolute sandbox path resolves" path
-            (Ok "/proj/test/foo.ml")
-            (ok "/proj/_build/default/test/foo.ml");
-          equal ~msg:"absolute in-root path resolves" path
-            (Ok "/proj/test/foo.ml") (ok "/proj/test/foo.ml");
-          equal ~msg:"dot and double-slash segments normalize" path
-            (Ok "/proj/test/a/b.ml") (ok "test/./a//b.ml");
-          equal ~msg:"internal dotdot stays contained" path
-            (Ok "/proj/test/foo.ml") (ok "test/sub/../foo.ml");
-          equal ~msg:"root with trailing slash accepted" path
-            (Ok "/proj/test/foo.ml")
-            (Os.reconstruct ~root:"/proj/" "test/foo.ml");
-          equal ~msg:"filesystem root as root works" path (Ok "/test/foo.ml")
-            (Os.reconstruct ~root:"/" "test/foo.ml");
-          equal ~msg:"backslashes in the source path normalize" path
-            (Ok "/proj/test/foo.ml")
-            (Os.reconstruct ~root:"/proj" "_build\\default\\test\\foo.ml"));
-      test "reconstruct rejects escapes" (fun () ->
-          let ok input = Os.reconstruct ~root:"/proj" input in
-          let is_error = function Error _ -> true | Ok _ -> false in
-          is_true ~msg:"absolute path outside root fails"
-            (is_error (ok "/elsewhere/foo.ml"));
-          is_true ~msg:"dotdot escaping root fails"
-            (is_error (ok "../escape.ml"));
-          is_true ~msg:"nested dotdot escape fails"
-            (is_error (ok "test/../../escape.ml"));
-          is_true ~msg:"sandbox dotdot escape fails"
-            (is_error (ok "_build/default/../../etc/passwd"));
-          is_true ~msg:"root itself is not a source file" (is_error (ok "."));
-          is_true ~msg:"empty path fails" (is_error (ok ""));
-          is_true ~msg:"prefix sibling directory fails"
-            (is_error (Os.reconstruct ~root:"/proj" "/proj2/test/foo.ml"));
-          is_true ~msg:"relative root cannot prove containment"
-            (is_error (Os.reconstruct ~root:"proj" "test/foo.ml"));
-          equal ~msg:"error carries the unproven candidate"
-            (result string string) (Error "/elsewhere/foo.ml")
-            (ok "/elsewhere/foo.ml"));
-      test "reconstruct strips a sandboxed action's build prefix" (fun () ->
-          equal (result string string) (Ok "/proj/test/foo.ml")
-            (Os.reconstruct ~root:"/proj"
-               "_build/.sandbox/3f/default/test/foo.ml"));
-      test "reconstruct's error candidate is resolved, not normalized"
-        (fun () ->
-          let ok input = Os.reconstruct ~root:"/proj" input in
-          equal ~msg:"an escape" (result string string)
-            (Error "/proj/test/../../escape.ml")
-            (ok "test/../../escape.ml");
-          equal ~msg:"an escape out of a build tree" (result string string)
-            (Error "/proj/../../etc/passwd")
-            (ok "_build/default/../../etc/passwd");
-          equal ~msg:"an absolute path elsewhere" (result string string)
-            (Error "/elsewhere/./a//foo.ml")
-            (ok "/elsewhere/./a//foo.ml"));
-      test "reconstruct is lexical" (fun () ->
-          equal ~msg:"a root that does not exist" (result string string)
-            (Ok "/no/such/root/a.ml")
-            (Os.reconstruct ~root:"/no/such/root" "a.ml");
-          if Sys.win32 then skip ~reason:"POSIX only" ();
-          (* The link points out of the root; resolving it would refuse the
-             path or move it. *)
-          let root = temp_dir () in
-          Unix.symlink "/elsewhere" (Filename.concat root "link");
-          equal ~msg:"a symbolic link is not resolved" (result string string)
-            (Ok (root ^ "/link/x.ml"))
-            (Os.reconstruct ~root "link/x.ml"));
-      test "reconstruct reads a drive as the anchor of an absolute path"
-        (fun () ->
-          let path = result string string in
-          equal ~msg:"a sandbox path under a drive root" path
-            (Ok "C:/w/test/a.ml")
-            (Os.reconstruct ~root:"C:/w" "C:\\w\\_build\\default\\test\\a.ml");
-          equal ~msg:"a lowercase drive" path (Ok "c:/w/a.ml")
-            (Os.reconstruct ~root:"c:/w" "c:/w/a.ml");
-          equal ~msg:"another drive is elsewhere" path (Error "D:/w/a.ml")
-            (Os.reconstruct ~root:"C:/w" "D:/w/a.ml");
-          equal ~msg:"the bare root of a drive is absolute" path (Error "C:/")
-            (Os.reconstruct ~root:"/w" "C:/");
-          equal ~msg:"a drive without its separator is relative" path
-            (Ok "/w/C:a.ml")
-            (Os.reconstruct ~root:"/w" "C:a.ml");
-          equal ~msg:"a digit is no drive" path (Ok "/w/1:/a.ml")
-            (Os.reconstruct ~root:"/w" "1:/a.ml"));
-      test "reconstruct's candidate spells the root without trailing slashes"
-        (fun () ->
-          equal (result string string) (Error "w/a.ml")
-            (Os.reconstruct ~root:"w//" "a.ml"));
-      test "build_root cuts after the build directory and its context"
-        (fun () ->
-          let root = option string in
-          equal ~msg:"a build context" root (Some "/w/_build/default")
-            (Os.build_root "/w/_build/default/test");
-          equal ~msg:"a sandboxed action's context" root
-            (Some "/w/_build/.sandbox/3f/default")
-            (Os.build_root "/w/_build/.sandbox/3f/default/test");
-          equal ~msg:"backslashes" root (Some "/w/_build/default")
-            (Os.build_root "\\w\\_build\\default\\test");
-          equal ~msg:"a build directory with no context" root None
-            (Os.build_root "/w/_build");
-          equal ~msg:"no build directory" root None (Os.build_root "/w/src"));
-      test "sanitize_component" (fun () ->
-          equal ~msg:"safe name unchanged" string "abc-1_2.x"
-            (Os.sanitize_component "abc-1_2.x");
-          (* A name the mapping altered carries a digest of the original:
-             without it the mapping is many-to-one and two tests share one
-             capture log, which Capture opens O_TRUNC. The injectivity it
-             stands for is asserted directly just below, and the digest's
-             bytes by the MD5 test. *)
-          let altered = Os.sanitize_component "a b/c" in
-          equal ~msg:"unsafe chars become underscores" string "a_b_c"
-            (String.sub altered 0 (min 5 (String.length altered)));
-          is_true ~msg:"a hex digest of the original is appended"
-            (String.length altered = 5 + 1 + 8
-            && altered.[5] = '-'
-            && String.for_all is_hex (String.sub altered 6 8));
-          not_equal ~msg:"punctuation variants stay distinct" string
-            (Os.sanitize_component "parse: empty")
-            (Os.sanitize_component "parse, empty");
-          is_true ~msg:"both still start with the readable form"
-            (String.starts_with ~prefix:"parse__empty"
-               (Os.sanitize_component "parse: empty")
-            && String.starts_with ~prefix:"parse__empty"
-                 (Os.sanitize_component "parse, empty"));
-          not_equal ~msg:"empty and dot stay distinct" string
-            (Os.sanitize_component "")
-            (Os.sanitize_component ".");
-          is_true ~msg:"empty becomes unnamed"
-            (String.starts_with ~prefix:"unnamed-" (Os.sanitize_component ""));
-          is_true ~msg:"dotdot becomes unnamed"
-            (String.starts_with ~prefix:"unnamed-" (Os.sanitize_component ".."));
-          let long = String.make 100 'a' in
-          let sanitized = Os.sanitize_component long in
-          equal ~msg:"long names truncated with digest" int 73
-            (String.length sanitized);
-          equal ~msg:"long name keeps prefix" string (String.make 40 'a')
-            (String.sub sanitized 0 40);
-          equal ~msg:"sanitize is deterministic" string sanitized
-            (Os.sanitize_component long);
-          not_equal ~msg:"distinct long names stay distinct" string sanitized
-            (Os.sanitize_component (String.make 100 'b'));
-          equal ~msg:"a result of exactly 80 bytes is kept whole" string
-            (String.make 80 'a')
-            (Os.sanitize_component (String.make 80 'a'));
-          equal ~msg:"one of 81 bytes is cut" int 73
-            (String.length (Os.sanitize_component (String.make 81 'a'))));
-      (* Digests computed apart from windtrap, with Python's hashlib. *)
-      test "sanitize_component's digest is MD5" (fun () ->
-          equal ~msg:"the first 8 digits on a changed name" string
-            "a_b_c-22ce5bc5"
-            (Os.sanitize_component "a b/c");
-          equal ~msg:"the whole digest on a long name" string
-            (String.make 40 'a' ^ "_36a92cc94a9e0fa21f625f8bfb007adf")
-            (Os.sanitize_component (String.make 100 'a'));
-          equal ~msg:"the empty name" string "unnamed-d41d8cd9"
-            (Os.sanitize_component ""));
-      test "mkdir_p creates nested directories and is idempotent" (fun () ->
-          let deep = Filename.concat (temp_dir ()) "a/b/c" in
-          Os.mkdir_p deep;
-          is_true ~msg:"mkdir_p creates nested directories"
-            (Sys.file_exists deep && Sys.is_directory deep);
-          Os.mkdir_p deep;
-          is_true ~msg:"mkdir_p is idempotent" (Sys.is_directory deep));
-      test "file_exists" (fun () ->
-          let dir = temp_dir () in
-          is_true ~msg:"file_exists on a directory" (Os.file_exists dir);
-          is_false ~msg:"file_exists on a missing path"
-            (Os.file_exists (Filename.concat dir "missing")));
-      test "file_exists is false on any error" (fun () ->
-          let file = temp_file () in
-          is_false ~msg:"a path under a regular file (ENOTDIR)"
-            (Os.file_exists (Filename.concat file "x"));
-          if Sys.win32 then skip ~reason:"POSIX only" ();
-          if Unix.geteuid () = 0 then
-            skip ~reason:"root ignores directory permissions" ();
-          let locked = Filename.concat (temp_dir ()) "locked" in
-          Unix.mkdir locked 0o700;
-          let inside = Filename.concat locked "x" in
-          close_out (open_out inside);
-          Unix.chmod locked 0o000;
-          Fun.protect
-            ~finally:(fun () -> Unix.chmod locked 0o700)
-            (fun () ->
-              is_false ~msg:"a file under an unreadable directory (EACCES)"
-                (Os.file_exists inside)));
-      test "mkdir_p of the empty path or the current directory does nothing"
-        (fun () ->
+      cases
+        "INSIDE_DUNE names the build directory, cut after its first _build \
+         component"
+        ~name:fst
+        [
+          ("a build context", ("/w/_build/default", ("/w", "/w/_build/_tests")));
+          ( "a sandboxed action's context",
+            ("/w/_build/.sandbox/3f/default", ("/w", "/w/_build/_tests")) );
+          ( "a private build directory",
+            ("/w/_build_priv/default", ("/w", "/w/_build_priv/_tests")) );
+          ( "a path deep under one",
+            ("/w/_build_x/default/test/t.exe", ("/w", "/w/_build_x/_tests")) );
+          ( "a second _build component",
+            ("/w/_build/default/a/_build_y/b", ("/w", "/w/_build/_tests")) );
+          ( "the build directory itself",
+            ("/w/_build", ("/w", "/w/_build/_tests")) );
+        ]
+        (fun (_, (value, roots)) ->
+          equal (pair string string) roots (under (Some value)));
+      cases
+        "a relative INSIDE_DUNE is made absolute against the working directory"
+        ~name:(fun (value, _) -> strf "%S" value)
+        [
+          ("w/_build/default", ("w", "w/_build/_tests"));
+          ("w\\_build\\default", ("w", "w/_build/_tests"));
+        ]
+        relative_inside_dune;
+      cases
+        "an INSIDE_DUNE that names no build directory leaves it to the \
+         executable"
+        ~name:shown
+        [ Some "1"; Some "/w/src"; Some "" ]
+        falls_through;
+      test "without INSIDE_DUNE, the directory of the executable decides"
+        executable's_directory;
+      cases
+        "project_root is WINDTRAP_PROJECT_ROOT when set, normalized lexically"
+        ~name:(fun (value, _) -> strf "%S" value)
+        [
+          ("/tmp/override", "/tmp/override");
+          ("/r/", "/r");
+          ("/r/.", "/r");
+          ("/r//", "/r");
+          ("/x/../r", "/r");
+          ("//r/./", "/r");
+          ("/..", "/..");
+          ("rel", "rel");
+          ("./sub/../r/", "r");
+        ]
+        root_from;
+      test
+        "project_root and default_log_dir raise Sys_error when the working \
+         directory is gone" (fun () ->
+          in_a_removed_directory ();
+          raises_match Exn.sys_error (fun () -> Os.project_root ());
+          raises_match Exn.sys_error (fun () -> Os.default_log_dir ()));
+    ]
+
+(* Source tree and build tree *)
+
+let reconstruct_symlink () =
+  posix_only ();
+  let root = temp_dir () in
+  Unix.symlink "/elsewhere" (Filename.concat root "link");
+  equal (result string string)
+    (Ok (root ^ "/link/x.ml"))
+    (Os.reconstruct ~root "link/x.ml")
+
+let reconstruction =
+  group "Source tree and build tree"
+    [
+      cases
+        "reconstruct proves a source path under the root, or gives the \
+         candidate"
+        ~name:(fun (name, _, _, _) -> name)
+        [
+          ("a relative path", "/proj", "test/foo.ml", Ok "/proj/test/foo.ml");
+          ( "a build context's copy",
+            "/proj",
+            "_build/default/test/foo.ml",
+            Ok "/proj/test/foo.ml" );
+          ( "a sandboxed action's copy",
+            "/proj",
+            "_build/.sandbox/3f/default/test/foo.ml",
+            Ok "/proj/test/foo.ml" );
+          ( "an absolute copy under the root",
+            "/proj",
+            "/proj/_build/default/test/foo.ml",
+            Ok "/proj/test/foo.ml" );
+          ( "an absolute path under the root",
+            "/proj",
+            "/proj/test/foo.ml",
+            Ok "/proj/test/foo.ml" );
+          ( "dots and repeated separators",
+            "/proj",
+            "test/./a//b.ml",
+            Ok "/proj/test/a/b.ml" );
+          ( "a .. inside the root",
+            "/proj",
+            "test/sub/../foo.ml",
+            Ok "/proj/test/foo.ml" );
+          ( "a root with a trailing /",
+            "/proj/",
+            "test/foo.ml",
+            Ok "/proj/test/foo.ml" );
+          ("the filesystem root", "/", "test/foo.ml", Ok "/test/foo.ml");
+          ( "backslashes",
+            "/proj",
+            "_build\\default\\test\\foo.ml",
+            Ok "/proj/test/foo.ml" );
+          ( "a root that does not exist",
+            "/no/such/root",
+            "a.ml",
+            Ok "/no/such/root/a.ml" );
+          ( "a drive",
+            "C:/w",
+            "C:\\w\\_build\\default\\test\\a.ml",
+            Ok "C:/w/test/a.ml" );
+          ("a lowercase drive", "c:/w", "c:/w/a.ml", Ok "c:/w/a.ml");
+          ("a drive without its separator", "/w", "C:a.ml", Ok "/w/C:a.ml");
+          ("a digit before a colon", "/w", "1:/a.ml", Ok "/w/1:/a.ml");
+          ("another drive", "C:/w", "D:/w/a.ml", Error "D:/w/a.ml");
+          ("the bare root of a drive", "/w", "C:/", Error "C:/");
+          ( "an absolute path elsewhere",
+            "/proj",
+            "/elsewhere/foo.ml",
+            Error "/elsewhere/foo.ml" );
+          ( "an unnormalized path elsewhere",
+            "/proj",
+            "/elsewhere/./a//foo.ml",
+            Error "/elsewhere/./a//foo.ml" );
+          ( "a sibling with the root as prefix",
+            "/proj",
+            "/proj2/test/foo.ml",
+            Error "/proj2/test/foo.ml" );
+          ( "a .. out of the root",
+            "/proj",
+            "../escape.ml",
+            Error "/proj/../escape.ml" );
+          ( "a nested .. out of the root",
+            "/proj",
+            "test/../../escape.ml",
+            Error "/proj/test/../../escape.ml" );
+          ( "a .. out of a build context",
+            "/proj",
+            "_build/default/../../etc/passwd",
+            Error "/proj/../../etc/passwd" );
+          ("the root itself", "/proj", ".", Error "/proj/.");
+          ("the empty path", "/proj", "", Error "/proj/");
+          ("a relative root", "proj", "test/foo.ml", Error "proj/test/foo.ml");
+          ("a relative root with trailing /", "w//", "a.ml", Error "w/a.ml");
+        ]
+        (fun (_, root, file, proven) ->
+          equal (result string string) proven (Os.reconstruct ~root file));
+      test "reconstruct resolves no symbolic link" reconstruct_symlink;
+      cases "build_root is the build directory and the context after it"
+        ~name:(fun (dir, _) -> strf "%S" dir)
+        [
+          ("/w/_build/default/test", Some "/w/_build/default");
+          ("/w/_build/default", Some "/w/_build/default");
+          ( "/w/_build/.sandbox/3f/default/test",
+            Some "/w/_build/.sandbox/3f/default" );
+          ("\\w\\_build\\default\\test", Some "/w/_build/default");
+          ("/w/_build", None);
+          ("/w/src", None);
+        ]
+        (fun (dir, context) ->
+          equal (option string) context (Os.build_root dir));
+    ]
+
+(* Display paths *)
+
+let displayed path =
+  setenv "WINDTRAP_PROJECT_ROOT" (Some "/r");
+  Os.display_path path
+
+let artifact path =
+  setenv "WINDTRAP_PROJECT_ROOT" (Some "/r");
+  Os.display_artifact path
+
+let under_root_spelled root =
+  setenv "WINDTRAP_PROJECT_ROOT" (Some root);
+  (Os.display_path "/r/a/b.ml", Os.display_artifact "/r/_build/x.log")
+
+let display =
+  group "Display paths"
+    [
+      cases
+        "display_path spells a path relative to the project root, without its \
+         build segment, dots or repeated separators"
+        ~name:(fun (path, _) -> strf "%S" path)
+        [
+          ("/r/_build/default/qa/x/t.exe", "qa/x/t.exe");
+          ("/r/_build/release.x/qa/x/t.exe", "qa/x/t.exe");
+          ("/r/qa/x/greeting.snap", "qa/x/greeting.snap");
+          ("/r/./qa//x/./t.exe", "qa/x/t.exe");
+          ("/r/qa/../qa/t.exe", "qa/../qa/t.exe");
+          ("/r/_build/default/a/_build/ctx/b.ml", "a/_build/ctx/b.ml");
+          ("/r/a/_build", "a/_build");
+          ("/_build/default/r/a.ml", "a.ml");
+          ("/elsewhere/./a//t.exe", "/elsewhere/a/t.exe");
+          ("qa/x/t.exe", "qa/x/t.exe");
+          ("./t.exe", "t.exe");
+          ("/r/.", ".");
+          ("w\\_build\\default\\test\\foo.ml", "w/test/foo.ml");
+        ]
+        (fun (path, shown) -> equal string shown (displayed path));
+      cases
+        "display_path and display_artifact remove a root spelled with ., .. or \
+         repeated separators"
+        ~name:(strf "%S") [ "/r/"; "/r/."; "/r//"; "/x/../r"; "//r/./" ]
+        (fun root ->
+          equal (pair string string) ("a/b.ml", "_build/x.log")
+            (under_root_spelled root));
+      cases "display_artifact removes the root prefix and nothing else"
+        ~name:(fun (path, _) -> strf "%S" path)
+        [
+          ("/r/_build/_tests/s/t.output", "_build/_tests/s/t.output");
+          ("/r/./a//b", "./a//b");
+          ("/elsewhere/./x", "/elsewhere/./x");
+        ]
+        (fun (path, shown) -> equal string shown (artifact path));
+      test
+        "display_path and display_artifact remove no prefix when the working \
+         directory is gone" (fun () ->
+          in_a_removed_directory ();
+          equal (pair string string)
+            ("/r/a.ml", "/r/_build/./a.ml")
+            ( Os.display_path "/r/_build/default/./a.ml",
+              Os.display_artifact "/r/_build/./a.ml" ));
+    ]
+
+(* Path components *)
+
+let safe_byte = function
+  | 'a' .. 'z' | 'A' .. 'Z' | '0' .. '9' | '-' | '_' | '.' -> true
+  | _ -> false
+
+let one_safe_component s =
+  let component = Os.sanitize_component s in
+  at_most int ~than:80 (String.length component);
+  satisfies ~claim:"safe bytes, and neither empty, . nor .." string
+    (fun c -> String.for_all safe_byte c && not (List.mem c [ ""; "."; ".." ]))
+    component
+
+(* The digests are MD5's, as Python's hashlib computes them. *)
+let components =
+  group "Path components"
+    [
+      cases
+        "sanitize_component keeps a safe name, and marks a changed one with \
+         its digest"
+        ~name:(fun (name, _, _) -> name)
+        [
+          ("a safe name", "abc-1_2.x", "abc-1_2.x");
+          ("a safe name with a leading dot", ".hidden", ".hidden");
+          ("a space and a slash", "a b/c", "a_b_c-22ce5bc5");
+          ("a colon", "parse: empty", "parse__empty-910a10a4");
+          ("a comma", "parse, empty", "parse__empty-f14525e6");
+          ("a two-byte code point", "\xc3\xa9", "__-66ddcd97");
+          ("the empty name", "", "unnamed-d41d8cd9");
+          ("a dot", ".", "unnamed-5058f1af");
+          ("two dots", "..", "unnamed-58b9e70b");
+          ("80 safe bytes", String.make 80 'a', String.make 80 'a');
+          ( "81 safe bytes",
+            String.make 81 'a',
+            String.make 40 'a' ^ "_986e6938ed767a8ae9530eef54bfe5f1" );
+          ( "100 safe bytes",
+            String.make 100 'a',
+            String.make 40 'a' ^ "_36a92cc94a9e0fa21f625f8bfb007adf" );
+          ( "100 other safe bytes",
+            String.make 100 'b',
+            String.make 40 'b' ^ "_d84a935724eac27d7c9676679b6cdbaf" );
+          ( "90 spaces",
+            String.make 90 ' ',
+            String.make 40 '_' ^ "_0211afbc5c7fd69b7872436c5a99688d" );
+        ]
+        (fun (_, s, component) ->
+          equal string component (Os.sanitize_component s));
+      prop "sanitize_component is one safe component of at most 80 bytes"
+        (Gen.string_of ~size:(Gen.int_range 0 120) Gen.char)
+        one_safe_component;
+    ]
+
+(* Filesystem helpers *)
+
+let unsearchable () =
+  permissions_honoured ();
+  let locked = Filename.concat (temp_dir ()) "locked" in
+  Unix.mkdir locked 0o700;
+  let inside = Filename.concat locked "x" in
+  write inside "";
+  Unix.chmod locked 0o000;
+  Fun.protect ~finally:(fun () -> Unix.chmod locked 0o700) @@ fun () ->
+  equal bool false (Os.file_exists inside)
+
+let creates_parents () =
+  let root = temp_dir () in
+  let deep = Filename.concat root "a/b/c" in
+  let made = [ "a/"; "a/b/"; "a/b/c/" ] in
+  Os.mkdir_p deep;
+  equal (list string) made (tree root);
+  Os.mkdir_p deep;
+  equal (list string) made (tree root)
+
+let mkdir_permissions () =
+  posix_only ();
+  let root = temp_dir () in
+  with_umask 0o020 (fun () -> Os.mkdir_p (Filename.concat root "a/b"));
+  equal (list int) [ 0o750; 0o750 ]
+    (List.map
+       (fun dir -> permissions (Filename.concat root dir))
+       [ "a"; "a/b" ])
+
+let leaves_a_file () =
+  let file = temp_file () in
+  write file "kept";
+  Os.mkdir_p file;
+  equal string "kept" (read file);
+  raises_match
+    (function Unix.Unix_error (Unix.ENOTDIR, _, _) -> true | _ -> false)
+    (fun () -> Os.mkdir_p (Filename.concat file "sub"))
+
+(* A link to nothing is missing to [file_exists] and taken to [mkdir], as a
+   directory that another process creates meanwhile is. *)
+let leaves_a_link () =
+  posix_only ();
+  let root = temp_dir () in
+  let link = Filename.concat root "link" in
+  let nowhere = Filename.concat root "nowhere" in
+  Unix.symlink nowhere link;
+  Os.mkdir_p link;
+  equal (list string) [ "link -> " ^ nowhere ] (tree root)
+
+let filesystem =
+  group "Filesystem helpers"
+    [
+      cases "file_exists is true iff the path exists, and false on an error"
+        ~name:(fun (name, _, _) -> name)
+        [
+          ("a directory", (fun () -> temp_dir ()), true);
+          ("a file", (fun () -> temp_file ()), true);
+          ( "a missing path",
+            (fun () -> Filename.concat (temp_dir ()) "x"),
+            false );
+          ( "a path under a file",
+            (fun () -> Filename.concat (temp_file ()) "x"),
+            false );
+        ]
+        (fun (_, path, exists) -> equal bool exists (Os.file_exists (path ())));
+      test "file_exists is false under a directory it cannot search"
+        unsearchable;
+      test "mkdir_p creates a directory and its missing parents, once"
+        creates_parents;
+      test "mkdir_p creates with 0o770 under the umask" mkdir_permissions;
+      test "mkdir_p leaves an existing file alone" leaves_a_file;
+      test "mkdir_p leaves a symbolic link to nothing alone" leaves_a_link;
+      test "mkdir_p of the empty path or of . creates nothing" (fun () ->
+          let cwd = outside_builds () in
           Os.mkdir_p "";
-          Os.mkdir_p ".");
-      test "mkdir_p leaves an existing file alone" (fun () ->
-          let file = temp_file () in
-          Out_channel.with_open_bin file (fun oc -> output_string oc "kept");
-          Os.mkdir_p file;
-          equal ~msg:"the file keeps its bytes" string "kept"
-            (In_channel.with_open_bin file In_channel.input_all);
-          raises_match ~msg:"a directory under it cannot be made"
-            (function
-              | Unix.Unix_error (Unix.ENOTDIR, _, _) -> true | _ -> false)
-            (fun () -> Os.mkdir_p (Filename.concat file "sub")));
-      test "mkdir_p creates with 0o770 under the umask" (fun () ->
-          if Sys.win32 then skip ~reason:"POSIX only" ();
-          let deep = Filename.concat (temp_dir ()) "a/b" in
-          let previous = Unix.umask 0o020 in
-          Fun.protect
-            ~finally:(fun () -> ignore (Unix.umask previous))
-            (fun () -> Os.mkdir_p deep);
-          List.iter
-            (fun dir ->
-              equal ~msg:dir int 0o750 ((Unix.stat dir).Unix.st_perm land 0o777))
-            [ deep; Filename.dirname deep ]);
-      test "failure_reason never repeats the path" (fun () ->
-          equal ~msg:"a Sys_error loses the path it starts with" string
-            "cannot write: No space left on device"
-            (Os.failure_reason ~path:"a/b.xml"
-               (Sys_error "a/b.xml: cannot write: No space left on device"));
-          equal ~msg:"another Sys_error is kept whole" string "c.xml: gone"
-            (Os.failure_reason ~path:"a/b.xml" (Sys_error "c.xml: gone"));
-          equal ~msg:"mkdir_p's error names the directory" string
-            "cannot create directory blocked/out: Not a directory"
-            (Os.failure_reason ~path:"blocked/out/r.xml"
-               (Unix.Unix_error (Unix.ENOTDIR, "mkdir", "blocked/out")));
-          equal ~msg:"any other exception is printed" string "Not_found"
-            (Os.failure_reason ~path:"a" Not_found));
-      test "project_root: explicit override wins" (fun () ->
-          setenv "WINDTRAP_PROJECT_ROOT" (Some "/tmp/override");
-          equal ~msg:"override wins" string "/tmp/override" (Os.project_root ());
-          setenv "WINDTRAP_PROJECT_ROOT" (Some "rel");
-          is_true ~msg:"relative override absolutized"
-            ((not (Filename.is_relative (Os.project_root ())))
-            && Filename.basename (Os.project_root ()) = "rel"));
-      test "build_dir_of_path: the first _build component" (fun () ->
-          let dir = option string in
-          let of_path = Os.build_dir_of_path in
-          equal ~msg:"the build context" dir (Some "/w/_build")
-            (of_path "/w/_build/default");
-          equal ~msg:"a sandboxed action's directory" dir (Some "/w/_build")
-            (of_path "/w/_build/.sandbox/3f/default");
-          equal ~msg:"a private build directory" dir (Some "/w/_build_x")
-            (of_path "/w/_build_x/default/test/t.exe");
-          equal ~msg:"only the first build component counts" dir
-            (Some "/w/_build")
-            (of_path "/w/_build/default/a/_build_y/b");
-          equal ~msg:"no build component" dir None (of_path "/w/src/t.exe");
-          equal ~msg:"backslashes normalize" dir (Some "/w/_build")
-            (of_path "\\w\\_build\\default\\t.exe");
-          equal ~msg:"a relative path keeps its prefix" dir (Some "a/_build")
-            (of_path "a/_build/default"));
-      test
-        "project_root and default_log_dir: the build directory, from \
-         INSIDE_DUNE" (fun () ->
-          (* INSIDE_DUNE is dune's build context (never a sandbox path, and
-             a private --build-dir when one was given) and the root is the
-             directory above its build component, the log root inside it. *)
-          setenv "WINDTRAP_PROJECT_ROOT" None;
-          let under context =
-            setenv "INSIDE_DUNE" (Some context);
-            (Os.build_dir (), Os.project_root (), Os.default_log_dir ())
-          in
-          let triple = triple (option string) string string in
-          equal ~msg:"the default context" triple
-            (Some "/w/_build", "/w", "/w/_build/_tests")
-            (under "/w/_build/default");
-          equal ~msg:"a sandboxed action's context is the same" triple
-            (Some "/w/_build", "/w", "/w/_build/_tests")
-            (under "/w/_build/.sandbox/3f/default");
-          equal ~msg:"a private build directory keeps its own logs" triple
-            (Some "/w/_build_priv", "/w", "/w/_build_priv/_tests")
-            (under "/w/_build_priv/default");
-          (* A boolean spelling (a harness's INSIDE_DUNE=1) names no build
-             directory, and the executable's own path decides. *)
-          let own = Os.build_dir_of_path Sys.executable_name in
-          equal ~msg:"a non-path value falls through to the executable"
-            (option string) own
-            (fst3 (under "1")));
-      test
-        "project_root and default_log_dir: the executable's own build \
-         directory, or the working directory" (fun () ->
-          setenv "WINDTRAP_PROJECT_ROOT" None;
-          setenv "INSIDE_DUNE" None;
-          match Os.build_dir_of_path Sys.executable_name with
-          | Some dir ->
-              (* This binary lives under a build directory: a test executable
-                 run by hand from there finds its root above it. *)
-              equal ~msg:"the executable's build directory" (option string)
-                (Some dir) (Os.build_dir ());
-              equal ~msg:"the root is the directory above it" string
-                (Filename.dirname dir) (Os.project_root ());
-              equal ~msg:"the logs live inside it" string
-                (Filename.concat dir "_tests")
-                (Os.default_log_dir ())
-          | None ->
-              (* An installed copy: nothing names a build directory, so the
-                 root is the working directory and the logs go to the
-                 temporary directory, never to a fresh _build. *)
-              equal ~msg:"no build directory" (option string) None
-                (Os.build_dir ());
-              equal ~msg:"the root is the working directory" string
-                (Sys.getcwd ()) (Os.project_root ());
-              equal ~msg:"the logs go to the temporary directory" string
-                (Filename.concat (Filename.get_temp_dir_name ()) "windtrap")
-                (Os.default_log_dir ()));
-      test "a relative INSIDE_DUNE is made absolute against the cwd" (fun () ->
-          (* A working directory outside every build tree, so the only
-             build directory in sight is the one the variable names. *)
-          let cwd = temp_dir () in
-          chdir cwd;
-          let cwd = Sys.getcwd () in
-          setenv "WINDTRAP_PROJECT_ROOT" None;
-          setenv "INSIDE_DUNE" (Some "w/_build/default");
-          equal ~msg:"build_dir" (option string)
-            (Some (cwd ^ "/w/_build"))
-            (Os.build_dir ());
-          equal ~msg:"project_root" string (cwd ^ "/w") (Os.project_root ()));
-      test "a working directory that is gone" (fun () ->
-          let gone = Filename.concat (temp_dir ()) "gone" in
-          Unix.mkdir gone 0o700;
-          chdir gone;
-          Unix.rmdir gone;
-          setenv "WINDTRAP_PROJECT_ROOT" None;
-          setenv "INSIDE_DUNE" (Some "w/_build/default");
-          raises_match ~msg:"project_root raises" Exn.sys_error (fun () ->
-              Os.project_root ());
-          raises_match ~msg:"default_log_dir raises" Exn.sys_error (fun () ->
-              Os.default_log_dir ());
-          equal ~msg:"display_path removes no prefix and does the rest" string
-            "/r/a.ml"
-            (Os.display_path "/r/_build/default/./a.ml");
-          equal ~msg:"display_artifact returns the path as given" string
-            "/r/_build/./a.ml"
-            (Os.display_artifact "/r/_build/./a.ml"));
-      test "WINDTRAP_PROJECT_ROOT is normalized lexically" (fun () ->
-          List.iter
-            (fun root ->
-              setenv "WINDTRAP_PROJECT_ROOT" (Some root);
-              equal ~msg:(root ^ ": project_root") string "/r"
-                (Os.project_root ());
-              equal ~msg:(root ^ ": display_path") string "a/b.ml"
-                (Os.display_path "/r/a/b.ml");
-              equal
-                ~msg:(root ^ ": display_artifact")
-                string "_build/x.log"
-                (Os.display_artifact "/r/_build/x.log"))
-            [ "/r/"; "/r/."; "/r//"; "/x/../r"; "//r/./" ];
-          chdir (temp_dir ());
-          let cwd = Sys.getcwd () in
-          setenv "WINDTRAP_PROJECT_ROOT" (Some "./sub/../r/");
-          equal ~msg:"a relative one, against the working directory" string
-            (cwd ^ "/r") (Os.project_root ());
-          setenv "WINDTRAP_PROJECT_ROOT" (Some "/..");
-          equal ~msg:"one that climbs above the root is kept" string "/.."
-            (Os.project_root ()));
-      test "display_path outside the root strips the build segment first"
-        (fun () ->
-          setenv "WINDTRAP_PROJECT_ROOT" (Some "/r");
-          equal string "a.ml" (Os.display_path "/_build/default/r/a.ml"));
-      test "display_artifact removes the root prefix and nothing else"
-        (fun () ->
-          setenv "WINDTRAP_PROJECT_ROOT" (Some "/r");
-          equal ~msg:"a capture log keeps its build segment" string
-            "_build/_tests/s/t.output"
-            (Os.display_artifact "/r/_build/_tests/s/t.output");
-          equal ~msg:"no normalization" string "./a//b"
-            (Os.display_artifact "/r/./a//b");
-          equal ~msg:"outside the root, as given" string "/elsewhere/./x"
-            (Os.display_artifact "/elsewhere/./x"));
-      test "display spells report paths project-root relative" (fun () ->
-          (* The one producer of [wrote]/hint path spellings for both the
-             library and inline runners. *)
-          let root = Os.project_root () in
-          equal ~msg:"build prefix stripped, root-relative" string "qa/x/t.exe"
-            (Os.display_path (root ^ "/_build/default/qa/x/t.exe"));
-          equal ~msg:"absolute in-root path relativized" string
-            "qa/x/greeting.snap"
-            (Os.display_path (root ^ "/qa/x/greeting.snap"));
-          equal ~msg:"interior dot and empty segments dropped" string
-            "qa/x/t.exe"
-            (Os.display_path (root ^ "/./qa//x/./t.exe"));
-          equal ~msg:"dotdot untouched" string "qa/../qa/t.exe"
-            (Os.display_path (root ^ "/qa/../qa/t.exe"));
-          equal ~msg:"path outside the root normalized, not relativized" string
-            "/elsewhere/a/t.exe"
-            (Os.display_path "/elsewhere/./a//t.exe"));
-      test "display strips exactly one _build sandbox prefix" (fun () ->
-          (* The [_build/<context>/] rule [display] and [reconstruct] share.
-             It has no export of its own, so the cases that neither the plain
-             [display] nor the [reconstruct] test reaches are pinned here,
-             through the surface that prints them. *)
-          let root = Os.project_root () in
-          equal ~msg:"any context is stripped, not just default" string
-            "qa/x/t.exe"
-            (Os.display_path (root ^ "/_build/release.x/qa/x/t.exe"));
-          equal ~msg:"only the first _build segment is stripped" string
-            "a/_build/ctx/b.ml"
-            (Os.display_path (root ^ "/_build/default/a/_build/ctx/b.ml"));
-          equal ~msg:"trailing _build without a context is kept" string
-            "a/_build"
-            (Os.display_path (root ^ "/a/_build"));
-          equal ~msg:"a path with no _build is left alone" string "qa/x/t.exe"
-            (Os.display_path "qa/x/t.exe");
-          equal ~msg:"backslashes normalized" string "w/test/foo.ml"
-            (Os.display_path "w\\_build\\default\\test\\foo.ml"));
+          Os.mkdir_p ".";
+          equal (list string) [] (entries cwd));
+      cases "failure_reason is why an operation on a path failed, less the path"
+        ~name:(fun (name, _, _, _) -> name)
+        [
+          ( "a Sys_error that starts with the path",
+            "a/b.xml",
+            Sys_error "a/b.xml: cannot write: No space left on device",
+            "cannot write: No space left on device" );
+          ( "another Sys_error",
+            "a/b.xml",
+            Sys_error "c.xml: gone",
+            "c.xml: gone" );
+          ( "the Unix_error of mkdir_p",
+            "blocked/out/r.xml",
+            Unix.Unix_error (Unix.ENOTDIR, "mkdir", "blocked/out"),
+            "cannot create directory blocked/out: Not a directory" );
+          ("any other exception", "a", Not_found, "Not_found");
+        ]
+        (fun (_, path, exn, reason) ->
+          equal string reason (Os.failure_reason ~path exn));
     ]
-end
 
 (* Standard error *)
 
-(* The capture holds both streams in the order their bytes reached the
-   descriptors, which is what makes the flush order observable. *)
-module Say_suite = struct
-  (* The messages, each said by a child on its own streams, so the parent
-     reads standard output and standard error apart; the capture of a test
-     merges them. *)
-  let messages =
+let redirect path fd =
+  let file = Unix.openfile path [ O_WRONLY; O_CREAT; O_TRUNC ] 0o600 in
+  Unix.dup2 file fd;
+  Unix.close file
+
+(* How a child that runs [f] ended, and what it wrote on each stream. *)
+let said f =
+  let dir = temp_dir () in
+  let out = Filename.concat dir "out" and err = Filename.concat dir "err" in
+  let child () =
+    redirect out Unix.stdout;
+    redirect err Unix.stderr;
+    f ()
+  in
+  let status = wait (fork child) in
+  (ended status, read out, read err)
+
+let closed_stdout () =
+  print_string "pending";
+  Unix.close Unix.stdout;
+  Os.say "still said"
+
+let pending_err_formatter () =
+  Format.eprintf "pending ";
+  Os.say "line"
+
+let flushed_first () =
+  print_string "channel, unflushed; ";
+  Format.printf "formatter, unflushed@\n";
+  Os.say "after both";
+  equal string
+    "channel, unflushed; formatter, unflushed\nwindtrap: after both\n"
+    (output ())
+
+let standard_error =
+  group "Standard error"
     [
-      ("say", fun () -> Os.say "could not write the verdict file: disk full");
-      ("warn", fun () -> Os.warn "could not write JUnit report: disk full");
-      ( "lines",
-        fun () ->
-          Os.say
-            "duplicate test paths:\n  a\nEvery full test path must be unique."
-      );
-      ("control", fun () -> Os.say "invalid value 'a\tb\027[31mc\127'");
-      ("bytes", fun () -> Os.say "a\rb \xc3\xa9 \xff");
-      (* The children below leave through [_exit], so no flush at exit
-         writes what [say] did not. *)
-      ( "closed",
-        fun () ->
-          print_string "pending";
-          Unix.close Unix.stdout;
-          Os.say "still said";
-          Unix._exit 0 );
-      ( "err_formatter",
-        fun () ->
-          Format.eprintf "pending ";
-          Os.say "line";
-          Unix._exit 0 );
-    ]
-
-  (* Re-exec dispatch for the children above; the suite's toplevel calls it
-     before its run. Never returns for a child invocation. *)
-  let dispatch_child () =
-    match Array.to_list Sys.argv with
-    | [ _; "--say-child"; name ] ->
-        (List.assoc name messages) ();
-        exit 0
-    | _ -> ()
-
-  (* What the child said on stderr, once it exited 0 with an empty stdout. *)
-  let said name =
-    let module Child = Windtrap_test_support.Child in
-    let r = Child.run Sys.executable_name [ "--say-child"; name ] in
-    equal ~msg:"the child exits 0" int 0 (Child.exit_code r);
-    equal ~msg:"nothing goes to standard output" string "" r.Child.out;
-    r.Child.err
-
-  let tests =
-    [
-      test "say is one anchored line on stderr" (fun () ->
-          equal string "windtrap: could not write the verdict file: disk full\n"
-            (said "say"));
-      test "standard output is flushed first, channel and formatter" (fun () ->
-          print_string "channel, unflushed; ";
-          Format.printf "formatter, unflushed@\n";
-          Os.say "after both";
-          equal string
-            "channel, unflushed; formatter, unflushed\nwindtrap: after both\n"
-            (output ()));
-      test "warn says the run goes on, behind the same anchor" (fun () ->
-          equal string
-            "windtrap: warning: could not write JUnit report: disk full\n"
-            (said "warn"));
-      test "a message of several lines is anchored on its first" (fun () ->
-          equal string
+      cases "say writes windtrap: and its message as a line on standard error"
+        ~name:(fun (name, _, _) -> name)
+        [
+          ( "a message",
+            (fun () -> Os.say "could not write the verdict file: disk full"),
+            "windtrap: could not write the verdict file: disk full\n" );
+          ( "a warning",
+            (fun () -> Os.warn "could not write JUnit report: disk full"),
+            "windtrap: warning: could not write JUnit report: disk full\n" );
+          ( "a message of several lines, anchored on its first",
+            (fun () ->
+              Os.say
+                "duplicate test paths:\n\
+                \  a\n\
+                 Every full test path must be unique."),
             "windtrap: duplicate test paths:\n\
             \  a\n\
-             Every full test path must be unique.\n"
-            (said "lines"));
-      test
-        "a control byte other than a line feed or a tab cannot restyle the \
-         terminal" (fun () ->
-          equal string "windtrap: invalid value 'a\tb\\x1b[31mc\\x7f'\n"
-            (said "control"));
-      test "a carriage return is escaped, bytes from 0x80 pass" (fun () ->
-          equal string "windtrap: a\\x0db \xc3\xa9 \xff\n" (said "bytes"));
-      test "a closed standard output does not cost the line" (fun () ->
-          equal string "windtrap: still said\n" (said "closed"));
-      test "Format.err_formatter is flushed before the line, stderr after"
-        (fun () ->
-          equal string "pending windtrap: line\n" (said "err_formatter"));
+             Every full test path must be unique.\n" );
+          ( "a control byte but a line feed or a tab, escaped",
+            (fun () -> Os.say "invalid value 'a\tb\027[31mc\127'"),
+            "windtrap: invalid value 'a\tb\\x1b[31mc\\x7f'\n" );
+          ( "a carriage return escaped, bytes from 0x80 as they are",
+            (fun () -> Os.say "a\rb \xc3\xa9 \xff"),
+            "windtrap: a\\x0db \xc3\xa9 \xff\n" );
+          ("a closed standard output", closed_stdout, "windtrap: still said\n");
+          ( "a pending Format.err_formatter, flushed before",
+            pending_err_formatter,
+            "pending windtrap: line\n" );
+        ]
+        (fun (_, f, err) ->
+          equal (triple string string string) ("exited 0", "", err) (said f));
+      test "say flushes standard output first, formatter and channel"
+        flushed_first;
     ]
-end
 
 (* Signals *)
 
-module Signal_suite = struct
-  (* No run handles [SIGUSR1] or [SIGUSR2], and each ends the process under
-     its default disposition. *)
-  let usr1 = Sys.sigusr1
-  let usr2 = Sys.sigusr2
-  let raise_signal signal = Unix.kill (Unix.getpid ()) signal
+(* No run handles SIGUSR1 or SIGUSR2, and each ends a process under its
+   default disposition. *)
+let usr1 = Sys.sigusr1
+let usr2 = Sys.sigusr2
+let raise_signal signal = Unix.kill (Unix.getpid ()) signal
 
-  (* A handler runs at a safepoint after [kill] returns: [until ready] polls
-     for about a second. *)
-  let until ?(tries = 1000) ready =
-    let rec poll tries =
-      if ready () || tries = 0 then ()
-      else begin
-        Unix.sleepf 0.001;
-        poll (tries - 1)
-      end
-    in
-    poll tries
+(* A handler runs at a safepoint after [kill] returns, so a test polls for
+   about [tries] milliseconds. *)
+let until ?(tries = 1000) ready =
+  let rec poll tries =
+    if not (ready () || tries = 0) then begin
+      Unix.sleepf 0.001;
+      poll (tries - 1)
+    end
+  in
+  poll tries
 
-  (* How a forked process that runs [f] ended. It leaves through [_exit], so
-     the at-exit functions of this process do not run twice. *)
-  let forked f =
-    match Unix.fork () with
-    | 0 ->
-        (try f () with _ -> ());
-        Unix._exit 0
-    | pid ->
-        let rec wait () =
-          match Unix.waitpid [] pid with
-          | _, status -> status
-          | exception Unix.Unix_error (Unix.EINTR, _, _) -> wait ()
-        in
-        wait ()
+let never () = false
 
-  let tests =
+let disposition ~mine = function
+  | Sys.Signal_handle f when f == mine -> "the handler found"
+  | Sys.Signal_handle _ -> "another handler"
+  | Sys.Signal_default -> "default"
+  | Sys.Signal_ignore -> "ignored"
+
+let handled_then_restored () =
+  posix_only ();
+  let mine (_ : int) = () in
+  let found = Sys.signal usr1 (Sys.Signal_handle mine) in
+  let got = ref [] in
+  Os.with_signals [ usr1 ]
+    (fun signal -> got := signal_name signal :: !got)
+    (fun () ->
+      raise_signal usr1;
+      until (fun () -> !got <> []));
+  let after = Sys.signal usr1 found in
+  equal
+    (pair (list string) string)
+    ([ "SIGUSR1" ], "the handler found")
+    (!got, disposition ~mine after)
+
+(* A signal a process sends itself is delivered before [kill] returns, and its
+   handler runs at the first safepoint, so ten polls would see it run. *)
+let ignored_stays_ignored () =
+  posix_only ();
+  let found = Sys.signal usr1 Sys.Signal_ignore in
+  let got = ref [] in
+  Os.with_signals [ usr1 ]
+    (fun signal -> got := signal_name signal :: !got)
+    (fun () ->
+      raise_signal usr1;
+      until ~tries:10 (fun () -> !got <> []));
+  Sys.set_signal usr1 found;
+  equal (list string) [] !got
+
+(* The handler sends [sent]: at its default disposition it ends the child at
+   once, and otherwise the child exits 3. *)
+let resent sent () =
+  Sys.set_signal usr1 Sys.Signal_default;
+  Sys.set_signal usr2 Sys.Signal_default;
+  Os.with_signals [ usr1; usr2 ]
+    (fun _ ->
+      raise_signal sent;
+      Unix._exit 3)
+    (fun () ->
+      raise_signal usr1;
+      until never)
+
+(* Two SIGPIPEs run the handler, and the SIGUSR1 after them ends the child,
+   whose exit code otherwise counts the handler's runs. *)
+let pipe_then_usr1 () =
+  Sys.set_signal Sys.sigpipe Sys.Signal_default;
+  Sys.set_signal usr1 Sys.Signal_default;
+  let count = ref 0 in
+  Os.with_signals [ Sys.sigpipe; usr1 ]
+    (fun _ -> incr count)
+    (fun () ->
+      raise_signal Sys.sigpipe;
+      until (fun () -> !count = 1);
+      raise_signal Sys.sigpipe;
+      until (fun () -> !count = 2);
+      if !count <> 2 then Unix._exit (10 + !count);
+      raise_signal usr1;
+      until (fun () -> !count = 3));
+  Unix._exit !count
+
+let forked_inside () =
+  Os.with_signals [ usr1 ] ignore (fun () ->
+      wait
+        (fork (fun () ->
+             raise_signal usr1;
+             until never)))
+
+let dies_by signal () =
+  Sys.set_signal signal (Sys.Signal_handle ignore);
+  ignore (Unix.sigprocmask Unix.SIG_BLOCK [ signal ]);
+  Os.die_by signal
+
+let killed_by signal status =
+  equal string ("killed by " ^ signal_name signal) (ended status)
+
+let signals =
+  group "Signals"
     [
-      test "the handler gets the signal, and the one found is back after"
-        (fun () ->
-          if Sys.win32 then skip ~reason:"POSIX only" ();
-          let mine (_ : int) = () in
-          let found = Sys.signal usr1 (Sys.Signal_handle mine) in
-          let got = ref None in
-          Os.with_signals [ usr1 ]
-            (fun signal -> got := Some signal)
-            (fun () ->
-              raise_signal usr1;
-              until (fun () -> Option.is_some !got));
-          let after = Sys.signal usr1 found in
-          equal ~msg:"the handler got the signal" (option int) (Some usr1) !got;
-          is_true ~msg:"the handler found is back"
-            (match after with
-            | Sys.Signal_handle f -> f == mine
-            | Sys.Signal_default | Sys.Signal_ignore -> false));
-      test "a signal the process was started with ignored stays ignored"
-        (fun () ->
-          if Sys.win32 then skip ~reason:"POSIX only" ();
-          let found = Sys.signal usr1 Sys.Signal_ignore in
-          let got = ref false in
-          Os.with_signals [ usr1 ]
-            (fun _ -> got := true)
-            (fun () ->
-              raise_signal usr1;
-              until ~tries:50 (fun () -> !got));
-          Sys.set_signal usr1 found;
-          is_false ~msg:"the handler did not run" !got);
       test
-        "the handler runs with the signals at their default disposition, \
-         unblocked" (fun () ->
-          if Sys.win32 then skip ~reason:"POSIX only" ();
-          let ended_by sent =
-            forked (fun () ->
-                Sys.set_signal usr1 Sys.Signal_default;
-                Sys.set_signal usr2 Sys.Signal_default;
-                Os.with_signals [ usr1; usr2 ]
-                  (fun _ ->
-                    raise_signal sent;
-                    Unix._exit 3)
-                  (fun () ->
-                    raise_signal usr1;
-                    until (fun () -> false)))
-          in
-          is_true ~msg:"the signal itself, sent again, ends the process at once"
-            (ended_by usr1 = Unix.WSIGNALED usr1);
-          is_true ~msg:"and so does another of the list"
-            (ended_by usr2 = Unix.WSIGNALED usr2));
-      test "SIGPIPE keeps the handler, and the others go back to the default"
+        "with_signals hands a signal to the handler, and puts back the one \
+         found"
+        handled_then_restored;
+      test "a signal the process was started with ignored stays ignored"
+        ignored_stays_ignored;
+      cases
+        "a signal of the list that the handler sends ends the process at once"
+        ~name:fst
+        [ ("the same signal", usr1); ("another of the list", usr2) ]
+        (fun (_, sent) ->
+          posix_only ();
+          killed_by sent (wait (fork (resent sent))));
+      test "SIGPIPE keeps the handler, and the others go back to their default"
         (fun () ->
-          if Sys.win32 then skip ~reason:"POSIX only" ();
-          let status =
-            forked (fun () ->
-                Sys.set_signal Sys.sigpipe Sys.Signal_default;
-                Sys.set_signal usr1 Sys.Signal_default;
-                let count = ref 0 in
-                Os.with_signals [ Sys.sigpipe; usr1 ]
-                  (fun _ -> incr count)
-                  (fun () ->
-                    raise_signal Sys.sigpipe;
-                    until (fun () -> !count = 1);
-                    raise_signal Sys.sigpipe;
-                    until (fun () -> !count = 2);
-                    if !count <> 2 then Unix._exit (10 + !count);
-                    raise_signal usr1;
-                    until (fun () -> !count = 3));
-                Unix._exit !count)
-          in
-          is_true ~msg:"two SIGPIPEs ran the handler, then SIGUSR1 ended it"
-            (status = Unix.WSIGNALED usr1));
+          posix_only ();
+          killed_by usr1 (wait (fork pipe_then_usr1)));
       test "a process forked inside dies by the signal" (fun () ->
-          if Sys.win32 then skip ~reason:"POSIX only" ();
-          let status =
-            Os.with_signals [ usr1 ] ignore (fun () ->
-                forked (fun () ->
-                    raise_signal usr1;
-                    until (fun () -> false)))
-          in
-          is_true ~msg:"and not by the handler, which would let it exit 0"
-            (status = Unix.WSIGNALED usr1));
-      test "die_by ends the process by a signal it handles and blocks"
-        (fun () ->
-          if Sys.win32 then skip ~reason:"POSIX only" ();
-          let status =
-            forked (fun () ->
-                Sys.set_signal Sys.sigterm (Sys.Signal_handle ignore);
-                ignore (Unix.sigprocmask Unix.SIG_BLOCK [ Sys.sigterm ]);
-                Os.die_by Sys.sigterm)
-          in
-          is_true (status = Unix.WSIGNALED Sys.sigterm));
+          posix_only ();
+          killed_by usr1 (forked_inside ()));
+      cases "die_by ends the process by the signal, though handled and blocked"
+        ~name:signal_name [ Sys.sighup; Sys.sigint; Sys.sigpipe; Sys.sigterm ]
+        (fun signal ->
+          posix_only ();
+          killed_by signal (wait (fork (dies_by signal))));
     ]
-end
 
-(* The concurrency and say tests re-exec this executable as helper
-   children, so the suite's toplevel dispatches here before its run. Never
-   returns for a child invocation. *)
-let () = Atomic_suite.dispatch_child ()
-let () = Say_suite.dispatch_child ()
-
-let tests =
-  [
-    group "clock" Clock_suite.tests;
-    group "env" Env_suite.tests;
-    group "atomic" Atomic_suite.tests;
-    group "paths" Path_suite.tests;
-    group "say" Say_suite.tests;
-    group "signals" Signal_suite.tests;
-  ]
-
-let () = exit @@ Windtrap.run "os" tests
+let () =
+  exit
+    (run "os"
+       [
+         clock;
+         environment;
+         platform;
+         colour;
+         atomic_writes;
+         root;
+         reconstruction;
+         display;
+         components;
+         filesystem;
+         standard_error;
+         signals;
+       ])

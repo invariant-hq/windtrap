@@ -469,9 +469,11 @@ its interface to be cut. The rewriters' own list is the
   - `Sys.Break`, `Out_of_memory` and `Stack_overflow` pass through
     `atomic_write` after its cleanup: needs a fault-injection hook, and
     none is added to the module for its suite.
-  - `mkdir_p` tolerates a component another process creates meanwhile:
-    a race between two processes; the rule it relies on, an existing
-    directory is no error, is pinned.
+  - Without `INSIDE_DUNE`, an executable outside every build directory
+    roots the project at the working directory and logs under the
+    temporary directory, and one whose own name starts with `_build`
+    lies in none: needs the executable at a chosen path; that its
+    directory decides is pinned.
 - `lib/mutate_loop.mli`
   - A mutant is killed when its child recorded no test, did not exit 0,
     or left no complete line: a child leaves only through `_exit 0`
