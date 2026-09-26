@@ -219,6 +219,11 @@ evaluated and is no survivor. The report lists it under `not evaluated`
 with an `arm:` command, which runs the suite in a new process and ends
 on the mutant's verdict.
 
+A site that no test runs, and that module initialization or a
+fixture release runs, is evaluated outside tests. No child tests its
+mutant, and the report lists its line under `evaluated outside tests`,
+apart from the lines never reached.
+
 A test marked `xfail` reaches no mutant. The dry run and the probe run
 it, and no child does. A line that only such tests run is never
 reached, and an `--arm` run of its mutant ends on `mutant not reached`.

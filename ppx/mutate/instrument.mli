@@ -112,7 +112,7 @@
 
     The code that runs when a module is initialized is mutated like any other,
     so a top-level [let origin = 1 + 2] carries a site. The [--mutate] loop
-    counts as never reached a site that was evaluated outside every test. *)
+    lists a site that ran outside tests alone as evaluated outside tests. *)
 
 (** {1:dismissal Dismissal attributes}
 

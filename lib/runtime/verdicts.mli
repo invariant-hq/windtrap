@@ -13,8 +13,8 @@
 
 (** {1:verdicts Verdicts}
 
-    A verdict is one of four cases, and never a boolean or an exit code. A
-    failure to supervise the child that arms a mutant is none of the four, and a
+    A verdict is one of five cases, and never a boolean or an exit code. A
+    failure to supervise the child that arms a mutant is none of the five, and a
     caller must record no verdict for it. *)
 
 type reaching_test = string list
@@ -23,7 +23,7 @@ type reaching_test = string list
 *)
 
 (** The type for verdicts. A survivor always names a reaching test, because a
-    mutant that no test reached is {!Unreached}. *)
+    mutant that no test reached is {!Outside_tests} or {!Unreached}. *)
 type verdict =
   | Killed
       (** A reaching test failed, or the child that armed the mutant crashed or
@@ -36,9 +36,13 @@ type verdict =
       (** Every reaching test passed, and the armed site was not evaluated. The
           dry run evaluated the site and the child did not, as when the dry run
           cached the result of the site in a table or a forced lazy value. *)
+  | Outside_tests
+      (** No test reached the site, and the dry run evaluated it outside every
+          test, at module initialization or in a fixture release. The loop forks
+          no child for the mutant. *)
   | Unreached
-      (** No test evaluated the site, so the loop forks no child for the mutant.
-      *)
+      (** No test reached the site, and the dry run did not evaluate it outside
+          every test either. The loop forks no child for the mutant. *)
 
 val survived : reaching_test list -> verdict
 (** [survived ts] is the {!Survived} verdict whose reaching tests are [ts],
@@ -75,7 +79,8 @@ val add : t -> record -> t
     combine into the verdict of a mutant that one executable saw one way and
     another the other way. It is {!Killed} if either is. Otherwise it is
     {!Not_evaluated} if either is, then {!Survived} with the reaching tests of
-    both if either is, and {!Unreached} if both are.
+    both if either is, then {!Outside_tests} if either is, and {!Unreached} if
+    both are.
 
     [add] checks nothing of [r.id]. It accepts an empty [file], a [line] below
     [1], a negative [col] and a [rewrite] outside {!Mutate.rewrites}, and

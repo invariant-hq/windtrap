@@ -413,7 +413,11 @@ type mutation = {
           order in which it prints. *)
   unreached : (string * int) list;
       (** The file and the one-based line of each mutant that no test evaluated,
-          one pair per mutant. *)
+          one pair per mutant, except those of [outside_tests]. *)
+  outside_tests : (string * int) list;
+      (** The file and the one-based line of each mutant that no test evaluated
+          and that the dry run evaluated outside every test, one pair per
+          mutant. *)
   killed : int;  (** The number of mutants killed. *)
   not_tested : int;
       (** The number of reached mutants that have no verdict, which are those
@@ -449,6 +453,9 @@ val mutation_closing : config:Run.config -> mutation -> section list
       [reproduce:] command below does.
     - when [m.unreached] is not empty, the never-reached section, between an
       opening rule that carries the number of mutants and a closing rule.
+    - when [m.outside_tests] is not empty, the section of the mutants evaluated
+      outside tests, which is the never-reached section of those mutants under
+      its own title and a line that says where such a site runs.
     - when [m.survivors] is not empty, the [reproduce:] command, which arms the
       first survivor of [m] under the selection of [config]. Under [`Exe cmd],
       the invocation of [config], it is [cmd], [--arm] and the run's selection
@@ -463,6 +470,6 @@ val mutation_report : invocation:Run.invocation -> mutation -> section list
     {!survivor_block} per survivor, between an opening rule that carries their
     number and a closing rule. The executables of all blocks form one column,
     which is absent when no reaching test names an executable. The not-evaluated
-    section, the never-reached section, the [reproduce:] command and the outcome
-    line follow, as {!mutation_closing} builds them for a run that selects every
-    test. *)
+    section, the never-reached section, the section of the mutants evaluated
+    outside tests, the [reproduce:] command and the outcome line follow, as
+    {!mutation_closing} builds them for a run that selects every test. *)

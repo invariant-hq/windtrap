@@ -135,7 +135,7 @@ let survived_in verdicts =
       match r.verdict with
       | Survived { first; others } ->
           Ids.add (Mutate.id_to_string r.id) (first :: others) acc
-      | Killed | Not_evaluated | Unreached -> acc)
+      | Killed | Not_evaluated | Outside_tests | Unreached -> acc)
     Ids.empty
     (Verdicts.records verdicts)
 
@@ -189,7 +189,7 @@ let merge ~source files =
           &&
           match fr.verdict with
           | Not_evaluated -> true
-          | Killed | Survived _ | Unreached -> false)
+          | Killed | Survived _ | Outside_tests | Unreached -> false)
         (Verdicts.records f.verdicts)
     in
     let invocation =
@@ -199,17 +199,21 @@ let merge ~source files =
     in
     { mutant = mutant r; invocation }
   in
-  let survivors, not_evaluated, unreached, killed =
+  let survivors, not_evaluated, unreached, outside_tests, killed =
     List.fold_right
-      (fun (r : Verdicts.record) (survivors, missed, unreached, killed) ->
+      (fun (r : Verdicts.record) (survivors, missed, unreached, outside, killed)
+         ->
+        let site = (r.id.file, r.id.line) in
         match r.verdict with
-        | Survived _ -> (survivor r :: survivors, missed, unreached, killed)
+        | Survived _ ->
+            (survivor r :: survivors, missed, unreached, outside, killed)
         | Not_evaluated ->
-            (survivors, not_evaluated r :: missed, unreached, killed)
-        | Unreached ->
-            (survivors, missed, (r.id.file, r.id.line) :: unreached, killed)
-        | Killed -> (survivors, missed, unreached, killed + 1))
-      (Verdicts.records merged) ([], [], [], 0)
+            (survivors, not_evaluated r :: missed, unreached, outside, killed)
+        | Unreached -> (survivors, missed, site :: unreached, outside, killed)
+        | Outside_tests ->
+            (survivors, missed, unreached, site :: outside, killed)
+        | Killed -> (survivors, missed, unreached, outside, killed + 1))
+      (Verdicts.records merged) ([], [], [], [], 0)
   in
   (* The survivor the most tests watched is the one a reader can act on
      soonest. The sort is stable, so identifier order holds within a count. *)
@@ -234,6 +238,7 @@ let merge ~source files =
       Sections.survivors;
       not_evaluated;
       unreached;
+      outside_tests;
       killed;
       not_tested = 0;
       scope = Executables (List.length files);

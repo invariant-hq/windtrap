@@ -11,6 +11,7 @@ type verdict =
   | Killed
   | Survived of { first : reaching_test; others : reaching_test list }
   | Not_evaluated
+  | Outside_tests
   | Unreached
 
 (* A collection builds each survivor it holds here, so its reaching tests
@@ -24,9 +25,10 @@ let survived ts =
 
 (* The order in which verdicts outrank one another in a merge. *)
 let rank = function
-  | Killed -> 3
-  | Not_evaluated -> 2
-  | Survived _ -> 1
+  | Killed -> 4
+  | Not_evaluated -> 3
+  | Survived _ -> 2
+  | Outside_tests -> 1
   | Unreached -> 0
 
 (* The verdict of a mutant that one executable saw as [a] and another as
@@ -35,8 +37,8 @@ let merge_verdict a b =
   match (a, b) with
   | Survived x, Survived y ->
       survived (x.first :: y.first :: (x.others @ y.others))
-  | ( (Killed | Not_evaluated | Survived _ | Unreached),
-      (Killed | Not_evaluated | Survived _ | Unreached) ) ->
+  | ( (Killed | Not_evaluated | Survived _ | Outside_tests | Unreached),
+      (Killed | Not_evaluated | Survived _ | Outside_tests | Unreached) ) ->
       if rank a >= rank b then a else b
 
 (* Collections *)
@@ -75,7 +77,7 @@ let add t r =
   let r =
     match r.verdict with
     | Survived s -> { r with verdict = survived (s.first :: s.others) }
-    | Killed | Not_evaluated | Unreached -> r
+    | Killed | Not_evaluated | Outside_tests | Unreached -> r
   in
   Id_map.update r.id
     (function None -> Some r | Some prior -> Some (combine prior r))
@@ -122,8 +124,8 @@ let output_file ~exe = Instr.output_file format ~exe
      <file> <line> <col> <rewrite> <before> <after> <verdict>
 
    with one such line for each record, in [Mutate.compare_id] order.
-   [<verdict>] is [unreached], [killed], [not_evaluated], or
-   [survived <n>] and then [n] reaching tests, each [<k>] and then its [k]
+   [<verdict>] is [unreached], [outside_tests], [killed],
+   [not_evaluated], or [survived <n>] and then [n] reaching tests, each [<k>] and then its [k]
    names. [load] reads this grammar and nothing else, and refuses a rewrite
    outside [Mutate.rewrites], which no report could render. *)
 let load path =
@@ -136,6 +138,7 @@ let load path =
     | "unreached" -> Unreached
     | "killed" -> Killed
     | "not_evaluated" -> Not_evaluated
+    | "outside_tests" -> Outside_tests
     | "survived" ->
         let n = Instr.read_count c "reaching test count" in
         if n = 0 then
@@ -186,6 +189,7 @@ let save ?identity path t =
     | Unreached -> Buffer.add_string b "unreached"
     | Killed -> Buffer.add_string b "killed"
     | Not_evaluated -> Buffer.add_string b "not_evaluated"
+    | Outside_tests -> Buffer.add_string b "outside_tests"
     | Survived s ->
         let tests = s.first :: s.others in
         Printf.bprintf b "survived %d" (List.length tests);

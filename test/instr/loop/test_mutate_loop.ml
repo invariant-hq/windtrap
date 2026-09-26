@@ -31,6 +31,7 @@ let pp_verdict ppf = function
       Format.fprintf ppf "survived by %s"
         (String.concat ", " (List.map (String.concat " > ") (first :: others)))
   | V.Not_evaluated -> Format.pp_print_string ppf "not evaluated"
+  | V.Outside_tests -> Format.pp_print_string ppf "outside tests"
   | V.Unreached -> Format.pp_print_string ppf "unreached"
 
 (* A file a fixture writes, read back; a file it never wrote reads as
@@ -608,24 +609,39 @@ let reach_tests =
         (* [orphan] is evaluated at module load and [crasher] by a fixture
            release: both are outside every test, and folding either into
            the test on whose side of the boundary it sits would make it a
-           permanent false survivor. The report counts only what was
-           reached; the verdict file, which the merge reads, names the
-           two as unreached. *)
+           permanent false survivor. Both ran, so neither is never
+           reached: the report and the verdict file, which the merge
+           reads, say that they were evaluated outside tests. *)
         contains ~msg:"the two out-of-test sites are not reached"
           ~sub:
-            "mutants: 1 survived of 2 reached by this suite, 1 killed, 2 never \
-             reached\n"
+            "mutants: 1 survived of 2 reached by this suite, 1 killed, 2 \
+             evaluated outside tests\n"
           out;
-        contains ~msg:"and are the never-reached row's two lines"
-          ~sub:"\n  2  test/instr/loop/subject.ml   lines 21, 27\n" out;
+        contains ~msg:"and are the outside-tests section's two lines"
+          ~sub:
+            "\n\
+             ────────────── evaluated outside tests (2) ───────────────\n\
+            \  These sites ran outside every test, at module initialization or \
+             in a fixture release.\n\
+            \  2  test/instr/loop/subject.ml   lines 21, 27\n\
+             ──────────────────────────────────────────────────────────\n"
+          out;
+        not_contains ~msg:"and neither is never reached" ~sub:"never reached"
+          out;
         (match V.load verdict_path with
         | Error e -> failf "verdict file unreadable: %a" V.pp_error e
         | Ok (verdicts, _) ->
-            equal ~msg:"orphan and crasher, by line, unreached in the file"
-              (list int) [ 21; 27 ]
+            equal ~msg:"orphan and crasher, by line, outside tests in the file"
+              (list string)
+              [ "21 outside tests"; "27 outside tests" ]
               (List.filter_map
                  (fun (r : V.record) ->
-                   if r.V.verdict = V.Unreached then Some r.V.id.M.line
+                   let line =
+                     Format.asprintf "%d %a" r.V.id.M.line pp_verdict
+                       r.V.verdict
+                   in
+                   if String.ends_with ~suffix:"outside tests" line then
+                     Some line
                    else None)
                  (V.records verdicts)));
         equal ~msg:"exactly one survivor" int 1
@@ -647,8 +663,8 @@ let reach_tests =
           ~sub:"widen \u{203a} fifth reaches sub" out;
         contains ~msg:"summary"
           ~sub:
-            "mutants: 1 survived of 2 reached by this suite, 1 killed, 2 never \
-             reached\n"
+            "mutants: 1 survived of 2 reached by this suite, 1 killed, 2 \
+             evaluated outside tests\n"
           out);
     test "a tag selection still selects the child's tests" (fun () ->
         (* [--tag gated] is the one selection a pruned tree cannot

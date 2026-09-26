@@ -4670,6 +4670,7 @@ let loop_report =
     Sections.survivors = [ add_survivor; ge_survivor ];
     not_evaluated = [];
     unreached = [ ("lib/calc.ml", 40); ("lib/calc.ml", 41) ];
+    outside_tests = [];
     killed = 3;
     not_tested = 0;
     scope = Sections.Suite;
@@ -4891,6 +4892,7 @@ let merge_report =
     unreached =
       List.map (fun line -> ("lib/text.ml", line)) [ 12; 13; 14; 32 ]
       @ [ ("lib/run.ml", 40); ("lib/run.ml", 40); ("lib/report.ml", 61) ];
+    outside_tests = [];
     killed = 16;
     not_tested = 0;
     scope = Sections.Executables 3;
@@ -5035,13 +5037,14 @@ let test_mutation_sentence () =
 
 let test_mutation_summary_forms () =
   let summary ?(survivors = []) ?(not_evaluated = []) ?(unreached = [])
-      ?(not_tested = 0) ~killed scope =
+      ?(outside_tests = []) ?(not_tested = 0) ~killed scope =
     last_line
       (at_rest
          {
            Sections.survivors;
            not_evaluated;
            unreached;
+           outside_tests;
            killed;
            not_tested;
            scope;
@@ -5091,6 +5094,12 @@ let test_mutation_summary_forms () =
      reached, 3 not tested"
     (summary ~survivors:[ add_survivor ] ~unreached ~not_tested:3 ~killed:2
        Sections.Suite);
+  equal ~msg:"a site evaluated outside tests is not reached" string
+    "mutants: 1 survived of 3 reached by this suite, 2 killed, 2 never \
+     reached, 1 evaluated outside tests"
+    (summary ~survivors:[ add_survivor ] ~unreached
+       ~outside_tests:[ ("lib/calc.ml", 3) ]
+       ~killed:2 Sections.Suite);
   equal ~msg:"a mutant its child did not evaluate is reached" string
     "mutants: 1 survived of 4 reached by this suite, 2 killed, 1 not evaluated"
     (summary ~survivors:[ add_survivor ] ~not_evaluated:[ memo_missed ]
@@ -5248,6 +5257,48 @@ let test_mutation_not_evaluated () =
   not_contains ~msg:"no survivor, nothing to reproduce" ~sub:"reproduce:"
     (at_rest report ~ansi:false)
 
+(* Mutants that only module initialization or a fixture release evaluated
+   are rows by file, as the never-reached ones are, under their own title,
+   after them. *)
+
+let test_mutation_outside_tests () =
+  equal ~msg:"its section follows the never-reached one" string
+    ("─────────────────── never reached (2) ────────────────────\n\
+     \  2  lib/calc.ml   lines 40-41\n" ^ closing_rule
+   ^ "\n\n\
+      ────────────── evaluated outside tests (3) ───────────────\n\
+     \  These sites ran outside every test, at module initialization or in a \
+      fixture release.\n\
+     \  2  lib/calc.ml    lines 1-2\n\
+     \  1  lib/table.ml   lines 7\n" ^ closing_rule
+   ^ "\n\n\
+      mutants: 3 reached by this suite, 3 killed, 2 never reached, 3 evaluated \
+      outside tests\n")
+    (at_rest
+       {
+         loop_report with
+         Sections.survivors = [];
+         outside_tests =
+           [ ("lib/table.ml", 7); ("lib/calc.ml", 1); ("lib/calc.ml", 2) ];
+       }
+       ~ansi:false);
+  equal ~msg:"alone, in a loop: a blank line opens it" string
+    ("\n\
+      ────────────── evaluated outside tests (1) ───────────────\n\
+     \  These sites ran outside every test, at module initialization or in a \
+      fixture release.\n\
+     \  1  lib/table.ml   lines 7\n" ^ closing_rule
+   ^ "\n\n\
+      mutants: 3 reached by this suite, 3 killed, 1 evaluated outside tests\n")
+    (sections
+       (Sections.mutation_closing ~config:(config ())
+          {
+            loop_report with
+            Sections.survivors = [];
+            unreached = [];
+            outside_tests = [ ("lib/table.ml", 7) ];
+          }))
+
 (* Never-reached mutants are one row per file, in path order, their
    distinct lines fitted as a coverage row's are. *)
 
@@ -5263,6 +5314,7 @@ let test_mutation_unreached () =
         Sections.survivors = [];
         not_evaluated = [];
         unreached = wide;
+        outside_tests = [];
         killed = 1;
         not_tested = 0;
         scope = Sections.Executables 1;
@@ -6508,6 +6560,8 @@ let tests =
     test "mutation: not evaluated, with the command that arms each"
       test_mutation_not_evaluated;
     test "mutation: never reached, one row per file" test_mutation_unreached;
+    test "mutation: evaluated outside tests, one row per file"
+      test_mutation_outside_tests;
     test "mutation: a survivor's source line is escaped" test_mutation_escapes;
     test "mutation: the armed verdict counts in English"
       test_mutation_armed_verdict;

@@ -549,6 +549,37 @@ let only_unreached =
   equal ~msg:"the summary counts it without a survived term" text
     "mutants: 2 reached, 2 killed, 1 never reached, 1 executable" (summary out)
 
+let outside_tests =
+  test "a site evaluated outside tests is not called never reached" @@ fun () ->
+  (* [or] ran only at module initialization in A and was never evaluated
+     in B: it ran, so the merge does not list it as never reached. [and]
+     is never reached in both. A test's verdict in one executable outranks
+     an evaluation outside tests in another, as [sub] shows. *)
+  let root = scratch "outside-tests" in
+  plant_sources root;
+  save
+    (Filename.concat root "_build/_mutants/a.mutants")
+    (collection
+       [ m_sub V.Outside_tests; m_or V.Outside_tests; m_and V.Unreached ]);
+  save
+    (Filename.concat root "_build/_mutants/b.mutants")
+    (collection [ m_sub V.Killed; m_or V.Unreached; m_and V.Unreached ]);
+  let code, out, err = mutate ~cwd:root [] in
+  equal ~msg:"nothing survived: exit 0" int 0 code;
+  equal ~msg:"stderr" text "" err;
+  equal ~msg:"the report, whole" text
+    "─────────────────── never reached (1) ────────────────────\n\
+    \  1  lib/util.ml   lines 3\n\
+     ──────────────────────────────────────────────────────────\n\n\
+     ────────────── evaluated outside tests (1) ───────────────\n\
+    \  These sites ran outside every test, at module initialization or in a \
+     fixture release.\n\
+    \  1  lib/util.ml   lines 1\n\
+     ──────────────────────────────────────────────────────────\n\n\
+     mutants: 1 reached, 1 killed, 1 never reached, 1 evaluated outside tests, \
+     2 executables\n"
+    out
+
 let not_evaluated =
   test "a mutant one executable did not evaluate is no survivor" @@ fun () ->
   (* [sub] survives in A, and B's child passed without evaluating its site.
@@ -1277,6 +1308,7 @@ let () =
          clean_report;
          only_unreached;
          not_evaluated;
+         outside_tests;
          discovery;
          explicit_paths;
          staleness;

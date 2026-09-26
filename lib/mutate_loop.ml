@@ -87,6 +87,7 @@ type site = {
    raises ends the run. *)
 type reach = {
   sites : (Mutate.id, site) Hashtbl.t;
+  outside : (Mutate.id, unit) Hashtbl.t; (* evaluated outside every test *)
   durations : (string, float) Hashtbl.t; (* seconds, by path string *)
   mutable executed : string list list; (* newest first *)
   mutable skipped : int;
@@ -97,14 +98,21 @@ let is_skip (r : Run.result) =
   | Failure.Skip _ -> true
   | Failure.Pass | Failure.Fail _ -> false
 
-(* The drain at [Test_started] precedes the epoch bump: what it collects ran
-   outside any test, and a warm-forked child cannot arm it. A test marked
-   xfail reaches no mutant, so what it evaluated is drained and dropped. *)
+(* What a drain outside every test collected: module initialization and
+   fixture releases, which a warm-forked child cannot arm. *)
+let evaluated_outside reach =
+  List.iter
+    (fun (r : Mutate.reached) -> Hashtbl.replace reach.outside r.mutant.id ())
+    (Mutate.drain ())
+
+(* The drain at [Test_started] precedes the epoch bump, so it collects what
+   ran outside any test. A test marked xfail reaches no mutant, so what it
+   evaluated is drained and dropped. *)
 let observe reach (event : Run.event) =
   match event with
   | Run.Run_started _ | Run.Fixture_release _ | Run.Interrupted _ -> ()
   | Run.Test_started _ ->
-      ignore (Mutate.drain ());
+      evaluated_outside reach;
       Mutate.next_epoch ()
   | Run.Test_finished result ->
       let add (reached : Mutate.reached) =
@@ -593,7 +601,7 @@ let test_mutants renderer loop reached =
                     }
                   in
                   (survivors, missed :: not_evaluated)
-              | Verdicts.Killed | Verdicts.Unreached ->
+              | Verdicts.Killed | Verdicts.Outside_tests | Verdicts.Unreached ->
                   (survivors, not_evaluated)
             in
             let record = Verdicts.record_of_mutant mutant verdict in
@@ -629,7 +637,7 @@ let narrows_suite (config : Run.config) ~focus =
 (* What the loop has to say about its verdict file, above the outcome line.
    Under a scope, the records of the other files stay when this build wrote
    them. *)
-let save_verdicts ~scope ~narrowed ~unreached tested =
+let save_verdicts ~scope ~narrowed ~outside ~unreached tested =
   match tested.stopped with
   | Some _ -> None
   | None when narrowed ->
@@ -648,13 +656,14 @@ let save_verdicts ~scope ~narrowed ~unreached tested =
               (Verdicts.records prior)
         | _ -> []
       in
-      let unreached =
-        List.map
-          (fun m -> Verdicts.record_of_mutant m Verdicts.Unreached)
-          unreached
+      let recorded verdict =
+        List.map (fun m -> Verdicts.record_of_mutant m verdict)
       in
       let verdicts =
-        List.fold_left Verdicts.add tested.verdicts (unreached @ kept)
+        List.fold_left Verdicts.add tested.verdicts
+          (recorded Verdicts.Outside_tests outside
+          @ recorded Verdicts.Unreached unreached
+          @ kept)
       in
       match Verdicts.save ?identity path verdicts with
       | () -> None
@@ -663,7 +672,7 @@ let save_verdicts ~scope ~narrowed ~unreached tested =
 
 (* A signal that came once the last child had ended stopped nothing: the
    report ends as usual, and the loop still dies by it. *)
-let finish renderer ~narrowed ~reach ~reached ~unreached forks =
+let finish renderer ~narrowed ~reach ~reached ~outside ~unreached forks =
   match forks with
   | Error message ->
       Report.mutation_refused renderer message;
@@ -674,17 +683,19 @@ let finish renderer ~narrowed ~reach ~reached ~unreached forks =
       let is_killed (r : Verdicts.record) =
         match r.verdict with
         | Verdicts.Killed -> true
-        | Verdicts.Survived _ | Verdicts.Not_evaluated | Verdicts.Unreached ->
+        | Verdicts.Survived _ | Verdicts.Not_evaluated | Verdicts.Outside_tests
+        | Verdicts.Unreached ->
             false
+      in
+      let lines =
+        List.map (fun (m : Mutate.mutant) -> (m.id.file, m.id.line))
       in
       let report : Report_sections.mutation =
         {
           survivors;
           not_evaluated;
-          unreached =
-            List.map
-              (fun (m : Mutate.mutant) -> (m.id.file, m.id.line))
-              unreached;
+          unreached = lines unreached;
+          outside_tests = lines outside;
           killed = List.length (List.filter is_killed records);
           not_tested = List.length reached - List.length records;
           scope =
@@ -715,6 +726,7 @@ let loop renderer ~scope ~suite (config : Run.config) tests =
   let reach =
     {
       sites = Hashtbl.create 256;
+      outside = Hashtbl.create 16;
       durations = Hashtbl.create 256;
       executed = [];
       skipped = 0;
@@ -728,8 +740,8 @@ let loop renderer ~scope ~suite (config : Run.config) tests =
   with
   | Error _ -> Reported 1
   | Ok outcome -> (
-      (* The last test's teardown. *)
-      ignore (Mutate.drain ());
+      (* The last test's teardown and the fixture releases. *)
+      evaluated_outside reach;
       if outcome.exit_code = 2 then
         refuse "no test ran, so there is nothing to mutate"
       else if outcome.exit_code <> 0 then
@@ -748,6 +760,11 @@ let loop renderer ~scope ~suite (config : Run.config) tests =
                   | None -> Either.Right m)
                 population
             in
+            let outside, unreached =
+              List.partition
+                (fun (m : Mutate.mutant) -> Hashtbl.mem reach.outside m.id)
+                unreached
+            in
             let dry_run_wall = Float.max 0.01 (Os.count_s started) in
             let narrowed = narrows_suite config ~focus:outcome.focus_active in
             (* Signals are handled until the verdict file is written, so a
@@ -762,14 +779,16 @@ let loop renderer ~scope ~suite (config : Run.config) tests =
                 in
                 Result.map
                   (fun tested ->
-                    (tested, save_verdicts ~scope ~narrowed ~unreached tested))
+                    ( tested,
+                      save_verdicts ~scope ~narrowed ~outside ~unreached tested
+                    ))
                   (fork renderer loop reached)
               with
               | Supervision message -> Error message
               | Sys_error _ when interrupt.signal = Some Sys.sigpipe ->
                   Os.die_by Sys.sigpipe
             in
-            finish renderer ~narrowed ~reach ~reached ~unreached forks)
+            finish renderer ~narrowed ~reach ~reached ~outside ~unreached forks)
 
 (* The armed run *)
 

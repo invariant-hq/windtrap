@@ -37,6 +37,7 @@ let pp_verdict ppf = function
            pp_test)
         (first :: others)
   | V.Not_evaluated -> Format.pp_print_string ppf "not evaluated"
+  | V.Outside_tests -> Format.pp_print_string ppf "outside tests"
   | V.Unreached -> Format.pp_print_string ppf "unreached"
 
 let find t id =
@@ -111,6 +112,7 @@ let merged a b =
 let sample_verdicts =
   [
     V.Unreached;
+    V.Outside_tests;
     V.survived [ [ "a" ] ];
     V.survived [ [ "b"; "c" ] ];
     V.survived [ [ "a" ]; [ "b"; "c" ] ];
@@ -137,6 +139,7 @@ let verdict_tests =
                 V.survived [ [ "a" ] ];
                 V.survived [ [ "a" ]; [ "b" ] ];
                 V.Not_evaluated;
+                V.Outside_tests;
               ])
           [ V.Killed ]);
     test "not evaluated anywhere outranks a survivor" (fun () ->
@@ -150,6 +153,17 @@ let verdict_tests =
           (merged (V.survived [ [ "a" ] ]) V.Not_evaluated);
         equal ~msg:"not evaluated and unreached" verdict_t V.Not_evaluated
           (merged V.Unreached V.Not_evaluated));
+    test "a test's verdict outranks an evaluation outside tests" (fun () ->
+        (* A site that one executable evaluated only outside its tests was
+           tested by none of them, so another executable's verdict stands;
+           over a never-reached site it says that the site ran. *)
+        equal ~msg:"survived and outside tests" verdict_t
+          (V.survived [ [ "a" ] ])
+          (merged V.Outside_tests (V.survived [ [ "a" ] ]));
+        equal ~msg:"not evaluated and outside tests" verdict_t V.Not_evaluated
+          (merged V.Not_evaluated V.Outside_tests);
+        equal ~msg:"outside tests and unreached" verdict_t V.Outside_tests
+          (merged V.Unreached V.Outside_tests));
     test "a survivor names at least one test" (fun () ->
         (* [Survived] with no reaching test would print as "no test ran this line
            and none failed when it changed", which is [Unreached]'s
@@ -420,15 +434,19 @@ let sample_collection () =
       record ~before:"a + b" ~after:"a - b"
         (id ~file:"lib/c.ml" ~line:7 ~col:1 ~rewrite:"sub")
         V.Not_evaluated;
+      record ~before:"a - b" ~after:"a + b"
+        (id ~file:"lib/c.ml" ~line:9 ~col:0 ~rewrite:"add")
+        V.Outside_tests;
     ]
 
 let sample_bytes =
   "windtrap-mutants-v3\n\
-   4\n\
+   5\n\
    8 lib/a.ml 1 2 3 add 5 a - b 5 a + b unreached\n\
    8 lib/b.ml 3 4 3 not 6 p && q 12 not (p && q) killed\n\
    8 lib/b.ml 5 0 2 or 6 a || b 6 a && b survived 2 1 1 x 2 1 y 1 z\n\
-   8 lib/c.ml 7 1 3 sub 5 a + b 5 a - b not_evaluated\n"
+   8 lib/c.ml 7 1 3 sub 5 a + b 5 a - b not_evaluated\n\
+   8 lib/c.ml 9 0 3 add 5 a - b 5 a + b outside_tests\n"
 
 let digest = String.make 32 'a'
 

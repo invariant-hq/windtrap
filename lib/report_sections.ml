@@ -1360,6 +1360,7 @@ type mutation = {
   survivors : survivor list;
   not_evaluated : not_evaluated list;
   unreached : (string * int) list;
+  outside_tests : (string * int) list;
   killed : int;
   not_tested : int;
   scope : scope;
@@ -1464,6 +1465,8 @@ let mutation_summary (m : mutation) =
         [ styled `Yellow (strf "%d not evaluated" n) ])
     @ term (List.length m.unreached) (fun n ->
         [ styled `Yellow (strf "%d never reached" n) ])
+    @ term (List.length m.outside_tests) (fun n ->
+        [ styled `Yellow (strf "%d evaluated outside tests" n) ])
     @ term m.not_tested (fun n -> [ plain (strf "%d not tested" n) ])
     @
     match m.scope with
@@ -1501,12 +1504,12 @@ let not_evaluated_section ~selection = function
 
 (* One row per file: what a reader does with an unreached mutant is write a
    test for its lines, and a project has hundreds of them. *)
-let unreached_section unreached =
-  let files = List.sort_uniq String.compare (List.map fst unreached) in
+let by_file ~title ~lead sites =
+  let files = List.sort_uniq String.compare (List.map fst sites) in
   let lines_of file =
     List.filter_map
       (fun (f, line) -> if String.equal f file then Some line else None)
-      unreached
+      sites
   in
   let count_width =
     List.fold_left
@@ -1529,9 +1532,24 @@ let unreached_section unreached =
   match files with
   | [] -> []
   | _ :: _ ->
-      Rule (Some (strf "never reached (%d)" (List.length unreached)))
-      :: List.map row files
-      @ [ Rule None ]
+      (Rule (Some (strf "%s (%d)" title (List.length sites))) :: lead)
+      @ List.map row files @ [ Rule None ]
+
+let unreached_section = by_file ~title:"never reached" ~lead:[]
+
+(* A reader takes "never reached" for "no test covers the line", which is
+   false of a site that module initialization evaluated. *)
+let outside_tests_section =
+  by_file ~title:"evaluated outside tests"
+    ~lead:
+      [
+        Line
+          [
+            plain
+              "  These sites ran outside every test, at module initialization \
+               or in a fixture release.";
+          ];
+      ]
 
 (* The command arms the first survivor printed. *)
 let outcome ~invocation ~selection (m : mutation) =
@@ -1549,6 +1567,7 @@ let mutation_closing ~(config : Run.config) (m : mutation) =
     [
       not_evaluated_section ~selection m.not_evaluated;
       unreached_section m.unreached;
+      outside_tests_section m.outside_tests;
     ]
   in
   let rest = join (sections @ [ outcome ~invocation ~selection m ]) in
@@ -1583,5 +1602,6 @@ let mutation_report ~invocation (m : mutation) =
       survivors;
       not_evaluated_section ~selection:"" m.not_evaluated;
       unreached_section m.unreached;
+      outside_tests_section m.outside_tests;
       outcome ~invocation ~selection:"" m;
     ]

@@ -610,6 +610,10 @@ Each one is also listed under its area below.
   tests it in a new process, and the merge keeps it not evaluated unless
   an executable killed it (see
   [What a mutation run runs](https://github.com/invariant-hq/windtrap/blob/main/doc/manual/mutation.md#what-a-mutation-run-runs)).
+- A site that no test reaches and that module initialization or a
+  fixture release evaluates is listed under `evaluated outside tests`,
+  apart from the lines never reached (see
+  [What a mutation run runs](https://github.com/invariant-hq/windtrap/blob/main/doc/manual/mutation.md#what-a-mutation-run-runs)).
 
 ### Packages and libraries
 

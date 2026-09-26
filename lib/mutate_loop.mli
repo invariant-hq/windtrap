@@ -52,14 +52,15 @@ val execute_and_report : suite:string -> Run.config -> Test_tree.t list -> run
     + It runs the dry run, which is {!Report.run} over [config] with [junit]
       cleared. Every other field is that of [config], [baseline] included, so
       the dry run of a [--mutate -u] run accepts what a [-u] run accepts. A site
-      that the dry run evaluated only outside a test, at module initialization
-      or in a fixture release, counts as unreached. So does a site that only
-      tests marked xfail evaluated.
+      that no test reached and that the dry run evaluated outside every test, at
+      module initialization or in a fixture release, is evaluated outside tests
+      ({!Windtrap_runtime.Verdicts.Outside_tests}). A site that only tests
+      marked xfail evaluated is unreached.
     + It runs the determinism probe, which is one unarmed child over the tests
       that the dry run executed. The probe agrees iff it executed as many tests,
       skipped as many and counted no failure.
     + It forks one child per reached mutant, in the order of the catalogue, and
-      never forks an unreached one.
+      never forks one that is unreached or evaluated outside tests.
     + When the last child has ended it writes the verdict file.
 
     {b Children.} A child runs {!Run.execute} over {!Run.for_subset} of
@@ -94,8 +95,9 @@ val execute_and_report : suite:string -> Run.config -> Test_tree.t list -> run
     [(hits * 8) + 1000] ([budget_of]) for a site that the dry run evaluated
     [hits] times.
 
-    {b The verdict file.} The file holds one record per reached mutant, and one
-    [Unreached] record per unreached mutant of the population. It is written to
+    {b The verdict file.} The file holds one record per reached mutant, one
+    [Outside_tests] record per mutant of the population evaluated outside tests,
+    and one [Unreached] record per unreached one. It is written to
     {!Windtrap_runtime.Verdicts.output_file} of the executable, by
     {!Windtrap_runtime.Verdicts.save}. Under a scope, the records of the files
     outside it stay when the file there was written by this build

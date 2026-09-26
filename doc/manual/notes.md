@@ -225,6 +225,12 @@ evaluated. Called a survivor, it would send a reader to strengthen
 tests that were never given the mutant. An `--arm` run starts in a new
 process and judges it.
 
+Module initialization runs before a child can arm a mutant, and a
+fixture release belongs to no test, so no child tests a site that only
+they evaluate. Such a site ran and the tests may depend on it. Listed
+as never reached, it would read as a line no test covers, so the report
+lists it as evaluated outside tests.
+
 ## Every mutant is compiled in
 
 The backend compiles every mutant of a library into one binary, each
