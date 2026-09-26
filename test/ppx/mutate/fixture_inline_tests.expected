@@ -1,7 +1,0 @@
-let sum a b = a + b
-let ordered a b = if a < b then 1 else 0
-[%%test let "sums" = assert ((sum 1 2) = 3)]
-[%%test
-  module Grouped =
-    struct [%%test let "orders" = assert ((ordered 1 2) = 1)] end]
-[%%expect_test let "prints" = print_int (sum 1 2); [%expect {| 3 |}]]

@@ -1,4 +1,0 @@
-File "./reject_dropped_body.ml", line 6, characters 33-43:
-6 | let%test "dropped" = ignore (1 [@expect.foo])
-                                     ^^^^^^^^^^
-Error: [@@expect.foo] is not supported by ppx_windtrap

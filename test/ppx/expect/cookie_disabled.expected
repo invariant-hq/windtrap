@@ -1,1 +1,0 @@
-let greet name = Printf.printf "hello %s\n" name

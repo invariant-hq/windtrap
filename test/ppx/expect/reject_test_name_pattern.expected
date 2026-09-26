@@ -1,4 +1,0 @@
-File "./reject_test_name_pattern.ml", line 1, characters 0-18:
-1 | let%test name = ()
-    ^^^^^^^^^^^^^^^^^^
-Error: Expected let%expect_test "name" = ... or let%expect_test _ = ...

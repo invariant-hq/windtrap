@@ -1,2 +1,0 @@
-File "<command-line>", line 1, characters 0-7:
-Error: invalid 'inline_tests' cookie (bogus), expected one of: enabled, disabled or ignored

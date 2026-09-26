@@ -1,4 +1,0 @@
-File "./reject_empty_payload.ml", line 1, characters 18-29:
-1 | let f n = (n + 1) [@coverage]
-                      ^^^^^^^^^^^
-Error: Bad payload in coverage attribute.

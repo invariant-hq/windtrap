@@ -17,7 +17,7 @@
    The comparison and connective operators are deliberately NOT shadowed
    here: rebinding them would switch their families off through the
    file-level capability gate, and no guard would be emitted to test. The
-   gate itself is pinned by test/ppx/mutate/fixture_shadow.ml. *)
+   gate itself is pinned by test/cram/ppx/mutate.t/fixture_shadow.ml. *)
 
 type bool = Yes | No
 

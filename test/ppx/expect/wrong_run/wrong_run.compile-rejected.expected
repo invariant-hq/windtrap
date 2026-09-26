@@ -1,7 +1,0 @@
-File "./wrong_run.ml", lines 10-12, characters 0-19:
-10 | let%expect_test "a run of another type" =
-11 |   print_string "x";
-12 |   [%expect {| x |}]
-Error: The value Expect_test_config.run has type (unit -> int) -> unit
-       but an expression was expected of type (unit -> unit) -> unit
-       Type int is not compatible with type unit

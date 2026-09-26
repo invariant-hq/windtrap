@@ -1,4 +1,0 @@
-File "./reject_on_outside.ml", line 3, characters 0-14:
-3 | [@@@mutate on]
-    ^^^^^^^^^^^^^^
-Error: Mutation is already on.

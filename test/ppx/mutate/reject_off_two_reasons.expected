@@ -1,4 +1,0 @@
-File "./reject_off_two_reasons.ml", line 1, characters 18-39:
-1 | let f n = (n + 1) [@mutate off "a" "b"]
-                      ^^^^^^^^^^^^^^^^^^^^^
-Error: Bad payload in mutate attribute.

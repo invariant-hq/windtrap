@@ -1,0 +1,44 @@
+; pp.exe links every rewriter and -apply names the ones a run applies. Under
+; -apply, ppxlib runs the instrumenting rewriters in the order they are
+; linked, whatever order -apply names them in: pp.exe runs mutation before
+; coverage, the order of the driver dune builds for a stanza naming both
+; backends, and coverage_first.exe links them the other way round.
+
+(library
+ (name windtrap_test_ppx_generated)
+ (modules generated)
+ (kind ppx_rewriter)
+ (libraries ppxlib))
+
+(executable
+ (name pp)
+ (modules pp)
+ (libraries
+  ppxlib
+  windtrap_test_ppx_generated
+  windtrap_mutate_ppx
+  windtrap_coverage_ppx
+  ppx_windtrap))
+
+(executable
+ (name coverage_first)
+ (modules coverage_first)
+ (libraries ppxlib windtrap_coverage_ppx windtrap_mutate_ppx))
+
+(executable
+ (name elide)
+ (modules elide)
+ (libraries ppxlib)
+ (preprocess
+  (pps ppxlib.metaquot)))
+
+(cram
+ (applies_to coverage mutate)
+ (deps pp.exe coverage_first.exe elide.exe))
+
+(cram
+ (applies_to expect)
+ (deps
+  pp.exe
+  (package windtrap)
+  (package ppx_windtrap)))

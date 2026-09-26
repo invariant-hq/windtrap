@@ -1,4 +1,0 @@
-File "./reject_expect_prefix.ml", line 1, characters 10-20:
-1 | let x = [%expect.foo]
-              ^^^^^^^^^^
-Error: [%expect.foo] is not supported by ppx_windtrap

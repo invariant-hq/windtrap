@@ -1,6 +1,0 @@
-type t =
-  | A 
-  | B 
-let x = 1
-let s = "hello"
-let pair a b = (a, b)

@@ -1,4 +1,0 @@
-File "./reject_test_binding_attr.ml", line 1, characters 21-40:
-1 | let%test "n" = () [@@expect.uncaught_exn {| |}]
-                         ^^^^^^^^^^^^^^^^^^^
-Error: [@@expect.uncaught_exn] is not supported by ppx_windtrap

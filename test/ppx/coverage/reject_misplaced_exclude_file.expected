@@ -1,4 +1,0 @@
-File "./reject_misplaced_exclude_file.ml", line 2, characters 2-28:
-2 |   [@@@coverage exclude_file]
-      ^^^^^^^^^^^^^^^^^^^^^^^^^^
-Error: coverage exclude_file is not allowed here.

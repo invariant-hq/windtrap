@@ -1,4 +1,0 @@
-File "./reject_two_bindings.ml", lines 1-2, characters 0-12:
-1 | let%expect_test "a" = ()
-2 | and "b" = ()
-Error: Expected let%expect_test <name> = <expr>

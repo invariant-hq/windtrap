@@ -1,4 +1,0 @@
-File "./reject_off_reason.ml", line 1, characters 18-42:
-1 | let f n = (n + 1) [@coverage off "reason"]
-                      ^^^^^^^^^^^^^^^^^^^^^^^^
-Error: Bad payload in coverage attribute.

@@ -1,4 +1,0 @@
-File "./reject_test_anonymous_module.ml", line 1, characters 0-26:
-1 | module%test _ = struct end
-    ^^^^^^^^^^^^^^^^^^^^^^^^^^
-Error: Expected let%test "name" = ..., let%test _ = ..., or module%test Name = ...

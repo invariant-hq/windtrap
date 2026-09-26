@@ -1,4 +1,0 @@
-File "./reject_test_pattern_attr.ml", line 1, characters 16-26:
-1 | let%test ("n" [@expect.foo]) = ()
-                    ^^^^^^^^^^
-Error: [@@expect.foo] is not supported by ppx_windtrap

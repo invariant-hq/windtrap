@@ -168,8 +168,8 @@ let ari_chain a b c =
    the bracketed expression a location starting at the [(], so the outer
    node no longer starts at the same byte as the inner; the chain rule
    reads the tree, not the layout, and this carries one site too
-   (test/ppx/mutate/fixture_chain.ml pins it). The witness pins that the
-   bracket changes no evaluation order either. *)
+   (test/cram/ppx/mutate.t/fixture_chain.ml pins it). The witness pins that
+   the bracket changes no evaluation order either. *)
 let ari_chain_parens a b c = string_of_int (note "a" a + note "b" b + note "c" c)
 
 (* Right-nested, where both nodes carry a site and the expansions nest. *)

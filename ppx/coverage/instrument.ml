@@ -10,8 +10,8 @@ module Exp = Ast_helper.Exp
 
 (* Attributes *)
 
-(* The grammar is ppx/mutate/instrument.ml's too, under its own name; the
-   parity fixtures of test/ppx/coverage pin that the two agree. *)
+(* The grammar is ppx/mutate/instrument.ml's too, under its own name;
+   test/cram/ppx/coverage.t pins that the two agree. *)
 let coverage_attribute { attr_name; attr_payload; attr_loc = loc } =
   if not (String.equal attr_name.txt "coverage") then `None
   else

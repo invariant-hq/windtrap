@@ -1,4 +1,0 @@
-(library
- (name windtrap_test_ppx_generated)
- (kind ppx_rewriter)
- (libraries ppxlib))

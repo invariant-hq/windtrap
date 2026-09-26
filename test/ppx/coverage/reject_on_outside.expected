@@ -1,4 +1,0 @@
-File "./reject_on_outside.ml", line 3, characters 0-16:
-3 | [@@@coverage on]
-    ^^^^^^^^^^^^^^^^
-Error: Coverage is already on.
