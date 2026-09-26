@@ -21,10 +21,10 @@ of them. `dune runtest` builds and runs every example, and each passes.
   with inline tests, for
   [Resources and structure](../doc/manual/resources-and-structure.md)
   and [Running tests](../doc/manual/running-tests.md).
-- `07-coverage`: a library with the coverage backend, three suites over
-  it and a `cover` alias, for [Coverage](../doc/manual/coverage.md).
-- `08-mutation`: a library with the mutation backend, a suite that
-  leaves two mutants alive and a `mutate` alias, for
+- `07-coverage`: a library with the coverage backend and three suites
+  over it, for [Coverage](../doc/manual/coverage.md).
+- `08-mutation`: a library with the mutation backend and a suite that
+  leaves two mutants alive, for
   [Mutation testing](../doc/manual/mutation.md).
 
 `x-blueprint` is a project of its own: a library with both

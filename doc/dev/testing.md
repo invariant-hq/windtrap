@@ -174,9 +174,10 @@ and every promoted diff is reviewed as a code change.
 
 `lib/` carries both instrumentation stanzas, inert without the flag: a
 plain `dune runtest` is uninstrumented and free. Two aliases in
-`test/dune` measure windtrap with windtrap. They are named `self-cover`
-and `self-mutate`, not `cover` and `mutate`, so the examples can teach
-`@cover` and `@mutate` under the names a user's own tree gives them.
+`test/dune`, `self-cover` and `self-mutate`, measure windtrap with
+windtrap. They are maintainers' tooling: the manual, the examples and
+the skill teach no alias, and show a user the instrumented
+`dune runtest` and the merge as two commands.
 
 ```
 dune build @self-cover --instrument-with ppx_windtrap.coverage

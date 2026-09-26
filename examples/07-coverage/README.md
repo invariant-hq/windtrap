@@ -2,9 +2,13 @@
 
 The example of the manual's [coverage page](../../doc/manual/coverage.md):
 a library instrumented with `ppx_windtrap.coverage` and three suites over
-it.
+it. The page's commands run at the root of a copy of this directory made
+a project of its own, as the
+[blueprint](../x-blueprint/README.md#copying-the-project-out) shows. In
+windtrap's repository, `--instrument-with` also instruments windtrap's
+own library, and the report lists its files.
 
-    dune runtest --force --instrument-with ppx_windtrap.coverage
+    dune runtest --instrument-with ppx_windtrap.coverage
     dune exec windtrap -- coverage -u
 
 Each suite's dump counts the modules its executable links. `test_a` never

@@ -8,11 +8,3 @@
  (name test_calc)
  (modules test_calc)
  (libraries windtrap windtrap_example_mutation))
-
-(rule
- (alias mutate)
- (deps
-  (alias_rec runtest)
-  (universe))
- (action
-  (run %{bin:windtrap} mutants)))

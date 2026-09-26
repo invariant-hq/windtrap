@@ -40,6 +40,17 @@ the coverage and mutation backends, pinned to `windtrap` with
       block. Durations, seeds and absolute paths may differ; any other
       difference is fixed on the page. A block that shows a failure
       needs the edit its page describes, reverted afterwards.
+- [ ] The instrumented commands of `coverage.md`, `mutation.md` and
+      `examples/x-blueprint/README.md` are re-run in a copy of the
+      example outside the checkout, as a user's project runs them. In
+      the checkout, `--instrument-with` also instruments windtrap's own
+      `lib/`, and the reports list its files. Copy the example's
+      directory out, add a `dune-project` whose package depends on
+      `windtrap` and `ppx_windtrap` and that pins both to the checkout
+      (the blueprint's README shows the `pin` stanza), run
+      `dune pkg lock`, then run the page's commands from the copy's
+      root. The lock records the checkout's commit, so commit first and
+      lock again after every commit.
 
 ## Versioning
 

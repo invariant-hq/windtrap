@@ -1,6 +1,5 @@
 ; Two inert instrumentation stanzas: zero overhead until
-; --instrument-with, or the workspace's instrument_with in
-; ../dune-workspace, asks for them.
+; --instrument-with asks for them.
 
 (library
  (name windtrap_example_blueprint)

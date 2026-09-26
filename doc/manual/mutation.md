@@ -4,7 +4,10 @@ This page shows how to find the changes to a library that no test
 notices, one mutant at a time, and how to kill, reproduce or dismiss
 each. The reference is `windtrap mutants --help`, in the
 [last section](#the-commands-options), and the suite's `--help`. The
-example is `examples/08-mutation/`, and the transcripts print its paths.
+example is `examples/08-mutation/`, and the transcripts ran at the root
+of a copy of it made a project of its own, as the
+[blueprint](../../examples/x-blueprint/README.md#copying-the-project-out)
+shows.
 
 ## Instrumenting a library for mutation
 
@@ -24,14 +27,6 @@ ordinary `(test)` stanzas.
  (name test_calc)
  (modules test_calc)
  (libraries windtrap windtrap_example_mutation))
-
-(rule
- (alias mutate)
- (deps
-  (alias_rec runtest)
-  (universe))
- (action
-  (run %{bin:windtrap} mutants)))
 ```
 
 The `instrumentation` field names the backend, `ppx_windtrap.mutate`.
@@ -39,9 +34,7 @@ A build that passes `--instrument-with ppx_windtrap.mutate` compiles
 every mutant of the library into it, each behind a guard, and a run
 executes the original code until it tests a mutant. A plain build
 compiles the library as written. The field repeats, and one library can
-carry both this backend and [coverage](coverage.md)'s. The rule at the
-end is the alias of
-[Mutation testing in one command](#mutation-testing-in-one-command).
+carry both this backend and [coverage](coverage.md)'s.
 
 ## Testing a suite's mutants
 
@@ -122,25 +115,25 @@ as a `SURVIVED` block: its identifier, the rewrite, the source line and
 the tests that ran it. No test calls `sign 0`:
 
 ```
-$ dune exec --instrument-with ppx_windtrap.mutate examples/08-mutation/test_calc.exe -- --mutate
-calc: 10 passed in 1.6ms.
+$ dune exec --instrument-with ppx_windtrap.mutate ./test_calc.exe -- --mutate
+calc: 10 passed in 1.3ms.
 
 ─────────────────────── survivors ────────────────────────
-  SURVIVED  examples/08-mutation/calc.ml:10:16:ge  n > 0 → n >= 0
+  SURVIVED  calc.ml:10:16:ge  n > 0 → n >= 0
       10 │ let sign n = if n > 0 then 1 else if n < 0 then -1 else 0
 
     2 tests ran this line and none failed:
-      sign › is -1 for a negative  examples/08-mutation/test_calc.ml:32
-      sign › is 1 for a positive   examples/08-mutation/test_calc.ml:31
+      sign › is -1 for a negative  test_calc.ml:32
+      sign › is 1 for a positive   test_calc.ml:31
 
-  SURVIVED  examples/08-mutation/calc.ml:10:37:le  n < 0 → n <= 0
+  SURVIVED  calc.ml:10:37:le  n < 0 → n <= 0
       10 │ let sign n = if n > 0 then 1 else if n < 0 then -1 else 0
 
     1 test ran this line and did not fail:
-      sign › is -1 for a negative  examples/08-mutation/test_calc.ml:32
+      sign › is -1 for a negative  test_calc.ml:32
 ──────────────────────────────────────────────────────────
 
-reproduce: dune exec --instrument-with ppx_windtrap.mutate examples/08-mutation/test_calc.exe -- --arm examples/08-mutation/calc.ml:10:16:ge
+reproduce: dune exec --instrument-with ppx_windtrap.mutate test_calc.exe -- --arm calc.ml:10:16:ge
 mutants: 2 survived of 5 reached by this suite, 3 killed
 ```
 
@@ -151,27 +144,28 @@ suite once with that mutant active, names it first, records no
 correction, and ends on its verdict: killed, survived, or not evaluated
 when no selected test ran the site. Under `dune runtest`, the mirror
 arms it in every suite that holds its file, as in
-`WINDTRAP_MUTATE_ARM=ID dune runtest --force --instrument-with ppx_windtrap.mutate`.
-Arming a killed mutant shows the failure that killed it:
+`WINDTRAP_MUTATE_ARM=ID dune runtest --force --instrument-with ppx_windtrap.mutate`
+(see [Mutation testing a project](#mutation-testing-a-project) for
+`--force`). Arming a killed mutant shows the failure that killed it:
 
 ```
-$ dune exec --instrument-with ppx_windtrap.mutate examples/08-mutation/test_calc.exe -- --arm examples/08-mutation/calc.ml:10:16:ge
-mutant examples/08-mutation/calc.ml:10:16:ge armed: n > 0 → n >= 0
-calc: 10 passed in 0.7ms.
+$ dune exec --instrument-with ppx_windtrap.mutate ./test_calc.exe -- --arm calc.ml:10:16:ge
+mutant calc.ml:10:16:ge armed: n > 0 → n >= 0
+calc: 10 passed in 0.9ms.
 mutant survived: the armed site was evaluated 2 times and no test failed.
-$ dune exec --instrument-with ppx_windtrap.mutate examples/08-mutation/test_calc.exe -- --arm examples/08-mutation/calc.ml:6:11:add
-mutant examples/08-mutation/calc.ml:6:11:add armed: a - b → a + b
+$ dune exec --instrument-with ppx_windtrap.mutate ./test_calc.exe -- --arm calc.ml:6:11:add
+mutant calc.ml:6:11:add armed: a - b → a + b
 calc: 10 tests
 ──────────────────────── failures ────────────────────────
   FAIL  subtraction › subtracts (mutant armed)
-    examples/08-mutation/test_calc.ml:12
+    test_calc.ml:12
       12 │ test "subtracts" (fun () -> equal int 6 (Calc.apply Calc.Sub 10 4));
 
     expected  6
     actual    14
 ──────────────────────────────────────────────────────────
 
-9 passed, 1 failed in 0.7ms.
+9 passed, 1 failed in 0.9ms.
 mutant killed.
 ```
 
@@ -184,22 +178,22 @@ filtered run lists the mutants its tests never reached and saves no
 verdict. `stays positive` checks a sign that `a - b → a + b` keeps:
 
 ```
-$ dune exec --instrument-with ppx_windtrap.mutate examples/08-mutation/test_calc.exe -- --mutate=examples/08-mutation/calc.ml -f "stays positive"
+$ dune exec --instrument-with ppx_windtrap.mutate ./test_calc.exe -- --mutate=calc.ml -f "stays positive"
 calc: 1 passed in 0.5ms.
 
 ─────────────────────── survivors ────────────────────────
-  SURVIVED  examples/08-mutation/calc.ml:6:11:add  a - b → a + b
+  SURVIVED  calc.ml:6:11:add  a - b → a + b
       6 │ | Sub -> a - b
 
     1 test ran this line and did not fail:
-      subtraction › stays positive  examples/08-mutation/test_calc.ml:11
+      subtraction › stays positive  test_calc.ml:11
 ──────────────────────────────────────────────────────────
 
 ─────────────────── never reached (4) ────────────────────
-  4  examples/08-mutation/calc.ml   lines 5, 8, 10
+  4  calc.ml   lines 5, 8, 10
 ──────────────────────────────────────────────────────────
 
-reproduce: dune exec --instrument-with ppx_windtrap.mutate examples/08-mutation/test_calc.exe -- --arm examples/08-mutation/calc.ml:6:11:add -f 'stays positive'
+reproduce: dune exec --instrument-with ppx_windtrap.mutate test_calc.exe -- --arm calc.ml:6:11:add -f 'stays positive'
 windtrap: verdicts not saved: this run's selection narrows the suite, and a partial run's verdicts would stand in the project merge as the whole.
 mutants: 1 survived of 1 reached by the 1 selected test, 4 never reached
 ```
@@ -246,59 +240,55 @@ boolean the prefixes. A suite with no mutant to test, such as a suite
 over another library, runs as usual and says why on standard error. A
 mutant killed by one executable is killed, and the command exits 1 when
 a mutant survived every executable that reached it, listing the most
-reached first. `--force` makes dune run the suites that already passed:
+reached first.
+
+Dune does not track `WINDTRAP_MUTATE`. A suite that ran without it
+does not run again when it is set, unless its build changed, and the
+merge then finds no verdict of that build.
+`(deps (env_var WINDTRAP_MUTATE))` on a test stanza makes dune run it
+again when the variable changes. Without it, `--force` makes dune run
+every suite:
 
 ```
 $ WINDTRAP_MUTATE=1 dune runtest --force --instrument-with ppx_windtrap.mutate
-calc: 10 passed in 0.7ms.
+calc: 10 passed in 0.9ms.
 
 ─────────────────────── survivors ────────────────────────
-  SURVIVED  examples/08-mutation/calc.ml:10:16:ge  n > 0 → n >= 0
+  SURVIVED  calc.ml:10:16:ge  n > 0 → n >= 0
       10 │ let sign n = if n > 0 then 1 else if n < 0 then -1 else 0
 
     2 tests ran this line and none failed:
-      sign › is -1 for a negative  examples/08-mutation/test_calc.ml:32
-      sign › is 1 for a positive   examples/08-mutation/test_calc.ml:31
+      sign › is -1 for a negative  test_calc.ml:32
+      sign › is 1 for a positive   test_calc.ml:31
 
-  SURVIVED  examples/08-mutation/calc.ml:10:37:le  n < 0 → n <= 0
+  SURVIVED  calc.ml:10:37:le  n < 0 → n <= 0
       10 │ let sign n = if n > 0 then 1 else if n < 0 then -1 else 0
 
     1 test ran this line and did not fail:
-      sign › is -1 for a negative  examples/08-mutation/test_calc.ml:32
+      sign › is -1 for a negative  test_calc.ml:32
 ──────────────────────────────────────────────────────────
 
-reproduce: dune exec --instrument-with ppx_windtrap.mutate examples/08-mutation/test_calc.exe -- --arm examples/08-mutation/calc.ml:10:16:ge
+reproduce: dune exec --instrument-with ppx_windtrap.mutate test_calc.exe -- --arm calc.ml:10:16:ge
 mutants: 2 survived of 5 reached by this suite, 3 killed
 $ dune exec windtrap -- mutants
 ───────────────────── survivors (2) ──────────────────────
-  SURVIVED  examples/08-mutation/calc.ml:10:16:ge  n > 0 → n >= 0
+  SURVIVED  calc.ml:10:16:ge  n > 0 → n >= 0
       10 │ let sign n = if n > 0 then 1 else if n < 0 then -1 else 0
 
     2 tests ran this line and none failed:
       test_calc.exe  sign › is -1 for a negative
       test_calc.exe  sign › is 1 for a positive
 
-  SURVIVED  examples/08-mutation/calc.ml:10:37:le  n < 0 → n <= 0
+  SURVIVED  calc.ml:10:37:le  n < 0 → n <= 0
       10 │ let sign n = if n > 0 then 1 else if n < 0 then -1 else 0
 
     1 test ran this line and did not fail:
       test_calc.exe  sign › is -1 for a negative
 ──────────────────────────────────────────────────────────
 
-reproduce: dune exec --instrument-with ppx_windtrap.mutate examples/08-mutation/test_calc.exe -- --arm examples/08-mutation/calc.ml:10:16:ge
+reproduce: dune exec --instrument-with ppx_windtrap.mutate test_calc.exe -- --arm calc.ml:10:16:ge
 mutants: 2 survived of 5 reached, 3 killed, 1 executable
 ```
-
-## Mutation testing in one command
-
-The `mutate` alias of the example's dune file runs both commands:
-`WINDTRAP_MUTATE=1 dune build @mutate --force --instrument-with
-ppx_windtrap.mutate`. It is built as the alias of
-[coverage](coverage.md#measuring-in-one-command) is.
-`(deps (env_var WINDTRAP_MUTATE))` on a test stanza makes dune
-run it again when the variable changes, in place of `--force`. A
-`dune-workspace` naming the backend drops `--instrument-with`, as for
-[coverage](coverage.md#instrumenting-every-build).
 
 ## Killing a survivor
 
@@ -322,9 +312,11 @@ The mutation run then kills every mutant the suite reaches, and the
 project's merge passes:
 
 ```
-$ dune exec --instrument-with ppx_windtrap.mutate examples/08-mutation/test_calc.exe -- --mutate
-calc: 11 passed in 0.9ms.
+$ dune exec --instrument-with ppx_windtrap.mutate ./test_calc.exe -- --mutate
+calc: 11 passed in 2.9ms.
 mutants: 5 reached by this suite, 5 killed
+$ dune exec windtrap -- mutants
+mutants: 5 reached, 5 killed, 1 executable
 ```
 
 ## What is mutated

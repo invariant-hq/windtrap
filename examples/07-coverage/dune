@@ -18,11 +18,3 @@
  (name test_b)
  (modules test_b)
  (libraries windtrap windtrap_example_coverage))
-
-(rule
- (alias cover)
- (deps
-  (alias_rec runtest)
-  (universe))
- (action
-  (run %{bin:windtrap} coverage --min 80)))

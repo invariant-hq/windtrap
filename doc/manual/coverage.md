@@ -4,7 +4,10 @@ This page shows how to measure which parts of a library its tests run,
 read the lines no test reached, and fail a build whose coverage falls
 below a minimum. The reference is `windtrap coverage --help`, in the
 [last section](#the-commands-options). The example is
-`examples/07-coverage/`, and the transcripts print its paths.
+`examples/07-coverage/`, and the transcripts ran at the root of a copy
+of it made a project of its own, as the
+[blueprint](../../examples/x-blueprint/README.md#copying-the-project-out)
+shows.
 
 ## Instrumenting a library
 
@@ -34,22 +37,13 @@ Coverage is a field of the library stanza, and the tests are ordinary
  (name test_b)
  (modules test_b)
  (libraries windtrap windtrap_example_coverage))
-
-(rule
- (alias cover)
- (deps
-  (alias_rec runtest)
-  (universe))
- (action
-  (run %{bin:windtrap} coverage --min 80)))
 ```
 
 The `instrumentation` field names the backend, `ppx_windtrap.coverage`.
 It does nothing until a build passes `--instrument-with
 ppx_windtrap.coverage`, so a plain `dune runtest` builds and runs the
 library as written. An instrumented build counts and changes no test's
-outcome. The rule at the end is the alias of
-[Measuring in one command](#measuring-in-one-command).
+outcome.
 
 ## Measuring coverage
 
@@ -102,21 +96,20 @@ let () = exit (run "calc" [ apply; eval ])
 ```
 
 Two commands measure it. The instrumented run builds the library with
-the backend, and each suite writes a dump when it exits; `--force` makes
-dune run the suites that already passed. A test run prints no coverage
-number. `windtrap coverage` merges the dumps into one row per source
-file and prints the total last:
+the backend, and each suite writes a dump when it exits. A test run
+prints no coverage number. `windtrap coverage` merges the dumps into one
+row per source file and prints the total last:
 
 ```
-$ dune runtest --force --instrument-with ppx_windtrap.coverage
-calc: 4 passed in 3.0ms.
-half_a: 6 passed in 1.0ms.
-half_b: 8 passed in 1.9ms.
+$ dune runtest --instrument-with ppx_windtrap.coverage
+calc: 4 passed in 0.8ms.
+half_b: 8 passed in 1.1ms.
+half_a: 6 passed in 1.3ms.
 $ dune exec windtrap -- coverage
-   cover    points   file                             uncovered lines (-u shows the source)
-   77.8%     7/9     examples/07-coverage/calc.ml     6-7
-  100.0%     9/9     examples/07-coverage/half_a.ml
-  100.0%    11/11    examples/07-coverage/half_b.ml
+   cover    points   file        uncovered lines (-u shows the source)
+   77.8%     7/9     calc.ml     6-7
+  100.0%     9/9     half_a.ml
+  100.0%    11/11    half_b.ml
 coverage: 93.1% (27/29 points)
 ```
 
@@ -134,12 +127,12 @@ line an unvisited point touches. The percentage counts points:
 
 ```
 $ dune exec windtrap -- coverage -u
-   cover    points   file                             uncovered lines
-   77.8%     7/9     examples/07-coverage/calc.ml     6-7
-  100.0%     9/9     examples/07-coverage/half_a.ml
-  100.0%    11/11    examples/07-coverage/half_b.ml
+   cover    points   file        uncovered lines
+   77.8%     7/9     calc.ml     6-7
+  100.0%     9/9     half_a.ml
+  100.0%    11/11    half_b.ml
 
-examples/07-coverage/calc.ml: 77.8% (7/9)
+calc.ml: 77.8% (7/9)
 
       5 │   | Add -> a + b
   ▌   6 │   | Sub -> a - b
@@ -153,15 +146,15 @@ coverage: 93.1% (27/29 points)
 
 To fail a build below a minimum, pass `--min PCT`. The last line states
 the minimum and whether the total meets it, and the command exits 1 when
-it does not. A percentage prints red below the minimum, or below 80%
-without one:
+it does not. Under CI, run it after the instrumented `dune runtest`. A
+percentage prints red below the minimum, or below 80% without one:
 
 ```
 $ dune exec windtrap -- coverage --min 95
-   cover    points   file                             uncovered lines (-u shows the source)
-   77.8%     7/9     examples/07-coverage/calc.ml     6-7
-  100.0%     9/9     examples/07-coverage/half_a.ml
-  100.0%    11/11    examples/07-coverage/half_b.ml
+   cover    points   file        uncovered lines (-u shows the source)
+   77.8%     7/9     calc.ml     6-7
+  100.0%     9/9     half_a.ml
+  100.0%    11/11    half_b.ml
 coverage: 93.1% (27/29 points), minimum 95%: FAILED
 ```
 
@@ -176,13 +169,13 @@ file or a directory. `calc.mll` and `calc.pp.ml` count as `calc.ml`. No
 suite calls `stats.ml`:
 
 ```
-$ dune exec windtrap -- coverage --expect examples/07-coverage/stats.ml
-   cover    points   file                             uncovered lines (-u shows the source)
-   77.8%     7/9     examples/07-coverage/calc.ml     6-7
-  100.0%     9/9     examples/07-coverage/half_a.ml
-  100.0%    11/11    examples/07-coverage/half_b.ml
+$ dune exec windtrap -- coverage --expect stats.ml
+   cover    points   file        uncovered lines (-u shows the source)
+   77.8%     7/9     calc.ml     6-7
+  100.0%     9/9     half_a.ml
+  100.0%    11/11    half_b.ml
 coverage: 93.1% (27/29 points)
-windtrap: examples/07-coverage/stats.ml: expected source has no coverage data (not instrumented, or linked into no test executable that ran)
+windtrap: stats.ml: expected source has no coverage data (not instrumented, or linked into no test executable that ran)
 ```
 
 ## Excluding code from coverage
@@ -205,12 +198,12 @@ there. To read one suite's dump, set `WINDTRAP_COVERAGE_FILE` to a path,
 which each run replaces, and pass the path to `windtrap coverage`:
 
 ```
-$ WINDTRAP_COVERAGE_FILE=half_b.coverage dune exec --instrument-with ppx_windtrap.coverage examples/07-coverage/test_b.exe
-half_b: 8 passed in 1.1ms.
+$ WINDTRAP_COVERAGE_FILE=half_b.coverage dune exec --instrument-with ppx_windtrap.coverage ./test_b.exe
+half_b: 8 passed in 2.1ms.
 $ dune exec windtrap -- coverage half_b.coverage
-   cover    points   file                             uncovered lines (-u shows the source)
-   11.1%     1/9     examples/07-coverage/half_a.ml   1-2, 5-7
-  100.0%    11/11    examples/07-coverage/half_b.ml
+   cover    points   file        uncovered lines (-u shows the source)
+   11.1%     1/9     half_a.ml   1-2, 5-7
+  100.0%    11/11    half_b.ml
 coverage: 60.0% (12/20 points)
 ```
 
@@ -226,18 +219,18 @@ lcov.info` writes the tracefile:
 $ dune exec windtrap -- coverage --json
 { "summary": { "visited": 27, "total": 29, "percentage": 93.10 },
   "files": [
-    { "path": "examples/07-coverage/calc.ml", "visited": 7, "total": 9,
+    { "path": "calc.ml", "visited": 7, "total": 9,
       "percentage": 77.78,
       "uncovered_lines": [6,7] },
-    { "path": "examples/07-coverage/half_a.ml", "visited": 9, "total": 9,
+    { "path": "half_a.ml", "visited": 9, "total": 9,
       "percentage": 100.00,
       "uncovered_lines": [] },
-    { "path": "examples/07-coverage/half_b.ml", "visited": 11, "total": 11,
+    { "path": "half_b.ml", "visited": 11, "total": 11,
       "percentage": 100.00,
       "uncovered_lines": [] } ] }
 $ dune exec windtrap -- coverage --lcov
 TN:
-SF:examples/07-coverage/calc.ml
+SF:calc.ml
 DA:4,5
 DA:5,2
 DA:6,0
@@ -248,7 +241,7 @@ LF:6
 LH:4
 end_of_record
 TN:
-SF:examples/07-coverage/half_a.ml
+SF:half_a.ml
 DA:1,1
 DA:2,1
 DA:5,1
@@ -258,7 +251,7 @@ LF:5
 LH:5
 end_of_record
 TN:
-SF:examples/07-coverage/half_b.ml
+SF:half_b.ml
 DA:1,1
 DA:2,1
 DA:3,1
@@ -267,40 +260,18 @@ LH:3
 end_of_record
 ```
 
-## Measuring in one command
-
-The `cover` alias of the example's dune file runs both commands:
-`dune build @cover --instrument-with ppx_windtrap.coverage`.
-`(alias_rec runtest)` runs every suite under the directory first, and
-`(universe)` makes dune run the merge on every build. `windtrap coverage`
-exits 1 below `--min 80`, and the build fails with it.
-
-## Instrumenting every build
-
-To drop `--instrument-with` from every command, name the backend in the
-`dune-workspace` file at the project root. Every build of the default
-context is then instrumented, and each test run writes its dump.
-
-`dune-workspace`:
-
-```lisp
-(lang dune 3.21)
-
-(context
- (default
-  (instrument_with ppx_windtrap.coverage)))
-```
-
 ## Where the dumps are
 
 A suite built by dune writes its dumps under `_build/_coverage`, in a
 directory of its own, one file per run. Every run keeps its dump, so a
 tool that a cram test runs several times is measured over every run.
 The first run of a rebuilt executable removes the dumps of its
-predecessors. An instrumented executable outside any build directory
-writes under `_windtrap/coverage` in its working directory, and
-`windtrap coverage` finds that directory from it or from below it.
-Under `dune exec` the command reads the build directory dune names, so a
+predecessors. When nothing a suite depends on has changed, dune does
+not run it again, and the report counts the dump of its last run.
+
+An instrumented executable outside any build directory writes under
+`_windtrap/coverage` in its working directory, and `windtrap coverage`
+finds that directory from it or from below it. Under `dune exec` the command reads the build directory dune names, so a
 build with `--build-dir` reports its own dumps.
 
 ## Instrumenting without dune

@@ -273,7 +273,7 @@ an `instrumentation` field that does nothing until a build asks for it:
 Coverage, for the code you changed:
 
 ```
-dune runtest --force --instrument-with ppx_windtrap.coverage
+dune runtest --instrument-with ppx_windtrap.coverage
 dune exec windtrap -- coverage -u
 ```
 
@@ -307,10 +307,7 @@ WINDTRAP_MUTATE=1 dune runtest --force --instrument-with ppx_windtrap.mutate
 dune exec windtrap -- mutants
 ```
 
-The `cover` and `mutate` aliases of the two pages fold each pair of
-commands into one `dune build`, and a `dune-workspace` naming the
-backends removes `--instrument-with` from every command. Mutation
-testing forks a child per mutant and is refused on Windows.
+Mutation testing forks a child per mutant and is refused on Windows.
 Mechanics: [Coverage](https://github.com/invariant-hq/windtrap/blob/main/doc/manual/coverage.md),
 [Mutation testing](https://github.com/invariant-hq/windtrap/blob/main/doc/manual/mutation.md).
 

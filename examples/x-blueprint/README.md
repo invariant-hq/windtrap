@@ -1,30 +1,25 @@
 # Blueprint project
 
 This directory is a project layout to copy: a small library, its
-binary, and a `test/` tree with one kind of test per directory and the
-project's coverage and mutation aliases. It also keeps a known bug, a
-dismissed mutant and a weak law, each shown in its own section below.
+binary, and a `test/` tree with one kind of test per directory. It
+also keeps a known bug, a dismissed mutant and a weak law, each shown in
+its own section below.
 
 ## The layout
 
 ```
 dune-project        the package, its dependencies, cram enabled
-dune-workspace      both instrumentation backends on every build
 lib/                Slug and Stats, the library under test
 bin/                main.exe, a command line over Slug
-test/dune           the cover and mutate aliases
 test/unit/          one suite per module: test_slug, test_stats
 test/failures/      one suite per known bug: issue_1
 test/expect/        let%expect_test over Slug, in a library
 test/cram/          sessions of main.exe
 ```
 
-- `dune-workspace` names both backends, `ppx_windtrap.coverage` and
-  `ppx_windtrap.mutate`, in the default context, so every build of a
-  copy is instrumented. Dune reads the file only at the workspace root,
-  and inside windtrap's repository it is inert.
-- `lib/dune` names the same two backends in `instrumentation` fields. A
-  build that asks for neither compiles the library as written.
+- `lib/dune` names both backends, `ppx_windtrap.coverage` and
+  `ppx_windtrap.mutate`, in `instrumentation` fields. A build that asks
+  for neither compiles the library as written.
 - `test/unit/` holds the properties, the specified points and an
   `expect` literal. `test_stats` runs with `--corrected`, so a stale
   literal shows as a diff and `dune promote` accepts it (see
@@ -36,8 +31,6 @@ test/cram/          sessions of main.exe
   [Writing expect tests inside a library](../../doc/manual/baselines.md#writing-expect-tests-inside-a-library)).
 - `test/cram/` depends on `bin/main.exe`, and dune rebuilds the binary
   before a session runs.
-- `test/dune` holds the two aliases. Each runs every suite under
-  `test/`, then merges what the suites wrote.
 
 ## Copying the project out
 
@@ -90,27 +83,34 @@ covers the flags and their mirrors.
 
 ## Measuring coverage
 
-Every build of the copy is instrumented, so every test run writes its
-coverage dump. The `cover` alias runs the suites and merges their dumps,
-and fails below 80% (see
-[Coverage](../../doc/manual/coverage.md#measuring-in-one-command)):
+A run built with `--instrument-with ppx_windtrap.coverage` writes a
+coverage dump from every suite, and `windtrap coverage` merges the
+dumps. `--min 80` makes it exit 1 below 80% (see
+[Coverage](../../doc/manual/coverage.md#failing-a-build-below-a-minimum)):
 
 ```
-$ dune build @cover
+$ dune runtest --instrument-with ppx_windtrap.coverage
+stats: 4 passed in 139ms (seed s1:86285a8e0eb4e567).
+slug: 9 passed in 42ms (seed s1:c8e2d1bdbbcbb528).
+issue-1: 1 expected failure in 0.5ms.
+windtrap_example_blueprint_expect/expect_slug.ml: 1 passed in 0.7ms.
+$ dune exec windtrap -- coverage --min 80
    cover    points   file           uncovered lines (-u shows the source)
-  100.0%    27/27    lib/slug.ml
-  100.0%    18/18    lib/stats.ml
-coverage: 100.0% (45/45 points), minimum 80%: ok
+  100.0%    25/25    lib/slug.ml
+  100.0%    17/17    lib/stats.ml
+coverage: 100.0% (42/42 points), minimum 80%: ok
 ```
 
 ## Testing the mutants
 
-The `mutate` alias runs each suite on its mutants and merges the
-verdicts. `WINDTRAP_MUTATE=1`, the mirror of `--mutate`, reaches every
-suite, and `--force` reruns the suites dune has cached:
+A run built with `--instrument-with ppx_windtrap.mutate` under
+`WINDTRAP_MUTATE=1`, the mirror of `--mutate`, tests each suite's
+mutants. Dune does not track the variable, and `--force` runs the
+suites it has cached (see
+[Mutation testing a project](../../doc/manual/mutation.md#mutation-testing-a-project)):
 
 ```
-WINDTRAP_MUTATE=1 dune build @mutate --force
+WINDTRAP_MUTATE=1 dune runtest --force --instrument-with ppx_windtrap.mutate
 ```
 
 Each suite prints its mutation report as it ends. The expect library
@@ -118,17 +118,15 @@ reaches mutants in `lib/slug.ml` that only `test/unit` pins, and lists
 them. The known-bug suite's one test is under `xfail`, which reaches no
 mutant, so its report lists the lines of `lib/slug.ml` as never reached
 (see [What a mutation run runs](../../doc/manual/mutation.md#what-a-mutation-run-runs)).
-The merge counts a mutant killed when any
-executable killed it, and prints the alias's last line. `windtrap
-mutants` prints the merge again:
+`windtrap mutants` merges the verdicts, and counts a mutant killed when
+any executable killed it:
 
 ```
 $ dune exec windtrap -- mutants
 mutants: 18 reached, 18 killed, 4 executables
 ```
 
-The alias fails when a mutant survived every executable that reached it
-(see [Mutation testing](../../doc/manual/mutation.md#mutation-testing-a-project)).
+It exits 1 when a mutant survived every executable that reached it.
 
 ## The known bug
 
@@ -178,8 +176,8 @@ arithmetic inside a line keeps the count. Mutation testing the property
 alone shows the two mutants it reaches and does not kill:
 
 ```
-$ dune exec test/unit/test_stats.exe -- --mutate -f 'one line per row'
-stats: 1 passed in 90ms (seed s1:4244aeac53c8f09d).
+$ dune exec --instrument-with ppx_windtrap.mutate test/unit/test_stats.exe -- --mutate -f 'one line per row'
+stats: 1 passed in 91ms (seed s1:f57d4071ad6eed49).
 
 ─────────────────────── survivors ────────────────────────
   SURVIVED  lib/stats.ml:14:18:add  width - (String.length label) → width + (String.length label)
@@ -204,8 +202,8 @@ The three tests beside it pin the rendered text and kill both, and the
 suite's whole run reports no survivor:
 
 ```
-$ dune exec test/unit/test_stats.exe -- --mutate
-stats: 4 passed in 107ms (seed s1:4fa1648bcfa77e8a).
+$ dune exec --instrument-with ppx_windtrap.mutate test/unit/test_stats.exe -- --mutate
+stats: 4 passed in 110ms (seed s1:7eec2ad33b9c5707).
 mutants: 2 reached by this suite, 2 killed
 ```
 
@@ -216,21 +214,22 @@ To judge a new test the same way, pass its name to `-f` with
 
 In windtrap's repository the commands run from the repository's root,
 and each path gains `examples/x-blueprint/`, as in
-`dune runtest examples/x-blueprint`. The `dune-workspace` file is
-inert there, and an instrumented command passes `--instrument-with`.
+`dune runtest examples/x-blueprint`.
 
-The flag also instruments windtrap's own library, which every suite
-links. A mutation run there names the example's library as its prefix,
-as `--mutate=examples/x-blueprint/lib` or as the value of
+There `--instrument-with` also instruments windtrap's own library, which
+every suite links. A mutation run there names the example's library as
+its prefix, as `--mutate=examples/x-blueprint/lib` or as the value of
 `WINDTRAP_MUTATE`:
 
 ```
-WINDTRAP_MUTATE=examples/x-blueprint/lib dune build @examples/x-blueprint/test/mutate --force --instrument-with ppx_windtrap.mutate
+WINDTRAP_MUTATE=examples/x-blueprint/lib dune runtest examples/x-blueprint --force --instrument-with ppx_windtrap.mutate
+dune exec windtrap -- mutants
 ```
 
 A run under a prefix keeps the verdicts that an earlier run of the same
 build saved for other files, and the merge counts them. To drop them,
 delete `_build/_mutants` before the run. A coverage report takes no
-prefix, and
-`dune build @examples/x-blueprint/test/cover --instrument-with ppx_windtrap.coverage`
-lists windtrap's library too and fails the 80% minimum.
+prefix. After
+`dune runtest examples/x-blueprint --instrument-with ppx_windtrap.coverage`,
+`dune exec windtrap -- coverage --min 80` lists windtrap's library too
+and fails the 80% minimum.
