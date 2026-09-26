@@ -2719,6 +2719,13 @@ let writes root r =
 
 let present = function None -> "absent" | Some text -> text
 
+(* A baseline file on disk whose content no test produces, so that a
+   correcting run records a correction for it: a missing file gets none. *)
+let stale root file =
+  let path = Filename.concat root file in
+  Os.mkdir_p (Filename.dirname path);
+  Out_channel.with_open_bin path (fun oc -> output_string oc "stale\n")
+
 let help_runs =
   let root = Scratch.dir "windtrap-corrections-" in
   let file = Filename.concat root "src/help.expected" in
@@ -2744,20 +2751,26 @@ let help_runs =
       @ writes root r
   in
   let check = one Baseline.Check in
-  let corrected = one Baseline.Corrected in
+  let missing = one Baseline.Corrected in
+  let corrected =
+    stale root "src/help.expected";
+    one Baseline.Corrected
+  in
   let update = one Baseline.Update in
   let again = one Baseline.Check in
-  [ check; corrected; update; again ]
+  [ check; missing; corrected; update; again ]
 
 let help_rows =
   [
     ( "under Check a mismatch fails the run and writes nothing",
       [ "exit 1"; "t1: fail body"; "file: absent"; "correction: absent" ] );
+    ( "under Corrected a missing file fails the run and writes nothing",
+      [ "exit 1"; "t1: fail body"; "file: absent"; "correction: absent" ] );
     ( "under Corrected the correction lands beside the file, the diff decides",
       [
         "exit 0";
         "t1: fail body";
-        "file: absent";
+        "file: stale\n";
         "correction: hello\n";
         "wrote src/help.expected.corrected, 0 literals";
       ] );
@@ -2789,6 +2802,8 @@ let gated =
       ]
       @ writes root r @ corrections
   in
+  stale root "src/a.expected";
+  stale root "src/d.expected";
   let dirty =
     correcting ~root Baseline.Corrected
       [
@@ -2956,6 +2971,7 @@ let excused =
 
 let release_beside_a_correction =
   let root = Scratch.dir "windtrap-beside-" in
+  stale root "src/help.expected";
   let fx = Run.fixture ~teardown:(fun () -> fail "release") ignore in
   let r =
     correcting ~root Baseline.Corrected
@@ -2974,6 +2990,7 @@ let release_beside_a_correction =
 
 let marks, written_at_release, written_after =
   let root = Scratch.dir "windtrap-marks-" in
+  stale root "kept.expected";
   let kept = Filename.concat root "kept.expected.corrected" in
   let at_release = ref None in
   let fx =

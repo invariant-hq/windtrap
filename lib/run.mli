@@ -672,14 +672,15 @@ val list_selection :
 (** {2:corrections Corrections}
 
     Under {!Baseline.Corrected} and {!Baseline.Update} a check whose baseline
-    differs or is missing records a correction ({!Baseline.check}). After every
-    attempt the runner settles them ({!Baseline.settle}): it keeps them iff
-    every failure of the attempt is a baseline failure and the attempt did not
-    skip. In every mode, the baseline failures of an attempt that breaks that
-    rule are marked with {!Failure.with_withheld}, so that no report offers to
-    accept them. The mark is {!Failure.Skipped} when the skip alone broke the
-    rule, and {!Failure.Failed_outside} otherwise. An [xfail] test checks
-    without correcting, in every mode. The kept corrections are written once
+    differs or is missing records a correction ({!Baseline.check}), except for a
+    file missing under {!Baseline.Corrected}. After every attempt the runner
+    settles them ({!Baseline.settle}): it keeps them iff every failure of the
+    attempt is a baseline failure and the attempt did not skip. In every mode,
+    the baseline failures of an attempt that breaks that rule are marked with
+    {!Failure.with_withheld}, so that no report offers to accept them. The mark
+    is {!Failure.Skipped} when the skip alone broke the rule, and
+    {!Failure.Failed_outside} otherwise. An [xfail] test checks without
+    correcting, in every mode. The kept corrections are written once
     ({!Baseline.val-write}), after the last test, the release of the fixtures
     and the update of the store, and before {!execute} returns. The observer was
     given the failures that offer them earlier, as each test finished. *)

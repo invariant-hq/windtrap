@@ -796,6 +796,7 @@ let printing =
 
 let kept_stops, kept_entered =
   let root = Scratch.dir "windtrap-kept-" and logs = logs () in
+  write (Filename.concat root "c.expected") "old\n";
   let tests =
     [
       test "corrects" (fun () -> expect_file "new\n" "c.expected");

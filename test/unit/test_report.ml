@@ -713,8 +713,20 @@ let empty_rows =
         "mylib: no tests ran: the suite declares none.\n" ) );
   ]
 
+(* A file on disk that no test produces: under Corrected a missing file
+   records no correction. *)
+let stale_file root path =
+  Out_channel.with_open_bin (Filename.concat root path) (fun oc ->
+      Out_channel.output_string oc "stale\n")
+
 let baselines_written ?(mode = Baseline.Corrected) ?(refuse = false) files =
   let root = temp_dir () in
+  if mode = Baseline.Corrected then
+    List.iter
+      (function
+        | Baseline.File path, _ -> stale_file root path
+        | (Baseline.Literal _ | Trailing _), _ -> ())
+      files;
   let b = Baseline.create ~root ~cwd:root ~mode () in
   List.iter
     (fun (baseline, text) ->
@@ -1146,6 +1158,7 @@ let literal =
 let corrections_written () =
   let root = temp_dir () in
   let source = write_source root in
+  stale_file root "help.expected";
   let b = Baseline.create ~root ~cwd:root ~mode:Baseline.Corrected () in
   (try Baseline.check b literal "b" with Failure.Check_failure _ -> ());
   (try Baseline.check b (fst help) (snd help)

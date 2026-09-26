@@ -97,9 +97,10 @@ let messages =
 ```
 
 To start a file baseline under dune, create the file empty, name it in
-`(deps …)`, run the tests and promote the correction. Dune stops before
-the suite runs when a file named in `(deps …)` does not exist. Outside
-dune, `-u` writes the missing file.
+`(deps …)` and in a `diff?`, run the tests and promote the correction.
+Dune stops before the suite runs when a file named in `(deps …)` does
+not exist. A file the stanza does not name is missing to the run, which
+fails. Outside dune, `-u` writes the missing file.
 
 ## Checking printed output
 

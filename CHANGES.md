@@ -411,8 +411,9 @@ Each one is also listed under its area below.
   the suffix ` (2)`.
 - `module%test` keeps the module's attributes.
 - `expect_file actual path` compares `actual` with the file at `path`,
-  relative to the project root; a missing file is a mismatch whose
-  correction is the file (see
+  relative to the project root; a missing file is a mismatch that `-u`
+  corrects by writing the file, and under `--corrected` it fails the run
+  (see
   [Keeping a baseline in a file](https://github.com/invariant-hq/windtrap/blob/main/doc/manual/baselines.md#keeping-a-baseline-in-a-file)).
 - The project root is `WINDTRAP_PROJECT_ROOT`, else the parent of dune's
   build directory, else the working directory; no marker file is

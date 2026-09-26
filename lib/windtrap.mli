@@ -1054,16 +1054,16 @@ val expect_exact : string -> pos * string -> unit
 val expect_file : string -> string -> unit
 (** [expect_file actual path] compares [actual] with the file at [path],
     relative to the project root whatever the working directory. A mismatch
-    records a failure and returns. A missing file is a mismatch whose correction
-    is the file.
+    records a failure and returns. A missing file is a mismatch that [-u]
+    corrects by writing the file.
 
     The comparison is of lines of text. CR and CRLF read as LF, and both sides
     are given a final newline. Text in which those bytes matter must be encoded
     first, as with [String.escaped].
 
-    Under dune the run reads dune's copy of the file. Promotion never creates a
-    file, so a new baseline starts as an empty file or is accepted once with
-    [-u].
+    Under dune the run reads dune's copy of the file. Under [--corrected] a
+    missing file gets no correction and fails the run, so a new baseline starts
+    as an empty file or is accepted once with [-u].
 
     A [path] that cannot be proven to lie under the project root fails the test
     at once, as an assertion does. Its failure is located at the call and, from

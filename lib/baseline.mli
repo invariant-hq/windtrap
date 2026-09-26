@@ -25,7 +25,8 @@ type mode =
   | Check  (** Compare and fail. Nothing is recorded and nothing is written. *)
   | Corrected
       (** Compare and fail, and write every kept correction as a [.corrected]
-          file. *)
+          file. A missing file records no correction and fails as under
+          {!constructor-Check}. *)
   | Update
       (** Accept. For a baseline that differs or is missing the check records a
           correction and does not fail, and every kept correction is written in
@@ -115,11 +116,11 @@ val check : t -> ?loc:Loc.t -> ?correct:bool -> subject -> string -> unit
     + Otherwise a difference is a {!Failure.Mismatch} of both texts in their
       comparison form, and a missing file or a {!Trailing} text a
       {!Failure.Missing} of the canonical content that the check would accept.
-      Under {!Corrected} and {!Update} the check then records a correction,
-      which holds [actual] whole where the failure bounds it: the literal as
-      {!Source_patch.val-patch} rewrites it to [actual], or the file holding the
-      canonical [actual]. The key is accepted with that content from then on,
-      unless a {!settle} drops the attempt.
+      Under {!Update}, and under {!Corrected} unless the file is missing, the
+      check then records a correction, which holds [actual] whole where the
+      failure bounds it: the literal as {!Source_patch.val-patch} rewrites it to
+      [actual], or the file holding the canonical [actual]. The key is accepted
+      with that content from then on, unless a {!settle} drops the attempt.
     + Before it records the correction of a literal, the check reads the source
       file that {!val-write} will patch, once per run, and tries the patch on it
       alone. When the file cannot be read or the patch is refused, no correction

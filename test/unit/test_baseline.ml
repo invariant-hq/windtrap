@@ -193,8 +193,8 @@ let modes =
   group "Modes"
     [
       by_mode
-        "a missing file fails and is not created under Check, fails and gets a \
-         .corrected file under Corrected, and is created under Update"
+        "a missing file fails and is not created under Check and Corrected, \
+         and is created under Update"
         ~files:[]
         ~steps:(fun root ->
           [
@@ -216,10 +216,9 @@ let modes =
           ( Corrected,
             [
               "file test/help.expected: missing \"hello\\nworld\\n\"";
-              "kept 1";
+              "kept 0";
               disk [];
-              "wrote test/help.expected.corrected, 0 literals";
-              disk [ file "test/help.expected.corrected" "hello\nworld\n" ];
+              disk [];
             ] );
           ( Update,
             [
@@ -469,13 +468,14 @@ let located () =
   equal traced [ "no location"; "test/t.ml:7:2" ] [ without; given ]
 
 let bounded () =
-  let root = project [] in
+  let root = project [ (help, "old\n") ] in
   let big =
     String.concat "" (List.init 20_000 (fun i -> string_of_int i ^ "\n"))
   in
   equal traced
     [
-      "file test/help.expected: missing " ^ text (Failure.text big);
+      strf "file test/help.expected: mismatch %s against \"old\\n\""
+        (text (Failure.text big));
       "kept 1";
       "wrote test/help.expected.corrected, 0 literals";
     ]
@@ -544,7 +544,8 @@ let checking =
          content is a conflict that records nothing"
         ~name:(fun (mode, _) -> mode_name mode)
         [
-          (Baseline.Corrected, "file test/help.expected: missing \"hi\\n\"");
+          ( Baseline.Corrected,
+            "file test/help.expected: mismatch \"hi\\n\" against \"old\\n\"" );
           (Update, "pass");
         ]
         (fun (mode, first) ->
@@ -556,7 +557,8 @@ let checking =
                conflict";
               "kept 1";
             ]
-            (scenario ~mode (project [])
+            (scenario ~mode
+               (project [ (help, "old\n") ])
                [
                  check file_help "hi";
                  check file_help "hi";
@@ -567,8 +569,9 @@ let checking =
         "a check with ~correct:false fails as under Check, whatever the mode"
         ~name:mode_name [ Baseline.Corrected; Update ] (fun mode ->
           equal traced
-            [ "file x: missing \"v\\n\""; "kept 0" ]
-            (scenario ~mode (project [])
+            [ "file x: mismatch \"v\\n\" against \"old\\n\""; "kept 0" ]
+            (scenario ~mode
+               (project [ ("x", "old\n") ])
                [ check ~correct:false (File "x") "v"; settle ~keep:true ]));
       test "a check computes no location and carries the one given" located;
       test "a failure bounds its texts, and the correction holds actual whole"
@@ -635,12 +638,12 @@ let settling =
       test
         "settle ~keep:false is 0, and a key it drops takes the next attempt's \
          correction" (fun () ->
-          let root = project [] in
+          let root = project [ (help, "old\n") ] in
           equal traced
             [
-              "file test/help.expected: missing \"hi\\n\"";
+              "file test/help.expected: mismatch \"hi\\n\" against \"old\\n\"";
               "kept 0";
-              "file test/help.expected: missing \"yo\\n\"";
+              "file test/help.expected: mismatch \"yo\\n\" against \"old\\n\"";
               "kept 1";
               "wrote test/help.expected.corrected, 0 literals";
             ]
@@ -700,13 +703,14 @@ let corrected_in_build () =
         (help, "source\n");
         ("test/t.ml", edited);
         (build ^ help, "copy\n");
+        (build ^ "test/other.expected", "y\n");
         (build ^ "test/t.ml", source);
       ]
   in
   equal traced
     [
       "pass";
-      "file test/other.expected: missing \"x\\n\"";
+      "file test/other.expected: mismatch \"x\\n\" against \"y\\n\"";
       "literal: mismatch \"new\" against \"old\"";
       "kept 2";
       "wrote _build/default/test/other.expected.corrected, 0 literals";
@@ -714,6 +718,7 @@ let corrected_in_build () =
       disk
         [
           file (build ^ help) "copy\n";
+          file (build ^ "test/other.expected") "y\n";
           file (build ^ "test/other.expected.corrected") "x\n";
           file (build ^ "test/t.ml") source;
           file (build ^ "test/t.ml.corrected") new_;

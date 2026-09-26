@@ -960,6 +960,7 @@ let is_baseline (failure : Failure.t) =
 
 let carries_correction (failure : Failure.t) =
   match failure.kind with
+  | Baseline { baseline = File _; state = Missing _; _ } -> false
   | Baseline { state = Missing _ | Mismatch _; withheld = None; _ } -> true
   | Baseline _ | Equality _ | Containment _ | Raise _ | Property _ | Timeout _
   | Message _ ->
@@ -968,7 +969,8 @@ let carries_correction (failure : Failure.t) =
 (* The outcome of an attempt, whether each of its failures carries a kept
    correction, and whether it must be the last: a kept correction is
    permanent, and a retry would agree with it. Under [Corrected] only a
-   correcting check raises a failure that carries one. *)
+   correcting check raises a failure that carries one, and a missing file's
+   check never corrects ([Baseline.check]). *)
 let settle frame =
   let baselines = frame.run.baselines in
   let failures = List.rev frame.rev_failures in

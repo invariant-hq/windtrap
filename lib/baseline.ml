@@ -204,7 +204,15 @@ let check t ?loc ?(correct = true) subject actual =
             | Trailing _, _ | (Literal _ | File _), None ->
                 Failure.Missing { proposed = Failure.text actual' }
           in
-          match if correct then t.mode else Check with
+          (* Promotion fills a file and never creates one, so a missing
+             file's correction would never reach the source. *)
+          let mode =
+            match (subject, baseline) with
+            | File _, None when t.mode = Corrected -> Check
+            | (Literal _ | Trailing _ | File _), _ ->
+                if correct then t.mode else Check
+          in
+          match mode with
           | Check -> fail state
           | (Corrected | Update) as mode -> (
               match correction t subject where ~actual ~accepted:actual' with
