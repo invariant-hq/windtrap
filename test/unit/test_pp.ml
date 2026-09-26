@@ -6,31 +6,134 @@
 open Windtrap
 module Pp = Windtrap.Private.Pp
 
-let s = Pp.to_string
+type printing = Prints : string * 'a Pp.t * 'a * string -> printing
 
-let tests =
-  [
-    test "basic printers" (fun () ->
-        equal ~msg:"string prints verbatim" string "hello" (s Pp.string "hello");
-        equal ~msg:"int" string "42" (s Pp.int 42);
-        equal ~msg:"negative int" string "-7" (s Pp.int (-7));
-        equal ~msg:"int32" string "5" (s Pp.int32 5l);
-        equal ~msg:"int64" string "9007199254740993"
-          (s Pp.int64 9007199254740993L);
-        (* What [float_exact] renders, a reader may copy back and get the
-           same double: a property counterexample pasted into [~examples], a
-           bit-exact witness. A fixed-precision rendering would print 0.3 for
-           this value. *)
-        equal ~msg:"float_exact keeps the bits" string "0.30000000000000004"
-          (s Pp.float_exact (0.1 +. 0.2));
-        List.iter
-          (fun f ->
-            let printed = s Pp.float_exact f in
-            is_true
-              ~msg:(Printf.sprintf "%s round-trips" printed)
-              (Int64.equal
-                 (Int64.bits_of_float (float_of_string printed))
-                 (Int64.bits_of_float f)))
+let prints claim rows =
+  cases claim
+    ~name:(fun (Prints (name, _, _, _)) -> name)
+    rows
+    (fun (Prints (_, pp, v, printed)) ->
+      equal string printed (Pp.to_string pp v))
+
+(* Formatting *)
+
+let into_a_buffer () =
+  let b = Buffer.create 8 in
+  let ppf = Format.formatter_of_buffer b in
+  Pp.pf ppf "[%d]" 7;
+  Pp.flush ppf ();
+  equal string "[7]" (Buffer.contents b)
+
+(* Every line but the last is full: one more element and its separator would
+   pass the margin. *)
+let breaks_at_the_margin () =
+  let lines =
+    String.split_on_char '\n'
+      (Pp.to_string (Pp.list Pp.int) (List.init 30 (fun i -> 1000 + i)))
+  in
+  let lengths = List.map String.length lines in
+  greater int ~than:1 (List.length lines);
+  at_most int ~than:78 (List.fold_left max 0 lengths);
+  greater int ~than:72 (List.fold_left min max_int (List.tl (List.rev lengths)))
+
+let to_the_sink_only () =
+  let b = Buffer.create 64 in
+  let ppf = Format.formatter_of_buffer b in
+  Pp.string ppf "s";
+  Pp.int ppf 1;
+  Pp.int32 ppf 1l;
+  Pp.int64 ppf 1L;
+  Pp.decimal ppf 1.;
+  Pp.float_exact ppf 1.;
+  Pp.bool ppf true;
+  Pp.list Pp.int ppf [ 1; 2 ];
+  Pp.array Pp.int ppf [| 1 |];
+  Pp.option Pp.int ppf (Some 1);
+  Pp.result ~ok:Pp.int ~error:Pp.string ppf (Error "e");
+  Pp.pair Pp.int Pp.int ppf (1, 2);
+  Pp.brackets Pp.int ppf 1;
+  Pp.semi ppf ();
+  Pp.pf ppf "%d" 1;
+  Pp.flush ppf ();
+  ignore (Pp.str "%d" 1 : string);
+  ignore (Pp.to_string Pp.int 1 : string);
+  Format.pp_print_flush Format.std_formatter ();
+  Format.pp_print_flush Format.err_formatter ();
+  flush stdout;
+  flush stderr;
+  equal string "" (output ());
+  not_equal string "" (Buffer.contents b)
+
+let formatting =
+  group "Formatting"
+    [
+      test "str formats to a string as Format.asprintf does" (fun () ->
+          equal string "a=1 b=two" (Pp.str "a=%d b=%s" 1 "two"));
+      test "pf formats to its formatter, and flush flushes it" into_a_buffer;
+      test "to_string breaks a long list at the 78 columns of asprintf"
+        breaks_at_the_margin;
+      test "no value writes to a standard channel" to_the_sink_only;
+    ]
+
+(* Printers *)
+
+let reads_back f =
+  equal int64 (Int64.bits_of_float f)
+    (Int64.bits_of_float (float_of_string (Pp.to_string Pp.float_exact f)))
+
+let printers =
+  group "Printers"
+    [
+      test "abstract is <abstract>" (fun () ->
+          equal string "<abstract>" Pp.abstract);
+      prints "string formats a string verbatim"
+        [
+          Prints ("a word", Pp.string, "hello", "hello");
+          Prints ("quotes and a newline", Pp.string, "\"a\"\n", "\"a\"\n");
+        ];
+      prints "int, int32 and int64 format in decimal, without a suffix"
+        [
+          Prints ("int", Pp.int, 42, "42");
+          Prints ("a negative int", Pp.int, -7, "-7");
+          Prints ("int32", Pp.int32, 5l, "5");
+          Prints ("int64", Pp.int64, 9007199254740993L, "9007199254740993");
+        ];
+      prints
+        "decimal formats the shortest decimal without an exponent that reads \
+         back"
+        [
+          Prints ("a whole value, no point", Pp.decimal, 80., "80");
+          Prints ("a fraction", Pp.decimal, 0.5, "0.5");
+          Prints ("many places", Pp.decimal, 99.99999, "99.99999");
+          Prints ("no exponent", Pp.decimal, 0.00001, "0.00001");
+          Prints
+            ( "at most 17 places, rounded below 0.1",
+              Pp.decimal,
+              1e-20,
+              "0.00000000000000000" );
+        ];
+      prints "float_exact formats the shortest decimal that reads back"
+        [
+          Prints ("0.1 + 0.2", Pp.float_exact, 0.1 +. 0.2, "0.30000000000000004");
+          Prints ("one third", Pp.float_exact, 1. /. 3., "0.3333333333333333");
+        ];
+      prints
+        "float_exact keeps the point of a whole value, and an exponent gets \
+         none"
+        [
+          Prints ("1.", Pp.float_exact, 1., "1.");
+          Prints ("-3.", Pp.float_exact, -3., "-3.");
+          Prints ("-0.", Pp.float_exact, -0., "-0.");
+          Prints ("1e300", Pp.float_exact, 1e300, "1e+300");
+        ];
+      prints "float_exact formats nan, inf and -inf"
+        [
+          Prints ("nan", Pp.float_exact, Float.nan, "nan");
+          Prints ("infinity", Pp.float_exact, Float.infinity, "inf");
+          Prints ("neg_infinity", Pp.float_exact, Float.neg_infinity, "-inf");
+        ];
+      prop "float_exact reads back to the same bits"
+        ~examples:
           [
             0.1 +. 0.2;
             1e300;
@@ -39,116 +142,59 @@ let tests =
             5e-324;
             Float.max_float;
             -0.;
-          ];
-        (* [%g] drops the point on a whole value, and ["1"] is an int
-           literal: a counterexample exists to be pasted back, so the
-           rendering has to stay syntactically a float. *)
-        equal ~msg:"float_exact keeps whole values float-shaped" string "1."
-          (s Pp.float_exact 1.);
-        equal ~msg:"and negative whole values" string "-3."
-          (s Pp.float_exact (-3.));
-        equal ~msg:"exponent form needs no point" string "1e+300"
-          (s Pp.float_exact 1e300);
-        equal ~msg:"float_exact keeps the sign of zero" string "-0."
-          (s Pp.float_exact (-0.));
-        equal ~msg:"float_exact renders nan" string "nan"
-          (s Pp.float_exact Float.nan);
-        equal ~msg:"float_exact renders inf" string "inf"
-          (s Pp.float_exact Float.infinity);
-        equal ~msg:"float_exact renders -inf" string "-inf"
-          (s Pp.float_exact Float.neg_infinity);
-        equal ~msg:"float_exact prints one third at 16 digits" string
-          "0.3333333333333333"
-          (s Pp.float_exact (1. /. 3.));
-        equal ~msg:"bool" string "true" (s Pp.bool true));
-    test "decimal prints a number as configured" (fun () ->
-        equal ~msg:"a whole value has no point" string "80" (s Pp.decimal 80.);
-        equal ~msg:"a fraction" string "0.5" (s Pp.decimal 0.5);
-        equal ~msg:"many places" string "99.99999" (s Pp.decimal 99.99999);
-        equal ~msg:"no exponent" string "0.00001" (s Pp.decimal 0.00001);
-        (* Seventeen places are the most [decimal] tries, and they cannot hold
-           a value this small. *)
-        equal ~msg:"decimal stops at 17 places" string "0.00000000000000000"
-          (s Pp.decimal 1e-20));
-    test "str and pf agree with to_string" (fun () ->
-        equal ~msg:"str formats like sprintf" string "a=1 b=two"
-          (Pp.str "a=%d b=%s" 1 "two");
-        equal ~msg:"pf into a buffer formatter" string "[7]"
-          (let b = Buffer.create 8 in
-           let ppf = Format.formatter_of_buffer b in
-           Pp.pf ppf "[%d]" 7;
-           Pp.flush ppf ();
-           Buffer.contents b));
-    test "combinators" (fun () ->
-        equal ~msg:"list with default semi separator" string "1; 2; 3"
-          (s (Pp.list Pp.int) [ 1; 2; 3 ]);
-        (* [?sep] is honored, not merely accepted: [Testable] passes an
-           explicit separator for every container instance it builds. *)
-        equal ~msg:"list honors a caller's separator" string "1|2"
-          (s (Pp.list ~sep:(fun ppf () -> Pp.pf ppf "|") Pp.int) [ 1; 2 ]);
-        equal ~msg:"singleton list has no separator" string "9"
-          (s (Pp.list Pp.int) [ 9 ]);
-        equal ~msg:"empty list is empty" string "" (s (Pp.list Pp.int) []);
-        equal ~msg:"array matches list" string "1; 2"
-          (s (Pp.array Pp.int) [| 1; 2 |]);
-        equal ~msg:"option none" string "None" (s (Pp.option Pp.int) None);
-        equal ~msg:"option some" string "Some 3" (s (Pp.option Pp.int) (Some 3));
-        equal ~msg:"result ok" string "Ok 1"
-          (s (Pp.result ~ok:Pp.int ~error:Pp.string) (Ok 1));
-        equal ~msg:"result error" string "Error boom"
-          (s (Pp.result ~ok:Pp.int ~error:Pp.string) (Error "boom"));
-        equal ~msg:"pair" string "(1, x)"
-          (s (Pp.pair Pp.int Pp.string) (1, "x"));
-        equal ~msg:"brackets" string "[1; 2]"
-          (s (Pp.brackets (Pp.list Pp.int)) [ 1; 2 ]));
-    test "abstract is the placeholder <abstract>" (fun () ->
-        equal string "<abstract>" Pp.abstract);
-    test "option puts no parentheses around its value" (fun () ->
-        equal string "Some Some 1"
-          (s (Pp.option (Pp.option Pp.int)) (Some (Some 1))));
-    test "to_string breaks a long list at 78 columns" (fun () ->
-        let items = List.init 30 (fun i -> 1000 + i) in
-        let lines = String.split_on_char '\n' (s (Pp.list Pp.int) items) in
-        is_true ~msg:"the list breaks" (List.length lines > 1);
-        List.iter
-          (fun line ->
-            at_most ~msg:"no line passes the margin" int ~than:78
-              (String.length line))
-          lines;
-        (* Every line but the last is full: one more element and its
-           separator would pass the margin, so the break is at the margin
-           and not before it. *)
-        List.iter
-          (fun line ->
-            greater ~msg:"a broken line is full" int ~than:72
-              (String.length line))
-          (List.rev (List.tl (List.rev lines))));
-    test "no printer writes to a standard channel" (fun () ->
-        let b = Buffer.create 64 in
-        let ppf = Format.formatter_of_buffer b in
-        Pp.string ppf "s";
-        Pp.int ppf 1;
-        Pp.int32 ppf 1l;
-        Pp.int64 ppf 1L;
-        Pp.float_exact ppf 1.;
-        Pp.bool ppf true;
-        Pp.list Pp.int ppf [ 1; 2 ];
-        Pp.array Pp.int ppf [| 1 |];
-        Pp.option Pp.int ppf (Some 1);
-        Pp.result ~ok:Pp.int ~error:Pp.string ppf (Error "e");
-        Pp.pair Pp.int Pp.int ppf (1, 2);
-        Pp.brackets Pp.int ppf 1;
-        Pp.semi ppf ();
-        Pp.pf ppf "%d" 1;
-        Pp.flush ppf ();
-        ignore (Pp.str "%d" 1 : string);
-        ignore (Pp.to_string Pp.int 1 : string);
-        Format.pp_print_flush Format.std_formatter ();
-        Format.pp_print_flush Format.err_formatter ();
-        flush stdout;
-        flush stderr;
-        equal ~msg:"nothing reached stdout or stderr" string "" (output ());
-        is_true ~msg:"the buffer got the text" (Buffer.length b > 0));
-  ]
+          ]
+        Gen.float reads_back;
+      prints "bool formats true and false"
+        [
+          Prints ("true", Pp.bool, true, "true");
+          Prints ("false", Pp.bool, false, "false");
+        ];
+    ]
 
-let () = exit @@ Windtrap.run "pp" tests
+(* Combinators *)
+
+let bar ppf () = Pp.pf ppf "|"
+
+let combinators =
+  group "Combinators"
+    [
+      prints "list separates its elements with sep, semi by default"
+        [
+          Prints ("three elements", Pp.list Pp.int, [ 1; 2; 3 ], "1; 2; 3");
+          Prints ("one element", Pp.list Pp.int, [ 9 ], "9");
+          Prints ("no element", Pp.list Pp.int, [], "");
+          Prints ("a caller's sep", Pp.list ~sep:bar Pp.int, [ 1; 2 ], "1|2");
+        ];
+      prints "array is list for arrays"
+        [
+          Prints ("two elements", Pp.array Pp.int, [| 1; 2 |], "1; 2");
+          Prints ("a caller's sep", Pp.array ~sep:bar Pp.int, [| 1; 2 |], "1|2");
+        ];
+      prints "option formats None, and Some then its value unparenthesized"
+        [
+          Prints ("None", Pp.option Pp.int, None, "None");
+          Prints ("Some", Pp.option Pp.int, Some 3, "Some 3");
+          Prints
+            ( "Some (Some 1)",
+              Pp.option (Pp.option Pp.int),
+              Some (Some 1),
+              "Some Some 1" );
+        ];
+      prints "result formats Ok and Error then the value under its printer"
+        [
+          Prints ("Ok", Pp.result ~ok:Pp.int ~error:Pp.string, Ok 1, "Ok 1");
+          Prints
+            ( "Error",
+              Pp.result ~ok:Pp.int ~error:Pp.string,
+              Error "boom",
+              "Error boom" );
+        ];
+      test "pair formats (x, y)" (fun () ->
+          equal string "(1, x)"
+            (Pp.to_string (Pp.pair Pp.int Pp.string) (1, "x")));
+      test "brackets formats a value between [ and ]" (fun () ->
+          equal string "[1; 2]"
+            (Pp.to_string (Pp.brackets (Pp.list Pp.int)) [ 1; 2 ]));
+    ]
+
+let () = exit (run "pp" [ formatting; printers; combinators ])

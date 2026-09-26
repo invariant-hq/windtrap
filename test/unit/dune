@@ -1,6 +1,5 @@
 (tests
  (names
-  test_pp
   test_text
   test_os
   test_loc
@@ -15,7 +14,6 @@
   test_report_junit
   test_cli)
  (modules
-  test_pp
   test_text
   test_os
   test_loc
@@ -64,6 +62,11 @@
 (test
  (name test_testable)
  (modules test_testable)
+ (libraries windtrap))
+
+(test
+ (name test_pp)
+ (modules test_pp)
  (libraries windtrap))
 
 (test
