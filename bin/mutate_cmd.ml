@@ -223,16 +223,27 @@ let merge ~source files =
         compare (List.length b.witnesses) (List.length a.witnesses))
       survivors
   in
+  (* Only dune runs an inline-test runner, and it runs every suite. *)
   let invocation =
     match survivors with
-    | { mutant; witnesses = { exe = Some label; _ } :: _ } :: _ ->
-        List.find_map
-          (fun (f, survived) ->
-            if String.equal f.label label && Ids.mem mutant.id survived then
-              Some f.invocation
-            else None)
-          survivals
-    | { witnesses = { exe = None; _ } :: _ | []; _ } :: _ | [] -> None
+    | [] -> `Mirrors
+    | { mutant; witnesses } :: _ ->
+        let runs (w : Sections.witness) =
+          List.find_map
+            (fun (f, survived) ->
+              if
+                Option.equal String.equal w.exe (Some f.label)
+                && Ids.mem mutant.id survived
+              then Some f.invocation
+              else None)
+            survivals
+        in
+        let alone w =
+          match runs w with
+          | Some (`Exe _ as exe) -> Some exe
+          | Some `Mirrors | None -> None
+        in
+        Option.value ~default:`Mirrors (List.find_map alone witnesses)
   in
   ( {
       Sections.survivors;
@@ -243,7 +254,7 @@ let merge ~source files =
       not_tested = 0;
       scope = Executables (List.length files);
     },
-    Option.value invocation ~default:`Mirrors )
+    invocation )
 
 (* Running *)
 

@@ -324,8 +324,9 @@ what invalidates one:
 The executable column names each file by its executable's basename, an
 inline-test runner by its library, and a file with no identity by its own
 name. Rows sort by executable, then test, in one column as wide as the
-widest name. A survivor whose first reaching test is an inline test is
-reproduced through the build, since dune alone runs that runner:
+widest name. The survivor is reproduced in the first executable of its
+reaching tests that runs alone, here test_calc.exe, though an inline test
+comes first:
 
   $ plant "$scratch/labels" && cd "$scratch/labels"
   $ mkdir -p _build/default/test _build/default/lib/.my_lib_expect.inline-tests
@@ -349,9 +350,15 @@ reproduced through the build, since dune alone runs that runner:
         test_calc.exe  calc › adds zero
   ──────────────────────────────────────────────────────────
   
-  reproduce: WINDTRAP_MUTATE_ARM=lib/calc.ml:1:14:add dune runtest --force --instrument-with ppx_windtrap.mutate
+  reproduce: dune exec --instrument-with ppx_windtrap.mutate test/test_calc.exe -- --arm lib/calc.ml:1:14:add
   mutants: 1 survived of 1 reached, 3 executables
   [1]
+
+Without it, the survivor is reproduced through the build, since dune alone
+runs an inline-test runner:
+
+  $ run windtrap mutants _build/_mutants/inline.mutants _build/_mutants/plain.mutants | grep reproduce
+  reproduce: WINDTRAP_MUTATE_ARM=lib/calc.ml:1:14:add dune runtest --force --instrument-with ppx_windtrap.mutate
 
 One column serves every block:
 

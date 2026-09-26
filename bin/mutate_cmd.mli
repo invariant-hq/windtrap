@@ -68,9 +68,11 @@
     most first, and then in the order of [Windtrap_runtime.Mutate.compare_id].
 
     {b Launcher.} The [reproduce:] command of the report arms the first
-    survivor, and its launcher is spelled from one verdict file. That file is
-    the first one kept, in path order, that bears the label of the first
-    reaching test of that survivor and in which the mutant survived. The
+    survivor, and its launcher is spelled from one verdict file. Each reaching
+    test of that survivor names a candidate: the first file kept, in path order,
+    that bears the label of the test and in which the mutant survived. The
+    launcher is that of the first candidate, in the order of the reaching tests,
+    whose launcher is an [`Exe], and [`Mirrors] when no candidate has one. A
     launcher is a {!type:Windtrap.Private.Run.invocation}:
     - [`Mirrors] when the file records no identity, or that of an inline-test
       runner, which takes its arguments from dune alone.
