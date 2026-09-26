@@ -27,3 +27,18 @@
   (progn
    (run %{test} --corrected)
    (diff? test_instr.ml test_instr.ml.corrected))))
+
+(executable
+ (name mutate_child)
+ (modules mutate_child)
+ (libraries windtrap_runtime))
+
+(test
+ (name test_mutate)
+ (modules test_mutate)
+ (libraries windtrap windtrap_runtime windtrap_test_support)
+ (deps mutate_child.exe)
+ (action
+  (progn
+   (run %{test} --corrected)
+   (diff? test_mutate.ml test_mutate.ml.corrected))))
