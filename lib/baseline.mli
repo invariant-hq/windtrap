@@ -72,8 +72,9 @@ val create : ?root:string -> ?cwd:string -> mode:mode -> unit -> t
 
     When [cwd] lies inside a build context under [root] ({!Os.build_root}), the
     run is a build action, and a check reads dune's copy of a file in that
-    context. The test compares strings and [root] is not normalized, so under a
-    [root] that ends with [/] no run is a build action.
+    context. The test compares strings, so [root] must be normalized as
+    {!Os.project_root} normalizes it: no [.] or [..] segment, and no repeated or
+    trailing separator.
 
     Raises [Sys_error] as {!Os.project_root} does. *)
 
