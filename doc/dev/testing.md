@@ -15,15 +15,13 @@ described under `ppx/`), the support library `support/` and one `dune`
 - `unit/`: windtrap suites over the library's modules, one executable
   each, reaching the internals through `Windtrap.Private` (the re-export
   block that exists for them and for `bin/`; never named by user code).
-  `Report_sections` is pinned through `test_report` and
-  `test_report_junit`, `Mutate_loop` in `instr/loop/`, and
-  `test_ppx_runtime` pins `ppx/runtime` and `ppx/config`.
-  `test_ppx_runtime` and `test_windtrap` drive `Run.execute` in process,
-  which refuses to nest inside a run, so they are plain executables over
-  `harness.ml`; `test_run` records its runs as it initialises, before its
-  own run. `render_fixtures.ml` is the synthetic run data the report
-  suites render, `xml_check.ml` checks a JUnit document for
-  well-formedness, and `expect_config/` is an `(inline_tests)` library
+  `Mutate_loop` is pinned in `instr/loop/`, and `test_ppx_runtime` pins
+  `ppx/runtime` and `ppx/config`. `Run.execute` refuses to nest inside a
+  run, so `test_run`, `test_windtrap` and `test_ppx_runtime` record their
+  runs as they initialise, before their own run. `render_fixtures.ml` is
+  the synthetic run data the report suites render, `gallery.ml` marks the
+  escape sequences of the report galleries by their role, and
+  `expect_config/` is an `(inline_tests)` library
   that shadows `Expect_test_config`. Address one suite by running it:
   `dune exec test/unit/test_gen.exe -- -f shrink`. The report's
   transcripts, the help and the JUnit documents are `expect_file`
@@ -158,9 +156,10 @@ and every promoted diff is reviewed as a code change.
   `test/ppx/expect/config`, `test/unit/expect_config`, the corpus): the
   runner runs under `--corrected`, dune diffs the `.corrected` file, and
   `dune promote` accepts it.
-- `test/unit/expected/`: a mismatch prints its acceptance, the suite's
-  own executable under `-u` (`dune exec test/unit/test_report.exe -- -u`
-  for the report's transcripts); review with `git diff`. The coloured
+- The unit suites' baselines (`expect` literals, and the files under
+  `test/unit/expected/`): a suite that holds one runs under
+  `--corrected`, so `dune promote` accepts a mismatch; review with `git
+  diff`. The coloured
   transcripts pin every escape sequence by its role, as a mark such as
   `«r|FAIL»` with `»` for the reset: the suite checks that the marks turn
   back into the exact bytes and that no escape is left unmarked, so the
