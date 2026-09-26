@@ -3,10 +3,6 @@
    SPDX-License-Identifier: ISC
   ---------------------------------------------------------------------------*)
 
-(* The v3 registry's one-accepted-content rule and atomic
-   acceptance, re-keyed by position or path and split into a recording
-   half (during the run) and a writing half (after it). *)
-
 type mode = Check | Corrected | Update
 
 type subject =
@@ -17,34 +13,38 @@ type key = Site of Loc.pos | Path of string
 
 let key_of = function Literal { pos; _ } -> Site pos | File path -> Path path
 
-(* Where a subject's file is: [read], the copy the run reads and (in
-   Corrected mode) patches, which is dune's build copy inside a build
-   action and the source otherwise; [source], the file under the project
-   root that Update mode rewrites. *)
+let subject_file = function
+  | Literal { pos = file, _, _, _; _ } -> file
+  | File path -> path
+
+(* A subject's file: [source] is under the project root, and [read] is the
+   file a check reads, dune's copy inside a build action and [source]
+   otherwise. *)
 type where = { read : string; source : string }
 
-(* One key: the content the run compares against, read once at the first
-   check, and the content a correction established, if one did. *)
 type entry = {
-  where : where;
-  baseline : string option;
-  mutable accepted : string option;
+  baseline : string option; (* in comparison form, read at the first check *)
+  mutable accepted : string option; (* the content a correction recorded *)
 }
 
+(* A correction produces the file [output]. A literal's patch applies to the
+   bytes of [input]. *)
 type correction =
-  | Patch of where * Source_patch.patch
-  | Content of where * string
+  | Patch of { input : string; output : string; patch : Source_patch.patch }
+  | Content of { output : string; text : string }
 
 type write =
   | Written of { path : string; literals : int }
   | Refused of { path : string; reason : string }
 
+(* A check records its correction in [pending]; [settle] moves the attempt's
+   corrections to [kept] or drops them, and [write] empties [kept]. *)
 type t = {
   mode : mode;
   root : string;
   build_root : string option;
   entries : (key, entry) Hashtbl.t;
-  mutable pending : (key * correction) list; (* this attempt's, newest first *)
+  mutable pending : (entry * correction) list; (* newest first *)
   mutable kept : correction list; (* newest first *)
   sources : (string, (string, string) result) Hashtbl.t;
       (* a source file's bytes as a check first read them, or why it could
@@ -81,111 +81,86 @@ let create ?root ?cwd ~mode () =
 
 let mode t = t.mode
 
-(* Resolution *)
-
-let subject_file = function
-  | Literal { pos = file, _, _, _; _ } -> file
-  | File path -> path
+(* Checking *)
 
 let resolve t subject =
-  match Os.reconstruct ~root:t.root (subject_file subject) with
-  | Error _ as e -> e
-  | Ok source ->
-      let read =
-        match t.build_root with
-        | None -> source
-        | Some build ->
-            let prefix = t.root ^ "/" in
-            let relative =
-              String.sub source (String.length prefix)
-                (String.length source - String.length prefix)
-            in
-            build ^ "/" ^ relative
-      in
-      Ok { read; source }
+  (* Dune's copy of a file has the file's path relative to the root. *)
+  let copy source =
+    match t.build_root with
+    | None -> source
+    | Some build ->
+        let skip = String.length t.root + 1 in
+        build ^ "/" ^ String.sub source skip (String.length source - skip)
+  in
+  Result.map
+    (fun source -> { read = copy source; source })
+    (Os.reconstruct ~root:t.root (subject_file subject))
 
-(* Comparison forms and file reading *)
-
-let canonicalize s = Text.ensure_trailing_newline (Text.normalize_newlines s)
-
-let form subject actual =
+let form subject text =
   match subject with
-  | Literal { exact = true; _ } -> actual
-  | Literal { exact = false; _ } -> Source_patch.normalize actual
-  | File _ -> canonicalize actual
+  | Literal { exact = true; _ } -> text
+  | Literal { exact = false; _ } -> Source_patch.normalize text
+  | File _ -> Text.ensure_trailing_newline (Text.normalize_newlines text)
 
 let read_file path = In_channel.with_open_bin path In_channel.input_all
-let unreadable reason = "the source file cannot be read: " ^ reason
 
 let read_baseline subject where =
   match subject with
-  | Literal { value; exact; _ } ->
-      Some (if exact then value else Source_patch.normalize value)
+  | Literal { value; _ } -> Some (form subject value)
   | File _ ->
       if Os.file_exists where.read then
-        Some (canonicalize (read_file where.read))
+        Some (form subject (read_file where.read))
       else None
 
-(* The destination of a correction: the bytes it applies to and the file
-   it produces. *)
+(* The reason names no path: the message that carries it names the file. *)
+let read_source path =
+  match read_file path with
+  | text -> Ok text
+  | exception (Sys_error _ as e) ->
+      Error ("the source file cannot be read: " ^ Os.failure_reason ~path e)
+
+(* The bytes a correction applies to and the file it produces. Dune's [diff?]
+   finds a [.corrected] file beside the copy that the action read. *)
 let destination t where =
   match t.mode with
   | Corrected -> (where.read, where.read ^ ".corrected")
   | Update | Check -> (where.source, where.source)
 
-(* Checking *)
+let cached table key make =
+  match Hashtbl.find_opt table key with
+  | Some value -> value
+  | None ->
+      let value = make () in
+      Hashtbl.add table key value;
+      value
 
-(* A patch is tried alone on the bytes that [write] will patch: [apply]
-   locates every patch of a file against the same original bytes, so one
-   valid alone is valid with the others. *)
-let validate t where patch =
-  let input, _ = destination t where in
-  let source =
-    match Hashtbl.find_opt t.sources input with
-    | Some source -> source
-    | None ->
-        let source =
-          match read_file input with
-          | text -> Ok text
-          | exception (Sys_error _ as e) ->
-              Error (unreadable (Os.failure_reason ~path:input e))
-        in
-        Hashtbl.add t.sources input source;
-        source
-  in
-  Result.bind source (fun text ->
-      match Source_patch.apply text [ patch ] with
-      | Ok _ -> Ok ()
-      | Error error -> Error (Source_patch.error_message error))
-
-let record t key entry subject where actual accepted =
-  let correction =
-    match subject with
-    | Literal { pos = (_, line, _, _) as pos; value; exact } -> (
-        let style =
-          if exact then Source_patch.Exact else Source_patch.Flexible
-        in
-        let patch = Source_patch.patch ~site:pos ~literal:value ~style actual in
-        match validate t where patch with
-        | Ok () -> Ok (Patch (where, patch))
-        | Error reason -> Error (Failure.Refused { line; reason }))
-    | File _ -> Ok (Content (where, accepted))
-  in
-  Result.map
-    (fun correction ->
-      entry.accepted <- Some accepted;
-      t.pending <- (key, correction) :: t.pending)
-    correction
+(* A literal's patch is tried alone on the bytes that [write] will patch:
+   [Source_patch.apply] locates every patch of a file against the same
+   original bytes, so one valid alone is valid with the others. *)
+let correction t subject where ~actual ~accepted =
+  let input, output = destination t where in
+  match subject with
+  | File _ -> Ok (Content { output; text = accepted })
+  | Literal { pos = (_, line, _, _) as pos; value; exact } -> (
+      let style = if exact then Source_patch.Exact else Source_patch.Flexible in
+      let patch = Source_patch.patch ~site:pos ~literal:value ~style actual in
+      let source = cached t.sources input (fun () -> read_source input) in
+      let apply text =
+        Result.map_error Source_patch.error_message
+          (Source_patch.apply text [ patch ])
+      in
+      match Result.bind source apply with
+      | Ok _ -> Ok (Patch { input; output; patch })
+      | Error reason -> Error (Failure.Refused { line; reason }))
 
 let check t ?loc ?(correct = true) subject actual =
-  let mode = if correct then t.mode else Check in
-  let kind =
-    match subject with
-    | Literal { exact; _ } -> Failure.Literal { exact }
-    | File path -> Failure.File path
-  in
   let fail ?withheld state =
-    let failure = Failure.baseline ?loc kind state in
+    let baseline =
+      match subject with
+      | Literal { exact; _ } -> Failure.Literal { exact }
+      | File path -> Failure.File path
+    in
+    let failure = Failure.baseline ?loc baseline state in
     raise
       (Failure.Check_failure
          (match withheld with
@@ -195,62 +170,49 @@ let check t ?loc ?(correct = true) subject actual =
   match resolve t subject with
   | Error candidate -> fail (Failure.Unresolvable { candidate })
   | Ok where -> (
-      let key = key_of subject in
       let entry =
-        match Hashtbl.find_opt t.entries key with
-        | Some entry -> entry
-        | None ->
-            let entry =
-              { where; baseline = read_baseline subject where; accepted = None }
-            in
-            Hashtbl.add t.entries key entry;
-            entry
+        cached t.entries (key_of subject) (fun () ->
+            { baseline = read_baseline subject where; accepted = None })
       in
       let actual' = form subject actual in
-      match entry.accepted with
-      | Some accepted ->
+      let mismatch expected =
+        Failure.Mismatch
+          { expected = Failure.text expected; actual = Failure.text actual' }
+      in
+      match (entry.accepted, entry.baseline) with
+      | Some accepted, _ ->
+          (* An accepted key records no second correction, so [write] has
+             one content per key. *)
           if not (String.equal actual' accepted) then
-            fail ~withheld:Failure.Conflict
-              (Failure.Mismatch
-                 {
-                   expected = Failure.text accepted;
-                   actual = Failure.text actual';
-                 })
-      | None -> (
-          match entry.baseline with
-          | Some expected when String.equal expected actual' -> ()
-          | baseline -> (
-              let state =
-                match baseline with
-                | Some expected ->
-                    Failure.Mismatch
-                      {
-                        expected = Failure.text expected;
-                        actual = Failure.text actual';
-                      }
-                | None -> Failure.Missing { proposed = Failure.text actual' }
-              in
-              match mode with
-              | Check -> fail state
-              | Corrected | Update -> (
-                  match record t key entry subject where actual actual' with
-                  | Error refused -> fail ~withheld:refused state
-                  | Ok () -> if mode = Corrected then fail state))))
+            fail ~withheld:Failure.Conflict (mismatch accepted)
+      | None, Some expected when String.equal expected actual' -> ()
+      | None, baseline -> (
+          let state =
+            match baseline with
+            | Some expected -> mismatch expected
+            | None -> Failure.Missing { proposed = Failure.text actual' }
+          in
+          match if correct then t.mode else Check with
+          | Check -> fail state
+          | (Corrected | Update) as mode -> (
+              match correction t subject where ~actual ~accepted:actual' with
+              | Error refused -> fail ~withheld:refused state
+              | Ok correction ->
+                  entry.accepted <- Some actual';
+                  t.pending <- (entry, correction) :: t.pending;
+                  if mode = Corrected then fail state)))
 
 let settle t ~keep =
   let pending = t.pending in
   t.pending <- [];
   if keep then begin
-    t.kept <- List.rev_append (List.rev_map snd pending) t.kept;
+    t.kept <- List.map snd pending @ t.kept;
     List.length pending
   end
   else begin
-    List.iter
-      (fun (key, _) ->
-        match Hashtbl.find_opt t.entries key with
-        | Some entry -> entry.accepted <- None
-        | None -> ())
-      pending;
+    (* A dropped attempt (a retry) leaves no accepted content behind for
+       the next attempt to agree with. *)
+    List.iter (fun (entry, _) -> entry.accepted <- None) pending;
     0
   end
 
@@ -258,66 +220,54 @@ let settle t ~keep =
 
 module String_map = Map.Make (String)
 
+(* A file's every failure is its refusal, so the files after it are still
+   written. *)
+let publish t output ~literals contents =
+  let outcome =
+    match contents with
+    | Error reason -> Refused { path = output; reason }
+    | Ok text -> (
+        try
+          Os.mkdir_p (Filename.dirname output);
+          Os.atomic_write ~path:output text;
+          Written { path = output; literals }
+        with (Sys_error _ | Unix.Unix_error _) as e ->
+          Refused { path = output; reason = Os.failure_reason ~path:output e })
+  in
+  t.writes <- outcome :: t.writes
+
 let write t =
-  (* One file's every failure is its refusal, so the files after it are
-     still written. *)
-  let publish output ~literals contents =
-    let outcome =
-      match
-        Result.map
-          (fun text ->
-            Os.mkdir_p (Filename.dirname output);
-            Os.atomic_write ~path:output text)
-          (contents ())
-      with
-      | Ok () -> Written { path = output; literals }
-      | Error reason -> Refused { path = output; reason }
-      | exception ((Sys_error _ | Unix.Unix_error _) as e) ->
-          Refused { path = output; reason = Os.failure_reason ~path:output e }
-    in
-    t.writes <- outcome :: t.writes
-  in
-  (* Patches group by the file they rewrite, contents stand alone. *)
-  let patches, contents =
-    List.fold_left
-      (fun (patches, contents) correction ->
-        match correction with
-        | Patch (where, patch) ->
-            let input, output = destination t where in
-            let existing =
-              Option.value ~default:[] (String_map.find_opt output patches)
-            in
-            ( String_map.add output ((input, patch) :: existing) patches,
-              contents )
-        | Content (where, text) ->
-            let _, output = destination t where in
-            (patches, String_map.add output text contents))
-      (String_map.empty, String_map.empty)
-      (List.rev t.kept)
-  in
+  let kept = List.rev t.kept in
   t.kept <- [];
-  if t.mode <> Check then begin
-    String_map.iter
-      (fun output entries ->
-        let input = fst (List.hd entries) in
-        let patches = List.map snd entries in
-        publish output ~literals:(List.length patches) (fun () ->
-            (* Every patch was valid alone on the bytes a check read: a
-               refusal now is an edit since. *)
-            match read_file input with
-            | exception (Sys_error _ as e) ->
-                Error (unreadable (Os.failure_reason ~path:input e))
-            | text ->
-                Result.map_error
-                  (fun error ->
-                    "it changed during the run: "
-                    ^ Source_patch.error_message error)
-                  (Source_patch.apply text patches)))
-      patches;
-    String_map.iter
-      (fun output text -> publish output ~literals:0 (fun () -> Ok text))
-      contents
-  end
+  let group (patched, contents) = function
+    | Patch { input; output; patch } ->
+        let earlier =
+          match String_map.find_opt output patched with
+          | Some (_, patches) -> patches
+          | None -> []
+        in
+        (String_map.add output (input, patch :: earlier) patched, contents)
+    | Content { output; text } -> (patched, String_map.add output text contents)
+  in
+  let patched, contents =
+    List.fold_left group (String_map.empty, String_map.empty) kept
+  in
+  (* Every patch was valid alone on the bytes a check read: a refusal now is
+     an edit since. *)
+  let apply input patches =
+    let changed error =
+      "it changed during the run: " ^ Source_patch.error_message error
+    in
+    Result.bind (read_source input) (fun text ->
+        Result.map_error changed (Source_patch.apply text patches))
+  in
+  String_map.iter
+    (fun output (input, patches) ->
+      publish t output ~literals:(List.length patches) (apply input patches))
+    patched;
+  String_map.iter
+    (fun output text -> publish t output ~literals:0 (Ok text))
+    contents
 
 let path = function Written { path; _ } | Refused { path; _ } -> path
 let writes t = List.sort (fun a b -> String.compare (path a) (path b)) t.writes

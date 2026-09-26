@@ -432,6 +432,48 @@ let () =
       not_contains ~msg:"without repeating the path" ~sub:path reason
   | _ -> fail "one refusal and nothing written"
 
+let () =
+  reg "literal correction: a check tries its patch on the source as first read"
+  @@ fun () ->
+  let root = temp_dir () in
+  let path = Filename.concat root "test/t.ml" in
+  let two x y =
+    Printf.sprintf
+      "let () =\n\
+      \  expect a @@ __POS_OF__ {| %s |};\n\
+      \  expect b @@ __POS_OF__ {| %s |}\n"
+      x y
+  in
+  write_raw path (two "x" "y");
+  let t = B.create ~root ~cwd:root ~mode:B.Update () in
+  let lit line value =
+    B.Literal { pos = ("test/t.ml", line, 14, 0); value; exact = false }
+  in
+  expect_pass "the first check reads the source" (fun () ->
+      B.check t (lit 2 " x ") "one");
+  write_raw path (two "x" "edited");
+  expect_pass "the second tries its patch on the same bytes" (fun () ->
+      B.check t (lit 3 " y ") "two");
+  ignore (B.settle t ~keep:true);
+  B.write t;
+  match B.writes t with
+  | [ B.Refused { reason; _ } ] ->
+      starts_with ~msg:"the write reads the source again"
+        ~affix:"it changed during the run: " reason
+  | _ -> fail "one refusal and nothing written"
+
+let () =
+  reg "literal correction: a source unreadable at its first check stays so"
+  @@ fun () ->
+  let root = temp_dir () in
+  let t = B.create ~root ~cwd:root ~mode:B.Update () in
+  ignore
+    (refused "missing source" (fun () -> B.check t (literal " old ") "new"));
+  write_raw (Filename.concat root "test/t.ml") source;
+  equal ~msg:"the source created since is not read" string
+    "line 2: the source file cannot be read: No such file or directory"
+    (refused "created since" (fun () -> B.check t (literal " old ") "new"))
+
 (* Build-copy placement *)
 
 let () =
