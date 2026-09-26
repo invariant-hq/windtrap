@@ -17,8 +17,7 @@ open Ast_builder.Default
 
 type directive = No_directive | Off of string | On | Exclude_file
 
-(* The grammar is the [coverage] attribute's (ppx/coverage/instrument.ml),
-   with a reason on [off]. *)
+(* The grammar is the [coverage] attribute's (ppx/coverage/instrument.ml). *)
 let directive { attr_name; attr_payload; attr_loc } =
   let payload =
     match attr_payload with

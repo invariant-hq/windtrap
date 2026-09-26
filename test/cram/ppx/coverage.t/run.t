@@ -994,10 +994,17 @@ A refusal is an error located at the attribute, and the driver exits 1:
   Error: coverage on is not allowed here.
   [1]
 
-  $ cov --impl ./reject_off_reason.ml
-  File "./reject_off_reason.ml", line 1, characters 18-42:
-  1 | let f n = (n + 1) [@coverage off "reason"]
-                        ^^^^^^^^^^^^^^^^^^^^^^^^
+  $ cov --impl ./reject_off_number.ml
+  File "./reject_off_number.ml", line 1, characters 18-36:
+  1 | let f n = (n + 1) [@coverage off 42]
+                        ^^^^^^^^^^^^^^^^^^
+  Error: Bad payload in coverage attribute.
+  [1]
+
+  $ cov --impl ./reject_off_two_reasons.ml
+  File "./reject_off_two_reasons.ml", line 1, characters 18-41:
+  1 | let f n = (n + 1) [@coverage off "a" "b"]
+                        ^^^^^^^^^^^^^^^^^^^^^^^
   Error: Bad payload in coverage attribute.
   [1]
 
@@ -1016,21 +1023,33 @@ A refusal is an error located at the attribute, and the driver exits 1:
   [1]
 
 The two instrumenting rewriters read one attribute grammar, each under
-its own name. Both accept every legal spelling:
+its own name. Both accept every legal spelling, and an off with a reason
+leaves out what an off without one does:
 
-  $ cov --impl ./spellings.ml > /dev/null
+  $ cov --impl ./spellings.ml | ../elide.exe
+  coverage points of "./spellings.ml" in Windtrap_cov_________spellings___ml:
+    0: 642-647
+  let expr_off x = ((x + 1)[@coverage off])
+  let expr_off_reason x = ((x + 1)[@coverage off "reason"])
+  let binding_off = List.length [1][@@coverage off]
+  let binding_off_reason = List.length [1][@@coverage off "reason"]
+  [@@@coverage off]
+  let region_off y = y * 2
+  [@@@coverage on]
+  [@@@coverage off "reason"]
+  let region_off_reason y = y * 2
+  [@@@coverage on]
+  let after_region z = ___windtrap_visit___ 0; z - 1
   $ sed s/coverage/mutate/g spellings.ml > mutate_spellings.ml
   $ ../pp.exe -apply windtrap_mutate --impl ./mutate_spellings.ml > /dev/null
 
 The mutation rewriter refuses what the coverage rewriter refuses, in the
 same words once the names are swapped and the width a name gives a span
-is erased. reject_off_reason.ml has no twin: only the mutation rewriter's
-off takes a reason.
+is erased:
 
   $ ns() { sed -E 's/[Cc]overage|[Mm]utate|[Mm]utation/NS/g; s/(characters [0-9]+-)[0-9]+/\1/; s/^( *)\^+$/\1^/'; }
   $ mkdir twin
   $ for f in reject_*.ml; do
-  >   test "$f" = reject_off_reason.ml && continue
   >   sed s/coverage/mutate/g "$f" > "twin/$f"
   >   cov --impl "./$f" 2>&1 | ns > coverage.out
   >   (cd twin && ../../pp.exe -apply windtrap_mutate --impl "./$f" 2>&1) | ns > mutate.out
@@ -1043,5 +1062,7 @@ off takes a reason.
   reject_exclude_file_expr.ml: same
   reject_misplaced_exclude_file.ml: same
   reject_misplaced_on.ml: same
+  reject_off_number.ml: same
+  reject_off_two_reasons.ml: same
   reject_on_binding.ml: same
   reject_on_outside.ml: same

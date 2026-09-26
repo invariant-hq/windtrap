@@ -161,8 +161,10 @@
 
 (** {1:exclusion Exclusion attributes}
 
-    The attribute is Bisect_ppx's [coverage], and its payload is one of the bare
-    identifiers [off], [on] and [exclude_file]. It takes no reason string.
+    The attribute is Bisect_ppx's [coverage], and its payload is [off], [on] or
+    [exclude_file]. [off] alone takes a reason, as one string literal:
+    [[@coverage off "reason"]]. The reason is for the reader of the source, and
+    the rewriter drops it.
     - [[@coverage off]] on an expression leaves the expression as written, with
       everything inside it.
     - [[@@coverage off]] does the same on a value binding at the top level of a
@@ -218,7 +220,8 @@ val transform_impl_file :
 
     Raises a ppxlib located error, which the driver reports as a compile error
     at the attribute, if an attribute that the rewriter reads:
-    - has a payload other than the three identifiers.
+    - has a payload other than [off], [off] with one string literal, [on] or
+      [exclude_file].
     - is [on] or [exclude_file] on an expression or on a binding.
     - is [exclude_file] floating inside a nested structure.
     - is [[@@@coverage off]] inside a region, or [[@@@coverage on]] outside one.

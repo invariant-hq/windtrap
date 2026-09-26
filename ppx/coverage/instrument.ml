@@ -11,30 +11,28 @@ module Exp = Ast_helper.Exp
 (* Attributes *)
 
 (* The grammar is ppx/mutate/instrument.ml's too, under its own name;
-   test/cram/ppx/coverage.t pins that the two agree. *)
+   test/cram/ppx/coverage.t pins that the two agree. The reason of an [off] is
+   for the reader of the source. *)
 let coverage_attribute { attr_name; attr_payload; attr_loc = loc } =
   if not (String.equal attr_name.txt "coverage") then `None
   else
-    let ident =
+    let payload =
       match attr_payload with
-      | PStr
-          [
-            {
-              pstr_desc =
-                Pstr_eval
-                  ({ pexp_desc = Pexp_ident { txt = Lident id; _ }; _ }, _);
-              _;
-            };
-          ] ->
-          Some id
+      | PStr [ { pstr_desc = Pstr_eval (payload, _); _ } ] ->
+          Some payload.pexp_desc
       | _ -> None
     in
-    match ident with
-    | Some "off" -> `Off
-    | Some "on" -> `On
-    | Some "exclude_file" -> `Exclude_file
-    | Some _ | None ->
-        Location.raise_errorf ~loc "Bad payload in coverage attribute."
+    match payload with
+    | Some (Pexp_ident { txt = Lident "off"; _ })
+    | Some
+        (Pexp_apply
+           ( { pexp_desc = Pexp_ident { txt = Lident "off"; _ }; _ },
+             [ (Nolabel, { pexp_desc = Pexp_constant (Pconst_string _); _ }) ]
+           )) ->
+        `Off
+    | Some (Pexp_ident { txt = Lident "on"; _ }) -> `On
+    | Some (Pexp_ident { txt = Lident "exclude_file"; _ }) -> `Exclude_file
+    | _ -> Location.raise_errorf ~loc "Bad payload in coverage attribute."
 
 let err_misplaced ~loc spelling =
   Location.raise_errorf ~loc "coverage %s is not allowed here." spelling

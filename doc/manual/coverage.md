@@ -185,8 +185,9 @@ To leave code out of the count, mark it with an attribute:
 `[@@@coverage off]` and `[@@@coverage on]` around structure items, or
 `[@@@coverage exclude_file]` for the whole file (see
 [`ppx/coverage/instrument.mli`](../../ppx/coverage/instrument.mli)).
-`symbol`, at the end of `calc.ml`, carries `[@@coverage off]`, and no
-report on this page counts its points. Inline tests (`let%test`,
+`off` takes a reason, as in `[@coverage off "reason"]`, which no report
+prints. `symbol`, at the end of `calc.ml`, carries `[@@coverage off]`,
+and no report on this page counts its points. Inline tests (`let%test`,
 `let%expect_test` and `module%test` with its helpers) carry no point
 without an attribute, and the rest of their file is counted.
 

@@ -115,10 +115,9 @@ what is non-obvious.
   wording); the conformance corpus gates `escaped_strings.ml` and
   `hello_async.ml` the same way.
   `coverage.t` holds the two backends' attribute grammars in parity:
-  both accept every spelling of `spellings.ml`, and each coverage
-  refusal reads as the mutation one once the namespace is swapped. The
-  one intended difference is that only `[@mutate off]` takes a reason
-  (`reject_off_reason`, `reject_off_number`, `reject_off_two_reasons`).
+  both accept every spelling of `spellings.ml`, an `off` with a reason
+  included, and each coverage refusal reads as the mutation one once
+  the namespace is swapped.
 - `inline/`: real `(inline_tests)` libraries under dune's own runner:
   `forms/` (the payload-shape matrix, `let%test` and `module%test`),
   `strict_flags/` (the generated code under `-w +a -warn-error +a`) and

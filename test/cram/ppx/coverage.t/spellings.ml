@@ -4,11 +4,18 @@
    backends read the same spellings. *)
 
 let expr_off x = (x + 1) [@coverage off]
+let expr_off_reason x = (x + 1) [@coverage off "reason"]
 let binding_off = List.length [ 1 ] [@@coverage off]
+let binding_off_reason = List.length [ 1 ] [@@coverage off "reason"]
 
 [@@@coverage off]
 
 let region_off y = y * 2
+
+[@@@coverage on]
+[@@@coverage off "reason"]
+
+let region_off_reason y = y * 2
 
 [@@@coverage on]
 
