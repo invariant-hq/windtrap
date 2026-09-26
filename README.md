@@ -13,7 +13,6 @@ two functions (the tutorial's example, `examples/01-getting-started/`).
 
 `test/dune`:
 
-<!-- file examples/01-getting-started/dune -->
 ```lisp
 (test
  (name test_mylib)
@@ -23,7 +22,6 @@ two functions (the tutorial's example, `examples/01-getting-started/`).
 
 `test/test_mylib.ml`:
 
-<!-- file examples/01-getting-started/test_mylib.ml -->
 ```ocaml
 open Windtrap
 
@@ -43,7 +41,6 @@ let () = exit (run "mylib" [ add; parse ])
 
 A run with nothing to report prints one line:
 
-<!-- run examples/01-getting-started -->
 ```
 $ dune runtest
 mylib: 2 passed in 0.5ms.

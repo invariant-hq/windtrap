@@ -13,7 +13,6 @@ ordinary `(test)` stanzas.
 
 `dune`:
 
-<!-- file examples/08-mutation/dune -->
 ```lisp
 (library
  (name windtrap_example_mutation)
@@ -50,7 +49,6 @@ The library holds a calculator.
 
 `calc.ml`:
 
-<!-- file examples/08-mutation/calc.ml -->
 ```ocaml
 type op = Add | Sub | Mul | Div
 
@@ -69,7 +67,6 @@ let abs n =
 
 `test_calc.ml`:
 
-<!-- file examples/08-mutation/test_calc.ml -->
 ```ocaml
 open Windtrap
 module Calc = Windtrap_example_mutation.Calc
@@ -124,7 +121,6 @@ process with those tests alone. A mutant that no test fails on prints
 as a `SURVIVED` block: its identifier, the rewrite, the source line and
 the tests that ran it. No test calls `sign 0`:
 
-<!-- run examples/08-mutation/instrumented as examples/08-mutation -->
 ```
 $ dune exec --instrument-with ppx_windtrap.mutate examples/08-mutation/test_calc.exe -- --mutate
 calc: 10 passed in 1.6ms.
@@ -158,7 +154,6 @@ arms it in every suite that holds its file, as in
 `WINDTRAP_MUTATE_ARM=ID dune runtest --force --instrument-with ppx_windtrap.mutate`.
 Arming a killed mutant shows the failure that killed it:
 
-<!-- run examples/08-mutation/instrumented as examples/08-mutation -->
 ```
 $ dune exec --instrument-with ppx_windtrap.mutate examples/08-mutation/test_calc.exe -- --arm examples/08-mutation/calc.ml:10:16:ge
 mutant examples/08-mutation/calc.ml:10:16:ge armed: n > 0 → n >= 0
@@ -188,7 +183,6 @@ saves its verdicts. The filters select the tests as in any run; a
 filtered run lists the mutants its tests never reached and saves no
 verdict. `stays positive` checks a sign that `a - b → a + b` keeps:
 
-<!-- run examples/08-mutation/instrumented as examples/08-mutation -->
 ```
 $ dune exec --instrument-with ppx_windtrap.mutate examples/08-mutation/test_calc.exe -- --mutate=examples/08-mutation/calc.ml -f "stays positive"
 calc: 1 passed in 0.5ms.
@@ -254,7 +248,6 @@ mutant killed by one executable is killed, and the command exits 1 when
 a mutant survived every executable that reached it, listing the most
 reached first. `--force` makes dune run the suites that already passed:
 
-<!-- run examples/08-mutation/instrumented as examples/08-mutation -->
 ```
 $ WINDTRAP_MUTATE=1 dune runtest --force --instrument-with ppx_windtrap.mutate
 calc: 10 passed in 0.7ms.
@@ -315,7 +308,6 @@ zero to the `sign` group:
 
 `test_calc.ml`:
 
-<!-- file examples/08-mutation/killed/test_calc.ml from let sign -->
 ```ocaml
 let sign =
   group "sign"
@@ -329,7 +321,6 @@ let sign =
 The mutation run then kills every mutant the suite reaches, and the
 project's merge passes:
 
-<!-- run examples/08-mutation/killed as examples/08-mutation -->
 ```
 $ dune exec --instrument-with ppx_windtrap.mutate examples/08-mutation/test_calc.exe -- --mutate
 calc: 11 passed in 0.9ms.
@@ -388,7 +379,6 @@ error, and no verdict file is written.
 `windtrap mutants --help` lists its options; the suite's own flags are
 in [Running tests](running-tests.md):
 
-<!-- run examples/08-mutation/instrumented as examples/08-mutation -->
 ```
 $ dune exec windtrap -- mutants --help
 windtrap mutants - merge .mutants verdict files and report the survivors

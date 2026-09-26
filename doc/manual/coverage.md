@@ -13,7 +13,6 @@ Coverage is a field of the library stanza, and the tests are ordinary
 
 `dune`:
 
-<!-- file examples/07-coverage/dune -->
 ```lisp
 (library
  (name windtrap_example_coverage)
@@ -59,7 +58,6 @@ arms untested.
 
 `calc.ml`:
 
-<!-- file examples/07-coverage/calc.ml -->
 ```ocaml
 type op = Add | Sub | Mul | Div
 
@@ -79,7 +77,6 @@ let symbol = function Add -> "+" | Sub -> "-" | Mul -> "*" | Div -> "/"
 
 `test_calc.ml`:
 
-<!-- file examples/07-coverage/test_calc.ml -->
 ```ocaml
 open Windtrap
 module Calc = Windtrap_example_coverage.Calc
@@ -110,7 +107,6 @@ dune run the suites that already passed. A test run prints no coverage
 number. `windtrap coverage` merges the dumps into one row per source
 file and prints the total last:
 
-<!-- run examples/07-coverage/instrumented as examples/07-coverage -->
 ```
 $ dune runtest --force --instrument-with ppx_windtrap.coverage
 calc: 4 passed in 3.0ms.
@@ -136,7 +132,6 @@ primitives have no point for their return. A row lists at most eight
 line ranges, then `(+N more)`. `-u` shows every one, with `▌` on each
 line an unvisited point touches. The percentage counts points:
 
-<!-- run examples/07-coverage/instrumented as examples/07-coverage -->
 ```
 $ dune exec windtrap -- coverage -u
    cover    points   file                             uncovered lines
@@ -161,7 +156,6 @@ the minimum and whether the total meets it, and the command exits 1 when
 it does not. A percentage prints red below the minimum, or below 80%
 without one:
 
-<!-- run examples/07-coverage/instrumented as examples/07-coverage -->
 ```
 $ dune exec windtrap -- coverage --min 95
    cover    points   file                             uncovered lines (-u shows the source)
@@ -181,7 +175,6 @@ under it that has no data and exits 1; `--do-not-expect PATH` exempts a
 file or a directory. `calc.mll` and `calc.pp.ml` count as `calc.ml`. No
 suite calls `stats.ml`:
 
-<!-- run examples/07-coverage/instrumented as examples/07-coverage -->
 ```
 $ dune exec windtrap -- coverage --expect examples/07-coverage/stats.ml
    cover    points   file                             uncovered lines (-u shows the source)
@@ -211,7 +204,6 @@ the counts of each point over every dump, and `half_a.ml` reads 100%
 there. To read one suite's dump, set `WINDTRAP_COVERAGE_FILE` to a path,
 which each run replaces, and pass the path to `windtrap coverage`:
 
-<!-- run examples/07-coverage/instrumented as examples/07-coverage -->
 ```
 $ WINDTRAP_COVERAGE_FILE=half_b.coverage dune exec --instrument-with ppx_windtrap.coverage examples/07-coverage/test_b.exe
 half_b: 8 passed in 1.1ms.
@@ -230,7 +222,6 @@ makes standard output the document, and under `--min` the gate's line
 goes to standard error. `dune exec windtrap -- coverage --lcov >
 lcov.info` writes the tracefile:
 
-<!-- run examples/07-coverage/instrumented as examples/07-coverage -->
 ```
 $ dune exec windtrap -- coverage --json
 { "summary": { "visited": 27, "total": 29, "percentage": 93.10 },
@@ -292,7 +283,6 @@ context is then instrumented, and each test run writes its dump.
 
 `dune-workspace`:
 
-<!-- file examples/07-coverage/dune-workspace -->
 ```lisp
 (lang dune 3.21)
 
@@ -342,7 +332,6 @@ message says to delete it.
 
 `windtrap coverage --help` lists every option:
 
-<!-- run examples/07-coverage/instrumented as examples/07-coverage -->
 ```
 $ dune exec windtrap -- coverage --help
 windtrap coverage - merge .coverage files and report

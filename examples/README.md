@@ -1,9 +1,8 @@
 # Examples
 
 Each numbered directory is the project of one page of the
-[manual](../doc/manual/): the page shows its files, and its transcripts
-are regenerated from runs of them. `dune runtest` builds and runs every
-example, and each passes.
+[manual](../doc/manual/), which shows its files and the output of runs
+of them. `dune runtest` builds and runs every example, and each passes.
 
 - `01-getting-started`: `Calc` and a suite of two tests, for
   [Getting started](../doc/manual/getting-started.md).
@@ -27,12 +26,6 @@ example, and each passes.
 - `08-mutation`: a library with the mutation backend, a suite that
   leaves two mutants alive and a `mutate` alias, for
   [Mutation testing](../doc/manual/mutation.md).
-
-A subdirectory named `failing`, `focused`, `killed` or `instrumented` is
-not a suite. It builds its example's executables with the edit a page
-describes (`failing`, `focused`, `killed`) or with an instrumentation
-backend applied (`instrumented`, and `killed` too), and `dune runtest`
-never runs them; the page's transcripts do.
 
 `x-blueprint` is a project of its own: a library with both
 instrumentation backends, a binary, and a `test/` directory with a unit

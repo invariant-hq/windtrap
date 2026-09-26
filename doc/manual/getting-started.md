@@ -23,7 +23,6 @@ example's paths. The first file is the module.
 
 `test/calc.ml`:
 
-<!-- file examples/01-getting-started/calc.ml -->
 ```ocaml
 exception Parse_error of string
 
@@ -47,7 +46,6 @@ A suite is one executable, declared by a `(test)` stanza.
 
 `test/dune`:
 
-<!-- file examples/01-getting-started/dune -->
 ```lisp
 (test
  (name test_mylib)
@@ -59,7 +57,6 @@ The suite declares its tests and runs them.
 
 `test/test_mylib.ml`:
 
-<!-- file examples/01-getting-started/test_mylib.ml -->
 ```ocaml
 open Windtrap
 
@@ -90,7 +87,6 @@ last line.
 
 Both tests pass, and a run with nothing to report prints one line:
 
-<!-- run examples/01-getting-started -->
 ```
 $ dune runtest
 mylib: 2 passed in 0.5ms.
@@ -105,7 +101,6 @@ of the failing assertion, the source of that line, and the two values,
 a body as here, is reported at the test's declaration line (see
 [Locating a failing assertion](assertions.md#locating-a-failing-assertion)):
 
-<!-- run examples/01-getting-started/failing as examples/01-getting-started -->
 ```
 $ dune runtest
 File "examples/01-getting-started/dune", line 2, characters 7-17:
@@ -128,7 +123,6 @@ mylib: 2 tests
 
 We put the `5` back and run again:
 
-<!-- run examples/01-getting-started -->
 ```
 $ dune runtest
 mylib: 2 passed in 0.6ms.

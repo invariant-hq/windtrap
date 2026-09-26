@@ -10,7 +10,6 @@ The snippets test `Geo`, a module of shapes.
 
 `test/geo.ml`:
 
-<!-- file examples/03-property-testing/geo.ml from type shape to let of_string -->
 ```ocaml
 type shape = Circle of float | Rect of float * float
 
@@ -39,7 +38,6 @@ The suite is `test/test_geo.ml`, built by a `(test)` stanza.
 
 `test/dune`:
 
-<!-- file examples/03-property-testing/dune -->
 ```lisp
 (test
  (name test_geo)
@@ -51,7 +49,6 @@ Its last line runs one group per section of this page.
 
 `test/test_geo.ml`:
 
-<!-- file examples/03-property-testing/test_geo.ml from let () = -->
 ```ocaml
 let () = exit (run "geo" [ area; to_string; scale; inverse; total_area ])
 ```
@@ -74,7 +71,6 @@ computed prints as what it was computed from, after `computed from`.
 
 `test/test_geo.ml`:
 
-<!-- file examples/03-property-testing/test_geo.ml from open Windtrap to let area -->
 ```ocaml
 open Windtrap
 
@@ -100,7 +96,6 @@ let area =
 
 A run that holds a property prints its seed on the summary line:
 
-<!-- run examples/03-property-testing -->
 ```
 $ dune runtest
 geo: 5 passed in 2.0ms (seed s1:2517c1601bf6fe73).
@@ -122,7 +117,6 @@ may not be minimal.
 
 `test/test_geo.ml`:
 
-<!-- file examples/03-property-testing/test_geo.ml from let shape to let to_string -->
 ```ocaml
 let shape = Testable.make ~pp:Geo.pp ~equal:( = )
 
@@ -138,7 +132,6 @@ let to_string =
 If `of_string` swapped the sides of a rectangle, shrinking would reduce
 the failing rectangle to `Rect (0, 1)`:
 
-<!-- run examples/03-property-testing/failing as examples/03-property-testing -->
 ```
 $ dune exec examples/03-property-testing/test_geo.exe -- --seed s1:5b58964be30f69a8 -f to_string
 geo: 1 test (seed s1:5b58964be30f69a8)
@@ -170,7 +163,6 @@ line.
 
 `test/test_geo.ml`:
 
-<!-- file examples/03-property-testing/test_geo.ml from let close to let scale -->
 ```ocaml
 let close = float_rel ~rel:1e-9 ~abs:1e-9
 
@@ -188,7 +180,6 @@ let scale =
 If `scale` left the height of a rectangle alone, the example would fail
 before any generated case:
 
-<!-- run examples/03-property-testing/failing as examples/03-property-testing -->
 ```
 $ dune exec examples/03-property-testing/test_geo.exe -- -f 'k squared'
 geo: 1 test (seed s1:96b69c9ed18d0547)
@@ -220,7 +211,6 @@ fails the property when no passing case carries its label (see
 
 `test/test_geo.ml`:
 
-<!-- file examples/03-property-testing/test_geo.ml from let inverse -->
 ```ocaml
 let inverse =
   group "inverse"
@@ -239,7 +229,6 @@ let inverse =
 Under `-v` the passing property prints the share of its cases under each
 label:
 
-<!-- run examples/03-property-testing -->
 ```
 $ dune exec examples/03-property-testing/test_geo.exe -- -v --seed s1:5b58964be30f69a8 --prop-count 1000 -f inverse
 geo: 1 test (seed s1:5b58964be30f69a8)
@@ -259,7 +248,6 @@ generator of sizes, lengths and counts. `Geo` groups shapes in drawings.
 
 `test/geo.ml`:
 
-<!-- file examples/03-property-testing/geo.ml from type drawing to let rec total_area -->
 ```ocaml
 type drawing = Shape of shape | Group of drawing list
 
@@ -279,7 +267,6 @@ let rec total_area = function
 
 `test/test_geo.ml`:
 
-<!-- file examples/03-property-testing/test_geo.ml from let rec gen_drawing to let total_area -->
 ```ocaml
 let rec gen_drawing depth =
   if depth = 0 then Gen.map (fun s -> Geo.Shape s) gen_shape
@@ -308,7 +295,6 @@ let total_area =
 If `total_area` subtracted the drawings of a group, shrinking would
 reduce the failing drawing to a group of one circle:
 
-<!-- run examples/03-property-testing/failing as examples/03-property-testing -->
 ```
 $ dune exec examples/03-property-testing/test_geo.exe -- --seed s1:5b58964be30f69a8 -f total_area
 geo: 1 test (seed s1:5b58964be30f69a8)

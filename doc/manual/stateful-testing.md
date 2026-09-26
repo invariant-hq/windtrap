@@ -10,7 +10,6 @@ capacity.
 
 `test/bounded_queue.ml`:
 
-<!-- file examples/04-stateful-testing/bounded_queue.ml -->
 ```ocaml
 exception Full
 exception Empty
@@ -46,7 +45,6 @@ The suite is `test/test_bounded_queue.ml`, built by a `(test)` stanza.
 
 `test/dune`:
 
-<!-- file examples/04-stateful-testing/dune -->
 ```lisp
 (test
  (name test_bounded_queue)
@@ -58,7 +56,6 @@ Its last line runs its two groups.
 
 `test/test_bounded_queue.ml`:
 
-<!-- file examples/04-stateful-testing/test_bounded_queue.ml from let () = -->
 ```ocaml
 let () = exit (run "bounded_queue" [ queue; regressions ])
 ```
@@ -85,7 +82,6 @@ resolves in the model, as `List.nth m (i mod List.length m)` under a
 
 `test/test_bounded_queue.ml`:
 
-<!-- file examples/04-stateful-testing/test_bounded_queue.ml from open Windtrap to let commands -->
 ```ocaml
 open Windtrap
 
@@ -123,7 +119,6 @@ queue that `push when full` needs.
 
 `test/test_bounded_queue.ml`:
 
-<!-- file examples/04-stateful-testing/test_bounded_queue.ml from let queue -->
 ```ocaml
 let queue =
   group "queue"
@@ -141,7 +136,6 @@ let queue =
 Under `-v`, a passing run prints the share of programs that reached
 capacity:
 
-<!-- run examples/04-stateful-testing -->
 ```
 $ dune exec examples/04-stateful-testing/test_bounded_queue.exe -- -v --seed s1:c26eddaeb764a645 -f behaves
 bounded_queue: 1 test (seed s1:c26eddaeb764a645)
@@ -162,7 +156,6 @@ line and `--seed` work as for a [property](property-testing.md).
 If `push` let one element too many in, shrinking would reduce the
 program to four pushes and a push on the full queue:
 
-<!-- run examples/04-stateful-testing/failing as examples/04-stateful-testing -->
 ```
 $ dune exec examples/04-stateful-testing/test_bounded_queue.exe -- --seed s1:c26eddaeb764a645 -f behaves
 bounded_queue: 1 test (seed s1:c26eddaeb764a645)
@@ -197,7 +190,6 @@ kept by copying its calls into a `test`:
 
 `test/test_bounded_queue.ml`:
 
-<!-- file examples/04-stateful-testing/test_bounded_queue.ml from let regressions -->
 ```ocaml
 let regressions =
   group "regressions"
@@ -212,7 +204,6 @@ let regressions =
 Against the same bug, the regression fails on every run, whatever the
 seed:
 
-<!-- run examples/04-stateful-testing/failing as examples/04-stateful-testing -->
 ```
 $ dune exec examples/04-stateful-testing/test_bounded_queue.exe -- -f regressions
 bounded_queue: 1 test

@@ -11,8 +11,8 @@ the coverage and mutation backends, pinned to `windtrap` with
 - [ ] `dune build`: zero warnings; warnings are treated as broken
       implementation, never silenced.
 - [ ] `dune runtest`: green, which includes the examples (the manual's
-      runnable mirror, one per chapter), the manual's and the README's
-      transcripts, the PPX expansion pins, and the conformance corpus.
+      runnable mirror, one per chapter), the PPX expansion pins, and the
+      conformance corpus.
 - [ ] The migration page (`doc/manual/migrating-from-0.1.md`) and the
       cookbook compile against the tree by hand. Nothing compiles them,
       so every replacement spelling and recipe is checked by reading,
@@ -35,9 +35,11 @@ the coverage and mutation backends, pinned to `windtrap` with
       the README against reality.
 - [ ] `SKILL.md` against the manual: it names
       commands, flags and stanzas, and nothing checks it.
-- [ ] A renderer change that moves a manual transcript fails
-      `dune runtest`; read each regenerated block before
-      `dune promote` accepts it.
+- [ ] Every command a `doc/manual/` page or the README shows is re-run
+      against its example, and its output is compared with the page's
+      block. Durations, seeds and absolute paths may differ; any other
+      difference is fixed on the page. A block that shows a failure
+      needs the edit its page describes, reverted afterwards.
 
 ## Versioning
 

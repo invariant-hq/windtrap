@@ -10,7 +10,6 @@ The snippets test `Shop`, a module of shopping carts.
 
 `test/shop.ml`:
 
-<!-- file examples/02-assertions/shop.ml -->
 ```ocaml
 type item = { name : string; price : int; quantity : int }
 
@@ -49,7 +48,6 @@ The suite is `test/test_assertions.ml`, built by a `(test)` stanza.
 
 `test/dune`:
 
-<!-- file examples/02-assertions/dune -->
 ```lisp
 (test
  (name test_assertions)
@@ -61,7 +59,6 @@ It opens `Windtrap` and declares a cart its tests share.
 
 `test/test_assertions.ml`:
 
-<!-- file examples/02-assertions/test_assertions.ml from open Windtrap to let bread -->
 ```ocaml
 open Windtrap
 
@@ -74,7 +71,6 @@ Its last line runs one group per section of this page.
 
 `test/test_assertions.ml`:
 
-<!-- file examples/02-assertions/test_assertions.ml from let () = -->
 ```ocaml
 let () =
   exit
@@ -107,7 +103,6 @@ The witness says how to compare and print values of a type: `int`,
 
 `test/test_assertions.ml`:
 
-<!-- file examples/02-assertions/test_assertions.ml from let subtotal -->
 ```ocaml
 let subtotal =
   group "subtotal"
@@ -122,7 +117,6 @@ let subtotal =
 If `subtotal` ignored the quantities, the failure would print both
 values, expected first:
 
-<!-- run examples/02-assertions/failing as examples/02-assertions -->
 ```
 $ dune exec examples/02-assertions/test_assertions.exe -- -f subtotal
 shop: 2 tests
@@ -148,7 +142,6 @@ locate a failure at the assertion's own line, pass the assertion
 
 `test/test_assertions.ml`:
 
-<!-- file examples/02-assertions/test_assertions.ml from let names -->
 ```ocaml
 let names =
   group "names"
@@ -161,7 +154,6 @@ let names =
 If `names` reversed the cart, the failure would be located at the
 assertion and show its source line:
 
-<!-- run examples/02-assertions/failing as examples/02-assertions -->
 ```
 $ dune exec examples/02-assertions/test_assertions.exe -- -f names
 shop: 1 test
@@ -189,7 +181,6 @@ block then prints the one rendering under `both sides render as:`.
 
 `test/test_assertions.ml`:
 
-<!-- file examples/02-assertions/test_assertions.ml from let item to let find -->
 ```ocaml
 let item = Testable.make ~pp:Shop.pp_item ~equal:( = )
 
@@ -206,7 +197,6 @@ let find =
 If `find` returned the first item of another name, the failures would
 print the items with `Shop.pp_item`:
 
-<!-- run examples/02-assertions/failing as examples/02-assertions -->
 ```
 $ dune exec examples/02-assertions/test_assertions.exe -- -f find
 shop: 2 tests
@@ -240,7 +230,6 @@ ignores it, as in `pair string pass`.
 
 `test/test_assertions.ml`:
 
-<!-- file examples/02-assertions/test_assertions.ml from let by_name to let remove -->
 ```ocaml
 let by_name = Testable.contramap (fun (item : Shop.item) -> item.name) string
 
@@ -255,7 +244,6 @@ let remove =
 If `remove` kept the named item instead of dropping it, the failure
 would print the names alone:
 
-<!-- run examples/02-assertions/failing as examples/02-assertions -->
 ```
 $ dune exec examples/02-assertions/test_assertions.exe -- -f remove
 shop: 1 test
@@ -279,7 +267,6 @@ compares bit for bit, and is the witness that asserts a NaN.
 
 `test/test_assertions.ml`:
 
-<!-- file examples/02-assertions/test_assertions.ml from let with_tax -->
 ```ocaml
 let with_tax =
   group "with_tax"
@@ -292,7 +279,6 @@ let with_tax =
 If `with_tax` multiplied the price by the rate alone, the failure would
 print both floats:
 
-<!-- run examples/02-assertions/failing as examples/02-assertions -->
 ```
 $ dune exec examples/02-assertions/test_assertions.exe -- -f with_tax
 shop: 1 test
@@ -316,7 +302,6 @@ line, which tells `""`, `" "` and `"\t"` apart.
 
 `test/test_assertions.ml`:
 
-<!-- file examples/02-assertions/test_assertions.ml from let receipt -->
 ```ocaml
 let receipt =
   group "receipt"
@@ -333,7 +318,6 @@ let receipt =
 The `subtotal` bug of the first section changes the receipt's last line,
 marked `-` for the expected text and `+` for the actual one:
 
-<!-- run examples/02-assertions/failing as examples/02-assertions -->
 ```
 $ dune exec examples/02-assertions/test_assertions.exe -- -f receipt
 shop: 1 test
@@ -365,7 +349,6 @@ of `lib/windtrap.mli`). `satisfies` checks any other claim and prints
 
 `test/test_assertions.ml`:
 
-<!-- file examples/02-assertions/test_assertions.ml from let discount -->
 ```ocaml
 let discount =
   group "discount"
@@ -381,7 +364,6 @@ let discount =
 
 If `discount` took an eighth of the price, both tests would fail:
 
-<!-- run examples/02-assertions/failing as examples/02-assertions -->
 ```
 $ dune exec examples/02-assertions/test_assertions.exe -- -f discount
 shop: 2 tests
@@ -414,7 +396,6 @@ through a function that returns an option. `is_some`, `is_none`,
 
 `test/test_assertions.ml`:
 
-<!-- file examples/02-assertions/test_assertions.ml from let parse_quantity -->
 ```ocaml
 let parse_quantity =
   group "parse_quantity"
@@ -433,7 +414,6 @@ let parse_quantity =
 If `parse_quantity` did not trim its input, `require_ok` would print the
 error with its `~pp`:
 
-<!-- run examples/02-assertions/failing as examples/02-assertions -->
 ```
 $ dune exec examples/02-assertions/test_assertions.exe -- -f parse_quantity
 shop: 2 tests
@@ -458,7 +438,6 @@ other. `mem` checks that a list holds an element.
 
 `test/test_assertions.ml`:
 
-<!-- file examples/02-assertions/test_assertions.ml from let label -->
 ```ocaml
 let label =
   group "label"
@@ -473,7 +452,6 @@ let label =
 If `label` swapped the quantity and the price, the failure would name
 the element that broke the chain and where the search found it:
 
-<!-- run examples/02-assertions/failing as examples/02-assertions -->
 ```
 $ dune exec examples/02-assertions/test_assertions.exe -- -f label
 shop: 2 tests
@@ -501,7 +479,6 @@ diff of the two.
 
 `test/test_assertions.ml`:
 
-<!-- file examples/02-assertions/test_assertions.ml from let validation -->
 ```ocaml
 let validation =
   group "validation"
@@ -519,7 +496,6 @@ let validation =
 If `Shop.item` accepted any quantity, both failures would say that
 nothing was raised:
 
-<!-- run examples/02-assertions/failing as examples/02-assertions -->
 ```
 $ dune exec examples/02-assertions/test_assertions.exe -- -f validation
 shop: 2 tests
@@ -555,7 +531,6 @@ branch the test must not reach, and `skip` ends the test as skipped.
 
 `test/test_assertions.ml`:
 
-<!-- file examples/02-assertions/test_assertions.ml from let rates -->
 ```ocaml
 let rates =
   group "rates"
@@ -572,7 +547,6 @@ let rates =
 
 With the `with_tax` bug above, the first rate fails:
 
-<!-- run examples/02-assertions/failing as examples/02-assertions -->
 ```
 $ dune exec examples/02-assertions/test_assertions.exe -- -f rates
 shop: 1 test

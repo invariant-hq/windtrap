@@ -12,6 +12,3 @@ references `Half_b`, which is absent from its dump, and `test_b` calls
 `Half_a.greet`, which brings every point of `Half_a` into its dump. The
 percentages of two suites never add up; the project's number is the merge
 of every dump.
-
-`instrumented/` builds the same suites with the backend applied, for the
-page's transcripts.

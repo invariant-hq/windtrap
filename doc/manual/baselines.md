@@ -11,7 +11,6 @@ greeting.
 
 `test/mytool.ml`:
 
-<!-- file examples/05-baselines/mytool.ml -->
 ```ocaml
 let help () =
   String.concat "\n"
@@ -43,7 +42,6 @@ rewrites it.
 
 `test/test_mytool.ml`:
 
-<!-- file examples/05-baselines/test_mytool.ml from open Windtrap to let report_counts_the_rows -->
 ```ocaml
 open Windtrap
 
@@ -68,7 +66,6 @@ is.
 
 `test/help.expected`:
 
-<!-- file examples/05-baselines/help.expected -->
 ```
 Usage: mytool [OPTIONS] COMMAND
 
@@ -85,7 +82,6 @@ file.
 
 `test/test_mytool.ml`:
 
-<!-- file examples/05-baselines/test_mytool.ml from let messages -->
 ```ocaml
 let messages =
   group "messages"
@@ -116,7 +112,6 @@ The suite's last line runs the group.
 
 `test/test_mytool.ml`:
 
-<!-- file examples/05-baselines/test_mytool.ml from let () = -->
 ```ocaml
 let () = exit (run "mytool" [ messages ])
 ```
@@ -128,7 +123,6 @@ correction. `(deps …)` names every file an `expect_file` reads.
 
 `test/dune`:
 
-<!-- file examples/05-baselines/dune from (test -->
 ```lisp
 (test
  (name test_mytool)
@@ -145,7 +139,6 @@ correction. `(deps …)` names every file an `expect_file` reads.
 With every baseline current, `dune runtest` prints the suite's line and
 one line per file of the library's expect tests (see below):
 
-<!-- run examples/05-baselines -->
 ```
 $ dune runtest
 mytool: 3 passed in 0.6ms.
@@ -160,7 +153,6 @@ To see a stale expectation, change `processed` to `read` in
 lines with `-`, the produced lines with `+`, and the command that
 accepts the change. Dune then prints its own diff of the source file:
 
-<!-- run examples/05-baselines/failing as examples/05-baselines -->
 ```
 $ dune runtest
 mytool: 3 tests
@@ -222,7 +214,6 @@ accepted and the tests run again.
 A suite run by hand writes no correction, and its `accept:` line reruns
 the test with `-u`:
 
-<!-- run examples/05-baselines/failing as examples/05-baselines -->
 ```
 $ dune exec examples/05-baselines/test_mytool.exe
 mytool: 3 tests
@@ -246,7 +237,6 @@ To accept, run the line. `-u` rewrites the literal in place, and its
 row under `corrections` says to build the executable again before the
 next run:
 
-<!-- run examples/05-baselines/failing as examples/05-baselines -->
 ```
 $ dune exec examples/05-baselines/test_mytool.exe -- -u -f 'messages › the report counts the rows'
 mytool: 1 test
@@ -274,7 +264,6 @@ An expect test lives next to the code it tests, in a library with
 
 `test/dune`:
 
-<!-- file examples/05-baselines/dune from (library -->
 ```lisp
 (library
  (name tokenizer)
@@ -289,7 +278,6 @@ what the test printed since the previous node.
 
 `test/tokens.ml`:
 
-<!-- file examples/05-baselines/tokens.ml -->
 ```ocaml
 type token = Int of int | Plus | Eof
 
@@ -347,7 +335,6 @@ comparison and before a correction is written.
 
 `test/timing.ml`:
 
-<!-- file examples/05-baselines/timing.ml -->
 ```ocaml
 module Expect_test_config = struct
   include Expect_test_config

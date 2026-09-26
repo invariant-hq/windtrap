@@ -16,7 +16,6 @@ print that directory's paths.
 `dune runtest` builds and runs every `(test)` stanza of the project. A
 suite with nothing to report prints one line:
 
-<!-- run examples/06-resources-and-structure -->
 ```
 $ dune runtest
 storage: 12 passed, 2 skipped, 1 expected failure in 2.8ms.
@@ -34,7 +33,6 @@ a terminal a dim line names the running test. Under `dune exec` the report is st
 its output goes to a pipe or a file, and `--color=never` turns the
 styling off. `-v` prints a line per test:
 
-<!-- run examples/06-resources-and-structure -->
 ```
 $ dune exec examples/06-resources-and-structure/test_storage.exe -- -v -f 'process state'
 storage: 3 tests
@@ -51,7 +49,6 @@ storage: 3 tests
 one of the `-f` patterns and none of the `-e` patterns. A bare pattern
 is one `-f`. `-l` prints the paths a selection keeps, and runs nothing:
 
-<!-- run examples/06-resources-and-structure -->
 ```
 $ dune exec examples/06-resources-and-structure/test_storage.exe -- -l -f server -e backup
 server › it answers a ping
@@ -65,7 +62,6 @@ server › reindexing keeps it running
 `--exclude-tag TAG` drops those that carry any. A test declared with
 `slow` carries the tag `slow`:
 
-<!-- run examples/06-resources-and-structure -->
 ```
 $ dune exec examples/06-resources-and-structure/test_storage.exe -- -l --tag slow
 server › reindexing keeps it running
@@ -77,7 +73,6 @@ A selection given on the command line that keeps no test runs nothing,
 says why, and exits `2`. The last line is the command that lists the
 suite's tests:
 
-<!-- run examples/06-resources-and-structure -->
 ```
 $ dune exec examples/06-resources-and-structure/test_storage.exe -- -f servr
 storage: no tests ran: filter "servr" matched none of 15 tests.
@@ -94,7 +89,6 @@ lists each one. A mirror reaches every stanza of the project. A stanza
 whose tests a mirror's filter misses says so and passes, as the
 library's tests do here:
 
-<!-- run examples/06-resources-and-structure -->
 ```
 $ WINDTRAP_FILTER=gpu dune runtest --force
 storage: 2 skipped in 0.4ms.
@@ -115,7 +109,6 @@ again. Dune prints the stanza above the output of a suite that fails.
 The report opens on the number of tests, prints a block per failure as
 its test ends, and closes on the counts:
 
-<!-- run examples/06-resources-and-structure/failing as examples/06-resources-and-structure -->
 ```
 $ dune runtest
 File "examples/06-resources-and-structure/dune", line 2, characters 7-19:
@@ -144,7 +137,6 @@ keep one record, so after a failing `dune runtest`,
 `dune exec test/test_storage.exe -- --failed` reruns its failures. The
 two commands below pass `-o` to keep this page's record apart:
 
-<!-- run examples/06-resources-and-structure/failing as examples/06-resources-and-structure -->
 ```
 $ dune exec examples/06-resources-and-structure/test_storage.exe -- -o _build/rerun
 storage: 15 tests
@@ -192,7 +184,6 @@ fails.
 server's first test wrapped as `focus (test "it answers a ping" …)`, one
 test runs, and the run warns on standard error:
 
-<!-- run examples/06-resources-and-structure/focused as examples/06-resources-and-structure -->
 ```
 $ dune exec examples/06-resources-and-structure/test_storage.exe
 storage: 1 passed in 1.0ms.
@@ -205,7 +196,6 @@ The runner is under CI when `CI` is set to a true value (see the
 command-line section of `lib/windtrap.mli`). A suite that holds a
 `focus` is then refused, with the focus named:
 
-<!-- run examples/06-resources-and-structure/focused as examples/06-resources-and-structure -->
 ```
 $ CI=true dune exec examples/06-resources-and-structure/test_storage.exe
 windtrap: focused tests committed (focus at examples/06-resources-and-structure/server_tests.ml:10); remove focus to run under CI
@@ -215,7 +205,6 @@ windtrap: focused tests committed (focus at examples/06-resources-and-structure/
 report is folded in a group, and each failure adds an annotation to the
 workflow run:
 
-<!-- run examples/06-resources-and-structure/failing as examples/06-resources-and-structure -->
 ```
 $ CI=true GITHUB_ACTIONS=true dune exec examples/06-resources-and-structure/test_storage.exe
 ::group::storage
@@ -241,7 +230,6 @@ so `WINDTRAP_JUNIT=_build/junit dune runtest` writes one file per suite
 under the project's `_build/junit`. `--shard K/N` keeps bucket `K` of `N` of the selection,
 the same on every machine, so `N` jobs run each test once:
 
-<!-- run examples/06-resources-and-structure -->
 ```
 $ dune exec examples/06-resources-and-structure/test_storage.exe -- -l --shard 1/2
 database › an insert adds one row
@@ -264,7 +252,6 @@ the call fails its test.
 `--help` lists every flag with its mirror, and the variables that no
 flag sets:
 
-<!-- run examples/06-resources-and-structure -->
 ```
 $ dune exec examples/06-resources-and-structure/test_storage.exe -- --help
 test_storage.exe - windtrap test runner

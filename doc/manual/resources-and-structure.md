@@ -24,7 +24,6 @@ them.
 
 `test/test_storage.ml`:
 
-<!-- file examples/06-resources-and-structure/test_storage.ml -->
 ```ocaml
 let () =
   exit
@@ -42,7 +41,6 @@ one executable.
 
 `test/dune`:
 
-<!-- file examples/06-resources-and-structure/dune from (test -->
 ```lisp
 (test
  (name test_storage)
@@ -58,7 +56,6 @@ running test's path, to name a file after the test.
 A test left out of the list does not run. `-l` prints the paths of the
 tests that do, and runs nothing:
 
-<!-- run examples/06-resources-and-structure -->
 ```
 $ dune exec examples/06-resources-and-structure/test_storage.exe -- -l
 database › an insert adds one row
@@ -88,7 +85,6 @@ each runner runs its own tests alone.
 
 `test/dune`:
 
-<!-- file examples/06-resources-and-structure/dune from (library -->
 ```lisp
 (library
  (name keys)
@@ -102,7 +98,6 @@ each runner runs its own tests alone.
 
 `test/keys.mli`:
 
-<!-- file examples/06-resources-and-structure/keys.mli -->
 ```ocaml
 val valid : string -> bool
 (** [valid name] is [true] iff [name], trimmed and lowercased, is a word of
@@ -117,7 +112,6 @@ compares printed output.
 
 `test/keys.ml`:
 
-<!-- file examples/06-resources-and-structure/keys.ml -->
 ```ocaml
 let normalize name = String.lowercase_ascii (String.trim name)
 
@@ -140,7 +134,6 @@ end
 `dune runtest` runs the suite, then the library's tests, one line per
 file:
 
-<!-- run examples/06-resources-and-structure -->
 ```
 $ dune runtest
 storage: 12 passed, 2 skipped, 1 expected failure in 3.5ms.
@@ -158,7 +151,6 @@ constructor for every test that needs the resource.
 
 `test/db_tests.ml`:
 
-<!-- file examples/06-resources-and-structure/db_tests.ml -->
 ```ocaml
 open Windtrap
 
@@ -203,7 +195,6 @@ body's.
 `name input`, as `a name is stored` above. Each input is a test of its
 own, so one that fails does not stop the others, and `-f` selects one:
 
-<!-- run examples/06-resources-and-structure -->
 ```
 $ dune exec examples/06-resources-and-structure/test_storage.exe -- -v -f 'a name is stored › bob'
 storage: 1 test
@@ -232,7 +223,6 @@ as a session that exists only inside `Server.with_session`.
 
 `test/server_tests.ml`:
 
-<!-- file examples/06-resources-and-structure/server_tests.ml -->
 ```ocaml
 open Windtrap
 
@@ -261,7 +251,6 @@ a `teardown` that waits on the outside world needs a deadline of its own
 Under `-v` the runner names each fixture it releases, with the line
 where `fixture` was applied:
 
-<!-- run examples/06-resources-and-structure -->
 ```
 $ dune exec examples/06-resources-and-structure/test_storage.exe -- -v -f server
 storage: 4 tests
@@ -299,7 +288,6 @@ with the same reason.
 
 `test/gpu_tests.ml`:
 
-<!-- file examples/06-resources-and-structure/gpu_tests.ml -->
 ```ocaml
 open Windtrap
 
@@ -320,7 +308,6 @@ let gpu =
 
 The summary counts the skips, and `-v` prints each with its reason:
 
-<!-- run examples/06-resources-and-structure -->
 ```
 $ dune exec examples/06-resources-and-structure/test_storage.exe -- -v -f gpu
 storage: 2 tests
@@ -339,7 +326,6 @@ every outcome.
 
 `test/process_tests.ml`:
 
-<!-- file examples/06-resources-and-structure/process_tests.ml -->
 ```ocaml
 open Windtrap
 
@@ -409,7 +395,6 @@ report says it was expected to fail. In
 mutant. Under `-v` the failure prints dim
 under its `XFAIL` line:
 
-<!-- run examples/06-resources-and-structure -->
 ```
 $ dune exec examples/06-resources-and-structure/test_storage.exe -- -v -f duplicate
 storage: 1 test
