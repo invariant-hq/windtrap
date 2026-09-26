@@ -1542,7 +1542,7 @@ let armed_tests =
           r.b_others);
   ]
 
-(* Guarantee 12's read-only clause, through the runner it exists for.
+(* Armed checking is read-only, through the runner it exists for.
 
    The inline runtime records its correction directory at module load
    ([Sys.getcwd ()]) and, for a recorded source [f], re-reads

@@ -703,7 +703,7 @@ let arming_tests =
         is_false ~msg:"the previous mutant is no longer armed" (g 0);
         ignore (drain ()));
     test "arming a second mutant disarms the first, budget included" (fun () ->
-        (* At most one mutant is armed per process (guarantee 12), and the two
+        (* At most one mutant is armed per process, and the two
            live in different files - so this bites the disarm [arm] does
            before it resolves, not the overwrite of one file's slot. *)
         let ga =

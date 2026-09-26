@@ -5,7 +5,7 @@
 
 (* Tests for coverage's reporting surface: a real windtrap run over an
    instrumented-like executable, which prints no number of its own (the
-   dump is the report, and guarantee 10's exit codes hold), the at_exit dump
+   dump is the report, and the exit codes hold), the at_exit dump
    feeding the reporting command (under a build directory and, for a
    tree built without one, under _windtrap) and `windtrap coverage` end
    to end (walk-up discovery, merge across two executables, the
@@ -145,7 +145,7 @@ let dump_is_the_report =
               digest = Digest.to_hex (Digest.file child_exe);
             })
   | None -> fail "the child's dump does not load");
-  (* Guarantee 10: coverage never changes outcomes or exit codes. *)
+  (* Coverage never changes outcomes or exit codes. *)
   let code, _, _, dump =
     child
       ~env:(("CHILD_FAIL", "1") :: child_src_env)
@@ -681,7 +681,7 @@ let loud_failures =
   contains ~msg:"no files: the hint names the backend, not a build tool"
     ~sub:"ppx_windtrap.coverage" err;
   not_contains ~msg:"and spells no dune command" ~sub:"dune " err;
-  (* Corrupt and foreign files are rejected loudly (guarantee 11). *)
+  (* Corrupt and foreign files are rejected loudly. *)
   let corrupt = scratch "corrupt" in
   write_file
     (Filename.concat corrupt "_build/_coverage/bad.coverage")

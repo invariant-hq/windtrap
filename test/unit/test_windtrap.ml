@@ -419,7 +419,7 @@ let () =
   check "skip is not a failure"
     (outcome_of outcome [ "skipped" ] = Some (Failure.Skip (Some "not today")))
 
-(* A nonempty selection whose every test skipped exits 0 (guarantee 9). *)
+(* A nonempty selection whose every test skipped exits 0. *)
 let () =
   with_temp_root @@ fun root ->
   let config = base_config ~log_dir:root () in

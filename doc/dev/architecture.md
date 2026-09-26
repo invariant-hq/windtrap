@@ -208,55 +208,55 @@ a lossy `%g` spelling is asked for at the call site.
   means the executable links two incompatible instrumentations; it is
   dropped with a warning on standard error rather than raised, because
   `register` runs at module load inside the user's program and
-  instrumentation never changes what programs mean (guarantee 10). A
-  rebuild from clean is the fix.
+  instrumentation never changes what programs mean. A rebuild from
+  clean is the fix.
 
 ## The twelve guarantees
 
 Changing one is a design decision, recorded here first.
 
-1. **Checking never writes to the source tree.** `-u` writes in place,
-   atomically, and is refused under `CI`; `--corrected` writes
-   `<file>.corrected` beside the file for dune to diff and promote,
-   never the file itself.
-2. **A baseline is where the source says it is**: a literal at its own
-   position, which the compiler recomputes on every build, or a file at
-   the path the call names; nothing is derived from a test's name or
-   declaration site, so no edit can orphan a baseline.
-3. **Every mismatch prints an acceptance command**: `dune promote` and
-   its file in its block under a stanza that diffs, otherwise one `-u`
-   over the run's selection above the summary.
-4. **Failures are data; renderers are projections** and cannot alter
-   status, counts or scheduling.
-5. **A failing test's captured output is in its report**, bounded, with
-   the full log's path, less what the test read with `output ()`.
-6. **Every generator shrinks; printers derive by composition**, a
-   printerless `map` or `bind` renders its pre-image, and `with_pp`
-   overrides.
-7. **Per-case seeds derive from (root, path, index)**; every failure
-   replays from the printed token, within one version of windtrap: the
-   derivation and the bit stream are frozen under the token's `s1` prefix,
-   what a generator draws from the stream is not.
-8. **Every user callback runs inside a test's boundary, and a resource
-   acquired is released on every path where the runner regains
-   control.**
-9. **The exit code is 0, 1 or 2**: passed, failed, nothing ran. Under
-   `--corrected` a recorded correction is not a failure, because the
-   `diff?` that follows is the verdict. What the environment broadcasts
-   is not an error of a suite that cannot honour it: a selection that
-   only the mirrors gave and that empties a suite returns 0, and
-   `WINDTRAP_MUTATE` on a suite with no mutant to test runs it
-   ordinarily (a command-line selection keeps 2, `--mutate` its
-   refusal, and usage errors stay 2).
-10. **Coverage never changes what programs or tests mean**, and the gate
-    lives only in the reporting command.
-11. **Instrumentation data is transient, versioned, and never touches
-    the source tree**, with one exception: an instrumented executable that
-    lies below no build directory writes under `_windtrap/` in its working
-    directory. A mutant catalogue is a literal in the binary.
-12. **A mutant changes meaning only when armed, only in a build that
-    asked, and only in the process that armed it**: a forked child of
-    the `--mutate` loop, or the run itself under `--arm`; an armed
-    process announces it before any output and concludes with one
-    verdict line; armed checking is read-only; the aggregate is the one
-    mutation exit code a build may gate on.
+- **Checking never writes to the source tree.** `-u` writes in place,
+  atomically, and is refused under `CI`; `--corrected` writes
+  `<file>.corrected` beside the file for dune to diff and promote,
+  never the file itself.
+- **A baseline is where the source says it is**: a literal at its own
+  position, which the compiler recomputes on every build, or a file at
+  the path the call names; nothing is derived from a test's name or
+  declaration site, so no edit can orphan a baseline.
+- **Every mismatch prints an acceptance command**: `dune promote` and
+  its file in its block under a stanza that diffs, otherwise one `-u`
+  over the run's selection above the summary.
+- **Failures are data; renderers are projections** and cannot alter
+  status, counts or scheduling.
+- **A failing test's captured output is in its report**, bounded, with
+  the full log's path, less what the test read with `output ()`.
+- **Every generator shrinks; printers derive by composition**, a
+  printerless `map` or `bind` renders its pre-image, and `with_pp`
+  overrides.
+- **Per-case seeds derive from (root, path, index)**; every failure
+  replays from the printed token, within one version of windtrap: the
+  derivation and the bit stream are frozen under the token's `s1` prefix,
+  what a generator draws from the stream is not.
+- **Every user callback runs inside a test's boundary, and a resource
+  acquired is released on every path where the runner regains
+  control.**
+- **The exit code is 0, 1 or 2**: passed, failed, nothing ran. Under
+  `--corrected` a recorded correction is not a failure, because the
+  `diff?` that follows is the verdict. What the environment broadcasts
+  is not an error of a suite that cannot honour it: a selection that
+  only the mirrors gave and that empties a suite returns 0, and
+  `WINDTRAP_MUTATE` on a suite with no mutant to test runs it
+  ordinarily (a command-line selection keeps 2, `--mutate` its
+  refusal, and usage errors stay 2).
+- **Coverage never changes what programs or tests mean**, and the gate
+  lives only in the reporting command.
+- **Instrumentation data is transient, versioned, and never touches
+  the source tree**, with one exception: an instrumented executable that
+  lies below no build directory writes under `_windtrap/` in its working
+  directory. A mutant catalogue is a literal in the binary.
+- **A mutant changes meaning only when armed, only in a build that
+  asked, and only in the process that armed it**: a forked child of
+  the `--mutate` loop, or the run itself under `--arm`; an armed
+  process announces it before any output and concludes with one
+  verdict line; armed checking is read-only; the aggregate is the one
+  mutation exit code a build may gate on.

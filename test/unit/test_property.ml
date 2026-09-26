@@ -15,7 +15,7 @@ module Shrink_tree = Gen_engine.Shrink_tree
 let contains needle haystack = Text.contains_substring ~pattern:needle haystack
 
 (* One fixed root for most tests: outcomes are deterministic across runs and
-   machines (guarantee 7), so every assertion below is exact. *)
+   machines, so every assertion below is exact. *)
 let root = 0x00c0ffee1234abcdL
 
 let property_payload (failure : Failure.t) =

@@ -423,7 +423,7 @@ let test_header_forms () =
   equal ~msg:"header: compact prints nothing at the start" string "" compact
 
 let test_seed_token_consistency () =
-  (* Guarantee 7: the replay line prints exactly the token the header printed. *)
+  (* The replay line prints exactly the token the header printed. *)
   let token = Seed.to_string Fixtures.root in
   let t = transcript () in
   contains ~msg:"header carries the root token"
@@ -6454,7 +6454,7 @@ let tests =
     test "live progress line (verbose)" test_live;
     test "live compact tail" test_live_compact_tail;
     test "header forms" test_header_forms;
-    test "seed token consistency (guarantee 7)" test_seed_token_consistency;
+    test "seed token consistency" test_seed_token_consistency;
     test "duration forms" test_duration_forms;
     test "create validation" test_create_validation;
     test "empty run" test_no_tests;

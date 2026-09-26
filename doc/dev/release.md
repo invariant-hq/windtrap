@@ -23,12 +23,12 @@ the coverage and mutation backends, pinned to `windtrap` with
       reports the byte-identical share of the corrections. If a count
       moved since the last release, the release notes say why.
 - [ ] Both semantics-preservation suites green (`test/ppx/coverage/semantics/`
-      and `test/ppx/mutate/semantics/`), which nothing waives
-      (guarantees 10 and 12 in `architecture.md`; see `testing.md`).
+      and `test/ppx/mutate/semantics/`), which nothing waives (the
+      coverage and mutant guarantees in `architecture.md`).
 - [ ] Instrumented smoke run:
       `dune runtest --force --instrument-with ppx_windtrap.coverage` still
-      green with no change in outcomes, counts or exit codes (guarantee
-      10), then `dune exec windtrap -- coverage` reports the tree.
+      green with no change in outcomes, counts or exit codes, then
+      `dune exec windtrap -- coverage` reports the tree.
 - [ ] Docs current: `doc/manual/` pages against `lib/windtrap.mli`
       (the `.mli` is the truth), the migration page against the surface,
       the README against reality.
