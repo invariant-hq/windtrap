@@ -1,7 +1,6 @@
 (tests
  (names
   test_os
-  test_gen
   test_property
   test_stateful
   test_report
@@ -9,7 +8,6 @@
   test_cli)
  (modules
   test_os
-  test_gen
   test_property
   test_stateful
   test_report
@@ -27,6 +25,15 @@
  ; change with `test_report.exe -u`.
  (deps
   (glob_files_rec expected/**)))
+
+(test
+ (name test_gen)
+ (modules test_gen)
+ (libraries windtrap)
+ (action
+  (progn
+   (run %{test} --corrected)
+   (diff? test_gen.ml test_gen.ml.corrected))))
 
 (test
  (name test_failure)
