@@ -90,7 +90,7 @@ The manual, [`doc/manual/`](doc/manual/), has one page per need:
   [`ppx/ppx_windtrap.mli`](ppx/ppx_windtrap.mli) for the inline test forms.
 
 A coding agent starts with the skill
-[`skills/windtrap-testing/SKILL.md`](skills/windtrap-testing/SKILL.md).
+[`SKILL.md`](SKILL.md).
 [`CHANGES.md`](CHANGES.md) lists the changes of each release. Questions
 are welcome on the [OCaml forum](https://discuss.ocaml.org/).
 

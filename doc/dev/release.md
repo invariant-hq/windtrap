@@ -33,7 +33,7 @@ the coverage and mutation backends, pinned to `windtrap` with
 - [ ] Docs current: `doc/manual/` pages against `lib/windtrap.mli`
       (the `.mli` is the truth), the migration page against the surface,
       the README against reality.
-- [ ] `skills/windtrap-testing/SKILL.md` against the manual: it names
+- [ ] `SKILL.md` against the manual: it names
       commands, flags and stanzas, and nothing checks it.
 - [ ] A renderer change that moves a manual transcript fails
       `dune runtest`; read each regenerated block before
