@@ -213,8 +213,7 @@ a lossy `%g` spelling is asked for at the call site.
 
 ## The twelve guarantees
 
-Each is pinned by the tests that `testing.md` names under "What pins
-the guarantees"; changing one is a design decision, recorded here first.
+Changing one is a design decision, recorded here first.
 
 1. **Checking never writes to the source tree.** `-u` writes in place,
    atomically, and is refused under `CI`; `--corrected` writes
