@@ -1037,8 +1037,9 @@ val expect : string -> pos * string -> unit
 
     A mismatch records a failure located at the line of [__POS_OF__] and
     returns. The position is the compiler's, so a call that moves keeps its
-    baseline. A call several tests share, as under {!cases}, must produce one
-    text.
+    baseline. Every test that checks one literal, as a {!cases} body does for
+    each row, must produce one text. A literal each row carries, as in
+    [(input, __POS_OF__ {|…|})], is checked and corrected for its row alone.
 
     When the source changed since the build, or cannot be read, a correcting run
     keeps no correction for the literal: the expectation fails, under [-u] too.

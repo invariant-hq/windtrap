@@ -203,7 +203,10 @@ storage: 1 test
 ```
 
 The inputs and their names are computed when the suite is declared,
-outside any test (see `Windtrap.cases`).
+outside any test (see `Windtrap.cases`). An input can carry its test's
+expected text as a `__POS_OF__` literal, which `expect` checks and a
+correction rewrites for that input alone (see
+[Giving each row of a table its own literal](baselines.md#giving-each-row-of-a-table-its-own-literal)).
 
 ## Naming the parts of one test
 

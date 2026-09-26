@@ -78,8 +78,8 @@ Options:
   --help   Show this help
 ```
 
-The group lists the three tests of the suite, the second one on the
-file.
+The group lists the tests of the suite. The second one is on the file,
+and the last is a table of one test per user.
 
 `test/test_mytool.ml`:
 
@@ -90,9 +90,14 @@ let messages =
       test "the report counts the rows" report_counts_the_rows;
       test "the help lists the commands" (fun () ->
           expect_file (Mytool.help ()) "examples/05-baselines/help.expected");
-      test "the greeting names the user" (fun () ->
-          Mytool.greet "Ada";
-          expect (output ()) @@ __POS_OF__ {| Hello, Ada! |});
+      cases "the greeting names the user" ~name:fst
+        [
+          ("Ada", __POS_OF__ {| Hello, Ada! |});
+          ("Grace", __POS_OF__ {| Hello, Grace! |});
+        ]
+        (fun (name, greeting) ->
+          Mytool.greet name;
+          expect (output ()) greeting);
     ]
 ```
 
@@ -104,9 +109,18 @@ fails. Outside dune, `-u` writes the missing file.
 
 ## Checking printed output
 
-The third test compares what it printed. `output ()` is what the running
-test wrote to standard output and standard error since the previous call
-(see `Windtrap.output`), and `expect` takes it as any other text.
+The greeting's tests compare what they printed. `output ()` is what the
+running test wrote to standard output and standard error since the
+previous call (see `Windtrap.output`), and `expect` takes it as any
+other text.
+
+## Giving each row of a table its own literal
+
+A row of `cases` can carry its own literal, as the greeting's rows do.
+`expect` checks each row against its literal, and `dune promote` or
+`-u` rewrites the literals of the stale rows alone (see
+`Windtrap.expect`). A literal written in the body of `cases` is shared,
+and every row must produce its one text.
 
 ## Running expectations under dune
 
@@ -121,7 +135,9 @@ let () = exit (run "mytool" [ messages ])
 The stanza runs the suite with `--corrected`, which writes the
 correction of a stale baseline beside its file as `<file>.corrected`.
 Each `diff?` then compares one file that holds baselines with its
-correction. `(deps …)` names every file an `expect_file` reads.
+correction. `(deps …)` names every file an `expect_file` reads. The
+stanza spells a path from its own directory, as `help.expected`, where
+the call spells it from the project root.
 
 `test/dune`:
 
@@ -143,9 +159,9 @@ one line per file of the library's expect tests (see below):
 
 ```
 $ dune runtest
-mytool: 3 passed in 0.6ms.
-tokenizer/timing.ml: 1 passed in 0.5ms.
-tokenizer/tokens.ml: 2 passed in 0.5ms.
+mytool: 4 passed in 0.9ms.
+tokenizer/timing.ml: 1 passed in 0.8ms.
+tokenizer/tokens.ml: 2 passed in 1.6ms.
 ```
 
 ## Reading a stale expectation
@@ -157,7 +173,7 @@ accepts the change. Dune then prints its own diff of the source file:
 
 ```
 $ dune runtest
-mytool: 3 tests
+mytool: 4 tests
 ──────────────────────── failures ────────────────────────
   FAIL  messages › the report counts the rows
     examples/05-baselines/test_mytool.ml:5
@@ -174,10 +190,10 @@ mytool: 3 tests
 corrections (1):
   wrote examples/05-baselines/test_mytool.ml.corrected (1 expectation)
 
-2 passed, 1 failed, 1 correction written in 0.8ms.
+3 passed, 1 failed, 1 correction written in 1.1ms.
 File "examples/05-baselines/test_mytool.ml", line 1, characters 0-0:
 diff --git a/_build/default/examples/05-baselines/test_mytool.ml b/_build/default/examples/05-baselines/test_mytool.ml.corrected
-index 2ef2112..d9ba548 100644
+index fd329b0..8d0b6e0 100644
 --- a/_build/default/examples/05-baselines/test_mytool.ml
 +++ b/_build/default/examples/05-baselines/test_mytool.ml.corrected
 @@ -3,7 +3,7 @@ open Windtrap
@@ -189,8 +205,6 @@ index 2ef2112..d9ba548 100644
      status: ok
      |}
  
-tokenizer/timing.ml: 1 passed in 0.5ms.
-tokenizer/tokens.ml: 2 passed in 0.5ms.
 ```
 
 ## Accepting a change
@@ -219,7 +233,7 @@ A suite run by hand writes no correction. Its report closes on one
 
 ```
 $ dune exec examples/05-baselines/test_mytool.exe
-mytool: 3 tests
+mytool: 4 tests
 ──────────────────────── failures ────────────────────────
   FAIL  messages › the report counts the rows
     examples/05-baselines/test_mytool.ml:5
@@ -233,7 +247,7 @@ mytool: 3 tests
 ──────────────────────────────────────────────────────────
 
 accept: dune exec examples/05-baselines/test_mytool.exe -- -u
-2 passed, 1 failed in 1.6ms.
+3 passed, 1 failed in 1.7ms.
 ```
 
 To accept, run the line. `-u` rewrites every stale literal in place, and
@@ -242,11 +256,11 @@ next run:
 
 ```
 $ dune exec examples/05-baselines/test_mytool.exe -- -u
-mytool: 3 tests
+mytool: 4 tests
 corrections (1):
   accepted examples/05-baselines/test_mytool.ml (1 expectation; rebuild before the tests see it)
 
-3 passed, 1 correction accepted in 2.2ms.
+4 passed, 1 correction accepted in 0.9ms.
 ```
 
 Review the change with `git diff`. `-u` is refused under CI (see

@@ -508,6 +508,69 @@ let promotion =
 
 let promoted name = List.assoc name promotion
 
+(* A table whose rows carry their own literals, checked, then accepted with
+   -u into a copy of this file under a scratch root. *)
+let rows =
+  [
+    ("same", __POS_OF__ {| same |});
+    ("new one", __POS_OF__ {| old one |});
+    ("new two", __POS_OF__ {| old two |});
+  ]
+
+let row_line (_, ((_, line, _, _), _)) = line
+
+let checked_rows, accepted_rows, row_copy =
+  let root = Scratch.dir "windtrap-rows-" in
+  let copy = Filename.concat root __FILE__ in
+  Os.mkdir_p (Filename.dirname copy);
+  write copy
+    (read (Filename.concat (Filename.dirname Sys.executable_name) this_file));
+  let table =
+    cases "rows" ~name:fst rows (fun (text, literal) -> expect text literal)
+  in
+  let run baseline =
+    Recorded.execute ~env:(project [] root)
+      ~config:(fun c -> { c with baseline })
+      [ table ]
+  in
+  let checked = run Baseline.Check in
+  (checked, run Baseline.Update, copy)
+
+let each_row_checks_its_literal () =
+  let outcome (name, _) =
+    let path = [ "rows"; name ] in
+    match Recorded.failures checked_rows path with
+    | [] -> strf "%s: %s" name (Recorded.row checked_rows path)
+    | failures ->
+        let lines =
+          List.map
+            (fun (f : Failure.t) -> string_of_int (require_some f.loc).Loc.line)
+            failures
+        in
+        strf "%s: failed at line %s" name (String.concat ", " lines)
+  in
+  equal (list string)
+    [
+      "same: pass";
+      strf "new one: failed at line %d" (row_line (List.nth rows 1));
+      strf "new two: failed at line %d" (row_line (List.nth rows 2));
+    ]
+    (List.map outcome rows)
+
+let each_row_is_corrected_alone () =
+  let lines = String.split_on_char '\n' (read row_copy) in
+  let at row = String.trim (List.nth lines (row_line row - 1)) in
+  equal (list string)
+    [
+      {x|("same", __POS_OF__ {| same |});|x};
+      {x|("new one", __POS_OF__ {| new one |});|x};
+      {x|("new two", __POS_OF__ {| new two |});|x};
+    ]
+    (List.map at rows);
+  equal (list string)
+    [ strf "wrote %s, 2" (Windtrap_test_support.slashed row_copy) ]
+    (written accepted_rows)
+
 (* An expect_file failure at a given position. *)
 let placed_file =
   let root = Scratch.dir "windtrap-placed-" in
@@ -539,6 +602,9 @@ let baselines =
             (read_as [ "stale" ], read_as [ "stale exact" ]));
       test "a literal's mismatch is located at its __POS_OF__"
         a_literal_is_located_at_its_position;
+      test "each row of a cases table is checked against the literal it carries"
+        each_row_checks_its_literal;
+      test "-u corrects each row's literal alone" each_row_is_corrected_alone;
       test "expect_file locates its failure at the __POS__ given" (fun () ->
           let loc = require_some (failure placed_file [ "placed" ]).loc in
           equal (pair string int) ("elsewhere.ml", 7) (loc.Loc.file, loc.line));
