@@ -17,16 +17,28 @@ module Scratch = struct
         try Unix.rmdir path with Unix.Unix_error _ -> ())
     | _ -> ( try Unix.unlink path with Unix.Unix_error _ -> ())
 
-  (* Only the creating process removes it: a forked child that leaves
-     through [exit] runs the same [at_exit] and would delete the tree its
-     parent is still using. *)
+  (* One [at_exit] for every directory, registered as the library
+     initialises. [exit] runs the newest functions first, and a run's exit
+     guard stops it with an exception: a removal registered after the guard
+     would run at every [exit] that a run intercepts, and one registered
+     before it never runs early. Only the creating process removes a
+     directory: a forked child that leaves through [exit] would delete the
+     tree its parent is still using. *)
+  let made = ref []
+
+  let () =
+    at_exit (fun () ->
+        let self = Unix.getpid () in
+        List.iter
+          (fun (owner, path) -> if owner = self then remove_tree path)
+          !made)
+
   let dir prefix =
     (* [Filename.temp_dir] is OCaml 5.1; the project supports 5.0. *)
     let path = Filename.temp_file prefix "" in
     Sys.remove path;
     Unix.mkdir path 0o700;
-    let owner = Unix.getpid () in
-    at_exit (fun () -> if Unix.getpid () = owner then remove_tree path);
+    made := (Unix.getpid (), path) :: !made;
     path
 end
 

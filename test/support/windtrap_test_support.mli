@@ -13,7 +13,9 @@ module Scratch : sig
   val dir : string -> string
   (** [dir prefix] is a new directory in the system's temporary directory, its
       name starting with [prefix]. It and everything under it are removed when
-      the process that called [dir] exits; a forked child removes nothing. *)
+      the process that called [dir] exits; a forked child removes nothing. The
+      removal is one [at_exit] function registered as this library initialises,
+      before any run, so an [exit] that a run intercepts removes nothing. *)
 
   val remove_tree : string -> unit
   (** [remove_tree path] removes [path] and everything under it. It never

@@ -5,8 +5,7 @@
 
 (* [Run.execute] refuses to start while a run is active, and every test body
    runs inside this suite's own run. The runs the tests judge are therefore
-   recorded as the module initialises, before the [run] that ends the file, and
-   whatever a claim reads of the file system is read right after its run. *)
+   recorded as the module initialises, before the [run] that ends the file. *)
 
 open Windtrap
 module Baseline = Windtrap.Private.Baseline
@@ -327,8 +326,8 @@ let isolated, between, seen_logs =
   ([ first; second ], between, List.rev !seen)
 
 let observer_raised =
-  escape (fun () ->
-      Recorded.execute ~on_event:(fun _ -> raise Boom) [ test "t" ignore ])
+  Recorded.escaped
+    (Recorded.execute ~on_event:(fun _ -> raise Boom) [ test "t" ignore ])
 
 let active_after_observer = Run.active ()
 
@@ -742,7 +741,7 @@ type made = {
 }
 
 type scratch = {
-  run : Recorded.t;
+  run : Recorded.execution;
   made : made option; (* [None] when the creating test did not finish *)
   unmade : exn option; (* what temp_dir raised with no temporary directory *)
   leftovers : string list; (* the paths of every test that outlived the run *)
@@ -1770,7 +1769,7 @@ let observer_exit, observer_called =
         called := true
   in
   let raised =
-    escape (fun () -> Recorded.execute ~on_event:observer [ test "t" ignore ])
+    Recorded.escaped (Recorded.execute ~on_event:observer [ test "t" ignore ])
   in
   (raised, !called)
 
@@ -1818,7 +1817,7 @@ let refusal = function
   | Run.Update_refused_in_ci -> "update refused in CI"
   | Run.No_recorded_failures -> "no recorded failures"
 
-let refused r = refusal (require_error (Recorded.result r))
+let refused r = refusal (require_error (Recorded.returned r))
 let in_ci = [ ("CI", "true") ]
 let focus_pos line = ("test/focus_decl.ml", line, 0, 0)
 
@@ -2012,9 +2011,10 @@ let sharded ?(filter = []) ?(suite = shard_suite) (k, n) =
     ~config:(fun c -> { c with shard = Some (k, n); filter })
     suite
 
-let buckets = List.map (fun k -> Recorded.executed (sharded (k, 3))) [ 1; 2; 3 ]
-let bucket_again = Recorded.executed (sharded (1, 3))
-let whole = Recorded.executed (sharded (1, 1))
+let bucket_runs = List.map (fun k -> sharded (k, 3)) [ 1; 2; 3 ]
+let bucket_again = sharded (1, 3)
+let whole = sharded (1, 1)
+let buckets () = List.map Recorded.executed bucket_runs
 
 let bucket_line r =
   let ran =
@@ -2025,9 +2025,7 @@ let bucket_line r =
   strf "%s, exit %d" ran (Recorded.exit_code r)
 
 let filtered_buckets =
-  List.map
-    (fun k -> bucket_line (sharded ~filter:[ "t-one" ] (k, 3)))
-    [ 1; 2; 3 ]
+  List.map (fun k -> sharded ~filter:[ "t-one" ] (k, 3)) [ 1; 2; 3 ]
 
 let focused_buckets =
   let suite =
@@ -2037,16 +2035,17 @@ let focused_buckets =
       test "plain two" ignore;
     ]
   in
-  List.map (fun k -> bucket_line (sharded ~suite (k, 3))) [ 1; 2; 3 ]
+  List.map (fun k -> sharded ~suite (k, 3)) [ 1; 2; 3 ]
 
 let malformed_shard =
-  escape (fun () ->
-      Recorded.execute
-        ~config:(fun c -> { c with shard = Some (2, 1) })
-        [ test "t" ignore ])
+  Recorded.escaped
+    (Recorded.execute
+       ~config:(fun c -> { c with shard = Some (2, 1) })
+       [ test "t" ignore ])
 
 let a_bucket_keeps_declaration_order () =
   let in_order bucket = List.filter (fun n -> List.mem n bucket) shard_names in
+  let buckets = buckets () in
   equal (list (list string)) (List.map in_order buckets) buckets
 
 let the_selection_and_the_suite_are_counted () =
@@ -2063,7 +2062,7 @@ let buckets_text () =
   String.concat "\n"
     (List.mapi
        (fun i b -> strf "%d/3: %s" (i + 1) (String.concat ", " b))
-       buckets)
+       (buckets ()))
 
 let the_buckets_are_frozen () =
   expect (buckets_text ())
@@ -2078,13 +2077,13 @@ let a_shard_buckets_the_filtered_tests () =
   equal
     (slist string String.compare)
     [ "t-one, exit 0"; "nothing, exit 2"; "nothing, exit 2" ]
-    filtered_buckets
+    (List.map bucket_line filtered_buckets)
 
 let a_shard_buckets_the_focused_tests () =
   equal
     (slist string String.compare)
     [ "starred, exit 0"; "nothing, exit 2"; "nothing, exit 2" ]
-    focused_buckets
+    (List.map bucket_line focused_buckets)
 
 let selection =
   group "Selection"
@@ -2107,13 +2106,18 @@ let selection =
       test "a focus narrows the selection to the focused tests"
         a_focus_narrows_the_selection;
       test "1/1 keeps every test" (fun () ->
-          equal (list string) shard_names whole);
+          equal (list string) shard_names (Recorded.executed whole));
       test "the buckets partition the selection" (fun () ->
-          equal (slist string String.compare) shard_names (List.concat buckets));
+          equal
+            (slist string String.compare)
+            shard_names
+            (List.concat (buckets ())));
       test "a bucket keeps the declaration order"
         a_bucket_keeps_declaration_order;
       test "a bucket is the same in every run" (fun () ->
-          equal (list string) (List.hd buckets) bucket_again);
+          equal (list string)
+            (Recorded.executed (List.hd bucket_runs))
+            (Recorded.executed bucket_again));
       test "the bucket of a path is frozen" the_buckets_are_frozen;
       test "a shard buckets the filtered tests"
         a_shard_buckets_the_filtered_tests;
@@ -2667,13 +2671,16 @@ let help_runs =
     if Sys.file_exists (file ^ ".corrected") then
       Sys.remove (file ^ ".corrected");
     let r = correcting ~root baseline suite in
-    [
-      strf "exit %d" (Recorded.exit_code r);
-      "t1: " ^ Recorded.row r [ "t1" ];
-      "file: " ^ present (contents file);
-      "correction: " ^ present (contents (file ^ ".corrected"));
-    ]
-    @ writes root r
+    let on_disk = present (contents file)
+    and correction = present (contents (file ^ ".corrected")) in
+    fun () ->
+      [
+        strf "exit %d" (Recorded.exit_code r);
+        "t1: " ^ Recorded.row r [ "t1" ];
+        "file: " ^ on_disk;
+        "correction: " ^ correction;
+      ]
+      @ writes root r
   in
   let check = one Baseline.Check in
   let corrected = one Baseline.Corrected in
@@ -2709,14 +2716,17 @@ let gated =
   let root = Scratch.dir "windtrap-gated-" in
   let under name = Filename.concat root name in
   let summary r names =
-    [
-      strf "exit %d" (Recorded.exit_code r);
-      "counted: " ^ String.concat ", " (counted r);
-    ]
-    @ writes root r
-    @ List.map
+    let corrections =
+      List.map
         (fun name -> "correction: " ^ present (contents (under name)))
         names
+    in
+    fun () ->
+      [
+        strf "exit %d" (Recorded.exit_code r);
+        "counted: " ^ String.concat ", " (counted r);
+      ]
+      @ writes root r @ corrections
   in
   let dirty =
     correcting ~root Baseline.Corrected
@@ -2781,15 +2791,19 @@ let stale_runs =
       if also_fails !bodies then fail "boom"
     in
     let r = correcting ~root baseline [ test ~retries "stale" stale ] in
-    [
-      strf "%d bodies, %d attempts" !bodies (attempts_used r [ "stale" ]);
-      "row: " ^ Recorded.row r [ "stale" ];
-      "failures: " ^ String.concat ", " (lines r [ "stale" ]);
-      strf "exit %d" (Recorded.exit_code r);
-      "source: " ^ which (contents source);
-      "correction: " ^ which (contents corrected);
-    ]
-    @ writes root r
+    let bodies = !bodies
+    and in_source = which (contents source)
+    and correction = which (contents corrected) in
+    fun () ->
+      [
+        strf "%d bodies, %d attempts" bodies (attempts_used r [ "stale" ]);
+        "row: " ^ Recorded.row r [ "stale" ];
+        "failures: " ^ String.concat ", " (lines r [ "stale" ]);
+        strf "exit %d" (Recorded.exit_code r);
+        "source: " ^ in_source;
+        "correction: " ^ correction;
+      ]
+      @ writes root r
   in
   let never _ = false in
   [
@@ -2864,18 +2878,20 @@ let excused =
         skip ~reason:"not here" ())
   in
   let summary r =
-    [
-      strf "exit %d" (Recorded.exit_code r);
-      "counted: " ^ String.concat ", " (counted r);
-      "known: " ^ Recorded.row r [ "known" ] ^ ", "
-      ^ String.concat ", " (lines r [ "known" ]);
-      strf "on disk: %b" (on_disk "known" || on_disk "undecided");
-    ]
-    @ writes root r
+    let written = on_disk "known" || on_disk "undecided" in
+    fun () ->
+      [
+        strf "exit %d" (Recorded.exit_code r);
+        "counted: " ^ String.concat ", " (counted r);
+        "known: " ^ Recorded.row r [ "known" ] ^ ", "
+        ^ String.concat ", " (lines r [ "known" ]);
+        strf "on disk: %b" written;
+      ]
+      @ writes root r
   in
   let corrected = summary (correcting ~root Baseline.Corrected [ known ]) in
   let updated = correcting ~root Baseline.Update [ known; undecided ] in
-  (corrected, summary updated, Recorded.row updated [ "undecided" ])
+  (corrected, summary updated, updated)
 
 let release_beside_a_correction =
   let root = Scratch.dir "windtrap-beside-" in
@@ -2887,12 +2903,13 @@ let release_beside_a_correction =
         test "acquires" fx;
       ]
   in
-  [
-    strf "exit %d" (Recorded.exit_code r);
-    strf "%d release failures"
-      (List.length (Recorded.outcome r).release_failures);
-  ]
-  @ writes root r
+  fun () ->
+    [
+      strf "exit %d" (Recorded.exit_code r);
+      strf "%d release failures"
+        (List.length (Recorded.outcome r).release_failures);
+    ]
+    @ writes root r
 
 let marks, written_at_release, written_after =
   let root = Scratch.dir "windtrap-marks-" in
@@ -2938,7 +2955,7 @@ let ci_read_once =
             Run.check_baseline (Baseline.File "late.expected") "v");
       ]
   in
-  (Recorded.exit_code r, contents (Filename.concat root "late.expected"))
+  (r, contents (Filename.concat root "late.expected"))
 
 let corrections_are_written_after_the_release () =
   equal
@@ -2955,7 +2972,7 @@ let an_xfail_test_checks_without_correcting () =
       "known: xfail body, body missing baseline";
       "on disk: false";
     ]
-    corrected
+    (corrected ())
 
 let an_xfail_test_accepts_nothing () =
   let _, updated, undecided = excused in
@@ -2966,8 +2983,8 @@ let an_xfail_test_accepts_nothing () =
       "known: xfail body, body missing baseline";
       "on disk: false";
     ]
-    updated;
-  equal string "skip not here" undecided
+    (updated ());
+  equal string "skip not here" (Recorded.row undecided [ "undecided" ])
 
 let a_failed_release_beside_a_correction () =
   equal (list string)
@@ -2976,7 +2993,7 @@ let a_failed_release_beside_a_correction () =
       "1 release failures";
       "wrote src/help.expected.corrected, 0 literals";
     ]
-    release_beside_a_correction
+    (release_beside_a_correction ())
 
 let a_withheld_correction_says_why () =
   equal (list string)
@@ -3001,17 +3018,17 @@ let corrections =
         (List.map2
            (fun (claim, expected) actual -> (claim, expected, actual))
            help_rows help_runs)
-        (fun (_, expected, actual) -> equal (list string) expected actual);
+        (fun (_, expected, actual) -> equal (list string) expected (actual ()));
       cases "gating"
         ~name:(fun (claim, _, _) -> claim)
         gated
-        (fun (_, expected, actual) -> equal (list string) expected actual);
+        (fun (_, expected, actual) -> equal (list string) expected (actual ()));
       cases "a stale literal"
         ~name:(fun (claim, _, _) -> claim)
         (List.map2
            (fun (claim, expected) actual -> (claim, expected, actual))
            stale_rows stale_runs)
-        (fun (_, expected, actual) -> equal (list string) expected actual);
+        (fun (_, expected, actual) -> equal (list string) expected (actual ()));
       test "an xfail test checks without correcting"
         an_xfail_test_checks_without_correcting;
       test "an xfail test accepts nothing, and a skip drops its correction"
@@ -3024,7 +3041,11 @@ let corrections =
       test "a correction that cannot be written fails the run, not a test"
         an_unwritable_correction_fails_the_run;
       test "CI is read once, at startup" (fun () ->
-          equal (pair int (option string)) (0, Some "v\n") ci_read_once);
+          let r, accepted = ci_read_once in
+          equal
+            (pair int (option string))
+            (0, Some "v\n")
+            (Recorded.exit_code r, accepted));
     ]
 
 (* Fixture release *)
@@ -3060,13 +3081,15 @@ let untimed_release =
       ignore
   in
   let r = Recorded.execute [ test ~timeout:0.02 "tight" fx ] in
-  [
-    "tight: " ^ Recorded.row r [ "tight" ];
-    strf "finished: %b" !finished;
-    strf "%d release failures"
-      (List.length (Recorded.outcome r).release_failures);
-    strf "exit %d" (Recorded.exit_code r);
-  ]
+  let finished = !finished in
+  fun () ->
+    [
+      "tight: " ^ Recorded.row r [ "tight" ];
+      strf "finished: %b" finished;
+      strf "%d release failures"
+        (List.length (Recorded.outcome r).release_failures);
+      strf "exit %d" (Recorded.exit_code r);
+    ]
 
 let bailed, bail_released =
   let released = ref false in
@@ -3153,7 +3176,7 @@ let release =
       test "no limit covers a release" (fun () ->
           equal (list string)
             [ "tight: pass"; "finished: true"; "0 release failures"; "exit 0" ]
-            untimed_release);
+            (untimed_release ()));
       test "the fixtures are released under bail" (fun () ->
           is_true bail_released);
       test "a failed release fails the run, and no test"
@@ -3165,8 +3188,8 @@ let release =
 (* The last-failed store *)
 
 let ran r =
-  match Recorded.result r with
-  | Ok outcome ->
+  match Recorded.returned r with
+  | Ok (outcome : Run.outcome) ->
       strf "exit %d: %s" outcome.exit_code
         (String.concat ", " (Recorded.executed r))
   | Error error -> "refused: " ^ refusal error
@@ -3185,11 +3208,11 @@ let round_trip =
       test "shaky" (fun () -> if not !fixed then fail "boom");
     ]
   in
-  let first = ran (with_store dir suite) in
-  let rerun = ran (with_store dir ~failed_only:true suite) in
+  let first = with_store dir suite in
+  let rerun = with_store dir ~failed_only:true suite in
   fixed := true;
-  let fixed_run = ran (with_store dir ~failed_only:true suite) in
-  let emptied = ran (with_store dir ~failed_only:true suite) in
+  let fixed_run = with_store dir ~failed_only:true suite in
+  let emptied = with_store dir ~failed_only:true suite in
   [ first; rerun; fixed_run; emptied ]
 
 let survivors =
@@ -3201,21 +3224,19 @@ let survivors =
       test "t2" (fun () -> fail "boom");
     ]
   in
-  let first = ran (with_store dir suite) in
+  let first = with_store dir suite in
   t1_fixed := true;
-  let filtered = ran (with_store dir ~filter:[ "t1" ] suite) in
-  let rerun = ran (with_store dir ~failed_only:true suite) in
-  let disjoint =
-    ran (with_store dir ~failed_only:true ~filter:[ "t1" ] suite)
-  in
+  let filtered = with_store dir ~filter:[ "t1" ] suite in
+  let rerun = with_store dir ~failed_only:true suite in
+  let disjoint = with_store dir ~failed_only:true ~filter:[ "t1" ] suite in
   [ first; filtered; rerun; disjoint ]
 
 let dead_entries =
   let dir = Scratch.dir "windtrap-dead-" in
   let old = [ test "old" (fun () -> fail "boom") ] in
-  let first = ran (with_store dir old) in
-  let replaced = ran (with_store dir [ test "new" ignore ]) in
-  let rerun = ran (with_store dir ~failed_only:true old) in
+  let first = with_store dir old in
+  let replaced = with_store dir [ test "new" ignore ] in
+  let rerun = with_store dir ~failed_only:true old in
   [ first; replaced; rerun ]
 
 let expected_in_store =
@@ -3226,33 +3247,31 @@ let expected_in_store =
       test "real" (fun () -> fail "boom");
     ]
   in
-  let first = ran (with_store dir suite) in
-  [ first; ran (with_store dir ~failed_only:true suite) ]
+  let first = with_store dir suite in
+  [ first; with_store dir ~failed_only:true suite ]
 
 let unexpected_in_store =
   let dir = Scratch.dir "windtrap-xpass-store-" in
   let suite = [ xfail (test "xp" ignore) ] in
-  let first = ran (with_store dir suite) in
-  [ first; ran (with_store dir ~failed_only:true suite) ]
+  let first = with_store dir suite in
+  [ first; with_store dir ~failed_only:true suite ]
 
 let no_store =
-  ran
-    (with_store
-       (Scratch.dir "windtrap-no-store-")
-       ~failed_only:true
-       [ test "any" ignore ])
+  with_store
+    (Scratch.dir "windtrap-no-store-")
+    ~failed_only:true
+    [ test "any" ignore ]
 
 let sanitized_store =
-  let dir = Scratch.dir "windtrap-sanitized-" in
-  ignore
-    (Recorded.execute
-       ~config:(fun c -> { c with log_dir = dir })
-       ~suite:"lib/a.ml"
-       [ test "t" (fun () -> fail "x") ]);
-  contents
-    (Filename.concat
-       (Filename.concat dir (Os.sanitize_component "lib/a.ml"))
-       ".last-failed")
+  Recorded.execute ~suite:"lib/a.ml" [ test "t" (fun () -> fail "x") ]
+
+let the_store_is_under_the_sanitized_suite () =
+  let suite_dir =
+    Filename.concat
+      (Recorded.log_dir sanitized_store)
+      (Os.sanitize_component "lib/a.ml")
+  in
+  is_some (contents (Filename.concat suite_dir ".last-failed"))
 
 let unrecognised_store =
   let dir = Scratch.dir "windtrap-unrecognised-" in
@@ -3260,16 +3279,16 @@ let unrecognised_store =
   Os.mkdir_p (Filename.dirname store);
   Out_channel.with_open_bin store (fun oc -> output_string oc "t\n");
   let suite = [ test "t" (fun () -> fail "x") ] in
-  let unrecognised = ran (with_store dir ~failed_only:true suite) in
+  let unrecognised = with_store dir ~failed_only:true suite in
   Sys.remove store;
   Unix.mkdir store 0o700;
-  [ unrecognised; ran (with_store dir suite) ]
+  [ unrecognised; with_store dir suite ]
 
 let unreadable_store =
   let dir = Scratch.dir "windtrap-unreadable-store-" in
   Os.mkdir_p (Filename.concat dir "suite/.last-failed");
-  escape (fun () ->
-      with_store dir ~filter:[ "a" ] [ test "a" ignore; test "b" ignore ])
+  Recorded.escaped
+    (with_store dir ~filter:[ "a" ] [ test "a" ignore; test "b" ignore ])
 
 let a_store_that_cannot_be_read_is_ignored () =
   if Sys.win32 then skip ~reason:"a directory does not open as a file here" ();
@@ -3283,7 +3302,7 @@ let failed_runs_the_recorded_failures () =
       "exit 0: shaky";
       "refused: no recorded failures";
     ]
-    round_trip
+    (List.map ran round_trip)
 
 let store =
   group "The last-failed store"
@@ -3293,28 +3312,30 @@ let store =
       test "the entry of a test the run did not execute survives" (fun () ->
           equal (list string)
             [ "exit 1: t1, t2"; "exit 0: t1"; "exit 1: t2"; "exit 2: " ]
-            survivors);
+            (List.map ran survivors));
       test "a run of the whole suite drops the paths that no longer exist"
         (fun () ->
           equal (list string)
             [ "exit 1: old"; "exit 0: new"; "refused: no recorded failures" ]
-            dead_entries);
+            (List.map ran dead_entries));
       test "an expected failure is never recorded" (fun () ->
           equal (list string)
             [ "exit 1: xf, real"; "exit 1: real" ]
-            expected_in_store);
+            (List.map ran expected_in_store));
       test "an unexpected pass is recorded" (fun () ->
-          equal (list string) [ "exit 1: xp"; "exit 1: xp" ] unexpected_in_store);
+          equal (list string)
+            [ "exit 1: xp"; "exit 1: xp" ]
+            (List.map ran unexpected_in_store));
       test "--failed without a store is refused" (fun () ->
-          equal string "refused: no recorded failures" no_store);
-      test "the store is <log_dir>/<sanitized suite>/.last-failed" (fun () ->
-          is_some sanitized_store);
+          equal string "refused: no recorded failures" (ran no_store));
+      test "the store is <log_dir>/<sanitized suite>/.last-failed"
+        the_store_is_under_the_sanitized_suite;
       test
         "a store that is not recognised reads as empty, one not written is \
          ignored" (fun () ->
           equal (list string)
             [ "refused: no recorded failures"; "exit 1: t" ]
-            unrecognised_store);
+            (List.map ran unrecognised_store));
       xfail ~reason:"read_store catches the error of opening, not of reading"
         (test "a store that cannot be read is ignored by a partial run"
            a_store_that_cannot_be_read_is_ignored);
@@ -3361,7 +3382,7 @@ let forked =
           | _, Unix.WSTOPPED s -> status := strf "stopped by %d" s)
     in
     let r = Recorded.execute [ test "forks" forks ] in
-    Some (Recorded.row r [ "forks" ], !status)
+    Some (r, !status)
 
 let[@inline never] raise_from_helper () = raise Boom
 
@@ -3452,7 +3473,9 @@ let exits =
       test "a forked child's exit ends the child" (fun () ->
           match forked with
           | None -> skip ~reason:"no fork on Windows" ()
-          | Some facts -> equal (pair string string) ("pass", "exited 3") facts);
+          | Some (r, status) ->
+              equal (pair string string) ("pass", "exited 3")
+                (Recorded.row r [ "forks" ], status));
       test "execute turns the recording of backtraces on" (fun () ->
           is_true recording_on);
       test "an uncaught exception carries the backtrace of its raise" (fun () ->
@@ -3462,41 +3485,13 @@ let exits =
 
 (* Executing *)
 
-let printed_by fn =
-  let file = Filename.concat (Scratch.dir "windtrap-printed-") "printed" in
-  let flush_all () =
-    Format.pp_print_flush Format.std_formatter ();
-    Format.pp_print_flush Format.err_formatter ();
-    flush stdout;
-    flush stderr
-  in
-  flush_all ();
-  let fd =
-    Unix.openfile file [ Unix.O_WRONLY; Unix.O_CREAT; Unix.O_TRUNC ] 0o600
-  in
-  let saved_out = Unix.dup Unix.stdout and saved_err = Unix.dup Unix.stderr in
-  Unix.dup2 fd Unix.stdout;
-  Unix.dup2 fd Unix.stderr;
-  Unix.close fd;
-  let restore () =
-    flush_all ();
-    Unix.dup2 saved_out Unix.stdout;
-    Unix.dup2 saved_err Unix.stderr;
-    Unix.close saved_out;
-    Unix.close saved_err
-  in
-  Fun.protect ~finally:restore fn;
-  In_channel.with_open_bin file In_channel.input_all
-
 let printed =
-  printed_by (fun () ->
-      ignore
-        (Recorded.execute
-           [
-             test "passes" ignore;
-             test "fails" (fun () -> fail "x");
-             test "skips" (fun () -> skip ());
-           ]))
+  Recorded.execute
+    [
+      test "passes" ignore;
+      test "fails" (fun () -> fail "x");
+      test "skips" (fun () -> skip ());
+    ]
 
 let decisions r =
   strf "exit %d" (Recorded.exit_code r)
@@ -3527,8 +3522,7 @@ let undecided_by_the_report =
       invocation = `Exe "suite.exe";
     }
   in
-  ( decisions (Recorded.execute tests),
-    decisions (Recorded.execute ~config:dressed tests) )
+  (Recorded.execute tests, Recorded.execute ~config:dressed tests)
 
 let exit_code_runs =
   [
@@ -3570,18 +3564,16 @@ let aftermath ~raised ~released ~store ~correction =
 
 let ended_by_exception ~on_event ~tests =
   let root = Scratch.dir "windtrap-ended-" in
-  let log_dir = Filename.concat root "_logs" in
   let released = ref false in
   let fx = Run.fixture ~teardown:(fun () -> released := true) ignore in
-  let raised =
-    escape (fun () ->
-        Recorded.execute ~on_event
-          ~env:[ ("WINDTRAP_PROJECT_ROOT", root) ]
-          ~config:(fun c -> { c with baseline = Baseline.Corrected; log_dir })
-          (tests fx))
+  let r =
+    Recorded.execute ~on_event
+      ~env:[ ("WINDTRAP_PROJECT_ROOT", root) ]
+      ~config:(fun c -> { c with baseline = Baseline.Corrected })
+      (tests fx)
   in
-  aftermath ~raised ~released:!released
-    ~store:(Filename.concat log_dir "suite/.last-failed")
+  aftermath ~raised:(Recorded.escaped r) ~released:!released
+    ~store:(Filename.concat (Recorded.log_dir r) "suite/.last-failed")
     ~correction:(Filename.concat root "c.expected.corrected")
 
 let corrects fx =
@@ -3629,29 +3621,27 @@ let fatal_release, fatal_released, active_after_fatal =
   let fx_fatal =
     Run.fixture ~teardown:(fun _ -> raise Out_of_memory) (fun () -> "fatal")
   in
-  let raised =
-    escape (fun () ->
-        Recorded.execute
-          [
-            test "acquires" (fun () ->
-                ignore (fx_ok ());
-                ignore (fx_fatal ()));
-          ])
+  let r =
+    Recorded.execute
+      [
+        test "acquires" (fun () ->
+            ignore (fx_ok ());
+            ignore (fx_fatal ()));
+      ]
   in
-  (raised, !released, Run.active ())
+  (Recorded.escaped r, !released, Run.active ())
 
 let broken_by_break, break_torn_down =
   let torn = ref false in
-  let raised =
-    escape (fun () ->
-        Recorded.execute
-          [
-            bracket "breaks" ~setup:ignore
-              ~teardown:(fun () -> torn := true)
-              (fun () -> raise Sys.Break);
-          ])
+  let r =
+    Recorded.execute
+      [
+        bracket "breaks" ~setup:ignore
+          ~teardown:(fun () -> torn := true)
+          (fun () -> raise Sys.Break);
+      ]
   in
-  (raised, !torn)
+  (Recorded.escaped r, !torn)
 
 let bail_past_xfail =
   Recorded.execute
@@ -3664,31 +3654,32 @@ let bail_past_xfail =
     ]
 
 (* [list_selection] takes no observer, so a body that ran would note it. *)
-let listed, listed_ran, listed_made_logs, listed_store, listed_duplicates =
-  let root = Scratch.dir "windtrap-listing-" in
-  let log_dir = Filename.concat root "_logs" in
-  let config = { (Run.default_config ()) with seed = Recorded.seed; log_dir } in
+let listed, listed_ran =
   let ran = ref [] in
-  let tests =
-    [
-      test "one" (fun () -> ran := "one" :: !ran);
-      test "two" (fun () -> ran := "two" :: !ran);
-    ]
+  let note name () = ran := name :: !ran in
+  let listed =
+    Recorded.list_selection [ test "one" (note "one"); test "two" (note "two") ]
   in
-  let listed = Run.list_selection config ~suite:"suite" tests in
-  let made = Sys.file_exists log_dir in
-  let store = Filename.concat log_dir "suite/.last-failed" in
+  (listed, !ran)
+
+let stored = "windtrap-last-failed 1\none\n"
+
+(* The store is written before the call, so the log directory is not the
+   recorded one, which does not exist until the call. *)
+let listed_from_store =
+  let dir = Scratch.dir "windtrap-listing-" in
+  let store = Filename.concat dir "suite/.last-failed" in
   Os.mkdir_p (Filename.dirname store);
-  Out_channel.with_open_bin store (fun oc ->
-      output_string oc "windtrap-last-failed 1\none\n");
-  let before = contents store in
-  ignore
-    (Run.list_selection { config with failed_only = true } ~suite:"suite" tests);
-  let duplicates =
-    Run.list_selection config ~suite:"suite"
-      [ test "d" ignore; test "d" ignore ]
+  Out_channel.with_open_bin store (fun oc -> output_string oc stored);
+  let r =
+    Recorded.list_selection
+      ~config:(fun c -> { c with log_dir = dir; failed_only = true })
+      [ test "one" ignore; test "two" ignore ]
   in
-  (listed, !ran, made, (before, contents store), duplicates)
+  (r, store)
+
+let listed_duplicates =
+  Recorded.list_selection [ test "d" ignore; test "d" ignore ]
 
 let the_exceptions_that_leave_execute =
   [
@@ -3717,10 +3708,12 @@ let an_exception_on_a_release_event () =
 let executing =
   group "Executing"
     ([
-       test "execute prints nothing" (fun () -> equal string "" printed);
+       test "execute prints nothing" (fun () ->
+           equal (pair string string) ("", "")
+             (Recorded.out printed, Recorded.err printed));
        test "the fields only a report reads decide nothing" (fun () ->
            let plain, dressed = undecided_by_the_report in
-           equal (list string) plain dressed);
+           equal (list string) (decisions plain) (decisions dressed));
        cases "the exit code is"
          ~name:(fun (claim, _, _) -> claim)
          exit_code_runs
@@ -3752,16 +3745,18 @@ let executing =
              (Recorded.executed bail_past_xfail));
        test "list_selection is what execute would run, and runs nothing"
          (fun () ->
-           equal (list string) [ "one"; "two" ] (require_ok listed);
+           equal (list string) [ "one"; "two" ]
+             (require_ok (Recorded.returned listed));
            equal (list string) [] listed_ran);
        test "list_selection makes no log directory" (fun () ->
-           is_false listed_made_logs);
-       test "list_selection rewrites no store" (fun () ->
-           let before, after = listed_store in
-           equal (option string) before after);
+           is_false (Sys.file_exists (Recorded.log_dir listed)));
+       test "list_selection reads the store and rewrites none" (fun () ->
+           let r, store = listed_from_store in
+           equal (list string) [ "one" ] (require_ok (Recorded.returned r));
+           equal (option string) (Some stored) (contents store));
        test "list_selection refuses what execute refuses" (fun () ->
            equal string "duplicate paths: d"
-             (refusal (require_error listed_duplicates)));
+             (refusal (require_error (Recorded.returned listed_duplicates))));
      ]
     @ [
         selection;

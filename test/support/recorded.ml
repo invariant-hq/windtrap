@@ -34,28 +34,92 @@ let with_environment env fn =
   List.iter (fun (name, v) -> Os.setenv name (Some v)) env;
   Fun.protect ~finally:restore fn
 
+(* Recorded calls *)
+
+type 'a t = {
+  returned : ('a, exn) result;
+  out : string;
+  err : string;
+  log_dir : string;
+}
+
+(* The runner's capture moves the same two descriptors around every test and
+   restores what it saved, which is these files. *)
+let with_output_in dir fn =
+  let flush_all () =
+    Format.pp_print_flush Format.std_formatter ();
+    Format.pp_print_flush Format.err_formatter ();
+    flush stdout;
+    flush stderr
+  in
+  let redirect name fd =
+    let path = Filename.concat dir name in
+    let file =
+      Unix.openfile path [ Unix.O_WRONLY; Unix.O_CREAT; Unix.O_TRUNC ] 0o600
+    in
+    let saved = Unix.dup ~cloexec:true fd in
+    Unix.dup2 file fd;
+    Unix.close file;
+    (path, saved)
+  in
+  flush_all ();
+  let out, saved_out = redirect "stdout" Unix.stdout in
+  let err, saved_err = redirect "stderr" Unix.stderr in
+  let restore () =
+    flush_all ();
+    Unix.dup2 saved_out Unix.stdout;
+    Unix.dup2 saved_err Unix.stderr;
+    Unix.close saved_out;
+    Unix.close saved_err
+  in
+  let v = Fun.protect ~finally:restore fn in
+  let read path = In_channel.with_open_bin path In_channel.input_all in
+  (v, read out, read err)
+
+(* The log directory is left for the call to make, since [list_selection]
+   promises to make none. *)
+let record ~env call =
+  let root = Scratch.dir "windtrap-recorded-" in
+  let log_dir = Filename.concat root "logs" in
+  let returned, out, err =
+    with_environment (env log_dir) @@ fun () ->
+    with_output_in root @@ fun () ->
+    match call log_dir with v -> Ok v | exception e -> Error e
+  in
+  { returned; out; err; log_dir }
+
+let returned t =
+  match t.returned with
+  | Ok v -> v
+  | Error e ->
+      Windtrap.failf "the recorded call raised %s" (Failure.exn_to_string e)
+
+let escaped t = match t.returned with Ok _ -> None | Error e -> Some e
+let out t = t.out
+let err t = t.err
+let log_dir t = t.log_dir
+
 (* Recorded executions *)
 
-type t = { result : (Run.outcome, Run.startup_error) result; log_dir : string }
+type execution = (Run.outcome, Run.startup_error) result t
+
+let configured config log_dir =
+  config { (Run.default_config ()) with Run.seed; log_dir }
 
 let execute ?(env = []) ?(config = Fun.id) ?on_event ?allowlist
     ?(suite = "suite") tests =
-  let log_dir = Scratch.dir "windtrap-recorded-" in
-  with_environment env @@ fun () ->
-  let base = { (Run.default_config ()) with Run.seed; log_dir } in
-  {
-    result = Run.execute ?on_event ?allowlist (config base) ~suite tests;
-    log_dir;
-  }
+  record ~env:(Fun.const env) @@ fun log_dir ->
+  Run.execute ?on_event ?allowlist (configured config log_dir) ~suite tests
 
-let result t = t.result
-let log_dir t = t.log_dir
-
-let outcome t =
-  let pp ppf e = Format.pp_print_string ppf (Run.startup_message e) in
-  Windtrap.require_ok ~msg:"the recorded run started" ~pp t.result
+let list_selection ?(env = []) ?(config = Fun.id) ?(suite = "suite") tests =
+  record ~env:(Fun.const env) @@ fun log_dir ->
+  Run.list_selection (configured config log_dir) ~suite tests
 
 (* Projections *)
+
+let outcome (t : execution) =
+  let pp ppf e = Format.pp_print_string ppf (Run.startup_message e) in
+  Windtrap.require_ok ~msg:"the recorded run started" ~pp (returned t)
 
 let executed_row t path =
   let at (r : Run.result) = List.equal String.equal r.path path in
