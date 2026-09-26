@@ -1,7 +1,6 @@
 (tests
  (names
   test_os
-  test_loc
   test_gen
   test_capture
   test_property
@@ -14,7 +13,6 @@
   test_cli)
  (modules
   test_os
-  test_loc
   test_gen
   test_capture
   test_property
@@ -71,6 +69,11 @@
  (name test_text)
  (modules test_text)
  (libraries windtrap))
+
+(test
+ (name test_loc)
+ (modules test_loc)
+ (libraries windtrap unix))
 
 (test
  (name test_diff)

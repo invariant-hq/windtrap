@@ -3,205 +3,198 @@
    SPDX-License-Identifier: ISC
   ---------------------------------------------------------------------------*)
 
+(* A capture and the [__POS__] it is compared with share a line, so the
+   captured line is known. *)
+
 open Windtrap
 module Loc = Windtrap.Private.Loc
 
-let line_of ((_, line, _, _) : Loc.pos) = line
-let in_this_file (loc : Loc.t) = Filename.basename loc.Loc.file = "test_loc.ml"
+let strf = Printf.sprintf
 
-let tests =
+let loc =
+  Testable.make
+    ~pp:(fun ppf (l : Loc.t) ->
+      Format.fprintf ppf "%s:%d:%d" l.file l.line l.column)
+    ~equal:(fun (a : Loc.t) (b : Loc.t) ->
+      String.equal a.file b.file && a.line = b.line && a.column = b.column)
+
+let here ((file, line, _, _) : Loc.pos) = strf "%s:%d" file line
+
+let where = function
+  | Some (l : Loc.t) -> strf "%s:%d" l.file l.line
+  | None -> "no location"
+
+(* Locations *)
+
+let locations =
+  group "Locations"
+    [
+      test "of_pos keeps the file, the line and the start column" (fun () ->
+          equal loc
+            { Loc.file = "test/foo.ml"; line = 12; column = 4 }
+            (Loc.of_pos ("test/foo.ml", 12, 4, 9)));
+      test "to_string spells a location file:line" (fun () ->
+          equal string "test/foo.ml:12"
+            (Loc.to_string { Loc.file = "test/foo.ml"; line = 12; column = 4 }));
+    ]
+
+(* Capturing *)
+
+let direct () =
+  let p = __POS__ and l = Loc.capture () in
+  (p, l)
+
+let in_a_handler () =
+  try failwith "boom"
+  with Stdlib.Failure _ ->
+    let p = __POS__ and l = Loc.capture () in
+    (p, l)
+
+let through_the_stdlib () =
+  List.hd (List.map (fun () -> (__POS__, Loc.capture ())) [ () ])
+
+(* The lazy's closure is [Loc.capture] itself, so its caller is a frame of
+   CamlinternalLazy. *)
+let under_lazy () =
+  let p = __POS__ and l = Lazy.force (Lazy.from_fun Loc.capture) in
+  (p, l)
+
+let inlined () =
+  let[@inline always] here () = (__POS__, Loc.capture ()) in
+  here ()
+
+let below_a_delimiter () =
+  Loc.delimit (fun () ->
+      let p = __POS__ and l = Loc.capture () in
+      (p, l))
+
+let resolved () =
+  let p = __POS__ and l = Loc.resolve () in
+  (p, l)
+
+let captures =
   [
-    test "of_pos keeps file, line, and start column" (fun () ->
-        let ((file, line, col, _) as p) = __POS__ in
-        let loc = Loc.of_pos p in
-        equal ~msg:"file" string file loc.Loc.file;
-        equal ~msg:"line" int line loc.Loc.line;
-        equal ~msg:"column" int col loc.Loc.column);
-    test "capture attributes to the caller's frame" (fun () ->
-        (* capture skips windtrap's own frames (Loc.capture itself is a
-           windtrap frame). Both bindings sit on one line so the captured
-           line number is known. *)
-        let p = __POS__ and l = Loc.capture () in
-        match l with
-        | None -> fail "capture returns a location"
-        | Some loc ->
-            is_true ~msg:"capture attributes to the caller's file"
-              (in_this_file loc);
-            equal ~msg:"capture line is the call line" int (line_of p)
-              loc.Loc.line);
-    test "capture is immune to a handled exception's backtrace" (fun () ->
-        (* capture walks the current stack, not the last exception's
-           backtrace, so a caught-and-handled exception before the capture
-           does not pollute the result. *)
-        let boom () = failwith "boom" in
-        let result =
-          try boom ()
-          with Stdlib.Failure _ ->
-            let p = __POS__ and l = Loc.capture () in
-            (p, l)
-        in
-        match result with
-        | _, None -> fail "capture inside handler returns a location"
-        | p, Some loc ->
-            is_true ~msg:"capture inside handler attributes to this file"
-              (in_this_file loc);
-            equal ~msg:"capture uses the capture line, not the raise" int
-              (line_of p) loc.Loc.line);
-    test "capture through a stdlib higher-order call" (fun () ->
-        (* stdlib frames (List.map) are never attributed; the closure in
-           this file is. *)
-        let results = List.map (fun () -> (__POS__, Loc.capture ())) [ () ] in
-        match results with
-        | [ (p, Some loc) ] ->
-            is_true ~msg:"capture through List.map attributes to the closure"
-              (in_this_file loc);
-            equal ~msg:"capture through List.map line" int (line_of p)
-              loc.Loc.line
-        | [ (_, None) ] -> fail "capture through List.map returns a location"
-        | _ -> fail "List.map shape");
-    test "capture skips a Camlinternal frame that calls it" (fun () ->
-        (* The lazy's closure is [Loc.capture] itself, so the frame that calls
-           it is CamlinternalLazy's; the first eligible frame is this
-           line's. *)
-        let p = __POS__ and l = Lazy.force (Lazy.from_fun Loc.capture) in
-        match l with
-        | None -> fail "capture under Lazy.force returns a location"
-        | Some loc ->
-            is_true ~msg:"the location is this file's" (in_this_file loc);
-            equal ~msg:"the location is the force's line" int (line_of p)
-              loc.Loc.line);
-    test "capture counts an inlined frame" (fun () ->
-        let[@inline always] here () = (__POS__, Loc.capture ()) in
-        match here () with
-        | p, Some loc ->
-            equal ~msg:"the inlined function's line, not its caller's" int
-              (line_of p) loc.Loc.line
-        | _, None -> fail "capture in an inlined function returns a location");
-    test "capture is None when every frame is the standard library's" (fun () ->
-        (* A domain's stack holds no user frame. It is spawned in a forked
-           child: once this process spawned one, OCaml refuses it every
-           later [fork], the mutation loop's included. *)
-        if Sys.win32 then
-          skip ~reason:"POSIX only: the domain runs in a fork" ();
-        match Unix.fork () with
-        | 0 ->
-            Unix._exit
-              (if Domain.join (Domain.spawn Loc.capture) = None then 0 else 1)
-        | pid -> (
-            match snd (Unix.waitpid [] pid) with
-            | Unix.WEXITED code ->
-                equal ~msg:"a domain whose stack holds no user frame" int 0 code
-            | _ -> fail "the child did not exit"));
-    test "capture reads the 24 innermost entries only" (fun () ->
-        (* [Seq.forever] calls [Loc.capture] from a Stdlib frame, and each
-           [Seq.map] forces the one inside it from a Stdlib frame of its own:
-           [depth] entries stand between the capture and this function. *)
-        let under depth =
-          let rec nest n s =
-            if n = 0 then s else nest (n - 1) (Seq.map Fun.id s)
-          in
-          match (nest depth (Seq.forever Loc.capture)) () with
-          | Seq.Cons (l, _) -> l
-          | Seq.Nil -> assert false
-        in
-        is_true ~msg:"a user frame within reach is found"
-          (Option.is_some (under 4));
-        is_true ~msg:"a user frame beyond the 24th entry is not"
-          (under 30 = None));
-    test "delimit stops capture instead of escaping the boundary" (fun () ->
-        (* [f] tail-calls capture, so its own frame is gone at capture time;
-           the walk must stop at the delimiter with None, never surface this
-           test's frame beyond it. Pins delimiter recognition by defname: a
-           toolchain or wrapping change that renames the frame fails here
-           loudly. *)
-        let f () = Loc.capture () in
-        is_true ~msg:"capture under delimit with a consumed frame is None"
-          (Loc.delimit f = None));
-    test "capture below a delimiter still finds the user frame" (fun () ->
-        (* Non-tail capture inside the delimited callback: the callback's
-           frame is live, so the delimiter must not regress the working
-           case. *)
-        let p, l =
-          Loc.delimit (fun () ->
-              let p = __POS__ and l = Loc.capture () in
-              (p, l))
-        in
-        match l with
-        | None -> fail "capture below a delimiter returns a location"
-        | Some loc ->
-            is_true ~msg:"capture below a delimiter attributes to this file"
-              (in_this_file loc);
-            equal ~msg:"capture below a delimiter keeps the call line" int
-              (line_of p) loc.Loc.line);
-    test "delimit is transparent to values and exceptions" (fun () ->
-        equal ~msg:"delimit returns fn's value" int 7
-          (Loc.delimit (fun () -> 7));
-        raises ~msg:"delimit re-raises fn's exception" (Stdlib.Failure "boom")
-          (fun () -> Loc.delimit (fun () -> failwith "boom")));
-    test "delimit re-raises with the exception's backtrace" (fun () ->
-        let recording = Printexc.backtrace_status () in
-        Printexc.record_backtrace true;
-        Fun.protect ~finally:(fun () -> Printexc.record_backtrace recording)
-        @@ fun () ->
-        let[@inline never] raiser () = raise (Stdlib.Failure "deep") in
-        let raise_line = line_of __POS__ - 1 in
-        match Loc.delimit (fun () -> ignore (raiser ())) with
-        | () -> fail "delimit returned"
-        | exception Stdlib.Failure _ ->
-            let slots =
-              Option.value ~default:[||]
-                (Printexc.backtrace_slots (Printexc.get_raw_backtrace ()))
-            in
-            let raised_here slot =
-              match Printexc.Slot.location slot with
-              | Some l -> l.Printexc.line_number = raise_line
-              | None -> false
-            in
-            is_true ~msg:"the backtrace reaches the raise inside fn"
-              (Array.exists raised_here slots));
-    test "own_unit names windtrap's units by whole name" (fun () ->
-        List.iter
-          (fun (name, own) -> equal ~msg:name bool own (Loc.own_unit name))
-          [
-            ("Windtrap", true);
-            ("Windtrap.run", true);
-            ("Windtrap__Check.raises", true);
-            ("Windtrap_runtime", true);
-            ("Windtrap_runtime.Coverage.hit", true);
-            ("Windtrap_runtime__Mutate.arm", true);
-            ("Windtrap_helpers.f", false);
-            ("Windtrapper", false);
-            ("Stdlib__List.map", false);
-            ("Dune__exe__Test_loc.f", false);
-            ("Dune__exe__Test_loc.Windtrap__Check", false);
-          ]);
-    test "resolve prefers ?__POS__ over the backtrace" (fun () ->
-        (match Loc.resolve ~__POS__:("other.ml", 42, 7, 20) () with
-        | Some loc ->
-            equal ~msg:"resolve prefers pos file" string "other.ml" loc.Loc.file;
-            equal ~msg:"resolve prefers pos line" int 42 loc.Loc.line;
-            equal ~msg:"resolve keeps pos column" int 7 loc.Loc.column
-        | None -> fail "resolve with pos is Some");
-        let p = __POS__ and l = Loc.resolve () in
-        match l with
-        | Some loc ->
-            is_true ~msg:"resolve without pos captures" (in_this_file loc);
-            equal ~msg:"resolve without pos captures the call line" int
-              (line_of p) loc.Loc.line
-        | None -> fail "resolve without pos is Some");
-    test "observers" (fun () ->
-        let loc = Loc.of_pos ("test/foo.ml", 12, 4, 9) in
-        equal ~msg:"to_string formats file:line" string "test/foo.ml:12"
-          (Loc.to_string loc);
-        is_true ~msg:"equal reflexive" (Loc.equal loc loc);
-        (* All three fields are load-bearing: a field [equal] ignored would
-           make two distinct sites equal. *)
-        is_false ~msg:"equal distinguishes columns"
-          (Loc.equal loc (Loc.of_pos ("test/foo.ml", 12, 5, 9)));
-        is_false ~msg:"equal distinguishes lines"
-          (Loc.equal loc (Loc.of_pos ("test/foo.ml", 13, 4, 9)));
-        is_false ~msg:"equal distinguishes files"
-          (Loc.equal loc (Loc.of_pos ("test/zzz.ml", 12, 4, 9))));
+    ("a direct call", direct);
+    ("in the handler of an exception raised before", in_a_handler);
+    ("through List.map", through_the_stdlib);
+    ("called from CamlinternalLazy", under_lazy);
+    ("in an inlined function", inlined);
+    ("below a delimiter", below_a_delimiter);
   ]
 
-let () = exit @@ Windtrap.run "loc" tests
+(* A domain's stack holds no user frame. It runs in a forked child: once a
+   process spawned a domain, OCaml refuses it every later [fork], the
+   mutation loop's included. *)
+let domain_capture () =
+  if Sys.win32 then skip ~reason:"POSIX only: the domain runs in a fork" ();
+  flush_all ();
+  let pid =
+    match Unix.fork () with
+    | 0 ->
+        Unix._exit
+          (match Domain.join (Domain.spawn Loc.capture) with
+          | None -> 0
+          | Some _ -> 1)
+    | pid -> pid
+  in
+  let ended =
+    match snd (Unix.waitpid [] pid) with
+    | Unix.WEXITED 0 -> "no location"
+    | WEXITED 1 -> "a location"
+    | WEXITED n -> strf "exited %d" n
+    | WSIGNALED n | WSTOPPED n -> strf "signal %d" n
+  in
+  equal string "no location" ended
+
+(* [Seq.forever] calls [Loc.capture] from a frame of the standard library, and
+   each [Seq.map] forces the node inside it from one of its own: [depth]
+   entries stand between the capture and [beneath]'s frame. *)
+let beneath depth =
+  let rec nest n s = if n = 0 then s else nest (n - 1) (Seq.map Fun.id s) in
+  match nest depth (Seq.forever Loc.capture) () with
+  | Seq.Cons (l, _) -> l
+  | Seq.Nil -> None
+
+let tail_capture () = Loc.capture ()
+
+let backtrace_lines () =
+  let[@inline never] raiser () = raise (Stdlib.Failure "deep") in
+  let raised_at = strf "%s:%d" __FILE__ (__LINE__ - 1) in
+  match Loc.delimit (fun () -> ignore (raiser ())) with
+  | () -> (raised_at, [])
+  | exception Stdlib.Failure _ ->
+      let slots =
+        Option.value ~default:[||]
+          (Printexc.backtrace_slots (Printexc.get_raw_backtrace ()))
+      in
+      let at slot =
+        Option.map
+          (fun (l : Printexc.location) -> strf "%s:%d" l.filename l.line_number)
+          (Printexc.Slot.location slot)
+      in
+      (raised_at, List.filter_map at (Array.to_list slots))
+
+let keeps_the_backtrace () =
+  let recording = Printexc.backtrace_status () in
+  Printexc.record_backtrace true;
+  Fun.protect ~finally:(fun () -> Printexc.record_backtrace recording)
+  @@ fun () ->
+  let raised_at, lines = backtrace_lines () in
+  satisfies
+    ~claim:("a frame at " ^ raised_at)
+    (list string) (List.mem raised_at) lines
+
+let capturing =
+  group "Capturing"
+    [
+      cases
+        "capture locates the innermost frame of neither windtrap nor the \
+         standard library"
+        ~name:fst captures (fun (_, located) ->
+          let p, l = located () in
+          equal string (here p) (where l));
+      test "capture is None when every frame is the standard library's"
+        domain_capture;
+      cases "capture reads the 24 innermost entries of the call stack" ~name:fst
+        [
+          ("a frame 4 entries in", (4, Some __FILE__));
+          ("a frame 30 entries in", (30, None));
+        ]
+        (fun (_, (depth, file)) ->
+          equal (option string) file
+            (Option.map (fun (l : Loc.t) -> l.file) (beneath depth)));
+      test "capture under delimit stops at its frame" (fun () ->
+          equal string "no location" (where (Loc.delimit tail_capture)));
+      test "delimit returns what its function returns" (fun () ->
+          equal int 7 (Loc.delimit (fun () -> 7)));
+      test "delimit raises again what its function raises" (fun () ->
+          raises (Stdlib.Failure "boom") (fun () ->
+              Loc.delimit (fun () -> failwith "boom")));
+      test "delimit raises again with the exception's backtrace"
+        keeps_the_backtrace;
+      test "resolve with a __POS__ is of_pos of it" (fun () ->
+          equal (option loc)
+            (Some { Loc.file = "other.ml"; line = 42; column = 7 })
+            (Loc.resolve ~__POS__:("other.ml", 42, 7, 20) ()));
+      test "resolve without a __POS__ is capture ()" (fun () ->
+          let p, l = resolved () in
+          equal string (here p) (where l));
+      cases "own_unit is true for windtrap's units, by whole unit name"
+        ~name:fst
+        [
+          ("Windtrap", true);
+          ("Windtrap.run", true);
+          ("Windtrap__Check.raises", true);
+          ("Windtrap_runtime", true);
+          ("Windtrap_runtime.Coverage.hit", true);
+          ("Windtrap_runtime__Mutate.arm", true);
+          ("Windtrap_helpers.f", false);
+          ("Windtrapper", false);
+          ("Stdlib__List.map", false);
+          ("Dune__exe__Test_loc.f", false);
+          ("Dune__exe__Test_loc.Windtrap__Check", false);
+        ]
+        (fun (name, own) -> equal bool own (Loc.own_unit name));
+    ]
+
+let () = exit (run "loc" [ locations; capturing ])
