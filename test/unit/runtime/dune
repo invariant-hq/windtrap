@@ -1,0 +1,8 @@
+(test
+ (name test_instr)
+ (modules test_instr)
+ (libraries windtrap windtrap_runtime windtrap_test_support)
+ (action
+  (progn
+   (run %{test} --corrected)
+   (diff? test_instr.ml test_instr.ml.corrected))))
