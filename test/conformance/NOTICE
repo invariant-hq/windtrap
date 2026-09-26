@@ -12,9 +12,28 @@ are vendored from Jane Street's ppx_expect test suite:
 The full upstream license text (upstream LICENSE.md at the pinned
 commit) is reproduced in this repository's THIRD_PARTY_LICENSES.md. Vendored sources are
 byte-identical to upstream except for the single-line substitutions
-listed in TRIAGE.md ("source tweaks"), applied identically to fixtures
-and their goldens so the corpus builds without Jane Street
-dependencies.
+listed below, applied identically to fixtures and their goldens so the
+corpus builds without Jane Street dependencies.
+
+Each substitution replaces "open Core" or "open! Core" with "open
+Corpus_shim" or "open! Corpus_shim" and preserves the line count and
+every other byte. Upstream's correction golden, vendored beside its
+fixture as <f>.ml.corrected.upstream, carries the same substitution.
+The Windtrap-authored corpus/*/corpus_shim.ml supply the few Core
+values the bodies use.
+
+  corpus/negative-tests/trailing.ml and its golden, line 1
+  corpus/negative-tests/exact.ml and its golden, line 1
+  corpus/negative-tests/flexible.ml and its golden, line 1
+  corpus/negative-tests/missing.ml and its golden, line 1
+  corpus/negative-tests/spacing.ml and its golden, line 1
+  corpus/negative-tests/for-mdx/foo.ml and its golden, line 2
+  corpus/example/divergent/control_chars.ml, line 1
+
+corpus/example/hello_async.ml is byte-identical to upstream. Its
+"open Core" and "open Async" resolve against the Windtrap-authored shim
+libraries in corpus/example/shim/. No other vendored byte differs from
+upstream.
 
 Windtrap-authored harness files in this tree (pp.ml, the runner mains,
 corpus_shim.ml, shim/, converged/, all dune files, and the goldens that

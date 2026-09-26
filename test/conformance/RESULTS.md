@@ -1,10 +1,10 @@
 # ppx_expect conformance: the bar and the rulings
 
 Corpus: janestreet/ppx_expect pinned at
-`54e2846ae50ffd72c00e528f62fb4a33948d0be2` (see `NOTICE`); every
-upstream file is classified in `TRIAGE.md`. This page holds the bar the
-corpus is held to and the rulings where windtrap does not follow
-upstream, each with its reason. It restates no number.
+`54e2846ae50ffd72c00e528f62fb4a33948d0be2` (see `NOTICE`); the upstream
+files it does not vendor are listed under "Not vendored". This page
+holds the bar the corpus is held to and the rulings where windtrap does
+not follow upstream, each with its reason. It restates no number.
 
 ## The numbers
 
@@ -14,7 +14,7 @@ computes them from the corpus's files on every `@runtest`, which fails
 when the corpus no longer agrees with the file; `dune promote` accepts
 the new numbers. Upstream's correction goldens are vendored beside
 windtrap's, as `<f>.ml.corrected.upstream` (with the same one-line
-tweak as their fixture, see `TRIAGE.md`), so that the comparison is
+tweak as their fixture, see `NOTICE`), so that the comparison is
 made, not remembered.
 
 ## The bar
@@ -104,3 +104,68 @@ over output that holds CR LF. Upstream writes the CR raw inside a
 source fails again. Windtrap writes such a correction as a quoted
 literal with `\r`, and `converged/` runs the corrected source to show
 that it passes.
+
+## Not vendored
+
+Every `.ml` file under upstream's `test/` at the pin is vendored under
+`corpus/`, except the three the rulings above drop and the files below.
+They test ppx_expect's own internals or Jane Street build machinery, and
+have no user-level equivalent. Paths are relative to upstream's `test/`.
+
+- Link aggregators, a Jane Street build idiom (a module list forcing
+  linkage, no test content); the corpus's runner mains
+  (`conformance_runner.ml`) and dune's generated runner do their work:
+  `ppx_expect_test.ml`, `example/expect_test_examples.ml`,
+  `duplicated-by-ppx/expect_test_copied_by_ppx_tests.ml`,
+  `duplicated-by-ppx/negative-tests/expect_test_copied_by_ppx_negative_tests.ml`,
+  `expect-if-reached/expect_test_if_unreachable_tests.ml`,
+  `expect-if-reached/negative-test/expect_test_if_unreachable_negative_tests.ml`,
+  `explicit-strict-false/expect_test_explicit_no_strict_indent.ml`,
+  `explicit-strict-false/negative-test/expect_test_explicit_no_strict_indent_negative.ml`,
+  `explicit-strict-true/expect_test_explicit_strict_indent.ml`,
+  `explicit-strict-true/negative-test/expect_test_explicit_strict_indent_negative.ml`,
+  `negative-tests/expect_test_negative_tests.ml`,
+  `negative-tests/for-mdx/expect_test_example_for_mdx.ml`,
+  `negative-tests/nesting/expect_test_nesting_tests.ml`,
+  `negative-tests/exit-in-test/expect_test_test_exit_in_test.ml`,
+  `negative-tests/exit-in-test/broken-test/expect_test_call_exit_in_test.ml`,
+  `no-output-patterns/ppx_expect_test_no_output_patterns.ml`,
+  `verbose-mode/sub/expect_test_verbose_mode_tests.ml`,
+  `negative-tests/disabling/lib/expect_test_disabling_test_lib.ml`.
+- ppx_expect-internal API tests, which call
+  `Ppx_expect_runtime.For_external` or collector knobs windtrap does not
+  export: `bad_test.ml`,
+  `current_test_has_output_that_does_not_match_exn.ml`,
+  `negative-tests/current_test_has_output_that_does_not_match_exn.ml`,
+  `negative-tests/nonempty_stack.ml`,
+  `force-drop/lib/sub/expect_test_force_drop_integration_lib.ml`.
+- Tests of how ppx_expect handles nodes copied by another PPX, driven by
+  a rewriter that exists only for them:
+  `duplicated-by-ppx/ppx-duplicate/ppx_duplicate_for_ppx_expect_internal_testing.ml`,
+  `duplicated-by-ppx/duplicated_expect.ml`,
+  `duplicated-by-ppx/negative-tests/duplicated_expect.ml`,
+  `duplicated-by-ppx/negative-tests/duplicated_inconsistent.ml`.
+- Jane Street runner and console machinery, whose observable is
+  ppx_expect's runner console text or its `inline_tests_runner` wrapper
+  scripts: `negative-tests/exit-in-test/test.ml`,
+  `negative-tests/exit-in-test/broken-test/test.ml`,
+  `verbose-mode/sub/print_in_the_middle.ml`,
+  `verbose-mode/sub/test_loops.ml`,
+  `source-tree-root/expect_test_source_tree_test.ml`,
+  `negative-tests/disabling/lib/test_ref.ml`,
+  `negative-tests/disabling/main.ml`.
+- The non-default driver flag `-expect-test-strict-indentation=true`,
+  which windtrap has no equivalent of: `explicit-strict-true/nine.ml`,
+  `explicit-strict-true/negative-test/nine.ml`.
+- Unbuildable without Core and ppx_jane deriving, their expect constructs
+  covered by other vendored files except the `{xxx|…|xxx}` payload of
+  `example/tests.ml`: `example/tests.ml`,
+  `negative-tests/trailing_in_module.ml`.
+- An expected observable that is itself a refused construct:
+  `negative-tests/expect_output.ml` (upstream corrects the unreached
+  nodes to `[%expect.unreachable]`), `negative-tests/nesting/nested.ml`
+  (upstream splices `[@@expect.uncaught_exn]` with the collector's
+  nested-test error).
+
+`example/tabs.ml.in`, which upstream's build generates into `tabs.ml`
+with a Jane Street formatter, is not vendored either.

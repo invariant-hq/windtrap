@@ -2,7 +2,7 @@
 ; Upstream passes -expect-test-strict-indentation=false, which is
 ; ppx_expect's default (upstream src/ppx_expect.ml: strict_indent = ref
 ; false); windtrap has the single default rule, so the flag is dropped
-; in this build layer (see TRIAGE.md).
+; in this build layer.
 
 (library
  (name conformance_esf)

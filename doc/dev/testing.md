@@ -267,33 +267,32 @@ Mutation needs `Unix.fork` and declines by name on Windows.
 The compatibility promise, that most ppx_expect suites run unchanged
 after swapping the pps and the backend, is measured, not asserted.
 `test/conformance/` vendors the test suite of a pinned ppx_expect commit
-(recorded in `NOTICE`) and classifies every file in `TRIAGE.md`: HONORED
-(runs with matching semantics: the same tests pass, the same payloads
-match, the same mismatches produce corrections), REJECTED (fails loudly
-at expansion with a diagnostic naming the construct, or fails to
-compile), N-A (Jane Street internals, each justified). `RESULTS.md`
-states the bar: every file of the pass set passes unchanged, and every
-construct windtrap does not support is refused, both `@runtest`
-outcomes. `count.exe` computes the numbers from the corpus's files into
-`counts.expected` on every `@runtest` (the pass set, the corrections and
-how many are byte-identical to upstream's, the refused), `dune promote`
-accepts new numbers, and `RESULTS.md` quotes the file and restates none
-of them. The byte-identical share is reported and gated by nothing;
-`RESULTS.md` says why. `converged/` runs each corrected source again and
-shows that it passes.
+(recorded in `NOTICE`) in two classes: HONORED (runs with matching
+semantics: the same tests pass, the same payloads match, the same
+mismatches produce corrections) and REJECTED (fails loudly at expansion
+with a diagnostic naming the construct, or fails to compile);
+`RESULTS.md` lists the files it does not vendor, each with its reason.
+`RESULTS.md` states the bar: every file of the pass set passes
+unchanged, and every construct windtrap does not support is refused,
+both `@runtest` outcomes. `count.exe` computes the numbers from the
+corpus's files into `counts.expected` on every `@runtest` (the pass set,
+the corrections and how many are byte-identical to upstream's, the
+refused), `dune promote` accepts new numbers, and `RESULTS.md` quotes
+the file and restates none of them. The byte-identical share is reported
+and gated by nothing; `RESULTS.md` says why. `converged/` runs each
+corrected source again and shows that it passes.
 
 When a conformance diff appears: reproduce on `@runtest` (there is no
 red-by-design alias; a fixture either states a contract windtrap holds
 or it is not vendored); decide which side is wrong, the upstream golden
 being truth for HONORED files; and record a divergence windtrap should
-not follow as a ruling in `RESULTS.md`, dropping the fixture and marking
-its row "not vendored" in `TRIAGE.md`. Never edit vendored bytes
-silently: the only permitted tweak is the one-line `open Corpus_shim`
-substitution, each listed in `TRIAGE.md`. Re-pinning to a newer
-ppx_expect is a change of its own: update the pin, re-vendor, re-triage
-every changed file, re-measure, record the numbers. One golden,
-`hello_async.compile-rejected.expected`, pins an OCaml type error and is
-re-promoted on compiler upgrades.
+not follow as a ruling in `RESULTS.md`, dropping the fixture. Never edit
+vendored bytes silently: the only permitted tweak is the one-line
+`open Corpus_shim` substitution, each listed in `NOTICE`. Re-pinning to
+a newer ppx_expect is a change of its own: update the pin, re-vendor,
+re-triage every changed file, re-measure, record the numbers. One
+golden, `hello_async.compile-rejected.expected`, pins an OCaml type
+error and is re-promoted on compiler upgrades.
 
 ## Without dune
 
