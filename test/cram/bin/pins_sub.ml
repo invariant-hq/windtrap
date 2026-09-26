@@ -9,7 +9,7 @@
    merge knows that every mutant but one is killed somewhere. *)
 
 open Windtrap
-module Calc = Mutcli_fixture.Calc
+module Calc = Bin_calc.Calc
 
 let () =
   exit

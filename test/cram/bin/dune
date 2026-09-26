@@ -1,0 +1,46 @@
+; mkdata.exe writes the dumps and verdict files that the sessions merge.
+
+(executable
+ (name mkdata)
+ (modules mkdata)
+ (libraries windtrap_runtime))
+
+(cram
+ (applies_to :whole_subtree)
+ (deps %{bin:windtrap} mkdata.exe))
+
+; A library under both backends in every build, and two suites over it. A
+; session copies them into a scratch build directory, where their runs
+; write their dumps and verdict files; the recorded source is calc.ml.
+
+(library
+ (name bin_calc)
+ (modules calc)
+ (preprocess
+  (pps ppx_windtrap.coverage ppx_windtrap.mutate)))
+
+(executables
+ (names pins_add pins_sub)
+ (modules pins_add pins_sub)
+ (libraries windtrap bin_calc))
+
+(cram
+ (applies_to data)
+ (deps pins_add.exe calc.ml))
+
+; two_executables.t runs the mutation loop, which Windows refuses for want
+; of fork.
+
+(cram
+ (applies_to two_executables)
+ (enabled_if
+  (<> %{os_type} Win32))
+ (deps pins_add.exe pins_sub.exe calc.ml))
+
+; unreadable.t makes files and directories unreadable with chmod and plants
+; a dangling symbolic link, which Windows does not do.
+
+(cram
+ (applies_to unreadable)
+ (enabled_if
+  (<> %{os_type} Win32)))

@@ -3,13 +3,13 @@
    SPDX-License-Identifier: ISC
   ---------------------------------------------------------------------------*)
 
-(* One of the two test executables over Mutcli_fixture.Calc. It pins
+(* One of the two test executables over Bin_calc.Calc. It pins
    [add] and merely reaches [sub], so its own mutation report calls
    [sub]'s mutant a survivor, which is a lie about the project, because
    the sibling executable kills it. *)
 
 open Windtrap
-module Calc = Mutcli_fixture.Calc
+module Calc = Bin_calc.Calc
 
 let () =
   exit
