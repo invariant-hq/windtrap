@@ -1,3 +1,8 @@
+(*---------------------------------------------------------------------------
+   Copyright (c) 2026 Invariant Systems. All rights reserved.
+   SPDX-License-Identifier: ISC
+  ---------------------------------------------------------------------------*)
+
 (* A node that a run of its test never reaches fails the test when the body
    returns, located at the first such node, and the failure names the lines of
    the others. A node reached once passes, and each functor instance is a test

@@ -1,3 +1,8 @@
+(*---------------------------------------------------------------------------
+   Copyright (c) 2026 Invariant Systems. All rights reserved.
+   SPDX-License-Identifier: ISC
+  ---------------------------------------------------------------------------*)
+
 (* The sanitized text is the text compared, and the text a correction writes as
    the new baseline: the correction of the first node reads [pid NNNN]. Beside
    it, the second node matches and keeps its spelling. *)

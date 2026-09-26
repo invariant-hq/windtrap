@@ -1,3 +1,8 @@
+(*---------------------------------------------------------------------------
+   Copyright (c) 2026 Invariant Systems. All rights reserved.
+   SPDX-License-Identifier: ISC
+  ---------------------------------------------------------------------------*)
+
 (* An override of run must call f once. One that calls it twice runs every
    expectation of the body twice. The one that never calls it is in
    ../correction/unreached.ml. *)
@@ -12,7 +17,7 @@ module Twice = struct
       sanitized := 0;
       f ();
       f ();
-      assert (!sanitized = 2)
+      Windtrap.equal Windtrap.int 2 !sanitized
 
     let sanitize s =
       incr sanitized;

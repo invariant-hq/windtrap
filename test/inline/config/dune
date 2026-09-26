@@ -1,5 +1,6 @@
 (library
- (name windtrap_test_ppx_config)
+ (name windtrap_test_inline_config)
  (inline_tests)
+ (libraries windtrap)
  (preprocess
   (pps ppx_windtrap)))

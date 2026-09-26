@@ -15,7 +15,7 @@
  (deps sanitized.ml trailing.ml unreached.ml)
  (action
   (run
-   %{dep:../../../cli/inline_runner/drive/drive.exe}
+   %{dep:../../cli/inline_runner/drive/drive.exe}
    --mask
    full-log
    --placeholder

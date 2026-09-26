@@ -1,3 +1,8 @@
+(*---------------------------------------------------------------------------
+   Copyright (c) 2026 Invariant Systems. All rights reserved.
+   SPDX-License-Identifier: ISC
+  ---------------------------------------------------------------------------*)
+
 (* Compiled with -w +a -warn-error +a (see ./dune): each form below
    expands to generated code under the harshest user regime, so the build
    fails if any of it provokes a warning. *)

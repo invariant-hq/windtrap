@@ -1,3 +1,8 @@
+(*---------------------------------------------------------------------------
+   Copyright (c) 2026 Invariant Systems. All rights reserved.
+   SPDX-License-Identifier: ISC
+  ---------------------------------------------------------------------------*)
+
 (* The generated code names Expect_test_config unqualified. *)
 
 (* The definition of Expect_test_config in scope where a test is written governs
@@ -28,13 +33,13 @@ let%expect_test "below the override, its sanitizer" =
   {%expect_exact|EXACT|}
 
 let%expect_test "below the override, its run" =
-  assert !Expect_test_config.running
+  Windtrap.is_true !Expect_test_config.running
 
 (* The body of a let%test does not go through run. *)
 let%test "a let%test body runs outside the override's run" =
-  assert (not !Expect_test_config.running)
+  Windtrap.is_false !Expect_test_config.running
 
 (* A body that calls Windtrap.output itself reads the output unsanitized. *)
 let%expect_test "Windtrap.output reads the output unsanitized" =
   print_string "abc";
-  assert (Windtrap.output () = "abc")
+  Windtrap.equal Windtrap.string "abc" (Windtrap.output ())

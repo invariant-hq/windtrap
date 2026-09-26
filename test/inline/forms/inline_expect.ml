@@ -1,8 +1,12 @@
+(*---------------------------------------------------------------------------
+   Copyright (c) 2026 Invariant Systems. All rights reserved.
+   SPDX-License-Identifier: ISC
+  ---------------------------------------------------------------------------*)
+
 (* The payload-shape matrix under the real backend: every [%expect]
    spelling the PPX accepts must round-trip through the core's matcher
-   without churn. Payloads are formatted exactly as a correction would
-   write them, so a promote of any of these tests is a no-op. The
-   transient promote-loop check relies on that. Two exercise
+   without churn. Payloads are formatted as a correction would write
+   them, so a promote of any of these tests is a no-op. Two exercise
    matcher-accepted spellings that are not the writer's fixed point
    ({||} and bare [%expect]): they match, and a correction patches only
    the literal it corrects, so they are never rewritten by a correction

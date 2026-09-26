@@ -1,3 +1,8 @@
+(*---------------------------------------------------------------------------
+   Copyright (c) 2026 Invariant Systems. All rights reserved.
+   SPDX-License-Identifier: ISC
+  ---------------------------------------------------------------------------*)
+
 (* let%test and module%test under the real backend: nested groups
    register in order, and let%test / let%expect_test coexist inside a
    module%test. The enter/leave wrapping keeps module contents (here

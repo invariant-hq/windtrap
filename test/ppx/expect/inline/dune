@@ -1,5 +1,0 @@
-(library
- (name windtrap_test_ppx_inline)
- (inline_tests)
- (preprocess
-  (pps ppx_windtrap)))

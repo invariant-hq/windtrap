@@ -1,3 +1,8 @@
+(*---------------------------------------------------------------------------
+   Copyright (c) 2026 Invariant Systems. All rights reserved.
+   SPDX-License-Identifier: ISC
+  ---------------------------------------------------------------------------*)
+
 (* The output a body writes after its last node is checked as the payload of an
    absent node. Blank output passes, other output fails, and the correction
    appends [;] and a node to the body, two columns right of the test's head. A

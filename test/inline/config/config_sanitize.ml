@@ -3,8 +3,7 @@
    SPDX-License-Identifier: ISC
   ---------------------------------------------------------------------------*)
 
-(* Tests for a shadowed Expect_test_config: the generated code applies
-   [sanitize] to what each node reads and hands the body to [run]. *)
+(* The generated code applies [sanitize] to what each node reads. *)
 
 module Expect_test_config = struct
   include Expect_test_config
@@ -28,10 +27,6 @@ let%expect_test "an [%expect.output] reads the sanitized text" =
   let captured = [%expect.output] in
   Windtrap.equal Windtrap.string "N" captured
 
-let%expect_test "Windtrap.output reads the output unsanitized" =
-  print_string "7";
-  Windtrap.equal Windtrap.string "7" (Windtrap.output ())
-
 module Never_runs = struct
   module Expect_test_config = struct
     include Expect_test_config
@@ -40,18 +35,8 @@ module Never_runs = struct
   end
 
   (* A body with a node fails, as that node is never reached; see
-     test/ppx/expect/correction/unreached.ml. *)
+     ../correction/unreached.ml. *)
   let%expect_test "a run that never calls a body without a node checks nothing"
       =
     print_string "anything"
-end
-
-module Raising_run = struct
-  module Expect_test_config = struct
-    include Expect_test_config
-
-    let run _ = failwith "run was called"
-  end
-
-  let%test "the body of a let%test does not go through run" = ()
 end

@@ -1,46 +1,46 @@
 correction: 12 tests
 ──────────────────────── failures ────────────────────────
   FAIL  Sanitized › a correction writes the sanitized text
-    test/ppx/expect/correction/sanitized.ml:13
-      13 │ [%expect {| stale |}];
+    test/inline/correction/sanitized.ml:18
+      18 │ [%expect {| stale |}];
 
     expect: mismatch
     @@ -1,1 +1,1 @@
     - stale
     + pid NNNN
-    accept: dune promote test/ppx/expect/correction/sanitized.ml
+    accept: dune promote test/inline/correction/sanitized.ml
 
   FAIL  Trailing › output after the last node
-    test/ppx/expect/correction/trailing.ml:9
-      9 │ print_string "goodbye\n"
+    test/inline/correction/trailing.ml:14
+      14 │ print_string "goodbye\n"
 
     expect: no baseline
     proposed (1 line):
       + goodbye
-    accept: dune promote test/ppx/expect/correction/trailing.ml
+    accept: dune promote test/inline/correction/trailing.ml
 
   FAIL  Trailing › a body with no node
-    test/ppx/expect/correction/trailing.ml:13
-      13 │ print_endline "two"
+    test/inline/correction/trailing.ml:18
+      18 │ print_endline "two"
 
     expect: no baseline
     proposed (2 lines):
       + one
       + two
-    accept: dune promote test/ppx/expect/correction/trailing.ml
+    accept: dune promote test/inline/correction/trailing.ml
 
   FAIL  Trailing › Nested › a nested test's node is indented under its head
-    test/ppx/expect/correction/trailing.ml:22
-      22 │ print_string "inner"
+    test/inline/correction/trailing.ml:27
+      27 │ print_string "inner"
 
     expect: no baseline
     proposed (1 line):
       + inner
-    accept: dune promote test/ppx/expect/correction/trailing.ml
+    accept: dune promote test/inline/correction/trailing.ml
 
   FAIL  Trailing › a body that raises checks nothing after it
-    test/ppx/expect/correction/trailing.ml:25
-      25 │ let%expect_test "a body that raises checks nothing after it" =
+    test/inline/correction/trailing.ml:30
+      30 │ let%expect_test "a body that raises checks nothing after it" =
 
     stop
     captured output (1 line):
@@ -48,33 +48,33 @@ correction: 12 tests
     full log: <log>
 
   FAIL  Unreached › a node behind a branch not taken
-    test/ppx/expect/correction/unreached.ml:9
-      9 │ if Sys.opaque_identity false then [%expect {| never |}]
+    test/inline/correction/unreached.ml:14
+      14 │ if Sys.opaque_identity false then [%expect {| never |}]
 
     the body returned without reaching this node
 
   FAIL  Unreached › every node not reached is named
-    test/ppx/expect/correction/unreached.ml:13
-      13 │ [%expect {| a |}];
+    test/inline/correction/unreached.ml:18
+      18 │ [%expect {| a |}];
 
-    the body returned without reaching this node, nor the nodes of lines 14, 15
+    the body returned without reaching this node, nor the nodes of lines 19, 20
 
   FAIL  Unreached › a node is judged in each instance (2)
-    test/ppx/expect/correction/unreached.ml:29
-      29 │ if B.reach then [%expect {| |}]
+    test/inline/correction/unreached.ml:34
+      34 │ if B.reach then [%expect {| |}]
 
     the body returned without reaching this node
 
   FAIL  Unreached › an override that never calls the body fails
-    test/ppx/expect/correction/unreached.ml:50
-      50 │ [%expect {| printed |}]
+    test/inline/correction/unreached.ml:55
+      55 │ [%expect {| printed |}]
 
     the body returned without reaching this node
 ──────────────────────────────────────────────────────────
 
 corrections (2):
-  wrote test/ppx/expect/correction/sanitized.ml.corrected (1 expectation)
-  wrote test/ppx/expect/correction/trailing.ml.corrected (3 expectations)
+  wrote test/inline/correction/sanitized.ml.corrected (1 expectation)
+  wrote test/inline/correction/trailing.ml.corrected (3 expectations)
 
 3 passed, 9 failed, 2 corrections written in <duration>.
 --- stderr ---

@@ -2,7 +2,7 @@
 ; regression is the build.
 
 (library
- (name windtrap_test_ppx_strict)
+ (name windtrap_test_inline_strict)
  (inline_tests)
  (flags
   (:standard -w +a -warn-error +a))
