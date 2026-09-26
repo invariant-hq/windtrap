@@ -1,3 +1,8 @@
+(*---------------------------------------------------------------------------
+   Copyright (c) 2026 Invariant Systems. All rights reserved.
+   SPDX-License-Identifier: ISC
+  ---------------------------------------------------------------------------*)
+
 (* Windtrap-authored runner main for the armed-inline fixture, mirroring
    the inline_tests backend's generated runner as the conformance corpus
    does. The module alias forces link order: the fixture registers its

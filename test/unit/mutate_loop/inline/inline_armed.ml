@@ -1,3 +1,8 @@
+(*---------------------------------------------------------------------------
+   Copyright (c) 2026 Invariant Systems. All rights reserved.
+   SPDX-License-Identifier: ISC
+  ---------------------------------------------------------------------------*)
+
 (* An expect test whose output changes when a mutant is armed.
 
    While a mutant is armed an [%expect] mismatch is a plain
