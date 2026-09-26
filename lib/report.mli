@@ -13,10 +13,9 @@
 
     A report is a projection of {!type:Run.result} rows and of the {!Failure.t}
     payloads in them, written under one [ansi] decision made at {!create}.
-    Nothing here alters a status, a count or the scheduling of a run (guarantee
-    4 of [doc/dev/architecture.md]). The entries of a failure block and the
-    sections of a mutation report are {!Report_sections}', and the JUnit
-    document is {!Report_junit}'s. *)
+    Nothing here alters a status, a count or the scheduling of a run. The
+    entries of a failure block and the sections of a mutation report are
+    {!Report_sections}', and the JUnit document is {!Report_junit}'s. *)
 
 (** {1:renderer The renderer} *)
 
@@ -288,9 +287,9 @@ val annotations :
 (** {2:armed The armed run}
 
     An armed process announces its mutant before any other output and ends on
-    one verdict line (guarantee 12 of [doc/dev/architecture.md]). The order is
-    the client's: a client must call {!mutation_armed} before {!run} and at most
-    one of the four verdict functions after it.
+    one verdict line. The order is the client's: a client must call
+    {!mutation_armed} before {!run} and at most one of the four verdict
+    functions after it.
 
     These five functions erase the live line and write their line, and do not
     flush: a client must flush [out] and the standard descriptors after the

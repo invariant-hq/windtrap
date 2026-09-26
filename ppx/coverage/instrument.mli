@@ -12,10 +12,10 @@
     initialized. The {{!section-exclusion}exclusion attributes} switch the
     rewriting off for an expression, a binding, a region or a file.
 
-    Instrumentation never changes what a program or a test means, which is
-    guarantee 10 of [doc/dev/architecture.md]. An instrumented file evaluates
-    the expressions of the original in the same order, every tail call stays a
-    tail call, and a [lazy] is compiled as it was.
+    Instrumentation never changes what a program or a test means. An
+    instrumented file evaluates the expressions of the original in the same
+    order, every tail call stays a tail call, and a [lazy] is compiled as it
+    was.
 
     The set of instrumented forms is closed, and adding one to it is a design
     amendment. *)

@@ -7,9 +7,8 @@
 
     The command merges the dumps that instrumented test executables wrote and
     reports expression coverage for each source file. It only reads files, so it
-    runs no test and drives no build. A test run prints no coverage number, so
-    this command is the one coverage reporter, and the one place where coverage
-    is gated (guarantee 10 of [doc/dev/architecture.md]).
+    runs no test and drives no build. A test run prints no coverage number; this
+    command reports it, and [--min] gates it.
 
     {!run} is the whole command.
     {!Windtrap.Private.Report_sections.coverage_report} states what the report

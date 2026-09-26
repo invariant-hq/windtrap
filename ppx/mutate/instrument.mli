@@ -15,10 +15,9 @@
     expression, a binding, a region or a file.
 
     Every mutant of a project is compiled into one binary, in which the runtime
-    arms at most one. Guarantee 12 of [doc/dev/architecture.md] is that a mutant
-    changes meaning only in the process that armed it. That process is a forked
-    child of the [--mutate] loop, or the run itself under [--arm]. The part of
-    the guarantee that this rewriter owes is that a program with no mutant armed
+    arms at most one. A mutant changes meaning only in the process that armed
+    it. That process is a forked child of the [--mutate] loop, or the run itself
+    under [--arm]. This rewriter's part is that a program with no mutant armed
     computes what the uninstrumented one does. A guard evaluates each operand
     once and in the order of the original application, a tail call stays a tail
     call, and a [lazy] is compiled as it was. *)

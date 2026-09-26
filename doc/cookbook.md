@@ -215,9 +215,7 @@ response only when the test says so, to observe the in-flight state —
 is scheduling, not sequencing: make the entry a promise
 (`Eio.Promise.t`, or your runtime's equivalent) that the seam awaits,
 and the concurrency library owns when it resolves. And a tape is not a
-mock framework: there is no call matcher and no expectation DSL here
-deliberately — a test that needs several interlocking fakes to check
-one line is the over-mocked shape the skill's bad-test catalog rejects.
+mock framework: there is no call matcher and no expectation DSL here: a test that needs several interlocking fakes to check one line is over-mocked.
 The tape verifies one thing, the thing hand-rolled fakes silently skip:
 this finite interaction budget was consumed, exactly. Faults need no
 machinery at all — script an `Error`, or a thunk that raises, at the

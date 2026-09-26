@@ -35,10 +35,9 @@ val execute_and_report : suite:string -> Run.config -> Test_tree.t list -> run
 
     [Reported 0] is a loop that ran whole, whatever it found. Only
     [windtrap mutants], which merges the verdict files of every executable,
-    gates on survivors (guarantee 12 of [doc/dev/architecture.md]). [Reported 1]
-    is a loop that refused to start or could not go on, or an [--arm] identifier
-    that is refused. Each says its reason on standard error, and none falls back
-    to a default and runs on. *)
+    gates on survivors. [Reported 1] is a loop that refused to start or could
+    not go on, or an [--arm] identifier that is refused. Each says its reason on
+    standard error, and none falls back to a default and runs on. *)
 
 (** {1:loop The loop}
 

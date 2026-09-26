@@ -8,9 +8,8 @@
     The command merges the verdict files that [--mutate] runs wrote and reports
     on a whole project. It reports the mutants that survived every executable
     that reached them, and the mutants that no executable reached. It only reads
-    files, so it runs no test and drives no build. Its exit code is the one
-    mutation exit code that a build may gate on (guarantee 12 of
-    [doc/dev/architecture.md]).
+    files, so it runs no test and drives no build. A build gates on its exit
+    code, since a [--mutate] run exits 0 whatever it finds.
 
     {!run} is the whole command.
     {!Windtrap.Private.Report_sections.mutation_report} states what the report

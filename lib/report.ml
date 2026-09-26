@@ -798,7 +798,7 @@ let annotations ?invocation ?armed ~release_failures results =
 (* Mutation lines *)
 
 (* The announcement prints whatever the mode: a run whose output does not
-   announce a mutant has none armed (guarantee 12). *)
+   announce a mutant has none armed. *)
 let mutation_armed t ~id ~before ~after =
   clear_live t;
   put t

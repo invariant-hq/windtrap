@@ -4,8 +4,7 @@
   ---------------------------------------------------------------------------*)
 
 (* The [windtrap] binary dispatches to its two commands, which merge the data
-   files of instrumented test runs and report them. Test executables are their
-   own runners, so nothing else lives here. *)
+   files of instrumented test runs and report them. *)
 
 module Os = Windtrap.Private.Os
 
