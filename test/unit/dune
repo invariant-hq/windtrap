@@ -2,7 +2,6 @@
  (names
   test_os
   test_gen
-  test_capture
   test_property
   test_baseline
   test_source_patch
@@ -13,7 +12,6 @@
  (modules
   test_os
   test_gen
-  test_capture
   test_property
   test_baseline
   test_source_patch
@@ -71,6 +69,11 @@
 (test
  (name test_loc)
  (modules test_loc)
+ (libraries windtrap unix))
+
+(test
+ (name test_capture)
+ (modules test_capture)
  (libraries windtrap unix))
 
 (test
