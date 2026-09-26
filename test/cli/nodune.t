@@ -80,7 +80,7 @@ The installed binary finds it from the working directory and merges;
 the untested arm is the uncovered line. Only the library's row is
 pinned: when windtrap's own tree is built under the coverage backend,
 the installed core is instrumented too and adds its rows to this
-report, and the --min gate (test/instr/coverage_cmd pins it) would
+report, and the --min gate (test/cram/bin/coverage.t pins it) would
 then measure the core rather than calc.ml; the columns are squeezed
 because the table aligns to its widest row:
 

@@ -22,8 +22,8 @@ the coverage and mutation backends, pinned to `windtrap` with
       both `@runtest` outcomes; `test/conformance/counts.expected`
       reports the byte-identical share of the corrections. If a count
       moved since the last release, the release notes say why.
-- [ ] Both semantics-preservation suites green (`test/ppx/coverage/semantics/`
-      and `test/ppx/mutate/semantics/`), which nothing waives (the
+- [ ] Both semantics-preservation suites green (`test/unit/semantics/coverage/`
+      and `test/unit/semantics/mutate/`), which nothing waives (the
       coverage and mutant guarantees in `architecture.md`).
 - [ ] Instrumented smoke run:
       `dune runtest --force --instrument-with ppx_windtrap.coverage` still

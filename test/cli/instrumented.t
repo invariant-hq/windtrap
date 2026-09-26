@@ -1,5 +1,5 @@
 The runs of an instrumented suite, and the JUnit file each leaves. The
-loop's own scenarios are test/instr/loop's; what this session pins is
+loop's own scenarios are test/unit/mutate_loop's; what this session pins is
 what --junit does beside --mutate and --arm. POSIX only: the loop
 forks, and Windows refuses it.
 

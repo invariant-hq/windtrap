@@ -2,7 +2,7 @@ The mutation flags on an executable with nothing to mutate, the
 commonest sibling of all, since the aggregate's remedy hands one
 identifier to every suite in a tree at once, and `--mutate` asked of a
 build that was never instrumented is the commonest misconfiguration.
-The loop's own scenarios are test/instr/loop's; what these sessions
+The loop's own scenarios are test/unit/mutate_loop's; what these sessions
 pin is the facade: the flags parse, the run still happens, and the
 answer is a sentence on stderr rather than a green run with no report.
 
