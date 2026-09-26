@@ -4,7 +4,7 @@
 ; dune reads the workspace file at the workspace root, so inside
 ; windtrap's tree this file is inert and the README's commands carry
 ; --instrument-with instead. Standalone, it declares once what every
-; command was repeating — both backends on for the default context —
+; command was repeating (both backends on for the default context),
 ; and the flag disappears from the whole README. The built program's
 ; meaning never changes: coverage marks only count, and a mutant
 ; changes meaning only in a forked child that armed it.

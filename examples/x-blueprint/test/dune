@@ -13,8 +13,8 @@
 ; mutation run is not a cached artifact; a plain `dune build @mutate`
 ; without them rebuilds the executables uninstrumented, which stales
 ; every verdict, and the merge then refuses loudly. The merge exits 1
-; when a mutant survived every executable that reached it. (universe) is
-; load-bearing in both: the .coverage and .mutants files are written by
+; when a mutant survived every executable that reached it. Both need
+; (universe): the .coverage and .mutants files are written by
 ; test executables at exit and are not declarable dependencies, so it
 ; makes the milliseconds-cheap merge re-run on every build.
 ;

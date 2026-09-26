@@ -1,6 +1,6 @@
-; Blackbox tests of the binary. The deps line is load-bearing: without
-; it dune would not rebuild bin/main.exe before running the test and
-; the session would exercise stale code.
+; Blackbox tests of the binary. Without the deps line, dune would not
+; rebuild bin/main.exe before running the test, and the session would
+; exercise stale code.
 
 (cram
  (applies_to :whole_subtree)
