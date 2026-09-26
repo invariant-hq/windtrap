@@ -1,4 +1,7 @@
-What the report shows beyond a failure, and where a run keeps its logs.
+What a report leaves outside the process that printed it: the bytes a
+test writes under --stream, where a failing test's log lands, and the
+replay line, spelled for the way the run was started and run again as
+pasted. The report's layout is pinned by test/unit's report suites.
 
   $ run() {
   >   env -i PATH="$PATH" WINDTRAP_COLOR=never WINDTRAP_SLOW_THRESHOLD=0 \
@@ -6,121 +9,50 @@ What the report shows beyond a failure, and where a run keeps its logs.
   >       WINDTRAP_OUTPUT="$PWD/_logs" "$@"
   > }
   $ scrub() {
-  >   sed -E 's/ in [0-9.]+m?s\./ in DURATION./; s/suite_main\.ml:[0-9]+/suite_main.ml:LINE/'
+  >   sed -E 's/ in [0-9.]+m?s\./ in DURATION./; s/s1:[0-9a-f]+/SEED/'
   > }
 
-A test that fails and then passes on a retry is never silent: the run
-exits 0 and counts it as passed, but the header comes out, the flaky
-section names the test with the attempt it passed on, and the summary
-says how many of the passes were flaky.
+--stream captures nothing: each test's bytes reach standard output
+whichever way they leave the process (the stdout channel left unflushed,
+descriptor 1, a subprocess), in the order the tests ran and before the
+report's own lines. A green streamed run is its tests' bytes and the one
+line.
 
-  $ run FACADE_FIXTURE=flaky ./suite_main.exe > out 2>&1
-  $ scrub < out
-  fixture: 1 test
-  flaky tests (1):
-    passed on attempt 2  flaky
-  
-  1 passed (1 flaky) in DURATION.
-
-Verbose already carries the attempt count on the status line, and keeps
-the section:
-
-  $ run FACADE_FIXTURE=flaky ./suite_main.exe -v > out 2>&1
-  $ scrub < out | sed -E 's/  +[0-9.]+m?s /  TIME /'
-  fixture: 1 test
-    PASS  flaky  TIME (2 attempts)
-  
-  flaky tests (1):
-    passed on attempt 2  flaky
-  
-  1 passed (1 flaky) in DURATION.
-
-Under -v a failed test's status line is its block's title: the block
-prints under it as soon as the test finishes and closes on a blank line,
-the rows of the tests after it follow, and no failures section repeats it
-at the end.
-
-  $ run ./suite_main.exe -v -e greeting > out 2>&1
+  $ run env FACADE_FIXTURE=stream ./suite_main.exe --stream > out 2> err
   [1]
-  $ scrub < out | sed -E 's/  +[0-9.]+m?s$/  TIME/'
-  fixture: 4 tests
-    PASS  math › adds  TIME
-    PASS  math › subtracts  TIME
-    FAIL  boom  TIME
-      test/cram/run/suite_main.ml:LINE
-      deliberate
-      expected  1
-      actual    2
-  
-    PASS  crawls  TIME
-  3 passed, 1 failed in DURATION.
-
---stream captures nothing and changes nothing else: each test's own bytes
-pass through, whichever way they leave the process (the stdout channel
-unflushed, descriptor 1, a subprocess), a failed test's block follows
-its bytes, and the transcript keeps the compact shape. A green streamed
-run is therefore its tests' bytes and the one line.
-
-  $ run FACADE_FIXTURE=stream ./suite_main.exe --stream > out 2> err
-  [1]
-  $ scrub < out | sed -E 's/  +[0-9.]+m?s$/  TIME/'
+  $ head -n 5 out
   through the stdout channel
   through descriptor 1
   through a subprocess
   before the failure
   fixture: 4 tests
-  ──────────────────────── failures ────────────────────────
-    FAIL  fails
-      test/cram/run/suite_main.ml:LINE
-      deliberate
-      expected  1
-      actual    2
-  ──────────────────────────────────────────────────────────
-  
-  3 passed, 1 failed in DURATION.
   $ cat err
-  $ run FACADE_FIXTURE=stream ./suite_main.exe -s -e fails > out 2>&1
+  $ run env FACADE_FIXTURE=stream ./suite_main.exe -s -e fails > out 2>&1
   $ scrub < out
   through the stdout channel
   through descriptor 1
   through a subprocess
   fixture: 3 passed in DURATION.
 
-Under GitHub Actions the transcript folds, the fold closes against the
-last section, the annotations follow the close so that they are never
-folded away, and the summary is still the last line. An annotation is
-titled by the test's path and carries the block's lines below its title.
+Under GitHub Actions the transcript folds, the annotations follow the
+fold's close so that they are never folded away, and the summary is still
+the last line (the envelope's lines are the report suite's):
 
   $ run CI=true GITHUB_ACTIONS=true ./suite_main.exe -f boom > out 2>&1
   [1]
-  $ scrub < out | sed -E 's/line=[0-9]+/line=LINE/'
-  ::group::fixture
-  fixture: 1 test
-  ──────────────────────── failures ────────────────────────
-    FAIL  boom
-      test/cram/run/suite_main.ml:LINE
-      deliberate
-      expected  1
-      actual    2
-  ──────────────────────────────────────────────────────────
-  ::endgroup::
-  ::error file=test/cram/run/suite_main.ml,line=LINE,title=Test failure%3A boom::    test/cram/run/suite_main.ml:LINE%0A    deliberate%0A    expected  1%0A    actual    2
-  
+  $ grep -o -e '^::[a-z]*' out
+  ::group
+  ::endgroup
+  ::error
+  $ tail -1 out | scrub
   1 failed in DURATION.
 
-JUnit has no state for it, so the testcase says so in its system-out:
-
-  $ run FACADE_FIXTURE=flaky ./suite_main.exe --junit report.xml > /dev/null
-  $ grep -A1 'name="flaky"' report.xml | sed -E 's/time="[0-9.]+"/time="TIME"/'
-      <testcase name="flaky" classname="fixture" time="TIME">
-        <system-out>passed on attempt 2</system-out>
-
-A failing test's captured output ends its block with the full log's
-path. The sessions above run the executable from under the build
-directory, where the logs live in its _tests; run by hand from anywhere
-else (a copy in a temporary directory, with no WINDTRAP_PROJECT_ROOT
-and no build directory in sight), the logs go under the system
-temporary directory, keyed by suite, and never grow a _build.
+A failing test's captured output is kept in a log, whose path ends its
+block. The sessions run the executable from under the build directory,
+whose _tests hold the logs; run from anywhere else (a copy in a temporary
+directory, with no WINDTRAP_PROJECT_ROOT and no build directory in sight),
+the logs go under the system temporary directory, keyed by suite, and no
+_build grows:
 
   $ dir=$(mktemp -d)
   $ cp ./suite_main.exe "$dir/suite.exe"
@@ -129,109 +61,68 @@ temporary directory, keyed by suite, and never grow a _build.
   >   TMPDIR="$dir/tmp" FACADE_FIXTURE=noisy \
   >   "$dir/suite.exe" > out 2>&1
   [1]
-  $ scrub < out | sed "s#$dir#<tmp>#g"
-  fixture: 1 test
-  ──────────────────────── failures ────────────────────────
-    FAIL  noisy
-      test/cram/run/suite_main.ml:LINE
-      deliberate
-      expected  1
-      actual    2
-      captured output (1 line):
-        hello from noisy
+  $ grep 'full log:' out | sed "s#$dir#<tmp>#g"
       full log: <tmp>/tmp/windtrap/fixture/noisy.output
-  ──────────────────────────────────────────────────────────
-  
-  1 failed in DURATION.
   $ cat "$dir/tmp/windtrap/fixture/noisy.output"
   hello from noisy
   $ test -e "$dir/_build" || echo 'no _build grown'
   no _build grown
   $ rm -rf "$dir"
 
-A report whose failures include a property's closes on the replay line,
-right above the summary: the command that reruns the run's tests, each
-failed test on the case it drew, spelled for the way the run was started.
-Run by hand, it restates the program as it was typed, then the seed.
-The seed is drawn, and the first case is 0 for some seeds, so the
-number of shrink steps is masked:
+A report whose failures include a property's closes on the replay line.
+Run by hand, the line restates the program as it was typed, then the
+seed:
 
-  $ run FACADE_FIXTURE=property ./suite_main.exe > out 2> err
+  $ run env FACADE_FIXTURE=property ./suite_main.exe > out 2> err
   [1]
-  $ scrub < out | sed -E 's/s1:[0-9a-f]+/SEED/; s/\(case 0(, shrunk [0-9]+ steps?)?\)/(case 0, STEPS)/'
-  fixture: 1 test (seed SEED)
-  ──────────────────────── failures ────────────────────────
-    FAIL  boom
-      test/cram/run/suite_main.ml:LINE
-      counterexample (case 0, STEPS): 0
-      which failed with:
-        expected  1
-        actual    2
-  ──────────────────────────────────────────────────────────
-  
+  $ grep 'replay:' out | scrub
   replay: ./suite_main.exe --seed SEED
-  1 failed in DURATION.
   $ cat err
 
 Run by dune, the program is dune's test action (INSIDE_DUNE set, the
 path relative to the action's directory): the line is a dune exec of the
-program's path from the project root, with no ./ left in it. A core built
-with the mutation backend adds that backend's flag, which the loop's
-suite pins; this session masks it so it reads the same in either build.
+program's path from the project root. A core built with the mutation
+backend adds that backend's flag, which test/unit's mutation loop suite
+pins; it is masked here so that the line reads the same in either build.
 
+  $ mask() { sed -E 's/--instrument-with ppx_windtrap\.mutate //'; }
   $ mkdir sub && cp ./suite_main.exe sub/
   $ run INSIDE_DUNE=1 FACADE_FIXTURE=property ./sub/suite_main.exe > out 2> err
   [1]
-  $ grep 'replay:' out | sed -E 's/s1:[0-9a-f]+/SEED/; s/--instrument-with ppx_windtrap\.mutate //'
+  $ grep 'replay:' out | scrub | mask
   replay: dune exec sub/suite_main.exe -- --seed SEED
   $ rm -r sub
 
-dune exec takes a word without a slash for the name of a program to
-look up, so a program at the project root keeps its ./. At the root of
-a project that holds the program, the line runs as pasted and fails
-again on the same case. INSIDE_DUNE keeps the pasted dune at this root,
-and the backend's flag is masked as above:
+dune exec reads a word without a slash as the name of a program to look
+up, so a program at the project root keeps its ./. At the root of a
+project that holds the program, the line runs as pasted and fails again
+on the same case:
 
   $ mkdir proj && cp ./suite_main.exe proj/ && cd proj
   $ echo '(lang dune 3.0)' > dune-project
   $ run INSIDE_DUNE=1 FACADE_FIXTURE=property ./suite_main.exe > out 2> err
   [1]
-  $ sed -n 's/^ *replay: //p' out | sed -E 's/--instrument-with ppx_windtrap\.mutate //' > replay
-  $ sed -E 's/s1:[0-9a-f]+/SEED/' replay
+  $ sed -n 's/^ *replay: //p' out | mask > replay
+  $ scrub < replay
   dune exec ./suite_main.exe -- --seed SEED
   $ eval "run INSIDE_DUNE=1 FACADE_FIXTURE=property $(cat replay)" > again 2>&1
   [1]
-  $ grep -e 'counterexample' -e 'replay:' again | sed -E 's/s1:[0-9a-f]+/SEED/; s/--instrument-with ppx_windtrap\.mutate //; s/\(case 0(, shrunk [0-9]+ steps?)?\)/(case 0, STEPS)/'
-      counterexample (case 0, STEPS): 0
-  replay: dune exec ./suite_main.exe -- --seed SEED
+  $ grep 'counterexample' out > before && grep 'counterexample' again > after
+  $ diff before after && echo same counterexample
+  same counterexample
   $ cd .. && rm -r proj
 
-A host that passes run no command line gives no program to restate, so
-the line spells the run through the mirrors.
+Two properties fail on cases the seed picks, beside a test that passes.
+The one replay line, pasted, runs the three tests again, and each
+property fails again on its case, shrunk to the same counterexample:
 
-  $ run FACADE_FIXTURE=no-argv ./suite_main.exe > out 2> err
+  $ run env FACADE_FIXTURE=properties ./suite_main.exe > out 2> err
   [1]
-  $ grep 'replay:' out | sed -E 's/s1:[0-9a-f]+/SEED/'
-  replay: WINDTRAP_SEED=SEED dune runtest
-
-Two properties fail beside a test that passes. No block carries a
-replay line: the report closes on one, right above the summary, which
-reruns the suite with the run's seed:
-
-  $ run FACADE_FIXTURE=properties ./suite_main.exe > out 2> err
-  [1]
-  $ grep -c 'replay:' out
-  1
-  $ tail -2 out | scrub | sed -E 's/s1:[0-9a-f]+/SEED/'
+  $ grep 'replay:' out | scrub
   replay: ./suite_main.exe --seed SEED
-  1 passed, 2 failed in DURATION.
-
-Pasted, the line runs the three tests again, and each property fails
-again on the case it failed on, shrunk to the same counterexample:
-
-  $ eval "run FACADE_FIXTURE=properties $(sed -n 's/^replay: //p' out)" > again 2>&1
+  $ eval "run env FACADE_FIXTURE=properties $(sed -n 's/^replay: //p' out)" > again 2>&1
   [1]
-  $ head -1 again | sed -E 's/s1:[0-9a-f]+/SEED/'
+  $ head -1 again | scrub
   fixture: 3 tests (seed SEED)
   $ grep 'counterexample' out > before && grep 'counterexample' again > after
   $ wc -l < before | tr -d ' '
@@ -239,98 +130,32 @@ again on the case it failed on, shrunk to the same counterexample:
   $ diff before after && echo same counterexamples
   same counterexamples
 
-A narrowed run's line restates its selection: one that selects the
-first property alone reruns that one alone.
+A narrowed run's line restates its selection, and runs that selection
+alone:
 
-  $ run FACADE_FIXTURE=properties ./suite_main.exe -f even > out 2> err
+  $ run env FACADE_FIXTURE=properties ./suite_main.exe -f even > out 2> err
   [1]
-  $ grep 'replay:' out | sed -E 's/s1:[0-9a-f]+/SEED/'
+  $ grep 'replay:' out | scrub
   replay: ./suite_main.exe --seed SEED -f 'even'
-  $ eval "run FACADE_FIXTURE=properties $(sed -n 's/^replay: //p' out)" > again 2>&1
+  $ eval "run env FACADE_FIXTURE=properties $(sed -n 's/^replay: //p' out)" > again 2>&1
   [1]
-  $ head -1 again | sed -E 's/s1:[0-9a-f]+/SEED/'
+  $ head -1 again | scrub
   fixture: 1 test (seed SEED)
 
 A run given --failed selected the record of the last failed tests, which
 lies under its -o, so its line restates both. A run of the whole suite
-records the two properties, and the line reruns them:
+records the two properties, and the line reruns them on their cases:
 
-  $ run FACADE_FIXTURE=properties ./suite_main.exe > /dev/null 2>&1
+  $ run env FACADE_FIXTURE=properties ./suite_main.exe > /dev/null 2>&1
   [1]
-  $ run FACADE_FIXTURE=properties ./suite_main.exe --failed > out 2> err
+  $ run env FACADE_FIXTURE=properties ./suite_main.exe --failed > out 2> err
   [1]
-  $ grep 'replay:' out | sed -E 's/s1:[0-9a-f]+/SEED/'
+  $ grep 'replay:' out | scrub
   replay: ./suite_main.exe --seed SEED -o _logs --failed
-  $ eval "run FACADE_FIXTURE=properties $(sed -n 's/^replay: //p' out)" > again 2>&1
+  $ eval "run env FACADE_FIXTURE=properties $(sed -n 's/^replay: //p' out)" > again 2>&1
   [1]
-  $ head -1 again | sed -E 's/s1:[0-9a-f]+/SEED/'
+  $ head -1 again | scrub
   fixture: 2 tests (seed SEED)
   $ grep 'counterexample' out > before && grep 'counterexample' again > after
   $ diff before after && echo same counterexamples
   same counterexamples
-
-An expected failure is the run's record of the test, never a reading of
-its message: a test expected to fail, whose own failure is the sentence
-the runner writes for an unexpected pass, is still an expected failure.
-The run exits 0 on one line, and under -v its line says XFAIL, with its
-failure under it, dim and uncounted, so a slip of the author's does not
-pass for the known defect:
-
-  $ run FACADE_FIXTURE=collide ./suite_main.exe > out 2> err
-  $ scrub < out
-  fixture: 1 expected failure in DURATION.
-  $ run FACADE_FIXTURE=collide ./suite_main.exe -v > out 2> err
-  $ scrub < out | sed -E 's/  +[0-9.]+m?s /  TIME /'
-  fixture: 1 test
-    XFAIL  collide  TIME (expected failure)
-      test/cram/run/suite_main.ml:LINE
-      expected to fail, but the test passed
-  
-  1 expected failure in DURATION.
-
-A fixture is released after the last test, and a release that raises is
-a failure row of its own, named after the fixture's site. The one test
-passed, the run fails, and every sink says why: the transcript and the
-JUnit report alike, rather than an exit code nothing explains.
-
-  $ run FACADE_FIXTURE=release ./suite_main.exe --junit release.xml > out 2> err
-  [1]
-  $ scrub < out
-  fixture: 1 test
-  ──────────────────────── failures ────────────────────────
-    FAIL  fixture release
-      [release] test/cram/run/suite_main.ml:LINE
-      fixture (test/cram/run/suite_main.ml:LINE): release raised Failure("release-boom")
-  ──────────────────────────────────────────────────────────
-  
-  1 passed, 1 failed in DURATION.
-  $ cat err
-  $ sed -E 's/time="[0-9.]+"/time="TIME"/g; s/suite_main\.ml:[0-9]+/suite_main.ml:LINE/g' release.xml
-  <?xml version="1.0" encoding="UTF-8"?>
-  <testsuites name="windtrap" tests="2" failures="1" errors="0" skipped="0" time="TIME">
-    <testsuite name="fixture" tests="2" failures="1" errors="0" skipped="0" time="TIME">
-      <testcase name="touches the fixture" classname="fixture" time="TIME"/>
-      <testcase name="fixture release" classname="fixture" time="TIME">
-        <failure message="fixture (test/cram/run/suite_main.ml:LINE): release raised Failure(&quot;release-boom&quot;…">    [release] test/cram/run/suite_main.ml:LINE
-      fixture (test/cram/run/suite_main.ml:LINE): release raised Failure("release-boom")
-  </failure>
-      </testcase>
-    </testsuite>
-  </testsuites>
-
-A release runs while its run is still executing, so a release that
-starts a run of its own is refused as a test body's would be: run
-raises, and the raise is the release's failure.
-
-  $ run FACADE_FIXTURE=nested ./suite_main.exe > out 2> err
-  [1]
-  $ scrub < out
-  fixture: 1 test
-  ──────────────────────── failures ────────────────────────
-    FAIL  fixture release
-      [release] test/cram/run/suite_main.ml:LINE
-      fixture (test/cram/run/suite_main.ml:LINE): release raised Invalid_argument("windtrap: a run is already executing; nothing inside it can start another run")
-  ──────────────────────────────────────────────────────────
-  
-  1 passed, 1 failed in DURATION.
-  $ cat err
