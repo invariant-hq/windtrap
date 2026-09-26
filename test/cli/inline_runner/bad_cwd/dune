@@ -1,8 +1,3 @@
-; A partition whose sources cannot be found must fail loudly and write no
-; correction: run from a scratch cwd outside any project, it exits 1, and
-; its block says why no correction was kept instead of offering one.
-; See doc/dev/testing.md, "The five families".
-
 (executable
  (name bad_cwd_runner)
  (modules bad_cwd_runner inline_bad_cwd)

@@ -1,7 +1,3 @@
-; A failing tail-position let%test is attributed to its declaration line,
-; never to a generated-runner path. See doc/dev/testing.md, "The five
-; families".
-
 (executable
  (name tail_loc_runner)
  (modules tail_loc_runner inline_tail_loc)

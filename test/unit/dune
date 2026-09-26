@@ -1,5 +1,3 @@
-; One executable per suite, run in parallel by dune. See doc/dev/testing.md.
-
 (tests
  (names
   test_pp
@@ -54,21 +52,14 @@
  (deps
   (glob_files_rec expected/**)))
 
-; Synthetic run data for the two report suites.
-
 (library
  (name render_fixtures)
  (modules render_fixtures)
  (libraries windtrap))
 
-; The JUnit suite's XML well-formedness oracle; stdlib only.
-
 (library
  (name xml_check)
  (modules xml_check))
-
-; The meta suites drive Run.execute in-process, which refuses to nest
-; inside a run, so they are plain executables over this harness.
 
 (library
  (name harness)
@@ -78,7 +69,6 @@
 (tests
  (names test_run test_ppx_runtime test_windtrap)
  (modules test_run test_ppx_runtime test_windtrap)
- ; ppx_windtrap.runtime and .config are test_ppx_runtime's subjects.
  (libraries
   windtrap
   ppx_windtrap.runtime

@@ -1,7 +1,6 @@
-; The fork loop driven through a real spawned process: subject is
-; instrumented unconditionally so its mutants exist in a plain runtest
-; build, and plain_main links no instrumented module so the seam must
-; decline by name. See doc/dev/testing.md, "The five families".
+; subject is instrumented unconditionally so its mutants exist in a plain
+; runtest build, and plain_main links no instrumented module so the seam
+; must decline by name.
 
 (library
  (name mutate_loop_subject)

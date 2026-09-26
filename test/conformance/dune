@@ -1,8 +1,5 @@
 ; The vendored ppx_expect corpus stays byte-identical to upstream, so
-; formatting is disabled for the subtree. The runners are driven by
-; test/cli/inline_runner/drive/drive.exe, the one driver of runner
-; transcripts; pp.exe expands the rejected set. See doc/dev/testing.md,
-; "The conformance corpus".
+; formatting is disabled for the subtree.
 
 (env
  (_
@@ -12,9 +9,6 @@
  (name pp)
  (modules pp)
  (libraries ppxlib ppx_windtrap))
-
-; The corpus's numbers, computed from its files: RESULTS.md quotes
-; counts.expected and restates none of them.
 
 (executable
  (name count)

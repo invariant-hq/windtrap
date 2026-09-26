@@ -1,7 +1,3 @@
-; A failing expect test under a sanitizing Expect_test_config, run through
-; the promotion protocol by the transcript driver: the correction it writes
-; is diffed, with the run's transcript and exit code.
-
 (executable
  (name correction_runner)
  (modules correction_runner sanitized)

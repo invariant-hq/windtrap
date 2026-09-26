@@ -1,8 +1,3 @@
-; The one process harness for the inline-runner fixtures and the
-; conformance corpus: a stated environment, the two streams kept apart,
-; and masks over measured numbers. See doc/dev/testing.md, "The five
-; families".
-
 (library
  (name drive_harness)
  (modules drive_harness)

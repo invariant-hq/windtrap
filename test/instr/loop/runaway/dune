@@ -1,7 +1,3 @@
-; A second instrumented executable: the runaway hit-count budget kills a
-; spinning mutant, and a sibling verdict file appears beside another's.
-; See doc/dev/testing.md, "The five families".
-
 (library
  (name mutate_loop_spinner)
  (modules spinner)

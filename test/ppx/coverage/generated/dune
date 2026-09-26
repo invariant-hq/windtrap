@@ -1,7 +1,5 @@
-; Expansion goldens of the coverage rewriter over generated code: the
-; stand-in deriver of ../../generated makes the nodes that carry [@generated]
-; ghost before the rewriter runs. A new fixture is one X.ml and one
-; X.expected, then dune build @gen-rules --auto-promote.
+; A new fixture is one X.ml and one X.expected, then dune build @gen-rules
+; --auto-promote.
 
 (executable
  (name generated_pp)

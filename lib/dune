@@ -1,6 +1,6 @@
-; The library. Both backends instrument it for windtrap's own coverage and
-; mutation aliases; the modules that judge mutants opt out with
-; [@@@mutate exclude_file]. See doc/dev/architecture.md.
+; Both backends instrument it for windtrap's own coverage and mutation
+; aliases; the modules that judge mutants opt out with
+; [@@@mutate exclude_file].
 
 (library
  (name windtrap)

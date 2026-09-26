@@ -1,7 +1,3 @@
-; An expect body that fails an assertion and leaves a stale payload must
-; exit 1 and record no correction. See doc/dev/testing.md, "The five
-; families".
-
 (executable
  (name masked_failure_runner)
  (modules masked_failure_runner inline_masked_failure)

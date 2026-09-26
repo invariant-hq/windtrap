@@ -2,10 +2,6 @@
 
 (name windtrap)
 
-; test/cli is a cram suite (the skill's "Testing an executable");
-; x-blueprint's test/cram is the same shape under its own dune-project.
-; See doc/dev/testing.md.
-
 (cram enable)
 
 (generate_opam_files true)

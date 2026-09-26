@@ -1,12 +1,6 @@
-; The windtrap suite: one test stanza per file, one file per source
-; module. test_stats holds an expect literal: its stanza runs the suite
-; with --corrected and diffs the corrected file, so a stale render
-; shows as a diff under `dune runtest` and `dune promote` accepts it.
-;
 ; Both suites declare properties, and the env_var deps make them react
 ; to a seed or a case count set in the environment: `WINDTRAP_SEED=…
-; dune runtest` replays on a warm tree without --force. An ad hoc run
-; passes flags instead: `dune exec test/unit/test_slug.exe -- -f slug`.
+; dune runtest` replays on a warm tree without --force.
 
 (test
  (name test_slug)
@@ -15,6 +9,10 @@
  (deps
   (env_var WINDTRAP_SEED)
   (env_var WINDTRAP_PROP_COUNT)))
+
+; test_stats holds an expect literal: its stanza runs the suite with
+; --corrected and diffs the corrected file, so a stale render shows as a
+; diff under `dune runtest` and `dune promote` accepts it.
 
 (test
  (name test_stats)

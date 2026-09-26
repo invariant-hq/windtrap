@@ -1,10 +1,3 @@
-; Every correction the corpus records converges: the corrected source,
-; run again, passes and corrects nothing. Each golden
-; <f>.ml.corrected.expected of the corpus is copied here as <f>.ml and run
-; by the same protocol; the transcript pins which tests ran and that none
-; failed. chdir.ml runs in a process of its own, as in the corpus.
-; escaped_strings.ml is the known exception, pinned apart below.
-
 (rule
  (copy ../corpus/negative-tests/exact.ml.corrected.expected exact.ml))
 
@@ -103,6 +96,8 @@
  (action
   (diff converged-log.expected converged-log)))
 
+; chdir.ml runs in a process of its own, as in the corpus.
+
 (rule
  (copy ../corpus/negative-tests/chdir.ml.corrected.expected chdir.ml))
 
@@ -139,12 +134,11 @@
  (action
   (diff chdir-log.expected chdir-log)))
 
-; escaped_strings.ml does NOT converge on OCaml 5.2 and later, and is
-; pinned as the known failure it is until the product decides: its
-; correction of an [%expect_exact] over "a\r\nb" writes the CR LF raw
-; inside a {|...|} literal, the compiler reads a CR LF line end in a
-; literal as LF since 5.2, so the corrected source prints "a\r\nb"
-; against a payload of "a\nb" and mismatches again.
+; escaped_strings.ml does not converge on OCaml 5.2 and later, and is
+; pinned as a known failure: its correction of an [%expect_exact] over
+; "a\r\nb" writes the CR LF raw inside a {|...|} literal, the compiler
+; reads a CR LF line end in a literal as LF since 5.2, so the corrected
+; source prints "a\r\nb" against a payload of "a\nb" and mismatches again.
 
 (rule
  (copy

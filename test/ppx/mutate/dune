@@ -1,18 +1,11 @@
-; Expansion and rejection goldens for the mutation instrumenter:
-; mutate_pp.exe is a standalone ppxlib driver, the fixtures are never
-; compiled (integration/ compiles generated code for real), and the parity
-; rules against the coverage twin live in ../coverage/dune. See
-; doc/dev/testing.md, "Accepting a golden".
-
 (executable
  (name mutate_pp)
  (modules mutate_pp)
  (libraries ppxlib windtrap_mutate_ppx))
 
-; dune.inc holds one golden rule pair per fixture, written by
-; ../gen/gen_dune.exe from the list of .ml files here: a new fixture is one
-; X.ml and one X.expected, then dune build @gen-rules --auto-promote. A
-; reject_* fixture must exit 1, and its whole output is its golden.
+; A new fixture is one X.ml and one X.expected, then dune build @gen-rules
+; --auto-promote. A reject_* fixture must exit 1, and its whole output is its
+; golden.
 
 (include dune.inc)
 
@@ -34,10 +27,6 @@
  (deps
   (alias gen-rules)))
 
-; The legal spellings of the exclusion grammar are accepted: the coverage
-; suite's parity_spellings.ml with the namespace swapped, so the two
-; drivers read one list of spellings.
-
 (rule
  (with-stdout-to
   parity_spellings.txt
@@ -48,10 +37,6 @@
  (action
   (ignore-outputs
    (run ./mutate_pp.exe --impl %{dep:parity_spellings.txt}))))
-
-; Under the input names //toplevel// and (stdin), and a base name .ocamlinit
-; or topfind, the rewriter returns fixture_input_name.ml as parsed; under its
-; own name, the fixture's golden shows it mutated.
 
 (rule
  (with-stdout-to

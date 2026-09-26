@@ -1,8 +1,3 @@
-; The windtrap binary: `coverage` and `mutants` merge and render the data
-; files instrumented executables wrote, through the library's report
-; sections (reached through Windtrap.Private); neither runs a test. See
-; doc/dev/architecture.md.
-
 (executable
  (name main)
  (public_name windtrap)

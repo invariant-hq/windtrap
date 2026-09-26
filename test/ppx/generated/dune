@@ -1,7 +1,3 @@
-; A stand-in for a deriver, linked into the drivers of coverage/generated and
-; mutate/generated: it turns the nodes that carry [@generated] into generated
-; code before the instrumenting rewriters run.
-
 (library
  (name windtrap_test_ppx_generated)
  (kind ppx_rewriter)

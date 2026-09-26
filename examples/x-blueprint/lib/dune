@@ -1,8 +1,6 @@
-; The library under test: two inert instrumentation stanzas, committed
-; once (zero overhead until --instrument-with, or the workspace's
-; instrument_with in ../dune-workspace, asks for them) and no PPX or
-; test code in lib/ itself. Each backend is named by its own rewriter,
-; so an instrumented library links that runtime and nothing else.
+; Two inert instrumentation stanzas: zero overhead until
+; --instrument-with, or the workspace's instrument_with in
+; ../dune-workspace, asks for them.
 
 (library
  (name windtrap_example_blueprint)

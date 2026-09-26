@@ -1,15 +1,6 @@
-# OCamlFormat configuration file
-
-# Pin the version of OCamlFormat to ensure consistent formatting across
-# different environments; dune's dev-tool locks to this pin.
+# dune's dev-tool locks to this version.
 version = 0.29.0
 
-# The formatting style to use. Options include 'default', 'ocamlformat', and 'janestreet'.
-# 'default' is a good starting point for most projects.
 profile = default
 
-# Parse and format comments in docstrings
 parse-docstrings = true
-
-# Wrap comments and docstrings to fit within the 'max-width'
-# wrap-comments = true

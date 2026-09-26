@@ -1,9 +1,3 @@
-; The two facts dune turns into a library-wide promotion verdict: a
-; crashing partition exits 1 and writes nothing, a stale one exits 0 and
-; writes its correction; one rule, so the runs never race on .corrected
-; files. The same two runs share one JUnit .xml, which the last replaces.
-; See doc/dev/testing.md, "The five families".
-
 (executable
  (name cross_partition_runner)
  (modules cross_partition_runner crash stale)
@@ -15,6 +9,8 @@
  (name drive_cross_partition)
  (modules drive_cross_partition)
  (libraries drive_harness unix))
+
+; One rule runs both partitions, so the runs never race on .corrected files.
 
 (rule
  (targets

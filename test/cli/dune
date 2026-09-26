@@ -1,8 +1,3 @@
-; The facade's command line as cram sessions over suite_main.exe (the deps
-; line is what rebuilds the fixture before a session); nodune.t needs the
-; installed package and one ppx driver per backend. See doc/dev/testing.md,
-; "The five families" and "Without dune".
-
 (executable
  (name suite_main)
  (modules suite_main)
@@ -11,8 +6,6 @@
 (cram
  (applies_to :whole_subtree)
  (deps suite_main.exe))
-
-; signals.t signals suite_main.exe through a program that holds its pid.
 
 (executable
  (name send_signal)
@@ -44,9 +37,6 @@
  (enabled_if
   (<> %{os_type} Win32))
  (deps mutant_main.exe))
-
-; broadcast.t lays out two stanzas as dune does, one of them this
-; instrumented suite, and runs both under the same WINDTRAP_* variables.
 
 (cram
  (applies_to broadcast)

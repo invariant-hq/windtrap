@@ -1,5 +1,5 @@
 ; The one runtime every instrumented closure links: stdlib only, never unix
-; or the core. See doc/dev/architecture.md.
+; or the core.
 
 (library
  (name windtrap_runtime)

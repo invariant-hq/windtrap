@@ -1,9 +1,3 @@
-; With nothing armed, an instrumented program is observationally identical
-; to an uninstrumented one: the same three sources are compiled with the
-; rewriter here and without it in baseline/, and every claim is checked
-; against the twin. No variable muzzles the runtime: an inert one needs
-; none. See doc/dev/testing.md, "The five families".
-
 ; Plain copy_files, not copy_files#: the file name the instrumenter records
 ; must name a file that exists in this build.
 
@@ -16,9 +10,8 @@
  (preprocess
   (pps ppx_windtrap.mutate)))
 
-; The suite is uninstrumented: it and mutsem_baseline are the plain side of
-; every comparison. OCAMLRUNPARAM=l=1M bounds the stack at 8 MiB, so a lost
-; tail_mod_cons overflows (OCaml 5's default bound of 1 GiB absorbs it).
+; OCAMLRUNPARAM=l=1M bounds the stack at 8 MiB, so a lost tail_mod_cons
+; overflows (OCaml 5's default bound of 1 GiB absorbs it).
 
 (test
  (name test_mutate_semantics)
@@ -38,8 +31,8 @@
  (modules test_mutate_linkonly)
  (libraries mutsem_fixtures))
 
-; The exit-code half: both copies of mutsem_boom's main are diffed against
-; one golden, with OCAMLRUNPARAM emptied so no backtrace names a directory.
+; Both copies of mutsem_boom's main are diffed against one golden, with
+; OCAMLRUNPARAM emptied so no backtrace names a directory.
 
 (executable
  (name mutsem_exit)

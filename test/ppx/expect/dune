@@ -1,16 +1,11 @@
-; Expansion and rejection goldens for ppx_windtrap: expect_pp.exe is a
-; standalone ppxlib driver and the fixtures are never compiled. Accept with
-; dune promote. See doc/dev/testing.md, "Accepting a golden".
-
 (executable
  (name expect_pp)
  (modules expect_pp)
  (libraries ppxlib ppx_windtrap))
 
-; dune.inc holds one golden rule pair per fixture, written by
-; ../gen/gen_dune.exe from the list of .ml files here: a new fixture is one
-; X.ml and one X.expected, then dune build @gen-rules --auto-promote. A
-; reject_* fixture must exit 1, and its whole output is its golden.
+; A new fixture is one X.ml and one X.expected, then dune build @gen-rules
+; --auto-promote. A reject_* fixture must exit 1, and its whole output is its
+; golden.
 
 (include dune.inc)
 
@@ -31,8 +26,6 @@
  (name runtest)
  (deps
   (alias gen-rules)))
-
-; The inline_tests cookie, over the fixtures above.
 
 (rule
  (with-stdout-to
@@ -83,9 +76,6 @@
  (action
   (diff cookie_invalid.expected cookie_invalid.actual)))
 
-; Under "ignored", as under "disabled", every form of test_basic.ml expands
-; to nothing, let%test and module%test included.
-
 (rule
  (with-stdout-to
   cookie_ignored.actual
@@ -100,10 +90,6 @@
  (alias runtest)
  (action
   (diff cookie_ignored.expected cookie_ignored.actual)))
-
-; A dropped form is still refused for a bad name, shape or [@tags], and a
-; dropped let%expect_test for a bad node, with the message of the enabled
-; build; the rest of a dropped body is not checked.
 
 (rule
  (target cookie_disabled_name.actual)
@@ -196,9 +182,6 @@
  (action
   (diff cookie_disabled_body.expected cookie_disabled_body.actual)))
 
-; A dropped let%expect_test is refused for a node of the family that is not
-; supported, as for a bad payload.
-
 (rule
  (target cookie_disabled_unsupported.actual)
  (action
@@ -217,9 +200,6 @@
  (alias runtest)
  (action
   (diff reject_unreachable.expected cookie_disabled_unsupported.actual)))
-
-; The library-name cookie: every registration, a group's included, names the
-; library first; leave_group names none.
 
 (rule
  (with-stdout-to

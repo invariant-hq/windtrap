@@ -1,7 +1,3 @@
-; A fixture release that raises after the last test is reported as a
-; failure, not only counted in the exit code. See doc/dev/testing.md,
-; "The five families".
-
 (executable
  (name release_failure_runner)
  (modules release_failure_runner inline_release_failure)

@@ -1,7 +1,5 @@
-; Generated code names Ppx_windtrap_runtime.Ppx_runtime, a client of the
-; public API only; unix is for the undriven guard's pid check. A coverage
-; stanza and no mutation stanza, because the runtime judges mutants. See
-; doc/dev/testing.md, "Windtrap under its own instrumentation".
+; Generated code names Ppx_windtrap_runtime.Ppx_runtime. A coverage stanza
+; and no mutation stanza, because the runtime judges mutants.
 
 (library
  (name ppx_windtrap_runtime)

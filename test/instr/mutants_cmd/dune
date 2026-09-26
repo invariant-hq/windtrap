@@ -1,7 +1,4 @@
-; `windtrap mutants` end to end: bin/main.exe over synthetic verdict files
-; and over two instrumented executables that disagree about calc.ml, a dep
-; because the suite replants it in a scratch project. See
-; doc/dev/testing.md, "The five families".
+; calc.ml is a dep because the suite replants it in a scratch project.
 
 (test
  (name test_mutants_cmd)

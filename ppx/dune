@@ -1,7 +1,5 @@
 ; The rewriter is a desugaring into the core and the runtime's registry, so
-; windtrap, the runtime and the config module are all ppx_runtime_libraries;
-; the inline_tests backend's generated main runs a partition through
-; Ppx_runtime under --corrected. See doc/dev/architecture.md, "Package map".
+; windtrap, the runtime and the config module are all ppx_runtime_libraries.
 
 (library
  (name ppx_windtrap)

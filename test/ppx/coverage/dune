@@ -1,21 +1,14 @@
-; Expansion and rejection goldens for the coverage instrumenter:
-; coverage_pp.exe is a standalone ppxlib driver, the fixtures are never
-; compiled, and the goldens pin point indexes and byte extents, so read
-; every promoted diff. See doc/dev/testing.md, "Accepting a golden".
-
 (executable
  (name coverage_pp)
  (modules coverage_pp)
  (libraries ppxlib windtrap_coverage_ppx))
 
-; dune.inc holds one golden rule pair per fixture, written by
-; ../gen/gen_dune.exe from the list of .ml files here: a new fixture is one
-; X.ml and one X.expected, then dune build @gen-rules --auto-promote. A
-; reject_* fixture must exit 1, and its whole output is its golden. Each
-; reject_* fixture with a twin of the same name in ../mutate is also
-; diffed against the twin's output modulo the attribute namespace, so a
-; message changed on one side only is caught; reject_off_reason has no
-; twin, and is the one intended difference.
+; A new fixture is one X.ml and one X.expected, then dune build @gen-rules
+; --auto-promote. A reject_* fixture must exit 1, and its whole output is its
+; golden. Each reject_* fixture with a twin of the same name in ../mutate is
+; also diffed against the twin's output modulo the attribute namespace, so a
+; message changed on one side only is caught; reject_off_reason has no twin,
+; and is the one intended difference.
 
 (include dune.inc)
 
@@ -47,10 +40,6 @@
  (action
   (ignore-outputs
    (run ./coverage_pp.exe --impl %{dep:parity_spellings.ml}))))
-
-; Under the input names //toplevel// and (stdin), and a base name .ocamlinit
-; or topfind, the rewriter returns fixture_input_name.ml as parsed; under its
-; own name, the fixture's golden shows it instrumented.
 
 (rule
  (with-stdout-to

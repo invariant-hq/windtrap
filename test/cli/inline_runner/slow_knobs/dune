@@ -1,7 +1,3 @@
-; The inline runner honours the WINDTRAP_VERBOSE and WINDTRAP_SLOW_THRESHOLD
-; mirrors, and a "slow" tag exempts a test from the threshold. See
-; doc/dev/testing.md, "The five families".
-
 (executable
  (name slow_knobs_runner)
  (modules slow_knobs_runner inline_slow_knobs)

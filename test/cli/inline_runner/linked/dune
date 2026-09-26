@@ -1,9 +1,3 @@
-; The split the manual teaches: a library with inline tests, and a
-; black-box suite in a (test) stanza that links it. The library's tests
-; are its own runner's: the suite runs its own tests and exits 0, and the
-; runner of a second inline library that depends on it runs only its own.
-; See doc/dev/testing.md, "The five families".
-
 (library
  (name linked_shapes)
  (modules shapes)
@@ -23,8 +17,6 @@
  (name test_shapes)
  (modules test_shapes)
  (libraries windtrap linked_shapes))
-
-; The runner of linked_scene as dune generates it, linking both libraries.
 
 (executable
  (name scene_runner)

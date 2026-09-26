@@ -1,7 +1,3 @@
-; A real (inline_tests) library over the Expect_test_config the generated
-; code names: its lexical shadowing, the bodies that do and do not go
-; through run, and overrides that call the body never or twice.
-
 (library
  (name windtrap_test_ppx_config)
  (inline_tests)

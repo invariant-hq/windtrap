@@ -1,9 +1,6 @@
-; Coverage never changes what a program means: covsem_fixtures is
-; instrumented unconditionally and compared with the uninstrumented answer.
 ; WINDTRAP_COVERAGE_FILE keeps the at_exit dump out of _build/_coverage;
 ; OCAMLRUNPARAM=l=1M bounds the stack at 8 MiB, so a lost tail call
 ; overflows (OCaml 5's default bound of 1 GiB absorbs it).
-; See doc/dev/testing.md, "The five families".
 
 (library
  (name covsem_fixtures)

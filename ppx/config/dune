@@ -1,7 +1,5 @@
 ; Generated code names the unqualified top-level Expect_test_config, so this
-; library exposes exactly that module (stdlib-only, no dependencies); the
-; coverage stanza keeps it in windtrap's measured set. See
-; doc/dev/testing.md, "Windtrap under its own instrumentation".
+; library exposes exactly that module.
 
 (library
  (name expect_test_config)

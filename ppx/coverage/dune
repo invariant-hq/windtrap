@@ -1,7 +1,5 @@
-; The coverage backend names itself in (instrumentation.backend) and lists
-; only the stdlib-only runtime in ppx_runtime_libraries, so instrumented code
-; never links the core; also usable through (pps). See doc/dev/testing.md,
-; "Windtrap under its own instrumentation".
+; ppx_runtime_libraries lists only the stdlib-only runtime, so instrumented
+; code never links the core.
 
 (library
  (name windtrap_coverage_ppx)

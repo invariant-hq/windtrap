@@ -1,7 +1,5 @@
-; `windtrap coverage` end to end: bin/main.exe over synthetic dumps and over
-; a real instrumented child. covcli_fixture.ml is a dep because the suite
-; replants it in a scratch project. See doc/dev/testing.md, "The five
-; families".
+; covcli_fixture.ml is a dep because the suite replants it in a scratch
+; project.
 
 (test
  (name test_coverage_cmd)

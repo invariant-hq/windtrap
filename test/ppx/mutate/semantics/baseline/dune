@@ -1,7 +1,6 @@
 ; The uninstrumented twin of ../dune's three sources: nothing here may name
 ; a preprocessor (an instrumented baseline grows a module the coercions in
-; test_mutate_semantics.ml reject). See doc/dev/testing.md, "The five
-; families".
+; test_mutate_semantics.ml reject).
 
 (copy_files
  (files ../../../coverage/semantics/covsem_fixtures.ml))

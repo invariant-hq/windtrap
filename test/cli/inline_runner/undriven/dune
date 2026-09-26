@@ -1,8 +1,3 @@
-; Tests registered by (pps ppx_windtrap) in an executable's own modules
-; are never run by dune: the guard must exit 2 for the undriven binary and
-; stay silent on every driven path. See doc/dev/testing.md, "The five
-; families".
-
 ; One stanza carries the fixture so both mains link the same module, a
 ; module of no library.
 

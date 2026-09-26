@@ -1,8 +1,6 @@
-; Windtrap's own verdicts, opt-in: the run half is every test family and
-; every example (the merges read every dump under _build), never the
-; transcript checks of doc/ and README.md, which state the plain build;
-; (universe) makes the cheap aggregate re-run on every build. See
-; doc/dev/testing.md, "Windtrap under its own instrumentation".
+; The run half is every test family and every example (the merges read
+; every dump under _build); (universe) makes the cheap aggregate re-run on
+; every build.
 
 (rule
  (alias self-cover)

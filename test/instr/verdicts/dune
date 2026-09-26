@@ -1,6 +1,3 @@
-; The verdict lattice and file format; save_child stands in for a mutation
-; run's writing side. See doc/dev/testing.md, "The five families".
-
 (executable
  (name save_child)
  (modules save_child)
