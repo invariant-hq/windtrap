@@ -6,9 +6,7 @@
   test_loc
   test_seed
   test_testable
-  test_failure
   test_diff
-  test_check
   test_gen
   test_capture
   test_property
@@ -26,9 +24,7 @@
   test_loc
   test_seed
   test_testable
-  test_failure
   test_diff
-  test_check
   test_gen
   test_capture
   test_property
@@ -51,6 +47,20 @@
  ; change with `test_report.exe -u`.
  (deps
   (glob_files_rec expected/**)))
+
+(test
+ (name test_failure)
+ (modules test_failure)
+ (libraries windtrap)
+ (action
+  (progn
+   (run %{test} --corrected)
+   (diff? test_failure.ml test_failure.ml.corrected))))
+
+(test
+ (name test_check)
+ (modules test_check)
+ (libraries windtrap))
 
 (library
  (name render_fixtures)
