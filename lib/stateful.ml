@@ -230,13 +230,15 @@ let program ?(steps = 20) ?pp_model ~model commands =
         })
       gen
   in
-  (* [Gen.frequency]'s choice does not shrink, so a candidate never turns
-     one command into another. *)
-  let choice =
-    Gen.frequency
-      (List.map2
-         (fun position command -> (1, call_gen position command))
-         (first_positions commands) commands)
+  (* The index is drawn with [Seed.below] and has no tree, so a candidate
+     never turns one command into another. *)
+  let calls =
+    Array.of_list (List.map2 call_gen (first_positions commands) commands)
+  in
+  let draw_call state =
+    let count = Int64.of_int (Array.length calls) in
+    let index, state = Seed.below ~bound:count state in
+    Gen.Engine.run calls.(Int64.to_int index) state
   in
   Gen.Engine.make ~pp:(pp_program ?pp_model) (fun state ->
       (match commands with
@@ -246,7 +248,7 @@ let program ?(steps = 20) ?pp_model ~model commands =
       let rec draw n trees state =
         if n = 0 then (List.rev trees, state)
         else
-          let tree, state = Gen.Engine.run choice state in
+          let tree, state = draw_call state in
           draw (n - 1) (tree :: trees) state
       in
       let trees, state = draw steps [] state in

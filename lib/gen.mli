@@ -148,16 +148,16 @@ val list : ?size:int t -> 'a t -> 'a list t
     With the default [size], the length is below [4] in 50% of the draws, below
     [8] in 25%, below [16] in 20% and below [64] in 5%, uniformly within each
     stratum. The mean is about 5, so a [list (list int)] holds about 22 integers
-    and a case draws in microseconds. The elements are drawn in order. The tree
-    is {!Engine.Shrink_tree.list} of the element trees, so the structure shrinks
-    first, then the elements from the left.
+    and a case draws in microseconds. The elements are drawn in order.
 
-    With an explicit [size], the length shrinks as [size] does and no chunk is
-    removed. A state is split off at sampling and the elements of every
-    candidate length are drawn again from it, so a shorter candidate is a prefix
-    of the drawn list. The length candidates come first, then the reductions of
-    one element, from the left. A candidate whose re-generation discards is
-    skipped.
+    A candidate is a shorter list, or a list of the same length with one element
+    replaced by one of its candidates. The order of the candidates is not part
+    of the contract.
+
+    With an explicit [size], the length of a candidate is the drawn length or
+    one of its candidates in [size]'s tree. A state is split off at sampling and
+    the elements of every candidate length are drawn again from it. A candidate
+    whose re-generation discards is skipped.
 
     Raises [Invalid_argument] if [size] generates a negative length: at sampling
     for the drawn length, and at the forcing of a candidate for a candidate
@@ -223,10 +223,10 @@ val one_of : 'a t list -> 'a t
 
 val frequency : (int * 'a t) list -> 'a t
 (** [frequency weighted] generates with one generator of [weighted], each with a
-    probability proportional to its weight. The choice never shrinks, and
-    {!Stateful.val-program} relies on that. The chosen generator runs on the
-    state as it stands and nothing is generated again, so the value shrinks as
-    the values of that generator do. The printer is derived as {!one_of}'s is.
+    probability proportional to its weight. The chosen generator runs on the
+    state as it stands. The candidates of the drawn value include those of the
+    generator that drew it, and every candidate is a value of one of the
+    generators. The printer is derived as {!one_of}'s is.
 
     Sampling raises [Invalid_argument] if [weighted] is empty, if a weight is
     negative, or if the weights sum to less than [1], checked in that order. *)

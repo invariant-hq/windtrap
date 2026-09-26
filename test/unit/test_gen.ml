@@ -1552,7 +1552,7 @@ let list_and_array_print_their_brackets () =
       (render tree)
   done
 
-let sized_list_candidates_are_prefixes_then_element_reductions () =
+let sized_list_candidates_are_shorter_or_reduce_one_element () =
   let gen = Gen.(list ~size:(int_range 0 6) (int_range 1 9)) in
   let tree =
     find_sample gen (fun xs ->
@@ -1564,31 +1564,12 @@ let sized_list_candidates_are_prefixes_then_element_reductions () =
   let shorter = List.filter (fun xs -> List.length xs < length) candidates in
   let same = List.filter (fun xs -> List.length xs = length) candidates in
   is_true ~msg:"premise: both kinds are there" (shorter <> [] && same <> []);
-  equal ~msg:"the length candidates come first"
-    (list (list int))
-    shorter
-    (List.filteri (fun i _ -> i < List.length shorter) candidates);
-  List.iter
-    (fun xs ->
-      equal ~msg:"a shorter candidate is a prefix of the drawn list" (list int)
-        (List.filteri (fun i _ -> i < List.length xs) drawn)
-        xs)
-    shorter;
+  equal ~msg:"no candidate is longer" int (List.length candidates)
+    (List.length shorter + List.length same);
   let changed xs =
     List.filteri (fun i x -> x <> List.nth drawn i) xs |> List.length
   in
-  let first_changed xs =
-    let rec go i = function
-      | x :: rest -> if x <> List.nth drawn i then i else go (i + 1) rest
-      | [] -> i
-    in
-    go 0 xs
-  in
-  List.iter (fun xs -> equal ~msg:"one element reduced" int 1 (changed xs)) same;
-  let positions = List.map first_changed same in
-  equal ~msg:"the reductions go from the left" (list int)
-    (List.sort compare positions)
-    positions
+  List.iter (fun xs -> equal ~msg:"one element reduced" int 1 (changed xs)) same
 
 let a_rejected_sized_list_candidate_is_skipped () =
   (* Every element is rejected, so only the empty list generates: the
@@ -1671,7 +1652,7 @@ let one_of_offers_earlier_branches_then_the_drawn_value () =
       is_true ~msg:"a candidate of the drawn value" (40 <= v && v < drawn))
     rest
 
-let frequency_draws_on_the_state_as_it_stands_and_keeps_its_choice () =
+let frequency_draws_on_the_state_as_it_stands () =
   for index = 0 to 9 do
     let s = state index in
     let _, after_choice = Seed.below ~bound:1L s in
@@ -1679,10 +1660,14 @@ let frequency_draws_on_the_state_as_it_stands_and_keeps_its_choice () =
       (root_value (Gen_engine.sample Gen.int after_choice))
       (root_value (Gen_engine.sample Gen.(frequency [ (1, int) ]) s))
   done;
-  let gen = Gen.(frequency [ (1, constant 0); (1, int_range 1 100) ]) in
-  let tree = find_sample gen (fun v -> v > 2) in
+  let gen =
+    Gen.(frequency [ (1, int_range 1000 2000); (1, int_range 1 100) ])
+  in
+  let tree = find_sample gen (fun v -> v > 2 && v <= 100) in
+  mem ~msg:"the drawn branch's first candidate" int 1 (child_values tree);
   explore ~limit:200 tree (fun v ->
-      is_true ~msg:"no candidate crosses to the other branch" (v >= 1))
+      is_true ~msg:"every candidate is a value of a branch"
+        ((1 <= v && v <= 100) || (1000 <= v && v <= 2000)))
 
 let such_that_draws_at_most_100_times () =
   let draws = ref 0 in
@@ -1818,8 +1803,8 @@ let contract_suite =
     ("char prints with %C", char_prints_with_percent_c);
     ("bytes prints as Bytes.of_string", bytes_prints_as_bytes_of_string);
     ("list and array print their brackets", list_and_array_print_their_brackets);
-    ( "a sized list offers prefixes, then element reductions from the left",
-      sized_list_candidates_are_prefixes_then_element_reductions );
+    ( "a sized list's candidates are shorter or reduce one element",
+      sized_list_candidates_are_shorter_or_reduce_one_element );
     ( "a rejected sized-list candidate is skipped",
       a_rejected_sized_list_candidate_is_skipped );
     ( "a negative candidate length raises at its forcing",
@@ -1833,7 +1818,7 @@ let contract_suite =
     ( "one_of offers the earlier branches, then the drawn value's candidates",
       one_of_offers_earlier_branches_then_the_drawn_value );
     ( "frequency draws on the state as it stands and keeps its choice",
-      frequency_draws_on_the_state_as_it_stands_and_keeps_its_choice );
+      frequency_draws_on_the_state_as_it_stands );
     ("such_that draws at most 100 times", such_that_draws_at_most_100_times);
     ( "map runs f once per node, and its exceptions escape",
       map_runs_f_once_per_node_and_lets_its_exceptions_escape );

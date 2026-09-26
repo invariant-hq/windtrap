@@ -101,8 +101,8 @@ val program :
     {b Shrinking.} The shrink tree is [Gen.Engine.Shrink_tree.list] over the
     trees of the kept calls, with repair applied again at every node. A
     candidate deletes calls or reduces one argument. The choice of a command
-    does not shrink (see {!Gen.frequency}), so every call of a candidate is one
-    that the drawn program made, its argument at most reduced.
+    never shrinks, so every call of a candidate is one that the drawn program
+    made, its argument at most reduced.
 
     No immediate candidate of the drawn program is longer than it, and the
     guarantee stops there. Under a node whose repair dropped a call, a candidate

@@ -713,9 +713,8 @@ module Gen : sig
   (** [list ?size gen] generates a list of [gen] values whose length follows
       [size]. Without [size], the length is below [64] and about 5 on average.
 
-      With the default [size] a list shrinks by structure first: to the empty
-      list, then by the removal of chunks of halving length. It then shrinks
-      element by element, from the left. With an explicit [size] the length
+      A list shrinks to shorter lists and by shrinking its elements, in an order
+      that is not part of the contract. With an explicit [size] the length
       shrinks as [size] does, so [~size:(int_range 2 5)] holds for every
       candidate.
 
@@ -767,10 +766,10 @@ module Gen : sig
 
   val frequency : (int * 'a t) list -> 'a t
   (** [frequency weighted] generates with one generator of [weighted], each with
-      a probability proportional to its weight. The choice does not shrink. The
-      value shrinks with its generator. Sampling raises [Invalid_argument] if
-      [weighted] is empty, if a weight is negative, or if the weights sum to
-      less than [1]. *)
+      a probability proportional to its weight. The value shrinks with the
+      generator that drew it, and every candidate is a value of one of the
+      generators. Sampling raises [Invalid_argument] if [weighted] is empty, if
+      a weight is negative, or if the weights sum to less than [1]. *)
 
   val such_that : ('a -> bool) -> 'a t -> 'a t
   (** [such_that p gen] generates [gen] values that satisfy [p], in at most 100
