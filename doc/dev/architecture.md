@@ -145,8 +145,7 @@ own frame was consumed by tail calls yields `None`, never the line that
 called the runner, and the executor then attributes the failure to the
 test's declaration. The delimiter is recognized by its debug name and
 pinned: never inlined, `fn` not called in tail position. `to_string`
-omits the column: it is identity data (`Loc.equal`), not an editor-jump
-target.
+omits the column: a report names a line, not a column.
 
 **Failure and the renderers.** Payload texts are bounded once, by
 `Failure.text` (64 KiB), because renderings are the one thing that cannot

@@ -78,6 +78,3 @@ let capture () =
 
 let resolve ?__POS__ () =
   match __POS__ with Some p -> Some (of_pos p) | None -> capture ()
-
-let equal a b =
-  String.equal a.file b.file && a.line = b.line && a.column = b.column

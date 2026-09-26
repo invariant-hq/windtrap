@@ -79,12 +79,3 @@ val own_unit : string -> bool
     and those of the instrumentation runtime: ["Windtrap_runtime"] and the names
     that start with ["Windtrap_runtime__"]. Whole unit names are compared, so a
     user library named [Windtrap_helpers] is not windtrap's. *)
-
-(**/**)
-
-(* Exported for the unit suite, and read by nothing else. [equal a b] is [true]
-   iff [a] and [b] have the same file, the same line and the same column. *)
-
-val equal : t -> t -> bool
-
-(**/**)

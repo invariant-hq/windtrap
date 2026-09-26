@@ -83,8 +83,11 @@ let error_message = function
 
 (* Literal rendering *)
 
+(* [Quote] is ["…"], [Tag tag] is [{tag|…|tag}], and [Tag ""] is [{|…|}]. *)
 type delimiter = Quote | Tag of string
 
+(* [tag] followed by as many [xxx] as it takes for [contents] to hold neither
+   [{tag|] nor [|tag}]. *)
 let rec fix_tag ~contents tag =
   let occurs delimiter = Text.contains_substring ~pattern:delimiter contents in
   if occurs ("{" ^ tag ^ "|") || occurs ("|" ^ tag ^ "}") then
@@ -112,7 +115,7 @@ let format_flexible ~delimiter ~column raw =
 
 (* The literal that holds [contents], after [ext], the head of a
    [{%ext|…|}] node. *)
-let literal' ?ext ~delimiter contents =
+let literal ?ext ~delimiter contents =
   match delimiter with
   | Quote -> "\"" ^ String.escaped contents ^ "\""
   | Tag tag ->
@@ -123,8 +126,6 @@ let literal' ?ext ~delimiter contents =
         | Some ext -> if tag = "" then ext else ext ^ " "
       in
       "{" ^ head ^ tag ^ "|" ^ contents ^ "|" ^ tag ^ "}"
-
-let literal ~delimiter contents = literal' ~delimiter contents
 
 (* Reading literals *)
 
@@ -343,7 +344,7 @@ let locate_rewrite source (p : rewrite) =
           else
             match (quoted, ext) with
             | false, _ ->
-                Ok (start, stop, literal' ?ext ~delimiter (contents delimiter))
+                Ok (start, stop, literal ?ext ~delimiter (contents delimiter))
             | true, None ->
                 Ok (start, stop, literal ~delimiter:Quote (contents Quote))
             | true, Some ext ->

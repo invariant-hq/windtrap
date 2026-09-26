@@ -143,23 +143,3 @@ val apply : string -> patch list -> (string, error) result
 
     [Error e] is the first patch of the list that is refused, and no patch is
     then applied. *)
-
-(**/**)
-
-(* The rendering of a literal, exported for the unit suite. [delimiter] is the delimiter of a string literal: [Quote] is ["…"],
-    [Tag tag] is [{tag|…|tag}], and [Tag ""] is [{|…|}]. [fix_tag ~contents tag]
-    is [tag] followed by as many [xxx] as it takes for [contents] to hold
-    neither [{tag|] nor [|tag}], so a tag that conflicts with nothing is
-    returned as given. [format_flexible ~delimiter ~column raw] is the contents,
-    without delimiter, of a flexible literal for the output [raw], laid out as
-    [apply] says with [column] for [c]. [column] must not be negative.
-    [literal ~delimiter contents] is the literal that holds [contents], as
-    [apply] writes one, with no head of a node. *)
-
-type delimiter = Quote | Tag of string
-
-val fix_tag : contents:string -> string -> string
-val format_flexible : delimiter:delimiter -> column:int -> string -> string
-val literal : delimiter:delimiter -> string -> string
-
-(**/**)
