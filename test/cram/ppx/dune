@@ -51,7 +51,7 @@
  (deps pp.exe))
 
 ; expect_typing.t types an expansion against the installed libraries, so
-; it depends on both packages; SKIP_PACKAGE_SESSIONS: see test/cli/dune.
+; it depends on both packages; SKIP_PACKAGE_SESSIONS: see test/cram/run/dune.
 
 (cram
  (applies_to expect_typing)
