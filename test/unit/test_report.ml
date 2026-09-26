@@ -685,8 +685,14 @@ let reason_rows =
 (* The end of the run *)
 
 let empty_rows =
-  let empty ?(invocation = `Mirrors) ?header () () =
-    rendered ~config:(config ~invocation ()) (fun r ->
+  let empty ?(invocation = `Mirrors) ?(broadcast = false) ?header () () =
+    let config =
+      {
+        (config ~invocation ()) with
+        Run.broadcast = { Run.selection = broadcast; mutate = false };
+      }
+    in
+    rendered ~config (fun r ->
         Option.iter
           (fun (declared, selection) ->
             Report.header r ~suite:"mylib" ~tests:0 ~declared ?selection
@@ -708,6 +714,12 @@ let empty_rows =
       ( empty ~header:parsr (),
         "mylib: no tests ran: filter \"parsr\" matched none of 48 tests.\n\
          (list the suite's tests with -l)\n" ) );
+    ( "a selection from the environment has no hint, under a launcher",
+      ( empty ~invocation:exe ~broadcast:true ~header:parsr (),
+        "mylib: no tests ran: filter \"parsr\" matched none of 48 tests.\n" ) );
+    ( "and under a build action",
+      ( empty ~broadcast:true ~header:parsr (),
+        "mylib: no tests ran: filter \"parsr\" matched none of 48 tests.\n" ) );
     ( "a suite that declares none has nothing to list",
       ( empty ~invocation:exe ~header:(0, None) (),
         "mylib: no tests ran: the suite declares none.\n" ) );

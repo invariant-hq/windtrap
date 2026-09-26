@@ -948,16 +948,21 @@ list: emptysuite -l
         ~name:(fun (name, _, _) -> name)
         selection_codes
         (fun (_, code, r) -> equal int code r.code);
-      test "a mirror's emptied selection still says why" (fun () ->
-          equal text typed.out mirrored.out);
+      test "a mirror's emptied selection says why and names no way out"
+        (fun () ->
+          expect_exact mirrored.out
+          @@ __POS_OF__
+               {|emptied: no tests ran: filter "zzznope" matched none of 1 test.
+|};
+          equal text mirrored.out mirrored_corrected.out);
       test "under --corrected the way out names the flag" (fun () ->
-          expect_exact mirrored_corrected.out
+          expect_exact typed_corrected.out
           @@ __POS_OF__
                {|emptied: no tests ran: filter "zzznope" matched none of 1 test.
 (list the suite's tests with -l)
 |});
-      test "without argv.(0) the way out names the flag too" (fun () ->
-          equal text mirrored_corrected.out blank_typed.out;
+      test "without argv.(0) a run prints what it prints with it" (fun () ->
+          equal text typed_corrected.out blank_typed.out;
           equal text mirrored_corrected.out blank_mirrored.out);
       test "a usage error beside the mirror names the option" (fun () ->
           contains ~sub:"unknown option '--nosuchflag'" mirrored_usage.err);

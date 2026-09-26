@@ -93,7 +93,6 @@ library's tests do here:
 $ WINDTRAP_FILTER=gpu dune runtest --force
 storage: 2 skipped in 0.4ms.
 keys/keys.ml: no tests ran: filter "gpu" matched none of 3 tests.
-(list the suite's tests with -l)
 ```
 
 To run one suite, name its directory, as in

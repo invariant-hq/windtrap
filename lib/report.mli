@@ -220,7 +220,9 @@ val finish :
 
     A run with no result at all says instead that no tests ran, with the reason
     of {!empty_selection_reason} when there is one. When a selection emptied a
-    suite that declares tests, one line follows the summary. *)
+    suite that declares tests, one line that says how to list them follows the
+    summary, unless the environment gave the selection
+    ([config.broadcast.selection]). *)
 
 val interrupted :
   t ->

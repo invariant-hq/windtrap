@@ -509,9 +509,13 @@ let summary_line t (c : summary) ~duration =
           | Some reason -> strf "%sno tests ran: %s." prefix reason
           | None -> prefix ^ "no tests ran.");
       ];
-    (* A build action has no launcher to restate, so it names the flag. *)
+    (* A build action has no launcher to restate, so it names the flag. A
+       selection that the environment broadcast gets no hint: the variable
+       reached every stanza, so an emptied one holds no mistake, and an
+       inline runner takes no [-l]. *)
     match t.header with
-    | Some { declared; selection = Some _; _ } when declared <> 0 -> (
+    | Some { declared; selection = Some _; _ }
+      when declared <> 0 && not t.config.broadcast.selection -> (
         match t.config.invocation with
         | `Exe launcher -> put t [ plain (strf "list: %s -l" launcher) ]
         | `Mirrors -> put t [ styled `Faint "(list the suite's tests with -l)" ]

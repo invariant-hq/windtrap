@@ -40,7 +40,6 @@ so and exits 0:
   fixture: 2 passed in DURATION.
   [unit: 0]
   mutant: no tests ran: filter "math" matched none of 1 test.
-  list: dune exec --instrument-with ppx_windtrap.mutate mutants/mutant_main.exe -- -l
   [mutants: 0]
 
 WINDTRAP_MUTATE reaches both stanzas. The fixture has no mutant under
