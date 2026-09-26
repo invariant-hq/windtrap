@@ -332,26 +332,3 @@ val die_by : int -> 'a
     function runs. [signal] must be [SIGHUP], [SIGINT], [SIGPIPE] or [SIGTERM].
     Should the process outlive it, it exits with the status that a shell reports
     for [signal], 128 plus the number of the signal. *)
-
-(**/**)
-
-(* Values with no client but the unit suite. [count start] is the nanoseconds
-   elapsed since [start], never negative, and [count_s] is [count] in seconds.
-   [temp_prefix] is [".tmp-"], the prefix of the temporaries of [atomic_write].
-   [is_temp_name name] is [true] iff [name] starts with [temp_prefix], where
-   [name] is a directory entry, a basename and no path. [build_dir_of_path
-   path] is [path] cut after its first component whose name starts with
-   [_build], or [None] when no component does. It is lexical, reads backslashes
-   as separators, spells its result with [/], and lets any component qualify,
-   the name of a file included. [build_dir ()] is the build directory of the
-   process as the section on roots defines it, or [None], and raises
-   [Sys_error] as [project_root] does. [lib/runtime/instr.ml] restates the rule
-   of [build_dir_of_path], because the runtime links no core. *)
-
-val count : counter -> int64
-val temp_prefix : string
-val is_temp_name : string -> bool
-val build_dir_of_path : string -> string option
-val build_dir : unit -> string option
-
-(**/**)

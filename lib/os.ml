@@ -92,7 +92,6 @@ let resolve_color mode ~tty ~inside_dune ~term_dumb =
 (* Atomic file writes *)
 
 let temp_prefix = ".tmp-"
-let is_temp_name name = String.starts_with ~prefix:temp_prefix name
 
 (* With the pid, the serial names each temporary of a process apart. *)
 let temp_serial = Atomic.make 0
