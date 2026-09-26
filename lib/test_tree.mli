@@ -22,9 +22,9 @@
     ({!Run.Duplicate_paths}).
 
     The declaration site of a node is [Loc.resolve ?__POS__ ()], fixed when its
-    constructor is applied. A capture cannot see through a helper that wraps a
-    constructor, so a function of the library that wraps one must take
-    [?__POS__] and pass it on. *)
+    constructor is applied. A capture cannot see through the frame of a helper
+    that wraps a constructor, so a function of the library that wraps one must
+    take [?__POS__] and pass it on. *)
 
 (** {1:tags Tags}
 
