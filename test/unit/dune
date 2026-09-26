@@ -4,7 +4,6 @@
   test_text
   test_os
   test_loc
-  test_seed
   test_testable
   test_diff
   test_gen
@@ -22,7 +21,6 @@
   test_text
   test_os
   test_loc
-  test_seed
   test_testable
   test_diff
   test_gen
@@ -60,6 +58,11 @@
 (test
  (name test_check)
  (modules test_check)
+ (libraries windtrap))
+
+(test
+ (name test_seed)
+ (modules test_seed)
  (libraries windtrap))
 
 (test

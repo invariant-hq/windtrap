@@ -351,8 +351,9 @@ A change that breaks one of these tests reopens the design first.
 6. Every generator shrinks and printers derive: `test_gen.ml` ("map
    renders the pre-image", "with_pp attaches a printer" and the
    shrinking family).
-7. Seeds: `test_seed.ml` ("stream frozen literals", "derivation frozen
-   literals") and `test_report.ml` ("seed token consistency").
+7. Seeds: `test_seed.ml` ("make's stream is frozen", "derive is frozen,
+   the path hashed byte by byte") and `test_report.ml` ("seed token
+   consistency").
 8. Callbacks inside a test's boundary, resources released: `test_run.ml`
    ("each raising release is a release failure, in release order", "the
    fixtures are released under bail", "the directory is removed when the
