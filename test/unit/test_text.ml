@@ -173,7 +173,7 @@ let anchored =
          [
            constant Text.Head;
            constant Text.Tail;
-           map (fun i -> Text.Around i) (int_range 0 (String.length s));
+           map (fun i -> Text.Around i) (int_range (-3) (String.length s + 3));
          ]
      in
      (s, bytes, at))
@@ -270,13 +270,11 @@ let lengths_and_cuts =
       prop "a head or tail window moves its cut by three bytes at most" anchored
         longest_law;
       prop "a head or tail window holds at most its lines" line_bound lines_law;
-      xfail ~reason:"window raises Invalid_argument for an anchor past the end"
-        (test "window never raises, whatever the anchor" (fun () ->
-             ignore (Text.window ~bytes:4 (Around 1_000) "abcdefghij")));
-      xfail ~reason:"a tail window ignores a bound of 0 lines"
-        (test "a tail window under a bound of 0 lines is empty" (fun () ->
-             equal string ""
-               (snd (Text.window ~lines:0 ~bytes:100 Tail "a\nb\n"))));
+      test "an anchor past the end keeps the end of the string" (fun () ->
+          equal window (8, "ij")
+            (Text.window ~bytes:4 (Around 1_000) "abcdefghij"));
+      test "a tail window under a bound of 0 lines is empty" (fun () ->
+          equal window (4, "") (Text.window ~lines:0 ~bytes:100 Tail "a\nb\n"));
       test "mark_truncated appends the marker with the total length" (fun () ->
           equal string "ab... (truncated; 9 bytes total)"
             (Text.mark_truncated ~length:9 "ab"));

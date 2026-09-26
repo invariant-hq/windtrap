@@ -77,7 +77,7 @@ type at = Head | Tail | Around of int
    precedes the last [n] lines, a final newline ending the last line. *)
 let after_lines s n =
   let rec go i n =
-    if n = 0 then Some i
+    if n <= 0 then Some i
     else
       match String.index_from_opt s i '\n' with
       | Some j -> go (j + 1) (n - 1)
@@ -92,7 +92,8 @@ let before_last_lines s n =
     | None -> None
   in
   let len = String.length s in
-  go (if String.ends_with ~suffix:"\n" s then len - 1 else len) n
+  if n <= 0 then Some len
+  else go (if String.ends_with ~suffix:"\n" s then len - 1 else len) n
 
 let window ?lines ~bytes at s =
   let len = String.length s and bytes = max 0 bytes in
@@ -118,7 +119,7 @@ let window ?lines ~bytes at s =
         (start, len)
     | Around _ when len <= bytes -> (0, len)
     | Around i ->
-        let start = boundary_after s (max 0 (i - (bytes / 2))) 3 in
+        let start = boundary_after s (max 0 (min i len - (bytes / 2))) 3 in
         let stop = start + bytes in
         (start, if stop >= len then len else boundary_before s stop 3)
   in
