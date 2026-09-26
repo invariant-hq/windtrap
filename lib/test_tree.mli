@@ -71,19 +71,6 @@ module Tag : sig
   val accepts : predicate -> t -> bool
   (** [accepts p tags] is [true] iff [tags] holds every required tag of [p] and
       none of its dropped tags. *)
-
-  (**/**)
-
-  (* Exported for the unit suites. Every other client reads a set with [mem]
-     and [accepts]. [empty] is the set without a tag, [of_list names] is the set
-     of the tags of [names], and [union a b] is the set of the tags of either.
-  *)
-
-  val empty : t
-  val of_list : string list -> t
-  val union : t -> t -> t
-
-  (**/**)
 end
 
 (** {1:trees Trees} *)

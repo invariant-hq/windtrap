@@ -8,7 +8,6 @@ module Tag = struct
 
   type t = String_set.t
 
-  let empty = String_set.empty
   let of_list = String_set.of_list
   let union = String_set.union
   let mem = String_set.mem

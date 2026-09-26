@@ -163,8 +163,7 @@ let count p testcases =
   let has t = List.exists p (Option.value ~default:[] t.children) in
   List.length (List.filter has testcases)
 
-let render ?(invocation = `Mirrors) ?armed ~suite ~results ~release_failures
-    ~duration () =
+let render ~invocation ?armed ~suite ~results ~release_failures ~duration () =
   let failure = failure ~invocation ~armed in
   let rows = List.concat_map (row_testcases ~suite ~failure) results in
   (* A failed release is timed no more than a subtest is. *)

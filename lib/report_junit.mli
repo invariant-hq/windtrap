@@ -111,25 +111,3 @@ val write :
     ({!Os.warn}), at every verbosity, and never a failed run. [write] catches
     the [Sys_error] and the [Unix.Unix_error] of {!Os.mkdir_p} and
     {!Os.atomic_write} for it. *)
-
-(**/**)
-
-(* The two halves of [write], exported for the unit suite. [render ?invocation
-   ?armed ~suite ~results ~release_failures ~duration ()] is the document that [write] writes, as
-   a string, from its XML declaration to a final newline. [invocation] defaults
-   to [`Mirrors]. It opens no file and writes nothing. [path ~suite target] is
-   the file that [write] writes to for [target], and it reads no file system. *)
-
-val render :
-  ?invocation:Run.invocation ->
-  ?armed:string ->
-  suite:string ->
-  results:Run.result list ->
-  release_failures:Failure.t list ->
-  duration:float ->
-  unit ->
-  string
-
-val path : suite:string -> string -> string
-
-(**/**)
