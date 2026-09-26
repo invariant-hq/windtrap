@@ -891,14 +891,15 @@ val command :
   ?pre:('model -> 'arg -> bool) ->
   string ->
   'arg Gen.t ->
-  next:('model -> 'arg -> 'model) ->
+  ?next:('model -> 'arg -> 'model) ->
   ('model -> 'arg -> 'sut -> unit) ->
   ('model, 'sut) command
-(** [command name gen ~next body] is the operation [name], whose argument [gen]
-    draws. Every function takes the model first, then the argument.
+(** [command name gen body] is the operation [name], whose argument [gen] draws.
+    Every function takes the model first, then the argument.
     - [pre m arg] is whether the call is legal in [m]. Defaults to always. The
       call is generated only where [pre] holds.
-    - [next m arg] is the model after the call.
+    - [next m arg] is the model after the call. Defaults to [m], the model
+      unchanged.
     - [body m arg sut] calls the system and asserts with the verbs. [m] is the
       model before the call.
     - [__POS__] is the declaration site, which a failing call reports when its
@@ -916,11 +917,10 @@ val call :
   ?__POS__:pos ->
   ?pre:('model -> bool) ->
   string ->
-  next:('model -> 'model) ->
+  ?next:('model -> 'model) ->
   ('model -> 'sut -> unit) ->
   ('model, 'sut) command
-(** [call name ~next body] is {!val:command} for an operation without argument.
-*)
+(** [call name body] is {!val:command} for an operation without argument. *)
 
 val stateful :
   ?__POS__:pos ->
@@ -957,8 +957,10 @@ val stateful :
     passing program called fails the test with a message that starts
     [never called: "pop" (over 100 passing cases)]. This is a demand on presence
     over the whole run, like {!cover}'s, so a [count] or [steps] too small can
-    miss a command that is legal. A command listed twice is one command. Under
-    [~count:0] nothing is judged.
+    miss a command that is legal. When a command omits the [next] it needs and
+    no other command makes that change, every command whose [pre] waits for it
+    is never called. A command listed twice is one command. Under [~count:0]
+    nothing is judged.
 
     {b The scope.} [scope] takes a callback, calls it once with a fresh system,
     and releases the system whether the callback returns or raises. It runs once

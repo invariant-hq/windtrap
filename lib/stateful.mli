@@ -48,15 +48,15 @@ val command :
   ?pre:('model -> 'arg -> bool) ->
   string ->
   'arg Gen.t ->
-  next:('model -> 'arg -> 'model) ->
+  ?next:('model -> 'arg -> 'model) ->
   ('model -> 'arg -> 'sut -> unit) ->
   ('model, 'sut) command
-(** [command name gen ~next body] is the operation [name], whose argument [gen]
-    draws. Every function takes the model first, then the argument, then, for
-    [body], the system.
+(** [command name gen body] is the operation [name], whose argument [gen] draws.
+    Every function takes the model first, then the argument, then, for [body],
+    the system.
     - [pre m arg] is whether the call is legal in the model [m]. Defaults to
       [fun _ _ -> true].
-    - [next m arg] is the model after the call.
+    - [next m arg] is the model after the call. Defaults to [m].
     - [body m arg sut] calls the system and asserts. [m] is the model before the
       call.
     - [name] identifies the command in the printed program, in its summary and
@@ -70,13 +70,13 @@ val call :
   ?__POS__:Loc.pos ->
   ?pre:('model -> bool) ->
   string ->
-  next:('model -> 'model) ->
+  ?next:('model -> 'model) ->
   ('model -> 'sut -> unit) ->
   ('model, 'sut) command
-(** [call name ~next body] is {!val-command} at ['arg = unit] over {!Gen.unit}.
-    [pre], [next] and [body] take no argument. [__POS__] is forwarded. Without
-    it, {!val-command}'s capture walks past the frames of this function and
-    lands on the caller. *)
+(** [call name body] is {!val-command} at ['arg = unit] over {!Gen.unit}. [pre],
+    [next] and [body] take no argument. [__POS__] is forwarded. Without it,
+    {!val-command}'s capture walks past the frames of this function and lands on
+    the caller. *)
 
 (** {1:programs Programs} *)
 

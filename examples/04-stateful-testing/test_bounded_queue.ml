@@ -14,11 +14,9 @@ let commands =
       (fun m q -> equal ~__POS__ int (List.hd m) (Bounded_queue.pop q));
     call "peek"
       ~pre:(fun m -> m <> [])
-      ~next:Fun.id
       (fun m q -> equal ~__POS__ int (List.hd m) (Bounded_queue.peek q));
     call "push when full"
       ~pre:(fun m -> List.length m = capacity)
-      ~next:Fun.id
       (fun _ q ->
         raises ~__POS__ Bounded_queue.Full (fun () -> Bounded_queue.push q 0));
   ]

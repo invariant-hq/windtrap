@@ -309,8 +309,9 @@ Each one is also listed under its area below.
 - `stateful name ~model ~scope commands` checks generated programs of
   calls on a system against a pure model (see
   [Writing a stateful test](https://github.com/invariant-hq/windtrap/blob/main/doc/manual/stateful-testing.md#writing-a-stateful-test)).
-- `command name gen ~next body` is an operation with an argument and
-  `call name ~next body` one without; `?pre` limits either to the models
+- `command name gen body` is an operation with an argument and
+  `call name body` one without; `?next` gives the model after the call,
+  the model unchanged by default, and `?pre` limits either to the models
   where the call is legal.
 - `~scope` gives each program and each shrink candidate a fresh system,
   and `?invariant m sut` runs on the fresh system and after every call.

@@ -245,7 +245,8 @@ Mechanics: [Baselines and expect tests](https://github.com/invariant-hq/windtrap
   passing case carries the label; use it for a case the law depends
   on.
 - A stateful model is a persistent value, such as a list or a `Map`,
-  and `~pre` and `~next` are pure. `~pre` both forbids a call and
+  and `~pre` and `~next` are pure. A command that leaves the model as
+  it is, such as a read, omits `~next`. `~pre` both forbids a call and
   selects the state it needs. Put a `cover` in `~invariant` for a state
   a command needs, since a precondition no program meets removes the
   command without a failure.

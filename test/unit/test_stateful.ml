@@ -67,7 +67,7 @@ let repaired drawn =
 let tick = Stateful.call "tick" ~next:succ (fun _ () -> note "tick")
 let ticks ?pp_model steps = Stateful.program ~steps ?pp_model ~model:0 [ tick ]
 let nothing _ () = ()
-let dead name = Stateful.call name ~pre:(fun _ -> false) ~next:Fun.id nothing
+let dead name = Stateful.call name ~pre:(fun _ -> false) nothing
 let never = dead "never"
 
 (* Five names, so a candidate that put one command in place of another would
@@ -218,10 +218,8 @@ let failing_site commands =
   site (Option.bind f (fun (f : Failure.t) -> f.loc))
 
 let captured_sites () =
-  let p1, c1 =
-    (__POS__, Stateful.command "boom" Gen.unit ~next:Fun.const boom)
-  in
-  let p2, c2 = (__POS__, Stateful.call "boom" ~next:Fun.id boom_call) in
+  let p1, c1 = (__POS__, Stateful.command "boom" Gen.unit boom) in
+  let p2, c2 = (__POS__, Stateful.call "boom" boom_call) in
   equal (list string)
     [ here p1; here p2 ]
     [ failing_site [ c1 ]; failing_site [ c2 ] ]
@@ -235,7 +233,7 @@ let located_site (_, loc, _) =
          (Failure.equality ?loc ~expected:"1" ~actual:"2" ()))
   in
   let pos = ("declared.ml", 42, 7, 11) in
-  failing_site [ Stateful.call ~__POS__:pos "boom" ~next:Fun.id body ]
+  failing_site [ Stateful.call ~__POS__:pos "boom" body ]
 
 let located =
   [
@@ -244,7 +242,7 @@ let located =
   ]
 
 let flattened_name () =
-  let two = Stateful.call "two\nlines" ~next:Fun.id (fun _ () -> fail "x") in
+  let two = Stateful.call "two\nlines" (fun _ () -> fail "x") in
   let pp_model ppf m = Format.fprintf ppf "a\nb%d" m in
   let gen = Stateful.program ~steps:2 ~pp_model ~model:0 [ two ] in
   let p = program gen 0 in
@@ -259,12 +257,25 @@ let flattened_name () =
 2 calls, last: two lines
 call 1 of 2: two lines|}
 
+(* The system counts the [tick]s, and so does the model, so an observer that
+   changed the model would disagree with the system. *)
+let observed () =
+  let tick = Stateful.call "tick" ~next:succ (fun _ r -> incr r) in
+  let look = Stateful.call "look" (fun m r -> equal int !r m) in
+  let see =
+    Stateful.command "see" (Gen.int_range 0 9) (fun m _ r -> equal int !r m)
+  in
+  let gen = Stateful.program ~steps:20 ~model:0 [ tick; look; see ] in
+  let run i = Stateful.execute ~scope:(fun k -> k (ref 0)) (program gen i) in
+  List.iter run (List.init 20 Fun.id)
+
 let commands =
   group "Commands"
     [
       test "a command without pre is legal in every model" (fun () ->
           let gen = Stateful.program ~steps:12 ~model:0 (counter ~pre:false) in
           equal int 12 (List.length (notes (program gen 0))));
+      test "a command without next leaves the model unchanged" observed;
       test "command and call default their site to the line that applies them"
         captured_sites;
       cases
@@ -462,10 +473,7 @@ let long_cell () =
  1  ééééééééééééééééééééééééééééééééééééééééééééééééééééééééé...  tick|}
 
 let printerless () =
-  let opaque =
-    Stateful.command "opaque" (Gen.constant 5) ~next:Fun.const (fun _ _ () ->
-        ())
-  in
+  let opaque = Stateful.command "opaque" (Gen.constant 5) (fun _ _ () -> ()) in
   expect_exact (table (Stateful.program ~steps:1 ~model:0 [ opaque ]))
   @@ __POS_OF__
        {| #  call
@@ -474,7 +482,7 @@ let printerless () =
 let long_argument () =
   let big = Gen.constant (String.make 300 'x') in
   let big = Gen.with_pp Format.pp_print_string big in
-  let write = Stateful.command "write" big ~next:Fun.const (fun _ _ () -> ()) in
+  let write = Stateful.command "write" big (fun _ _ () -> ()) in
   expect_exact (table (Stateful.program ~steps:1 ~model:0 [ write ]))
   @@ __POS_OF__
        {| #  call
@@ -482,10 +490,7 @@ let long_argument () =
 
 (* A sample of a printerless [Gen.map] renders as a pre-image. *)
 let rendering () =
-  let set =
-    Stateful.command "set" (Gen.map succ Gen.nat) ~next:Fun.const (fun _ _ () ->
-        ())
-  in
+  let set = Stateful.command "set" (Gen.map succ Gen.nat) (fun _ _ () -> ()) in
   let gen = Stateful.program ~steps:1 ~model:0 [ set ] in
   let rendering =
     match Gen_engine.render (Shrink_tree.root (drawn gen 0)) with
@@ -681,10 +686,8 @@ let numbering () =
       Stateful.call "first"
         ~pre:(offered "first" (fun m -> m = 0))
         ~next:succ nothing;
-      Stateful.call "never"
-        ~pre:(offered "never" (fun _ -> false))
-        ~next:Fun.id nothing;
-      Stateful.call "boom" ~pre:(offered "boom" raises) ~next:Fun.id nothing;
+      Stateful.call "never" ~pre:(offered "never" (fun _ -> false)) nothing;
+      Stateful.call "boom" ~pre:(offered "boom" raises) nothing;
     ]
   in
   let gen = Stateful.program ~steps:12 ~model:0 commands in
@@ -708,7 +711,6 @@ let candidate_raise () =
       Stateful.call "inc" ~next:succ (fun _ () -> note "inc");
       Stateful.call "check"
         ~pre:(fun m -> if m = 0 then raise Candidate_boom else true)
-        ~next:Fun.id
         (fun _ () -> note "check");
     ]
   in
@@ -1127,7 +1129,14 @@ let wiring () =
        !releases (List.length !noted) !checks)
 
 (* Legal only before the first [tick], so only some programs call it. *)
-let first = Stateful.call "first" ~pre:(fun m -> m = 0) ~next:Fun.id nothing
+let first = Stateful.call "first" ~pre:(fun m -> m = 0) nothing
+
+(* [pop] is legal only once a [push] has changed the model. *)
+let pushes ?next () =
+  [
+    Stateful.call "push" ?next nothing;
+    Stateful.call "pop" ~pre:(fun m -> m > 0) ~next:pred nothing;
+  ]
 
 let never_called names =
   strf
@@ -1148,6 +1157,8 @@ let judged =
       [ dead "x"; dead "x" ],
       never_called {|"x", "x"|} );
     ("a command some programs call", 20, [ tick; first ], "passed");
+    ("a push with its next", 5, pushes ~next:succ (), "passed");
+    ("a push that omits its next", 5, pushes (), never_called {|"pop"|});
     ("no case", 0, [ never ], "passed");
   ]
 

@@ -21,14 +21,15 @@ type ('model, 'sut) command =
     }
       -> ('model, 'sut) command
 
-let command ?__POS__ ?(pre = fun _ _ -> true) name gen ~next body =
+let command ?__POS__ ?(pre = fun _ _ -> true) name gen ?(next = fun m _ -> m)
+    body =
   Command { name; gen; pre; next; body; loc = Loc.resolve ?__POS__ () }
 
-let call ?__POS__ ?pre name ~next body =
+let call ?__POS__ ?pre name ?next body =
   command ?__POS__
     ?pre:(Option.map (fun pre model () -> pre model) pre)
     name Gen.unit
-    ~next:(fun model () -> next model)
+    ?next:(Option.map (fun next model () -> next model) next)
     (fun model () sut -> body model sut)
 
 (* Programs *)

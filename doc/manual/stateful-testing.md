@@ -71,7 +71,8 @@ A stateful test draws programs, sequences of calls to the system, from a
 list of commands, and checks each program against a model, a pure value
 that stands for the system's state. `command name gen ~next body` is an
 operation whose argument `gen` draws, and `call` is one without
-argument. `~next` gives the model after the call, and the body calls the
+argument. `~next` gives the model after the call, and an operation that
+leaves the model as it is, such as `peek`, omits it. The body calls the
 system and asserts on what it returns, given the model before the call.
 `~pre` restricts an operation to the models where it is legal, which
 also selects the state it needs, as `push when full` does. A command
@@ -99,11 +100,9 @@ let commands =
       (fun m q -> equal ~__POS__ int (List.hd m) (Bounded_queue.pop q));
     call "peek"
       ~pre:(fun m -> m <> [])
-      ~next:Fun.id
       (fun m q -> equal ~__POS__ int (List.hd m) (Bounded_queue.peek q));
     call "push when full"
       ~pre:(fun m -> List.length m = capacity)
-      ~next:Fun.id
       (fun _ q ->
         raises ~__POS__ Bounded_queue.Full (fun () -> Bounded_queue.push q 0));
   ]
@@ -163,8 +162,8 @@ $ dune exec examples/04-stateful-testing/test_bounded_queue.exe -- --seed s1:c26
 bounded_queue: 1 test (seed s1:c26eddaeb764a645)
 ──────────────────────── failures ────────────────────────
   FAIL  queue › behaves like a list
-    examples/04-stateful-testing/test_bounded_queue.ml:29
-      29 │ stateful "behaves like a list" ~model:[]
+    examples/04-stateful-testing/test_bounded_queue.ml:27
+      27 │ stateful "behaves like a list" ~model:[]
 
     counterexample (case 5, shrunk 8 steps): 5 calls, last: push when full
        #  model before  call
@@ -174,8 +173,8 @@ bounded_queue: 1 test (seed s1:c26eddaeb764a645)
        4  [0; 0; 0]     push 0
        5  [0; 0; 0; 0]  push when full
     which failed at:
-      examples/04-stateful-testing/test_bounded_queue.ml:23
-        23 │ raises ~__POS__ Bounded_queue.Full (fun () -> Bounded_queue.push q 0));
+      examples/04-stateful-testing/test_bounded_queue.ml:21
+        21 │ raises ~__POS__ Bounded_queue.Full (fun () -> Bounded_queue.push q 0));
       call 5 of 5: push when full
       expected exception  Bounded_queue.Full
       but no exception was raised
@@ -213,8 +212,8 @@ $ dune exec examples/04-stateful-testing/test_bounded_queue.exe -- -f regression
 bounded_queue: 1 test
 ──────────────────────── failures ────────────────────────
   FAIL  regressions › a full queue refuses a push
-    examples/04-stateful-testing/test_bounded_queue.ml:44
-      44 │ raises ~__POS__ Bounded_queue.Full (fun () -> Bounded_queue.push q 0));
+    examples/04-stateful-testing/test_bounded_queue.ml:42
+      42 │ raises ~__POS__ Bounded_queue.Full (fun () -> Bounded_queue.push q 0));
 
     expected exception  Bounded_queue.Full
     but no exception was raised
