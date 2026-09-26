@@ -135,6 +135,15 @@
     code, is not inserted. The payloads of extension nodes and of attributes are
     never traversed.
 
+    The inline tests of a file are test code and carry no point; the rest of the
+    file is instrumented. An inline test is an extension node such as [let%test]
+    or [module%test], which a driver without ppx_windtrap leaves in place, or
+    the items that ppx_windtrap expands it into. Those are a structure item
+    [let … = Ppx_windtrap_runtime.Ppx_runtime.<f> …], which registers a test
+    with its body, and every item between the registrations [enter_group] and
+    [leave_group] of one structure, which hold the module of a [module%test]
+    with its helpers.
+
     When the mutation rewriter ran on the file first, which is the order of the
     driver that dune builds for a stanza naming both backends, the file holds
     its guards. A guard is generated code and takes no mark, with these effects:

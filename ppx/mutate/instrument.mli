@@ -101,10 +101,14 @@
       constructor, with or without a type constraint or a coercion.
       [lazy (fun x -> x + 1)] carries no mutant.
     - The payloads of attributes and of extension nodes.
-    - A file that declares inline tests, which is test code. Such a file holds
-      an extension node named [test] or [expect_test], as [let%test], or an
-      identifier under [Ppx_windtrap_runtime.Ppx_runtime], which is what the
-      expansion of such a node leaves.
+    - The inline tests of a file, which are test code; the rest of the file is
+      mutated. An inline test is an extension node such as [let%test] or
+      [module%test], which a driver without ppx_windtrap leaves in place, or the
+      items that ppx_windtrap expands it into. Those are a structure item
+      [let … = Ppx_windtrap_runtime.Ppx_runtime.<f> …], which registers a test
+      with its body, and every item between the registrations [enter_group] and
+      [leave_group] of one structure, which hold the module of a [module%test]
+      with its helpers.
     - Generated code, which is a site at a ghost location.
     - A site whose line, column and rewrite an earlier site of the file already
       has, which happens in the code of a deriver. The first one keeps the
@@ -218,9 +222,8 @@ val transform_impl_file :
     {{!section-generated}generated module} prepended. [ctxt] is read for the
     input name of the file alone.
 
-    The result is [ast] itself in four cases:
+    The result is [ast] itself in three cases:
     - [ast] has a top-level [[@@@mutate exclude_file]].
-    - [ast] {{!section-exclusions}declares inline tests}.
     - The input name is [//toplevel//] or [(stdin)], or its base name is
       [.ocamlinit] or [topfind].
     - No site was recorded. A dismissed site is a recorded one, so a file whose

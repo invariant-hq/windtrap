@@ -186,7 +186,9 @@ To leave code out of the count, mark it with an attribute:
 `[@@@coverage exclude_file]` for the whole file (see
 [`ppx/coverage/instrument.mli`](../../ppx/coverage/instrument.mli)).
 `symbol`, at the end of `calc.ml`, carries `[@@coverage off]`, and no
-report on this page counts its points.
+report on this page counts its points. Inline tests (`let%test`,
+`let%expect_test` and `module%test` with its helpers) carry no point
+without an attribute, and the rest of their file is counted.
 
 ## Measuring one suite
 

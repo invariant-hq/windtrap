@@ -456,29 +456,88 @@ after, and the reason of a dismissed site.
   let sum a b = a + b
   let ordered a b = if a < b then 1 else 0
 
-  $ mut --impl ./fixture_inline_expanded.ml | ../elide.exe
-  let sum a b = a + b
-  let () =
-    Ppx_windtrap_runtime.Ppx_runtime.add_test
-      ~file:"fixture_inline_expanded.ml" ~tags:[] "sums"
-      (fun () -> assert ((sum 1 2) = 3))
-
-  $ mut --impl ./fixture_inline_expect_only.ml | ../elide.exe
-  let add a b = a + b
-  [%%expect_test let "adds" = print_int (add 1 2); [%expect {| 3 |}]]
-
-  $ mut --impl ./fixture_inline_test_only.ml | ../elide.exe
-  let add a b = a + b
-  [%%test let "adds" = (add 1 2) = 3]
-
   $ mut --impl ./fixture_inline_tests.ml | ../elide.exe
-  let sum a b = a + b
-  let ordered a b = if a < b then 1 else 0
-  [%%test let "sums" = assert ((sum 1 2) = 3)]
+  mutation sites of "./fixture_inline_tests.ml" in Windtrap_mut_________fixture_inline_tests___ml, with type 'a operands:
+    0: 6:14 "sub" "a + b" -> "a - b"
+    1: 7:21 "le" "a < b" -> "a <= b"
+  let sum a b =
+    let (__windtrap_mut_0_l, __windtrap_mut_0_r) = (a, b) in
+    if Windtrap_mut_________fixture_inline_tests___ml.___windtrap_armed___ 0
+    then __windtrap_mut_0_l - __windtrap_mut_0_r
+    else __windtrap_mut_0_l + __windtrap_mut_0_r
+  let ordered a b =
+    if
+      let (__windtrap_mut_1_l, __windtrap_mut_1_r) =
+        ((a, b) : _ Windtrap_mut_________fixture_inline_tests___ml.operands) in
+      (if Windtrap_mut_________fixture_inline_tests___ml.___windtrap_armed___ 1
+       then Stdlib.not (__windtrap_mut_1_r < __windtrap_mut_1_l)
+       else __windtrap_mut_1_l < __windtrap_mut_1_r)
+    then 1
+    else 0
+  [%%test let "sums" = if (sum 1 2) = 3 then () else failwith "sum"]
   [%%test
     module Grouped =
-      struct [%%test let "orders" = assert ((ordered 1 2) = 1)] end]
-  [%%expect_test let "prints" = print_int (sum 1 2); [%expect {| 3 |}]]
+      struct
+        let twice x = x + x
+        [%%test
+          let "orders" =
+            if (ordered 1 (twice 1)) > 0 then () else failwith "order"]
+      end]
+  [%%expect_test let "prints" = print_int ((sum 1 2) - 1); [%expect {| 2 |}]]
+
+  $ ../pp.exe -apply ppx_windtrap,windtrap_mutate --impl ./fixture_inline_tests.ml | ../elide.exe
+  mutation sites of "./fixture_inline_tests.ml" in Windtrap_mut_________fixture_inline_tests___ml, with type 'a operands:
+    0: 6:14 "sub" "a + b" -> "a - b"
+    1: 7:21 "le" "a < b" -> "a <= b"
+  let sum a b =
+    let (__windtrap_mut_0_l, __windtrap_mut_0_r) = (a, b) in
+    if Windtrap_mut_________fixture_inline_tests___ml.___windtrap_armed___ 0
+    then __windtrap_mut_0_l - __windtrap_mut_0_r
+    else __windtrap_mut_0_l + __windtrap_mut_0_r
+  let ordered a b =
+    if
+      let (__windtrap_mut_1_l, __windtrap_mut_1_r) =
+        ((a, b) : _ Windtrap_mut_________fixture_inline_tests___ml.operands) in
+      (if Windtrap_mut_________fixture_inline_tests___ml.___windtrap_armed___ 1
+       then Stdlib.not (__windtrap_mut_1_r < __windtrap_mut_1_l)
+       else __windtrap_mut_1_l < __windtrap_mut_1_r)
+    then 1
+    else 0
+  let () =
+    Ppx_windtrap_runtime.Ppx_runtime.add_test ~file:"./fixture_inline_tests.ml"
+      ~pos:("./fixture_inline_tests.ml", 8, 0, 60) ~tags:[] "sums"
+      (fun () -> if (sum 1 2) = 3 then () else failwith "sum")
+  let () =
+    Ppx_windtrap_runtime.Ppx_runtime.enter_group
+      ~file:"./fixture_inline_tests.ml" ~tags:[] "Grouped"
+  module Grouped =
+    struct
+      let twice x = x + x
+      let () =
+        Ppx_windtrap_runtime.Ppx_runtime.add_test
+          ~file:"./fixture_inline_tests.ml"
+          ~pos:("./fixture_inline_tests.ml", 12, 2, 78) ~tags:[] "orders"
+          (fun () -> if (ordered 1 (twice 1)) > 0 then () else failwith "order")
+    end
+  let () = Ppx_windtrap_runtime.Ppx_runtime.leave_group ()
+  let () =
+    Ppx_windtrap_runtime.Ppx_runtime.add_test ~file:"./fixture_inline_tests.ml"
+      ~pos:("./fixture_inline_tests.ml", 15, 0, 73) ~tags:[] "prints"
+      (fun () ->
+         Ppx_windtrap_runtime.Ppx_runtime.expect_test
+           ~pos:("./fixture_inline_tests.ml", 15, 0, 73)
+           ~body_end:("./fixture_inline_tests.ml", 17, 19, 19)
+           ~nodes:[("./fixture_inline_tests.ml", 17, 2, 19)]
+           (fun () ->
+              (Expect_test_config.run : (unit -> unit) -> unit)
+                (fun () ->
+                   print_int ((sum 1 2) - 1);
+                   Ppx_windtrap_runtime.Ppx_runtime.reach
+                     ("./fixture_inline_tests.ml", 17, 2, 19);
+                   Windtrap.expect
+                     (Expect_test_config.sanitize (Windtrap.output ()))
+                     (("./fixture_inline_tests.ml", 17, 2, 19), {| 2 |})))
+           (fun () -> Expect_test_config.sanitize (Windtrap.output ())))
 
   $ mut --impl ./fixture_lazy.ml | ../elide.exe
   mutation sites of "./fixture_lazy.ml" in Windtrap_mut_________fixture_lazy___ml:

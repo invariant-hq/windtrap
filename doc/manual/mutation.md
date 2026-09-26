@@ -350,10 +350,11 @@ identifier names the rewrite:
 
 A comparison outside a condition, as in `let ok = a < b`, carries no
 mutant, and neither does an `assert`. In a chain of one operator, as
-`a + b + c`, the outermost application alone is a site. A file that
-declares inline tests is not mutated, and a file that rebinds an
-operator loses the rewrites of its family: the four arithmetic
-operators, the six comparisons or the two connectives.
+`a + b + c`, the outermost application alone is a site. Inline tests
+(`let%test`, `let%expect_test` and `module%test` with its helpers)
+carry no mutant, and the rest of their file is mutated. A file that
+rebinds an operator loses the rewrites of its family: the four
+arithmetic operators, the six comparisons or the two connectives.
 
 ## Where the verdicts are
 

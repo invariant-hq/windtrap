@@ -72,33 +72,50 @@ let excludes_file structure =
       | _ -> false)
     structure
 
-(* Test code *)
+(* Inline tests *)
 
-(* The rewriter sees the extension nodes of inline tests in a driver without
-   ppx_windtrap, and the calls they expand into in a build, where
-   instrumentation runs after every other rewriter. *)
-let declares_inline_tests structure =
-  let scan =
-    object
-      inherit [bool] Ast_traverse.fold as super
+(* In a build, instrumentation runs after every other rewriter, so an inline
+   test reaches this pass as ppx_windtrap's expansion: a registration
+   [let () = Ppx_windtrap_runtime.Ppx_runtime.<f> ...], which holds the body
+   of a test, and for a [module%test] the items between its [enter_group]
+   and its [leave_group]. In a driver without ppx_windtrap it is an extension
+   node, which is never traversed. ppx/coverage/instrument.ml reads the same
+   shapes. *)
+let registration item =
+  match item.pstr_desc with
+  | Pstr_value (_, [ { pvb_expr = { pexp_desc = Pexp_apply (f, _); _ }; _ } ])
+    -> (
+      match f.pexp_desc with
+      | Pexp_ident
+          {
+            txt =
+              Ldot (Ldot (Lident "Ppx_windtrap_runtime", "Ppx_runtime"), name);
+            _;
+          } ->
+          Some name
+      | _ -> None)
+  | _ -> None
 
-      method! extension ((name, _) as extension) found =
-        let found =
-          match name.txt with "test" | "expect_test" -> true | _ -> found
-        in
-        super#extension extension found
-
-      method! longident lid found =
-        let found =
-          match lid with
-          | Ldot (Ldot (Lident "Ppx_windtrap_runtime", "Ppx_runtime"), _) ->
-              true
-          | _ -> found
-        in
-        super#longident lid found
-    end
+(* [items] with each inline test left as written and [f] applied to every
+   other item, in order. *)
+let map_outside_tests f items =
+  let rec outside acc = function
+    | [] -> List.rev acc
+    | item :: items -> (
+        match registration item with
+        | Some "enter_group" -> inside (item :: acc) items
+        | Some _ -> outside (item :: acc) items
+        | None ->
+            let item = f item in
+            outside (item :: acc) items)
+  and inside acc = function
+    | [] -> List.rev acc
+    | item :: items -> (
+        match registration item with
+        | Some "leave_group" -> outside (item :: acc) items
+        | Some _ | None -> inside (item :: acc) items)
   in
-  scan#structure structure false
+  outside [] items
 
 (* Operators *)
 
@@ -572,7 +589,7 @@ class instrumenter ~keeps ~module_name =
 
     method! structure items =
       let outer = suppressed in
-      let items = super#structure items in
+      let items = map_outside_tests self#structure_item items in
       suppressed <- outer;
       items
 
@@ -652,7 +669,7 @@ let transform_impl_file ctxt ast =
   if
     List.mem file always_ignore_paths
     || List.mem (Filename.basename file) always_ignore_basenames
-    || excludes_file ast || declares_inline_tests ast
+    || excludes_file ast
   then ast
   else
     let module_name = generated_module_name file in

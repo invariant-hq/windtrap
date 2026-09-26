@@ -194,6 +194,73 @@ module of any other shape as it is.
      for i = 1 to n do (___windtrap_visit___ 10; total := ((!total) + i)) done;
      !total)
 
+  $ cov --impl ./fixture_inline_tests.ml | ../elide.exe
+  coverage points of "./fixture_inline_tests.ml" in Windtrap_cov_________fixture_inline_tests___ml:
+    0: 292-297
+    1: 337-338
+    2: 330-331
+    3: 316-338
+  let sum a b = ___windtrap_visit___ 0; a + b
+  let ordered a b =
+    ___windtrap_visit___ 3;
+    if a < b then (___windtrap_visit___ 2; 1) else (___windtrap_visit___ 1; 0)
+  [%%test let "sums" = if (sum 1 2) = 3 then () else failwith "sum"]
+  [%%test
+    module Grouped =
+      struct
+        let twice x = x + x
+        [%%test
+          let "orders" =
+            if (ordered 1 (twice 1)) > 0 then () else failwith "order"]
+      end]
+  [%%expect_test let "prints" = print_int ((sum 1 2) - 1); [%expect {| 2 |}]]
+
+  $ ../pp.exe -apply ppx_windtrap,windtrap_coverage --impl ./fixture_inline_tests.ml | ../elide.exe
+  coverage points of "./fixture_inline_tests.ml" in Windtrap_cov_________fixture_inline_tests___ml:
+    0: 292-297
+    1: 337-338
+    2: 330-331
+    3: 316-338
+  let sum a b = ___windtrap_visit___ 0; a + b
+  let ordered a b =
+    ___windtrap_visit___ 3;
+    if a < b then (___windtrap_visit___ 2; 1) else (___windtrap_visit___ 1; 0)
+  let () =
+    Ppx_windtrap_runtime.Ppx_runtime.add_test ~file:"./fixture_inline_tests.ml"
+      ~pos:("./fixture_inline_tests.ml", 8, 0, 60) ~tags:[] "sums"
+      (fun () -> if (sum 1 2) = 3 then () else failwith "sum")
+  let () =
+    Ppx_windtrap_runtime.Ppx_runtime.enter_group
+      ~file:"./fixture_inline_tests.ml" ~tags:[] "Grouped"
+  module Grouped =
+    struct
+      let twice x = x + x
+      let () =
+        Ppx_windtrap_runtime.Ppx_runtime.add_test
+          ~file:"./fixture_inline_tests.ml"
+          ~pos:("./fixture_inline_tests.ml", 12, 2, 78) ~tags:[] "orders"
+          (fun () -> if (ordered 1 (twice 1)) > 0 then () else failwith "order")
+    end
+  let () = Ppx_windtrap_runtime.Ppx_runtime.leave_group ()
+  let () =
+    Ppx_windtrap_runtime.Ppx_runtime.add_test ~file:"./fixture_inline_tests.ml"
+      ~pos:("./fixture_inline_tests.ml", 15, 0, 73) ~tags:[] "prints"
+      (fun () ->
+         Ppx_windtrap_runtime.Ppx_runtime.expect_test
+           ~pos:("./fixture_inline_tests.ml", 15, 0, 73)
+           ~body_end:("./fixture_inline_tests.ml", 17, 19, 19)
+           ~nodes:[("./fixture_inline_tests.ml", 17, 2, 19)]
+           (fun () ->
+              (Expect_test_config.run : (unit -> unit) -> unit)
+                (fun () ->
+                   print_int ((sum 1 2) - 1);
+                   Ppx_windtrap_runtime.Ppx_runtime.reach
+                     ("./fixture_inline_tests.ml", 17, 2, 19);
+                   Windtrap.expect
+                     (Expect_test_config.sanitize (Windtrap.output ()))
+                     (("./fixture_inline_tests.ml", 17, 2, 19), {| 2 |})))
+           (fun () -> Expect_test_config.sanitize (Windtrap.output ())))
+
   $ cov --impl ./fixture_keys.ml | ../elide.exe
   coverage points of "./fixture_keys.ml" in Windtrap_cov_________fixture_keys___ml, with ___windtrap_post_visit___:
     0: 543-546

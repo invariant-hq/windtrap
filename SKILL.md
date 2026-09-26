@@ -108,8 +108,8 @@ let () = exit (run "mylib" [ parse ])
   outside the library and for tests that need `bracket`, `scoped` or
   `fixture`. A library can have both: dune runs its inline tests in the
   library's own runner, and a `(test)` executable that links the library
-  runs its own tests alone. A file that declares inline tests is not
-  mutated.
+  runs its own tests alone. Coverage and mutation leave the inline tests
+  out and instrument the code beside them.
 - A resource belongs to a test: `bracket ~setup ~teardown` for one per
   test, `scoped` for a `with_`-style function, `fixture` for one shared
   across the run. `temp_dir`, `setenv` and `chdir` are undone when the

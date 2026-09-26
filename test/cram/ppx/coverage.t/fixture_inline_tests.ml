@@ -1,7 +1,7 @@
 (* A library's functions beside its inline tests, as written, where a test
    is an extension node, and as ppx_windtrap expands them before a build
-   instruments them. Every test body holds a site, and so does the helper
-   of the group; the functions alone are rewritten. *)
+   instruments them. Every test body holds a block, and so does the helper
+   of the group; the functions alone carry points. *)
 
 let sum a b = a + b
 let ordered a b = if a < b then 1 else 0
