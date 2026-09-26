@@ -2,15 +2,19 @@
 ; and [%expect.if_reached] must be rejected at expansion time with the
 ; explicit "not supported by ppx_windtrap" diagnostic. The upstream
 ; negative-test/ files are vendored flat here (unique basenames).
+; OCAML_COLOR is set for the reason ../root/dune gives.
 
 (rule
  (target passing_tests.rejected)
  (action
   (with-outputs-to
    passing_tests.rejected
-   (with-accepted-exit-codes
-    1
-    (run ../../pp.exe --impl %{dep:passing_tests.ml})))))
+   (setenv
+    OCAML_COLOR
+    never
+    (with-accepted-exit-codes
+     1
+     (run ../../pp.exe --impl %{dep:passing_tests.ml}))))))
 
 (rule
  (alias runtest)
@@ -22,9 +26,12 @@
  (action
   (with-outputs-to
    expect_if_reacheds_are_corrected.rejected
-   (with-accepted-exit-codes
-    1
-    (run ../../pp.exe --impl %{dep:expect_if_reacheds_are_corrected.ml})))))
+   (setenv
+    OCAML_COLOR
+    never
+    (with-accepted-exit-codes
+     1
+     (run ../../pp.exe --impl %{dep:expect_if_reacheds_are_corrected.ml}))))))
 
 (rule
  (alias runtest)
@@ -38,9 +45,12 @@
  (action
   (with-outputs-to
    expects_still_must_be_reached.rejected
-   (with-accepted-exit-codes
-    1
-    (run ../../pp.exe --impl %{dep:expects_still_must_be_reached.ml})))))
+   (setenv
+    OCAML_COLOR
+    never
+    (with-accepted-exit-codes
+     1
+     (run ../../pp.exe --impl %{dep:expects_still_must_be_reached.ml}))))))
 
 (rule
  (alias runtest)

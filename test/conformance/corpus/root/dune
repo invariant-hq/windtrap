@@ -18,15 +18,21 @@
 
 ; Rejected set: expansion must exit 1 with the explicit
 ; "not supported by ppx_windtrap" diagnostic, goldened per file.
+; OCAML_COLOR is set: dune sets it to always in every action's
+; environment when its own stderr takes colour (a terminal,
+; CLICOLOR_FORCE), and the diagnostic would then carry escapes.
 
 (rule
  (target test_expectation.rejected)
  (action
   (with-outputs-to
    test_expectation.rejected
-   (with-accepted-exit-codes
-    1
-    (run ../../pp.exe --impl %{dep:test_expectation.ml})))))
+   (setenv
+    OCAML_COLOR
+    never
+    (with-accepted-exit-codes
+     1
+     (run ../../pp.exe --impl %{dep:test_expectation.ml}))))))
 
 (rule
  (alias runtest)
@@ -38,9 +44,12 @@
  (action
   (with-outputs-to
    test_sanitize.rejected
-   (with-accepted-exit-codes
-    1
-    (run ../../pp.exe --impl %{dep:test_sanitize.ml})))))
+   (setenv
+    OCAML_COLOR
+    never
+    (with-accepted-exit-codes
+     1
+     (run ../../pp.exe --impl %{dep:test_sanitize.ml}))))))
 
 (rule
  (alias runtest)
@@ -52,9 +61,12 @@
  (action
   (with-outputs-to
    uncaught_exn.rejected
-   (with-accepted-exit-codes
-    1
-    (run ../../pp.exe --impl %{dep:uncaught_exn.ml})))))
+   (setenv
+    OCAML_COLOR
+    never
+    (with-accepted-exit-codes
+     1
+     (run ../../pp.exe --impl %{dep:uncaught_exn.ml}))))))
 
 (rule
  (alias runtest)
@@ -66,9 +78,12 @@
  (action
   (with-outputs-to
    unreachable.rejected
-   (with-accepted-exit-codes
-    1
-    (run ../../pp.exe --impl %{dep:unreachable.ml})))))
+   (setenv
+    OCAML_COLOR
+    never
+    (with-accepted-exit-codes
+     1
+     (run ../../pp.exe --impl %{dep:unreachable.ml}))))))
 
 (rule
  (alias runtest)
@@ -80,9 +95,12 @@
  (action
   (with-outputs-to
    warning_40.rejected
-   (with-accepted-exit-codes
-    1
-    (run ../../pp.exe --impl %{dep:warning_40.ml})))))
+   (setenv
+    OCAML_COLOR
+    never
+    (with-accepted-exit-codes
+     1
+     (run ../../pp.exe --impl %{dep:warning_40.ml}))))))
 
 (rule
  (alias runtest)
@@ -94,9 +112,12 @@
  (action
   (with-outputs-to
    zero_alloc_attr.rejected
-   (with-accepted-exit-codes
-    1
-    (run ../../pp.exe --impl %{dep:zero_alloc_attr.ml})))))
+   (setenv
+    OCAML_COLOR
+    never
+    (with-accepted-exit-codes
+     1
+     (run ../../pp.exe --impl %{dep:zero_alloc_attr.ml}))))))
 
 (rule
  (alias runtest)

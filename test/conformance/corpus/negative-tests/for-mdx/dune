@@ -42,14 +42,19 @@
  (action
   (diff foo.ml.corrected.expected foo.ml.corrected)))
 
+; OCAML_COLOR is set for the reason ../../root/dune gives.
+
 (rule
  (target mdx_cases.rejected)
  (action
   (with-outputs-to
    mdx_cases.rejected
-   (with-accepted-exit-codes
-    1
-    (run ../../../pp.exe --impl %{dep:mdx_cases.ml})))))
+   (setenv
+    OCAML_COLOR
+    never
+    (with-accepted-exit-codes
+     1
+     (run ../../../pp.exe --impl %{dep:mdx_cases.ml}))))))
 
 (rule
  (alias runtest)

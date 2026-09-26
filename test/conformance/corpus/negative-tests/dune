@@ -214,14 +214,19 @@
 
 ; ── Rejected set: expansion must exit 1 with the explicit diagnostic ──
 
+; OCAML_COLOR is set for the reason ../root/dune gives.
+
 (rule
  (target comment.rejected)
  (action
   (with-outputs-to
    comment.rejected
-   (with-accepted-exit-codes
-    1
-    (run ../../pp.exe --impl %{dep:comment.ml})))))
+   (setenv
+    OCAML_COLOR
+    never
+    (with-accepted-exit-codes
+     1
+     (run ../../pp.exe --impl %{dep:comment.ml}))))))
 
 (rule
  (alias runtest)
@@ -233,9 +238,12 @@
  (action
   (with-outputs-to
    exn.rejected
-   (with-accepted-exit-codes
-    1
-    (run ../../pp.exe --impl %{dep:exn.ml})))))
+   (setenv
+    OCAML_COLOR
+    never
+    (with-accepted-exit-codes
+     1
+     (run ../../pp.exe --impl %{dep:exn.ml}))))))
 
 (rule
  (alias runtest)
@@ -247,9 +255,12 @@
  (action
   (with-outputs-to
    exn_and_trailing.rejected
-   (with-accepted-exit-codes
-    1
-    (run ../../pp.exe --impl %{dep:exn_and_trailing.ml})))))
+   (setenv
+    OCAML_COLOR
+    never
+    (with-accepted-exit-codes
+     1
+     (run ../../pp.exe --impl %{dep:exn_and_trailing.ml}))))))
 
 (rule
  (alias runtest)
@@ -261,9 +272,12 @@
  (action
   (with-outputs-to
    exn_missing.rejected
-   (with-accepted-exit-codes
-    1
-    (run ../../pp.exe --impl %{dep:exn_missing.ml})))))
+   (setenv
+    OCAML_COLOR
+    never
+    (with-accepted-exit-codes
+     1
+     (run ../../pp.exe --impl %{dep:exn_missing.ml}))))))
 
 (rule
  (alias runtest)
@@ -275,9 +289,12 @@
  (action
   (with-outputs-to
    expectation.rejected
-   (with-accepted-exit-codes
-    1
-    (run ../../pp.exe --impl %{dep:expectation.ml})))))
+   (setenv
+    OCAML_COLOR
+    never
+    (with-accepted-exit-codes
+     1
+     (run ../../pp.exe --impl %{dep:expectation.ml}))))))
 
 (rule
  (alias runtest)
@@ -289,9 +306,12 @@
  (action
   (with-outputs-to
    function_with_distinct_outputs.rejected
-   (with-accepted-exit-codes
-    1
-    (run ../../pp.exe --impl %{dep:function_with_distinct_outputs.ml})))))
+   (setenv
+    OCAML_COLOR
+    never
+    (with-accepted-exit-codes
+     1
+     (run ../../pp.exe --impl %{dep:function_with_distinct_outputs.ml}))))))
 
 (rule
  (alias runtest)
@@ -305,9 +325,12 @@
  (action
   (with-outputs-to
    functor.rejected
-   (with-accepted-exit-codes
-    1
-    (run ../../pp.exe --impl %{dep:functor.ml})))))
+   (setenv
+    OCAML_COLOR
+    never
+    (with-accepted-exit-codes
+     1
+     (run ../../pp.exe --impl %{dep:functor.ml}))))))
 
 (rule
  (alias runtest)
@@ -319,9 +342,12 @@
  (action
   (with-outputs-to
    tag.rejected
-   (with-accepted-exit-codes
-    1
-    (run ../../pp.exe --impl %{dep:tag.ml})))))
+   (setenv
+    OCAML_COLOR
+    never
+    (with-accepted-exit-codes
+     1
+     (run ../../pp.exe --impl %{dep:tag.ml}))))))
 
 (rule
  (alias runtest)
@@ -333,9 +359,12 @@
  (action
   (with-outputs-to
    zero_alloc.rejected
-   (with-accepted-exit-codes
-    1
-    (run ../../pp.exe --impl %{dep:zero_alloc.ml})))))
+   (setenv
+    OCAML_COLOR
+    never
+    (with-accepted-exit-codes
+     1
+     (run ../../pp.exe --impl %{dep:zero_alloc.ml}))))))
 
 (rule
  (alias runtest)
