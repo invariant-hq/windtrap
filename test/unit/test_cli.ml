@@ -738,10 +738,13 @@ let () =
   setenv "WINDTRAP_JUNIT" (Some "_build/junit");
   setenv "WINDTRAP_OUTPUT" (Some "logs");
   let config = resolve Cli.empty in
+  let root = "/somewhere/project" in
   equal ~msg:"WINDTRAP_JUNIT, from the project root" (option string)
-    (Some "/somewhere/project/_build/junit") config.Run.junit;
+    (Some (Filename.concat root "_build/junit"))
+    config.Run.junit;
   equal ~msg:"WINDTRAP_OUTPUT, from the project root" string
-    "/somewhere/project/logs" config.Run.log_dir;
+    (Filename.concat root "logs")
+    config.Run.log_dir;
   let config =
     resolve { Cli.empty with Cli.junit = Some "out"; log_dir = Some "logs" }
   in

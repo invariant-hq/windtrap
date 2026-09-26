@@ -45,7 +45,7 @@
 (test
  (name test_baseline)
  (modules test_baseline)
- (libraries windtrap unix))
+ (libraries windtrap windtrap_test_support unix))
 
 (test
  (name test_source_patch)

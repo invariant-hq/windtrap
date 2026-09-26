@@ -1039,7 +1039,7 @@ let moved =
     let dir = Run.temp_dir () in
     targets := Unix.realpath dir :: !targets;
     Run.chdir dir;
-    inside := cwd () :: !inside;
+    inside := Unix.realpath (cwd ()) :: !inside;
     if List.length !inside < 3 then fail "again"
   in
   let on_event = function
@@ -2673,8 +2673,12 @@ let correcting ~root baseline tests =
     ~config:(fun c -> { c with baseline })
     tests
 
+(* Separators compared as '/': on Windows the root is native and a baseline
+   path is spelled with '/'. *)
 let relative root path =
-  let prefix = root ^ Filename.dir_sep in
+  let root = Windtrap_test_support.slashed root
+  and path = Windtrap_test_support.slashed path in
+  let prefix = root ^ "/" in
   if String.starts_with ~prefix path then
     String.sub path (String.length prefix)
       (String.length path - String.length prefix)

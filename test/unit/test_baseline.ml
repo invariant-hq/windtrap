@@ -89,8 +89,10 @@ let write t =
   Baseline.write t;
   []
 
+(* Baseline spells the paths it reports with '/', and a Windows root is
+   native. *)
 let relative root path =
-  let prefix = root ^ "/" in
+  let prefix = Windtrap_test_support.slashed root ^ "/" in
   if String.starts_with ~prefix path then
     String.sub path (String.length prefix)
       (String.length path - String.length prefix)

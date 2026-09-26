@@ -738,7 +738,8 @@ let () =
     match Baseline.writes (Run.baselines outcome.Run.run) with
     | [ Baseline.Written { path = written; literals = 0 } ] ->
         check "acceptance wrote the file"
-          (written = path && read_file path = "hello\n")
+          (written = Windtrap_test_support.slashed path
+          && read_file path = "hello\n")
     | _ -> check "acceptance recorded one write" false );
   (* 3. Check mode now passes; a changed actual mismatches. *)
   ( expect_run "file baseline green" ~config [ file_test ] @@ fun outcome ->
@@ -967,7 +968,7 @@ let () =
   match Baseline.writes (Run.baselines outcome.Run.run) with
   | [ Baseline.Written { path = written; literals = 2 } ] ->
       check "one corrected file holds both literals"
-        (written = path ^ ".corrected"
+        (written = Windtrap_test_support.slashed path ^ ".corrected"
         && read_file written
            = "let () =\n\
              \  expect \"x\" (__POS_OF__ {| x |});\n\
@@ -1069,7 +1070,9 @@ let () =
   match Baseline.writes (Run.baselines outcome.Run.run) with
   | [ Baseline.Written { path; literals = 0 } ] ->
       check "the bracket's baseline is accepted under the root"
-        (path = Filename.concat root "src/bracketed.expected")
+        (path
+        = Windtrap_test_support.slashed
+            (Filename.concat root "src/bracketed.expected"))
   | _ -> check "bracket baseline accepted a file" false
 
 (* The assertion verbs, body operations and xfail through the facade

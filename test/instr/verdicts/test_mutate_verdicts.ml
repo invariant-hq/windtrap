@@ -723,8 +723,7 @@ let filename_tests =
              (V.output_file ~exe:"/home/p/_build_ci/default/test/t.exe"));
         is_true ~msg:"under _windtrap/mutants for an executable outside any"
           (String.starts_with
-             ~prefix:
-               (Filename.concat (Sys.getcwd ()) "_windtrap/mutants/windtrap-")
+             ~prefix:(Sys.getcwd () ^ "/_windtrap/mutants/windtrap-")
              (V.output_file ~exe:"/usr/local/bin/t"));
         is_true ~msg:"named .mutants" (Filename.check_suffix direct ".mutants");
         not_equal ~msg:"a different executable gets a different file" string

@@ -481,8 +481,7 @@ let filename_tests =
            go under the working directory's own _windtrap. *)
         starts_with
           ~msg:"an executable under no build directory dumps under _windtrap"
-          ~affix:
-            (Filename.concat (Sys.getcwd ()) "_windtrap/coverage/windtrap-")
+          ~affix:(Sys.getcwd () ^ "/_windtrap/coverage/windtrap-")
           (I.output_dir C.format ~exe:"/opt/tools/mytool.exe"));
     test "build_dir, build_root and exe_identity follow the first _build*"
       (fun () ->
@@ -583,10 +582,9 @@ let filename_tests =
         equal ~msg:"with a trailing separator" string "/w/p/_build"
           (I.exe_identity ~exe:"/w/p/_build/");
         equal ~msg:"and its files are the standalone ones" string
-          (Filename.concat (Sys.getcwd ())
-             ("_windtrap/coverage/windtrap-"
-             ^ Digest.to_hex (Digest.string "/w/p/_build_x.exe")
-             ^ ".coverage"))
+          (Sys.getcwd () ^ "/_windtrap/coverage/windtrap-"
+          ^ Digest.to_hex (Digest.string "/w/p/_build_x.exe")
+          ^ ".coverage")
           (I.output_file C.format ~exe:"/w/p/_build_x.exe");
         equal ~msg:"below a build directory, the name follows the context"
           string "_build_x.exe"
@@ -611,8 +609,8 @@ let filename_tests =
           ("/w/p/_build/_coverage/windtrap-" ^ md5 "default/test/a.exe")
           (I.output_dir C.format ~exe:"/w/p/_build/default/test/a.exe");
         equal ~msg:"below none, the hash of the absolute path" string
-          (Filename.concat (Sys.getcwd ())
-             ("_windtrap/coverage/windtrap-" ^ md5 "/opt/t.exe" ^ ".coverage"))
+          (Sys.getcwd () ^ "/_windtrap/coverage/windtrap-" ^ md5 "/opt/t.exe"
+         ^ ".coverage")
           (I.output_file C.format ~exe:"/opt/t.exe"));
     test "what needs an unreadable current directory raises Sys_error"
       (fun () ->
@@ -1216,7 +1214,8 @@ let dump_tests =
         in
         let dir = I.output_dir C.format ~exe in
         equal ~msg:"the directory sits under the executable's root" string
-          (Filename.concat root "_build/_coverage")
+          (Windtrap_test_support.slashed
+             (Filename.concat root "_build/_coverage"))
           (Filename.dirname dir);
         let dumps () =
           match Sys.readdir dir with

@@ -492,10 +492,14 @@ let outside_builds () =
   chdir (temp_dir ());
   Sys.getcwd ()
 
-let relative_inside_dune (value, (root, logs)) =
-  let cwd = outside_builds () in
+(* The roots are spelled with '/', and the log root joins [_tests] to the
+   build directory with [Filename.concat], as the product does. *)
+let logs build = Filename.concat build "_tests"
+
+let relative_inside_dune (value, (root, build)) =
+  let cwd = Windtrap_test_support.slashed (outside_builds ()) in
   equal (pair string string)
-    (Filename.concat cwd root, Filename.concat cwd logs)
+    (cwd ^ "/" ^ root, logs (cwd ^ "/" ^ build))
     (under (Some value))
 
 let falls_through value =
@@ -537,26 +541,25 @@ let root =
          component"
         ~name:fst
         [
-          ("a build context", ("/w/_build/default", ("/w", "/w/_build/_tests")));
+          ("a build context", ("/w/_build/default", ("/w", "/w/_build")));
           ( "a sandboxed action's context",
-            ("/w/_build/.sandbox/3f/default", ("/w", "/w/_build/_tests")) );
+            ("/w/_build/.sandbox/3f/default", ("/w", "/w/_build")) );
           ( "a private build directory",
-            ("/w/_build_priv/default", ("/w", "/w/_build_priv/_tests")) );
+            ("/w/_build_priv/default", ("/w", "/w/_build_priv")) );
           ( "a path deep under one",
-            ("/w/_build_x/default/test/t.exe", ("/w", "/w/_build_x/_tests")) );
+            ("/w/_build_x/default/test/t.exe", ("/w", "/w/_build_x")) );
           ( "a second _build component",
-            ("/w/_build/default/a/_build_y/b", ("/w", "/w/_build/_tests")) );
-          ( "the build directory itself",
-            ("/w/_build", ("/w", "/w/_build/_tests")) );
+            ("/w/_build/default/a/_build_y/b", ("/w", "/w/_build")) );
+          ("the build directory itself", ("/w/_build", ("/w", "/w/_build")));
         ]
-        (fun (_, (value, roots)) ->
-          equal (pair string string) roots (under (Some value)));
+        (fun (_, (value, (root, build))) ->
+          equal (pair string string) (root, logs build) (under (Some value)));
       cases
         "a relative INSIDE_DUNE is made absolute against the working directory"
         ~name:(fun (value, _) -> strf "%S" value)
         [
-          ("w/_build/default", ("w", "w/_build/_tests"));
-          ("w\\_build\\default", ("w", "w/_build/_tests"));
+          ("w/_build/default", ("w", "w/_build"));
+          ("w\\_build\\default", ("w", "w/_build"));
         ]
         relative_inside_dune;
       cases
@@ -853,8 +856,10 @@ let leaves_a_file () =
   write file "kept";
   Os.mkdir_p file;
   equal string "kept" (read file);
+  (* Windows reports the path under a file as missing. *)
+  let error = if Sys.win32 then Unix.ENOENT else Unix.ENOTDIR in
   raises_match
-    (function Unix.Unix_error (Unix.ENOTDIR, _, _) -> true | _ -> false)
+    (function Unix.Unix_error (e, _, _) -> e = error | _ -> false)
     (fun () -> Os.mkdir_p (Filename.concat file "sub"))
 
 (* A link to nothing is missing to [file_exists] and taken to [mkdir], as a
