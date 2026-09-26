@@ -287,8 +287,9 @@ and the backend and calls `Ppxlib.Driver.standalone ()` instruments a
 file when the compiler runs it as `-ppx "driver.exe --as-ppx"`, with the
 installed `windtrap/runtime` directory on the include path. Instrument
 the library and not its tests, link the suite against `windtrap`, and
-run it, with `--mutate` for the mutation backend. `windtrap coverage` or
-`windtrap mutants` then merges what it wrote. `test/cram/run/nodune.t`
+run it, with `--mutate` for the mutation backend. Compile the suite with
+`-g`, which a test's location needs. `windtrap coverage` or `windtrap
+mutants` then merges what it wrote. `test/cram/run/nodune.t`
 holds such a session.
 
 ## When a dump is excluded

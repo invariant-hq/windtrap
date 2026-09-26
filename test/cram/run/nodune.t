@@ -54,7 +54,7 @@ Coverage. The library is instrumented through -ppx; the test file is
 not, and links windtrap as any test does:
 
   $ ocamlopt -ppx "$pp windtrap_coverage" -I "$lib/windtrap/runtime" -c calc.ml
-  $ ocamlopt -I +unix -I "$lib/windtrap/runtime" -I "$lib/windtrap" \
+  $ ocamlopt -g -I +unix -I "$lib/windtrap/runtime" -I "$lib/windtrap" \
   >   unix.cmxa windtrap_runtime.cmxa windtrap.cmxa calc.cmx test_calc.ml -o test_calc.exe
 
 The run is one green line (a run prints no coverage number of its own),
@@ -84,7 +84,7 @@ A run whose tests fail exits 1 and still writes its dump:
   > let () =
   >   exit Windtrap.(run "fails" [ test "add" (fun () -> equal int 6 (Calc.add 2 3)) ])
   > ML
-  $ ocamlopt -I +unix -I "$lib/windtrap/runtime" -I "$lib/windtrap" \
+  $ ocamlopt -g -I +unix -I "$lib/windtrap/runtime" -I "$lib/windtrap" \
   >   unix.cmxa windtrap_runtime.cmxa windtrap.cmxa calc.cmx test_fails.ml -o test_fails.exe
   $ mkdir failing && cd failing
   $ run ../test_fails.exe > log
@@ -111,7 +111,7 @@ Mutation. The same library through the other backend, then the survey
 scoped to the file, with --mutate:
 
   $ ocamlopt -ppx "$pp windtrap_mutate" -I "$lib/windtrap/runtime" -c calc.ml
-  $ ocamlopt -I +unix -I "$lib/windtrap/runtime" -I "$lib/windtrap" \
+  $ ocamlopt -g -I +unix -I "$lib/windtrap/runtime" -I "$lib/windtrap" \
   >   unix.cmxa windtrap_runtime.cmxa windtrap.cmxa calc.cmx test_calc.ml -o test_calc.exe
   $ run ./test_calc.exe --mutate=calc.ml
   calc: 4 passed in TIME.
