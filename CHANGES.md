@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## v0.2.0 2026-09-26
 
 Windtrap 0.2.0 is a complete rewrite of Windtrap. It keeps the shape of
 0.1.0's API and rebuilds it on a stronger design: one runner for every
