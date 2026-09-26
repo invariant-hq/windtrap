@@ -282,14 +282,17 @@ output stays the document:
   [1]
   $ diff lcov "$bin/out"
 
--u and a WINDTRAP_COLOR the report refuses change neither a document nor
-the exit code:
+-u, --color=always and a WINDTRAP_COLOR the report refuses change neither
+a document nor the exit code:
 
   $ for doc in --json --lcov; do
   >   run windtrap coverage $doc > plain
   >   run windtrap coverage $doc -u > shown; echo "[$?]"; diff plain shown
+  >   run windtrap coverage $doc --color=always > shown; echo "[$?]"; diff plain shown
   >   run WINDTRAP_COLOR=sometimes windtrap coverage $doc > shown; echo "[$?]"; diff plain shown
   > done
+  [0]
+  [0]
   [0]
   [0]
   [0]
@@ -422,12 +425,15 @@ variable that has no flag:
     -u, --show-uncovered
         Also render uncovered source excerpts.
   
+    --color=MODE (env WINDTRAP_COLOR)
+        Color output: always, never or auto.
+  
     -h, --help
         Print this help and exit.
   
   ENVIRONMENT (no flag):
-    WINDTRAP_COLOR
-        Color output: always, never or auto.
+    NO_COLOR
+        Any value: never style output (--color auto).
   $ cp "$bin/out" help
   $ awk '{ sub(/\r$/, "") } length > 80' help
   $ run windtrap coverage -h > /dev/null && diff help "$bin/out"
@@ -442,7 +448,7 @@ before any flag is read:
   windtrap: unknown option '--frobnicate'
   usage: windtrap coverage [OPTIONS] [PATH...]
   [2]
-  $ for flag in --min --expect --do-not-expect; do run windtrap coverage -u $flag; echo "[$?]"; done
+  $ for flag in --min --expect --do-not-expect --color; do run windtrap coverage -u $flag; echo "[$?]"; done
   --- stderr
   windtrap: option '--min' requires an argument
   usage: windtrap coverage [OPTIONS] [PATH...]
@@ -455,12 +461,16 @@ before any flag is read:
   windtrap: option '--do-not-expect' requires an argument
   usage: windtrap coverage [OPTIONS] [PATH...]
   [2]
+  --- stderr
+  windtrap: option '--color' requires an argument
+  usage: windtrap coverage [OPTIONS] [PATH...]
+  [2]
   $ run windtrap coverage --min --expect=lib
   --- stderr
   windtrap: invalid value '--expect' for --min: expected a percentage (0-100)
   usage: windtrap coverage [OPTIONS] [PATH...]
   [2]
-  $ for arg in --json=1 --help=1 - --color; do run windtrap coverage $arg; echo "[$?]"; done
+  $ for arg in --json=1 --help=1 -; do run windtrap coverage $arg; echo "[$?]"; done
   --- stderr
   windtrap: unknown option '--json=1'
   usage: windtrap coverage [OPTIONS] [PATH...]
@@ -471,10 +481,6 @@ before any flag is read:
   [2]
   --- stderr
   windtrap: unknown option '-'
-  usage: windtrap coverage [OPTIONS] [PATH...]
-  [2]
-  --- stderr
-  windtrap: unknown option '--color'
   usage: windtrap coverage [OPTIONS] [PATH...]
   [2]
 
@@ -492,7 +498,24 @@ The first argument that ends the parse decides:
   usage: windtrap coverage [OPTIONS] [PATH...]
   [2]
 
-Colour is WINDTRAP_COLOR's alone. A value the runner refuses is a usage
+--color is the runner's flag, in either spelling, and it hides
+WINDTRAP_COLOR:
+
+  $ run windtrap coverage > plain
+  $ run WINDTRAP_COLOR=always windtrap coverage > coloured
+  $ cmp -s plain coloured || echo styled
+  styled
+  $ run WINDTRAP_COLOR=always windtrap coverage --color never > /dev/null
+  $ diff plain "$bin/out"
+  $ run WINDTRAP_COLOR=sometimes windtrap coverage --color=always > /dev/null
+  $ diff coloured "$bin/out"
+  $ run windtrap coverage --color=sometimes
+  --- stderr
+  windtrap: invalid value 'sometimes' for --color: expected always, never or auto
+  usage: windtrap coverage [OPTIONS] [PATH...]
+  [2]
+
+Without --color, a value of WINDTRAP_COLOR the runner refuses is a usage
 error, said before any PATH is looked at:
 
   $ run WINDTRAP_COLOR=sometimes windtrap coverage

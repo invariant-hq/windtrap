@@ -391,7 +391,7 @@ in [Running tests](running-tests.md):
 $ dune exec windtrap -- mutants --help
 windtrap mutants - merge .mutants verdict files and report the survivors
 
-usage: windtrap mutants [PATH...]
+usage: windtrap mutants [OPTIONS] [PATH...]
 
 Merges the .mutants verdict files written by mutation runs and reports the
 mutants that survived every test executable. Without PATH arguments the files
@@ -404,10 +404,13 @@ Runs no tests and drives no build.
 Exits 1 when any mutant survived every executable that reached it.
 
 OPTIONS:
+  --color=MODE (env WINDTRAP_COLOR)
+      Color output: always, never or auto.
+
   -h, --help
       Print this help and exit.
 
 ENVIRONMENT (no flag):
-  WINDTRAP_COLOR
-      Color output: always, never or auto.
+  NO_COLOR
+      Any value: never style output (--color auto).
 ```

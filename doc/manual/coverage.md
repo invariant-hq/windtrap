@@ -345,10 +345,13 @@ OPTIONS:
   -u, --show-uncovered
       Also render uncovered source excerpts.
 
+  --color=MODE (env WINDTRAP_COLOR)
+      Color output: always, never or auto.
+
   -h, --help
       Print this help and exit.
 
 ENVIRONMENT (no flag):
-  WINDTRAP_COLOR
-      Color output: always, never or auto.
+  NO_COLOR
+      Any value: never style output (--color auto).
 ```

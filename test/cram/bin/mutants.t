@@ -471,7 +471,7 @@ The command line
   $ run windtrap mutants --help
   windtrap mutants - merge .mutants verdict files and report the survivors
   
-  usage: windtrap mutants [PATH...]
+  usage: windtrap mutants [OPTIONS] [PATH...]
   
   Merges the .mutants verdict files written by mutation runs and reports the
   mutants that survived every test executable. Without PATH arguments the files
@@ -484,34 +484,54 @@ The command line
   Exits 1 when any mutant survived every executable that reached it.
   
   OPTIONS:
+    --color=MODE (env WINDTRAP_COLOR)
+        Color output: always, never or auto.
+  
     -h, --help
         Print this help and exit.
   
   ENVIRONMENT (no flag):
-    WINDTRAP_COLOR
-        Color output: always, never or auto.
+    NO_COLOR
+        Any value: never style output (--color auto).
   $ cp "$bin/out" help
   $ awk '{ sub(/\r$/, "") } length > 80' help
   $ run windtrap mutants -h > /dev/null && diff help "$bin/out"
   $ run windtrap mutants -help > /dev/null && diff help "$bin/out"
 
-An unknown option is a usage error, as is a lone dash, and there is no
---color flag:
+An unknown option is a usage error, as is a lone dash:
 
   $ run windtrap mutants --frobnicate
   --- stderr
   windtrap: unknown option '--frobnicate'
-  usage: windtrap mutants [PATH...]
+  usage: windtrap mutants [OPTIONS] [PATH...]
   [2]
   $ run windtrap mutants -
   --- stderr
   windtrap: unknown option '-'
-  usage: windtrap mutants [PATH...]
+  usage: windtrap mutants [OPTIONS] [PATH...]
   [2]
-  $ run windtrap mutants --color never
+
+--color is the runner's flag, in either spelling, and it hides
+WINDTRAP_COLOR:
+
+  $ run WINDTRAP_COLOR=always windtrap mutants --color never > /dev/null
+  [1]
+  $ diff merged "$bin/out"
+  $ run windtrap mutants --color=always > /dev/null
+  [1]
+  $ diff coloured "$bin/out"
+  $ run WINDTRAP_COLOR=sometimes windtrap mutants --color=always > /dev/null
+  [1]
+  $ diff coloured "$bin/out"
+  $ run windtrap mutants --color=sometimes
   --- stderr
-  windtrap: unknown option '--color'
-  usage: windtrap mutants [PATH...]
+  windtrap: invalid value 'sometimes' for --color: expected always, never or auto
+  usage: windtrap mutants [OPTIONS] [PATH...]
+  [2]
+  $ run windtrap mutants --color
+  --- stderr
+  windtrap: option '--color' requires an argument
+  usage: windtrap mutants [OPTIONS] [PATH...]
   [2]
 
 The first argument that starts with a dash ends the parse: a PATH before
@@ -521,11 +541,11 @@ The first argument that starts with a dash ends the parse: a PATH before
   $ run windtrap mutants -x --help
   --- stderr
   windtrap: unknown option '-x'
-  usage: windtrap mutants [PATH...]
+  usage: windtrap mutants [OPTIONS] [PATH...]
   [2]
 
-A value of WINDTRAP_COLOR the runner refuses is a usage error, said
-before any PATH is looked at:
+Without --color, a value of WINDTRAP_COLOR the runner refuses is a usage
+error, said before any PATH is looked at:
 
   $ run WINDTRAP_COLOR=sometimes windtrap mutants
   --- stderr

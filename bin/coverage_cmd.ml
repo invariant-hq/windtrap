@@ -19,6 +19,7 @@ type options = {
   min : float option;
   output : output;
   mode : [ `Report | `Full ];
+  color : Os.color_mode option; (* [--color], which hides [WINDTRAP_COLOR] *)
   expect : string list;
   do_not_expect : string list;
   paths : string list;
@@ -300,19 +301,22 @@ OPTIONS:
   -u, --show-uncovered
       Also render uncovered source excerpts.
 
+  --color=MODE (env WINDTRAP_COLOR)
+      Color output: always, never or auto.
+
   -h, --help
       Print this help and exit.
 
 ENVIRONMENT (no flag):
-  WINDTRAP_COLOR
-      Color output: always, never or auto.|}
+  NO_COLOR
+      Any value: never style output (--color auto).|}
 
 (* [--flag=value] is [--flag value] for a flag that takes a value. *)
 let split_inline arg =
   match String.index_opt arg '=' with
   | Some i
     when List.mem (String.sub arg 0 i)
-           [ "--min"; "--expect"; "--do-not-expect" ] ->
+           [ "--min"; "--expect"; "--do-not-expect"; "--color" ] ->
       [ String.sub arg 0 i; String.sub arg (i + 1) (String.length arg - i - 1) ]
   | Some _ | None -> [ arg ]
 
@@ -347,7 +351,11 @@ let options args =
         parse { o with expect = path :: o.expect } args
     | "--do-not-expect" :: path :: args ->
         parse { o with do_not_expect = path :: o.do_not_expect } args
-    | [ (("--min" | "--expect" | "--do-not-expect") as flag) ] ->
+    | "--color" :: value :: args -> (
+        match Cli.parse_color value with
+        | Ok color -> parse { o with color = Some color } args
+        | Error error -> usage_error (Cli.error_message error))
+    | [ (("--min" | "--expect" | "--do-not-expect" | "--color") as flag) ] ->
         usage_error (strf "option '%s' requires an argument" flag)
     | (("--json" | "--lcov") as flag) :: args ->
         let output = if flag = "--json" then Json else Lcov in
@@ -364,16 +372,22 @@ let options args =
       min = None;
       output = Report;
       mode = `Report;
+      color = None;
       expect = [];
       do_not_expect = [];
       paths = [];
     }
     (List.concat_map split_inline args)
 
-let ansi = function
+(* A document is never styled, so it reads no [WINDTRAP_COLOR]. *)
+let ansi o =
+  match o.output with
   | Json | Lcov -> Ok false
   | Report -> (
-      match Cli.color_mode () with
+      let color =
+        match o.color with Some color -> Ok color | None -> Cli.color_mode ()
+      in
+      match color with
       | Error error ->
           Os.say (Cli.error_message error);
           Error 2
@@ -385,7 +399,7 @@ let ansi = function
 let run args =
   let code =
     let* o = options args in
-    let* ansi = ansi o.output in
+    let* ansi = ansi o in
     let* files, source_roots =
       match Data_files.discover Coverage.format o.paths with
       | Ok found -> Ok found

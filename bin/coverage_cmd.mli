@@ -109,18 +109,21 @@ val run : string list -> int
     The flags are those of the help page. [-u] asks
     {!Windtrap.Private.Report_sections.coverage_report} for [`Full]. An argument
     that starts with [-] and is no flag is refused, and the rest are [PATH]s.
-    The command has no [--color] flag. [WINDTRAP_COLOR] is the whole colour
-    decision, read by {!Windtrap.Private.Cli.color_mode} and resolved for
-    standard output by {!Windtrap.Private.Os.resolve_color}.
+    [--color] is the runner's flag, read by {!Windtrap.Private.Cli.parse_color};
+    without it the colour mode of the report is its mirror [WINDTRAP_COLOR],
+    read by {!Windtrap.Private.Cli.color_mode}. The mode is resolved for
+    standard output by {!Windtrap.Private.Os.resolve_color}, and a document is
+    never styled.
 
-    [run] parses the arguments, reads [WINDTRAP_COLOR] for the report, finds the
-    {{!section-files}files}, judges, loads and merges them, prints the report or
-    the document, and runs the two {{!section-gates}gates}, in that order. A
-    step before the gates that fails returns its code, so standard output stays
-    empty until the merge has succeeded. The report, the document and the help
-    page print on standard output. Every other line goes to standard error,
-    through {!Windtrap.Private.Os.say} but for the usage line that follows a
-    usage error.
+    [run] parses the arguments, reads [WINDTRAP_COLOR] for the report when
+    [--color] is absent, finds the {{!section-files}files}, judges, loads and
+    merges them, prints the report or the document, and runs the two
+    {{!section-gates}gates}, in that order. A step before the gates that fails
+    returns its code, so standard output stays empty until the merge has
+    succeeded. The report, the document and the help page print on standard
+    output. Every other line goes to standard error, through
+    {!Windtrap.Private.Os.say} but for the usage line that follows a usage
+    error.
 
     The result is:
     - [0] when the report or the document was printed and every gate that was
@@ -133,7 +136,8 @@ val run : string list -> int
       [--do-not-expect] does not exist, a source under [--expect] has no data,
       or the coverage is below [--min].
     - [2] for a usage error. The usage errors are an unknown option, a [--min]
-      that is not a number of the interval \[[0];[100]\], a flag that lacks its
-      value, and [--json] given with [--lcov]. It is also [2] for a
-      [WINDTRAP_COLOR] that the [--color] flag of a runner would refuse, when
-      the report is printed. A machine format reads no [WINDTRAP_COLOR]. *)
+      that is not a number of the interval \[[0];[100]\], a [--color] value that
+      the flag refuses, a flag that lacks its value, and [--json] given with
+      [--lcov]. It is also [2] for a [WINDTRAP_COLOR] that the flag would
+      refuse, when [--color] is absent and the report is printed. A machine
+      format reads no [WINDTRAP_COLOR]. *)

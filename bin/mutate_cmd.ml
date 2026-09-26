@@ -258,7 +258,7 @@ let merge ~source files =
 
 (* Running *)
 
-let usage = "usage: windtrap mutants [PATH...]"
+let usage = "usage: windtrap mutants [OPTIONS] [PATH...]"
 
 let help =
   "windtrap mutants - merge .mutants verdict files and report the survivors\n\n"
@@ -276,28 +276,54 @@ Runs no tests and drives no build.
 Exits 1 when any mutant survived every executable that reached it.
 
 OPTIONS:
+  --color=MODE (env WINDTRAP_COLOR)
+      Color output: always, never or auto.
+
   -h, --help
       Print this help and exit.
 
 ENVIRONMENT (no flag):
-  WINDTRAP_COLOR
-      Color output: always, never or auto.|}
+  NO_COLOR
+      Any value: never style output (--color auto).|}
 
-let paths args =
-  match List.find_opt (String.starts_with ~prefix:"-") args with
-  | None -> Ok args
-  | Some ("-h" | "--help" | "-help") ->
-      print_endline help;
-      Error 0
-  | Some arg ->
-      Os.say (strf "unknown option '%s'" arg);
-      prerr_endline usage;
-      Error 2
+(* [--color] and the help flags are the options; any other argument that
+   starts with [-] is refused, and the rest are PATHs. *)
+let options args =
+  let usage_error message =
+    Os.say message;
+    prerr_endline usage;
+    Error 2
+  in
+  let rec parse color paths = function
+    | [] -> Ok (color, List.rev paths)
+    | ("-h" | "--help" | "-help") :: _ ->
+        print_endline help;
+        Error 0
+    | "--color" :: value :: args -> (
+        match Cli.parse_color value with
+        | Ok color -> parse (Some color) paths args
+        | Error error -> usage_error (Cli.error_message error))
+    | [ "--color" ] -> usage_error "option '--color' requires an argument"
+    | arg :: _ when String.starts_with ~prefix:"-" arg ->
+        usage_error (strf "unknown option '%s'" arg)
+    | path :: args -> parse color (path :: paths) args
+  in
+  (* [--color=MODE] is [--color MODE]. *)
+  let split arg =
+    match String.index_opt arg '=' with
+    | Some i when String.equal (String.sub arg 0 i) "--color" ->
+        [ "--color"; String.sub arg (i + 1) (String.length arg - i - 1) ]
+    | Some _ | None -> [ arg ]
+  in
+  parse None [] (List.concat_map split args)
 
-(* With no [--color] flag, [WINDTRAP_COLOR] is the whole colour decision,
-   refused on the runner's terms and never read as [auto] out of a typo. *)
-let ansi () =
-  match Cli.color_mode () with
+(* [WINDTRAP_COLOR] is read when [--color] is absent, refused on the runner's
+   terms and never read as [auto] out of a typo. *)
+let ansi color =
+  let color =
+    match color with Some color -> Ok color | None -> Cli.color_mode ()
+  in
+  match color with
   | Error error -> fail ~code:2 (Cli.error_message error)
   | Ok color ->
       Ok
@@ -306,8 +332,8 @@ let ansi () =
 
 let run args =
   let code =
-    let* paths = paths args in
-    let* ansi = ansi () in
+    let* color, paths = options args in
+    let* ansi = ansi color in
     let* files, roots =
       match Data_files.discover Verdicts.format paths with
       | Ok found -> Ok found

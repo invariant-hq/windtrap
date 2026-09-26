@@ -504,6 +504,15 @@ let color_mode () =
   let* p = layer_entries [ color_entry ] empty in
   Ok (Option.value p.color ~default:Os.Auto)
 
+let parse_color value =
+  let* p, _ =
+    apply color_entry ~source:"--color" ~inline:(Some value) empty []
+  in
+  (* [apply] of [color_entry] sets [color] whenever it succeeds. *)
+  match p.color with
+  | Some mode -> Ok mode
+  | None -> assert false
+
 (* Help *)
 
 let usage ~prog =

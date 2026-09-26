@@ -90,19 +90,21 @@ val run : string list -> int
     [mutants] on the command line, and is the exit code of the process. It never
     calls [exit].
 
-    The command line is [windtrap mutants [PATH...]]. [-h], [--help] and [-help]
-    print the help page on standard output. Every other argument that starts
-    with [-] is refused, and the rest are [PATH]s. The command has no [--color]
-    flag. [WINDTRAP_COLOR] is the whole colour decision, read by
-    {!Windtrap.Private.Cli.color_mode} and resolved for standard output by
-    {!Windtrap.Private.Os.resolve_color}.
+    The command line is [windtrap mutants [OPTIONS] [PATH...]]. [-h], [--help]
+    and [-help] print the help page on standard output. [--color MODE], also
+    spelled [--color=MODE], is the runner's flag, read by
+    {!Windtrap.Private.Cli.parse_color}; without it the colour mode is its
+    mirror [WINDTRAP_COLOR], read by {!Windtrap.Private.Cli.color_mode}. The
+    mode is resolved for standard output by
+    {!Windtrap.Private.Os.resolve_color}. Every other argument that starts with
+    [-] is refused, and the rest are [PATH]s.
 
-    [run] parses the arguments, reads [WINDTRAP_COLOR], finds the
-    {{!section-files}files}, judges and loads them, and prints the report of the
-    {{!section-merge}merge} on standard output, in that order. A step that fails
-    returns its code, so a failure prints no report. Every other line goes to
-    standard error, through {!Windtrap.Private.Os.say} but for the usage line
-    that follows a usage error.
+    [run] parses the arguments, reads [WINDTRAP_COLOR] when [--color] is absent,
+    finds the {{!section-files}files}, judges and loads them, and prints the
+    report of the {{!section-merge}merge} on standard output, in that order. A
+    step that fails returns its code, so a failure prints no report. Every other
+    line goes to standard error, through {!Windtrap.Private.Os.say} but for the
+    usage line that follows a usage error.
 
     The result is:
     - [0] when the report was printed and no mutant survived. Unreached mutants
@@ -114,5 +116,6 @@ val run : string list -> int
       [PATH] cannot be used, when no verdict file is found, when a file that is
       not excluded cannot be read, is corrupt or has another format version, or
       when every file is excluded.
-    - [2] for an unknown option, which is the one usage error, and for a
-      [WINDTRAP_COLOR] that the [--color] flag of a runner would refuse. *)
+    - [2] for a usage error: an unknown option, a [--color] without its value or
+      with a value that the flag refuses. It is also [2] for a [WINDTRAP_COLOR]
+      that the flag would refuse, read when [--color] is absent. *)

@@ -181,10 +181,16 @@ val settings : parsed -> (Run.config, error) result
     when no layer gives one. *)
 
 val color_mode : unit -> (Os.color_mode, error) result
-(** [color_mode ()] is [WINDTRAP_COLOR] read by the parser of [--color], for a
-    command that has no such flag. It is [Ok Os.Auto] when the variable is unset
-    or empty, and [Error (Invalid_value _)] naming the variable for a word that
-    the flag would refuse. *)
+(** [color_mode ()] is the colour mode that [WINDTRAP_COLOR] gives, read by the
+    parser of [--color], for a command whose one runner flag is [--color]
+    ({!parse_color}). It is [Ok Os.Auto] when the variable is unset or empty,
+    and [Error (Invalid_value _)] naming the variable for a word that the flag
+    would refuse. *)
+
+val parse_color : string -> (Os.color_mode, error) result
+(** [parse_color value] is [value] read as the value of [--color] on the command
+    line, and [Error (Invalid_value _)] naming [--color] for a word that the
+    flag refuses. *)
 
 (** {1:help Help} *)
 
