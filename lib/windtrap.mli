@@ -1051,7 +1051,7 @@ val expect_exact : string -> pos * string -> unit
     byte. The correction of an [actual] that holds a CR is a quoted literal,
     with the CR written [\r]. *)
 
-val expect_file : string -> string -> unit
+val expect_file : ?__POS__:pos -> string -> string -> unit
 (** [expect_file actual path] compares [actual] with the file at [path],
     relative to the project root whatever the working directory. A mismatch
     records a failure and returns. A missing file is a mismatch that [-u]
@@ -1065,10 +1065,10 @@ val expect_file : string -> string -> unit
     missing file gets no correction and fails the run, so a new baseline starts
     as an empty file or is accepted once with [-u].
 
-    A [path] that cannot be proven to lie under the project root fails the test
-    at once, as an assertion does. Its failure is located at the call and, from
-    tail position, at the test's declaration. Raises [Sys_error] if the file
-    exists and cannot be read, and [Invalid_argument] if no test is running. *)
+    [__POS__] is the failure's location (see {!type:pos}). A [path] that cannot
+    be proven to lie under the project root fails the test at once, as an
+    assertion does. Raises [Sys_error] if the file exists and cannot be read,
+    and [Invalid_argument] if no test is running. *)
 
 (** {1:capture Captured output}
 

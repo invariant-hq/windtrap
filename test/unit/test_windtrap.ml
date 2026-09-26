@@ -508,6 +508,15 @@ let promotion =
 
 let promoted name = List.assoc name promotion
 
+(* An expect_file failure at a given position. *)
+let placed_file =
+  let root = Scratch.dir "windtrap-placed-" in
+  Recorded.execute ~env:(project [] root)
+    [
+      test "placed" (fun () ->
+          expect_file ~__POS__:("elsewhere.ml", 7, 2, 9) "v" "placed.expected");
+    ]
+
 let one_warning () =
   expect_exact (promoted "a correction beside a failure").err
   @@ __POS_OF__
@@ -530,6 +539,9 @@ let baselines =
             (read_as [ "stale" ], read_as [ "stale exact" ]));
       test "a literal's mismatch is located at its __POS_OF__"
         a_literal_is_located_at_its_position;
+      test "expect_file locates its failure at the __POS__ given" (fun () ->
+          let loc = require_some (failure placed_file [ "placed" ]).loc in
+          equal (pair string int) ("elsewhere.ml", 7) (loc.Loc.file, loc.line));
       test "a relative expect_file path does not follow chdir" (fun () ->
           equal string "pass" (Recorded.row relative_file [ "moved" ]));
       test "a baseline in a bracket's body is accepted like any other"

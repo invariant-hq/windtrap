@@ -116,8 +116,8 @@ let check_literal ~exact actual (pos, value) =
 let expect actual literal = check_literal ~exact:false actual literal
 let expect_exact actual literal = check_literal ~exact:true actual literal
 
-let expect_file actual path =
-  Run.check_baseline ?loc:(Loc.capture ()) (Baseline.File path) actual
+let expect_file ?__POS__ actual path =
+  Run.check_baseline ?loc:(Loc.resolve ?__POS__ ()) (Baseline.File path) actual
 
 (* Captured output *)
 
