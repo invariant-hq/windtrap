@@ -130,7 +130,7 @@ let cmp_in_args a b c d =
    and a guard that does not makes this an unbound constructor - a
    build failure of this library rather than a red witness. What the
    witness pins is that the annotation costs no evaluation and changes
-   no answer. (test/ppx/mutate/integration/expected_type.ml carries the
+   no answer. (../integration/expected_type.ml carries the
    shape where a later type claims the name instead; it cannot live
    here, because test_mutate_semantics.ml coerces this module to its twin's
    signature, which strengthens every top-level datatype to the twin's
@@ -266,7 +266,7 @@ let lazy_witness () =
 
 (* {1 Generalization}
 
-   Placement rule 3 - "no guard on a value spine" - is vacuous today:
+   No guard sits on a value spine, the spine a binding generalizes over:
    every site of the four operators is an application or a conditional,
    which is never a syntactic value, so a binding that generalizes
    uninstrumented still generalizes instrumented. This binding is where

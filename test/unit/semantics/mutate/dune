@@ -2,7 +2,7 @@
 ; must name a file that exists in this build.
 
 (copy_files
- (files ../../../unit/semantics/coverage/covsem_fixtures.ml))
+ (files ../coverage/covsem_fixtures.ml))
 
 (library
  (name mutsem_fixtures)
@@ -16,7 +16,12 @@
 (test
  (name test_mutate_semantics)
  (modules test_mutate_semantics)
- (libraries windtrap windtrap.runtime mutsem_fixtures mutsem_baseline)
+ (libraries
+  windtrap
+  windtrap.runtime
+  windtrap_test_support
+  mutsem_fixtures
+  mutsem_baseline)
  (action
   (setenv
    OCAMLRUNPARAM
