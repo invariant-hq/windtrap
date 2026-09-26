@@ -128,9 +128,10 @@ let test_incremental_consumption () =
   match Capture.output_tail cap with
   | None -> is_true ~msg:"output_tail present after the attempt" false
   | Some tail ->
-      equal ~msg:"tail covers the whole file despite consumption" string
-        "alphabetagammadelta" tail.Failure.text;
-      equal ~msg:"nothing omitted" int 0 tail.Failure.omitted_bytes;
+      equal ~msg:"the tail leaves out every byte that output returned" string ""
+        tail.Failure.text;
+      equal ~msg:"bytes that output returned are not omitted ones" int 0
+        tail.Failure.omitted_bytes;
       is_true ~msg:"tail names the log file" (tail.Failure.log_path <> None)
 
 (* Exception safety *)
@@ -573,6 +574,31 @@ let test_uncut_log_kept_whole () =
     tail.Failure.text;
   equal ~msg:"nothing is omitted" int 0 tail.Failure.omitted_bytes
 
+(* The tail starts at the cursor of [output]: what the test wrote after its
+   last read, and the cut of the bound counts the unread bytes alone. *)
+let test_tail_after_last_read () =
+  let root = temp_dir () in
+  let cap = Capture.create ~log_dir:root ~suite:"s" () in
+  Capture.with_capture cap ~groups:[] ~test_name:"small" (fun () ->
+      print_string "compared";
+      ignore (Capture.output cap);
+      print_string "after");
+  let tail = tail_of "small" cap in
+  equal ~msg:"the tail is what followed the last read" string "after"
+    tail.Failure.text;
+  equal ~msg:"the read bytes are not counted as omitted" int 0
+    tail.Failure.omitted_bytes;
+  let payload = String.make (Failure.tail_bytes + 100) 'x' in
+  Capture.with_capture cap ~groups:[] ~test_name:"big" (fun () ->
+      print_string "compared";
+      ignore (Capture.output cap);
+      print_string payload);
+  let tail = tail_of "big" cap in
+  equal ~msg:"a long unread text keeps its last bytes" int Failure.tail_bytes
+    (String.length tail.Failure.text);
+  equal ~msg:"only the unread bytes before the tail are omitted" int 100
+    tail.Failure.omitted_bytes
+
 (* Per-attempt reset *)
 
 let test_per_attempt_reset () =
@@ -584,15 +610,16 @@ let test_per_attempt_reset () =
       w1 := Capture.output cap);
   Capture.with_capture cap ~groups:[ "g" ] ~test_name:"t" (fun () ->
       print_string "second";
-      w2 := Capture.output cap);
+      w2 := Capture.output cap;
+      print_string "-rest");
   equal ~msg:"attempt 1 window" string "first-attempt" !w1;
   equal ~msg:"attempt 2 starts from a truncated file and reset cursor" string
     "second" !w2;
   match Capture.output_tail cap with
   | None -> is_true ~msg:"tail present after retries" false
   | Some tail ->
-      equal ~msg:"only the final attempt's output remains" string "second"
-        tail.Failure.text;
+      equal ~msg:"the tail follows the final attempt's own cursor" string
+        "-rest" tail.Failure.text;
       equal ~msg:"the final attempt omits nothing" int 0
         tail.Failure.omitted_bytes
 
@@ -776,6 +803,7 @@ let tests =
   [
     test "fd-level round trip into the per-test file" test_fd_round_trip;
     test "incremental consumption windows" test_incremental_consumption;
+    test "the tail starts after the last read" test_tail_after_last_read;
     test "an exception restores the descriptors" test_exception_restores;
     test "a failed setup leaves the descriptors untouched"
       test_setup_failure_isolation;

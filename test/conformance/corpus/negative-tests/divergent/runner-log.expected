@@ -8,9 +8,6 @@ conformance: 4 tests
     @@ -1,1 +1,1 @@
     - bar
     + foo
-    captured output (1 line):
-      foo
-    full log: <log>
     accept: dune promote test/conformance/corpus/negative-tests/divergent/similar_distinct_outputs.ml
 ──────────────────────────────────────────────────────────
 

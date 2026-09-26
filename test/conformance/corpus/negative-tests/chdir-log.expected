@@ -7,9 +7,6 @@ conformance: 1 test
     expect: mismatch
     @@ -0,0 +1,1 @@
     + About to change dir
-    captured output (1 line):
-      About to change dir
-    full log: <log>
     accept: dune promote test/conformance/corpus/negative-tests/chdir.ml
 ──────────────────────────────────────────────────────────
 

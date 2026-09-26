@@ -7,9 +7,6 @@ cross_partition/crash.ml: 1 test
     uncaught exception:
       Failure("boom")
     <backtrace>
-    captured output (1 line):
-      before the raise
-    full log: <log>
 ──────────────────────────────────────────────────────────
 
 1 failed in <duration>.

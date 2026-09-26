@@ -166,20 +166,22 @@ let output_tail = function
   | Capturing c ->
       let tail path ic =
         let length = in_channel_length ic in
-        let start = max 0 (length - Failure.tail_bytes) in
+        (* The test can truncate its own log below the cursor. *)
+        let unread = min c.cursor length in
+        let start = max unread (length - Failure.tail_bytes) in
         seek_in ic start;
         let s = really_input_string ic (length - start) in
         (* A cut inside a UTF-8 sequence moves past it, by three bytes at
-           most, and bytes with no lead in reach are kept. A cut log fills
-           [s] with [Failure.tail_bytes] bytes, so [s.[3]] exists. *)
+           most, and bytes with no lead in reach are kept. A cut fills [s]
+           with [Failure.tail_bytes] bytes, so [s.[3]] exists. *)
         let rec lead i =
           if i > 3 then 0
           else if Char.code s.[i] land 0xC0 = 0x80 then lead (i + 1)
           else i
         in
-        let skip = if start = 0 then 0 else lead 0 in
+        let skip = if start = unread then 0 else lead 0 in
         let text = String.sub s skip (String.length s - skip) in
-        Failure.tail ~log_path:path ~omitted_bytes:(start + skip) text
+        Failure.tail ~log_path:path ~omitted_bytes:(start - unread + skip) text
       in
       Option.bind c.log (fun path ->
           Result.to_option (read_log path (tail path)))

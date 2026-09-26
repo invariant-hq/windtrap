@@ -46,13 +46,6 @@ conformance: 41 tests
     @@ -0,0 +1,2 @@
     + a
     + \x0db
-    captured output (5 lines):
-      a\x0dba\x0dba\x0d
-      ba\x0d
-      ba
-      \x0dba
-      \x0db
-    full log: <log>
     accept: dune promote test/conformance/corpus/negative-tests/escaped_strings.ml
 
   FAIL  Escaped_strings › escaped tab
@@ -101,13 +94,6 @@ conformance: 41 tests
     @@ -0,0 +1,2 @@
     + a
     + 	b
-    captured output (5 lines):
-      a	ba	ba	
-      ba	
-      ba
-      	ba
-      	b
-    full log: <log>
     accept: dune promote test/conformance/corpus/negative-tests/escaped_strings.ml
 
   FAIL  Escaped_strings › escaped quote
@@ -124,9 +110,6 @@ conformance: 41 tests
     expect_exact: mismatch
     @@ -0,0 +1,1 @@
     + a"b
-    captured output (1 line):
-      a"ba"b
-    full log: <log>
     accept: dune promote test/conformance/corpus/negative-tests/escaped_strings.ml
 
   FAIL  Escaped_strings › escaped trailing carriage return
@@ -161,16 +144,6 @@ conformance: 41 tests
     @@ -0,0 +1,2 @@
     + a\x0d
     + b\x0d
-    captured output (8 lines):
-      a\x0d
-      b\x0d
-      a\x0d
-      b\x0d
-      a\x0d
-      b\x0d
-      a\x0d
-      b\x0d
-    full log: <log>
     accept: dune promote test/conformance/corpus/negative-tests/escaped_strings.ml
 
   FAIL  Escaped_strings › unescaped carriage return --- empty expect
@@ -189,11 +162,6 @@ conformance: 41 tests
     @@ -0,0 +1,2 @@
     + a\x0d
     + b
-    captured output (3 lines):
-      a\x0d
-      ba\x0d
-      b
-    full log: <log>
     accept: dune promote test/conformance/corpus/negative-tests/escaped_strings.ml
 
   FAIL  Escaped_strings › unescaped carriage return --- populated expect
@@ -205,11 +173,6 @@ conformance: 41 tests
     - a
     + a\x0d
       b
-    captured output (3 lines):
-      a\x0d
-      ba\x0d
-      b
-    full log: <log>
     accept: dune promote test/conformance/corpus/negative-tests/escaped_strings.ml
 
   FAIL  Exact › line_4
@@ -222,9 +185,6 @@ conformance: 41 tests
     -   foobarbaz
     -   
     + foobarbaz
-    captured output (1 line):
-      foobarbaz
-    full log: <log>
     accept: dune promote test/conformance/corpus/negative-tests/exact.ml
 
   FAIL  Exact › line_13
@@ -237,10 +197,6 @@ conformance: 41 tests
     -     foobarbaz
     -   
     + foobarbaz
-    captured output (2 lines):
-      
-      foobarbaz
-    full log: <log>
     accept: dune promote test/conformance/corpus/negative-tests/exact.ml
 
   FAIL  Exact › line_22
@@ -251,9 +207,6 @@ conformance: 41 tests
     @@ -1,1 +1,1 @@
     -  foobarbaz 
     + foobarbaz
-    captured output (1 line):
-      foobarbaz
-    full log: <log>
     accept: dune promote test/conformance/corpus/negative-tests/exact.ml
 
   FAIL  Flexible › line_13
@@ -263,9 +216,6 @@ conformance: 41 tests
     expect: mismatch
     @@ -0,0 +1,1 @@
     + hello
-    captured output (1 line):
-      hello
-    full log: <log>
     accept: dune promote test/conformance/corpus/negative-tests/flexible.ml
 
   FAIL  Flexible › line_18
@@ -275,9 +225,6 @@ conformance: 41 tests
     expect: mismatch
     @@ -0,0 +1,1 @@
     + hello
-    captured output (1 line):
-      hello
-    full log: <log>
     accept: dune promote test/conformance/corpus/negative-tests/flexible.ml
 
   FAIL  Flexible › line_25
@@ -287,9 +234,6 @@ conformance: 41 tests
     expect: mismatch
     @@ -0,0 +1,1 @@
     + hello
-    captured output (1 line):
-      hello
-    full log: <log>
     accept: dune promote test/conformance/corpus/negative-tests/flexible.ml
 
   FAIL  Flexible › line_32
@@ -300,9 +244,6 @@ conformance: 41 tests
     @@ -1,1 +1,1 @@
     - WRONG
     + hello
-    captured output (1 line):
-      hello
-    full log: <log>
     accept: dune promote test/conformance/corpus/negative-tests/flexible.ml
 
   FAIL  Flexible › line_39
@@ -313,9 +254,6 @@ conformance: 41 tests
     @@ -1,1 +1,1 @@
     - WRONG
     + hello
-    captured output (1 line):
-      hello
-    full log: <log>
     accept: dune promote test/conformance/corpus/negative-tests/flexible.ml
 
   FAIL  Flexible › line_46
@@ -326,9 +264,6 @@ conformance: 41 tests
     @@ -1,1 +1,1 @@
     - WRONG
     + hello
-    captured output (1 line):
-      hello
-    full log: <log>
     accept: dune promote test/conformance/corpus/negative-tests/flexible.ml
 
   FAIL  Flexible › line_53
@@ -339,9 +274,6 @@ conformance: 41 tests
     @@ -1,1 +1,1 @@
     - WRONG
     + hello
-    captured output (1 line):
-      hello
-    full log: <log>
     accept: dune promote test/conformance/corpus/negative-tests/flexible.ml
 
   FAIL  Flexible › line_63
@@ -352,10 +284,6 @@ conformance: 41 tests
     @@ -0,0 +1,2 @@
     + one1
     + two
-    captured output (2 lines):
-      one1
-      two
-    full log: <log>
     accept: dune promote test/conformance/corpus/negative-tests/flexible.ml
 
   FAIL  Flexible › line_68
@@ -366,10 +294,6 @@ conformance: 41 tests
     @@ -0,0 +1,2 @@
     + one2
     + two
-    captured output (2 lines):
-      one2
-      two
-    full log: <log>
     accept: dune promote test/conformance/corpus/negative-tests/flexible.ml
 
   FAIL  Flexible › line_75
@@ -380,10 +304,6 @@ conformance: 41 tests
     @@ -0,0 +1,2 @@
     + one3
     + two
-    captured output (2 lines):
-      one3
-      two
-    full log: <log>
     accept: dune promote test/conformance/corpus/negative-tests/flexible.ml
 
   FAIL  Flexible › line_82
@@ -395,10 +315,6 @@ conformance: 41 tests
     - WRONG
     + one4
     + two
-    captured output (2 lines):
-      one4
-      two
-    full log: <log>
     accept: dune promote test/conformance/corpus/negative-tests/flexible.ml
 
   FAIL  Flexible › line_89
@@ -410,10 +326,6 @@ conformance: 41 tests
     - WRONG
     + one5
     + two
-    captured output (2 lines):
-      one5
-      two
-    full log: <log>
     accept: dune promote test/conformance/corpus/negative-tests/flexible.ml
 
   FAIL  Flexible › line_96
@@ -425,10 +337,6 @@ conformance: 41 tests
     - WRONG
     + one6
     + two
-    captured output (2 lines):
-      one6
-      two
-    full log: <log>
     accept: dune promote test/conformance/corpus/negative-tests/flexible.ml
 
   FAIL  Flexible › line_104
@@ -441,10 +349,6 @@ conformance: 41 tests
     - THING
     + one8
     + two
-    captured output (2 lines):
-      one8
-      two
-    full log: <log>
     accept: dune promote test/conformance/corpus/negative-tests/flexible.ml
 
   FAIL  Flexible › line_112
@@ -457,10 +361,6 @@ conformance: 41 tests
     - THING
     + one9
     + two
-    captured output (2 lines):
-      one9
-      two
-    full log: <log>
     accept: dune promote test/conformance/corpus/negative-tests/flexible.ml
 
   FAIL  Flexible › line_121
@@ -473,10 +373,6 @@ conformance: 41 tests
     -    THING
     + one10
     + two
-    captured output (2 lines):
-      one10
-      two
-    full log: <log>
     accept: dune promote test/conformance/corpus/negative-tests/flexible.ml
 
   FAIL  Flexible › line_130
@@ -489,10 +385,6 @@ conformance: 41 tests
     - THING
     + one11
     + two
-    captured output (2 lines):
-      one11
-      two
-    full log: <log>
     accept: dune promote test/conformance/corpus/negative-tests/flexible.ml
 
   FAIL  Missing › line_12
@@ -503,10 +395,6 @@ conformance: 41 tests
     @@ -0,0 +1,2 @@
     + hello
     + goodbye
-    captured output (2 lines):
-      hello
-      goodbye
-    full log: <log>
     accept: dune promote test/conformance/corpus/negative-tests/missing.ml
 
   FAIL  Normal_strings › short quoted string
@@ -517,10 +405,6 @@ conformance: 41 tests
     @@ -0,0 +1,2 @@
     + foo
     + bar
-    captured output (2 lines):
-      foo
-      bar
-    full log: <log>
     accept: dune promote test/conformance/corpus/negative-tests/normal_strings.ml
 
   FAIL  Normal_strings › long quoted string
@@ -534,15 +418,6 @@ conformance: 41 tests
     + XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
     + XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
     + XXXXXXXXXXXXXXXXXXXX XXXXXXXXXXXXXXXXXXX
-    captured output (7 lines):
-      
-          XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
-          XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
-          XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
-          XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
-          XXXXXXXXXXXXXXXXXXXX XXXXXXXXXXXXXXXXXXX
-          
-    full log: <log>
     accept: dune promote test/conformance/corpus/negative-tests/normal_strings.ml
 
   FAIL  Normal_strings › quoted strings with leading spaces
@@ -565,18 +440,6 @@ conformance: 41 tests
     +   loooooooooooooooooooooooooooooooooooooooooooooooooooooooooooong
     +     and
     + prosper
-    captured output (last 10 of 11 lines):
-          live
-            long
-              and
-          prosper
-          
-          live
-            loooooooooooooooooooooooooooooooooooooooooooooooooooooooooooong
-              and
-          prosper
-          
-    full log: <log>
     accept: dune promote test/conformance/corpus/negative-tests/normal_strings.ml
 
   FAIL  Semicolon › line_1
@@ -587,9 +450,6 @@ conformance: 41 tests
     @@ -1,1 +1,1 @@
     - two
     + one
-    captured output (1 line):
-      one
-    full log: <log>
     accept: dune promote test/conformance/corpus/negative-tests/semicolon.ml
 
   FAIL  Spacing › line_3
@@ -625,18 +485,6 @@ conformance: 41 tests
     +  one
     + blah
     +  three
-    captured output (last 10 of 11 lines):
-      two(no newline)
-      threeone
-      two(1)
-      three
-      one
-      two(2)
-      three
-        one
-       blah
-        three
-    full log: <log>
     accept: dune promote test/conformance/corpus/negative-tests/spacing.ml
 
   FAIL  String_extension_syntax › correction for expect node
@@ -650,12 +498,6 @@ conformance: 41 tests
     + 1
     + 2
     + 3
-    captured output (4 lines):
-      Testing
-      1
-      2
-      3
-    full log: <log>
     accept: dune promote test/conformance/corpus/negative-tests/string_extension_syntax.ml
 
   FAIL  String_extension_syntax › correction for expect exact node
@@ -669,12 +511,6 @@ conformance: 41 tests
     + 1
     + 2
     + 3
-    captured output (4 lines):
-      Testing
-      1
-      2
-      3
-    full log: <log>
     accept: dune promote test/conformance/corpus/negative-tests/string_extension_syntax.ml
 
   FAIL  String_padding › line_1
@@ -685,9 +521,6 @@ conformance: 41 tests
     @@ -1,1 +1,1 @@
     - goodbye
     + hello
-    captured output (1 line):
-      hello
-    full log: <log>
     accept: dune promote test/conformance/corpus/negative-tests/string_padding.ml
 
   FAIL  Unidiomatic_syntax › line_1
@@ -698,9 +531,6 @@ conformance: 41 tests
     @@ -1,1 +1,1 @@
     - Good night, moon.
     + Hello, world.
-    captured output (1 line):
-      Hello, world.
-    full log: <log>
     accept: dune promote test/conformance/corpus/negative-tests/unidiomatic_syntax.ml
 ──────────────────────────────────────────────────────────
 

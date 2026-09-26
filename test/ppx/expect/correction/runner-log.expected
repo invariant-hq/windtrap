@@ -8,9 +8,6 @@ correction: 1 test
     @@ -1,1 +1,1 @@
     - stale
     + pid NNNN
-    captured output (1 line):
-      pid 4242same
-    full log: <log>
     accept: dune promote test/ppx/expect/correction/sanitized.ml
 ──────────────────────────────────────────────────────────
 

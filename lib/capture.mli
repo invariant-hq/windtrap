@@ -115,16 +115,18 @@ val output : ?__POS__:Loc.pos -> t -> string
 *)
 
 val output_tail : t -> Failure.tail option
-(** [output_tail t] is the end of what the last attempt wrote, as the
-    {!type:Failure.tail} that a failure carries. It reads the log as
-    {!with_capture} left it, from its end, whatever the cursor of {!val-output},
-    so the bytes that {!val-output} returned are in the tail too. It drains
-    nothing, so a call inside an attempt misses what a buffer still holds.
+(** [output_tail t] is the end of what the last attempt wrote after the cursor
+    of {!val-output}, as the {!type:Failure.tail} that a failure carries. The
+    bytes that {!val-output} returned are not in the tail, so a tail is [""]
+    when the attempt wrote nothing after its last {!val-output}. It reads the
+    log as {!with_capture} left it and drains nothing, so a call inside an
+    attempt misses what a buffer still holds.
 
-    The tail keeps at most the last {!Failure.tail_bytes} bytes of the log and
-    reads no more than that. [omitted_bytes] counts the bytes before them, and
-    [log_path] is the log. A cut inside a UTF-8 sequence moves past it, the
-    bytes skipped counted as omitted, and invalid UTF-8 is kept as it is.
+    The tail keeps at most the last {!Failure.tail_bytes} bytes after the cursor
+    and reads no more than that. [omitted_bytes] counts the bytes between the
+    cursor and them, and [log_path] is the log, which holds every byte. A cut
+    inside a UTF-8 sequence moves past it, the bytes skipped counted as omitted,
+    and invalid UTF-8 is kept as it is.
 
     It is [None] when [t] has no current log, and when the log can no longer be
     opened. *)

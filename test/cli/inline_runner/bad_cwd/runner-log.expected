@@ -6,9 +6,6 @@ bad_cwd: 1 test
     @@ -1,1 +1,1 @@
     - stale payload
     + fresh output
-    captured output (1 line):
-      fresh output
-    full log: <log>
     correction refused (line 7): the source file cannot be read: <reason>
 ──────────────────────────────────────────────────────────
 

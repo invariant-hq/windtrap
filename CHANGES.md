@@ -483,8 +483,9 @@ Each one is also listed under its area below.
   0 (see
   [Passing flags to dune runtest](https://github.com/invariant-hq/windtrap/blob/main/doc/manual/running-tests.md#passing-flags-to-dune-runtest)).
 - A failure's block prints when its test ends.
-- When a failing test wrote output, its block closes on the last 10
-  lines and `full log: <path>`, where 0.1 showed no captured output.
+- When a failing test wrote output after its last `output ()` call, its
+  block closes on the last 10 lines of that output and
+  `full log: <path>`, where 0.1 showed no captured output.
 - `-v` prints one row per test, with its status (`PASS`, `FAIL`, `SKIP`
   with its reason, or `XFAIL`), path and duration, and no group header
   lines.

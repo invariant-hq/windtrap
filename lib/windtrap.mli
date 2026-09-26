@@ -1073,7 +1073,12 @@ val expect_file : string -> string -> unit
     error, C stubs and child processes included, into
     [<log dir>/<suite>/<groups>/<test>.output]. The log directory is [-o], by
     default [_tests] in dune's build directory and [windtrap] in the system
-    temporary directory otherwise. [--stream] turns capture off. *)
+    temporary directory otherwise. [--stream] turns capture off.
+
+    The block of a failing test shows the last lines that the test wrote after
+    its last {!output} call, under [captured output], and names the log. What an
+    {!output} call returned is not shown again, so a test whose failure is an
+    expectation on [output ()] shows no captured output. *)
 
 val output : unit -> string
 (** [output ()] is what the running test wrote to standard output and standard

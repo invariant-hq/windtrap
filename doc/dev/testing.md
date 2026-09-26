@@ -345,8 +345,9 @@ A change that breaks one of these tests reopens the design first.
    ("report: observe raises nothing of its own", "headline
    projection"). No test compares the renderers with one another.
 5. A failing test's captured output is in its report: `test_capture.ml`
-   ("bounded tails with drop counts", "log paths are stable across
-   runs") and `test_report.ml` ("captured tail").
+   ("bounded tails with drop counts", "the tail starts after the last
+   read", "log paths are stable across runs") and `test_report.ml`
+   ("captured tail").
 6. Every generator shrinks and printers derive: `test_gen.ml` ("map
    renders the pre-image", "with_pp attaches a printer" and the
    shrinking family).

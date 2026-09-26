@@ -8,9 +8,6 @@ cross_partition/stale.ml: 1 test
     @@ -1,1 +1,1 @@
     - stale payload
     + fresh output
-    captured output (1 line):
-      fresh output
-    full log: <log>
     accept: dune promote test/cli/inline_runner/cross_partition/stale.ml
 ──────────────────────────────────────────────────────────
 

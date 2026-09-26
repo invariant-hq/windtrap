@@ -230,7 +230,7 @@ the guarantees"; changing one is a design decision, recorded here first.
 4. **Failures are data; renderers are projections** and cannot alter
    status, counts or scheduling.
 5. **A failing test's captured output is in its report**, bounded, with
-   the full log's path.
+   the full log's path, less what the test read with `output ()`.
 6. **Every generator shrinks; printers derive by composition**, a
    printerless `map` or `bind` renders its pre-image, and `with_pp`
    overrides.

@@ -8,9 +8,6 @@ conformance: 1 test
     @@ -1,1 +1,1 @@
     - 4
     + 3
-    captured output (1 line):
-      3
-    full log: <log>
     accept: dune promote test/conformance/corpus/negative-tests/for-mdx/foo.ml
 ──────────────────────────────────────────────────────────
 

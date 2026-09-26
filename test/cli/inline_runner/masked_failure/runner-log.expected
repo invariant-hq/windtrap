@@ -15,9 +15,6 @@ masked_failure: 1 test
     @@ -1,1 +1,1 @@
     - stale payload
     + fresh output
-    captured output (1 line):
-      fresh output
-    full log: <log>
     no correction was kept: the test also failed outside its expectations; fix that failure and rerun
 ──────────────────────────────────────────────────────────
 

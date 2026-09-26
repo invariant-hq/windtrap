@@ -180,9 +180,9 @@ Read the whole block before editing anything. It holds:
   shrunk N steps):` with the value, `which failed at:` and the
   assertion's failure; for a stateful test, the shrunk program as a
   table of calls with the model before each.
-- `captured output`, the last lines the test printed, and `full log:`,
-  the file with all of them. `[setup]` or `[teardown]` before the
-  location when the failure is in one.
+- `captured output`, the last lines the test printed after its last
+  `output ()`, and `full log:`, the file with all of them. `[setup]` or
+  `[teardown]` before the location when the failure is in one.
 - A last command when it says something new: under dune, `accept:`
   promotes a baseline's file; `reproduce:` arms a mutant.
 

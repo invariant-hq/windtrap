@@ -72,18 +72,6 @@ conformance: 1 test
     @@ -1,1 +1,1 @@
     - goodbye
     + hello
-    captured output (last 10 of 18 lines):
-      
-      
-      
-      hello
-      
-      hello
-      
-      
-      hello
-      
-    full log: <log>
     accept: dune promote test/conformance/corpus/explicit-strict-false/negative-test/nine.ml
 ──────────────────────────────────────────────────────────
 
