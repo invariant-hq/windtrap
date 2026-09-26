@@ -103,5 +103,17 @@ are welcome on the [OCaml forum](https://discuss.ocaml.org/).
 
 [`doc/dev/`](doc/dev/) describes the architecture, how windtrap tests
 itself, the changelog discipline and the release checklist.
-[`THIRD_PARTY_LICENSES.md`](THIRD_PARTY_LICENSES.md) credits the
-projects windtrap builds on and holds their notices.
+
+## Acknowledgments
+
+Windtrap builds on ideas and code from
+[Alcotest](https://github.com/mirage/alcotest) and Craig Ferguson's
+pull requests to it ([#294](https://github.com/mirage/alcotest/pull/294),
+[#247](https://github.com/mirage/alcotest/pull/247)),
+[QCheck2](https://github.com/c-cube/qcheck),
+[ppx_expect](https://github.com/janestreet/ppx_expect),
+[ppx_inline_test](https://github.com/janestreet/ppx_inline_test),
+[Bisect_ppx](https://github.com/aantron/bisect_ppx) and
+[mtime](https://erratique.ch/software/mtime);
+[`THIRD_PARTY_LICENSES.md`](THIRD_PARTY_LICENSES.md) holds the notices
+of the code derived from them.
