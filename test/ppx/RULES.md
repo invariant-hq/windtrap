@@ -146,7 +146,7 @@ a rule whose row does not name it, and when a rule is unpinned without a
 | M1 | `neg` on an `if` or `while` condition and an arm's guard that is neither comparison nor connective. | mut:56-58 | `mutate/fixture_neg`; `test_mutate_semantics.ml` "evaluates exactly as its twin does"; `integration/test_registration.ml` behaviour |
 | M2 | `neg` nowhere else. | mut:56-58 | `mutate/fixture_con`, `mutate/fixture_nesting` |
 | M3 | The six `cmp` rewrites and their names. | mut:59-62 | `mutate/fixture_cmp`; `integration/test_registration.ml` behaviour |
-| M4 | An ordering's armed arm swaps its operands under `Stdlib.not`, pinned by `operands`; an equality's negates the whole comparison. | mut:74-75, mut:182-183 | `mutate/fixture_cmp`; `test_mutate_semantics.ml` "evaluates exactly as its twin does" |
+| M4 | An ordering's armed arm swaps its operands under `Stdlib.not`, pinned by `operands`; an equality's negates the whole comparison. | mut:74-75, mut:186-187 | `mutate/fixture_cmp`; `test_mutate_semantics.ml` "evaluates exactly as its twin does" |
 | M5 | `cmp` sites lie in a boolean context alone. | mut:62, mut:68-72 | `mutate/fixture_cmp` |
 | M6 | An operand of `\|\|` is a boolean context. | mut:68-69 | `mutate/fixture_contexts`, `mutate/fixture_lost_con` (a file without `con`); `test_mutate_semantics.ml` "evaluates exactly as its twin does" |
 | M7 | A boolean context does not reach through a sequence. | mut:70 | `mutate/fixture_assert` |
@@ -194,7 +194,7 @@ a rule whose row does not name it, and when a rule is unpinned without a
 | M34 | The `cmp` and `con` families are removed as `ari` is. | mut:36-37 | `mutate/fixture_lost_cmp`, `mutate/fixture_lost_con` |
 | M35 | `neg` names `Stdlib.not` and is never lost. | mut:37-38 | build of `mutate/integration/shadowed.ml`; never lost: `mutate/fixture_lost_cmp` |
 | M36 | Guards name `Stdlib.Bool.t`, which survives a local `type bool`. | mut:28-30 | build of `mutate/integration/shadowed.ml` |
-| M37 | Operands are typed left to right, the right one given the left one's type. | mut:182-183 (the annotation; the typing order is stated nowhere) | builds of `mutate/integration/disambiguate.ml`, `expected_type.ml`; `integration/test_registration.ml` typing_context, expected_type |
+| M37 | Operands are typed left to right, the right one given the left one's type. | mut:186-187 (the annotation; the typing order is stated nowhere) | builds of `mutate/integration/disambiguate.ml`, `expected_type.ml`; `integration/test_registration.ml` typing_context, expected_type |
 
 ### Dismissal attributes
 
@@ -206,43 +206,44 @@ a rule whose row does not name it, and when a rule is unpinned without a
 | M41 | `[@@mutate off]` on a top-level value binding and a module binding, recursive or not. | mut:132-133 | `mutate/fixture_off` (non-recursive), `mutate/fixture_off_structure` (recursive) |
 | M42 | `[@@mutate off]` on a `let ... in` binding or another item is ignored, its payload unchecked. | mut:133-135 | `mutate/fixture_off_edges` (ignored), `mutate/fixture_off_structure` (payload not checked) |
 | M43 | `[@@@mutate off]` ... `[@@@mutate on]` is a region; a nested structure inherits it and restores the outer setting; an unclosed one runs to the end. | mut:136-140 | `mutate/fixture_off`, `mutate/fixture_off_unclosed`, `mutate/fixture_off_structure` (nested) |
-| M44 | A reason on `[@@mutate off]` or `[@@@mutate off]` is accepted and dropped. | mut:144-145 | `mutate/fixture_off_structure` |
-| M45 | A top-level `[@@@mutate exclude_file]` returns the file as parsed. | mut:141-142, mut:217 | `mutate/fixture_exclude` |
-| M46 | The input names `//toplevel//`, `(stdin)`, `.ocamlinit`, `topfind` return the file as parsed. | mut:219-220 | `mutate/fixture_input_name` and the input_name rules of mutate/dune |
+| M44 | A reason on `[@@mutate off]` or `[@@@mutate off]` is accepted and dropped. | mut:144-149 | `mutate/fixture_off_structure` |
+| M45 | A top-level `[@@@mutate exclude_file]` returns the file as parsed. | mut:141-142, mut:221 | `mutate/fixture_exclude` |
+| M46 | The input names `//toplevel//`, `(stdin)`, `.ocamlinit`, `topfind` return the file as parsed. | mut:223-224 | `mutate/fixture_input_name` and the input_name rules of mutate/dune |
+| M66 | A bare `[@mutate off]` dismisses every mutant of its expression, in later versions too; a payload that names a rewrite, as `off gt "r"`, is refused. | mut:146-148 | `mutate/reject_off_rewrite` |
 
 ### Identification
 
 | id | rule | interface | pinned by |
 | --- | --- | --- | --- |
-| M47 | Line one-based, column zero-based in bytes, a bracketed site starting at its bracket. | mut:151-154 | every mutation golden (`mutate/fixture_off`, `mutate/fixture_ari`) |
-| M48 | Two sites may share a line and column under two rewrites. | mut:155 | `mutate/fixture_cmp`, `mutate/fixture_chain` |
-| M49 | Sites are numbered top-down, left operand before right. | mut:157-160 | `mutate/fixture_cmp`, `mutate/fixture_chain`, `mutate/fixture_neg` |
-| M50 | `before` and `after` are printed from the parsetree, the site's attributes left out. | mut:162-163 | `mutate/fixture_off` |
-| M51 | Each run of blanks in a text becomes one space. | mut:163-165 | `integration/test_registration.ml` typing_context |
-| M52 | ... inside a string literal too. | mut:164 | `mutate/fixture_texts` |
+| M47 | Line one-based, column zero-based in bytes, a bracketed site starting at its bracket. | mut:155-158 | every mutation golden (`mutate/fixture_off`, `mutate/fixture_ari`) |
+| M48 | Two sites may share a line and column under two rewrites. | mut:159 | `mutate/fixture_cmp`, `mutate/fixture_chain` |
+| M49 | Sites are numbered top-down, left operand before right. | mut:161-164 | `mutate/fixture_cmp`, `mutate/fixture_chain`, `mutate/fixture_neg` |
+| M50 | `before` and `after` are printed from the parsetree, the site's attributes left out. | mut:166-167 | `mutate/fixture_off` |
+| M51 | Each run of blanks in a text becomes one space. | mut:167-169 | `integration/test_registration.ml` typing_context |
+| M52 | ... inside a string literal too. | mut:168 | `mutate/fixture_texts` |
 
 ### Generated code
 
 | id | rule | interface | pinned by |
 | --- | --- | --- | --- |
-| M53 | Three items in order, the module `Windtrap_mut___<name>` never opened. | mut:170-176 | every mutation golden; build of `mutate/integration/no_guard.ml` |
-| M54 | `type site = Windtrap_runtime.Mutate.site = { ... }` with its six fields. | mut:179-181 | every mutation golden |
-| M55 | `type 'a operands` only in a file with an ordering guard. | mut:182-183 | `mutate/fixture_cmp` (present), `mutate/fixture_ari` (absent) |
-| M56 | Every generated node is ghost; the disarmed arm keeps its location and attributes. | mut:189-191 | `mutate/fixture_texts` (attributes), `coverage/after_mutate/fixture_guards` (ghost: the disarmed arm alone takes a mark) |
-| M57 | A file whose every site is dismissed is registered, by a module no guard refers to. | mut:221-223 | `mutate/fixture_all_dismissed` |
-| M58 | The two effects on a file the coverage rewriter ran on first. | mut:195-201 | `mutate/after_coverage/fixture_visits` |
+| M53 | Three items in order, the module `Windtrap_mut___<name>` never opened. | mut:174-180 | every mutation golden; build of `mutate/integration/no_guard.ml` |
+| M54 | `type site = Windtrap_runtime.Mutate.site = { ... }` with its six fields. | mut:183-185 | every mutation golden |
+| M55 | `type 'a operands` only in a file with an ordering guard. | mut:186-187 | `mutate/fixture_cmp` (present), `mutate/fixture_ari` (absent) |
+| M56 | Every generated node is ghost; the disarmed arm keeps its location and attributes. | mut:193-195 | `mutate/fixture_texts` (attributes), `coverage/after_mutate/fixture_guards` (ghost: the disarmed arm alone takes a mark) |
+| M57 | A file whose every site is dismissed is registered, by a module no guard refers to. | mut:225-227 | `mutate/fixture_all_dismissed` |
+| M58 | The two effects on a file the coverage rewriter ran on first. | mut:199-205 | `mutate/after_coverage/fixture_visits` |
 
 ### Rejections
 
 | id | rule | interface | pinned by |
 | --- | --- | --- | --- |
-| M59 | An unknown identifier payload is refused. | mut:233-234 | `mutate/reject_bad_payload` |
-| M60 | Other payload shapes (empty, `off 42`, `off "a" "b"`) are refused. | mut:233-234 | `mutate/reject_empty_payload`, `mutate/reject_off_number`, `mutate/reject_off_two_reasons` |
-| M61 | `on` on an expression is refused. | mut:235 | `mutate/reject_misplaced_on`, `mutate/reject_on_assert` |
-| M62 | `on` or `exclude_file` on a binding, `exclude_file` on an expression, are refused. | mut:235 | `mutate/reject_on_binding`, `mutate/reject_exclude_file_binding`, `mutate/reject_exclude_file_expr` |
-| M63 | `exclude_file` floating in a nested structure is refused. | mut:236 | `mutate/reject_misplaced_exclude_file` |
-| M64 | `[@@@mutate off]` inside a region is refused: "Mutation is already off." | mut:237 | `mutate/reject_double_off` |
-| M65 | `[@@@mutate on]` outside a region is refused: "Mutation is already on." | mut:237 | `mutate/reject_on_outside` |
+| M59 | An unknown identifier payload is refused. | mut:237-238 | `mutate/reject_bad_payload` |
+| M60 | Other payload shapes (empty, `off 42`, `off "a" "b"`) are refused. | mut:237-238 | `mutate/reject_empty_payload`, `mutate/reject_off_number`, `mutate/reject_off_two_reasons` |
+| M61 | `on` on an expression is refused. | mut:239 | `mutate/reject_misplaced_on`, `mutate/reject_on_assert` |
+| M62 | `on` or `exclude_file` on a binding, `exclude_file` on an expression, are refused. | mut:239 | `mutate/reject_on_binding`, `mutate/reject_exclude_file_binding`, `mutate/reject_exclude_file_expr` |
+| M63 | `exclude_file` floating in a nested structure is refused. | mut:240 | `mutate/reject_misplaced_exclude_file` |
+| M64 | `[@@@mutate off]` inside a region is refused: "Mutation is already off." | mut:241 | `mutate/reject_double_off` |
+| M65 | `[@@@mutate on]` outside a region is refused: "Mutation is already on." | mut:241 | `mutate/reject_on_outside` |
 
 ## Expect (`ppx/ppx_windtrap.ml`)
 

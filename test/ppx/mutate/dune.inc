@@ -399,6 +399,20 @@
   (diff reject_off_number.expected reject_off_number.actual)))
 
 (rule
+ (target reject_off_rewrite.actual)
+ (action
+  (with-outputs-to
+   reject_off_rewrite.actual
+   (with-accepted-exit-codes
+    1
+    (run ./mutate_pp.exe --impl %{dep:reject_off_rewrite.ml})))))
+
+(rule
+ (alias runtest)
+ (action
+  (diff reject_off_rewrite.expected reject_off_rewrite.actual)))
+
+(rule
  (target reject_off_two_reasons.actual)
  (action
   (with-outputs-to

@@ -6,4 +6,4 @@ let f n = n + 1
 
 let g n = n + 1
 
-(* Rules pinned here, by id in RULES.md and interface line: M64, mut:237. *)
+(* Rules pinned here, by id in RULES.md and interface line: M64, mut:241. *)

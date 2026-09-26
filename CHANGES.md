@@ -592,7 +592,10 @@ Each one is also listed under its area below.
   and `||`, or swaps `+` and `-`, and is named
   `<file>:<line>:<col>:<rewrite>`.
 - `[@mutate off "reason"]` and its `[@@…]` and `[@@@…]` forms dismiss
-  equivalent mutants.
+  equivalent mutants; a bare `[@mutate off]` dismisses every mutant of
+  its expression, in later releases too, and a payload that names a
+  rewrite is refused (see
+  [Dismissing an equivalent mutant](https://github.com/invariant-hq/windtrap/blob/main/doc/manual/mutation.md#dismissing-an-equivalent-mutant)).
 - `--mutate[=PREFIX,…]` runs the suite, then each reached mutant in a
   child process with the tests that reached it, prints each survivor
   with those tests, and exits 0 (see

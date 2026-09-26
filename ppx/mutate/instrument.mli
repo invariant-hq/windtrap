@@ -141,7 +141,11 @@
       the file.
 
     The last three record no site, and the reason of a [[@@mutate off]] or of a
-    [[@@@mutate off]] is accepted and dropped. *)
+    [[@@@mutate off]] is accepted and dropped.
+
+    [[@mutate off]] dismisses every mutant of its expression, and keeps that
+    meaning in any later version that gives an expression more mutants. A
+    payload that names a rewrite, as [[@mutate off gt "reason"]], is refused. *)
 
 (** {1:identification Identification}
 

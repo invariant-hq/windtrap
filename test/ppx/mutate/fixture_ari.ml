@@ -17,4 +17,4 @@ let negate x = -x
 let scaled a b = (a + b) * 2
 
 (* Rules pinned here, by id in RULES.md and interface line: M11, mut:65-66;
-   M12, mut:52-53; M31, mut:114-115; M47, mut:151-154; M55, mut:182-183. *)
+   M12, mut:52-53; M31, mut:114-115; M47, mut:155-158; M55, mut:186-187. *)

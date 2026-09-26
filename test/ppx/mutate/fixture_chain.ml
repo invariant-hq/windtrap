@@ -48,5 +48,5 @@ let mixed a b c = a + b - c
 let chained a b c = if a < b < c then 1 else 0
 
 (* Rules pinned here, by id in RULES.md and interface line: M17, mut:84-86;
-   M20, mut:89-93; M22, mut:68-72; M23, mut:94-95; M48, mut:155;
-   M49, mut:157-160. *)
+   M20, mut:89-93; M22, mut:68-72; M23, mut:94-95; M48, mut:159;
+   M49, mut:161-164. *)

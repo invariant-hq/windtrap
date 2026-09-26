@@ -20,4 +20,4 @@ let classify p x = match x with y when p y -> "yes" | _ -> "no"
 let nested a b = if if a then b else false then 1 else 0
 
 (* Rules pinned here, by id in RULES.md and interface line: M1, mut:56-58;
-   M49, mut:157-160. *)
+   M49, mut:161-164. *)

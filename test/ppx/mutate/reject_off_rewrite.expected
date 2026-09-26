@@ -1,0 +1,4 @@
+File "./reject_off_rewrite.ml", line 1, characters 18-51:
+1 | let f n = (n + 1) [@mutate off sub "equal at zero"]
+                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Error: Bad payload in mutate attribute.
