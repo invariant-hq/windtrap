@@ -197,9 +197,12 @@ reads stale dumps and the mutation merge refuses loudly.
 The `nodune.t` session compiles a scratch project against the installed
 core, which under the coverage backend is instrumented too and adds its
 own rows to the scratch project's report; the session therefore pins the
-scratch library's row alone, never the total, and it runs under every
-configuration. Its dump lands under the scratch directory's `_windtrap`,
-never under `_build/_coverage`, so it never enters the number.
+scratch library's row alone, never the total. Its dump lands under the
+scratch directory's `_windtrap`, never under `_build/_coverage`, so it
+never enters the number. Dune 3.24, the release CI installs, reports its
+`(package windtrap)` dependency as a cycle under the coverage backend, so
+the coverage job binds `SKIP_NODUNE_SESSION=true` to leave it out; a dune
+built from main runs it under every configuration.
 
 `--min 84` is a ratchet: the measured number (86.2% on 2026-08-19, 93.0%
 on 2026-09-16) less a few points of headroom. Raise it when the margin is comfortable;
