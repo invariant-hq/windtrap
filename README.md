@@ -106,14 +106,13 @@ itself, the changelog discipline and the release checklist.
 
 ## Acknowledgments
 
-Windtrap builds on ideas and code from
-[Alcotest](https://github.com/mirage/alcotest) and Craig Ferguson's
-pull requests to it ([#294](https://github.com/mirage/alcotest/pull/294),
-[#247](https://github.com/mirage/alcotest/pull/247)),
-[QCheck2](https://github.com/c-cube/qcheck),
-[ppx_expect](https://github.com/janestreet/ppx_expect),
-[ppx_inline_test](https://github.com/janestreet/ppx_inline_test),
-[Bisect_ppx](https://github.com/aantron/bisect_ppx) and
-[mtime](https://erratique.ch/software/mtime);
-[`THIRD_PARTY_LICENSES.md`](THIRD_PARTY_LICENSES.md) holds the notices
-of the code derived from them.
+Windtrap builds on ideas and code from several OCaml projects:
+
+- **[Alcotest](https://github.com/mirage/alcotest)** by Thomas Gazagnaire: test structure and runner design.
+- **Craig Ferguson's Alcotest PRs** ([#294](https://github.com/mirage/alcotest/pull/294), [#247](https://github.com/mirage/alcotest/pull/247)): API design, subcomponent diffing, and Levenshtein distance (ISC).
+- **[QCheck2](https://github.com/c-cube/qcheck)** by Simon Cruanes et al.: generator design and integrated shrinking (BSD 2-Clause).
+- **[ppx_expect](https://github.com/janestreet/ppx_expect)** and **[ppx_inline_test](https://github.com/janestreet/ppx_inline_test)** by Jane Street: expect test paradigm and dune integration.
+- **[Bisect_ppx](https://github.com/aantron/bisect_ppx)** by Anton Bachin et al.: coverage instrumentation and runtime (MIT).
+- **[mtime](https://erratique.ch/software/mtime)** by Daniel Bünzli: the monotonic clock (ISC).
+
+[`THIRD_PARTY_LICENSES.md`](THIRD_PARTY_LICENSES.md) holds the notices of the code derived from them.
