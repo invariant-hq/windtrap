@@ -234,7 +234,11 @@
 (test
  (name test_windtrap)
  (modules test_windtrap)
- (libraries windtrap windtrap_test_support unix harness))
+ (libraries windtrap recorded windtrap_test_support unix)
+ (action
+  (progn
+   (run %{test} --corrected)
+   (diff? test_windtrap.ml test_windtrap.ml.corrected))))
 
 (test
  (name test_ppx_runtime)
