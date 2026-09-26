@@ -1,9 +1,9 @@
 # Getting started
 
-In this tutorial we add windtrap to a dune project, write a suite of two
-tests for a small module, run it, read one failure and fix it. After it
-we can read a green report and a failing one, and we know which page to
-open next.
+In this tutorial we add windtrap to a dune project, write a suite of
+three tests for a small module, run it, read one failure and fix it.
+After it we can read a green report and a failing one, and we know which
+page to open next.
 
 ## Installing windtrap
 
@@ -18,8 +18,7 @@ opam install windtrap
 The module we test is `Calc`, written for this tutorial. We create a
 directory `test` at the root of the project and put three files in it.
 The three files ship as `examples/01-getting-started/` in windtrap's
-repository. The transcripts below were captured there and print the
-example's paths. The first file is the module.
+repository. The first file is the module.
 
 `test/calc.ml`:
 
@@ -69,6 +68,8 @@ let parse =
     [
       test "rejects the empty string" (fun () ->
           raises (Calc.Parse_error "empty") (fun () -> Calc.parse ""));
+      prop "reads back any integer that string_of_int prints" Gen.int (fun n ->
+          equal int n (Calc.parse (string_of_int n)));
     ]
 
 let () = exit (run "mylib" [ add; parse ])
@@ -79,17 +80,20 @@ let () = exit (run "mylib" [ add; parse ])
 passes by returning and fails by raising. `equal int 5 (Calc.add 2 3)`
 asserts that the sum is `5` under the `int` witness.
 `raises (Calc.Parse_error "empty") (fun () -> Calc.parse "")` asserts
-that the call raises that exception. `run` executes the groups and
-returns the exit code, which `exit` hands to the shell on the file's
-last line.
+that the call raises that exception. `prop` declares a property, a
+test whose body runs once for each of 100 integers that `Gen.int`
+generates (see [Property testing](property-testing.md)). `run` executes
+the groups and returns the exit code, which `exit` hands to the shell on
+the file's last line.
 
 ## Running the suite
 
-Both tests pass, and a run with nothing to report prints one line:
+The three tests pass, and a run with nothing to report prints one
+line. It ends with the seed the property drew its integers from:
 
 ```
 $ dune runtest
-mylib: 2 passed in 0.5ms.
+mylib: 3 passed in 1.0ms (seed s1:b02192cebcec40d2).
 ```
 
 ## A failing test
@@ -103,20 +107,20 @@ a body as here, is reported at the test's declaration line (see
 
 ```
 $ dune runtest
-File "examples/01-getting-started/dune", line 2, characters 7-17:
+File "test/dune", line 2, characters 7-17:
 2 |  (name test_mylib)
            ^^^^^^^^^^
-mylib: 2 tests
+mylib: 3 tests (seed s1:4370715203d03b81)
 ──────────────────────── failures ────────────────────────
   FAIL  add › adds two integers
-    examples/01-getting-started/test_mylib.ml:5
+    test/test_mylib.ml:5
       5 │ [ test "adds two integers" (fun () -> equal int 6 (Calc.add 2 3)) ]
 
     expected  6
     actual    5
 ──────────────────────────────────────────────────────────
 
-1 passed, 1 failed in 0.6ms.
+2 passed, 1 failed in 0.9ms.
 ```
 
 ## The fix
@@ -125,7 +129,7 @@ We put the `5` back and run again:
 
 ```
 $ dune runtest
-mylib: 2 passed in 0.6ms.
+mylib: 3 passed in 0.6ms (seed s1:a59d57ed8371d91e).
 ```
 
 ## Where to go next

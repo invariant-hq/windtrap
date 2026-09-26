@@ -4,7 +4,7 @@ Each numbered directory is the project of one page of the
 [manual](../doc/manual/), which shows its files and the output of runs
 of them. `dune runtest` builds and runs every example, and each passes.
 
-- `01-getting-started`: `Calc` and a suite of two tests, for
+- `01-getting-started`: `Calc` and a suite of three tests, for
   [Getting started](../doc/manual/getting-started.md).
 - `02-assertions`: `Shop`, a module of shopping carts, and one group per
   section of [Assertions](../doc/manual/assertions.md).
