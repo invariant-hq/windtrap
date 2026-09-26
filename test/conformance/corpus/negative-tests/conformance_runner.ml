@@ -2,9 +2,9 @@
    inline_tests backend's generated runner). The module aliases force
    link order: every fixture module initializes (registering its tests)
    before the protocol runs. Import_test pulls in Export_test. Chdir
-   runs in a process of its own (chdir_runner.ml). *)
+   and Escaped_strings run in processes of their own (chdir_runner.ml,
+   escaped_strings_runner.ml). *)
 
-module _ = Escaped_strings
 module _ = Exact
 module _ = Flexible
 module _ = Import_test

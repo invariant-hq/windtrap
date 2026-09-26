@@ -73,7 +73,12 @@ described under `ppx/`), the support library `support/` and one `dune`
   `generated.ml` stands in for a deriver's generated code, and
   `expect_typing.t` types the expansion of `wrong_run.ml` against the
   installed libraries to pin the type error of a mistyped
-  `Expect_test_config.run`.
+  `Expect_test_config.run`. A golden of text the compiler decides runs
+  only from the OCaml version that prints it, so such blocks have
+  sessions of their own: `coverage_functions.t` from 5.2 (the printer's
+  spelling of a function), `expect_typing.t` from 5.4 (a type error's
+  wording); the conformance corpus gates `escaped_strings.ml` and
+  `hello_async.ml` the same way.
   `coverage.t` holds the two backends' attribute grammars in parity:
   both accept every spelling of `spellings.ml`, and each coverage
   refusal reads as the mutation one once the namespace is swapped. The

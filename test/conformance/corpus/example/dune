@@ -25,8 +25,9 @@
 ; with pp.exe, then typechecked with ocamlc against the shim and
 ; runtime cmis; exit 2 (type error) is required and the error text is
 ; goldened. (sandbox none): the -I paths reach library .objs dirs in
-; _build that the declared .cma deps guarantee are built; the golden
-; text is also OCaml-compiler-version-sensitive by nature.
+; _build that the declared .cma deps guarantee are built. The golden is
+; the compiler's wording of a type error, settled in OCaml 5.4, so the
+; rules hold from 5.4 on.
 
 (rule
  (target hello_async_pp.ml)
@@ -37,6 +38,8 @@
 
 (rule
  (target hello_async.compile-rejected)
+ (enabled_if
+  (>= %{ocaml_version} 5.4))
  (deps
   (sandbox none)
   hello_async_pp.ml
@@ -70,5 +73,7 @@
 
 (rule
  (alias runtest)
+ (enabled_if
+  (>= %{ocaml_version} 5.4))
  (action
   (diff hello_async.compile-rejected.expected hello_async.compile-rejected)))

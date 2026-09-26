@@ -36,6 +36,16 @@
  (applies_to coverage mutate)
  (deps pp.exe coverage_first.exe elide.exe))
 
+; coverage_functions.t pins the compiler's printer, whose spelling of a
+; function's parameters, return constraint and coercion settled in OCaml
+; 5.2; expect_typing.t pins the wording of a type error, settled in 5.4.
+
+(cram
+ (applies_to coverage_functions)
+ (enabled_if
+  (>= %{ocaml_version} 5.2))
+ (deps pp.exe elide.exe))
+
 (cram
  (applies_to expect)
  (deps pp.exe))
@@ -46,7 +56,9 @@
 (cram
  (applies_to expect_typing)
  (enabled_if
-  (<> %{env:SKIP_PACKAGE_SESSIONS=} true))
+  (and
+   (>= %{ocaml_version} 5.4)
+   (<> %{env:SKIP_PACKAGE_SESSIONS=} true)))
  (deps
   pp.exe
   (package windtrap)

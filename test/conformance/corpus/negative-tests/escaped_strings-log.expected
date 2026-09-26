@@ -1,0 +1,183 @@
+conformance: 6 tests
+──────────────────────── failures ────────────────────────
+  FAIL  Escaped_strings › escaped carriage return
+    test/conformance/corpus/negative-tests/escaped_strings.ml:3
+      3 │ [%expect ""];
+
+    expect: mismatch
+    @@ -0,0 +1,1 @@
+    + a\x0db
+
+    test/conformance/corpus/negative-tests/escaped_strings.ml:5
+      5 │ [%expect_exact ""];
+
+    expect_exact: mismatch
+    @@ -0,0 +1,1 @@
+    + a\x0db
+
+    test/conformance/corpus/negative-tests/escaped_strings.ml:7
+      7 │ [%expect ""];
+
+    expect: mismatch
+    @@ -0,0 +1,2 @@
+    + a
+    + b
+
+    test/conformance/corpus/negative-tests/escaped_strings.ml:9
+      9 │ [%expect_exact ""];
+
+    expect_exact: mismatch
+    @@ -0,0 +1,2 @@
+    + a\x0d
+    + b
+
+    test/conformance/corpus/negative-tests/escaped_strings.ml:11
+      11 │ [%expect ""];
+
+    expect: mismatch
+    @@ -0,0 +1,2 @@
+    + a
+    + b
+
+    test/conformance/corpus/negative-tests/escaped_strings.ml:13
+      13 │ [%expect_exact ""]
+
+    expect_exact: mismatch
+    @@ -0,0 +1,2 @@
+    + a
+    + \x0db
+    accept: dune promote test/conformance/corpus/negative-tests/escaped_strings.ml
+
+  FAIL  Escaped_strings › escaped tab
+    test/conformance/corpus/negative-tests/escaped_strings.ml:18
+      18 │ [%expect ""];
+
+    expect: mismatch
+    @@ -0,0 +1,1 @@
+    + a	b
+
+    test/conformance/corpus/negative-tests/escaped_strings.ml:20
+      20 │ [%expect_exact ""];
+
+    expect_exact: mismatch
+    @@ -0,0 +1,1 @@
+    + a	b
+
+    test/conformance/corpus/negative-tests/escaped_strings.ml:22
+      22 │ [%expect ""];
+
+    expect: mismatch
+    @@ -0,0 +1,2 @@
+    + a
+    + b
+
+    test/conformance/corpus/negative-tests/escaped_strings.ml:24
+      24 │ [%expect_exact ""];
+
+    expect_exact: mismatch
+    @@ -0,0 +1,2 @@
+    + a	
+    + b
+
+    test/conformance/corpus/negative-tests/escaped_strings.ml:26
+      26 │ [%expect ""];
+
+    expect: mismatch
+    @@ -0,0 +1,2 @@
+    + a
+    + b
+
+    test/conformance/corpus/negative-tests/escaped_strings.ml:28
+      28 │ [%expect_exact ""]
+
+    expect_exact: mismatch
+    @@ -0,0 +1,2 @@
+    + a
+    + 	b
+    accept: dune promote test/conformance/corpus/negative-tests/escaped_strings.ml
+
+  FAIL  Escaped_strings › escaped quote
+    test/conformance/corpus/negative-tests/escaped_strings.ml:33
+      33 │ [%expect ""];
+
+    expect: mismatch
+    @@ -0,0 +1,1 @@
+    + a"b
+
+    test/conformance/corpus/negative-tests/escaped_strings.ml:35
+      35 │ [%expect_exact ""]
+
+    expect_exact: mismatch
+    @@ -0,0 +1,1 @@
+    + a"b
+    accept: dune promote test/conformance/corpus/negative-tests/escaped_strings.ml
+
+  FAIL  Escaped_strings › escaped trailing carriage return
+    test/conformance/corpus/negative-tests/escaped_strings.ml:40
+      40 │ [%expect ""];
+
+    expect: mismatch
+    @@ -0,0 +1,2 @@
+    + a
+    + b
+
+    test/conformance/corpus/negative-tests/escaped_strings.ml:42
+      42 │ [%expect_exact ""];
+
+    expect_exact: mismatch
+    @@ -0,0 +1,2 @@
+    + a\x0d
+    + b\x0d
+
+    test/conformance/corpus/negative-tests/escaped_strings.ml:44
+      44 │ [%expect];
+
+    expect: mismatch
+    @@ -0,0 +1,2 @@
+    + a
+    + b
+
+    test/conformance/corpus/negative-tests/escaped_strings.ml:46
+      46 │ [%expect_exact]
+
+    expect_exact: mismatch
+    @@ -0,0 +1,2 @@
+    + a\x0d
+    + b\x0d
+    accept: dune promote test/conformance/corpus/negative-tests/escaped_strings.ml
+
+  FAIL  Escaped_strings › unescaped carriage return --- empty expect
+    test/conformance/corpus/negative-tests/escaped_strings.ml:51
+      51 │ [%expect];
+
+    expect: mismatch
+    @@ -0,0 +1,2 @@
+    + a
+    + b
+
+    test/conformance/corpus/negative-tests/escaped_strings.ml:53
+      53 │ [%expect_exact]
+
+    expect_exact: mismatch
+    @@ -0,0 +1,2 @@
+    + a\x0d
+    + b
+    accept: dune promote test/conformance/corpus/negative-tests/escaped_strings.ml
+
+  FAIL  Escaped_strings › unescaped carriage return --- populated expect
+    test/conformance/corpus/negative-tests/escaped_strings.ml:63
+      63 │ [%expect_exact
+
+    expect_exact: mismatch
+    @@ -1,2 +1,2 @@
+    - a
+    + a\x0d
+      b
+    accept: dune promote test/conformance/corpus/negative-tests/escaped_strings.ml
+──────────────────────────────────────────────────────────
+
+corrections (1):
+  wrote test/conformance/corpus/negative-tests/escaped_strings.ml.corrected (21 expectations)
+
+6 failed, 1 correction written in <duration>.
+--- stderr ---
