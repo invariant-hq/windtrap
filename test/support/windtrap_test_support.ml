@@ -42,6 +42,8 @@ module Scratch = struct
     path
 end
 
+let slashed path = String.map (function '\\' -> '/' | c -> c) path
+
 module Child = struct
   let inherited =
     [ "PATH"; "HOME"; "TMPDIR"; "TEMP"; "TMP"; "SYSTEMROOT"; "LANG"; "LC_ALL" ]

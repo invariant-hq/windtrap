@@ -416,6 +416,8 @@ Each one is also listed under its area below.
 - The project root is `WINDTRAP_PROJECT_ROOT`, else the parent of dune's
   build directory, else the working directory; no marker file is
   consulted.
+- On Windows a backslash in the project root separates as `/` does, so
+  reports print paths relative to the root.
 - `Expect_test_config`, from `ppx_windtrap.config`, wraps expect-test
   bodies with `run` and rewrites captured output with `sanitize`, and a
   local module of that name overrides it (see
@@ -580,6 +582,8 @@ Each one is also listed under its area below.
   format windtrap writes.
 - `--expect PATH` exits 1 unless every source under `PATH` has coverage
   data, and `--do-not-expect PATH` exempts a file or directory from it.
+- On Windows `--expect` names each source without coverage data once,
+  spelled with `/`.
 - `[@@coverage off]` also excludes a module binding.
 
 ### Mutation testing

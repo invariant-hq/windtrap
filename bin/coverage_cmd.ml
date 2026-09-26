@@ -84,9 +84,11 @@ let merged files =
 (* Gates *)
 
 (* A backslash separates as a slash does, as in a name recorded on Windows. *)
+let slashed path = String.map (function '\\' -> '/' | c -> c) path
+
 let stem path =
   let parts =
-    String.split_on_char '/' (String.map (function '\\' -> '/' | c -> c) path)
+    String.split_on_char '/' (slashed path)
     |> List.filter (fun part -> part <> "" && part <> ".")
   in
   match List.rev parts with
@@ -120,15 +122,19 @@ let rec sources_under dir =
           | false -> []
           | exception Sys_error _ -> [])
 
+(* Spelled with [/] on Windows too, so that a source reached twice is named
+   once. *)
 let sources paths =
   match List.find_opt (fun path -> not (Sys.file_exists path)) paths with
   | Some path -> Error (strf "%s: no such file or directory" path)
   | None ->
+      let spelled = if Sys.win32 then List.map slashed else Fun.id in
       Ok
-        (List.concat_map
-           (fun path ->
-             if Sys.is_directory path then sources_under path else [ path ])
-           paths)
+        (spelled
+           (List.concat_map
+              (fun path ->
+                if Sys.is_directory path then sources_under path else [ path ])
+              paths))
 
 (* The sources that [--expect] names, less those that [--do-not-expect] names,
    whose stem no recorded name has. *)

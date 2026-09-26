@@ -168,7 +168,8 @@ val atomic_write : ?perm:int -> path:string -> string -> unit
 val project_root : unit -> string
 (** [project_root ()] is [WINDTRAP_PROJECT_ROOT] when it is set, made absolute
     against the current directory. It is else the parent of the build directory
-    when there is one, and else the current directory.
+    when there is one, and else the current directory. It is spelled with [/],
+    every backslash read as a separator.
 
     The value of the variable is normalized lexically: [.] and [..] segments,
     repeated separators and a trailing [/] are removed, and no symbolic link is
@@ -240,9 +241,10 @@ val display_path : string -> string
 
 val display_artifact : string -> string
 (** [display_artifact path] is [path] without a leading {!project_root} prefix,
-    and nothing else is changed. It is the form for a file that the build wrote
-    under [_build], as a capture log is. {!display_path} would strip the build
-    segment of such a path, which then does not open.
+    matched with backslashes read as separators, and nothing else is changed. It
+    is the form for a file that the build wrote under [_build], as a capture log
+    is. {!display_path} would strip the build segment of such a path, which then
+    does not open.
 
     [display_artifact] never raises. When the current directory cannot be read,
     [path] is returned as given. *)

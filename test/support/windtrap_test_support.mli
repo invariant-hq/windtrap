@@ -22,6 +22,12 @@ module Scratch : sig
       follows a symbolic link, and a missing [path] is no error. *)
 end
 
+(** {1:paths Paths} *)
+
+val slashed : string -> string
+(** [slashed path] is [path] with every backslash replaced by [/]: a native
+    Windows path as windtrap spells the paths it reports. *)
+
 (** {1:children Child processes} *)
 
 module Child : sig

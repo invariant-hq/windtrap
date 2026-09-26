@@ -236,12 +236,12 @@ let join (anchor, comps) = anchor ^ "/" ^ String.concat "/" comps
 let project_root () =
   match getenv "WINDTRAP_PROJECT_ROOT" with
   | Some root -> (
-      let root = absolute root in
+      let root = normalize_sep (absolute root) in
       match normalized root with Some path -> join path | None -> root)
   | None -> (
       match build_dir () with
       | Some dir -> Filename.dirname dir
-      | None -> Sys.getcwd ())
+      | None -> normalize_sep (Sys.getcwd ()))
 
 (* The logs follow the build directory, so a private [--build-dir] keeps its
    own and a tree built without dune never grows a [_build]. *)
@@ -303,11 +303,18 @@ let chop_prefix ~prefix s =
   else None
 
 (* [None] when the root cannot be read: a test can remove its own working
-   directory, and these paths are printed after the run. *)
+   directory, and these paths are printed after the run. The prefix is
+   matched with backslashes read as separators, and the rest keeps the
+   path's bytes: [normalize_sep] keeps every offset. *)
 let chop_root path =
   match project_root () with
   | exception Sys_error _ -> None
-  | root -> chop_prefix ~prefix:(root ^ "/") path
+  | root ->
+      let prefix = root ^ "/" in
+      if String.starts_with ~prefix (normalize_sep path) then
+        let first = String.length prefix in
+        Some (String.sub path first (String.length path - first))
+      else None
 
 (* The root goes first: a root inside a build tree (a scratch root under a
    sandbox) would not prefix the stripped path. Dune runs a test as

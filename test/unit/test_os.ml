@@ -513,10 +513,10 @@ let executable's_directory () =
   equal (pair string string) (under (Some dir)) own
 
 let root_from (value, root) =
-  let cwd = outside_builds () in
+  let cwd = Windtrap_test_support.slashed (outside_builds ()) in
   setenv "WINDTRAP_PROJECT_ROOT" (Some value);
   equal string
-    (if Filename.is_relative root then Filename.concat cwd root else root)
+    (if Filename.is_relative root then cwd ^ "/" ^ root else root)
     (Os.project_root ())
 
 let in_a_removed_directory () =
@@ -580,6 +580,7 @@ let root =
           ("/..", "/..");
           ("rel", "rel");
           ("./sub/../r/", "r");
+          ("sub\\..\\r\\", "r");
         ]
         root_from;
       test
@@ -752,6 +753,7 @@ let display =
           ("/r/_build/_tests/s/t.output", "_build/_tests/s/t.output");
           ("/r/./a//b", "./a//b");
           ("/elsewhere/./x", "/elsewhere/./x");
+          ("\\r\\_build\\x.log", "_build\\x.log");
         ]
         (fun (path, shown) -> equal string shown (artifact path));
       test
