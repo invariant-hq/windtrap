@@ -1,0 +1,4 @@
+# Goldens pin byte offsets into the sources they are built from, so a
+# checkout keeps every text file's line endings as committed, LF.
+# test/conformance states its own rule.
+* text=auto eol=lf
