@@ -1,0 +1,115 @@
+=== a failure's row is its block's title: its path bold, then the armed qualifier
+  «r|FAIL»  «b|first»                                      «d|0.2ms» «d|(mutant armed)»
+    «d|test/test_geo.ml:17»
+    counterexample (case 12, shrunk 4 steps): Rect (2, 0)
+    which failed at:
+      «d|test/test_geo.ml:18»
+      «d|expected»  «g|true»
+      «d|actual»    «r|false»
+
+
+=== a missing baseline qualifies the row after its duration
+  FAIL  help                                       0.2ms (no baseline)
+    test/test_cli.ml:9
+    expect_file "test/help.expected": no baseline
+    proposed (3 lines):
+      + Usage: mytool [OPTIONS] COMMAND
+      + Commands:
+      +   run
+    accept: touch 'test/help.expected' && dune runtest; dune promote test/help.expected
+
+
+=== and shares the parenthesis with the armed qualifier
+  FAIL  help                                       0.2ms (no baseline, mutant armed)
+    test/test_cli.ml:9
+    expect_file "test/help.expected": no baseline
+    proposed (3 lines):
+      + Usage: mytool [OPTIONS] COMMAND
+      + Commands:
+      +   run
+
+
+=== an expected failure: XFAIL, the duration, then the reason
+  XFAIL  known › broken carry                      0.2ms (expected failure: issue #42)
+    test/test_carry.ml:5
+    expected  1
+    actual    2
+
+
+=== an expected failure without a reason
+  XFAIL  known › broken carry                      0.2ms (expected failure)
+    test/test_carry.ml:5
+    expected  1
+    actual    2
+
+
+=== an expected failure's block under its row, with no replay
+  XFAIL  known › broken carry                      0.2ms (expected failure: issue #42)
+    test/test_carry.ml:5
+    counterexample (case 3): (1, 2)
+    which failed with:
+      carry lost
+
+
+=== and styled, each line faint past its indent
+  «d|XFAIL»  known › broken carry                      «d|0.2ms» «d|(expected failure: issue #42)»
+    «d|test/test_carry.ml:5»
+    «d|counterexample (case 3): (1, 2)»
+    «d|which failed with:»
+      «d|carry lost»
+
+
+=== an expected failure whose message is the unexpected pass's stays excused
+  XFAIL  collide                                   0.2ms (expected failure)
+    expected to fail, but the test passed
+
+
+=== an unexpected pass is a FAIL
+  FAIL  known › fixed already                      0.2ms
+    test/test_carry.ml:9
+    expected to fail (issue #42), but the test passed
+
+
+=== an xfail annotation on a pass changes nothing
+  PASS  t                                          0.2ms
+
+=== a passing property prints its label table
+  PASS  labels visible                             1.2ms
+    labels (100 passing cases):
+       46.0%  even
+
+=== and none without collected labels
+  PASS  no labels                                  0.2ms
+
+=== an expected failure's table is in its block
+  XFAIL  known › broken carry                      0.2ms (expected failure: issue #42)
+    test/test_carry.ml:5
+    expected  1
+    actual    2
+    labels (100 passing cases):
+       46.0%  even
+
+
+=== a flaky pass names its attempts
+  PASS  network › fetches the manifest             0.2ms (2 attempts)
+
+=== a name's control bytes print escaped
+  FAIL  first\x0ahalf                              0.2ms
+    b
+
+
+=== a skip's reason and an expected failure's stay in their rows, escaped
+s: 2 tests
+  SKIP  skipped (no\x0adb)
+  XFAIL  excused                                   0.2ms (expected failure: issue	42)
+    test/test_users.ml:31
+    expected  [("alice", [1; 2; 3]); ("bob", [4])]
+    actual    [("alice", [1; 2; 3]); ("bob", [4; 5]); ("carol", [])]
+                                               ~~~~~~~~~~~~~~~~~~
+
+
+=== a header's control bytes print escaped
+a\x07b: 1 test
+
+=== a note's control bytes print escaped
+releasing d\x0ab

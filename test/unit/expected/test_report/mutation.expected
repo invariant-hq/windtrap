@@ -1,0 +1,97 @@
+=== a loop commits each survivor's block when its child ends
+--- mutation_testing 1
+--- mutation_survivor
+
+─────────────────────── survivors ────────────────────────
+  SURVIVED  lib/calc.ml:13:11:add  a - b → a + b
+      13 │ | Sub -> a - b
+
+    1 test ran this line and did not fail:
+      subtraction › stays positive  test/test_calc.ml:19
+--- mutation_testing 2
+--- mutation_survivor
+
+  SURVIVED  lib/calc.ml:21:16:ge  n > 0 → n >= 0
+      21 │ let sign n = if n > 0 then 1 else 0
+
+    2 tests ran this line and none failed:
+      sign of a negative  test/test_calc.ml:31
+      sign of a positive  test/test_calc.ml:30
+--- mutation_finish
+──────────────────────────────────────────────────────────
+
+─────────────────── never reached (2) ────────────────────
+  2  lib/calc.ml   lines 40-41
+──────────────────────────────────────────────────────────
+
+reproduce: dune exec --instrument-with ppx_windtrap.mutate test/test_calc.exe -- --arm lib/calc.ml:13:11:add
+mutants: 2 survived of 5 reached by this suite, 3 killed, 2 never reached
+
+=== and styled
+--- mutation_testing 1
+--- mutation_survivor
+
+«d|─────────────────────── survivors ────────────────────────»
+  «r|SURVIVED»  «b|lib/calc.ml:13:11:add»  a - b → a + b
+      «d|13 │» | Sub -> a - b
+
+    1 test ran this line and did not fail:
+      subtraction › stays positive  «d|test/test_calc.ml:19»
+--- mutation_testing 2
+--- mutation_survivor
+
+  «r|SURVIVED»  «b|lib/calc.ml:21:16:ge»  n > 0 → n >= 0
+      «d|21 │» let sign n = if n > 0 then 1 else 0
+
+    2 tests ran this line and none failed:
+      sign of a negative  «d|test/test_calc.ml:31»
+      sign of a positive  «d|test/test_calc.ml:30»
+--- mutation_finish
+«d|──────────────────────────────────────────────────────────»
+
+«d|─────────────────── never reached (2) ────────────────────»
+  «y|2»  lib/calc.ml   lines 40-41
+«d|──────────────────────────────────────────────────────────»
+
+reproduce: dune exec --instrument-with ppx_windtrap.mutate test/test_calc.exe -- --arm lib/calc.ml:13:11:add
+mutants: «r|2 survived» of 5 reached by this suite, «g|3 killed», «y|2 never reached»
+
+=== the live line names the mutant, and is erased before a block
+--- mutation_testing 1
+«erase»«d|  [1/4] lib/calc.ml:13:11:add…» [no newline]
+--- mutation_survivor
+«erase»
+«d|─────────────────────── survivors ────────────────────────»
+  «r|SURVIVED»  «b|lib/calc.ml:13:11:add»  a - b → a + b
+      «d|13 │» | Sub -> a - b
+
+    1 test ran this line and did not fail:
+      subtraction › stays positive  «d|test/test_calc.ml:19»
+--- mutation_finish
+«d|──────────────────────────────────────────────────────────»
+
+reproduce: dune exec --instrument-with ppx_windtrap.mutate test/test_calc.exe -- --arm lib/calc.ml:13:11:add
+mutants: «r|1 survived» of 4 reached by this suite, «g|3 killed»
+
+=== a killed mutant leaves nothing, the next line draws over it
+--- mutation_testing 1
+«erase»«d|  [1/2] lib/calc.ml:9:3:sub…» [no newline]
+--- mutation_testing 2
+«erase»«erase»«d|  [2/2] lib/calc.ml:13:11:add…» [no newline]
+
+=== every mutant killed: the outcome alone
+--- mutation_finish
+mutants: 3 reached by this suite, «g|3 killed»
+
+=== an interrupted loop closes over the children that ended
+──────────────────────────────────────────────────────────
+
+─────────────────── never reached (2) ────────────────────
+  2  lib/calc.ml   lines 40-41
+──────────────────────────────────────────────────────────
+
+reproduce: dune exec --instrument-with ppx_windtrap.mutate test/test_calc.exe -- --arm lib/calc.ml:13:11:add
+mutants: 1 survived of 3 reached by this suite, 2 never reached, 2 not tested
+
+=== stopped before a child ended
+mutants: 5 reached by this suite, 5 not tested

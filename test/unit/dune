@@ -1,6 +1,6 @@
 (tests
- (names test_os test_report test_report_junit)
- (modules test_os test_report test_report_junit)
+ (names test_os test_report_junit)
+ (modules test_os test_report_junit)
  (libraries
   windtrap
   windtrap_runtime
@@ -9,8 +9,8 @@
   harness
   render_fixtures
   xml_check)
- ; The report suite's golden transcripts are action inputs; accept a
- ; change with `test_report.exe -u`.
+ ; The goldens under expected/ are action inputs; accept a change with
+ ; the suite's `-u`.
  (deps
   (glob_files_rec expected/**)))
 
@@ -163,6 +163,43 @@
    (diff?
     expected/test_report_sections/raise.expected
     expected/test_report_sections/raise.expected.corrected))))
+
+(test
+ (name test_report)
+ (modules test_report)
+ (libraries windtrap render_fixtures gallery)
+ (deps
+  (glob_files expected/test_report/*.expected))
+ (action
+  (progn
+   (run %{test} --corrected)
+   (diff?
+    expected/test_report/annotation.expected
+    expected/test_report/annotation.expected.corrected)
+   (diff?
+    expected/test_report/compact.expected
+    expected/test_report/compact.expected.corrected)
+   (diff?
+    expected/test_report/compact-ansi.expected
+    expected/test_report/compact-ansi.expected.corrected)
+   (diff?
+    expected/test_report/endings.expected
+    expected/test_report/endings.expected.corrected)
+   (diff?
+    expected/test_report/mutation.expected
+    expected/test_report/mutation.expected.corrected)
+   (diff?
+    expected/test_report/rows.expected
+    expected/test_report/rows.expected.corrected)
+   (diff?
+    expected/test_report/timelines.expected
+    expected/test_report/timelines.expected.corrected)
+   (diff?
+    expected/test_report/verbose.expected
+    expected/test_report/verbose.expected.corrected)
+   (diff?
+    expected/test_report/verbose-ansi.expected
+    expected/test_report/verbose-ansi.expected.corrected))))
 
 (library
  (name gallery)

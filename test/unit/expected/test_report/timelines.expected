@@ -1,0 +1,97 @@
+=== a compact run commits a block when its test finishes
+--- Run_started, four tests
+--- Test_started ok
+--- Test_finished ok, a pass
+--- Test_started first
+--- Test_finished first, a failure
+s: 4 tests
+──────────────────────── failures ────────────────────────
+  FAIL  first
+    boom
+--- Test_finished second, a failure
+
+  FAIL  second
+    boom
+--- finish, a fixture release failed
+
+  FAIL  fixture release
+    [release] test/t.ml:4
+    db: release raised Exit
+──────────────────────────────────────────────────────────
+
+1 passed, 3 failed, 1 not run in 4.2ms.
+
+=== under -v every result commits its row, a failure its block under it
+--- Run_started, four tests
+s: 4 tests
+--- Test_started ok
+--- Test_finished ok, a pass
+  PASS  ok                                         0.2ms
+--- Test_started first
+--- Test_finished first, a failure
+  FAIL  first                                      0.2ms
+    boom
+
+--- Test_finished second, a failure
+  FAIL  second                                     0.2ms
+    boom
+
+--- finish, a fixture release failed
+  FAIL  fixture release
+    [release] test/t.ml:4
+    db: release raised Exit
+
+1 passed, 3 failed, 1 not run in 4.2ms.
+
+=== under -v the live line names the test and its position
+--- header
+mylib: 2 tests
+--- begin_test
+«erase»«d|  Running [1/2] math › addition…» [no newline]
+--- result
+«erase»  «g|PASS»  math › addition                            «d|0.2ms»
+
+=== a compact run's live line draws from column zero and never brings the header out
+--- header
+--- begin_test
+«erase»«d|  [1/2] math › addition…» [no newline]
+--- a pass
+--- begin_test
+«erase»«erase»«d|  [2/2] users › sessions after login…» [no newline]
+
+=== the live line is erased before a block and redrawn under it
+--- header
+--- begin_test
+«erase»«d|  [1/2] bad…» [no newline]
+--- a failure
+«erase»mylib: 2 tests
+«d|──────────────────────── failures ────────────────────────»
+  «r|FAIL»  «b|bad»
+    b
+--- begin_test
+«erase»«d|  [2/2] math › addition…» [no newline]
+--- a pass
+
+=== a live name's control bytes print escaped
+--- header
+--- begin_test
+«erase»«d|  [1/2] first\x0ahalf…» [no newline]
+
+=== a compact run's notice is the live line, erased before the summary
+--- header
+--- a pass
+--- begin_test
+«erase»«d|  [2/2] b…» [no newline]
+--- note
+«erase»«d|releasing db» [no newline]
+--- finish
+«erase»s: «g|1 passed», 1 not run in 10ms.
+
+=== under -v every event has its line
+--- Run_started
+s: 1 test
+--- Test_started
+--- Test_finished
+  PASS  t                                          0.2ms
+--- Fixture_release
+releasing db
