@@ -3287,12 +3287,16 @@ let unrecognised_store =
 let unreadable_store =
   let dir = Scratch.dir "windtrap-unreadable-store-" in
   Os.mkdir_p (Filename.concat dir "suite/.last-failed");
-  Recorded.escaped
-    (with_store dir ~filter:[ "a" ] [ test "a" ignore; test "b" ignore ])
+  let suite = [ test "a" ignore; test "b" ignore ] in
+  [
+    with_store dir ~filter:[ "a" ] suite; with_store dir ~failed_only:true suite;
+  ]
 
-let a_store_that_cannot_be_read_is_ignored () =
+let a_store_that_cannot_be_read_reads_as_empty () =
   if Sys.win32 then skip ~reason:"a directory does not open as a file here" ();
-  equal (option exn) None unreadable_store
+  equal (list string)
+    [ "exit 0: a"; "refused: no recorded failures" ]
+    (List.map ran unreadable_store)
 
 let failed_runs_the_recorded_failures () =
   equal (list string)
@@ -3336,9 +3340,8 @@ let store =
           equal (list string)
             [ "refused: no recorded failures"; "exit 1: t" ]
             (List.map ran unrecognised_store));
-      xfail ~reason:"read_store catches the error of opening, not of reading"
-        (test "a store that cannot be read is ignored by a partial run"
-           a_store_that_cannot_be_read_is_ignored);
+      test "a store that cannot be read reads as empty"
+        a_store_that_cannot_be_read_reads_as_empty;
     ]
 
 (* Exits and backtraces *)

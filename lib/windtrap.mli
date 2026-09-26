@@ -1210,7 +1210,8 @@ val run : ?argv:string array -> string -> test list -> int
 
     [--failed] selects the last failed tests. The tests a run executes update
     that record, and a test it did not execute, under a filter or after [-x],
-    keeps its entry.
+    keeps its entry. A run never fails because it cannot read or write the
+    record, and a record it cannot read counts as empty.
 
     Beyond the mirrors {!run} reads [WINDTRAP_PROJECT_ROOT] (see
     {{!section-baselines}baselines}), [CI], [GITHUB_ACTIONS], [INSIDE_DUNE],

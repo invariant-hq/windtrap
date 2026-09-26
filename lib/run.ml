@@ -593,31 +593,32 @@ let store_path (config : config) ~suite =
     (Filename.concat config.log_dir (Os.sanitize_component suite))
     ".last-failed"
 
+(* A directory opens as a file on POSIX systems, and the first read raises
+   [Sys_error], so a read is guarded as the opening is. *)
 let read_store path =
-  match open_in_bin path with
-  | exception Sys_error _ -> []
-  | ic ->
-      Fun.protect
-        ~finally:(fun () -> close_in_noerr ic)
-        (fun () ->
+  let entries ic =
+    match input_line ic with
+    | exception End_of_file -> []
+    | magic when not (String.equal magic store_magic) -> []
+    | _magic ->
+        let seen = Hashtbl.create 16 in
+        let rec lines acc =
           match input_line ic with
-          | exception End_of_file -> []
-          | magic when not (String.equal magic store_magic) -> []
-          | _magic ->
-              let seen = Hashtbl.create 16 in
-              let rec lines acc =
-                match input_line ic with
-                | exception End_of_file -> List.rev acc
-                | line -> (
-                    match Scanf.unescaped line with
-                    | "" -> lines acc
-                    | entry when Hashtbl.mem seen entry -> lines acc
-                    | entry ->
-                        Hashtbl.replace seen entry ();
-                        lines (entry :: acc)
-                    | exception _ -> lines acc)
-              in
-              lines [])
+          | exception End_of_file -> List.rev acc
+          | line -> (
+              match Scanf.unescaped line with
+              | "" -> lines acc
+              | entry when Hashtbl.mem seen entry -> lines acc
+              | entry ->
+                  Hashtbl.replace seen entry ();
+                  lines (entry :: acc)
+              | exception _ -> lines acc)
+        in
+        lines []
+  in
+  match In_channel.with_open_bin path entries with
+  | entries -> entries
+  | exception Sys_error _ -> []
 
 let write_store path entries =
   let buffer = Buffer.create 256 in

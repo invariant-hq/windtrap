@@ -694,7 +694,9 @@ val list_selection :
     survives. A run that executed the whole declared suite also drops the
     entries of paths that no longer exist. The format is not stable, and a file
     that is not recognised reads as empty. Every I/O error is ignored, because
-    the store only feeds [config.failed_only]. *)
+    the store only feeds [config.failed_only]. A store that cannot be opened or
+    read, a directory at its path for example, reads as empty, and one that
+    cannot be written keeps its content. *)
 
 (** {2:exits Exits and backtraces}
 

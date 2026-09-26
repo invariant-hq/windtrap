@@ -459,6 +459,8 @@ Each one is also listed under its area below.
   `<suite>.xml`.
 - (breaking) `CI` and `GITHUB_ACTIONS` count as unset when empty or `0`,
   `false`, `no`, `n` or `off`.
+- A run never fails because it cannot read or write the `--failed`
+  record, and a record it cannot read counts as empty.
 - An unknown long option names the nearest flag, as in
   `windtrap: unknown option '--juint'; did you mean '--junit'?`.
 - A run with nothing to show prints one line, such as
