@@ -2,9 +2,11 @@ ppx_windtrap's expansion as the compiler types it. The expansion applies
 Expect_test_config.run at type (unit -> unit) -> unit, so a run of
 another type is a type error at the test that names it. pp.exe writes
 the expansion as an AST, and the compiler types it against the installed
-libraries:
+libraries, found in dune's OCAMLPATH, whose separator is ; on Windows:
 
-  $ lib=$INSIDE_DUNE/../install/default/lib
+  $ sep=:; if [ "$(ocamlc -config-var os_type)" = Win32 ]; then sep=';'; fi
+  $ lib=$(IFS=$sep; for d in $OCAMLPATH; do
+  >   if [ -d "$d/ppx_windtrap/runtime" ]; then echo "$d"; break; fi; done)
   $ ../pp.exe -apply ppx_windtrap --impl ./wrong_run.ml --dump-ast -o wrong_run.ast
   $ ocamlc -color never -stop-after typing -w -a \
   >   -I "$lib/windtrap" -I "$lib/ppx_windtrap/runtime" -impl wrong_run.ast
