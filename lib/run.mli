@@ -411,7 +411,11 @@ val property :
 (** [property gen law] is the body of the test that {!prop} declares, [loc]
     being its declaration site. It returns [()] on a [Pass] and raises the
     failure of any other outcome as a [Failure.Check_failure] (see {!prop}).
-    [cost] is {!Property.run}'s. Raises as {!current_frame} does. *)
+    [cost] is {!Property.run}'s. Raises as {!current_frame} does.
+
+    What the law raises reaches the engine through windtrap's frames alone, so
+    its backtrace ends on the law's own frames once
+    {!Failure.backtrace_to_string} drops the trailing run of windtrap's. *)
 
 val without_labels : (unit -> 'a) -> 'a
 (** [without_labels fn] is [fn ()] with the labels of the running law going to a

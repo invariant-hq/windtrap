@@ -3664,7 +3664,13 @@ let[@inline never] raise_from_helper () = raise Boom
 
 let recording_on, deep_raise =
   Printexc.record_backtrace false;
-  let r = Recorded.execute [ test "deep raise" raise_from_helper ] in
+  let r =
+    Recorded.execute
+      [
+        test "deep raise" raise_from_helper;
+        prop "deep raise in a law" gen (fun _ -> raise_from_helper ());
+      ]
+  in
   (Printexc.backtrace_status (), r)
 
 let backtrace_of r path =
@@ -3672,6 +3678,12 @@ let backtrace_of r path =
     (fun (f : Failure.t) ->
       match f.kind with
       | Failure.Raise { backtrace = Some bt; _ } -> Some bt.kept
+      | Failure.Property
+          {
+            inner = Some { kind = Failure.Raise { backtrace = Some bt; _ }; _ };
+            _;
+          } ->
+          Some bt.kept
       | _ -> None)
     (failure r path)
 
@@ -3757,6 +3769,11 @@ let exits =
       test "an uncaught exception carries the backtrace of its raise" (fun () ->
           contains ~sub:"raise_from_helper"
             (backtrace_of deep_raise [ "deep raise" ]));
+      test "a law's uncaught exception ends its backtrace on the law's frames"
+        (fun () ->
+          let backtrace = backtrace_of deep_raise [ "deep raise in a law" ] in
+          contains ~sub:"raise_from_helper" backtrace;
+          not_contains ~sub:"Fun.protect" backtrace);
     ]
 
 (* Executing *)

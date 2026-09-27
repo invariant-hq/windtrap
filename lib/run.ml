@@ -542,12 +542,17 @@ let property ?loc ?count ?max_discard ?examples ?summary ?cost gen law =
     | Some n -> Some (`Declared n)
     | None -> Option.map (fun n -> `Config n) config.prop_count
   in
+  (* Not [Fun.protect], whose frames would end the backtrace of every law
+     that raises, after the law's own. *)
   let run_law context value =
     let enclosing = frame.prop in
     frame.prop <- Some context;
-    Fun.protect
-      ~finally:(fun () -> frame.prop <- enclosing)
-      (fun () -> law value)
+    match law value with
+    | () -> frame.prop <- enclosing
+    | exception exn ->
+        let backtrace = Printexc.get_raw_backtrace () in
+        frame.prop <- enclosing;
+        Printexc.raise_with_backtrace exn backtrace
   in
   let fail stats failure =
     frame.prop_stats <- Some stats;
