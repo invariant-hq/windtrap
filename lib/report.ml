@@ -248,31 +248,28 @@ let label_table t (s : Property.stats) =
 (* The heading counts every byte before the first line shown: what the
    capture cut and the lines the cap drops. *)
 let captured_output t (tail : Failure.tail) =
-  if not (tail.text = "" && tail.omitted_bytes = 0) then begin
-    let total = List.length (Text.split_lines tail.text) in
-    let cut, kept =
-      Text.window ~lines:Sections.max_lines ~bytes:max_int Tail tail.text
-    in
-    let shown = Text.split_lines kept in
-    let n = List.length shown in
-    let heading =
-      if tail.omitted_bytes > 0 then
-        strf "captured output (last %d line%s, %d earlier bytes omitted):" n
-          (plural n) (tail.omitted_bytes + cut)
-      else if n < total then
-        strf "captured output (last %d of %d lines):" n total
-      else strf "captured output (%d line%s):" total (plural total)
-    in
-    put t [ plain indent; styled `Faint heading ];
-    List.iter (fun line -> put t [ plain (indent ^ "  " ^ line) ]) shown;
-    Option.iter
-      (fun path ->
-        put t
-          [
-            plain indent; styled `Faint ("full log: " ^ Os.display_artifact path);
-          ])
-      tail.log_path
-  end
+  let total = List.length (Text.split_lines tail.text) in
+  let cut, kept =
+    Text.window ~lines:Sections.max_lines ~bytes:max_int Tail tail.text
+  in
+  let shown = Text.split_lines kept in
+  let n = List.length shown in
+  let heading =
+    if tail.omitted_bytes > 0 then
+      strf "captured output (last %d line%s, %d earlier bytes omitted):" n
+        (plural n) (tail.omitted_bytes + cut)
+    else if n < total then strf "captured output (last %d of %d lines):" n total
+    else strf "captured output (%d line%s):" total (plural total)
+  in
+  put t [ plain indent; styled `Faint heading ];
+  List.iter (fun line -> put t [ plain (indent ^ "  " ^ line) ]) shown;
+  Option.iter
+    (fun path ->
+      put t
+        [
+          plain indent; styled `Faint ("full log: " ^ Os.display_artifact path);
+        ])
+    tail.log_path
 
 (* Sibling subtests, or a body and its teardown, fail independently: each
    failure has its entry, and the hints are the whole test's. *)

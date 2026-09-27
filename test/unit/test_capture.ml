@@ -528,7 +528,7 @@ let truncated () =
         let after = Capture.output cap in
         [ read; after; tail_row (Capture.output_tail cap) ])
   in
-  equal (list string) [ "abcdef"; ""; "\"\", 0 omitted" ] rows
+  equal (list string) [ "abcdef"; ""; "none" ] rows
 
 (* The tail after an attempt that wrote [read], read it with [output], then
    wrote [unread]: its length, the bytes it omits, whether it is the end of
@@ -547,9 +547,16 @@ let tail_of ~read unread =
     (if text = "" || Char.code text.[0] land 0xC0 <> 0x80 then "on a code point"
      else "inside a sequence")
 
+(* The tail after an attempt that wrote [read] and read it with [output]. *)
+let silent_after ~read =
+  let cap, _ = state () in
+  attempt cap (fun () ->
+      print_string read;
+      ignore (Capture.output cap));
+  tail_row (Capture.output_tail cap)
+
 let after_cursor =
   [
-    ("nothing after the last output", "", "0 bytes, 0 omitted");
     ("5 bytes after it", "after", "5 bytes, 0 omitted");
     ("8,292 bytes after it", String.make 8_292 'x', "8192 bytes, 100 omitted");
   ]
@@ -618,6 +625,12 @@ let reading =
           equal string
             (row ^ ", the end, on a code point")
             (tail_of ~read:"compared" unread));
+      cases "output_tail is None when nothing was written after the cursor"
+        ~name:fst
+        [
+          ("an attempt that wrote nothing", ""); ("all of it read", "compared");
+        ]
+        (fun (_, read) -> equal string "none" (silent_after ~read));
       cases "output_tail keeps at most 8,192 bytes, cut on a code point"
         ~name:(fun (name, _, _) -> name)
         bounded
@@ -625,7 +638,7 @@ let reading =
       test "the tail names the log, which holds every byte" whole_log;
       test "output_tail inside an attempt misses what a buffer holds" (fun () ->
           let cap, _ = state () in
-          equal string "\"\", 0 omitted"
+          equal string "none"
             (attempt cap (fun () ->
                  print_string "abc";
                  tail_row (Capture.output_tail cap))));

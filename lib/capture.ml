@@ -160,7 +160,8 @@ let output ?__POS__ t =
 
 (* No drain: the attempt drained its buffers into the log before the real
    descriptors came back, and a drain now would flush those, whose failure is
-   no fact about the test. *)
+   no fact about the test. An attempt that wrote nothing after the cursor has
+   no tail, so no renderer points at a log that holds nothing unread. *)
 let output_tail = function
   | Disabled -> None
   | Capturing c ->
@@ -184,4 +185,6 @@ let output_tail = function
         Failure.tail ~log_path:path ~omitted_bytes:(start - unread + skip) text
       in
       Option.bind c.log (fun path ->
-          Result.to_option (read_log path (tail path)))
+          match read_log path (tail path) with
+          | Ok { text = ""; omitted_bytes = 0; _ } | Error _ -> None
+          | Ok tail -> Some tail)

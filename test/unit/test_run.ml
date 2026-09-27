@@ -13,6 +13,7 @@ module Failure = Windtrap.Private.Failure
 module Loc = Windtrap.Private.Loc
 module Os = Windtrap.Private.Os
 module Property = Windtrap.Private.Property
+module Report_junit = Windtrap.Private.Report_junit
 module Run = Windtrap.Private.Run
 module Seed = Windtrap.Private.Seed
 module Test_tree = Windtrap.Private.Test_tree
@@ -2497,6 +2498,16 @@ let streamed =
     ~config:(fun c -> { c with stream = true })
     [ test "fails quietly" (fun () -> fail "boom") ]
 
+let silent =
+  Recorded.execute
+    [
+      test "prints nothing" (fun () -> fail "quiet");
+      test "reads what it printed" (fun () ->
+          print_string "seen\n";
+          ignore (output ());
+          fail "after reading");
+    ]
+
 let uncapturable =
   let root = Scratch.dir "windtrap-uncapturable-" in
   let file = Filename.concat root "a file" in
@@ -2623,6 +2634,18 @@ let no_tail_under_stream () =
     [ None ]
     (List.map tail (Recorded.failures streamed [ "fails quietly" ]))
 
+let no_tail_without_unread_output () =
+  equal
+    (list (option string))
+    [ None; None ]
+    (List.concat_map
+       (fun path -> List.map tail (Recorded.failures silent [ path ]))
+       [ "prints nothing"; "reads what it printed" ]);
+  let junit = Filename.concat (Scratch.dir "windtrap-silent-") "junit.xml" in
+  Report_junit.write ~invocation:`Mirrors ~suite:"suite" ~duration:0.
+    ~results:(rows_of silent) ~release_failures:[] junit;
+  not_contains ~sub:"system-out" (require_some (contents junit))
+
 let an_uncapturable_test_fails_alone () =
   starts_with ~affix:"body raise" (line (failure uncapturable [ "first" ]));
   equal (list string) [ "first"; "second" ] (Recorded.executed uncapturable)
@@ -2666,6 +2689,10 @@ let attempts =
       test "a retried test's tail is its last attempt's"
         a_retried_tail_is_the_last_attempt;
       test "no failure carries a tail under stream" no_tail_under_stream;
+      test
+        "a failure with no unread output carries no tail, and its JUnit \
+         testcase no system-out"
+        no_tail_without_unread_output;
       test "a capture that cannot be set up fails the body, and the run goes on"
         an_uncapturable_test_fails_alone;
       cases "a failure without a location is located"
