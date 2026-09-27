@@ -137,6 +137,7 @@ let ended f =
   | exception e -> Printexc.to_string e
 
 let always _ = true
+let is_negative_zero v = v = 0. && Float.sign_bit v
 
 let within w low high v =
   at_least w ~than:low v;
@@ -244,6 +245,14 @@ let kept =
       ( "float_range 2. 5.",
         (fun () -> Gen.float_range 2. 5.),
         fun _ -> within float_exact 2. 5. );
+    Kept
+      ( "float_range (-1.) (-0.), never 0.",
+        (fun () -> Gen.float_range (-1.) (-0.)),
+        fun _ -> within float_exact (-1.) (-0.) );
+    Kept
+      ( "float, finite",
+        (fun () -> Gen.float),
+        fun _ -> satisfies ~claim:"finite" float_exact Float.is_finite );
     Kept
       ( "char_range 'b' 'y'",
         (fun () -> Gen.char_range 'b' 'y'),
@@ -467,7 +476,7 @@ let replayed_values () =
        {|
     int: 3814646949886580551
     nat: 254
-    float: 9.32137030625773e+307
+    float: 3.626460398842157e-116
     string_of: "evmm"
     list of small_int: [1809; 5; -31; -839; 0]
     option, one_of and frequency: (Some (false), 9, 8)
@@ -562,6 +571,14 @@ let numbers_shrink =
         "0n" );
     Shrinks
       ("float", (fun () -> Gen.float), (fun v -> not (Float.equal v 0.)), "0.");
+    Shrinks ("float, from -0.", (fun () -> Gen.float), is_negative_zero, "0.");
+    Shrinks
+      ("any_float, from nan", (fun () -> Gen.any_float), Float.is_nan, "0.");
+    Shrinks
+      ( "any_float, from neg_infinity",
+        (fun () -> Gen.any_float),
+        Float.equal Float.neg_infinity,
+        "0." );
     Shrinks
       ("float_range 2. 5.", (fun () -> Gen.float_range 2. 5.), always, "2.");
     Shrinks
@@ -575,10 +592,10 @@ let numbers_shrink =
         always,
         "0." );
     Shrinks
-      ( "float_range (-1.) (-0.), to 0.",
+      ( "float_range (-1.) (-0.), to -0.",
         (fun () -> Gen.float_range (-1.) (-0.)),
         always,
-        "0." );
+        "-0." );
   ]
 
 let number_literals =
@@ -596,6 +613,7 @@ let number_literals =
     Literal
       ("nativeint_range", (fun () -> Gen.nativeint_range (-7n) 7n), strf "%ndn");
     Literal ("float", (fun () -> Gen.float), exact);
+    Literal ("any_float", (fun () -> Gen.any_float), exact);
     Literal ("float_range", (fun () -> Gen.float_range (-1e6) 1e6), exact);
   ]
 
@@ -705,11 +723,48 @@ let corners =
         (fun () -> Gen.nativeint_range 5n Nativeint.max_int),
         nativeint,
         [ 5n; 6n; Nativeint.max_int ] );
+    Corners
+      ( "float",
+        (fun () -> Gen.float),
+        float_exact,
+        [
+          0.;
+          -0.;
+          1.;
+          -1.;
+          Float.succ 0.;
+          Float.pred 0.;
+          Float.min_float;
+          -.Float.min_float;
+          Float.max_float;
+          -.Float.max_float;
+        ] );
+    Corners
+      ( "any_float",
+        (fun () -> Gen.any_float),
+        float_exact,
+        [ Float.nan; Float.infinity; Float.neg_infinity; -0.; Float.max_float ]
+      );
+    Corners
+      ( "float_range (-1.) 1.",
+        (fun () -> Gen.float_range (-1.) 1.),
+        float_exact,
+        [ -1.; Float.pred 0.; -0.; 0.; Float.succ 0.; 1. ] );
+    Corners
+      ( "float_range 2. 5.",
+        (fun () -> Gen.float_range 2. 5.),
+        float_exact,
+        [ 2.; Float.succ 2.; 5. ] );
+    Corners
+      ( "float_range (-1.) (-0.)",
+        (fun () -> Gen.float_range (-1.) (-0.)),
+        float_exact,
+        [ -1.; Float.pred 0.; -0. ] );
   ]
 
 (* One draw in ten is a corner, each corner equally likely, so a corner of
-   [int] comes about once in 50 draws; 2000 draws miss one with probability
-   below 1e-17. *)
+   [int] comes about once in 50 draws, and one of the ten of [float] once in
+   100; 2000 draws miss one with probability below 1e-17 and 1e-8. *)
 let reaches_its_corners (Corners (_, gen, w, corners)) =
   let values = samples (gen ()) 2_000 in
   let drawn c = List.exists (Testable.equal w c) values in
@@ -762,7 +817,8 @@ let wide_int64_range () =
   equal (float 0.02) 0.34 (share values (fun v -> Int64.compare v 0L < 0))
 
 (* Half the finite bit patterns are negative, and half have a magnitude of at
-   least 1; a float uniform over the reals would have nearly none below 1. *)
+   least 1; a float uniform over the reals would have nearly none below 1. The
+   corners, a tenth of the draws, are half negative and 4 in 10 at least 1. *)
 let float_bits () =
   let values = samples Gen.float 4_000 in
   equal int 0
@@ -782,14 +838,36 @@ let float_cut () =
   at_most int ~than:15 (greatest counts);
   mem int 15 counts
 
+(* [-0. +. 0.] is [0.], so a uniform draw at [high] must take its sign. *)
 let float_edges () =
   let draw gen = value (sample gen 0) in
   equal float_exact 1.5 (draw (Gen.float_range 1.5 1.5));
   satisfies ~claim:"finite" float_exact Float.is_finite
     (draw (Gen.float_range 0. Float.max_float));
-  equal int 0
-    (List.length
-       (List.filter (Float.equal 2.) (samples (Gen.float_range 1. 2.) 1_000)))
+  equal (list float_exact)
+    (List.init 100 (fun _ -> -0.))
+    (samples (Gen.float_range (-0.) (-0.)) 100)
+
+(* A range draws the zero of its bounds' sign: [float_range 0. 10.] states a
+   non-negative domain, and [float_range (-1.) (-0.)] a non-positive one. *)
+let zero_of_its_sign () =
+  let signs gen =
+    List.sort_uniq Bool.compare
+      (List.map Float.sign_bit
+         (List.filter (fun v -> v = 0.) (samples gen 2_000)))
+  in
+  equal (list bool) [ false ] (signs (Gen.float_range 0. 10.));
+  equal (list bool) [ true ] (signs (Gen.float_range (-1.) (-0.)))
+
+(* One draw in ten is not finite, each of the three values equally likely. *)
+let any_float_share () =
+  let values = samples Gen.any_float 20_000 in
+  equal
+    (list (float 0.01))
+    [ 0.1; 0.1 /. 3. ]
+    [
+      share values (fun v -> not (Float.is_finite v)); share values Float.is_nan;
+    ]
 
 let numbers =
   group "Numbers"
@@ -823,14 +901,21 @@ let numbers =
         nat_strata;
       test "small_int draws in [-9_999;9_999], either sign" small_int_range;
       test "nativeint draws over the whole native word" nativeint_word;
-      cases "an integer generator draws each of its corners"
+      cases "a number generator draws each of its corners"
         ~name:(fun (Corners (name, _, _, _)) -> name)
         corners reaches_its_corners;
       test "one draw in ten is a corner" corner_share;
-      test "float draws finite floats, uniformly over their bit patterns"
+      test
+        "float draws finite floats, uniformly over their bit patterns apart \
+         from its corners"
         float_bits;
+      test
+        "any_float draws nan, infinity or neg_infinity one draw in ten, each \
+         equally likely"
+        any_float_share;
       test "a float node has at most 15 candidates" float_cut;
       test "float_range draws inside its edges" float_edges;
+      test "float_range draws the zero of its bounds' sign" zero_of_its_sign;
     ]
 
 (* Unit, booleans, characters and strings *)

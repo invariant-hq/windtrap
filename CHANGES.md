@@ -24,6 +24,17 @@
   same corners and shrinking; 0.2.0 had removed the first two.
 - `Gen.uchar` draws a Unicode scalar value, each UTF-8 length equally
   likely, and prints as `Uchar.of_int 0xE9`.
+- `Gen.float` and `Gen.float_range` draw a corner case with probability
+  0.1: for `Gen.float`, `0.`, `-0.`, `1.`, `-1.` and, of each sign, the
+  least subnormal, the least normal and the greatest finite float; for
+  a range, its bounds, its point closest to 0 and that point's
+  neighbours, and `-0.` when `low < 0. <= high`. A property that passed
+  under 0.2.0 can fail on one of them, and a `replay:` line that 0.2.0
+  printed for a property over a float draws other values.
+- `-0.` shrinks to `0.`, and a range whose `high` is `-0.` shrinks
+  toward `-0.`, where 0.2.0 shrank it toward `0.`.
+- `Gen.any_float` generates `nan`, `infinity` and `neg_infinity` beside
+  the finite floats.
 
 ### Stateful testing
 

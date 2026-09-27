@@ -87,6 +87,7 @@ spelling this page does not list is unchanged. The entries of
 - `Gen.fix`, `Gen.delay` → recursion through `let*` over `Gen.nat`
 - `Gen.no_shrink`, `Gen.add_shrink_invariant`, `Gen.make_primitive`,
   `Gen.find` → removed
+- `Gen.float` for NaN and the infinities → `Gen.any_float`
 - `?origin` on the range generators, `?ratio` on `Gen.option`,
   `Gen.result` and `Gen.either` → removed; `Gen.frequency` weighs
   choices

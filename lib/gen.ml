@@ -279,8 +279,15 @@ let towards (type n) (module N : Number with type t = n) origin x =
 
 let int_towards origin = towards (module Int) origin
 
-(* Halving floats yields values without end short of [x]. *)
-let float_towards origin x = Seq.take 15 (towards (module Float) origin x)
+(* Halving floats yields values without end short of [x]. [Float.equal]
+   equates the zeros, so the zero of the other sign gets the origin as its
+   one candidate here; a non-finite [x] gets it from [towards]. *)
+let float_towards origin x =
+  if not (Float.equal origin x) then
+    Seq.take 15 (towards (module Float) origin x)
+  else if Int64.equal (Int64.bits_of_float origin) (Int64.bits_of_float x) then
+    Seq.empty
+  else Seq.return origin
 
 let rec tree_towards node shrink x =
   Shrink_tree.make ~root:(node x)
@@ -416,33 +423,71 @@ let nativeint_range low high =
     (module Nativeint)
     ~name:"Gen.nativeint_range" pp_nativeint uniform low high
 
-(* Rejection keeps the bit-pattern distribution; about 0.05% of the patterns
-   are not finite. *)
-let float =
+(* The corners are the zeros, [1.] and [-1.], and of each sign the least
+   subnormal, the least normal and the greatest finite float. Rejection keeps
+   the bit-pattern distribution; about 0.05% of the patterns are not finite. *)
+let draw_float =
   let rec finite state =
     let value, state = word Int64.float_of_bits state in
     if Float.is_finite value then (value, state) else finite state
   in
-  primitive Pp.float_exact (float_towards 0.0) finite
+  with_corners
+    [
+      0.0;
+      -0.0;
+      1.0;
+      -1.0;
+      Float.succ 0.0;
+      Float.pred 0.0;
+      Float.min_float;
+      -.Float.min_float;
+      Float.max_float;
+      -.Float.max_float;
+    ]
+    finite
 
+let float = primitive Pp.float_exact (float_towards 0.0) draw_float
+
+let any_float =
+  primitive Pp.float_exact (float_towards 0.0)
+    (with_corners [ Float.nan; Float.infinity; Float.neg_infinity ] draw_float)
+
+(* A range whose [high] is [-0.] has [-0.] as its origin, so it shrinks
+   toward a value of its own sign. The corners are ordered by their bits,
+   which tell the zeros apart; [float_range 0. 1.] means no [-0.], though
+   [0. <= -0.] holds. *)
 let float_range low high =
-  let origin = if low > 0.0 then low else if high < 0.0 then high else 0.0 in
+  let origin =
+    if low > 0.0 then low else if Float.sign_bit high then high else 0.0
+  in
+  let inside x = low <= x && x <= high in
+  let corners =
+    List.sort_uniq
+      (fun a b -> Int64.compare (Int64.bits_of_float a) (Int64.bits_of_float b))
+      (List.filter inside
+         [ low; high; origin; Float.pred origin; Float.succ origin ]
+      @ if low < 0.0 && 0.0 <= high then [ -0.0 ] else [])
+  in
+  let uniform state =
+    let unit_interval, state =
+      word
+        (fun bits ->
+          Int64.to_float (Int64.shift_right_logical bits 11) *. 0x1p-53)
+        state
+    in
+    (* [high -. low] can round up past the span, and the sum then past
+       [high]; it never falls below [low], whose addend is non-negative. A
+       sum equal to [high] takes [high]'s sign, as [-0. +. 0.] is [0.]. *)
+    let value = low +. (unit_interval *. (high -. low)) in
+    ((if value >= high then high else value), state)
+  in
   primitive Pp.float_exact (float_towards origin) (fun state ->
       if not (Float.is_finite low && Float.is_finite high) then
         invalid_arg "Gen.float_range: bounds must be finite";
       if high < low then invalid_arg "Gen.float_range: high < low";
       if high -. low > Float.max_float then
         invalid_arg "Gen.float_range: high -. low > max_float";
-      let unit_interval, state =
-        word
-          (fun bits ->
-            Int64.to_float (Int64.shift_right_logical bits 11) *. 0x1p-53)
-          state
-      in
-      (* [high -. low] can round up past the span, and the sum then past
-         [high]; it never falls below [low], whose addend is non-negative. *)
-      let value = low +. (unit_interval *. (high -. low)) in
-      ((if value > high then high else value), state))
+      with_corners corners uniform state)
 
 (* Unit, booleans, characters and strings *)
 

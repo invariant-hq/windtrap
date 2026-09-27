@@ -841,10 +841,11 @@ module Gen : sig
 
       {b Printing.} A counterexample prints with its generator's printer. The
       generators of base types print OCaml expressions: literals, and
-      [Uchar.of_int 0xE9] or [Bytes.of_string "…"] where the type has none. A
-      container prints only when every component prints; a choice prints as the
-      generator that drew the value. {!constant} and {!of_list} print only when
-      given [~pp]. {!map}, {!bind} and the binding operators have no printer.
+      [neg_infinity], [Uchar.of_int 0xE9] or [Bytes.of_string "…"] where no
+      literal denotes the value. A container prints only when every component
+      prints; a choice prints as the generator that drew the value. {!constant}
+      and {!of_list} print only when given [~pp]. {!map}, {!bind} and the
+      binding operators have no printer.
 
       A value that {!map} or {!bind} computed prints as its pre-image. The
       pre-image has the same shape, with each such value replaced by what it was
@@ -864,11 +865,12 @@ module Gen : sig
 
   (** {1:numeric Numbers}
 
-      {!int}, {!int32}, {!int64}, {!nativeint} and their ranges draw a corner
-      case with probability 0.1 and draw uniformly otherwise. The corners of a
-      range are its bounds, the point closest to [0] and that point's neighbours
-      inside the range. The corners of a whole type are [0], [1], [-1] and the
-      type's two extremes. *)
+      {!int}, {!int32}, {!int64}, {!nativeint}, {!float} and their ranges draw a
+      corner case with probability 0.1 and draw uniformly otherwise. The corners
+      of a range are its bounds, the point closest to [0] and that point's
+      neighbours inside the range, and [-0.] too for a float range whose [low]
+      is negative and whose [high] is not. The corners of a whole integer type
+      are [0], [1], [-1] and the type's two extremes. *)
 
   val int : int t
   (** [int] generates an integer over the whole [int] range. It shrinks toward
@@ -912,12 +914,23 @@ module Gen : sig
 
   val float : float t
   (** [float] generates a finite float from a uniform IEEE 754 bit pattern, so
-      magnitudes spread over the whole exponent range, subnormals included. It
-      shrinks toward [0.]. *)
+      magnitudes spread over the whole exponent range, subnormals included. Its
+      corners are [0.], [-0.], [1.], [-1.], and of each sign the least
+      subnormal, the least normal and the greatest finite float. Unlike {!int}
+      and {!char}, it leaves out part of its type, the non-finite values;
+      {!any_float} draws them. It shrinks toward [0.], and [-0.] shrinks to
+      [0.]. *)
+
+  val any_float : float t
+  (** [any_float] generates [nan], [infinity] or [neg_infinity] with probability
+      0.1, each equally likely, and a {!float} otherwise. A non-finite value
+      shrinks to [0.]. NaN is equal to nothing under a tolerance, so a law over
+      [any_float] compares under {!Windtrap.float_exact}. *)
 
   val float_range : float -> float -> float t
-  (** [float_range low high] generates a float in \[[low];[high]\], uniformly.
-      It shrinks toward the point of the range closest to [0.]. Sampling raises
+  (** [float_range low high] generates a finite float in \[[low];[high]\],
+      uniformly apart from its corners. It shrinks toward the point of the range
+      closest to [0.], and toward [-0.] when [high] is [-0.]. Sampling raises
       [Invalid_argument] if [high < low], if a bound is not finite, or if
       [high -. low] overflows. *)
 

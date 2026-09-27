@@ -68,8 +68,9 @@ Rules for every test:
 - A property needs a law. Without one, write `cases` over chosen
   inputs.
 - Choose inputs to break the code: empty, one element, each boundary
-  and its neighbours, duplicates, `min_int` and `max_int`, `nan`,
-  non-ASCII text, the format's own delimiters, every documented error.
+  and its neighbours, duplicates, `min_int` and `max_int`, `nan`
+  (`Gen.any_float` draws it; `Gen.float` does not), non-ASCII text,
+  the format's own delimiters, every documented error.
 - Test through the public interface. A helper is tested through the
   public value that reaches it.
 - Assert what the claim is about and nothing more: not a whole help

@@ -227,7 +227,9 @@ cases fails with `property gave up:` and its counts. A precondition on
 the value's structure belongs in the generator, built in or with
 `Gen.such_that`. `classify` and `collect` label a case, and `cover`
 fails the property when no passing case carries its label (see
-`Windtrap.cover`).
+`Windtrap.cover`). `undoes scale by k` holds only where `1. /. k` is
+finite: `float_range 0. 10.` draws `0.` and the least subnormal float
+among its corners, and their reciprocals are `infinity`.
 
 `test/test_geo.ml`:
 
@@ -238,7 +240,7 @@ let inverse =
       prop "undoes scale by k"
         Gen.(pair (float_range 0. 10.) gen_shape)
         (fun (k, s) ->
-          assume (k > 0.);
+          assume (Float.is_finite (1. /. k));
           let back = Geo.scale (1. /. k) (Geo.scale k s) in
           classify "circle" (match s with Circle _ -> true | Rect _ -> false);
           cover "rect" (match s with Rect _ -> true | Circle _ -> false);
@@ -250,13 +252,13 @@ Under `-v` the passing property prints the share of its cases under each
 label:
 
 ```
-$ dune exec examples/03-property-testing/test_geo.exe -- -v --seed s1:5b58964be30f69a8 --prop-count 1000 -f inverse
+$ dune exec examples/03-property-testing/test_geo.exe -- -v --seed s1:5b58964be30f69a8 --prop-count 1000 -f 'undoes scale'
 geo: 1 test (seed s1:5b58964be30f69a8)
-  PASS  inverse › undoes scale by k                1.0ms
+  PASS  inverse › undoes scale by k                1.7ms
     labels (1000 passing cases):
-       50.0%  circle
-       50.0%  rect
-1 passed in 1.5ms.
+       51.0%  circle
+       49.0%  rect
+1 passed in 2.3ms.
 ```
 
 A `cover` belongs where its scenario is observed. In a stateful test,
@@ -747,4 +749,5 @@ and a witness with a tolerance is never an equivalence. Float addition
 is not associative, under any tolerance. `(1e20 +. -1e20) +. 1.` is
 `1.`, and `1e20 +. (-1e20 +. 1.)` is `0.`. `float_exact` satisfies
 `Law.equivalence` and `Law.order`, with `-0.` below `0.` and every NaN
-equal to every other.
+equal to every other. Under `float_exact` the neutral element of `+.` is
+`-0.`, not `0.`, since `-0. +. 0.` is `0.`.

@@ -47,7 +47,7 @@ let inverse =
       prop "undoes scale by k"
         Gen.(pair (float_range 0. 10.) gen_shape)
         (fun (k, s) ->
-          assume (k > 0.);
+          assume (Float.is_finite (1. /. k));
           let back = Geo.scale (1. /. k) (Geo.scale k s) in
           classify "circle" (match s with Circle _ -> true | Rect _ -> false);
           cover "rect" (match s with Rect _ -> true | Circle _ -> false);

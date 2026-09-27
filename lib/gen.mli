@@ -47,22 +47,27 @@ type 'a t
 
 (** {1:numeric Numbers}
 
-    The twelve generators print OCaml literals ([3], [3l], [3L], [3n]). A finite
-    float prints as the shortest decimal that round-trips, the others as
+    The thirteen generators print OCaml literals ([3], [3l], [3L], [3n]). A
+    finite float prints as the shortest decimal that round-trips, the others as
     [infinity], [neg_infinity] and [nan].
 
-    {!int}, {!int32}, {!int64}, {!nativeint} and their ranges draw a corner case
-    with probability 0.1, each corner equally likely, and draw uniformly
-    otherwise. The corners of a range are its bounds, its origin and the
-    origin's neighbours inside the range. The corners of a whole type are [0],
-    [1], [-1] and the type's two extremes.
+    {!int}, {!int32}, {!int64}, {!nativeint}, {!float} and their ranges draw a
+    corner case with probability 0.1, each corner equally likely, and draw
+    uniformly otherwise. The corners of a range are its bounds, its origin and
+    the origin's neighbours inside the range ([Float.pred] and [Float.succ] of a
+    float origin), and [-0.] too for a float range whose [low] is negative and
+    whose [high] is not. The corners of a whole integer type are [0], [1], [-1]
+    and the type's two extremes. The corners of {!float} are [0.], [-0.], [1.],
+    [-1.], and of each sign the least subnormal, the least normal and the
+    greatest finite float.
 
     The candidates of an integer [x] with origin [o] are [o] first, then values
     that each close half of the remaining gap to [x], which is not a candidate
     itself. Every candidate lies between [o] and [x]. A candidate's own
     candidates are built the same way toward [o], so every candidate is strictly
     nearer [o] than its parent and the tree is finite in depth. Floats follow
-    the same scheme, cut at [15] candidates per node. *)
+    the same scheme, cut at [15] candidates per node, except that [-0.] has one
+    candidate, [0.], when [o] is [0.], and so has a non-finite float. *)
 
 val int : int t
 (** [int] generates an [int] over the whole range. It shrinks toward [0]. *)
@@ -109,14 +114,21 @@ val nativeint_range : nativeint -> nativeint -> nativeint t
     if [high < low]. *)
 
 val float : float t
-(** [float] generates a finite float, uniformly among the finite bit patterns.
-    It shrinks toward [0.]. *)
+(** [float] generates a finite float, uniformly among the finite bit patterns
+    apart from its corners. Unlike {!int}, it leaves out part of its type, the
+    non-finite values, which {!any_float} draws. It shrinks toward [0.]. *)
+
+val any_float : float t
+(** [any_float] generates [nan], [infinity] or [neg_infinity] with probability
+    0.1, each equally likely, and a {!float} otherwise. It shrinks toward [0.].
+*)
 
 val float_range : float -> float -> float t
-(** [float_range low high] generates a float in \[[low];[high]\], uniformly. Its
-    origin is the point of the range closest to [0.]. Sampling raises
-    [Invalid_argument] if a bound is not finite, if [high < low], or if
-    [high -. low] overflows, checked in that order. *)
+(** [float_range low high] generates a float in \[[low];[high]\], uniformly
+    apart from its corners. Its origin is the point of the range closest to
+    [0.], and [-0.] when [high] is [-0.]. Sampling raises [Invalid_argument] if
+    a bound is not finite, if [high < low], or if [high -. low] overflows,
+    checked in that order. *)
 
 (** {1:base Unit, booleans, characters and strings} *)
 
