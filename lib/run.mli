@@ -253,12 +253,17 @@ val subtest : string -> (unit -> unit) -> unit
     passes through, so a skip, a timeout or an [exit] ends the whole test, and
     an [assume] inside a subtest inside a law discards the case.
 
-    An added failure carries its label as data, in its [subtest] field and never
-    in its [msg]. The label is the name of the test, then the names of the open
-    subtests, outermost first, as in [["test"; "outer"; "inner"]]. The phase of
-    the failure stays {!Failure.Body}, in a setup and in a teardown too. Inside
-    a law the engine sees a case that passed, so the failure is not shrunk and
-    the attempt fails on the added entries. *)
+    Inside a law, where the frame has a property context, the failure is raised
+    as {!Failure.Check_failure} instead of added, so the engine fails the case
+    and shrinks it as an assertion's. The failure of an exception then has no
+    location, as {!Failure.of_fault} makes it. Every function of a stateful test
+    runs inside its law.
+
+    The failure carries its label as data, in its [subtest] field and never in
+    its [msg]. The label is the name of the test, then the names of the open
+    subtests, outermost first, as in [["test"; "outer"; "inner"]]. An enclosing
+    subtest keeps the label of a failure that an inner one raised. The phase of
+    the failure stays {!Failure.Body}, in a setup and in a teardown too. *)
 
 val check_baseline : ?loc:Loc.t -> Baseline.subject -> string -> unit
 (** [check_baseline ?loc subject actual] is {!Baseline.check} of [actual]

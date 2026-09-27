@@ -292,11 +292,11 @@ and t = {
       (** The [?msg] of the assertion, when given. For the failure of a call,
           {!Stateful} writes the label of the call before it. *)
   subtest : string list;
-      (** The label of a subtest, for a failure that {!Run.subtest} recorded:
-          the name of the test, then the names of the open subtests, outermost
-          first. It is [[]] otherwise. A renderer classifies a subtest failure
-          by this field and never by [msg], so an annotation of the user cannot
-          pass a plain failure off as one. *)
+      (** The label of a subtest, for a failure that {!Run.subtest} recorded, or
+          raised out of a law: the name of the test, then the names of the open
+          subtests, outermost first. It is [[]] otherwise. A renderer classifies
+          a subtest failure by this field and never by [msg], so an annotation
+          of the user cannot pass a plain failure off as one. *)
   output_tail : tail option;
       (** The captured output of the attempt. [None] until {!with_output_tail}.
       *)

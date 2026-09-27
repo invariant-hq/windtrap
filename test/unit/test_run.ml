@@ -688,8 +688,21 @@ let subtests, resumed, passed_through, bracket_released =
           (fun resource ->
             Run.subtest "uses" (fun () -> equal int 0 resource);
             Run.subtest "fine" ignore);
-        prop ~count:5 "law" gen (fun _ ->
-            Run.subtest "half" (fun () -> fail "nope"));
+        prop "law" gen (fun x ->
+            Run.subtest "half" (fun () -> if x > 10 then fail "nope"));
+        prop "law raises" gen (fun x ->
+            Run.subtest "raises" (fun () -> if x > 10 then raise Boom));
+        prop "nested law" gen (fun x ->
+            Run.subtest "outer" (fun () ->
+                Run.subtest "inner" (fun () -> if x > 10 then fail "deep")));
+        stateful "stateful"
+          [
+            command "check"
+              (Gen.int_range 0 20 @-> returns unit)
+              ignore
+              (fun x ->
+                Run.subtest "small" (fun () -> if x > 10 then fail "big"));
+          ];
         test ~timeout:0.02 "times out" (fun () ->
             Run.subtest "spins" busy_forever);
         prop ~count:5 "discards" gen (fun _ ->
@@ -772,11 +785,22 @@ let the_label_never_enters_msg () =
     [ Some "ctx"; None ]
     (List.map msg (Recorded.failures subtests [ "nested" ]))
 
-let a_subtest_in_a_law_bypasses_the_engine () =
-  equal (option int) (Some 5) (cases_run subtests [ "law" ]);
-  equal (list string)
-    (List.init 5 (fun _ -> "body message in law/half"))
-    (lines subtests [ "law" ])
+(* The shrunk counterexample of a law that failed, and the failure of the law
+   on it. *)
+let shrunk r path =
+  require_match
+    (fun (f : Failure.t) ->
+      match f.kind with
+      | Failure.Property { rendered; inner = Some inner; _ } ->
+          Some (rendered.kept, line inner)
+      | _ -> None)
+    (failure r path)
+
+let a_subtest_in_a_law_fails_the_case () =
+  equal (list string) [ "body property" ] (lines subtests [ "law" ]);
+  equal (pair string string)
+    ("11", "body message in law/half")
+    (shrunk subtests [ "law" ])
 
 let a_subtest_exception_is_at_the_declaration () =
   equal
@@ -859,8 +883,25 @@ let the_running_test =
               attempts_used subtests [ "flaky" ] ));
       test "a teardown runs after a failing subtest and fails after it"
         a_teardown_follows_a_failing_subtest;
-      test "a subtest failure in a law fails the test and no case"
-        a_subtest_in_a_law_bypasses_the_engine;
+      test "a subtest failure in a law fails the case, which shrinks"
+        a_subtest_in_a_law_fails_the_case;
+      test "an exception in a subtest in a law fails the case, labelled"
+        (fun () ->
+          equal (pair string string)
+            ("11", "body raise Test_run.Boom in law raises/raises")
+            (shrunk subtests [ "law raises" ]));
+      test "an outer subtest keeps the label that an inner one raised with"
+        (fun () ->
+          equal (pair string string)
+            ("11", "body message in nested law/outer/inner")
+            (shrunk subtests [ "nested law" ]));
+      test "a subtest failure in a stateful function fails the program"
+        (fun () ->
+          equal (list string) [ "body property" ]
+            (lines subtests [ "stateful" ]);
+          equal (pair string string)
+            (" #  call\n 1  check 11", "body message in stateful/small")
+            (shrunk subtests [ "stateful" ]));
       test "a timeout passes through a subtest, unlabelled" (fun () ->
           needs_timeouts ();
           equal (list string) [ "body timeout 0.02s" ]

@@ -1569,7 +1569,9 @@ val subtest : string -> (unit -> unit) -> unit
     A {!skip}, a timeout or a call to [exit] ends the whole test, which still
     fails on what was recorded, and inside the law of a property an {!assume}
     discards the case. [-f] cannot select a subtest. Inside the law of a
-    property a subtest failure is not shrunk. *)
+    property or a function of a {!stateful} test, a failure of [fn] is not
+    recorded: it fails the case, which shrinks as any failing case does, and the
+    report names the subtest under the counterexample. *)
 
 val temp_dir : ?prefix:string -> unit -> string
 (** [temp_dir ?prefix ()] is a fresh empty directory under the system temporary

@@ -42,7 +42,7 @@ val headline : Failure.t -> string
 
 val is_subtest_failure : Failure.t -> bool
 (** [is_subtest_failure f] is [true] iff [f.subtest] is not empty, that is iff
-    [f] was recorded inside {!Run.subtest}. *)
+    [f] was recorded inside {!Run.subtest}, or raised by it inside a law. *)
 
 val labeled_msg : Failure.t -> string option
 (** [labeled_msg f] is the label of [f] in a single-line field. For a failure

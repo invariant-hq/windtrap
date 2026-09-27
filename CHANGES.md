@@ -514,7 +514,9 @@ Each one is also listed under its area below.
   scope such as `In_channel.with_open_text path` provides; a scope that
   swallows the body's failure cannot pass the test.
 - `subtest name fn` runs a named part of the current test and records
-  its failure while the rest runs.
+  its failure while the rest runs. Inside a property's law or a stateful
+  test's function, its failure fails the case, which shrinks, and the
+  report names the subtest under the counterexample.
 - `current_test ()` returns the running test's path.
 - `temp_dir ()` and `temp_file ()` make scratch paths the runner removes
   when the attempt ends.

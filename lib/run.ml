@@ -266,13 +266,16 @@ let split_last path =
   | [] -> assert false (* a case's path is never empty *)
 
 (* Inside a subtest a failure is labelled, as data: its [msg] stays the
-   user's. *)
+   user's. A failure that an inner subtest raised out of a law keeps its
+   label. *)
 let labelled frame (failure : Failure.t) =
-  if frame.subtests = [] then failure
+  if frame.subtests = [] || failure.subtest <> [] then failure
   else
     let _, name = split_last frame.path in
     { failure with subtest = name :: List.rev frame.subtests }
 
+(* In a law the case is the unit of failure: a recorded failure would leave
+   the engine a passing case, which it never shrinks or reports. *)
 let subtest name fn =
   let frame = current_frame () in
   let enclosing = frame.subtests in
@@ -284,12 +287,11 @@ let subtest name fn =
       close ();
       Printexc.raise_with_backtrace fatal backtrace
   | Ok () -> close ()
-  | Error (`Assertion failure) ->
-      add_failure frame (labelled frame failure);
-      close ()
-  | Error (`Exception (exn, backtrace)) ->
-      add_failure frame (labelled frame (uncaught frame exn backtrace));
-      close ()
+  | Error (#Failure.fault as fault) ->
+      let failure = labelled frame (Failure.of_fault fault) in
+      close ();
+      if Option.is_some frame.prop then raise (Failure.Check_failure failure)
+      else add_failure frame failure
   | Error (#Failure.control as c) ->
       close ();
       Failure.reraise c
