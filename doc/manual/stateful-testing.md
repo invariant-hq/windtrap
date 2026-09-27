@@ -2,7 +2,8 @@
 
 This page shows how to test code that keeps state across calls:
 describe its operations as commands, read the program a failure prints,
-and keep that program as a regression. Every rule is documented under
+keep that program as a regression, and test a structure shared between
+domains. Every rule is documented under
 `Windtrap.stateful` in [`lib/windtrap.mli`](../../lib/windtrap.mli).
 
 A stateful test runs the same calls on two implementations of one API
@@ -190,6 +191,9 @@ command "pop"
   Model.pop Bounded_queue.pop
 ```
 
+On several domains a command with a `~pre` runs only in a program's
+prefix (see [Testing on several domains](#testing-on-several-domains)).
+
 ## Reading a failing program
 
 A failure prints the program that its failing run executed, as a table
@@ -367,3 +371,107 @@ that surround `run`, so the suite installs the handler there:
 (* fragment: requires eio, and stores is a group of stateful tests *)
 let () = exit (Eio_main.run (fun _env -> run "store" [ stores ]))
 ```
+
+## Testing on several domains
+
+`~domains:n` tests a structure meant to be shared between domains. A
+program is then a short prefix, one branch per domain and a short
+suffix. The prefix and the suffix run on the test's domain, and the
+branches run at once, each on a domain of its own. The test fails when
+no order of the calls, each branch keeping its order and the suffix
+last, replayed on the reference, gives every outcome the system gave.
+
+One command list serves both tests. `Mpmc` is the project's own queue,
+meant to be shared, and the standard library's `Queue` is its
+reference.
+
+`test/test_mpmc.ml`:
+
+```ocaml
+open Windtrap
+
+let queue = abstract "q"
+
+let commands =
+  [
+    command "create" (Gen.unit @-> makes queue) Queue.create Mpmc.create;
+    command "push"
+      (queue ^-> Gen.int_range 0 9 @-> returns unit)
+      (fun q x -> Queue.push x q)
+      Mpmc.push;
+    command "pop" (queue ^-> returns (option int)) Queue.take_opt Mpmc.pop_opt;
+    command "length" (queue ^-> returns int) Queue.length Mpmc.length;
+  ]
+
+let mpmc =
+  group "Mpmc"
+    [
+      stateful "behaves like Queue" commands;
+      stateful ~domains:2 "behaves like Queue from two domains" commands;
+    ]
+
+let () = exit (run "mpmc" [ mpmc ])
+```
+
+Only the prefix has one state of the reference, so a command that makes
+a value or has a `~pre` runs only there: every branch and the suffix
+work on the prefix's values, and no call after the prefix is refused.
+An operation meant to be called from several domains at once, such as
+`pop_opt`, is total, and misuse there is an outcome. Each program runs
+50 times, from no value each time, and a failure prints two more
+columns: `domain`, the branch of each parallel call, and `result`, what
+the system returned in the failing run. Under the table, the closest
+order, the one whose first difference comes latest, names the call
+where it differs, above its `expected` and `actual` pair.
+
+If `Mpmc.push` forgot to take the queue's lock, two pushes at once
+could lose one:
+
+```
+$ dune exec test/test_mpmc.exe
+mpmc: 2 tests (seed s1:6f2e36ce28690db1)
+──────────────────────── failures ────────────────────────
+  FAIL  Mpmc › behaves like Queue from two domains
+    test/test_mpmc.ml:20
+      20 │ stateful ~domains:2 "behaves like Queue from two domains" commands;
+
+    counterexample (case 0, shrunk 10 steps): 4 calls, 2 in parallel
+       #  domain  call                result
+       1          let q1 = create ()
+       2  1       push q1 0           ()
+       3  2       push q1 0           ()
+       4          length q1           1
+    which failed with:
+      no order of the calls gives these results
+      the closest order, 2 then 3, differs at call 4: length q1
+      expected  2
+      actual    1
+──────────────────────────────────────────────────────────
+
+replay: dune exec test/test_mpmc.exe -- --seed s1:6f2e36ce28690db1
+1 passed, 1 failed in 197ms.
+```
+
+The invariant of an abstract type runs after the prefix's calls only:
+after the branches, several orders may explain what the system did.
+
+The contract differs from one domain's in four ways, all stated under
+`Windtrap.stateful`: a replay draws the same programs but not the same
+schedules, so it may pass; the test takes no retries and ignores a
+group's; under `--mutate` and `--arm` each program runs once on the
+test's domain, so a kill does not depend on a schedule; and a call
+still running one limit after the test's limit expired fails the test
+as timed out and stops the run after it. Without a limit, a deadlock
+hangs until interrupted, and Ctrl-C works on it.
+
+The domains need a processor each beside the test's. On fewer, a
+failure stays a failure, but fewer schedules are tried. A structure
+known to be unsafe is a negative test,
+`xfail ~reason:"not thread-safe" (stateful ~domains:2 "…" commands)`,
+which fails as an unexpected pass when it finds nothing. The branches
+run outside the handlers that surround `run`, so a system whose calls
+need an effect handler is tested on one domain. Without a model the
+system is its own reference, as in
+`command "add" (h ^-> key @-> nat @-> returns unit) Hashtbl.add Hashtbl.add`:
+the test then checks that parallel runs agree with sequential runs of
+the same code.

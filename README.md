@@ -68,7 +68,9 @@ prop "rev is an involution" Gen.(list int) (fun l ->
 `stateful` runs generated programs of calls on a system and on a
 reference, such as a model of its state or another implementation, and
 compares what each call returns or raises. A failing program is reduced
-to a shorter one and printed as the calls that ran.
+to a shorter one and printed as the calls that ran. With `~domains:2`,
+the middle of each program runs on two domains at once, and the test
+fails when no order of the calls explains the results.
 
 ```ocaml
 command "pop" (queue ^-> returns int) Model.pop Bounded_queue.pop

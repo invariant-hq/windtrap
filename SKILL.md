@@ -274,6 +274,14 @@ Mechanics: [Baselines and expect tests](https://github.com/invariant-hq/windtrap
   release removes it. A system whose calls perform effects, as Eio's
   do, runs with their handler around `run`.
 - A program that failed is kept by copying its calls into a `test`.
+- A structure shared between domains takes the same command list twice:
+  `stateful` and `stateful ~domains:2`. The second runs the middle of
+  each program on two domains at once and fails when no order of the
+  calls explains what the system returned. There a command that makes a
+  value or has a `~pre` runs only before the parallel calls, so an
+  operation meant to be called concurrently must be total. Its failure
+  does not replay its schedule; a structure known to be unsafe is
+  `xfail (stateful ~domains:2 …)`.
 
 Mechanics: [Property testing](https://github.com/invariant-hq/windtrap/blob/main/doc/manual/property-testing.md),
 [Stateful testing](https://github.com/invariant-hq/windtrap/blob/main/doc/manual/stateful-testing.md).
