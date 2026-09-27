@@ -169,6 +169,12 @@ let instance_prints =
     ("bool", Prints (bool, true, "true"));
     ("char", Prints (char, 'a', "'a'"));
     ("char, escaped", Prints (char, '\n', "'\\n'"));
+    ("uchar, U+0000", Prints (uchar, Uchar.min, "U+0000"));
+    ("uchar, ASCII", Prints (uchar, Uchar.of_char 'a', "U+0061"));
+    ("uchar, four digits", Prints (uchar, Uchar.of_int 0xE9, "U+00E9"));
+    ("uchar, uppercase", Prints (uchar, Uchar.rep, "U+FFFD"));
+    ("uchar, past U+FFFF", Prints (uchar, Uchar.of_int 0x1F600, "U+1F600"));
+    ("uchar, the greatest", Prints (uchar, Uchar.max, "U+10FFFF"));
     ("string, quoted", Prints (string, "hello", "\"hello\""));
     ("string, escaped", Prints (string, "a\nb", "\"a\\nb\""));
     ("string, on one line", Prints (string, doc, "\"alpha\\nbeta\\n\""));
@@ -197,6 +203,8 @@ let instance_equal =
     ("nativeint, unequal", Differ (nativeint, 0n, 1n));
     ("char, equal", Equal (char, 'a', 'a'));
     ("char, unequal", Differ (char, 'a', 'b'));
+    ("uchar, equal", Equal (uchar, Uchar.of_int 0xE9, Uchar.of_int 0xE9));
+    ("uchar, unequal", Differ (uchar, Uchar.of_int 0xE9, Uchar.of_int 0xE8));
     ("string, equal", Equal (string, "hello", "hello"));
     ("string, unequal", Differ (string, "hello", "world"));
     ("text, equal", Equal (text, "a\nb", "a\nb"));
@@ -213,6 +221,7 @@ let instance_orders =
     ("unit", Orders (unit, (), (), "same, same, same"));
     ("bool", Orders (bool, false, true, ordered));
     ("char", Orders (char, 'a', 'b', ordered));
+    ("uchar", Orders (uchar, Uchar.of_char 'z', Uchar.of_int 0xE9, ordered));
     ("string", Orders (string, "a", "b", ordered));
     ("text", Orders (text, "a", "b", ordered));
     ("bytes", Orders (bytes, Bytes.of_string "a", Bytes.of_string "b", ordered));

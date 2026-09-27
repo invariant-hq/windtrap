@@ -861,6 +861,10 @@ let base_literals =
     Literal ("char", (fun () -> Gen.char), strf "%C");
     Literal ("char_range 'a' 'z'", (fun () -> Gen.char_range 'a' 'z'), strf "%C");
     Literal
+      ( "uchar",
+        (fun () -> Gen.uchar),
+        fun u -> strf "Uchar.of_int 0x%X" (Uchar.to_int u) );
+    Literal
       ( "char_range '\\000' '\\031', escaped",
         (fun () -> Gen.char_range '\000' '\031'),
         strf "%C" );
@@ -899,6 +903,7 @@ let base_shrink =
         (fun () -> Gen.char_range '0' '9'),
         (fun c -> c < '9'),
         "'9'" );
+    Shrinks ("uchar", (fun () -> Gen.uchar), always, "Uchar.of_int 0x61");
     Shrinks ("string", (fun () -> Gen.string), longer, {|""|});
     Shrinks
       ( "string_of ~size:(int_range 2 5)",
@@ -916,6 +921,43 @@ let high_and_low (_, gen) =
   let codes = List.map Char.code (samples (gen ()) 300) in
   less int ~than:32 (least codes);
   greater int ~than:127 (greatest codes)
+
+let uchar_corners =
+  List.map Uchar.of_int
+    [
+      0x0;
+      0x7F;
+      0x80;
+      0x7FF;
+      0x800;
+      0xD7FF;
+      0xE000;
+      0xFFFD;
+      0xFFFF;
+      0x10000;
+      0x10FFFF;
+    ]
+
+(* Each length draws 0.9 / 4 of the values, and the corners add 2, 2, 5 and
+   2 elevenths of 0.1. *)
+let uchar_lengths () =
+  let values = samples Gen.uchar 8_000 in
+  let length n u = Uchar.utf_8_byte_length u = n in
+  equal
+    (list (float 0.015))
+    [ 0.2432; 0.2432; 0.2705; 0.2432 ]
+    (List.map (fun n -> share values (length n)) [ 1; 2; 3; 4 ])
+
+let uchar_nearer_a seed =
+  let tree = at_seed Gen.uchar seed in
+  let a = Uchar.of_char 'a' in
+  List.iter
+    (fun (parent, child) ->
+      within uchar (min a parent) (max a parent) child;
+      not_equal uchar parent child)
+    (edges tree)
+
+let past code u = Uchar.to_int u > code
 
 let base =
   group "Unit, booleans, characters and strings"
@@ -940,6 +982,27 @@ let base =
         base_shrink;
       literals "unit, a character, a string and bytes print as OCaml literals"
         base_literals;
+      test
+        "uchar draws each length of UTF-8 encoding, 1 to 4 bytes, with equal \
+         probability"
+        uchar_lengths;
+      test "uchar draws each of its corners" (fun () ->
+          reaches_its_corners
+            (Corners ("uchar", (fun () -> Gen.uchar), uchar, uchar_corners)));
+      prop
+        "a uchar's candidates lie between U+0061 and their parent, never a \
+         surrogate"
+        ~count:50 Gen.int64 uchar_nearer_a;
+      cases
+        "a search for a uchar past a code point stops at the next scalar value"
+        ~name:(fun (code, _) -> strf "past 0x%X" code)
+        [
+          (0x7F, "Uchar.of_int 0x80");
+          (0xD7FF, "Uchar.of_int 0xE000");
+          (0xFFFF, "Uchar.of_int 0x10000");
+        ]
+        (fun (code, expected) ->
+          equal string expected (shrinks_to ~failing:(past code) Gen.uchar));
     ]
 
 (* Containers *)

@@ -49,6 +49,7 @@ let () =
 let unit = Testable.unit
 let bool = Testable.bool
 let char = Testable.char
+let uchar = Testable.uchar
 let string = Testable.string
 let text = Testable.text
 let bytes = Testable.bytes

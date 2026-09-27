@@ -140,6 +140,7 @@ let pp_int64 ppf n = Pp.pf ppf "%LdL" n
 let pp_nativeint ppf n = Pp.pf ppf "%ndn" n
 let pp_unit ppf () = Pp.string ppf "()"
 let pp_char ppf c = Pp.pf ppf "%C" c
+let pp_uchar ppf u = Pp.pf ppf "Uchar.of_int 0x%X" (Uchar.to_int u)
 let pp_string ppf s = Pp.pf ppf "%S" s
 let pp_bytes ppf b = Pp.pf ppf "Bytes.of_string %S" (Bytes.to_string b)
 
@@ -473,6 +474,39 @@ let char_range low high =
       (Char.chr (Char.code low + Int64.to_int offset), state))
 
 let char = char_range '\000' '\255'
+
+(* The index of a scalar value is its rank among them: its code point, less
+   the 2048 surrogates below it. *)
+let uchar_index u =
+  let code = Uchar.to_int u in
+  if code < 0xD800 then code else code - 0x800
+
+let uchar_of_index index =
+  Uchar.of_int (if index < 0xD800 then index else index + 0x800)
+
+(* A length of UTF-8 encoding, 1 to 4 bytes, with equal probability, then a
+   value of that length uniformly: over all the scalar values, 94% are 4
+   bytes long and one draw in 8,700 is ASCII. *)
+let uchar =
+  (* The first index of each length, and the end of the last. *)
+  let starts = [| 0x0; 0x80; 0x800; 0xF800; 0x10F800 |] in
+  (* The bounds of the lengths, the edges of the surrogates and U+FFFD. *)
+  let corners =
+    List.map Uchar.of_int
+      ([ 0x0; 0x7F; 0x80; 0x7FF; 0x800; 0xFFFF; 0x10000; 0x10FFFF ]
+      @ [ 0xD7FF; 0xE000; 0xFFFD ])
+  in
+  let uniform state =
+    let length, state = Seed.below ~bound:4L state in
+    let first = starts.(Int64.to_int length) in
+    let count = starts.(Int64.to_int length + 1) - first in
+    let offset, state = Seed.below ~bound:(Int64.of_int count) state in
+    (uchar_of_index (first + Int64.to_int offset), state)
+  in
+  let origin = uchar_index (Uchar.of_char 'a') in
+  primitive pp_uchar
+    (fun u -> Seq.map uchar_of_index (int_towards origin (uchar_index u)))
+    (with_corners corners uniform)
 
 (* The element trees of [list ?size gen], which [list], [array] and
    [string_of] each assemble into their own node. *)

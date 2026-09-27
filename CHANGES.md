@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+### Assertions
+
+- `uchar` is the witness for `Uchar.t`, printed in the Unicode notation,
+  as `U+00E9`.
+
 ### Property testing
 
 - The captured output in the block of a failing property or stateful
@@ -14,6 +19,8 @@
 - `Gen.int32_range`, `Gen.int64_range` and `Gen.nativeint_range`
   generate in a range of their type as `Gen.int_range` does, with the
   same corners and shrinking; 0.2.0 had removed the first two.
+- `Gen.uchar` draws a Unicode scalar value, each UTF-8 length equally
+  likely, and prints as `Uchar.of_int 0xE9`.
 
 ### Stateful testing
 

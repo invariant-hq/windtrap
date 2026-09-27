@@ -693,6 +693,11 @@ val bool : bool testable
 val char : char testable
 (** [char] is the witness for [char], printed with [%C]. *)
 
+val uchar : Uchar.t testable
+(** [uchar] is the witness for [Uchar.t], printed in the Unicode notation: [U+]
+    and the code point in at least four uppercase hexadecimal digits, as
+    [U+00E9] and [U+1F600]. *)
+
 val string : string testable
 (** [string] is the witness for [string], printed with [%S]: quoted, escaped, on
     one line. *)
@@ -834,10 +839,11 @@ module Gen : sig
       the constraints of its generator.
 
       {b Printing.} A counterexample prints with its generator's printer. The
-      generators of base types print OCaml literals. A container prints only
-      when every component prints; a choice prints as the generator that drew
-      the value. {!constant} and {!of_list} print only when given [~pp]. {!map},
-      {!bind} and the binding operators have no printer.
+      generators of base types print OCaml expressions: literals, and
+      [Uchar.of_int 0xE9] or [Bytes.of_string "…"] where the type has none. A
+      container prints only when every component prints; a choice prints as the
+      generator that drew the value. {!constant} and {!of_list} print only when
+      given [~pp]. {!map}, {!bind} and the binding operators have no printer.
 
       A value that {!map} or {!bind} computed prints as its pre-image. The
       pre-image has the same shape, with each such value replaced by what it was
@@ -932,6 +938,15 @@ module Gen : sig
       order, uniformly. It shrinks toward the character of the range closest to
       ['a']: [char_range 'A' 'Z'] toward ['Z'], [char_range '0' '9'] toward
       ['9']. Sampling raises [Invalid_argument] if [high < low]. *)
+
+  val uchar : Uchar.t t
+  (** [uchar] generates a Unicode scalar value, never a surrogate. Its UTF-8
+      encoding is 1, 2, 3 or 4 bytes long with equal probability, so ASCII is
+      drawn as often as all the 4-byte values together. It draws a corner with
+      probability 0.1: the bounds of the lengths (U+0000, U+007F, U+0080,
+      U+07FF, U+0800, U+FFFF, U+10000, U+10FFFF), the edges of the surrogates
+      (U+D7FF, U+E000) and U+FFFD. It shrinks toward [Uchar.of_char 'a'], and
+      prints as [Uchar.of_int 0xE9]. *)
 
   val string : string t
   (** [string] is [string_of char]. *)

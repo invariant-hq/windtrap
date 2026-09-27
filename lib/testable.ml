@@ -55,6 +55,14 @@ let of_module (type a) (module M : Ordered with type t = a) ~pp =
 let unit = of_module (module Unit) ~pp:(fun ppf () -> Pp.string ppf "()")
 let bool = of_module (module Bool) ~pp:Pp.bool
 let char = of_module (module Char) ~pp:(fun ppf c -> Pp.pf ppf "%C" c)
+
+(* The notation and never the glyph, which can be invisible, combine with its
+   neighbour or be wide enough to misalign the report's marker line. *)
+let uchar =
+  of_module
+    (module Uchar)
+    ~pp:(fun ppf u -> Pp.pf ppf "U+%04X" (Uchar.to_int u))
+
 let string = of_module (module String) ~pp:(fun ppf s -> Pp.pf ppf "%S" s)
 
 (* Verbatim, so that a multi-line value reaches the report's unified diff. *)

@@ -136,6 +136,20 @@ val char_range : char -> char -> char t
     order, uniformly. Its origin is the character of the range closest to ['a'].
     Sampling raises [Invalid_argument] if [high < low]. *)
 
+val uchar : Uchar.t t
+(** [uchar] generates a Unicode scalar value, never a surrogate. The length of
+    its UTF-8 encoding, 1 to 4 bytes, is drawn with equal probability, then the
+    value uniformly among those of that length.
+
+    It draws a corner with probability 0.1, each corner equally likely: U+0000,
+    U+007F, U+0080, U+07FF, U+0800, U+FFFF, U+10000 and U+10FFFF, the bounds of
+    the lengths; U+D7FF and U+E000, the edges of the surrogates; and U+FFFD, the
+    replacement character.
+
+    It shrinks toward [Uchar.of_char 'a'], by the integer scheme over the scalar
+    values in order, so no candidate is a surrogate. It prints as
+    [Uchar.of_int 0xE9], the code point in uppercase hexadecimal. *)
+
 val string : string t
 (** [string] is [string_of char]. *)
 

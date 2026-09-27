@@ -77,6 +77,11 @@ val bool : bool t
 val char : char t
 (** [char] is the witness for [char], printed with [%C]. *)
 
+val uchar : Uchar.t t
+(** [uchar] is the witness for [Uchar.t], printed in the Unicode notation: [U+]
+    and the code point in at least four uppercase hexadecimal digits, as
+    [U+00E9] and [U+1F600]. *)
+
 val string : string t
 (** [string] is the witness for [string], printed with [%S]: quoted, escaped, on
     one line. *)
