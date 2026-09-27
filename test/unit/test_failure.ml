@@ -241,10 +241,15 @@ let interior_frames_kept () =
   contains ~sub:"Windtrap__Loc.delimit" whole;
   equal string (unwrapped whole) (Failure.backtrace_to_string raw)
 
-(* A raise in [reraise], handled in [catch]: no frame of the reader's. *)
+(* A raise in [reraise], handled in [catch]: no frame of the reader's. The
+   call goes through [Sys.opaque_identity] so that flambda cannot inline
+   [Failure.reraise] into this closure, whose frame would then join the
+   backtrace. *)
 let windtrap_frames_kept () =
   let empty = Printexc.get_callstack 0 in
-  let reraise () = Failure.reraise (`Exception (Not_found, empty)) in
+  let reraise () =
+    (Sys.opaque_identity Failure.reraise) (`Exception (Not_found, empty))
+  in
   let raw = require_match exception_backtrace (Failure.catch reraise) in
   let slots = Option.value ~default:[||] (Printexc.backtrace_slots raw) in
   let names = Array.to_list (Array.map Printexc.Slot.name slots) in
