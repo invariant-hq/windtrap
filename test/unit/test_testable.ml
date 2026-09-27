@@ -307,9 +307,12 @@ let float_prints =
   let open Testable in
   [
     ("float, 1.5", Prints (float 0.1, 1.5, "1.5"));
-    ("float, a whole value", Prints (float 0.1, 1.0, "1"));
+    ("float, a whole value", Prints (float 0.1, 1.0, "1."));
+    ("float, past the sixth digit", Prints (float 1e-9, 1.0000001, "1.0000001"));
     ("float, nan", Prints (float 0.1, Float.nan, "nan"));
     ("float_rel", Prints (float_rel ~rel:0.1 ~abs:0.1, 2.5, "2.5"));
+    ( "float_rel, a large value",
+      Prints (float_rel ~rel:1e-12 ~abs:0., 123456789.0, "123456789.") );
     ( "float_exact, 0.1 +. 0.2",
       Prints (float_exact, 0.1 +. 0.2, "0.30000000000000004") );
   ]
@@ -377,10 +380,8 @@ let exact_is_an_equivalence () =
       List.iter (fun b -> Law.equivalence Testable.float_exact (a, b)) specials)
     specials
 
-let exact_apart (a, b) =
-  not_equal string
-    (Testable.to_string Testable.float_exact a)
-    (Testable.to_string Testable.float_exact b)
+let apart w (a, b) =
+  not_equal string (Testable.to_string w a) (Testable.to_string w b)
 
 let refuses substring make = raises_match (Exn.invalid_arg ~substring) make
 
@@ -396,14 +397,17 @@ let floats =
         "float_rel holds when a = b, within abs, or within rel of the larger \
          magnitude, never on nan"
         ~name:fst rel_rows within_rel;
-      printings
-        "a float witness prints with %g, float_exact the shortest decimal"
+      printings "a float witness prints the shortest decimal that round-trips"
         float_prints;
       cases "float_exact prints two unequal floats apart" ~name:fst
         [ ("0.3 and 0.1 +. 0.2", (0.3, 0.1 +. 0.2)); ("0. and -0.", (0., -0.)) ]
-        (fun (_, pair) -> exact_apart pair);
+        (fun (_, pair) -> apart Testable.float_exact pair);
       prop "float_exact prints a float apart from the next one" Gen.float
-        (fun x -> exact_apart (x, Float.succ x));
+        (fun x -> apart Testable.float_exact (x, Float.succ x));
+      prop "float eps and float_rel print a float apart from the next one"
+        Gen.float (fun x ->
+          apart (Testable.float 1e-9) (x, Float.succ x);
+          apart (Testable.float_rel ~rel:1e-12 ~abs:0.) (x, Float.succ x));
       orderings
         "the float witnesses order with Float.compare, whatever the tolerance"
         float_orders;

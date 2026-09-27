@@ -177,6 +177,9 @@ Each one is also listed under its area below.
 - (breaking) `float_rel` raises `Invalid_argument` when a tolerance is
   negative or NaN, or when both are zero.
 - `float_rel` no longer finds an infinity equal to every float.
+- `float eps` and `float_rel` print as `float_exact` does, where 0.1
+  printed six significant digits, so a failure never shows two
+  unequal floats alike.
 - `Testable.of_equal` prints `<abstract>`, where 0.1 printed `<opaque>`.
 - `slist` prints both sides sorted, where 0.1 printed them as given.
 - `raises` and `raises_match` let a `skip`, a timeout, an intercepted

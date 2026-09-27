@@ -108,7 +108,7 @@ let float_rel ~rel ~abs =
     let max_ab = Float.max (Float.abs a) (Float.abs b) in
     a = b || diff <= abs || (Float.is_finite max_ab && diff <= rel *. max_ab)
   in
-  { pp = (fun ppf f -> Pp.pf ppf "%g" f); equal; compare = Some Float.compare }
+  { pp = Pp.float_exact; equal; compare = Some Float.compare }
 
 (* Checked here so that the refusal names [float]. [not (eps > 0.)] refuses
    NaN too. *)

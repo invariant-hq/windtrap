@@ -298,7 +298,7 @@ let equalities =
             "not equality, expected 3, actual 3" );
           ( "not_equal, under the witness's tolerance",
             (fun () -> Check.not_equal (float 0.5) 1.0 1.2),
-            "not equality, expected 1, actual 1" );
+            "not equality, expected 1., actual 1." );
           ( "is_true",
             (fun () -> Check.is_true false),
             "equality, expected true, actual false" );
@@ -488,11 +488,11 @@ let orders =
             {|predicate, expected greater than "m", actual "a"|} );
           ( "at_least, without the tolerance",
             (fun () -> Check.at_least close ~than:1.2 1.0),
-            "predicate, expected at least 1.2, actual 1" );
+            "predicate, expected at least 1.2, actual 1." );
           ( "greater, without a relative tolerance",
             (fun () ->
               Check.greater (float_rel ~rel:0.5 ~abs:0.5) ~than:1.2 1.0),
-            "predicate, expected greater than 1.2, actual 1" );
+            "predicate, expected greater than 1.2, actual 1." );
           ( "at_least, nan",
             (fun () -> Check.at_least float_exact ~than:neg_infinity Float.nan),
             "predicate, expected at least -inf, actual nan" );

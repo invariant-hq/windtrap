@@ -208,8 +208,8 @@ geo: 1 test (seed s1:96b69c9ed18d0547)
     which failed at:
       examples/03-property-testing/test_geo.ml:41
         41 │ equal ~__POS__ close (k *. k *. Geo.area s) (Geo.area (Geo.scale k s)));
-      expected  12
-      actual    6
+      expected  12.
+      actual    6.
 ──────────────────────────────────────────────────────────
 
 1 failed in 1.4ms.

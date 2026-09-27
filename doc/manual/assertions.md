@@ -292,8 +292,8 @@ shop: 1 test
     examples/02-assertions/test_assertions.ml:47
       47 │ equal ~__POS__ (float 1e-9) 744. (Shop.with_tax ~rate:0.2 620));
 
-    expected  744
-    actual    124
+    expected  744.
+    actual    124.
 ──────────────────────────────────────────────────────────
 
 1 failed in 0.6ms.
@@ -561,8 +561,8 @@ shop: 1 test
       101 │ at_least ~__POS__ ~msg (float 1e-9) ~than:100.
 
     rate 0
-    expected  at least 100
-    actual    0
+    expected  at least 100.
+    actual    0.
 ──────────────────────────────────────────────────────────
 
 1 failed in 0.5ms.

@@ -117,14 +117,14 @@ val float_exact : float t
 
 val float : float -> float t
 (** [float eps] compares with absolute tolerance [eps]. [a] and [b] are equal
-    when [a = b] or [|a -. b| <= eps]. It prints with [%g]. Raises
+    when [a = b] or [|a -. b| <= eps]. It prints as {!float_exact} does. Raises
     [Invalid_argument] if [eps] is not strictly positive, NaN included. *)
 
 val float_rel : rel:float -> abs:float -> float t
 (** [float_rel ~rel ~abs] compares with relative tolerance [rel] and absolute
     tolerance [abs]. [a] and [b] are equal when [a = b], when [|a -. b| <= abs],
     or when [|a -. b| <= rel *. Float.max (abs_float a) (abs_float b)]. One zero
-    bound switches that component off. It prints with [%g]. Raises
+    bound switches that component off. It prints as {!float_exact} does. Raises
     [Invalid_argument] if a bound is negative or NaN, or if both are zero. *)
 
 (** {1:containers Containers}
