@@ -8,6 +8,9 @@
   test is that of the run that failed on the counterexample, where
   0.2.0 showed the last lines of the whole search, which end on the
   last candidate tried.
+- After the search the law runs once more on the counterexample, and
+  when that run does not fail the block says
+  `the test did not fail again on this counterexample; it is not deterministic`.
 
 ### Stateful testing
 

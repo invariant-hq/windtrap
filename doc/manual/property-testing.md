@@ -131,7 +131,9 @@ and the number of shrink steps change. Renaming or regrouping the property chang
 values it draws, and the other tests of the suite do not. A search cut
 short says so, as `shrinking stopped after N steps` or
 `timed out after Ns while shrinking`, and adds that the counterexample
-may not be minimal.
+may not be minimal. The law then runs once more on the counterexample,
+drawn again, and when it does not fail there, the block says
+`the test did not fail again on this counterexample; it is not deterministic`.
 
 `test/test_geo.ml`:
 

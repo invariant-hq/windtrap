@@ -81,6 +81,7 @@ type kind =
       examples : bool;
       rendering : rendering;
       inner : t option;
+      failed_again : bool option;
     }
   | Law of {
       law : string;
@@ -334,7 +335,8 @@ let baseline ?loc baseline state =
   make ?loc (Baseline { baseline; state; withheld = None })
 
 let property ?loc ?inner ?count ?summary ~rendered ~case_index ~shrink_steps
-    ?(shrink_end = Converged) ~root ~examples ?(rendering = Value) () =
+    ?(shrink_end = Converged) ~root ~examples ?(rendering = Value) ?failed_again
+    () =
   make ?loc
     (Property
        {
@@ -348,6 +350,7 @@ let property ?loc ?inner ?count ?summary ~rendered ~case_index ~shrink_steps
          examples;
          rendering;
          inner;
+         failed_again;
        })
 
 let law ?loc ?msg ?clause ~law ~equation terms =

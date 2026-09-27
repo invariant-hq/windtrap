@@ -451,10 +451,11 @@ val stateful :
     [cannot spawn a worker domain: <message>], and no counterexample. Each run
     of the law costs [50] of the shrink budget ({!Property.run}'s [cost]), and
     one that discards costs [1]: only an element discards, and it is taken in
-    the prefix of the first repetition. The test takes [~retries:0], so a
-    group's retries do not apply. Under [--mutate] or [--arm] ([config.mutation]
-    is not {!Run.No_mutation}) the body spawns nothing, and each program runs
-    once on the test's domain.
+    the prefix of the first repetition. The law is not [deterministic], so a
+    counterexample does not run again. The test takes [~retries:0], so a group's
+    retries do not apply. Under [--mutate] or [--arm] ([config.mutation] is not
+    {!Run.No_mutation}) the body spawns nothing, each program runs once on the
+    test's domain, and a counterexample runs again.
 
     {b A broken reference.} {!execute} raises {!Property.Oracle_failure} for a
     broken reference, so {!Property.run} shrinks a case that broke the reference

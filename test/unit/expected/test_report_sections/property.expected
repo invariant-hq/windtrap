@@ -79,6 +79,24 @@
       actual    false
     replay: WINDTRAP_SEED=s1:7be1d2c904aa31f5 dune runtest
 
+=== a counterexample that did not fail again says the test is not deterministic, before the inner failure
+    counterexample (case 0, shrunk 6 steps): 10
+    the test did not fail again on this counterexample; it is not deterministic
+    which failed with:
+      expected  true
+      actual    false
+    replay: WINDTRAP_SEED=s1:7be1d2c904aa31f5 dune runtest
+
+=== and after the search's stop
+    counterexample (case 4, shrunk 50 steps): 9
+    shrinking stopped after 50 steps; counterexample may not be minimal
+    the test did not fail again on this counterexample; it is not deterministic
+    replay: WINDTRAP_SEED=s1:7be1d2c904aa31f5 dune runtest
+
+=== a counterexample that failed again says nothing more
+    counterexample (case 4, shrunk 3 steps): 9
+    replay: WINDTRAP_SEED=s1:7be1d2c904aa31f5 dune runtest
+
 === an uncaught exception inside a property
     counterexample (case 3, shrunk 2 steps): 50
     which failed with:

@@ -809,7 +809,10 @@ val pass : 'a testable
     failure block carries its own.
 
     A law must be deterministic, because the search for a counterexample runs it
-    again on candidate inputs.
+    again on candidate inputs. After the search, the law runs once more on the
+    counterexample, drawn again as a replay draws it, and when that run does not
+    fail, the report says that the test is not deterministic. A failing example
+    does not run again.
 
     Shrinking runs the law at most [10_000] times, accepted and rejected
     candidates alike, and a search stopped there reports that the counterexample
@@ -1483,8 +1486,10 @@ val stateful :
     real time, so every linearizable history passes. The invariant runs after
     the prefix's calls only.
 
-    The contract differs from one domain's in four ways:
+    The contract differs from one domain's in five ways:
     - a replay draws the same programs, not the same schedules, and may pass;
+    - a counterexample does not run once more after the search, except under
+      [--mutate] and [--arm];
     - the test takes no retries and ignores a group's;
     - under [--mutate] and [--arm] each program runs once on the test's domain,
       the prefix, branch 1 to [n], then the suffix, so a kill does not depend on

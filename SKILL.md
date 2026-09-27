@@ -194,6 +194,11 @@ Read the whole block before editing anything. It holds:
   table of the calls that ran, then the failing call with the
   reference's outcome as `expected` and the system's as `actual`, or
   `reference of call N of N` when the model itself broke.
+- `the test did not fail again on this counterexample; it is not
+  deterministic` under the counterexample when a second run on it,
+  drawn again, did not fail. Look for what the test reads besides its
+  input: state that outlives a run, such as a global table or a file,
+  or the clock.
 - `captured output`, the last lines the test printed after its last
   `output ()`, and `full log:`, the file with all of them. For a
   property or a stateful test, the lines are those of the run that

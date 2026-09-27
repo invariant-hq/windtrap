@@ -1750,6 +1750,35 @@ let printing =
         ];
     ]
 
+(* Each law fails on the first run on a value, and the second of each pair
+   also on every later run. *)
+let running_again =
+  let first_sight () =
+    let seen = Hashtbl.create 8 in
+    fun x ->
+      let first = not (Hashtbl.mem seen x) in
+      Hashtbl.replace seen x ();
+      first
+  in
+  let prop_sight = first_sight () and call_sight = first_sight () in
+  let check name failing =
+    stateful name
+      [
+        command "check"
+          (Gen.int_range 0 20 @-> returns unit)
+          ignore
+          (fun x -> if failing x && x > 10 then fail "big");
+      ]
+  in
+  Recorded.execute
+    [
+      Run.prop "fails on a first sight" (Gen.int_range 0 1000) (fun x ->
+          is_true ((not (prop_sight x)) || x < 10));
+      Run.prop "fails again" (Gen.int_range 0 1000) (fun x -> is_true (x < 10));
+      check "fails on a first call" call_sight;
+      check "fails on every call" (fun _ -> true);
+    ]
+
 let twice_drawn =
   let tests = [ Run.prop "shrinks" Gen.int (fun n -> equal int n (n + 1)) ] in
   [ Recorded.execute tests; Recorded.execute tests ]
@@ -1954,6 +1983,22 @@ let a_property_tail_is_its_counterexample_run () =
     (Option.bind (failure printing [ "prints every run" ]).output_tail
        (fun (t : Failure.tail) -> t.log_path))
 
+let a_counterexample_runs_again () =
+  equal
+    (list (option bool))
+    [ Some false; Some true; Some false; Some true ]
+    (List.map
+       (fun path ->
+         match (failure running_again [ path ]).kind with
+         | Failure.Property p -> p.failed_again
+         | _ -> fail "not a property failure")
+       [
+         "fails on a first sight";
+         "fails again";
+         "fails on a first call";
+         "fails on every call";
+       ])
+
 let a_limit_while_shrinking_keeps_the_counterexample () =
   needs_timeouts ();
   equal (pair string string)
@@ -2000,6 +2045,10 @@ let properties =
         "a property's tail is the output of the run on its counterexample, and \
          names the log"
         a_property_tail_is_its_counterexample_run;
+      test
+        "a property's or a stateful test's counterexample runs again, and the \
+         failure says whether it failed"
+        a_counterexample_runs_again;
       test "a limit that expires while shrinking keeps the counterexample"
         a_limit_while_shrinking_keeps_the_counterexample;
       test "a limit that expires before a failure names the case it cut"

@@ -536,7 +536,8 @@ let gave_up_failure ?loc (stats : Property.stats) =
         cases passed)"
        stats.discards stats.cases)
 
-let property ?loc ?count ?max_discard ?examples ?summary ?cost gen law =
+let property ?loc ?count ?max_discard ?examples ?summary ?cost ?deterministic
+    gen law =
   let frame = current_frame () in
   let config = frame.run.config and capture = frame.run.capture in
   let count =
@@ -569,8 +570,8 @@ let property ?loc ?count ?max_discard ?examples ?summary ?cost gen law =
     raise (Failure.Check_failure failure)
   in
   match
-    Property.run ?loc ?count ?max_discard ?examples ?summary ?cost ~output
-      ~root:config.seed
+    Property.run ?loc ?count ?max_discard ?examples ?summary ?cost
+      ?deterministic ~output ~root:config.seed
       ~path:(Test_tree.path_to_string frame.path)
       gen run_law
   with

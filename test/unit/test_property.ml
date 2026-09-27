@@ -847,7 +847,8 @@ let budget_runs () =
     "fail, 0 cases, 0 discards; case 0, 10 steps, budget spent: 40; raise \
      Not_found"
     (outcome_row o);
-  equal int (Property.shrink_budget + 1) !runs
+  (* The case's first run, the budget, and the run again. *)
+  equal int (Property.shrink_budget + 2) !runs
 
 let quad () =
   let gen = Gen.quad Gen.int64 Gen.int64 Gen.int64 Gen.int64 in
@@ -1097,6 +1098,132 @@ let output =
                descent at_least_10));
     ]
 
+(* Running again *)
+
+(* A law that fails on the first run on each value of at least 10, and does
+   [later] on any later run on a value. *)
+let first_sight later =
+  let seen = Hashtbl.create 8 in
+  fun _ x ->
+    if Hashtbl.mem seen x then later ()
+    else begin
+      Hashtbl.replace seen x ();
+      if x >= 10 then Check.fail "big"
+    end
+
+let failed_again o =
+  require_match
+    (fun (f : Failure.t) ->
+      match f.kind with Property p -> Some p.failed_again | _ -> None)
+    (failed o)
+
+(* The outcome of [law] on [gen] as a row, its failure's [failed_again], and
+   the values that the law ran on. *)
+let ran_again ?deterministic ?examples gen law =
+  let law, seen = traced law in
+  let o = Property.run ?deterministic ?examples ~root ~path:"again" gen law in
+  (outcome_row o, failed_again o, seen ())
+
+let converged_at_10 =
+  "fail, 0 cases, 0 discards; case 0, 2 steps, converged: 10; message big"
+
+let ran_again_row = triple string (option bool) (list int)
+
+let reruns =
+  [
+    ("a law that fails again", (at_least_10, Some true));
+    ("a law that passes", (first_sight ignore, Some false));
+    ("a law that discards", (first_sight Property.reject, Some false));
+    ( "a law that raises a control",
+      (first_sight (fun () -> raise (Failure.Control `Exit)), Some false) );
+    ( "a law that fails in another class",
+      (first_sight (fun () -> raise Exit), Some true) );
+    ( "a law that the test's limit cuts",
+      (first_sight (fun () -> raise (timeout 0.25)), None) );
+  ]
+
+let timed_out_search () =
+  let calls = ref 0 in
+  let law _ x =
+    incr calls;
+    if !calls >= 3 then raise (timeout 0.25) else at_least_10 () x
+  in
+  equal ran_again_row
+    ( "fail, 0 cases, 0 discards; case 0, 0 steps, timed out after 0.25s: 40; \
+       message big",
+      None,
+      [ 40; 5; 20 ] )
+    (ran_again descent law)
+
+(* A law that sorts its array in place and fails when the array was not
+   sorted, a function of the value it is given that changes that value. *)
+let sorts_in_place _ a =
+  let given = Array.copy a in
+  Array.sort Int.compare a;
+  if a <> given then Check.fail "unsorted"
+
+let changed_in_place () =
+  let o =
+    Property.run ~root ~path:"again" Gen.(array (int_range 0 9)) sorts_in_place
+  in
+  equal
+    (pair string (option bool))
+    ( "fail, 0 cases, 0 discards; case 0, 7 steps, converged: [|1; 0|]; \
+       message unsorted",
+      Some true )
+    (outcome_row o, failed_again o)
+
+(* [40] fails, its candidate [3] discards and [20] fails, and [20]'s
+   candidate [1] discards and [10] fails. The run again follows the accepted
+   candidates, the second of their siblings, and not the discarding ones. *)
+let past_discards () =
+  let law _ x = if x < 5 then Property.reject () else at_least_10 () x in
+  equal ran_again_row
+    (converged_at_10, Some true, [ 40; 3; 20; 1; 10; 10 ])
+    (ran_again
+       (drawn (node 40 [ node 3 []; node 20 [ node 1 []; node 10 [] ] ]))
+       law)
+
+let running_again =
+  group "Running again"
+    [
+      cases "the counterexample runs once more after the search" ~name:fst
+        reruns (fun (_, (law, again)) ->
+          equal ran_again_row
+            (converged_at_10, again, [ 40; 5; 20; 10; 10 ])
+            (ran_again descent law));
+      test "a failing example does not run again" (fun () ->
+          equal ran_again_row
+            ( "fail, 1 cases, 0 discards; example 1, 0 steps, converged: 42; \
+               message big",
+              None,
+              [ 3; 42 ] )
+            (ran_again ~examples:[ 3; 42 ] descent (first_sight ignore)));
+      test "a law that is not deterministic does not run again" (fun () ->
+          equal ran_again_row
+            (converged_at_10, None, [ 40; 5; 20; 10 ])
+            (ran_again ~deterministic:false descent (first_sight ignore)));
+      test "a search that a timeout ended does not run again" timed_out_search;
+      test "a generator that raised runs nothing again" (fun () ->
+          equal ran_again_row
+            ( strf
+                "fail, 0 cases, 0 discards; case 0, 0 steps, converged: %s; \
+                 raise Failure(\"drawn\")"
+                unproduced,
+              None,
+              [] )
+            (ran_again
+               (Gen.map (fun _ -> failwith "drawn") Gen.int)
+               at_least_10));
+      test
+        "a law that changes its value fails again on the counterexample drawn \
+         again"
+        changed_in_place;
+      test
+        "a counterexample reached past discarding candidates fails again on it"
+        past_discards;
+    ]
+
 let () =
   exit
     (run "property"
@@ -1110,4 +1237,5 @@ let () =
          generated;
          shrinking;
          output;
+         running_again;
        ])

@@ -21,7 +21,8 @@
     is a [Failure.fault] of one of three classes, an assertion, a broken oracle
     ({!Oracle_failure}) or any other exception, and the shrink search keeps to
     the class of the first failure (see {!run}). It runs the law again on
-    candidates, so a law must be deterministic.
+    candidates, and once more on the counterexample, so a law must be
+    deterministic.
     - A [`Discard] discards the case.
     - A [`Timeout] while no case has failed, during an example, a generation or
       the first run of a case, ends the run in a [Fail] whose failure is a
@@ -131,6 +132,8 @@ type stats = {
     - [count] is [Some n] for a [`Config n] count, and [None] otherwise.
     - [inner] is the failure of the law on the reported counterexample, the
       final node of the search.
+    - [failed_again] is what the law did when it ran once more on the reported
+      counterexample, drawn again (see {!run}).
 
     Its [output_tail] is the captured output of the run of the law that failed
     on the reported counterexample, as [output] gave it, and [None] for a
@@ -174,6 +177,7 @@ val run :
   ?examples:'a list ->
   ?summary:('a -> string option) ->
   ?cost:int ->
+  ?deterministic:bool ->
   ?output:(unit -> Failure.tail option) ->
   root:Seed.seed ->
   path:string ->
@@ -202,6 +206,8 @@ val run :
       a law that runs its case several times. A run that discards spends [1],
       which assumes that such a law discards before it repeats its case.
       Defaults to [1].
+    - [deterministic] is whether every run of [law] on a failing case fails,
+      which a law that races on several domains need not do. Defaults to [true].
     - [output ()] is the captured output of the run of [law] that has just
       ended. [run] calls it right after each run that fails on a case that
       becomes the counterexample: a failing example, the first failing case, and
@@ -247,6 +253,19 @@ val run :
     case, which a [`Timeout] there reports unshrunk and without output.
     [case_index] is always that of the first failure, so a replay descends the
     same path, and a timeout changes only where on that path the descent stops.
+
+    {b Running again.} After the search, a [deterministic] law runs once more on
+    the reported counterexample, drawn again as a replay draws it: [gen] samples
+    the case's seed again, and the draw descends to the candidate that the
+    search accepted at each step. A pure [gen] draws the counterexample as it
+    was first generated, whatever a run of [law] did to the value it was given.
+    The run's labels go to a {!scratch} context. The [failed_again] of the
+    failure is [Some true] when that run raises a [Failure.fault], in any class,
+    [Some false] when it returns or raises a control other than [`Timeout], and
+    [None] when the test's limit expires during the draw or the run. The law
+    does not run again, and [failed_again] is [None], when [deterministic] is
+    [false], after a search that a timeout ended, for a failing example, which
+    no seed draws, and for a generator that raised.
 
     Raises [Invalid_argument] if [count] or [max_discard] is negative, or if
     [cost] is not positive, inside the running test, where [run] executes.

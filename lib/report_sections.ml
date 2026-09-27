@@ -1003,6 +1003,7 @@ and facts ~seen ~excerpt = function
         examples;
         rendering;
         inner;
+        failed_again;
         root = _;
         count = _;
       } ->
@@ -1076,6 +1077,16 @@ and facts ~seen ~excerpt = function
               line "counterexample may not be minimal";
             ]
       in
+      let again =
+        match failed_again with
+        | Some false ->
+            [
+              line
+                "the test did not fail again on this counterexample; it is not \
+                 deterministic";
+            ]
+        | Some true | None -> []
+      in
       (* A failure raised in tail position has no location to be [at]. *)
       let inner =
         match inner with
@@ -1086,7 +1097,7 @@ and facts ~seen ~excerpt = function
                else "which failed with:")
             :: List.map (indented "  ") (entry ~seen ~excerpt ~inner:true i)
       in
-      counterexample @ pre_image @ stop @ inner
+      counterexample @ pre_image @ stop @ again @ inner
   | Failure.Law { law; clause; equation; terms } ->
       line (strf "%s: %s" (law_head ~law ~clause) equation)
       :: law_terms ~seen ~excerpt terms

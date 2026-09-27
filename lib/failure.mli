@@ -202,6 +202,11 @@ type kind =
               {!of_fault} makes it of what the law raised, or the payload of a
               {!Property.Oracle_failure} that the law raised. A failure that
               {!Property.run} builds always has one. *)
+      failed_again : bool option;
+          (** Whether the law failed, in any class, when it ran once more on the
+              counterexample, drawn again, after the search. [None] when it did
+              not run again or the test's limit cut that run (see
+              {!Property.run}). *)
     }  (** A property failed. *)
   | Law of {
       law : string;
@@ -466,13 +471,14 @@ val property :
   root:Seed.seed ->
   examples:bool ->
   ?rendering:rendering ->
+  ?failed_again:bool ->
   unit ->
   t
 (** [property ~rendered ~case_index ~shrink_steps ~root ~examples ()] is a
-    {!constructor-Property} failure with the fields given. [inner], [count] and
-    [summary] default to [None], [shrink_end] to {!Converged} and [rendering] to
-    {!Value}. Nothing is validated, so the invariants that {!type-kind} states
-    are the producer's to keep. *)
+    {!constructor-Property} failure with the fields given. [inner], [count],
+    [summary] and [failed_again] default to [None], [shrink_end] to {!Converged}
+    and [rendering] to {!Value}. Nothing is validated, so the invariants that
+    {!type-kind} states are the producer's to keep. *)
 
 val timeout : ?loc:Loc.t -> ?case:timed_case -> float -> t
 (** [timeout ?case limit] is a {!constructor-Timeout} failure for [limit]

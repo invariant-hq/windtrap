@@ -123,10 +123,11 @@ let shrink ~cost ~output law tree fault =
      the last accepted node. A node is accepted with the output of its run
      or not at all, so the two never come from different runs. The failing
      case is accepted from the start, without output until [output] returns
-     on it. *)
-  let best = ref (tree, 0, fault, None) in
-  let rec descend ~runs steps tree =
-    let rec first_accepted ~runs candidates =
+     on it. A route holds the index of each accepted candidate among its
+     siblings, the last first. *)
+  let best = ref (tree, [], fault, None) in
+  let rec descend ~runs route tree =
+    let rec first_accepted ~runs index candidates =
       match Failure.catch candidates with
       | Error (`Timeout _ as timeout) -> Failure.reraise timeout
       | Error c ->
@@ -139,17 +140,18 @@ let shrink ~cost ~output law tree fault =
           match run_case scratch law (root_value candidate) with
           | Error (`Timeout _ as timeout) -> Failure.reraise timeout
           | Error (#Failure.fault as accepted) when same_class fault accepted ->
-              best := (candidate, steps + 1, accepted, output ());
-              descend ~runs:(runs + cost) (steps + 1) candidate
-          | Error `Discard -> first_accepted ~runs:(runs + 1) rest
+              let route = index :: route in
+              best := (candidate, route, accepted, output ());
+              descend ~runs:(runs + cost) route candidate
+          | Error `Discard -> first_accepted ~runs:(runs + 1) (index + 1) rest
           | Ok () | Error (#Failure.fault | #Failure.control) ->
-              first_accepted ~runs:(runs + cost) rest)
+              first_accepted ~runs:(runs + cost) (index + 1) rest)
     in
-    first_accepted ~runs (Gen.Engine.Shrink_tree.children tree)
+    first_accepted ~runs 0 (Gen.Engine.Shrink_tree.children tree)
   in
   let search () =
-    best := (tree, 0, fault, output ());
-    descend ~runs:0 0 tree
+    best := (tree, [], fault, output ());
+    descend ~runs:0 [] tree
   in
   let shrink_end =
     match Failure.catch search with
@@ -157,8 +159,18 @@ let shrink ~cost ~output law tree fault =
     | Error (`Timeout limit) -> Failure.Timed_out limit
     | Error c -> Failure.reraise c
   in
-  let tree, steps, fault, tail = !best in
-  (Gen.Engine.Shrink_tree.root tree, steps, fault, tail, shrink_end)
+  let tree, route, fault, tail = !best in
+  (Gen.Engine.Shrink_tree.root tree, List.rev route, fault, tail, shrink_end)
+
+(* The node of [tree] that [route] reaches, or [None] when a step names no
+   candidate. A tree sampled again from a pure generator holds every route
+   that a search took on it. *)
+let rec follow tree = function
+  | [] -> Some tree
+  | index :: route -> (
+      match Seq.drop index (Gen.Engine.Shrink_tree.children tree) () with
+      | Seq.Cons (child, _) -> follow child route
+      | Seq.Nil -> None)
 
 (* Running *)
 
@@ -171,7 +183,8 @@ let inner_failure : Failure.fault -> Failure.t = function
   | fault -> Failure.of_fault fault
 
 let run ?loc ?count ?max_discard ?(examples = []) ?(summary = Fun.const None)
-    ?(cost = 1) ?(output = Fun.const None) ~root ~path gen law =
+    ?(cost = 1) ?(deterministic = true) ?(output = Fun.const None) ~root ~path
+    gen law =
   let count, config_count =
     match count with
     | None -> (default_count, None)
@@ -189,11 +202,11 @@ let run ?loc ?count ?max_discard ?(examples = []) ?(summary = Fun.const None)
   in
   let ctx = make_context () in
   let fail ~case_index ~examples ?summary ?rendering ?(shrink_steps = 0)
-      ?shrink_end ?tail ~rendered fault =
+      ?shrink_end ?tail ?failed_again ~rendered fault =
     let failure =
       Failure.property ?loc ~inner:(inner_failure fault) ?count:config_count
         ?summary ~rendered ~case_index ~shrink_steps ?shrink_end ~root ~examples
-        ?rendering ()
+        ?rendering ?failed_again ()
     in
     let failure =
       match tail with
@@ -201,6 +214,25 @@ let run ?loc ?count ?max_discard ?(examples = []) ?(summary = Fun.const None)
       | None -> failure
     in
     Fail { failure; stats = stats ctx }
+  in
+  (* A law that does not fail again on its own counterexample is no function
+     of it. It runs on the counterexample drawn again from the case's [state]
+     along the search's [route], as a replay draws it, since a run can change
+     the value it is given. That path was drawn once, so only the limit can
+     cut the draw. *)
+  let run_again state route =
+    if not deterministic then None
+    else
+      let drawn () =
+        Option.map root_value (follow (Gen.Engine.sample gen state) route)
+      in
+      match Failure.catch drawn with
+      | Ok None | Error _ -> None
+      | Ok (Some value) -> (
+          match run_case (scratch ()) law value with
+          | Error #Failure.fault -> Some true
+          | Ok () | Error (`Skip _ | `Exit | `Discard) -> Some false
+          | Error (`Timeout _) -> None)
   in
   (* Built here: only the engine knows the case the limit cut and the cases
      that passed before it, which a replay needs. *)
@@ -254,7 +286,7 @@ let run ?loc ?count ?max_discard ?(examples = []) ?(summary = Fun.const None)
           | `Timed_out limit ->
               timed_out ~case_index:index ~examples:false limit
           | `Failed fault ->
-              let node, shrink_steps, fault, tail, shrink_end =
+              let node, route, fault, tail, shrink_end =
                 shrink ~cost ~output law tree fault
               in
               let rendered, rendering =
@@ -262,9 +294,17 @@ let run ?loc ?count ?max_discard ?(examples = []) ?(summary = Fun.const None)
                 | Value text -> (text, Failure.Value)
                 | Pre_image text -> (text, Failure.Pre_image)
               in
+              (* The timeout spent the test's alarm: a run now has no limit. *)
+              let failed_again =
+                match shrink_end with
+                | Failure.Timed_out _ -> None
+                | Converged | Budget_spent | Candidate_raised _ ->
+                    run_again state route
+              in
               fail ~case_index:index ~examples:false
                 ?summary:(summary (Gen.Engine.value node))
-                ~rendering ~shrink_steps ~shrink_end ?tail ~rendered fault)
+                ~rendering ~shrink_steps:(List.length route) ~shrink_end ?tail
+                ?failed_again ~rendered fault)
   in
   let rec run_examples index = function
     | [] -> generate ~passed:0 0

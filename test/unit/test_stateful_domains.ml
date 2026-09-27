@@ -1394,6 +1394,25 @@ let failing_run_output () =
       equal (option string) (Some "run 3\n")
         (Option.map (fun (t : Failure.tail) -> t.text) f.output_tail)
 
+(* On the workers a counterexample does not run again, though [check]
+   fails in every run. *)
+let not_run_again () =
+  if mutating () then
+    skip ~reason:"under mutation testing no test spawns a domain" ();
+  let r = abstract "r" in
+  let t =
+    Stateful.stateful ~steps:1 ~domains:2 "t"
+      [
+        command "create" (Gen.unit @-> makes r) ignore ignore;
+        command "check" (r ^-> returns bool) (fun () -> true) (fun () -> false);
+      ]
+  in
+  match body t () with
+  | () -> fail "the test passed"
+  | exception Failure.Check_failure { kind = Property p; _ } ->
+      equal (option bool) None p.failed_again
+  | exception Failure.Check_failure f -> fail ("another failure: " ^ kind f)
+
 let executor =
   group "Workers"
     [
@@ -1417,6 +1436,7 @@ let executor =
       test "what a worker prints reaches the test's output" printed_output;
       test "a failing case's output is that of the run that failed"
         failing_run_output;
+      test "a counterexample does not run again on the workers" not_run_again;
       test ~timeout:60.
         "an alarm handled on any domain times the test out on its own" alarmed;
       test "a worker blocks the runner's signals, so their handlers run here"

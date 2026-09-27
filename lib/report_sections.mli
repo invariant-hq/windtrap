@@ -106,9 +106,10 @@ val pp_failure :
     most 20 lines ([max_proposed_lines]) and then a count of the rest.
 
     {b Property.} An explicit example is named by its one-based index, any other
-    case by its zero-based index and, when it has some, by its shrink steps. The
-    entry of the inner failure comes last. It is an entry as above, nested, with
-    no blank line after its source line and no hint lines.
+    case by its zero-based index and, when it has some, by its shrink steps. A
+    [failed_again] of [Some false] adds a line that says the test is not
+    deterministic. The entry of the inner failure comes last. It is an entry as
+    above, nested, with no blank line after its source line and no hint lines.
 
     {b Law.} The head is the law's name, its clause in parentheses when it has
     one, then [": "] and the equation. A row follows for each term, its name and

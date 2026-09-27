@@ -647,6 +647,21 @@ let property_entries () =
       entry
         (Failure.property ~inner:(unequal "true" "false") ~rendered:"7"
            ~case_index:0 ~shrink_steps:0 ~root ~examples:false ()) );
+    ( "a counterexample that did not fail again says the test is not \
+       deterministic, before the inner failure",
+      entry
+        (Failure.property ~inner:(unequal "true" "false") ~rendered:"10"
+           ~case_index:0 ~shrink_steps:6 ~root ~examples:false
+           ~failed_again:false ()) );
+    ( "and after the search's stop",
+      entry
+        (Failure.property ~shrink_end:Failure.Budget_spent ~rendered:"9"
+           ~case_index:4 ~shrink_steps:50 ~root ~examples:false
+           ~failed_again:false ()) );
+    ( "a counterexample that failed again says nothing more",
+      entry
+        (Failure.property ~rendered:"9" ~case_index:4 ~shrink_steps:3 ~root
+           ~examples:false ~failed_again:true ()) );
     ( "an uncaught exception inside a property",
       entry
         (Failure.property
