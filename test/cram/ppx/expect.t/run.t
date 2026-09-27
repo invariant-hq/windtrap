@@ -20,6 +20,7 @@ ppx_windtrap's expansions and refusals, as pp.exe prints them (see
                    | exception __windtrap_e ->
                        Stdlib.raise_notrace __windtrap_e))
            (fun () -> Expect_test_config.sanitize (Windtrap.output ())))
+    [@@windtrap.test ]
   let () =
     Ppx_windtrap_runtime.Ppx_runtime.add_test ~file:"./expect_attributes.ml"
       ~pos:("./expect_attributes.ml", 9, 0, 125) ~tags:[] "carried"
@@ -47,6 +48,7 @@ ppx_windtrap's expansions and refusals, as pp.exe prints them (see
                    | exception __windtrap_e ->
                        Stdlib.raise_notrace __windtrap_e))
            (fun () -> Expect_test_config.sanitize (Windtrap.output ())))
+    [@@windtrap.test ]
 
   $ expand --impl ./expect_basic.ml
   let greet name = Printf.printf "hello %s\n" name
@@ -96,6 +98,7 @@ ppx_windtrap's expansions and refusals, as pp.exe prints them (see
                    | exception __windtrap_e ->
                        Stdlib.raise_notrace __windtrap_e))
            (fun () -> Expect_test_config.sanitize (Windtrap.output ())))
+    [@@windtrap.test ]
   let () =
     Ppx_windtrap_runtime.Ppx_runtime.add_test ~file:"./expect_basic.ml"
       ~pos:("./expect_basic.ml", 20, 0, 65) ~tags:[] "line_20"
@@ -119,6 +122,7 @@ ppx_windtrap's expansions and refusals, as pp.exe prints them (see
                    | exception __windtrap_e ->
                        Stdlib.raise_notrace __windtrap_e))
            (fun () -> Expect_test_config.sanitize (Windtrap.output ())))
+    [@@windtrap.test ]
   let () =
     Ppx_windtrap_runtime.Ppx_runtime.add_test ~file:"./expect_basic.ml"
       ~pos:("./expect_basic.ml", 24, 0, 85) ~tags:["slow"] "tagged"
@@ -142,6 +146,7 @@ ppx_windtrap's expansions and refusals, as pp.exe prints them (see
                    | exception __windtrap_e ->
                        Stdlib.raise_notrace __windtrap_e))
            (fun () -> Expect_test_config.sanitize (Windtrap.output ())))
+    [@@windtrap.test ]
 
   $ expand --impl ./test_basic.ml
   let () =
@@ -151,6 +156,7 @@ ppx_windtrap's expansions and refusals, as pp.exe prints them (see
          match (assert ((1 + 1) = 2) : unit) with
          | () -> ()
          | exception __windtrap_e -> Stdlib.raise_notrace __windtrap_e)
+    [@@windtrap.test ]
   let () =
     Ppx_windtrap_runtime.Ppx_runtime.add_test ~file:"./test_basic.ml"
       ~pos:("./test_basic.ml", 5, 0, 15) ~tags:[] "line_5"
@@ -158,6 +164,7 @@ ppx_windtrap's expansions and refusals, as pp.exe prints them (see
          match (() : unit) with
          | () -> ()
          | exception __windtrap_e -> Stdlib.raise_notrace __windtrap_e)
+    [@@windtrap.test ]
   let () =
     Ppx_windtrap_runtime.Ppx_runtime.add_test ~file:"./test_basic.ml"
       ~pos:("./test_basic.ml", 6, 0, 39) ~tags:["slow"] "tagged"
@@ -165,6 +172,7 @@ ppx_windtrap's expansions and refusals, as pp.exe prints them (see
          match (() : unit) with
          | () -> ()
          | exception __windtrap_e -> Stdlib.raise_notrace __windtrap_e)
+    [@@windtrap.test ]
   let () =
     Ppx_windtrap_runtime.Ppx_runtime.add_test ~file:"./test_basic.ml"
       ~pos:("./test_basic.ml", 7, 0, 44) ~tags:["slow"; "io"] "multi"
@@ -172,9 +180,10 @@ ppx_windtrap's expansions and refusals, as pp.exe prints them (see
          match (() : unit) with
          | () -> ()
          | exception __windtrap_e -> Stdlib.raise_notrace __windtrap_e)
+    [@@windtrap.test ]
   let () =
     Ppx_windtrap_runtime.Ppx_runtime.enter_group ~file:"./test_basic.ml"
-      ~tags:[] "Outer"
+      ~tags:[] "Outer"[@@windtrap.test ]
   module Outer =
     struct
       let helper = 41
@@ -185,9 +194,10 @@ ppx_windtrap's expansions and refusals, as pp.exe prints them (see
              match (assert ((helper + 1) = 42) : unit) with
              | () -> ()
              | exception __windtrap_e -> Stdlib.raise_notrace __windtrap_e)
+        [@@windtrap.test ]
       let () =
         Ppx_windtrap_runtime.Ppx_runtime.enter_group ~file:"./test_basic.ml"
-          ~tags:[] "Nested"
+          ~tags:[] "Nested"[@@windtrap.test ]
       module Nested =
         struct
           let () =
@@ -197,13 +207,15 @@ ppx_windtrap's expansions and refusals, as pp.exe prints them (see
                  match (() : unit) with
                  | () -> ()
                  | exception __windtrap_e -> Stdlib.raise_notrace __windtrap_e)
-        end
-      let () = Ppx_windtrap_runtime.Ppx_runtime.leave_group ()
-    end
-  let () = Ppx_windtrap_runtime.Ppx_runtime.leave_group ()
+            [@@windtrap.test ]
+        end[@@windtrap.test ]
+      let () = Ppx_windtrap_runtime.Ppx_runtime.leave_group ()[@@windtrap.test
+                                                                ]
+    end[@@windtrap.test ]
+  let () = Ppx_windtrap_runtime.Ppx_runtime.leave_group ()[@@windtrap.test ]
   let () =
     Ppx_windtrap_runtime.Ppx_runtime.enter_group ~file:"./test_basic.ml"
-      ~tags:["group-tag"] "Tagged"
+      ~tags:["group-tag"] "Tagged"[@@windtrap.test ]
   module Tagged =
     struct
       let () =
@@ -213,8 +225,9 @@ ppx_windtrap's expansions and refusals, as pp.exe prints them (see
              match (() : unit) with
              | () -> ()
              | exception __windtrap_e -> Stdlib.raise_notrace __windtrap_e)
-    end[@@warning "-60"]
-  let () = Ppx_windtrap_runtime.Ppx_runtime.leave_group ()
+        [@@windtrap.test ]
+    end[@@warning "-60"][@@windtrap.test ]
+  let () = Ppx_windtrap_runtime.Ppx_runtime.leave_group ()[@@windtrap.test ]
 
 A refusal is an error located at the node, and the driver exits 1:
 
@@ -428,6 +441,7 @@ The library-name cookie names the library a test registers under:
          match (assert ((1 + 1) = 2) : unit) with
          | () -> ()
          | exception __windtrap_e -> Stdlib.raise_notrace __windtrap_e)
+    [@@windtrap.test ]
   let () =
     Ppx_windtrap_runtime.Ppx_runtime.add_test ~library:"scene"
       ~file:"./test_basic.ml" ~pos:("./test_basic.ml", 5, 0, 15) ~tags:[]
@@ -436,6 +450,7 @@ The library-name cookie names the library a test registers under:
          match (() : unit) with
          | () -> ()
          | exception __windtrap_e -> Stdlib.raise_notrace __windtrap_e)
+    [@@windtrap.test ]
   let () =
     Ppx_windtrap_runtime.Ppx_runtime.add_test ~library:"scene"
       ~file:"./test_basic.ml" ~pos:("./test_basic.ml", 6, 0, 39) ~tags:
@@ -444,6 +459,7 @@ The library-name cookie names the library a test registers under:
          match (() : unit) with
          | () -> ()
          | exception __windtrap_e -> Stdlib.raise_notrace __windtrap_e)
+    [@@windtrap.test ]
   let () =
     Ppx_windtrap_runtime.Ppx_runtime.add_test ~library:"scene"
       ~file:"./test_basic.ml" ~pos:("./test_basic.ml", 7, 0, 44)
@@ -452,9 +468,10 @@ The library-name cookie names the library a test registers under:
          match (() : unit) with
          | () -> ()
          | exception __windtrap_e -> Stdlib.raise_notrace __windtrap_e)
+    [@@windtrap.test ]
   let () =
     Ppx_windtrap_runtime.Ppx_runtime.enter_group ~library:"scene"
-      ~file:"./test_basic.ml" ~tags:[] "Outer"
+      ~file:"./test_basic.ml" ~tags:[] "Outer"[@@windtrap.test ]
   module Outer =
     struct
       let helper = 41
@@ -466,9 +483,10 @@ The library-name cookie names the library a test registers under:
              match (assert ((helper + 1) = 42) : unit) with
              | () -> ()
              | exception __windtrap_e -> Stdlib.raise_notrace __windtrap_e)
+        [@@windtrap.test ]
       let () =
         Ppx_windtrap_runtime.Ppx_runtime.enter_group ~library:"scene"
-          ~file:"./test_basic.ml" ~tags:[] "Nested"
+          ~file:"./test_basic.ml" ~tags:[] "Nested"[@@windtrap.test ]
       module Nested =
         struct
           let () =
@@ -479,13 +497,15 @@ The library-name cookie names the library a test registers under:
                  match (() : unit) with
                  | () -> ()
                  | exception __windtrap_e -> Stdlib.raise_notrace __windtrap_e)
-        end
-      let () = Ppx_windtrap_runtime.Ppx_runtime.leave_group ()
-    end
-  let () = Ppx_windtrap_runtime.Ppx_runtime.leave_group ()
+            [@@windtrap.test ]
+        end[@@windtrap.test ]
+      let () = Ppx_windtrap_runtime.Ppx_runtime.leave_group ()[@@windtrap.test
+                                                                ]
+    end[@@windtrap.test ]
+  let () = Ppx_windtrap_runtime.Ppx_runtime.leave_group ()[@@windtrap.test ]
   let () =
     Ppx_windtrap_runtime.Ppx_runtime.enter_group ~library:"scene"
-      ~file:"./test_basic.ml" ~tags:["group-tag"] "Tagged"
+      ~file:"./test_basic.ml" ~tags:["group-tag"] "Tagged"[@@windtrap.test ]
   module Tagged =
     struct
       let () =
@@ -496,5 +516,6 @@ The library-name cookie names the library a test registers under:
              match (() : unit) with
              | () -> ()
              | exception __windtrap_e -> Stdlib.raise_notrace __windtrap_e)
-    end[@@warning "-60"]
-  let () = Ppx_windtrap_runtime.Ppx_runtime.leave_group ()
+        [@@windtrap.test ]
+    end[@@warning "-60"][@@windtrap.test ]
+  let () = Ppx_windtrap_runtime.Ppx_runtime.leave_group ()[@@windtrap.test ]

@@ -104,11 +104,9 @@
     - The inline tests of a file, which are test code; the rest of the file is
       mutated. An inline test is an extension node such as [let%test] or
       [module%test], which a driver without ppx_windtrap leaves in place, or the
-      items that ppx_windtrap expands it into. Those are a structure item
-      [let … = Ppx_windtrap_runtime.Ppx_runtime.<f> …], which registers a test
-      with its body, and every item between the registrations [enter_group] and
-      [leave_group] of one structure, which hold the module of a [module%test]
-      with its helpers.
+      items that ppx_windtrap expands it into, each of which carries the
+      attribute [[@@windtrap.test]]. A [let] or [module] item that carries it is
+      left as written, the helpers inside a [module%test] included.
     - Generated code, which is a site at a ghost location.
     - A site whose line, column and rewrite an earlier site of the file already
       has, which happens in the code of a deriver. The first one keeps the

@@ -510,9 +510,10 @@ after, and the reason of a dismissed site.
          match (if (sum 1 2) = 3 then () else failwith "sum" : unit) with
          | () -> ()
          | exception __windtrap_e -> Stdlib.raise_notrace __windtrap_e)
+    [@@windtrap.test ]
   let () =
     Ppx_windtrap_runtime.Ppx_runtime.enter_group
-      ~file:"./fixture_inline_tests.ml" ~tags:[] "Grouped"
+      ~file:"./fixture_inline_tests.ml" ~tags:[] "Grouped"[@@windtrap.test ]
   module Grouped =
     struct
       let twice x = x + x
@@ -526,8 +527,9 @@ after, and the reason of a dismissed site.
              with
              | () -> ()
              | exception __windtrap_e -> Stdlib.raise_notrace __windtrap_e)
-    end
-  let () = Ppx_windtrap_runtime.Ppx_runtime.leave_group ()
+        [@@windtrap.test ]
+    end[@@windtrap.test ]
+  let () = Ppx_windtrap_runtime.Ppx_runtime.leave_group ()[@@windtrap.test ]
   let () =
     Ppx_windtrap_runtime.Ppx_runtime.add_test ~file:"./fixture_inline_tests.ml"
       ~pos:("./fixture_inline_tests.ml", 15, 0, 73) ~tags:[] "prints"
@@ -551,6 +553,7 @@ after, and the reason of a dismissed site.
                    | exception __windtrap_e ->
                        Stdlib.raise_notrace __windtrap_e))
            (fun () -> Expect_test_config.sanitize (Windtrap.output ())))
+    [@@windtrap.test ]
 
   $ mut --impl ./fixture_lazy.ml | ../elide.exe
   mutation sites of "./fixture_lazy.ml" in Windtrap_mut_________fixture_lazy___ml:

@@ -128,6 +128,18 @@ let pos_expr ~loc (l : Location.t) =
 
 let tags_expr ~loc tags = elist ~loc (List.map (estring ~loc) tags)
 
+(* No rewriter declares the mark: ppxlib's [-check] reports only the
+   attributes of the source, and the compiler ignores an attribute it does
+   not know. *)
+let test_mark ~loc =
+  attribute ~loc ~name:(Located.mk ~loc "windtrap.test") ~payload:(PStr [])
+
+(* [let () = e] as a marked item. *)
+let test_item ~loc e =
+  let binding = value_binding ~loc ~pat:(punit ~loc) ~expr:e in
+  pstr_value ~loc Nonrecursive
+    [ { binding with pvb_attributes = [ test_mark ~loc ] } ]
+
 (* [Ppx_runtime.fn args] as an item, [~library] first when dune names one. *)
 let registration ~loc fn args =
   let library =
@@ -136,7 +148,7 @@ let registration ~loc fn args =
     | None -> []
   in
   let fn = evar ~loc ("Ppx_windtrap_runtime.Ppx_runtime." ^ fn) in
-  [%stri let () = [%e pexp_apply ~loc fn (library @ args)]]
+  test_item ~loc (pexp_apply ~loc fn (library @ args))
 
 (* [body] out of tail position: the frame of the test's function stays on the
    stack while [body]'s last call runs, so an assertion that ends [body]
@@ -180,7 +192,7 @@ let group ~ctxt name (mb : module_binding) =
       ]
   in
   let leave =
-    [%stri let () = Ppx_windtrap_runtime.Ppx_runtime.leave_group ()]
+    test_item ~loc [%expr Ppx_windtrap_runtime.Ppx_runtime.leave_group ()]
   in
   let binding =
     {
@@ -188,7 +200,9 @@ let group ~ctxt name (mb : module_binding) =
          ~name:(Located.mk ~loc (Some name))
          ~expr:mb.pmb_expr)
       with
-      pmb_attributes = List.filter (fun a -> not (is_tags a)) mb.pmb_attributes;
+      pmb_attributes =
+        List.filter (fun a -> not (is_tags a)) mb.pmb_attributes
+        @ [ test_mark ~loc ];
     }
   in
   [ enter; pstr_module ~loc binding; leave ]

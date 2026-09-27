@@ -78,6 +78,18 @@
     [let%expect_test] for a bad node; the rest of a dropped body is not checked.
     Under ["enabled"], and without the cookie, they expand as above.
 
+    {1:mark The test mark}
+
+    Every structure item that an expansion generates carries the attribute
+    [[@@windtrap.test]]: the registration of a [let%test] or a
+    [let%expect_test], and the [enter_group] and [leave_group] registrations and
+    the module of a [module%test]. The instrumentation backends
+    [ppx_windtrap.coverage] and [ppx_windtrap.mutate] leave an item that carries
+    it as written, a module with every item it holds, so a test and its helpers
+    carry no point and no mutant. The compiler ignores the attribute and
+    ppxlib's [-check] does not report it, so a build without the backends
+    compiles the items as they are.
+
     {1:library The [library-name] cookie}
 
     Under the cookie [library-name], which dune sets for a library stanza, each

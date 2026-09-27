@@ -232,9 +232,10 @@ module of any other shape as it is.
          match (if (sum 1 2) = 3 then () else failwith "sum" : unit) with
          | () -> ()
          | exception __windtrap_e -> Stdlib.raise_notrace __windtrap_e)
+    [@@windtrap.test ]
   let () =
     Ppx_windtrap_runtime.Ppx_runtime.enter_group
-      ~file:"./fixture_inline_tests.ml" ~tags:[] "Grouped"
+      ~file:"./fixture_inline_tests.ml" ~tags:[] "Grouped"[@@windtrap.test ]
   module Grouped =
     struct
       let twice x = x + x
@@ -248,8 +249,9 @@ module of any other shape as it is.
              with
              | () -> ()
              | exception __windtrap_e -> Stdlib.raise_notrace __windtrap_e)
-    end
-  let () = Ppx_windtrap_runtime.Ppx_runtime.leave_group ()
+        [@@windtrap.test ]
+    end[@@windtrap.test ]
+  let () = Ppx_windtrap_runtime.Ppx_runtime.leave_group ()[@@windtrap.test ]
   let () =
     Ppx_windtrap_runtime.Ppx_runtime.add_test ~file:"./fixture_inline_tests.ml"
       ~pos:("./fixture_inline_tests.ml", 15, 0, 73) ~tags:[] "prints"
@@ -273,6 +275,7 @@ module of any other shape as it is.
                    | exception __windtrap_e ->
                        Stdlib.raise_notrace __windtrap_e))
            (fun () -> Expect_test_config.sanitize (Windtrap.output ())))
+    [@@windtrap.test ]
 
   $ cov --impl ./fixture_keys.ml | ../elide.exe
   coverage points of "./fixture_keys.ml" in Windtrap_cov_________fixture_keys___ml, with ___windtrap_post_visit___:

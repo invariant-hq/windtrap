@@ -61,44 +61,18 @@ let excludes_file = function
 
 (* Inline tests *)
 
-(* An inline test reaches this pass as ppx_windtrap's expansion, or as an
-   extension node, which is never traversed. The shapes are
-   ppx/mutate/instrument.ml's, which states them. *)
-let registration item =
-  match item.pstr_desc with
-  | Pstr_value (_, [ { pvb_expr = { pexp_desc = Pexp_apply (f, _); _ }; _ } ])
-    -> (
-      match f.pexp_desc with
-      | Pexp_ident
-          {
-            txt =
-              Ldot (Ldot (Lident "Ppx_windtrap_runtime", "Ppx_runtime"), name);
-            _;
-          } ->
-          Some name
-      | _ -> None)
-  | _ -> None
-
-(* [items] with each inline test left as written and [f] applied to every
-   other item, in order. *)
-let map_outside_tests f items =
-  let rec outside acc = function
-    | [] -> List.rev acc
-    | item :: items -> (
-        match registration item with
-        | Some "enter_group" -> inside (item :: acc) items
-        | Some _ -> outside (item :: acc) items
-        | None ->
-            let item = f item in
-            outside (item :: acc) items)
-  and inside acc = function
-    | [] -> List.rev acc
-    | item :: items -> (
-        match registration item with
-        | Some "leave_group" -> outside (item :: acc) items
-        | Some _ | None -> inside (item :: acc) items)
+(* ppx_windtrap marks each item it generates for a test with
+   [[@@windtrap.test]]. Without ppx_windtrap a test stays an extension node,
+   which is never traversed. *)
+let is_test_item si =
+  let marked =
+    List.exists (fun a -> String.equal a.attr_name.txt "windtrap.test")
   in
-  outside [] items
+  match si.pstr_desc with
+  | Pstr_value (_, bindings) ->
+      List.exists (fun b -> marked b.pvb_attributes) bindings
+  | Pstr_module mb -> marked mb.pmb_attributes
+  | _ -> false
 
 (* Points *)
 
@@ -578,7 +552,11 @@ class instrumenter st =
 
     method! structure items =
       let outer = suppressed in
-      let items = map_outside_tests self#structure_item items in
+      let items =
+        List.map
+          (fun si -> if is_test_item si then si else self#structure_item si)
+          items
+      in
       suppressed <- outer;
       items
 
