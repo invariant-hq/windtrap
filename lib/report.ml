@@ -651,7 +651,7 @@ let rec drop n = function _ :: rest when n > 0 -> drop (n - 1) rest | l -> l
    [reproduce:] sits on its outcome, so the last line still says how the run
    ended. An interrupted run's would run the tests the signal kept from
    running, and [-u] would accept baselines the report does not show. *)
-let close t ~commands ~results ~release_failures ~duration ?baselines
+let close t ~commands ~results ~release_failures ~duration ?baselines ?stopped
     ?(before_summary = ignore) () =
   sync t;
   clear_live t;
@@ -740,6 +740,18 @@ let close t ~commands ~results ~release_failures ~duration ?baselines
       @ Option.to_list (Sections.replay ?armed ~invocation ~tests:run failures)
       )
   end;
+  (* The summary counts the tests a stop kept from running; this names it. *)
+  Option.iter
+    (fun path ->
+      put t
+        [
+          plain
+            (strf
+               "run stopped after %s: a call on another domain outlived the \
+                test's limit"
+               (Text.escape_controls (Test_tree.path_to_string path)));
+        ])
+    stopped;
   summary_line t summary ~duration;
   Pp.flush t.out ()
 
@@ -951,6 +963,7 @@ let run ?(on_event = fun (_ : Run.event) -> ()) ~suite (config : Run.config)
       let release_failures = outcome.release_failures in
       finish renderer ~results ~release_failures ~duration:outcome.duration
         ~baselines:(Run.baselines outcome.run)
+        ?stopped:(Run.stopped outcome.run)
         ~before_summary:(close_envelope ~release_failures results)
         ();
       (* Last, so the file is written from the rows the terminal has shown. *)

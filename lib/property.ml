@@ -33,6 +33,7 @@ let make_context () =
     discards = 0;
   }
 
+let scratch = make_context
 let collect ctx label = Hashtbl.replace ctx.marks label ()
 let classify ctx label condition = if condition then collect ctx label
 
@@ -114,7 +115,7 @@ let same_class a b = failure_class a = failure_class b
 (* The search terminates: [shrink_budget] bounds the runs of the law, and a
    node's candidates that run no law (a discarding re-generation, a filtered
    candidate) are finite for [Gen]'s generators. *)
-let shrink law tree fault =
+let shrink ~cost law tree fault =
   let scratch = make_context () in
   (* A timeout can fire at any poll point of the search, which then ends at
      the last accepted node. *)
@@ -134,9 +135,9 @@ let shrink law tree fault =
           | Error (`Timeout _ as timeout) -> Failure.reraise timeout
           | Error (#Failure.fault as accepted) when same_class fault accepted ->
               best := (candidate, steps + 1, accepted);
-              descend ~runs:(runs + 1) (steps + 1) candidate
+              descend ~runs:(runs + cost) (steps + 1) candidate
           | Ok () | Error (#Failure.fault | #Failure.control) ->
-              first_accepted ~runs:(runs + 1) rest)
+              first_accepted ~runs:(runs + cost) rest)
     in
     first_accepted ~runs (Gen.Engine.Shrink_tree.children tree)
   in
@@ -162,7 +163,7 @@ let inner_failure : Failure.fault -> Failure.t = function
         ()
 
 let run ?loc ?count ?max_discard ?(examples = []) ?(summary = Fun.const None)
-    ~root ~path gen law =
+    ?(cost = 1) ~root ~path gen law =
   let count, config_count =
     match count with
     | None -> (default_count, None)
@@ -170,6 +171,7 @@ let run ?loc ?count ?max_discard ?(examples = []) ?(summary = Fun.const None)
     | Some (`Config n) -> (n, Some n)
   in
   if count < 0 then invalid_arg "Property.run: count must be non-negative";
+  if cost < 1 then invalid_arg "Property.run: cost must be positive";
   let max_discard =
     match max_discard with
     | None -> if count > max_int / 2 then max_int else 2 * count
@@ -240,7 +242,7 @@ let run ?loc ?count ?max_discard ?(examples = []) ?(summary = Fun.const None)
               timed_out ~case_index:index ~examples:false limit
           | `Failed fault ->
               let node, shrink_steps, fault, shrink_end =
-                shrink law tree fault
+                shrink ~cost law tree fault
               in
               let rendered, rendering =
                 match Gen.Engine.render node with

@@ -72,6 +72,11 @@ val classify : context -> string -> bool -> unit
 (** [classify ctx label cond] is [collect ctx label] if [cond] holds and [()]
     otherwise. *)
 
+val scratch : unit -> context
+(** [scratch ()] is a context that no run reads: what is marked or demanded in
+    it counts nowhere. A law gives it to code whose labels must not count, as
+    the orders of a stateful test that its judge rejects. *)
+
 val cover : context -> string -> bool -> unit
 (** [cover ctx label cond] is [classify ctx label cond] with the demand that at
     least one passing case marks [label].
@@ -163,6 +168,7 @@ val run :
   ?max_discard:int ->
   ?examples:'a list ->
   ?summary:('a -> string option) ->
+  ?cost:int ->
   root:Seed.seed ->
   path:string ->
   'a Gen.t ->
@@ -186,6 +192,8 @@ val run :
       the final node of the search or the failing example. It must be
       [Some line] iff [gen] prints [v] as a table (see {!Failure.Property}).
       Defaults to [Fun.const None].
+    - [cost] is the share of {!shrink_budget} that one run of [law] spends, for
+      a law that runs its case several times. Defaults to [1].
 
     {b Examples.} The examples run first, in order, unshrunk and without a seed.
     A passing example commits its labels and counts in [cases], a discarding one
@@ -211,10 +219,10 @@ val run :
     raises a control other than [`Timeout] is rejected.
 
     The search ends at a node with no accepted candidate, [Failure.Converged].
-    It also ends when it has run [law] {!shrink_budget} times,
-    [Failure.Budget_spent], and when the forcing of a candidate raises anything
-    but a [`Timeout]: [Failure.Candidate_raised] with that exception as
-    [Failure.exn_to_string] prints it.
+    It also ends when its runs of [law], each costing [cost], have spent
+    {!shrink_budget}, [Failure.Budget_spent], and when the forcing of a
+    candidate raises anything but a [`Timeout]: [Failure.Candidate_raised] with
+    that exception as [Failure.exn_to_string] prints it.
 
     A [`Timeout] raised anywhere in the search ends it as well,
     [Failure.Timed_out] with the limit. The failure then describes the last
@@ -222,9 +230,9 @@ val run :
     of the first failure, so a replay descends the same path, and a timeout
     changes only where on that path the descent stops.
 
-    Raises [Invalid_argument] if [count] or [max_discard] is negative, inside
-    the running test, where [run] executes. Raises a [Failure.Control] other
-    than [`Discard] and [`Timeout] when [law] or [gen] raises it outside the
-    search, and no outcome then exists. A control delivered while the
-    counterexample is formatted does not leave [run], since the guard of
-    [Gen.Engine.render] turns it into text. *)
+    Raises [Invalid_argument] if [count] or [max_discard] is negative, or if
+    [cost] is not positive, inside the running test, where [run] executes.
+    Raises a [Failure.Control] other than [`Discard] and [`Timeout] when [law]
+    or [gen] raises it outside the search, and no outcome then exists. A control
+    delivered while the counterexample is formatted does not leave [run], since
+    the guard of [Gen.Engine.render] turns it into text. *)

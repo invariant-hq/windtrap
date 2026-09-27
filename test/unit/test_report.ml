@@ -1419,6 +1419,24 @@ let transcript_group =
             (fun (_, run) ->
               let t, expected = run () in
               equal string expected (last_line t));
+          test "a stopped run names the test that stopped it above the summary"
+            (fun () ->
+              let stuck = failed "stuck" "timed out" in
+              let t =
+                rendered (fun r ->
+                    Report.header r ~suite:"s" ~tests:3 ~seed:None ();
+                    Report.result r stuck;
+                    Report.finish r ~release_failures:[] ~results:[ stuck ]
+                      ~stopped:[ "g"; "stuck" ] ~duration:0.5 ())
+              in
+              match List.rev (lines t) with
+              | "" :: summary :: stop :: _ ->
+                  equal (pair string string)
+                    ( "run stopped after g \u{203a} stuck: a call on another \
+                       domain outlived the test's limit",
+                      "1 failed, 2 not run in 500ms." )
+                    (stop, summary)
+              | _ -> fail t);
           cases "the slow section lists the results at or over the threshold"
             ~name:fst slow_section_rows slow_section;
           test "corrections: one written row per file, in path order"

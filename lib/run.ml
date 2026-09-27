@@ -81,7 +81,6 @@ let for_subset config ~log_dir ~bail =
     log_dir;
     allow_focus = true;
     junit = None;
-    mutation = No_mutation;
     broadcast = not_broadcast;
   }
 
@@ -119,6 +118,7 @@ type t = {
   mutable interrupted : int option;
       (* a signal that arrived in the runner's own code, acted on at the next
          boundary *)
+  mutable stopped : string list option; (* the test after which the run stops *)
 }
 
 let create config ~capture ~baselines =
@@ -132,12 +132,14 @@ let create config ~capture ~baselines =
     releasing = None;
     rev_results = [];
     interrupted = None;
+    stopped = None;
   }
 
 let config t = t.config
 let capture t = t.capture
 let baselines t = t.baselines
 let results t = List.rev t.rev_results
+let stopped t = t.stopped
 
 (* Frames *)
 
@@ -244,6 +246,10 @@ let current_frame () =
   | Some (In_run _) | None -> invalid_arg outside_run_error
 
 let current () = (current_frame ()).run
+
+let stop () =
+  let frame = current_frame () in
+  frame.run.stopped <- Some frame.path
 
 (* The running test *)
 
@@ -521,7 +527,7 @@ let gave_up_failure ?loc (stats : Property.stats) =
         cases passed)"
        stats.discards stats.cases)
 
-let property ?loc ?count ?max_discard ?examples ?summary gen law =
+let property ?loc ?count ?max_discard ?examples ?summary ?cost gen law =
   let frame = current_frame () in
   let config = frame.run.config in
   let count =
@@ -541,7 +547,8 @@ let property ?loc ?count ?max_discard ?examples ?summary gen law =
     raise (Failure.Check_failure failure)
   in
   match
-    Property.run ?loc ?count ?max_discard ?examples ?summary ~root:config.seed
+    Property.run ?loc ?count ?max_discard ?examples ?summary ?cost
+      ~root:config.seed
       ~path:(Test_tree.path_to_string frame.path)
       gen run_law
   with
@@ -549,6 +556,15 @@ let property ?loc ?count ?max_discard ?examples ?summary gen law =
   | Fail { failure; stats } -> fail stats failure
   | Coverage_failed stats -> fail stats (coverage_failure ?loc:frame.loc stats)
   | Gave_up stats -> fail stats (gave_up_failure ?loc:frame.loc stats)
+
+(* The enclosing law's context comes back however [fn] ends. *)
+let without_labels fn =
+  match Atomic.get slot with
+  | Some (In_test ({ prop = Some _ as enclosing; _ } as frame))
+    when on_run_domain frame.run ->
+      frame.prop <- Some (Property.scratch ());
+      Fun.protect ~finally:(fun () -> frame.prop <- enclosing) fn
+  | Some (In_test _ | In_run _) | None -> fn ()
 
 let prop ?__POS__ ?tags ?timeout ?count ?max_discard ?examples ?summary name gen
     law =
@@ -1135,7 +1151,8 @@ let drive ~on_event ~interrupt run selected =
         Option.iter interrupt run.interrupted;
         let result, corrected = run_case ~on_event run case in
         let uncorrected = uncorrected || (result.counted && not corrected) in
-        if run.config.bail && result.counted then uncorrected
+        if (run.config.bail && result.counted) || Option.is_some run.stopped
+        then uncorrected
         else loop uncorrected cases
   in
   try loop false selected

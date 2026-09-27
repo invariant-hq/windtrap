@@ -957,6 +957,25 @@ let shrinking =
                 Not_found"
                row)
             (outcome_row o));
+      cases "a law whose run costs 50 spends the budget in 200 runs" ~name:fst
+        [
+          ("a candidate left", (201, "200 steps, budget spent: 1"));
+          ("no candidate left", (200, "200 steps, converged: 0"));
+        ]
+        (fun (_, (n, row)) ->
+          let o =
+            Property.run ~cost:50 ~root ~path:"budget"
+              (drawn (chain n))
+              (fun _ _ -> raise Not_found)
+          in
+          equal string
+            (strf "fail, 0 cases, 0 discards; case 0, %s; raise Not_found" row)
+            (outcome_row o));
+      test "a cost below 1 raises" (fun () ->
+          raises_match Exn.invalid_arg (fun () ->
+              Property.run ~cost:0 ~root ~path:"budget"
+                (drawn (chain 1))
+                (fun _ _ -> ())));
       test "the budget counts every candidate probed" budget_runs;
       test "a quad of int64 converges within 256 steps" quad;
       test "a candidate whose forcing raises ends the search" raising_candidate;

@@ -73,7 +73,7 @@ report and the aggregate cannot drift apart.
 | `Windtrap` | the contract and the flat re-exports; the ambient-reading wrappers |
 | `Test_tree` (with `Test_tree.Tag`) | the tree, tags, focus, xfail, flatten, paths |
 | `Testable`, `Check`, `Failure`, `Diff` | witnesses; the verbs, pure, with no run-state dependency; failure data (typed kinds, phase, location, output tail, the `Check_failure` and `Control` exceptions); diff data (Myers hunks and character-refinement spans, no styling) |
-| `Gen` (with `Gen.Engine.Shrink_tree`), `Property`, `Stateful` | generators; the case loop (examples first, per-case seeds, the discard budget, the shrink search, label tables); commands and programs, compiled into properties |
+| `Gen` (with `Gen.Engine.Shrink_tree`), `Property`, `Stateful`, `Workers` | generators; the case loop (examples first, per-case seeds, the discard budget, the shrink search, label tables); commands and programs, compiled into properties, and the judge of a program on several domains; the worker domains that run its branches |
 | `Baseline`, `Source_patch`, `Capture` | the correction registry keyed by site or path, read-only checking, corrections gated per test and written once as `.corrected` files or in place; literal rewriting inside a source file; fd-level capture into per-test log files |
 | `Cli`, `Run`, `Report`, `Report_sections`, `Report_junit` | one declarative item table (flags and flagless settings) resolved once into the one `Run.config`, each mirror declared beside its flag and read through the flag's parser; the run record and the ambient slot, the sequential executor (startup checks, selection, the per-test boundary, SIGALRM timeouts, retries, fixture release, the last-failed store, the exit guard, the exit codes), which prints nothing and emits typed events; the transcript, the GitHub envelope and `Report.run`, execute reported; the failure projection every transport shares and the section vocabulary the coverage and mutation reports project into; the JUnit document and its file |
 | `Mutate_loop` | the dry run and its reach map, the scope applied to the population it forks over, the determinism probe, the fork loop (one child per reached mutant, each running only the tests that reach it), the verdict file, the per-executable report. It wraps `Report.run` rather than sitting beside it, because a mutation run must announce an armed mutant before any other output and fork after the dry run |
@@ -84,7 +84,9 @@ The rows group by role, not by layer: `Os`, `Pp`, `Text`, `Loc` and
 that reaches every other; between them the executor (`Run`) sits over
 the producers it drives, the report over the executor and the mutation
 loop over the report, with `Stateful` and `Cli` reaching `Run` (for
-`Run.property` and `Run.config`).
+`Run.property`, `Run.without_labels` and `Run.stop`, and for
+`Run.config`). `Workers` depends on `Os` alone, and knows nothing of
+tests.
 `Windtrap.Private` re-exports these modules for windtrap's own test
 suite and its binary; it is not part of the public API and carries no
 stability guarantee, and nothing in it escapes into scope on
@@ -122,12 +124,29 @@ module.
   tag, and per-case seeds derive from root, path and index. A new
   selection knob `for_subset` does not clear gives a child a selection
   its parent's tree already applied, which is how a deterministic suite
-  comes to look non-deterministic.
+  comes to look non-deterministic. It keeps `mutation`: a stateful test
+  on several domains reads it to run each program on the test's domain,
+  and a mutation child must run it as the dry run did, which spawned
+  nothing, so the loop can still fork.
 - The ambient slot is an `Atomic.t`, and `Run.t` records the domain
   that called `execute`, so a read from another domain is defined and
   refused instead of racing. The refusal is raised in the calling domain
   and recorded nowhere: like any exception of that domain, it fails the
   test only when it reaches the test's domain.
+- A signal handler runs on whichever domain polls first, among those
+  that do not block the signal, and the runner's handlers act where
+  they land, as in any test: the alarm raises its timeout there. A
+  stateful test's workers are spawned while the test's domain blocks
+  `SIGALRM`, `SIGINT`, `SIGTERM` and `SIGHUP`, and a domain is born with
+  its creator's mask, so no handler of the runner ever runs on a worker
+  or on a domain a worker spawns, and a limit that expires while a
+  branch deadlocks lands on the test's domain, which waits in spins and
+  sleeps rather than a join. The report, the temporary paths and the
+  fixture releases therefore never run on a worker. A domain that the
+  test's own domain spawned, such as a pool a system starts in the
+  prefix, blocks nothing: while it lives it may take the alarm, whose
+  timeout then ends the test only if it reaches the test's domain, and
+  a deadlocked branch hangs as a deadlocked test would.
 - `Run.active_run_error` is one string because three already-active
   checks each matter: the executor's two halves, and the facade's, which
   must fire before `Cli.parse` can exit on `--help`. The sentence a
@@ -158,6 +177,19 @@ candidate that deletes an unrelated maker moves no later choice. A
 broken reference is `Property.Oracle_failure`, a failure class of its
 own: its case shrinks as any other, and neither search accepts a
 candidate of the other class.
+
+On several domains the judge never copies a reference: it replays a
+fresh one along the path to every branch point but the first, so a
+mutable model needs no persistence, and it checks each replay of the
+prefix against the run's outcomes, since a drifting reference would
+otherwise blame the system. A pending call packs its bound reference
+function (parameterised by the sides it reads), its system function and
+how the system ended in one existential, so the judge compares within
+one unpacking. Every run is judged; nothing caches a verdict. Only the
+prefix has one reference state, so only there does a call make a value
+or ask a `~pre`: a value made after it would need a reference side that
+exists only once an order is chosen, and a `~pre` asked after it would
+need one state the orders do not share.
 
 **Loc.** `Loc.capture` takes the first call-stack slot whose
 compilation unit is neither windtrap's nor the stdlib's, via
@@ -256,12 +288,14 @@ Changing one is a design decision, recorded here first.
   printerless `map` or `bind` renders its pre-image, and `with_pp`
   overrides.
 - **Per-case seeds derive from (root, path, index)**; every failure
-  replays from the printed token, within one version of windtrap: the
-  derivation and the bit stream are frozen under the token's `s1` prefix,
-  what a generator draws from the stream is not.
+  replays from the printed token, within one version of windtrap, except
+  that the failure of a test on several domains replays its programs,
+  not its schedule: the derivation and the bit stream are frozen under
+  the token's `s1` prefix, what a generator draws from the stream is not.
 - **Every user callback runs inside a test's boundary, and a resource
   acquired is released on every path where the runner regains
-  control.**
+  control.** A call on another domain that outlives its test's limit
+  ends the run after that test.
 - **The exit code is 0, 1 or 2**: passed, failed, nothing ran. Under
   `--corrected` a recorded correction is not a failure, because the
   `diff?` that follows is the verdict. What the environment broadcasts

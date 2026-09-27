@@ -78,20 +78,14 @@ type command =
       name : string;
       loc : Loc.t option;
       fn : ('r, 's, 'p) fn;
-      pre : 'p;
+      pre : 'p option;
       reference : 'r;
       system : 's;
     }
       -> command
 
-let rec always : type r s p. (r, s, p) fn -> p = function
-  | Result _ -> true
-  | Drawn (_, fn) -> fun _ -> always fn
-  | Chosen (_, fn) -> fun _ -> always fn
-
 let command ?__POS__ ?pre name fn reference system =
   let loc = Loc.resolve ?__POS__ () in
-  let pre = match pre with Some pre -> pre | None -> always fn in
   Command { name = one_line name; loc; fn; pre; reference; system }
 
 (* The abstract types of a command, for drawing and for the check of the
@@ -110,6 +104,12 @@ let rec shape : type r s p. (r, s, p) fn -> shape = function
       { shape with takes = Any t :: shape.takes }
 
 let command_shape (Command c) = shape c.fn
+
+(* On several domains only the prefix has one reference state, so only there
+   can a value be named or a [pre] be asked: after it, a command runs only
+   when it makes no value and has no [pre]. *)
+let runs_anywhere (Command c as command) =
+  Option.is_none c.pre && Option.is_none (command_shape command).makes
 
 (* [first_positions commands] is, for each command, the position of its first
    occurrence in [commands], so a command listed twice is one command. *)
@@ -146,10 +146,11 @@ let check_prefix prefix =
 
 (* The types are gathered first, so that no frame of the standard library
    stands between a raise and the test in the printed backtrace. *)
-let check ~steps commands =
+let check ~steps ~domains commands =
   if Array.length commands = 0 then
     invalid_arg "Windtrap.stateful: no commands to draw from";
   if steps < 0 then invalid_arg "Windtrap.stateful: negative steps";
+  if domains < 1 then invalid_arg "Windtrap.stateful: domains below 1";
   let types command =
     let { takes; makes } = command_shape command in
     takes @ Option.to_list makes
@@ -169,7 +170,11 @@ let check ~steps commands =
         | None -> Hashtbl.replace owners t.prefix t.id);
         check_all types
   in
-  check_all (List.concat_map types (Array.to_list commands))
+  check_all (List.concat_map types (Array.to_list commands));
+  if domains > 1 && not (Array.exists runs_anywhere commands) then
+    invalid_arg
+      "Windtrap.stateful: on several domains every command makes a value or \
+       has a ~pre, so no call can run after the prefix"
 
 (* Programs *)
 
@@ -193,23 +198,30 @@ type call =
       name : string;
       loc : Loc.t option;
       args : ('r, 's, 'p) args;
-      pre : 'p;
+      pre : 'p option;
       reference : 'r;
       system : 's;
     }
       -> call
 
-(* A call that ran. [made] is set when the call made a value. *)
+(* A call that ran. [made] is set when the call made a value, [result] when
+   its system's outcome is no value. *)
 type row = {
   command : int;
   name : string;
+  domain : int option; (* the branch of a parallel call, from 1 *)
   before : string option; (* the [reference before] cell *)
   call : string Lazy.t; (* [name a1 … an] *)
   mutable made : string option;
+  mutable result : string Lazy.t option;
 }
 
+(* On one domain [prefix] is the whole program and [branches] is empty. On
+   [n] domains [branches] holds [n] lists, which shrinking may empty. *)
 type program = {
-  calls : call list;
+  prefix : call list;
+  branches : call list array;
+  suffix : call list;
   held : bool array; (* the case's subset, by position *)
   mutable record : row list option; (* the rows of the last run, in order *)
 }
@@ -223,7 +235,6 @@ let argument_bytes = 200
 let cell_chars = 60
 let context_calls = 20
 let call_count n = Pp.str "%d call%s" n (if n = 1 then "" else "s")
-let pad width text = String.make (width - Text.length_utf8 text) ' '
 
 let argument_text sample =
   let text = match Gen.Engine.render sample with Value t | Pre_image t -> t in
@@ -235,6 +246,25 @@ let argument_text sample =
 let row_text row =
   let call = Lazy.force row.call in
   match row.made with Some v -> "let " ^ v ^ " = " ^ call | None -> call
+
+let is_parallel row = Option.is_some row.domain
+
+(* The columns after [#]: [reference before] when a shown row has a cell,
+   then [call], between [domain] and [result] when the record has a parallel
+   call. *)
+let columns ~parallel rows =
+  let before row = Option.value row.before ~default:"" in
+  let domain row = Option.fold ~none:"" ~some:string_of_int row.domain in
+  let result row = Option.fold ~none:"" ~some:Lazy.force row.result in
+  List.concat
+    [
+      (if List.exists (fun row -> Option.is_some row.before) rows then
+         [ ("reference before", before) ]
+       else []);
+      (if parallel then [ ("domain", domain) ] else []);
+      [ ("call", row_text) ];
+      (if parallel then [ ("result", result) ] else []);
+    ]
 
 (* Hard newlines and padding only: the engine renders through
    [Format.asprintf] at its default margin, which would re-wrap break
@@ -255,27 +285,38 @@ let record_text = function
             [ Pp.str "\u{2026} (%s omitted)" (call_count omitted) ],
             List.filteri (fun i _ -> i >= total - context_calls) numbered )
       in
-      let cells =
-        List.exists (fun (_, row) -> Option.is_some row.before) (head @ tail)
+      let shown = List.map snd (head @ tail) in
+      let columns = columns ~parallel:(List.exists is_parallel rows) shown in
+      let widths =
+        List.map
+          (fun (header, cell) ->
+            List.fold_left
+              (fun width row -> max width (Text.length_utf8 (cell row)))
+              (String.length header) shown)
+          columns
       in
-      let cell_width =
-        List.fold_left
-          (fun width (_, row) ->
-            max width (Text.length_utf8 (Option.value row.before ~default:"")))
-          0 (head @ tail)
-      in
-      let cell_width = max cell_width (String.length "reference before") in
       let number_width = max 2 (String.length (string_of_int total)) in
-      let line number cell text =
-        pad number_width number ^ number
-        ^ (if cells then "  " ^ cell ^ pad cell_width cell else "")
-        ^ "  " ^ text
+      (* Every cell but a line's last is padded, and the blank cells that
+         end a line are dropped, so no line ends on a blank. *)
+      let rec cells = function
+        | [] -> ""
+        | (width, cell) :: rest ->
+            if List.for_all (fun (_, cell) -> cell = "") rest then "  " ^ cell
+            else
+              "  " ^ cell
+              ^ String.make (width - Text.length_utf8 cell) ' '
+              ^ cells rest
+      in
+      let line number texts =
+        String.make (number_width - String.length number) ' '
+        ^ number
+        ^ cells (List.combine widths texts)
       in
       let row (number, row) =
-        line number (Option.value row.before ~default:"") (row_text row)
+        line number (List.map (fun (_, cell) -> cell row) columns)
       in
       String.concat "\n"
-        ((line "#" "reference before" "call" :: List.map row head)
+        ((line "#" (List.map fst columns) :: List.map row head)
         @ omission @ List.map row tail)
 
 let pp_program ppf program =
@@ -287,9 +328,13 @@ let pp_program ppf program =
 let summary program =
   match program.record with
   | None | Some [] -> None
-  | Some rows ->
-      let last = List.nth rows (List.length rows - 1) in
-      Some (Pp.str "%s, last: %s" (call_count (List.length rows)) last.name)
+  | Some rows -> (
+      let total = call_count (List.length rows) in
+      match List.length (List.filter is_parallel rows) with
+      | 0 ->
+          let last = List.nth rows (List.length rows - 1) in
+          Some (Pp.str "%s, last: %s" total last.name)
+      | parallel -> Some (Pp.str "%s, %d in parallel" total parallel))
 
 (* Drawing *)
 
@@ -372,21 +417,74 @@ let draw_subset firsts shapes state =
   Array.iteri (fun i first -> held.(i) <- held.(first)) firsts;
   (held, !state)
 
+(* Where a call of a program on several domains runs. *)
+type slot = Prefix | Branch of int | Suffix
+
+(* The calls of each branch: the most, at most ten in all, whose orders stay
+   within 7! = 5040, and never fewer than one. Two domains take five calls
+   each (252 orders), three take three (1680), four take two (2520), five to
+   seven take one; from eight domains one call each gives n! orders. *)
+let branch_calls = function 2 -> 5 | 3 -> 3 | 4 -> 2 | _ -> 1
+
+(* A parallel call's first candidates move it to the end of the prefix,
+   then to the start of the suffix, where it runs alone. A moved call has no
+   such candidate, so the tree stays finite in depth. *)
+let rec slotted slot tree =
+  let moved slot = Shrink_tree.map (fun call -> (slot, call)) tree in
+  match slot with
+  | Prefix | Suffix -> moved slot
+  | Branch _ ->
+      let rec argument_moves children () =
+        match children () with
+        | Seq.Nil -> Seq.Nil
+        | Seq.Cons (child, rest) ->
+            Seq.Cons (slotted slot child, argument_moves rest)
+      in
+      let moves () =
+        Seq.Cons
+          ( moved Prefix,
+            fun () ->
+              Seq.Cons (moved Suffix, argument_moves (Shrink_tree.children tree))
+          )
+      in
+      Shrink_tree.make ~root:(slot, Shrink_tree.root tree) ~children:moves
+
+(* The calls in program order: the prefix, each branch, the suffix, each in
+   the order the list holds it, so a call moved to the prefix ends it and one
+   moved to the suffix starts it. *)
+let parallel_program ~domains held calls =
+  let in_slot slot =
+    List.filter_map
+      (fun (s, call) -> if s = slot then Some call else None)
+      calls
+  in
+  {
+    prefix = in_slot Prefix;
+    branches = Array.init domains (fun i -> in_slot (Branch i));
+    suffix = in_slot Suffix;
+    held;
+    record = None;
+  }
+
 (* No reference runs here: a command is drawn when every type it takes has a
    value that an earlier call makes, if both of its sides return. Nothing
    repairs a candidate; [execute] skips what does not resolve. [makers]
-   holds, per type, the steps of the calls that make it, newest first. *)
-let program ?(steps = 20) commands =
+   holds, per type, the steps of the calls that make it, newest first. After
+   the prefix only a command that [runs_anywhere] is drawn, so a branch and
+   the suffix choose among the prefix's values. *)
+let program ?(steps = 20) ?(domains = 1) commands =
   let commands = Array.of_list commands in
   let firsts = first_positions commands in
   let shapes = Array.map command_shape commands in
+  let anywhere = Array.map runs_anywhere commands in
   let draw state =
-    check ~steps commands;
+    check ~steps ~domains commands;
     let held, state = draw_subset firsts shapes state in
     let made = Hashtbl.create 8 in
     let makers t = Option.value ~default:[] (Hashtbl.find_opt made t) in
-    let drawable i =
+    let drawable ~prefix i =
       held.(i)
+      && (prefix || anywhere.(i))
       && List.for_all (fun t -> makers (type_id t) <> []) shapes.(i).takes
     in
     let draw_call step i state =
@@ -409,31 +507,67 @@ let program ?(steps = 20) commands =
           (Shrink_tree.map call args, state)
     in
     let positions = List.init (Array.length commands) Fun.id in
-    let rec draw_calls n trees state =
-      match if n = 0 then [] else List.filter drawable positions with
+    let next_step = ref 0 in
+    let rec draw_calls ~prefix n trees state =
+      match if n = 0 then [] else List.filter (drawable ~prefix) positions with
       | [] -> (List.rev trees, state)
       | drawable ->
           let bound = Int64.of_int (List.length drawable) in
           let pick, state = Seed.below ~bound state in
           let i = List.nth drawable (Int64.to_int pick) in
-          let step = List.length trees in
+          let step = !next_step in
+          incr next_step;
           let tree, state = draw_call step i state in
           let make t =
             Hashtbl.replace made (type_id t) (step :: makers (type_id t))
           in
           Option.iter make shapes.(i).makes;
-          draw_calls (n - 1) (tree :: trees) state
+          draw_calls ~prefix (n - 1) (tree :: trees) state
     in
-    let trees, state = draw_calls steps [] state in
-    let program calls = { calls; held; record = None } in
-    (Shrink_tree.map program (Shrink_tree.list trees), state)
+    if domains = 1 then
+      let trees, state = draw_calls ~prefix:true steps [] state in
+      let program calls =
+        { prefix = calls; branches = [||]; suffix = []; held; record = None }
+      in
+      (Shrink_tree.map program (Shrink_tree.list trees), state)
+    else
+      let below n state =
+        let k, state = Seed.below ~bound:(Int64.of_int (n + 1)) state in
+        (Int64.to_int k, state)
+      in
+      let prefix_calls, state = below steps state in
+      let suffix_calls, state = below (steps - prefix_calls) state in
+      let prefix, state = draw_calls ~prefix:true prefix_calls [] state in
+      let rec draw_branches i trees state =
+        if i = domains then (List.concat (List.rev trees), state)
+        else
+          let branch, state =
+            draw_calls ~prefix:false (branch_calls domains) [] state
+          in
+          draw_branches (i + 1)
+            (List.map (slotted (Branch i)) branch :: trees)
+            state
+      in
+      let branches, state = draw_branches 0 [] state in
+      let suffix, state = draw_calls ~prefix:false suffix_calls [] state in
+      let calls =
+        List.map (slotted Prefix) prefix
+        @ branches
+        @ List.map (slotted Suffix) suffix
+      in
+      ( Shrink_tree.map (parallel_program ~domains held) (Shrink_tree.list calls),
+        state )
   in
   Gen.Engine.make ~pp:pp_program draw
 
 (* Running *)
 
-(* A value that a system made. Its reference side is the run's, under the
-   step of the call that made it. *)
+(* The reference sides of a run, or of a replay by the judge, by the step of
+   the call that made each. *)
+type sides = (int, exn) Hashtbl.t
+
+(* A value that a system made. Its reference side is in the run's [sides],
+   under the step of the call that made it. *)
 type value = {
   step : int; (* the step of the call that made it *)
   name : string;
@@ -442,44 +576,69 @@ type value = {
 }
 
 type release = { label : string; release : unit -> unit }
+type 'a outcome = Returned of 'a | Raised of exn * Printexc.raw_backtrace
+
+(* What is never an outcome: a verb's failure or a broken contract, as its
+   failure, and a discard. *)
+type never = Failed of Failure.t | Discarded
+
+(* A call on the way to a record: bound, with how its system ended once it
+   ran, an outcome or what is none. [number] is its row's number once the
+   row is recorded. *)
+type pending =
+  | Pending : {
+      step : int;
+      loc : Loc.t option;
+      row : row;
+      mutable number : int;
+      form : ('r, 's) form;
+      reference : sides -> unit -> 'r;
+      system : unit -> 's;
+      mutable ended : ('s outcome, never) result option;
+    }
+      -> pending
 
 type run = {
+  sides : sides;
   mutable pool : value list; (* newest first *)
-  references : (int, exn) Hashtbl.t; (* the reference sides, by step *)
   counts : (string, int) Hashtbl.t; (* the values made, per prefix *)
   mutable releases : release list; (* newest first *)
   mutable rows : row list; (* newest first *)
+  mutable ran : pending list; (* the prefix's calls that ran, newest first *)
 }
 
-(* [reference_side run t step] is the reference side of the value that the
+(* [reference_side sides t step] is the reference side of the value that the
    call at [step] made. A value joins the pool when its system returns, and
    its call ends the run unless the reference returned a side too, so every
-   value that a later call or an invariant reads has one. *)
-let reference_side run (t : (_, _) abstract) step =
-  match
-    Option.bind (Hashtbl.find_opt run.references step) t.reference.project
-  with
+   value that a later call or an invariant reads has one. A replay by the
+   judge replays the prefix, whose outcomes it checks, so it has a side
+   wherever the run has one. *)
+let reference_side sides (t : (_, _) abstract) step =
+  match Option.bind (Hashtbl.find_opt sides step) t.reference.project with
   | Some r -> r
   | None -> assert false
 
-(* [resolve run t maker] is the value of [t] that the call at step [maker]
+(* [resolve pool t maker] is the value of [t] that the call at step [maker]
    made, or when it made none, the newest value of [t], with its system
    side. *)
-let resolve run (t : (_, _) abstract) maker =
+let resolve pool (t : (_, _) abstract) maker =
   let of_type value =
     Option.map (fun s -> (value, s)) (t.system.project value.system)
   in
-  match List.find_opt (fun value -> value.step = maker) run.pool with
+  match List.find_opt (fun value -> value.step = maker) pool with
   | Some value -> of_type value
-  | None -> List.find_map of_type run.pool
+  | None -> List.find_map of_type pool
 
 (* A call whose arguments resolved. Its functions apply their arguments
-   when called, so that no code of the user runs before [pre] holds. *)
+   when called, so that no code of the user runs before [pre] holds. The
+   reference reads its arguments' sides from the [sides] it is given, so
+   the judge replays it on sides of its own; [pre] and the cells read the
+   run's. *)
 type ready =
   | Ready : {
       form : ('r, 's) form;
-      pre : unit -> bool;
-      reference : unit -> 'r;
+      pre : (unit -> bool) option;
+      reference : sides -> unit -> 'r;
       system : unit -> 's;
       words : string Lazy.t list; (* the call's text after its name *)
       cells : (unit -> string) list; (* the reference sides that print *)
@@ -500,8 +659,8 @@ let reference_cell pp r =
 let bind run (Call c) =
   let rec apply : type r s p.
       (r, s, p) args ->
-      (unit -> p) ->
-      (unit -> r) ->
+      (unit -> p) option ->
+      (sides -> unit -> r) ->
       (unit -> s) ->
       string Lazy.t list ->
       (unit -> string) list ->
@@ -513,42 +672,44 @@ let bind run (Call c) =
         Some (Ready { form; pre; reference; system; words; cells })
     | Sample (sample, args) ->
         let v = Gen.Engine.value sample in
+        let reference sides =
+          let f = reference sides in
+          fun () -> f () v
+        in
         apply args
-          (fun () -> pre () v)
-          (fun () -> reference () v)
+          (Option.map (fun pre () -> pre () v) pre)
+          reference
           (fun () -> system () v)
           (lazy (argument_text sample) :: words)
           cells
     | Index (t, maker, args) -> (
-        match resolve run t maker with
+        match resolve run.pool t maker with
         | None -> None
         | Some (value, s) ->
-            let r = reference_side run t value.step in
+            let r = reference_side run.sides t value.step in
+            let reference sides =
+              let f = reference sides in
+              fun () -> f () (reference_side sides t value.step)
+            in
             let cells =
               match t.pp with
               | None -> cells
               | Some pp -> (fun () -> reference_cell pp r) :: cells
             in
             apply args
-              (fun () -> pre () r)
-              (fun () -> reference () r)
+              (Option.map (fun pre () -> pre () r) pre)
+              reference
               (fun () -> system () s)
               (Lazy.from_val value.name :: words)
               cells)
   in
   apply c.args
-    (fun () -> c.pre)
-    (fun () -> c.reference)
+    (Option.map (fun pre () -> pre) c.pre)
+    (fun _ () -> c.reference)
     (fun () -> c.system)
     [] []
 
 (* Outcomes *)
-
-type 'a outcome = Returned of 'a | Raised of exn * Printexc.raw_backtrace
-
-(* What is never an outcome: a verb's failure or a broken contract, as its
-   failure, and a discard. *)
-type never = Failed of Failure.t | Discarded
 
 (* The failure of a fault, or of a discard, which fails in a command. *)
 let failure_of = function
@@ -619,6 +780,24 @@ let differ w reference system =
   | Raised (r, _), Raised (s, _) when same_constructor r s -> None
   | (Returned _ | Raised _), _ -> Some (mismatch reference system)
 
+let seen = function Returned v -> Ok v | Raised (exn, _) -> Error exn
+
+(* A result prints only in a table's [result] column, when the table is
+   printed: whatever its printer raises then is the cell. *)
+let printed w v =
+  lazy
+    (match Failure.catch (fun () -> Testable.to_string w v) with
+    | Ok text -> Text.truncate_utf8 cell_chars (one_line text)
+    | Error c -> Pp.str "<pp raised %s>" (Failure.caught_to_string c))
+
+let result_text : type r s. (r, s) form -> s outcome -> string Lazy.t option =
+ fun form outcome ->
+  match (outcome, form) with
+  | Raised (exn, _), _ -> Some (lazy ("exception " ^ Failure.exn_to_string exn))
+  | Returned v, Returns w -> Some (printed w v)
+  | Returned v, Chooses w -> Some (printed w v)
+  | Returned _, Makes _ -> None
+
 (* Executing *)
 
 (* [label] is spelled only on failure. A headline prints [msg] on one line,
@@ -631,6 +810,19 @@ let attribute ?loc label (failure : Failure.t) =
   in
   let loc = match failure.loc with None -> loc | Some _ -> failure.loc in
   { failure with msg = Some (Failure.text msg); loc }
+
+let call_label what ~total (Pending p) =
+  Pp.str "%scall %d of %d: %s" what p.number total (Lazy.force p.row.call)
+
+let fresh_run () =
+  {
+    sides = Hashtbl.create 8;
+    pool = [];
+    counts = Hashtbl.create 8;
+    releases = [];
+    rows = [];
+    ran = [];
+  }
 
 (* A system side is released once per type: an earlier value of its type
    that holds it physically registered its release already. [Obj] alone
@@ -647,7 +839,7 @@ let add_release run (t : (_, _) abstract) s ~label =
   | Some _ | None -> ()
 
 (* A value is made when its system returns, and named then. *)
-let make run ~step t s =
+let make run ~step (t : (_, _) abstract) s =
   let count =
     1 + Option.value ~default:0 (Hashtbl.find_opt run.counts t.prefix)
   in
@@ -656,7 +848,7 @@ let make run ~step t s =
   add_release run t s ~label:("release of " ^ name);
   let invariant =
     Option.map
-      (fun invariant () -> invariant (reference_side run t step) s)
+      (fun invariant () -> invariant (reference_side run.sides t step) s)
       t.invariant
   in
   run.pool <- { step; name; system = t.system.inject s; invariant } :: run.pool;
@@ -674,22 +866,111 @@ let check_invariants run k =
     (fun value -> Option.iter (check value) value.invariant)
     (List.rev run.pool)
 
-(* The system runs, then the reference judges its outcome: [returns]
-   compares, [makes] keeps the reference's side of the value, and [chooses]
-   gives the reference the outcome to accept. The first failure ends the run,
-   and the call that failed is the last row. A broken reference is raised as
+let pending ?before ~domain (Call c) (Ready r) =
+  let text = lazy (String.concat " " (c.name :: List.map Lazy.force r.words)) in
+  let row =
+    {
+      command = c.command;
+      name = c.name;
+      domain;
+      before;
+      call = text;
+      made = None;
+      result = None;
+    }
+  in
+  Pending
+    {
+      step = c.step;
+      loc = c.loc;
+      row;
+      number = 0;
+      form = r.form;
+      reference = r.reference;
+      system = r.system;
+      ended = None;
+    }
+
+let add_row run (Pending p) =
+  run.rows <- p.row :: run.rows;
+  p.number <- List.length run.rows
+
+let has_run (Pending p) = Option.is_some p.ended
+
+(* Runs a pending call's system and records how it ended; [false] when it
+   raised what is no outcome. Every control but a discard leaves. *)
+let run_system (Pending p) =
+  let ended = side p.system in
+  p.ended <- Some ended;
+  match ended with
+  | Ok outcome ->
+      p.row.result <- result_text p.form outcome;
+      true
+  | Error _ -> false
+
+(* A system's never-outcome fails the run at its call. *)
+let fail_never ~total (Pending p as pending) =
+  match p.ended with
+  | Some (Error never) ->
+      let label = call_label "" ~total pending in
+      raise
+        (Failure.Check_failure
+           (attribute ?loc:p.loc label (never_failure never)))
+  | Some (Ok _) | None -> ()
+
+let made run (Pending p) =
+  match (p.form, p.ended) with
+  | Makes t, Some (Ok (Returned s)) ->
+      p.row.made <- Some (make run ~step:p.step t s)
+  | (Makes _ | Returns _ | Chooses _), _ -> ()
+
+(* [judge_call ~total sides pending] is the difference between the outcome
+   of [pending]'s system and the one its reference gives on [sides]:
+   [returns] compares, [makes] keeps the reference's side in [sides], and
+   [chooses] gives the reference the outcome to accept, where a verb's
+   failure is the system's mismatch. A broken reference is raised as
    [Property.Oracle_failure]. *)
+let judge_call ~total sides (Pending p as pending) =
+  let outcome =
+    match p.ended with
+    | Some (Ok outcome) -> outcome
+    | Some (Error _) | None -> assert false (* only an outcome is judged *)
+  in
+  let break what failure =
+    let label = call_label what ~total pending in
+    raise (Property.Oracle_failure (attribute ?loc:p.loc label failure))
+  in
+  let reference fn =
+    match side fn with
+    | Ok outcome -> outcome
+    | Error never -> break "reference of " (never_failure never)
+  in
+  let fn = p.reference sides in
+  match p.form with
+  | Returns w -> differ w (reference fn) outcome
+  | Makes t -> (
+      match (reference fn, outcome) with
+      | Returned r, Returned _ ->
+          Hashtbl.replace sides p.step (t.reference.inject r);
+          None
+      | Raised (a, _), Raised (b, _) when same_constructor a b -> None
+      | expected, _ -> Some (mismatch expected outcome))
+  | Chooses w -> (
+      match side (fun () -> fn () (seen outcome)) with
+      | Ok expected -> differ w expected outcome
+      | Error (Failed failure) -> Some failure
+      | Error Discarded -> break "reference of " (failure_of `Discard))
+
+(* A call on one domain or in the prefix: the system runs, then the
+   reference judges its outcome on the run's sides. The first failure ends
+   the run, and the call that failed is the last row. *)
 let run_call run (Call c as call) =
   match bind run call with
   | None -> ()
-  | Some (Ready r) -> (
-      match guard r.pre with
+  | Some (Ready r as ready) -> (
+      match match r.pre with None -> Ok true | Some pre -> guard pre with
       | Ok false -> ()
       | pre ->
-          let k = List.length run.rows + 1 in
-          let text =
-            lazy (String.concat " " (c.name :: List.map Lazy.force r.words))
-          in
           let before =
             match r.cells with
             | [] -> None
@@ -699,60 +980,26 @@ let run_call run (Call c as call) =
                 in
                 Some (Text.truncate_utf8 cell_chars cell)
           in
-          let row =
-            {
-              command = c.command;
-              name = c.name;
-              before;
-              call = text;
-              made = None;
-            }
+          let (Pending p as pending) =
+            pending ?before ~domain:None call ready
           in
-          run.rows <- row :: run.rows;
-          let label what =
-            Pp.str "%scall %d of %d: %s" what k k (Lazy.force text)
-          in
+          add_row run pending;
+          let label what = call_label what ~total:p.number pending in
+          (match pre with
+          | Error f ->
+              raise
+                (Property.Oracle_failure
+                   (attribute ?loc:c.loc (label "~pre of ") f))
+          | Ok _ -> ());
+          ignore (run_system pending : bool);
+          fail_never ~total:p.number pending;
+          made run pending;
+          run.ran <- pending :: run.ran;
           let fail f =
             raise (Failure.Check_failure (attribute ?loc:c.loc (label "") f))
           in
-          let break what f =
-            raise
-              (Property.Oracle_failure (attribute ?loc:c.loc (label what) f))
-          in
-          (match pre with Error f -> break "~pre of " f | Ok _ -> ());
-          let actual =
-            match side r.system with
-            | Ok outcome -> outcome
-            | Error never -> fail (never_failure never)
-          in
-          let reference fn =
-            match side fn with
-            | Ok outcome -> outcome
-            | Error never -> break "reference of " (never_failure never)
-          in
-          (match r.form with
-          | Returns w ->
-              Option.iter fail (differ w (reference r.reference) actual)
-          | Makes t -> (
-              (match actual with
-              | Returned s -> row.made <- Some (make run ~step:c.step t s)
-              | Raised _ -> ());
-              match (reference r.reference, actual) with
-              | Returned rv, Returned _ ->
-                  Hashtbl.replace run.references c.step (t.reference.inject rv)
-              | Raised (a, _), Raised (b, _) when same_constructor a b -> ()
-              | expected, _ -> fail (mismatch expected actual))
-          | Chooses w -> (
-              let seen =
-                match actual with
-                | Returned v -> Ok v
-                | Raised (exn, _) -> Error exn
-              in
-              match side (fun () -> r.reference () seen) with
-              | Ok expected -> Option.iter fail (differ w expected actual)
-              | Error (Failed f) -> fail f
-              | Error Discarded -> break "reference of " (failure_of `Discard)));
-          check_invariants run k)
+          Option.iter fail (judge_call ~total:p.number run.sides pending);
+          check_invariants run p.number)
 
 (* Every release runs, newest first. The first control among them wins,
    then the run's failure, then the first failure of a release. *)
@@ -769,23 +1016,256 @@ let release_all run ending =
   in
   List.fold_left release ending run.releases
 
-(* A fatal exception leaves no record, so the record is cleared first. *)
-let execute program =
-  program.record <- None;
-  let run =
-    {
-      pool = [];
-      references = Hashtbl.create 8;
-      counts = Hashtbl.create 8;
-      releases = [];
-      rows = [];
-    }
+(* Judging *)
+
+type verdict =
+  | Explained of int list
+  | Unexplained of { order : int list; at : int; failure : Failure.t }
+
+(* Depth first over the orders that keep each branch's order, each followed
+   by the suffix. The first child of a branch point continues on the state
+   that the call before it left; every other starts from [fresh ()], replayed
+   along its path, so a state need be neither persistent nor copyable.
+   [path] is newest first. The closest order is the one whose first
+   difference comes latest, the first found winning a tie; it is completed
+   with the calls it did not reach, each branch in turn, then the suffix. *)
+let judge ~fresh ~branches ~suffix =
+  let calls = Array.of_list (List.map Array.of_list branches) in
+  let cursors = Array.make (Array.length calls) 0 in
+  let exhausted i = cursors.(i) = Array.length calls.(i) in
+  let state = ref None in
+  let at path =
+    match !state with
+    | Some s -> s
+    | None ->
+        let s = fresh () in
+        List.iter (fun (_, call) -> ignore (call s)) (List.rev path);
+        state := Some s;
+        s
   in
+  let closest = ref None in
+  let differs path failure =
+    state := None;
+    let depth = List.length path in
+    match !closest with
+    | Some (d, _, _) when d >= depth -> ()
+    | Some _ | None -> closest := Some (depth, path, failure)
+  in
+  let rec run_suffix path s = function
+    | [] -> Some (List.rev_map fst path)
+    | ((_, call) as step) :: rest -> (
+        match call s with
+        | None -> run_suffix (step :: path) s rest
+        | Some failure ->
+            differs (step :: path) failure;
+            None)
+  in
+  let rec explore path =
+    let rec from i =
+      if i = Array.length calls then None
+      else if exhausted i then from (i + 1)
+      else
+        let s = at path in
+        let ((_, call) as step) = calls.(i).(cursors.(i)) in
+        let found =
+          match call s with
+          | Some failure ->
+              differs (step :: path) failure;
+              None
+          | None ->
+              cursors.(i) <- cursors.(i) + 1;
+              let found = explore (step :: path) in
+              cursors.(i) <- cursors.(i) - 1;
+              state := None;
+              found
+        in
+        match found with Some _ -> found | None -> from (i + 1)
+    in
+    let rec all_exhausted i =
+      i = Array.length calls || (exhausted i && all_exhausted (i + 1))
+    in
+    if all_exhausted 0 then run_suffix path (at path) suffix else from 0
+  in
+  match (explore [], !closest) with
+  | Some order, _ -> Explained order
+  | None, Some (_, ((at, _) :: _ as path), failure) ->
+      let taken = List.rev_map fst path in
+      let untaken =
+        List.filter
+          (fun number -> not (List.mem number taken))
+          (List.map fst (List.concat branches @ suffix))
+      in
+      Unexplained { order = taken @ untaken; at; failure }
+  | None, (Some (_, [], _) | None) ->
+      assert false (* an order either ends or reaches a call that differs *)
+
+(* Several domains *)
+
+let order_text numbers =
+  match List.rev_map string_of_int numbers with
+  | [] -> ""
+  | [ last ] -> last
+  | last :: rest -> String.concat ", " (List.rev rest) ^ " then " ^ last
+
+(* With no parallel call there is one order, and the failure reads as a
+   call's. *)
+let unexplained ~total ~parallel pendings ~order ~at (failure : Failure.t) =
+  let (Pending p as pending) =
+    List.find (fun (Pending p) -> p.number = at) pendings
+  in
+  if parallel = [] then
+    attribute ?loc:p.loc (call_label "" ~total pending) failure
+  else
+    let head =
+      Pp.str
+        "no order of the calls gives these results\n\
+         the closest order, %s, differs at call %d: %s"
+        (order_text (List.filter (fun n -> List.mem n parallel) order))
+        at (Lazy.force p.row.call)
+    in
+    let msg =
+      match failure.msg with
+      | None -> head
+      | Some msg -> head ^ "; " ^ one_line msg.kept
+    in
+    { failure with msg = Some (Failure.text msg) }
+
+(* A replay gave a call of the prefix, which passed in the run, another
+   outcome: the reference drifted, and the judge would blame the system. *)
+let drifted () =
+  Failure.message
+    "a replay of the reference differs from this run; the reference must \
+     behave the same from run to run"
+
+let grace = function Failure.Control (`Timeout limit) -> limit | _ -> 0.
+
+(* After the prefix: the branches, on the workers or, without them, one
+   after the other, then the suffix's systems on this domain, then the
+   judge. [stuck] is set when a call still runs after the grace, and the
+   run of the suite then stops after this test (see [Run.stop]). *)
+let run_parallel ~first ~workers ~stuck run program =
+  let total () = List.length run.rows in
+  let bind_call ~domain call =
+    Option.map (pending ~domain call) (bind run call)
+  in
+  let branches =
+    Array.mapi
+      (fun i calls -> List.filter_map (bind_call ~domain:(Some (i + 1))) calls)
+      program.branches
+  in
+  (* A branch stops at its first call that fails. What else a system
+     raises, a control included, leaves the job; one after the other, the
+     first raise ends the run, as a call does on one domain. *)
+  let rec run_branch = function
+    | [] -> ()
+    | pending :: rest -> if run_system pending then run_branch rest
+  in
+  let jobs = Array.map (fun pendings () -> run_branch pendings) branches in
+  let raised =
+    match
+      match workers with
+      | None -> Array.iter (fun job -> job ()) jobs
+      | Some workers -> Workers.run workers ~grace jobs
+    with
+    | () -> None
+    | exception Workers.Stuck (exn, backtrace) ->
+        stuck := true;
+        Run.stop ();
+        Printexc.raise_with_backtrace exn backtrace
+    | exception exn -> Some (exn, Printexc.get_raw_backtrace ())
+  in
+  Array.iter (List.iter (fun p -> if has_run p then add_row run p)) branches;
+  Option.iter
+    (fun (exn, backtrace) -> Printexc.raise_with_backtrace exn backtrace)
+    raised;
+  Array.iter (List.iter (fail_never ~total:(total ()))) branches;
+  (* A suffix call makes no value and has no [pre]. *)
+  let run_suffix call =
+    Option.map
+      (fun pending ->
+        add_row run pending;
+        ignore (run_system pending : bool);
+        fail_never ~total:(total ()) pending;
+        pending)
+      (bind_call ~domain:None call)
+  in
+  let suffix = List.filter_map run_suffix program.suffix in
+  let branches = Array.to_list (Array.map (List.filter has_run) branches) in
+  let pendings = List.concat branches @ suffix in
+  let total = total () in
+  let prefix = List.rev run.ran in
+  (* Every call of the prefix passed, so a replay that differs drifted. *)
+  let fresh () =
+    let sides = Hashtbl.create 8 in
+    let replay (Pending p as pending) =
+      if Option.is_some (judge_call ~total sides pending) then
+        let label = call_label "reference of " ~total pending in
+        raise
+          (Property.Oracle_failure (attribute ?loc:p.loc label (drifted ())))
+    in
+    List.iter replay prefix;
+    sides
+  in
+  let steps =
+    List.map (fun (Pending p as pending) ->
+        (p.number, fun sides -> judge_call ~total sides pending))
+  in
+  let verdict =
+    Run.without_labels (fun () ->
+        judge ~fresh ~branches:(List.map steps branches) ~suffix:(steps suffix))
+  in
+  match verdict with
+  | Explained order ->
+      (* Labels count along the accepted order, once per case. *)
+      if first then begin
+        let sides = Run.without_labels fresh in
+        let replay number =
+          let pending =
+            List.find (fun (Pending p) -> p.number = number) pendings
+          in
+          ignore (judge_call ~total sides pending : Failure.t option)
+        in
+        List.iter replay order
+      end
+  | Unexplained { order; at; failure } ->
+      let parallel =
+        List.map (fun (Pending p) -> p.number) (List.concat branches)
+      in
+      raise
+        (Failure.Check_failure
+           (unexplained ~total ~parallel pendings ~order ~at failure))
+
+(* One run from no value: the prefix as on one domain, invariants included,
+   then, on several domains, the rest. A run whose call never returned
+   releases nothing. A fatal exception leaves no record. *)
+let run_once ~first ~workers program =
+  program.record <- None;
+  let run = fresh_run () in
+  let stuck = ref false in
   let ending =
-    Failure.catch (fun () -> List.iter (run_call run) program.calls)
+    Failure.catch (fun () ->
+        List.iter (run_call run) program.prefix;
+        if Array.length program.branches > 0 then
+          run_parallel ~first ~workers ~stuck run program)
   in
   program.record <- Some (List.rev run.rows);
-  match release_all run ending with Ok () -> () | Error c -> Failure.reraise c
+  match if !stuck then ending else release_all run ending with
+  | Ok () -> ()
+  | Error c -> Failure.reraise c
+
+(* A repeat costs the system's calls and a judge, so it samples schedules
+   for the price of a run. *)
+let repetitions = 50
+
+let execute ?workers program =
+  let runs =
+    if Array.length program.branches > 0 && Option.is_some workers then
+      repetitions
+    else 1
+  in
+  for i = 1 to runs do
+    run_once ~first:(i = 1) ~workers program
+  done
 
 (* Declaring *)
 
@@ -797,28 +1277,61 @@ let never_called ?loc ~cases names =
        (String.concat ", " (List.map (Pp.str "%S") names))
        cases)
 
+let mutating () =
+  match (Run.config (Run.current ())).mutation with
+  | Run.No_mutation -> false
+  | Run.Loop _ | Run.Armed _ -> true
+
+(* The workers live for the attempt: spawned before the first case, outside
+   the property, and joined when the body ends, however it ends. Under
+   mutation testing a program runs once on the test's domain, so a kill does
+   not depend on a schedule and the process can still fork. *)
+let with_workers ?loc ~domains fn =
+  if domains = 1 || mutating () then fn None
+  else
+    match Workers.spawn domains with
+    | exception Stdlib.Failure message ->
+        raise
+          (Failure.Check_failure
+             (Failure.message ?loc ("cannot spawn a worker domain: " ^ message)))
+    | workers -> (
+        match fn (Some workers) with
+        | () -> Workers.join workers
+        | exception exn ->
+            let backtrace = Printexc.get_raw_backtrace () in
+            (* The body's exception wins over a handler's in the join. *)
+            (try Workers.join workers with _ -> ());
+            Printexc.raise_with_backtrace exn backtrace)
+
 (* [Test_tree.Tag.prop] because a stateful test is a property: [--tag prop]
    selects it, and its report shows the root seed. The law returns only on a
    passing program, and [Run.property] returns only when every case passed, so
-   [held] and [called] then mark the passing programs. *)
-let stateful ?__POS__ ?tags ?timeout ?count ?(steps = 20) name commands =
+   [held] and [called] then mark the passing programs. On several domains the
+   test takes no retries, since a failure there is never undone. *)
+let stateful ?__POS__ ?tags ?timeout ?count ?(steps = 20) ?(domains = 1) name
+    commands =
   let loc = Loc.resolve ?__POS__ () in
   let tags =
-    Test_tree.Tag.prop :: "stateful" :: Option.value ~default:[] tags
+    Test_tree.Tag.prop :: "stateful"
+    :: ((if domains > 1 then [ "parallel" ] else [])
+       @ Option.value ~default:[] tags)
   in
-  let gen = program ~steps commands in
+  let retries = if domains > 1 then Some 0 else None in
+  let gen = program ~steps ~domains commands in
   let body () =
     let commands = Array.of_list commands in
-    check ~steps commands;
+    check ~steps ~domains commands;
     let held = Array.make (Array.length commands) false in
     let called = Array.make (Array.length commands) false in
     let cases = ref 0 in
-    Run.property ?loc ?count ~summary gen (fun program ->
-        execute program;
-        incr cases;
-        Array.iteri (fun i h -> if h then held.(i) <- true) program.held;
-        let ran (row : row) = called.(row.command) <- true in
-        List.iter ran (Option.value ~default:[] program.record));
+    with_workers ?loc ~domains (fun workers ->
+        let cost = if Option.is_some workers then repetitions else 1 in
+        Run.property ?loc ?count ~summary ~cost gen (fun program ->
+            execute ?workers program;
+            incr cases;
+            Array.iteri (fun i h -> if h then held.(i) <- true) program.held;
+            let ran (row : row) = called.(row.command) <- true in
+            List.iter ran (Option.value ~default:[] program.record)));
     let firsts = first_positions commands in
     let never i _ = firsts.(i) = i && held.(i) && not called.(i) in
     match List.filteri never (Array.to_list commands) with
@@ -830,4 +1343,4 @@ let stateful ?__POS__ ?tags ?timeout ?count ?(steps = 20) name commands =
           (Failure.Check_failure
              (never_called ?loc ~cases:!cases (List.map name never)))
   in
-  Test_tree.test ?__POS__ ~tags ?timeout name body
+  Test_tree.test ?__POS__ ~tags ?timeout ?retries name body

@@ -24,6 +24,15 @@ what is non-obvious.
   `dune exec test/unit/test_gen.exe -- -f shrink`. The report's
   transcripts, the help and the JUnit documents are `expect_file`
   baselines under `unit/expected/`.
+  `test_stateful_domains` holds the stateful tests on several domains,
+  in an executable of its own because a process that has spawned a
+  domain can never fork again. Its systems give results that depend on
+  the domain a call runs on, never on a race, so every verdict is
+  deterministic. Under mutation testing it spawns nothing: a stateful
+  test on several domains then runs each program on the test's domain,
+  and each test that spawns a pool skips. Its scenarios that leave a
+  domain running forever or spawn every domain the runtime has run in
+  children forked as the module initialises, before any domain exists.
   `runtime/` holds the suites over the runtime's modules:
   `test_coverage` and `test_mutate`, each with a child executable (for
   the at_exit dump and for a registration that runs before any window

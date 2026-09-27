@@ -17,9 +17,10 @@ The main additions are stateful testing and mutation testing.
   fails, windtrap removes calls and simplifies their arguments for as
   long as the sequence keeps failing, so the report shows a short
   sequence that reproduces the bug. It follows
-  [Monolith](https://gitlab.inria.fr/fpottier/monolith) and the
-  sequential mode of
-  [qcheck-stm](https://github.com/ocaml-multicore/multicoretests).
+  [Monolith](https://gitlab.inria.fr/fpottier/monolith) and
+  [qcheck-stm](https://github.com/ocaml-multicore/multicoretests), whose
+  parallel mode it shares: with `~domains`, the middle of each sequence
+  runs on several domains at once.
 - Mutation testing makes small changes to the code under test, such as
   turning `<` into `<=` or `&&` into `||`, and reports each change that
   no test fails on. Each such change points at a gap in the suite.
@@ -353,6 +354,29 @@ Each one is also listed under its area below.
   `assume or reject in a command; a call's legality is its ~pre`.
 - A drawn argument whose generator has no printer fails the test with
   `push: argument 2 has no printer; attach one with Gen.with_pp`.
+- `stateful ~domains:n` runs the middle of each program on `n` domains
+  at once, 50 times, and fails when no order of the calls replayed on
+  the reference gives the outcomes the system gave; the test carries the
+  tag `parallel` (see
+  [Testing on several domains](https://github.com/invariant-hq/windtrap/blob/main/doc/manual/stateful-testing.md#testing-on-several-domains)).
+- On several domains a command that makes a value or has a `~pre` runs
+  only before the parallel calls; `stateful ~domains` above 1 raises
+  `Invalid_argument` when every command makes a value or has a `~pre`.
+- A failing program on several domains prints a `domain` and a `result`
+  column, then `no order of the calls gives these results` and the
+  closest order, as `the closest order, 2 then 3, differs at call 4: length q1`.
+- On several domains a reference whose replay gives a call before the
+  parallel calls another outcome than the run breaks with
+  `a replay of the reference differs from this run; the reference must behave the same from run to run`.
+- On several domains a replay draws the same programs but not the same
+  schedules, so it may pass.
+- A stateful test on several domains takes no retries, a group's
+  included.
+- Under `--mutate` and `--arm` a stateful test on several domains runs
+  each program once on the test's domain, so a kill does not depend on a
+  schedule.
+- A stateful test on several domains whose domains cannot be spawned
+  fails with `cannot spawn a worker domain: <message>`.
 - A stateful test fails with
   `never called: "pop" (over 100 passing cases); a call runs only where its arguments resolve and its ~pre holds`
   when a command that a passing case could draw was called by none; a
@@ -574,6 +598,11 @@ Each one is also listed under its area below.
 - `WINDTRAP_VERBOSE`, `WINDTRAP_JUNIT`, `WINDTRAP_OUTPUT`,
   `WINDTRAP_SHARD` and `WINDTRAP_SLOW_THRESHOLD` are new mirrors.
 - `--help` lists each flag with its mirror.
+- A call on another domain that outlives its test's limit by one more
+  limit fails the test as timed out and ends the run after it, with
+  `run stopped after <test>: a call on another domain outlived the test's limit`
+  above the summary; on Windows, where no limit is enforced, it hangs
+  the run.
 - `output`, `expect`, `expect_exact`, `expect_file`, `collect`,
   `classify`, `cover`, a fixture's accessor and the functions of the
   running test raise a failure when called from a domain other than the

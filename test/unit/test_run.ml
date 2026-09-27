@@ -258,14 +258,15 @@ let subset_rules =
         ("tags", "[t]");
         ("exclude_tags", "[x]");
       ] );
-    ( "checks, allows focus and neither reports, mutates nor broadcasts",
+    ( "checks, allows focus and neither reports nor broadcasts",
       [
         ("baseline", "check");
         ("allow_focus", "true");
         ("junit", "none");
-        ("mutation", "none");
         ("broadcast", "none");
       ] );
+    ( "keeps the mutation, which its tests may read",
+      [ ("mutation", "loop lib/") ] );
     ( "captures into the log directory it is given",
       [ ("stream", "false"); ("log_dir", "child") ] );
     ( "bails as told and keeps every other field",
@@ -450,6 +451,21 @@ let labels_counted r path =
   let demand (c : Property.cover_status) = (c.label, c.satisfied) in
   (s.collected, List.map demand s.coverage)
 
+(* The labels of a law, muted, restored and counted. *)
+let muted_labels =
+  let marked () =
+    collect "x";
+    cover "never" false
+  in
+  Recorded.execute
+    [
+      Run.prop ~count:3 "muted" gen (fun _ -> Run.without_labels marked);
+      Run.prop ~count:3 "counted" gen (fun _ -> marked ());
+      Run.prop ~count:3 "restored" gen (fun _ ->
+          Run.without_labels ignore;
+          collect "after");
+    ]
+
 let law_contexts =
   let seen = ref [] in
   let law _ =
@@ -493,6 +509,17 @@ let frames =
         "a stateful system function, pre, invariant and release label their \
          program's case"
         every_place_labels_its_case;
+      test "without_labels marks and demands nothing" (fun () ->
+          equal
+            (pair (list (pair string int)) (list (pair string bool)))
+            ([], [])
+            (labels_counted muted_labels [ "muted" ]);
+          equal string "fail body" (Recorded.row muted_labels [ "counted" ]));
+      test "without_labels gives the law its context back" (fun () ->
+          equal
+            (list (pair string int))
+            [ ("after", 3) ]
+            (fst (labels_counted muted_labels [ "restored" ])));
     ]
 
 (* Refused callers *)
@@ -3945,6 +3972,11 @@ let an_exception_on_a_release_event () =
     left;
   is_false second
 
+let stopped_run =
+  Recorded.execute [ test "stops" (fun () -> Run.stop ()); test "later" ignore ]
+
+let stopped r = Run.stopped (Recorded.outcome r).run
+
 let executing =
   group "Executing"
     ([
@@ -3979,6 +4011,11 @@ let executing =
        test "under bail the run stops after the first counted failure"
          (fun () ->
            equal (list string) [ "first fails" ] (Recorded.executed bailed));
+       test "stop ends the run after the running test, and says which"
+         (fun () ->
+           equal (list string) [ "stops" ] (Recorded.executed stopped_run);
+           equal (option (list string)) (Some [ "stops" ]) (stopped stopped_run);
+           equal (option (list string)) None (stopped bailed));
        test "an expected failure does not stop a run under bail" (fun () ->
            equal (list string)
              [ "excused"; "ok"; "boom" ]

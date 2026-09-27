@@ -139,8 +139,12 @@ val for_subset : config -> log_dir:string -> bail:bool -> config
       allowlist is that selection.
     - [tags], [exclude_tags] and [seed] are kept, so the child selects within
       the tags of its parent and draws the property cases its parent drew.
-    - [baseline] is {!Baseline.Check}, [junit] is [None], [mutation] is
-      {!No_mutation}, nothing is broadcast and [allow_focus] is [true].
+    - [baseline] is {!Baseline.Check}, [junit] is [None], nothing is broadcast
+      and [allow_focus] is [true].
+    - [mutation] is kept, so a test that reads it runs in the child as in the
+      run the child was forked from: a stateful test on several domains runs
+      each program on the test's domain in both. No child reads it to test
+      mutants.
     - [stream] is [false] and [log_dir] is the argument.
     - [bail] is the argument, and every other field is [config]'s.
 
@@ -211,6 +215,13 @@ val current_frame : unit -> frame
 val current : unit -> t
 (** [current ()] is the record of the run that the frame of {!current_frame}
     belongs to. Raises as {!current_frame} does. *)
+
+val stop : unit -> unit
+(** [stop ()] ends the run after the running test: no later test executes, as
+    under [config.bail], and {!stopped} names the test. A stateful test calls it
+    when a call on another domain outlives the test's limit, since that domain
+    would run the test's code inside the next test. Raises as {!current_frame}
+    does. *)
 
 (** {1:body The running test}
 
@@ -373,6 +384,10 @@ val results : t -> result list
 (** [results t] is the row of every test executed so far, in the order of
     execution. *)
 
+val stopped : t -> string list option
+(** [stopped t] is the path of the test after which {!stop} ended the run, and
+    [None] when nothing did. *)
+
 (** {1:props Properties} *)
 
 val property :
@@ -381,13 +396,20 @@ val property :
   ?max_discard:int ->
   ?examples:'a list ->
   ?summary:('a -> string option) ->
+  ?cost:int ->
   'a Gen.t ->
   ('a -> unit) ->
   unit
 (** [property gen law] is the body of the test that {!prop} declares, [loc]
     being its declaration site. It returns [()] on a [Pass] and raises the
     failure of any other outcome as a [Failure.Check_failure] (see {!prop}).
-    Raises as {!current_frame} does. *)
+    [cost] is {!Property.run}'s. Raises as {!current_frame} does. *)
+
+val without_labels : (unit -> 'a) -> 'a
+(** [without_labels fn] is [fn ()] with the labels of the running law going to a
+    {!Property.scratch} context, so that what [fn] marks or demands counts
+    nowhere. The law's context comes back however [fn] ends. It is [fn ()] alone
+    outside a law, and on a domain other than the run's. *)
 
 val prop :
   ?__POS__:Loc.pos ->
@@ -513,8 +535,8 @@ val startup_message : startup_error -> string
 type outcome = {
   run : t;  (** The record of the run. *)
   selected : Test_tree.case list;
-      (** The selected tests, in the order of execution. Under [config.bail]
-          some may not have executed, and those have no row. *)
+      (** The selected tests, in the order of execution. Under [config.bail] or
+          after a {!stop} some may not have executed, and those have no row. *)
   total : int;  (** The tests that the suite declares, before any selection. *)
   focus_active : bool;
       (** [true] iff the suite holds a focused node, selected or not. *)

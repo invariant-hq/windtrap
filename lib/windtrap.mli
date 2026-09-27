@@ -108,7 +108,9 @@ type 'a testable = 'a Testable.t
 
     The limit is a [SIGALRM] interval timer, so it has no effect on Windows and
     cannot interrupt a blocked C call. The runner owns [SIGALRM] while a test
-    with a limit runs.
+    with a limit runs. A domain that the test spawned may take the signal: the
+    timeout is then raised on that domain, and ends the test only when it
+    reaches the test's domain, as through [Domain.join].
 
     {b Retries.} Each attempt is a fresh setup, body, teardown and capture. A
     skip is never retried. An {!xfail} test is retried on an unexpected pass,
@@ -935,7 +937,9 @@ val cover : string -> bool -> unit
     {b A call} runs the system, then the reference, which judges the system's
     outcome: under {!returns} and {!makes} the two outcomes compare, and under
     {!chooses} the reference accepts one. Then the invariant of every abstract
-    type runs on each of its values. The first failure ends the program.
+    type runs on each of its values. The first failure ends the program. On
+    several domains the calls after the prefix run and are judged differently
+    (see {!stateful}).
 
     {b Outcomes.} An outcome is a result or a raised exception. Two results
     compare under the signature's witness, which must be reflexive on every
@@ -964,7 +968,10 @@ val cover : string -> bool -> unit
 
     {b Labels.} {!collect}, {!classify} and {!cover} in a command's functions, a
     [~pre], an invariant or a release count once per case, in the run that
-    executes it. Shrinking counts nothing.
+    executes it. Shrinking counts nothing. On several domains the reference runs
+    again for every order the judge tries, and those runs count nothing: the
+    labels of the calls after the prefix count along the order the judge
+    accepted for the case's first run.
 
     {b The reference behaves the same from run to run}, since shrinking and
     retries run it again. Drift comes from [Random], a [Hashtbl] whose order a
@@ -983,7 +990,28 @@ val cover : string -> bool -> unit
     the pair of its outcomes, the reference's as [expected], with its command's
     location. A broken reference reads [reference of call 3 of 3: pop q1] above
     its failure, and an invariant's failure [after call 3 of 3, on s2] above the
-    verb's lines. *)
+    verb's lines.
+
+    On several domains the table adds a [domain] column, the branch of each
+    parallel call, and a [result] column, the system's outcome in the failing
+    run, and [reference before] prints on the prefix's rows only:
+
+    {v
+    counterexample (case 3, shrunk 10 steps): 4 calls, 2 in parallel
+       #  domain  call                result
+       1          let q1 = create ()
+       2  1       push q1 0           ()
+       3  2       push q1 0           ()
+       4          length q1           1
+    which failed with:
+      no order of the calls gives these results
+      the closest order, 2 then 3, differs at call 4: length q1
+      expected  2
+      actual    1
+    v}
+
+    The closest order is the one whose first difference comes latest. A program
+    that shrank to no parallel call prints as on one domain. *)
 
 type ('r, 's) abstract
 (** The type for abstract types of an API, whose values only calls make. A value
@@ -998,8 +1026,10 @@ val abstract :
 (** [abstract prefix] is a new abstract type whose values are named [prefix] and
     a count, as [s1] and [s2] under [abstract "s"]. Two calls make two types.
     - [pp] prints a reference side, in the report's [reference before] column.
-    - [invariant r s] runs after every call on the two sides of every value of
-      the type, and asserts with the verbs. Its failure fails the case.
+    - [invariant r s] runs on the two sides of every value of the type after
+      every call made on the test's domain while one reference state exists:
+      every call on one domain, the prefix's calls on several. It asserts with
+      the verbs, and its failure fails the case.
     - [release s] runs when a program ends, whether it passed, failed or was cut
       short, once per physically distinct system side of the type that the
       program made, newest first. Sides are told apart within the type only, so
@@ -1093,18 +1123,22 @@ val stateful :
   ?timeout:float ->
   ?count:int ->
   ?steps:int ->
+  ?domains:int ->
   string ->
   command list ->
   test
 (** [stateful name commands] is a property test over the programs of [commands].
     Each case draws a program, runs it from no value, and fails at the first
     call whose outcomes differ.
-    - [steps] is the most calls a program makes. Defaults to [20].
+    - [steps] is the most calls a program makes on the test's domain. Defaults
+      to [20].
+    - [domains] is the number of domains that the middle of a program runs on.
+      Defaults to [1] (see below).
     - [count] and [timeout] are {!prop}'s. So are [--prop-count], the seed, the
       bound on shrinking and the [replay:] line.
 
-    Shrinking removes calls and shrinks arguments, and runs every candidate
-    again.
+    Shrinking removes calls, shrinks arguments and, on several domains, moves a
+    parallel call out of its branch. It runs every candidate again.
 
     {b Commands never called.} When every case has passed, a command that a
     passing case could draw and that no passing case ran fails the test with a
@@ -1117,9 +1151,55 @@ val stateful :
     it inherits the [retries] of an enclosing group, and every retry replays the
     same programs.
 
+    {b Several domains.} With [~domains:n] above [1] a program is a short
+    prefix, one branch per domain and a short suffix. The prefix and the suffix
+    make at most [steps] calls between them. Each branch makes at most five
+    calls on two domains, three on three, two on four and one from five, so that
+    a program has at most 5040 orders up to seven domains; from eight domains,
+    one call each gives [n!] orders, and the search of a failing program grows
+    with them. Only the prefix has one reference state, so a command that makes
+    a value or has a [~pre] is drawn only there: every branch and the suffix
+    choose among the prefix's values, and no call after the prefix is refused.
+
+    The test spawns [n] domains before its first case and joins them when it
+    ends. Branch [i] runs its system functions on domain [i], every branch at
+    once, and the prefix and the suffix run on the test's domain. Each program
+    runs 50 times from no value, and the test fails when no order of the calls,
+    each branch keeping its order and the suffix last, replayed on the
+    reference, gives every outcome that the system gave. The search follows
+    program order and never real time, so every linearizable history passes. The
+    invariant runs after the prefix's calls only.
+
+    The contract differs from one domain's in four ways:
+    - a replay draws the same programs, not the same schedules, and may pass;
+    - the test takes no retries and ignores a group's;
+    - under [--mutate] and [--arm] each program runs once on the test's domain,
+      the prefix, branch 1 to [n], then the suffix, so a kill does not depend on
+      a schedule;
+    - a call still running one limit after the test's limit expired fails the
+      test as timed out, and the run stops after it, since its domain would run
+      this test's code inside the next test. On Windows, where no limit is
+      enforced, such a call hangs the run.
+
+    It also carries the tag ["parallel"]. The domains need a processor each
+    beside the test's. With fewer, a failure stays sound but fewer schedules are
+    tried, and an {!xfail} test may find nothing and fail as an unexpected pass.
+    A passing test runs [count] times 50 programs. After such a test has spawned
+    its domains, [Unix.fork] raises [Failure] in every later test of the
+    process. A spawn that fails fails the test with
+    [cannot spawn a worker domain: <message>].
+
+    Without a model the system is its own reference, as in
+    [command "add" (h ^-> key @-> nat @-> returns unit) Hashtbl.add Hashtbl.add]:
+    the test checks that parallel runs agree with sequential runs of the same
+    code. It cannot see a bug that the code also has sequentially, and a module
+    with global state shares it between the two sides.
+
     Raises [Invalid_argument], inside the running test and before any case, if
-    [commands] is empty, if [steps] is negative, or if the prefixes of the
-    abstract types break the rules of {!val-abstract}. *)
+    [commands] is empty, if [steps] is negative, if [domains] is below [1], if
+    the prefixes of the abstract types break the rules of {!val-abstract}, or if
+    [domains] is above [1] and every command makes a value or has a [~pre], so
+    that no call could run after the prefix. *)
 
 (** {1:baselines Baselines}
 
@@ -1238,7 +1318,9 @@ val output : unit -> string
 
     Tests run one at a time, in declaration order, on the domain that called
     {!run}, so the environment and the working directory never race between
-    tests. Nothing here is thread-safe. Every function here, {!output}, the
+    tests. A {!stateful} test with [~domains] above [1] also runs system
+    functions on domains that it joins before it ends. Nothing here is
+    thread-safe. Every function here, {!output}, the
     {{!section-baselines}baseline} checks, {!collect}, {!classify}, {!cover} and
     a {!fixture}'s accessor raise a failure when called from another domain,
     which fails the running test when it reaches the test's domain, as through
@@ -1425,4 +1507,5 @@ module Private : sig
   module Stateful = Stateful
   module Test_tree = Test_tree
   module Text = Text
+  module Workers = Workers
 end

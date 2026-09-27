@@ -172,6 +172,7 @@ val finish :
   release_failures:Failure.t list ->
   duration:float ->
   ?baselines:Baseline.t ->
+  ?stopped:string list ->
   ?before_summary:(unit -> unit) ->
   unit ->
   unit
@@ -195,6 +196,10 @@ val finish :
       over the run's selection ([`Run config]), save the [accept:] of a
       [config.bail] run, which is over the path of its one counted failed
       result.
+    - with [stopped], the path of the test after which {!Run.stop} ended the
+      run, the line
+      [run stopped after <path>: a call on another domain outlived the test's
+       limit]. The summary counts the tests it kept from running as not run.
     - the summary. It is the last line of the transcript, save the one hint of
       an empty run. The verdict of an armed run and the report of a loop follow
       it (see {{!section-mutation}mutation lines}).
