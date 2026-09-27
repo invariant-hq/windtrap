@@ -142,10 +142,12 @@ Questions are welcome on the [OCaml forum](https://discuss.ocaml.org/).
 Windtrap builds on ideas and code from several OCaml projects:
 
 - **[Alcotest](https://github.com/mirage/alcotest)** by Thomas Gazagnaire: test structure and runner design.
-- **Craig Ferguson's Alcotest PRs** ([#294](https://github.com/mirage/alcotest/pull/294), [#247](https://github.com/mirage/alcotest/pull/247)): API design, subcomponent diffing, and Levenshtein distance (ISC).
-- **[QCheck2](https://github.com/c-cube/qcheck)** by Simon Cruanes et al.: generator design and integrated shrinking (BSD 2-Clause).
-- **[ppx_expect](https://github.com/janestreet/ppx_expect)** and **[ppx_inline_test](https://github.com/janestreet/ppx_inline_test)** by Jane Street: expect test paradigm and dune integration.
-- **[Bisect_ppx](https://github.com/aantron/bisect_ppx)** by Anton Bachin et al.: coverage instrumentation and runtime (MIT).
-- **[mtime](https://erratique.ch/software/mtime)** by Daniel Bünzli: the monotonic clock (ISC).
+- **Craig Ferguson's Alcotest PRs** ([#294](https://github.com/mirage/alcotest/pull/294), [#247](https://github.com/mirage/alcotest/pull/247)): API design, subcomponent diffing.
+- **[QCheck2](https://github.com/c-cube/qcheck)** by Simon Cruanes et al.: generator design and integrated shrinking.
+- **[Monolith](https://gitlab.inria.fr/fpottier/monolith)** by François Pottier, and **[qcheck-stm](https://github.com/ocaml-multicore/multicoretests)** by Jan Midtgaard et al.: stateful testing against a reference, on one domain or several.
+- **[ppx_expect](https://github.com/janestreet/ppx_expect)** and **[ppx_inline_test](https://github.com/janestreet/ppx_inline_test)** by Jane Street: expect test paradigm and dune integration, and ppx_expect's test corpus.
+- **[Bisect_ppx](https://github.com/aantron/bisect_ppx)** by Anton Bachin et al.: coverage instrumentation and runtime.
+- **[mutaml](https://github.com/jmid/mutaml)** by Jan Midtgaard: mutation testing for OCaml as a PPX, with every mutant compiled into one build.
+- **[mtime](https://erratique.ch/software/mtime)** by Daniel Bünzli: the monotonic clock.
 
 [`THIRD_PARTY_LICENSES.md`](THIRD_PARTY_LICENSES.md) holds the notices of the code derived from them.
