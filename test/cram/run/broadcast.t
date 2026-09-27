@@ -21,7 +21,7 @@ planted in the build context, where a run under dune reads it.
   $ echo 'hello from the fixture' > _build/default/test/cram/run/greeting.expected
   $ stanza() {
   >   dir=$1; shift
-  >   (cd "_build/default/$dir" && env -i PATH="$PATH" \
+  >   (cd "_build/default/$dir" && env -i PATH="$PATH" TMPDIR="${TMPDIR:-/tmp}" \
   >       INSIDE_DUNE="$root/_build/default" WINDTRAP_COLOR=never \
   >       WINDTRAP_SLOW_THRESHOLD=0 "$@")
   > }

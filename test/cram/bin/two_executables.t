@@ -11,7 +11,7 @@ recorded. --mutate scopes each loop to calc.ml's mutants, since under
 
   $ bin=$PWD
   $ run() {
-  >   env -i PATH="$PATH" WINDTRAP_COLOR=never WINDTRAP_SLOW_THRESHOLD=0 "$@" \
+  >   env -i PATH="$PATH" TMPDIR="${TMPDIR:-/tmp}" WINDTRAP_COLOR=never WINDTRAP_SLOW_THRESHOLD=0 "$@" \
   >     > "$bin/out" 2> "$bin/err"
   >   code=$?; cat "$bin/out"
   >   if [ -s "$bin/err" ]; then echo '--- stderr'; cat "$bin/err"; fi

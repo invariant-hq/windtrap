@@ -2,7 +2,7 @@ The windtrap command's dispatch: a command runs, and anything else is
 refused with the commands there are.
 
   $ run() {
-  >   env -i PATH="$PATH" WINDTRAP_COLOR=never "$@" > out 2> err
+  >   env -i PATH="$PATH" TMPDIR="${TMPDIR:-/tmp}" WINDTRAP_COLOR=never "$@" > out 2> err
   >   code=$?; cat out; if [ -s err ]; then echo '--- stderr'; cat err; fi
   >   return $code
   > }

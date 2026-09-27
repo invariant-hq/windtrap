@@ -4,7 +4,7 @@ replay line, spelled for the way the run was started and run again as
 pasted. The report's layout is pinned by test/unit's report suites.
 
   $ run() {
-  >   env -i PATH="$PATH" WINDTRAP_COLOR=never WINDTRAP_SLOW_THRESHOLD=0 \
+  >   env -i PATH="$PATH" TMPDIR="${TMPDIR:-/tmp}" WINDTRAP_COLOR=never WINDTRAP_SLOW_THRESHOLD=0 \
   >       WINDTRAP_PROJECT_ROOT="$PWD" \
   >       WINDTRAP_OUTPUT="$PWD/_logs" "$@"
   > }

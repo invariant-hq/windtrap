@@ -10,7 +10,7 @@ call stack gives a failure.
 A run's environment is stated, and its logs stay in this directory:
 
   $ run() {
-  >   env -i PATH="$PATH" WINDTRAP_COLOR=never WINDTRAP_SLOW_THRESHOLD=0 \
+  >   env -i PATH="$PATH" TMPDIR="${TMPDIR:-/tmp}" WINDTRAP_COLOR=never WINDTRAP_SLOW_THRESHOLD=0 \
   >       WINDTRAP_OUTPUT="$PWD/_logs" "$@" > out 2> err
   > }
   $ partition() {

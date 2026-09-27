@@ -7,7 +7,7 @@ correction the way a dune action would, each starting from the file the
 block before it left.
 
   $ run() {
-  >   env -i PATH="$PATH" WINDTRAP_COLOR=never WINDTRAP_SLOW_THRESHOLD=0 \
+  >   env -i PATH="$PATH" TMPDIR="${TMPDIR:-/tmp}" WINDTRAP_COLOR=never WINDTRAP_SLOW_THRESHOLD=0 \
   >       WINDTRAP_PROJECT_ROOT="$PWD" \
   >       WINDTRAP_OUTPUT="$PWD/_logs" "$@"
   > }

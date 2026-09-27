@@ -9,7 +9,7 @@ find.
   $ bin=$PWD
   $ mkdata() { "$bin/mkdata.exe" "$@"; }
   $ run() {
-  >   env -i PATH="$PATH" WINDTRAP_COLOR=never "$@" > "$bin/out" 2> "$bin/err"
+  >   env -i PATH="$PATH" TMPDIR="${TMPDIR:-/tmp}" WINDTRAP_COLOR=never "$@" > "$bin/out" 2> "$bin/err"
   >   code=$?; cat "$bin/out"
   >   if [ -s "$bin/err" ]; then
   >     echo '--- stderr'

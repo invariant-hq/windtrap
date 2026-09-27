@@ -6,7 +6,7 @@ the build directory, whose own dumps the command would otherwise find.
   $ bin=$PWD
   $ mkdata() { "$bin/mkdata.exe" "$@"; }
   $ run() {
-  >   env -i PATH="$PATH" WINDTRAP_COLOR=never "$@" > "$bin/out" 2> "$bin/err"
+  >   env -i PATH="$PATH" TMPDIR="${TMPDIR:-/tmp}" WINDTRAP_COLOR=never "$@" > "$bin/out" 2> "$bin/err"
   >   code=$?; cat "$bin/out"
   >   if [ -s "$bin/err" ]; then echo '--- stderr'; cat "$bin/err"; fi
   >   return $code
@@ -249,7 +249,7 @@ standard error, in its place among the records:
   $ mkdir -p "$scratch/lcov-order/lib" && cd "$scratch/lcov-order"
   $ echo 'let a = 1' > lib/a.ml && echo 'let c = 1' > lib/c.ml
   $ mkdata coverage _build/_coverage/abc.coverage lib/a.ml=1 lib/b.ml=1 lib/c.ml=0
-  $ env -i PATH="$PATH" windtrap coverage --lcov 2>&1
+  $ env -i PATH="$PATH" TMPDIR="${TMPDIR:-/tmp}" windtrap coverage --lcov 2>&1
   TN:
   SF:lib/a.ml
   DA:1,1

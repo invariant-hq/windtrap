@@ -11,7 +11,7 @@ and returns the child's code.
 
   $ scrub() { sed -E 's/ in [0-9.]+m?s\./ in DURATION./'; }
   $ run() {
-  >   env -i PATH="$PATH" WINDTRAP_COLOR=never WINDTRAP_SLOW_THRESHOLD=0 \
+  >   env -i PATH="$PATH" TMPDIR="${TMPDIR:-/tmp}" WINDTRAP_COLOR=never WINDTRAP_SLOW_THRESHOLD=0 \
   >       WINDTRAP_PROJECT_ROOT="$PWD" \
   >       WINDTRAP_OUTPUT="$PWD/_logs" "$@" > out 2> err
   >   code=$?
