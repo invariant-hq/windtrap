@@ -386,7 +386,7 @@ let rec draw_args : type r s p.
       let tree = Shrink_tree.pair (Shrink_tree.map maker (index_tree k)) args in
       (Shrink_tree.map (fun (maker, args) -> Index (t, maker, args)) tree, state)
 
-(* Each command joins the subset with probability 1/2, every command when
+(* Each command joins the subset with probability 3/4, every command when
    none does, and a command in the subset brings the makers of the types it
    takes. *)
 let draw_subset firsts shapes state =
@@ -395,8 +395,8 @@ let draw_subset firsts shapes state =
   let state = ref state in
   for i = 0 to n - 1 do
     if firsts.(i) = i then begin
-      let coin, next = Seed.below ~bound:2L !state in
-      joins.(i) <- Int64.equal coin 1L;
+      let quarter, next = Seed.below ~bound:4L !state in
+      joins.(i) <- not (Int64.equal quarter 0L);
       state := next
     end
   done;

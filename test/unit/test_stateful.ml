@@ -382,6 +382,28 @@ let weights () =
   greater int ~than:0 (count "b ()");
   greater int ~than:(count "b ()") (count "a ()")
 
+(* Four commands that take nothing, over 40 calls: a case calls every command
+   of its subset. *)
+let joining () =
+  let names = [ "a"; "b"; "c"; "d" ] in
+  let gen =
+    Stateful.program ~steps:40
+      (List.map (fun name -> unit_call name ignore ignore) names)
+  in
+  let joined i =
+    let called = calls (recorded gen (value (drawn gen i))) in
+    List.map (fun name -> List.mem (name ^ " ()") called) names
+  in
+  let all = List.concat_map joined (List.init 400 Fun.id) in
+  let held = List.length (List.filter Fun.id all) in
+  equal (float 0.05) 0.75 (float_of_int held /. float_of_int (List.length all))
+
+(* One command stays out of a case's subset one time in four. *)
+let none_joins () =
+  let gen = ticks 5 in
+  let run i = rows (recorded gen (value (drawn gen i))) in
+  equal (list int) (List.init 100 (Fun.const 5)) (List.init 100 run)
+
 (* The reference side of a value is its number, so a call notes the value it
    received. *)
 let received () =
@@ -511,6 +533,8 @@ let drawing =
       test "a command whose type no command makes is never drawn" unmade;
       test "a command listed twice is drawn more often than one listed once"
         weights;
+      test "a case's subset holds each command three times in four" joining;
+      test "a case that no command joins holds every command" none_joins;
       test "the record names the value that each call received" received;
       prop
         "an index candidate moves its argument to a newer value, the newest \
@@ -1401,18 +1425,29 @@ let counter ?pp ?(swap = false) () =
 
 let pp_count ppf r = Format.pp_print_int ppf !r
 
+(* Whether [record] bumps some counter twice. *)
+let bumps_twice record =
+  let bumped row =
+    match List.rev (String.split_on_char ' ' row) with
+    | c :: "bump" :: _ -> Some c
+    | _ -> None
+  in
+  let bumps = List.filter_map bumped (String.split_on_char '\n' record) in
+  List.length (List.sort_uniq String.compare bumps) < List.length bumps
+
 let reference_before () =
-  expect_exact (table (Stateful.program ~steps:8 (counter ~pp:pp_count ())))
+  let gen = Stateful.program ~steps:8 (counter ~pp:pp_count ()) in
+  expect_exact (printed gen (value (find gen bumps_twice)))
   @@ __POS_OF__
        {| #  reference before  call
  1                    let c1 = new ()
  2  0                 bump c1
  3  1                 bump c1
- 4  2                 bump c1
- 5  3                 bump c1
- 6  4                 bump c1
- 7                    let c2 = new ()
- 8                    let c3 = new ()|}
+ 4                    let c2 = new ()
+ 5                    let c3 = new ()
+ 6                    let c4 = new ()
+ 7  0                 bump c4
+ 8                    let c5 = new ()|}
 
 let occurs sub s =
   let n = String.length sub in
@@ -1441,7 +1476,8 @@ let joined_cell () =
 let long_cell () =
   let e_acute = String.concat "" (List.init 100 (fun _ -> "\u{00e9}")) in
   let pp ppf _ = Format.pp_print_string ppf e_acute in
-  expect_exact (table (Stateful.program ~steps:3 (counter ~pp ())))
+  let gen = Stateful.program ~steps:3 (counter ~pp ()) in
+  expect_exact (printed gen (value (find gen (occurs "bump"))))
   @@ __POS_OF__
        {| #  reference before                                              call
  1                                                                let c1 = new ()
@@ -1450,17 +1486,18 @@ let long_cell () =
 
 let raising_pp () =
   let pp ppf r = if !r = 1 then raise Not_found else pp_count ppf r in
-  expect_exact (table (Stateful.program ~steps:8 (counter ~pp ())))
+  let gen = Stateful.program ~steps:8 (counter ~pp ()) in
+  expect_exact (printed gen (value (find gen bumps_twice)))
   @@ __POS_OF__
        {| #  reference before       call
  1                         let c1 = new ()
  2  0                      bump c1
  3  <pp raised Not_found>  bump c1
- 4  2                      bump c1
- 5  3                      bump c1
- 6  4                      bump c1
- 7                         let c2 = new ()
- 8                         let c3 = new ()|}
+ 4                         let c2 = new ()
+ 5                         let c3 = new ()
+ 6                         let c4 = new ()
+ 7  0                      bump c4
+ 8                         let c5 = new ()|}
 
 let cut steps =
   let rows = String.split_on_char '\n' (table (ticks steps)) in
@@ -1788,7 +1825,7 @@ let screens =
                (queue_commands ()))
           @@ __POS_OF__
                {|    test/test_bounded_queue.ml:32
-    counterexample (case 1, shrunk 8 steps): 3 calls, last: push
+    counterexample (case 1, shrunk 7 steps): 3 calls, last: push
        #  reference before  call
        1                    let q1 = create 1
        2  []                push q1 0

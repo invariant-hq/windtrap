@@ -153,10 +153,10 @@ queue:
 ```
 $ dune exec examples/04-stateful-testing/test_bounded_queue.exe -- -v --seed s1:c26eddaeb764a645 -f behaves
 bounded_queue: 1 test (seed s1:c26eddaeb764a645)
-  PASS  queue › behaves like a list                2.8ms
+  PASS  queue › behaves like a list                3.3ms
     labels (100 passing cases):
-       36.0%  reached capacity
-1 passed in 3.6ms.
+       46.0%  reached capacity
+1 passed in 4.1ms.
 ```
 
 ## Checking the exceptions an operation raises
@@ -215,7 +215,7 @@ bounded_queue: 1 test (seed s1:c26eddaeb764a645)
     examples/04-stateful-testing/test_bounded_queue.ml:39
       39 │ let queues = group "queue" [ stateful "behaves like a list" commands ]
 
-    counterexample (case 1, shrunk 6 steps): 3 calls, last: push
+    counterexample (case 0, shrunk 7 steps): 3 calls, last: push
        #  reference before  call
        1                    let q1 = create 1
        2  []                push q1 0
@@ -229,7 +229,7 @@ bounded_queue: 1 test (seed s1:c26eddaeb764a645)
 ──────────────────────────────────────────────────────────
 
 replay: dune exec examples/04-stateful-testing/test_bounded_queue.exe -- --seed s1:c26eddaeb764a645 -f 'behaves'
-1 failed in 1.4ms.
+1 failed in 0.8ms.
 ```
 
 ## Reading a failure of the model
@@ -253,7 +253,7 @@ bounded_queue: 1 test (seed s1:c26eddaeb764a645)
     examples/04-stateful-testing/test_bounded_queue.ml:39
       39 │ let queues = group "queue" [ stateful "behaves like a list" commands ]
 
-    counterexample (case 0, shrunk 5 steps): 2 calls, last: peek
+    counterexample (case 0, shrunk 7 steps): 2 calls, last: peek
        #  reference before  call
        1                    let q1 = create 1
        2  []                peek q1
@@ -263,11 +263,11 @@ bounded_queue: 1 test (seed s1:c26eddaeb764a645)
       reference of call 2 of 2: peek q1
       uncaught exception:
         File "examples/04-stateful-testing/test_bounded_queue.ml", line 10, characters 29-35: Assertion failed
-      Raised at Dune__exe__Test_bounded_queue.Model.peek in file "examples/04-stateful-testing/test_bounded_queue.ml", line 10, characters 29-41
+      Raised at Test_bounded_queue.Model.peek in file "examples/04-stateful-testing/test_bounded_queue.ml", line 10, characters 29-41
 ──────────────────────────────────────────────────────────
 
 replay: dune exec examples/04-stateful-testing/test_bounded_queue.exe -- --seed s1:c26eddaeb764a645 -f 'behaves'
-1 failed in 7.7ms.
+1 failed in 1.0ms.
 ```
 
 ## Keeping a failing program as a regression
@@ -429,13 +429,13 @@ could lose one:
 
 ```
 $ dune exec test/test_mpmc.exe
-mpmc: 2 tests (seed s1:6f2e36ce28690db1)
+mpmc: 2 tests (seed s1:f1eb7b7406b0cca6)
 ──────────────────────── failures ────────────────────────
   FAIL  Mpmc › behaves like Queue from two domains
     test/test_mpmc.ml:20
       20 │ stateful ~domains:2 "behaves like Queue from two domains" commands;
 
-    counterexample (case 0, shrunk 10 steps): 4 calls, 2 in parallel
+    counterexample (case 0, shrunk 9 steps): 4 calls, 2 in parallel
        #  domain  call                result
        1          let q1 = create ()
        2  1       push q1 0           ()
@@ -448,8 +448,8 @@ mpmc: 2 tests (seed s1:6f2e36ce28690db1)
       actual    1
 ──────────────────────────────────────────────────────────
 
-replay: dune exec test/test_mpmc.exe -- --seed s1:6f2e36ce28690db1
-1 passed, 1 failed in 197ms.
+replay: dune exec test/test_mpmc.exe -- --seed s1:f1eb7b7406b0cca6
+1 passed, 1 failed in 81ms.
 ```
 
 The invariant of an abstract type runs after the prefix's calls only:

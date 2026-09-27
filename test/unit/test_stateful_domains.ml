@@ -108,11 +108,12 @@ let recorded ?workers gen program =
   ignore (ended (execute ?workers program) : string);
   printed gen program
 
-(* The first program of [gen] whose record, run on the calling domain,
-   [accept] holds. *)
-let find ?(path = "find") gen accept =
+(* The first program of [gen] whose record, run on the calling domain after
+   [reset ()], [accept] holds. *)
+let find ?(path = "find") ?(reset = ignore) gen accept =
   let at index =
     let tree = drawn ~path gen index in
+    reset ();
     if accept (recorded gen (value tree)) then Some tree else None
   in
   require_some ~msg:"a program among the first 2000 meets the premise"
@@ -863,15 +864,18 @@ let drifting () =
     ]
   in
   let gen = Stateful.program ~steps:2 ~domains:2 commands in
+  let reset () =
+    reference_calls := 0;
+    system_calls := 0
+  in
   let tree =
-    find gen (fun record ->
+    find ~reset gen (fun record ->
         match calls record with
         | ("", "let m1 = create ()") :: ("", "get m1") :: (_ :: _ as rest) ->
             List.for_all (fun (d, _) -> d <> "") rest
         | _ -> false)
   in
-  reference_calls := 0;
-  system_calls := 0;
+  reset ();
   let ending = ended (execute (value tree)) in
   starts_with ~affix:"oracle [reference of call 2 of " ending;
   ends_with
