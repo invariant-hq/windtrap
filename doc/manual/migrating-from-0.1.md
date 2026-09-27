@@ -1,9 +1,9 @@
 # Migrating from 0.1
 
-This page ports a suite written for windtrap 0.1 to 0.2. Each line maps
-a 0.1 spelling to its 0.2 spelling, by area, and a spelling this page
-does not list is unchanged. The `0.2.0` entry of
-[`CHANGES.md`](../../CHANGES.md) lists every change.
+This page ports a suite written for windtrap 0.1 to this version. Each
+line maps a 0.1 spelling to its current spelling, by area, and a
+spelling this page does not list is unchanged. The entries of
+[`CHANGES.md`](../../CHANGES.md) from `0.2.0` on list every change.
 
 ## Declaring tests
 
@@ -87,9 +87,6 @@ does not list is unchanged. The `0.2.0` entry of
 - `Gen.fix`, `Gen.delay` → recursion through `let*` over `Gen.nat`
 - `Gen.no_shrink`, `Gen.add_shrink_invariant`, `Gen.make_primitive`,
   `Gen.find` → removed
-- `Gen.int32_range lo hi`, `Gen.int64_range lo hi` →
-  `Gen.map Int32.of_int (Gen.int_range lo hi)` over `int` bounds, and
-  likewise for `Int64`
 - `?origin` on the range generators, `?ratio` on `Gen.option`,
   `Gen.result` and `Gen.either` → removed; `Gen.frequency` weighs
   choices

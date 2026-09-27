@@ -857,7 +857,7 @@ module Gen : sig
 
   (** {1:numeric Numbers}
 
-      {!int}, {!int_range}, {!int32}, {!int64} and {!nativeint} draw a corner
+      {!int}, {!int32}, {!int64}, {!nativeint} and their ranges draw a corner
       case with probability 0.1 and draw uniformly otherwise. The corners of a
       range are its bounds, the point closest to [0] and that point's neighbours
       inside the range. The corners of a whole type are [0], [1], [-1] and the
@@ -884,12 +884,24 @@ module Gen : sig
   val int32 : int32 t
   (** [int32] is {!int} for the whole [int32] range. It shrinks toward [0l]. *)
 
+  val int32_range : int32 -> int32 -> int32 t
+  (** [int32_range low high] is {!int_range} for [int32]. It shrinks toward the
+      point of the range closest to [0l]. *)
+
   val int64 : int64 t
   (** [int64] is {!int} for the whole [int64] range. It shrinks toward [0L]. *)
+
+  val int64_range : int64 -> int64 -> int64 t
+  (** [int64_range low high] is {!int_range} for [int64]. It shrinks toward the
+      point of the range closest to [0L]. *)
 
   val nativeint : nativeint t
   (** [nativeint] is {!int} for the whole [nativeint] range. It shrinks toward
       [0n]. *)
+
+  val nativeint_range : nativeint -> nativeint -> nativeint t
+  (** [nativeint_range low high] is {!int_range} for [nativeint]. It shrinks
+      toward the point of the range closest to [0n]. *)
 
   val float : float t
   (** [float] generates a finite float from a uniform IEEE 754 bit pattern, so

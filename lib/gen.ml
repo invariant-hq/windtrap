@@ -252,6 +252,16 @@ module type Number = sig
   val equal : t -> t -> bool
 end
 
+module type Integer = sig
+  include Number
+
+  val compare : t -> t -> int
+  val min : t -> t -> t
+  val max : t -> t -> t
+  val pred : t -> t
+  val succ : t -> t
+end
+
 (* The candidates of [x] with origin [origin]: [origin] first, then each
    closes half the remaining gap, short of [x]. The gap is a difference of
    halves, since [(x - current) / 2] overflows across the whole range. *)
@@ -296,17 +306,27 @@ let with_corners corners draw state =
     (List.nth corners (Int64.to_int index), state)
   else draw state
 
+(* The range generator [name] of an integer type: its origin is the point
+   closest to [0], and [uniform] draws once [low <= high] holds. *)
+let range (type n) (module N : Integer with type t = n) ~name pp uniform low
+    high =
+  let origin = N.max low (N.min high N.zero) in
+  (* The neighbours stay inside the range, where they cannot overflow. *)
+  let corners =
+    List.sort_uniq N.compare
+      ([ low; high; origin ]
+      @ (if N.compare origin low > 0 then [ N.pred origin ] else [])
+      @ if N.compare origin high < 0 then [ N.succ origin ] else [])
+  in
+  primitive pp
+    (towards (module N) origin)
+    (fun state ->
+      if N.compare high low < 0 then invalid_arg (name ^ ": high < low");
+      with_corners corners uniform state)
+
 let int_range low high =
   let low64 = Int64.of_int low in
   let span = Int64.sub (Int64.of_int high) low64 in
-  let origin = Int.max low (Int.min high 0) in
-  (* The neighbours stay inside the range, where they cannot overflow. *)
-  let corners =
-    List.sort_uniq Int.compare
-      ([ low; high; origin ]
-      @ (if origin > low then [ origin - 1 ] else [])
-      @ if origin < high then [ origin + 1 ] else [])
-  in
   let uniform state =
     (* The whole [int] range counts one value more than [Int64.max_int]. *)
     if Int64.equal span Int64.max_int then word Int64.to_int state
@@ -314,11 +334,26 @@ let int_range low high =
       let offset, state = Seed.below ~bound:(Int64.succ span) state in
       (Int64.to_int (Int64.add low64 offset), state)
   in
-  primitive Pp.int (int_towards origin) (fun state ->
-      if high < low then invalid_arg "Gen.int_range: high < low";
-      with_corners corners uniform state)
+  range (module Int) ~name:"Gen.int_range" Pp.int uniform low high
 
 let int = int_range min_int max_int
+
+(* A uniform [int64] in \[[low];[high]\], through [of_int64]. A span that
+   [Seed.below] cannot bound takes whole words, and at least half of them
+   fall in the range. *)
+let between of_int64 low high state =
+  let span = Int64.sub high low in
+  if Int64.compare span 0L >= 0 && Int64.compare span Int64.max_int < 0 then
+    let offset, state = Seed.below ~bound:(Int64.succ span) state in
+    (of_int64 (Int64.add low offset), state)
+  else
+    let rec draw state =
+      let bits, state = Seed.bits64 state in
+      if Int64.compare low bits <= 0 && Int64.compare bits high <= 0 then
+        (of_int64 bits, state)
+      else draw state
+    in
+    draw state
 
 (* 50% below [b0], 25% below [b1], 20% below [b2], 5% below [b3]. *)
 let draw_strata (b0, b1, b2, b3) state =
@@ -349,10 +384,20 @@ let int32 =
        [ Int32.min_int; -1l; 0l; 1l; Int32.max_int ]
        (word Int64.to_int32))
 
+let int32_range low high =
+  let uniform =
+    between Int64.to_int32 (Int64.of_int32 low) (Int64.of_int32 high)
+  in
+  range (module Int32) ~name:"Gen.int32_range" pp_int32 uniform low high
+
 let int64 =
   primitive pp_int64
     (towards (module Int64) 0L)
     (with_corners [ Int64.min_int; -1L; 0L; 1L; Int64.max_int ] (word Fun.id))
+
+let int64_range low high =
+  let uniform = between Fun.id low high in
+  range (module Int64) ~name:"Gen.int64_range" pp_int64 uniform low high
 
 let nativeint =
   primitive pp_nativeint
@@ -360,6 +405,15 @@ let nativeint =
     (with_corners
        [ Nativeint.min_int; -1n; 0n; 1n; Nativeint.max_int ]
        (word Int64.to_nativeint))
+
+let nativeint_range low high =
+  let uniform =
+    between Int64.to_nativeint (Int64.of_nativeint low)
+      (Int64.of_nativeint high)
+  in
+  range
+    (module Nativeint)
+    ~name:"Gen.nativeint_range" pp_nativeint uniform low high
 
 (* Rejection keeps the bit-pattern distribution; about 0.05% of the patterns
    are not finite. *)

@@ -47,10 +47,10 @@ type 'a t
 
 (** {1:numeric Numbers}
 
-    The nine generators print OCaml literals ([3], [3l], [3L], [3n]). A float
+    The twelve generators print OCaml literals ([3], [3l], [3L], [3n]). A float
     prints as the shortest decimal that round-trips.
 
-    {!int}, {!int_range}, {!int32}, {!int64} and {!nativeint} draw a corner case
+    {!int}, {!int32}, {!int64}, {!nativeint} and their ranges draw a corner case
     with probability 0.1, each corner equally likely, and draw uniformly
     otherwise. The corners of a range are its bounds, its origin and the
     origin's neighbours inside the range. The corners of a whole type are [0],
@@ -84,12 +84,28 @@ val int_range : int -> int -> int t
 val int32 : int32 t
 (** [int32] is {!int} for the whole [int32] range. It shrinks toward [0l]. *)
 
+val int32_range : int32 -> int32 -> int32 t
+(** [int32_range low high] is {!int_range} for [int32]. Its origin is the point
+    of the range closest to [0l]. Sampling raises [Invalid_argument] if
+    [high < low]. *)
+
 val int64 : int64 t
 (** [int64] is {!int} for the whole [int64] range. It shrinks toward [0L]. *)
+
+val int64_range : int64 -> int64 -> int64 t
+(** [int64_range low high] is {!int_range} for [int64]. Its origin is the point
+    of the range closest to [0L]. Sampling raises [Invalid_argument] if
+    [high < low]. A range of 2{^ 63} values or more draws whole words until one
+    falls in it, as at least half of them do. *)
 
 val nativeint : nativeint t
 (** [nativeint] is {!int} for the whole [nativeint] range. It shrinks toward
     [0n]. *)
+
+val nativeint_range : nativeint -> nativeint -> nativeint t
+(** [nativeint_range low high] is {!int64_range} for [nativeint]. Its origin is
+    the point of the range closest to [0n]. Sampling raises [Invalid_argument]
+    if [high < low]. *)
 
 val float : float t
 (** [float] generates a finite float, uniformly among the finite bit patterns.

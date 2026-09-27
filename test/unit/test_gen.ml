@@ -229,6 +229,18 @@ let kept =
         (fun () -> Gen.int_range (-100) (-10)),
         fun _ -> within int (-100) (-10) );
     Kept
+      ( "int32_range (-5l) 70_000l",
+        (fun () -> Gen.int32_range (-5l) 70_000l),
+        fun _ -> within int32 (-5l) 70_000l );
+    Kept
+      ( "int64_range (-1L) Int64.max_int, a span past Int64.max_int",
+        (fun () -> Gen.int64_range (-1L) Int64.max_int),
+        fun _ -> within int64 (-1L) Int64.max_int );
+    Kept
+      ( "nativeint_range 3n 900n",
+        (fun () -> Gen.nativeint_range 3n 900n),
+        fun _ -> within nativeint 3n 900n );
+    Kept
       ( "float_range 2. 5.",
         (fun () -> Gen.float_range 2. 5.),
         fun _ -> within float_exact 2. 5. );
@@ -319,6 +331,18 @@ let malformed =
   [
     Malformed ("int_range 10 (-10)", (fun () -> Gen.int_range 10 (-10)), None);
     Malformed ("char_range 'z' 'a'", (fun () -> Gen.char_range 'z' 'a'), None);
+    Malformed
+      ( "int32_range 10l (-10l)",
+        (fun () -> Gen.int32_range 10l (-10l)),
+        Some "Gen.int32_range: high < low" );
+    Malformed
+      ( "int64_range Int64.max_int Int64.min_int",
+        (fun () -> Gen.int64_range Int64.max_int Int64.min_int),
+        Some "Gen.int64_range: high < low" );
+    Malformed
+      ( "nativeint_range 0n (-1n)",
+        (fun () -> Gen.nativeint_range 0n (-1n)),
+        Some "Gen.nativeint_range: high < low" );
     Malformed
       ( "float_range 1. 0.",
         (fun () -> Gen.float_range 1. 0.),
@@ -522,6 +546,21 @@ let numbers_shrink =
         (fun v -> not (Nativeint.equal v 0n)),
         "0n" );
     Shrinks
+      ( "int32_range 10l 100l",
+        (fun () -> Gen.int32_range 10l 100l),
+        (fun v -> v > 10l),
+        "10l" );
+    Shrinks
+      ( "int64_range (-100L) (-10L)",
+        (fun () -> Gen.int64_range (-100L) (-10L)),
+        (fun v -> v < -10L),
+        "-10L" );
+    Shrinks
+      ( "nativeint_range Nativeint.min_int Nativeint.max_int",
+        (fun () -> Gen.nativeint_range Nativeint.min_int Nativeint.max_int),
+        (fun v -> not (Nativeint.equal v 0n)),
+        "0n" );
+    Shrinks
       ("float", (fun () -> Gen.float), (fun v -> not (Float.equal v 0.)), "0.");
     Shrinks
       ("float_range 2. 5.", (fun () -> Gen.float_range 2. 5.), always, "2.");
@@ -550,6 +589,12 @@ let number_literals =
     Literal ("int32", (fun () -> Gen.int32), strf "%ldl");
     Literal ("int64", (fun () -> Gen.int64), strf "%LdL");
     Literal ("nativeint", (fun () -> Gen.nativeint), strf "%ndn");
+    Literal
+      ("int32_range", (fun () -> Gen.int32_range (-1000l) 1000l), strf "%ldl");
+    Literal
+      ("int64_range", (fun () -> Gen.int64_range Int64.min_int 0L), strf "%LdL");
+    Literal
+      ("nativeint_range", (fun () -> Gen.nativeint_range (-7n) 7n), strf "%ndn");
     Literal ("float", (fun () -> Gen.float), exact);
     Literal ("float_range", (fun () -> Gen.float_range (-1e6) 1e6), exact);
   ]
@@ -640,6 +685,26 @@ let corners =
         (fun () -> Gen.nativeint),
         nativeint,
         [ 0n; 1n; -1n; Nativeint.min_int; Nativeint.max_int ] );
+    Corners
+      ( "int32_range Int32.min_int (-7l)",
+        (fun () -> Gen.int32_range Int32.min_int (-7l)),
+        int32,
+        [ Int32.min_int; -8l; -7l ] );
+    Corners
+      ( "int64_range (-1_000_000L) 1_000_000_000_000L",
+        (fun () -> Gen.int64_range (-1_000_000L) 1_000_000_000_000L),
+        int64,
+        [ -1_000_000L; -1L; 0L; 1L; 1_000_000_000_000L ] );
+    Corners
+      ( "int64_range Int64.min_int Int64.max_int",
+        (fun () -> Gen.int64_range Int64.min_int Int64.max_int),
+        int64,
+        [ 0L; 1L; -1L; Int64.min_int; Int64.max_int ] );
+    Corners
+      ( "nativeint_range 5n Nativeint.max_int",
+        (fun () -> Gen.nativeint_range 5n Nativeint.max_int),
+        nativeint,
+        [ 5n; 6n; Nativeint.max_int ] );
   ]
 
 (* One draw in ten is a corner, each corner equally likely, so a corner of
@@ -655,6 +720,46 @@ let corner_share () =
   let values = samples (Gen.int_range (-1_000_000) 1_000_000) 20_000 in
   let corner v = List.mem v [ -1_000_000; -1; 0; 1; 1_000_000 ] in
   equal (float 0.01) 0.1 (share values corner)
+
+type sized =
+  | Sized :
+      string * ('a -> 'a -> 'a Gen.t) * 'a Gen.t * 'a testable * 'a
+      -> sized
+
+let sized_ranges =
+  [
+    Sized ("int32_range", Gen.int32_range, Gen.int32, int32, 0l);
+    Sized ("int64_range", Gen.int64_range, Gen.int64, int64, 0L);
+    Sized ("nativeint_range", Gen.nativeint_range, Gen.nativeint, nativeint, 0n);
+  ]
+
+(* Bounds drawn over the whole type reach its extremes, and a range of 2^63
+   values or more. *)
+let sized_range (Sized (name, range, whole, w, zero)) =
+  prop
+    (name
+   ^ " low high draws within [low;high], each candidate between the origin and \
+      its parent")
+    ~count:50
+    Gen.(triple whole whole int64)
+    (fun (a, b, seed) ->
+      let low = min a b and high = max a b in
+      let origin = max low (min high zero) in
+      let tree = at_seed (range low high) seed in
+      within w low high (value tree);
+      List.iter
+        (fun (parent, child) ->
+          within w (min origin parent) (max origin parent) child;
+          not_equal w parent child)
+        (edges ~limit:100 tree))
+
+(* [-2^62; Int64.max_int] holds a third of its values below 0, and two of its
+   five corners. *)
+let wide_int64_range () =
+  let values =
+    samples (Gen.int64_range (Int64.div Int64.min_int 2L) Int64.max_int) 4_000
+  in
+  equal (float 0.02) 0.34 (share values (fun v -> Int64.compare v 0L < 0))
 
 (* Half the finite bit patterns are negative, and half have a magnitude of at
    least 1; a float uniform over the reals would have nearly none below 1. *)
@@ -704,6 +809,10 @@ let numbers =
         "an integer's candidates lie between the origin and their parent, \
          strictly nearer the origin"
         ~count:30 bounds nearer_the_origin;
+      group "a range of int32, int64 or nativeint behaves as int_range"
+        (List.map sized_range sized_ranges);
+      test "int64_range draws uniformly over a range of more than 2^63 values"
+        wide_int64_range;
       literals
         "a number prints as an OCaml literal, a float as its shortest round \
          trip"

@@ -11,6 +11,9 @@
 - After the search the law runs once more on the counterexample, and
   when that run does not fail the block says
   `the test did not fail again on this counterexample; it is not deterministic`.
+- `Gen.int32_range`, `Gen.int64_range` and `Gen.nativeint_range`
+  generate in a range of their type as `Gen.int_range` does, with the
+  same corners and shrinking; 0.2.0 had removed the first two.
 
 ### Stateful testing
 
