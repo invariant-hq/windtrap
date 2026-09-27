@@ -139,6 +139,13 @@ let () = exit (run "mylib" [ parse ])
    (diff? help.expected help.expected.corrected))))
 ```
 
+`expect_file` reads its path from the project root, while the stanza's
+`deps` and `diff?` name the file from the stanza's directory: for the
+stanza above in `test/dune`, the call is
+`expect_file (Mylib.help ()) "test/help.expected"`. A path written from
+the stanza's directory names a file that does not exist: its failure
+says `no baseline`, and its `accept:` line cannot fix it.
+
 In `windtrap.mli`: Declaring tests, Resources, Annotations, and `run`.
 
 ## Running tests
@@ -270,10 +277,30 @@ In `windtrap.mli`: Baselines, Captured output.
   passes every `equal` that uses it.
 - A law's `never covered:` failure says no drawn case exercised the
   law. Fix the generator, the respelling or the witness, never the law.
-- Draw sizes and indices from `Gen.nat` or `Gen.int_range 0 n`, and
-  magnitudes from `Gen.small_int`, not the full range of `int`. A structural precondition (non-empty, sorted) belongs
-  in the generator; `assume` is for rare cases, since a property that
-  discards too many gives up.
+- Draw the sizes of generated values from `Gen.nat` or a range, and a
+  number the law computes with from `Gen.small_int`, so that the law
+  itself cannot overflow. Draw an argument that the API bounds or
+  counts with (an index, a length, a count) across its edges: 0, the
+  bound, one past either end, and the extremes of `int` with their
+  neighbours, where the stdlib's `Dynarray.blit ~src_pos:max_int` and
+  `String.take_last (min_int + 3)` went wrong. `Gen.int` draws
+  `min_int` but none of its neighbours, so with `n` the largest valid
+  value:
+
+  ```ocaml
+  Gen.frequency
+    [
+      (6, Gen.int_range (-2) (n + 2));
+      (1, Gen.int);
+      ( 1,
+        Gen.of_list ~pp:Format.pp_print_int
+          [ min_int; min_int + 1; max_int - 1; max_int ] );
+    ]
+  ```
+
+  A structural precondition (non-empty, sorted) belongs in the
+  generator; `assume` is for rare cases, since a property that discards
+  too many gives up.
 - Give a generator of your type a printer with `Gen.with_pp`, the same
   `pp` its witness uses; a list of chosen values takes it directly,
   `Gen.of_list ~pp:Format.pp_print_int [ 0; max_int ]`. `cover "label" cond` fails the property when no
