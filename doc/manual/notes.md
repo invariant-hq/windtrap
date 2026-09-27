@@ -123,7 +123,7 @@ prints as the name that run gave it.
 
 A call runs the system first, and the reference judges its outcome. One
 order serves every signature: an outcome the API leaves open reaches
-the reference before it chooses, and a value exists as soon as the
+the reference, which rules on it, and a value exists as soon as the
 system made it, so a report names it and its release runs even when the
 reference disagrees. A reference that breaks is a bug of the test, the
 common one while a model is being written, so its failure shrinks as

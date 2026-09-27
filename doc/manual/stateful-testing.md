@@ -308,12 +308,13 @@ bounded_queue: 1 test
 
 ## Checking an outcome the API leaves open
 
-`chooses w` ends the signature of an operation whose outcome the API
+`judges w` ends the signature of an operation whose outcome the API
 leaves open, such as the element that a bag's `take_any` removes. The
 reference receives the system's outcome, `Ok v` or `Error e`, as its
-last argument, returns or raises the outcome it accepts, and updates
-its state to follow the choice. A choice it does not accept prints as
-an `expected` and `actual` pair.
+last argument, and rules on it instead of predicting it. Returning
+accepts the outcome, and the reference updates its state to follow
+it. A verb's failure, or the system's own exception raised again,
+rejects it.
 
 ```ocaml
 (* fragment: Bag is the project's own, and the model of a bag is an int list ref *)
@@ -325,14 +326,14 @@ let rec remove_one x = function
 
 let take_any =
   command "take_any"
-    (bag ^-> chooses (option int))
+    (bag ^-> judges (option int))
     (fun b seen ->
       match seen with
-      | Ok (Some x) when List.mem x !b ->
-          b := remove_one x !b;
-          Some x
-      | Ok None when !b = [] -> None
-      | _ -> ( match !b with [] -> None | x :: _ -> Some x))
+      | Ok (Some x) ->
+          mem int x !b;
+          b := remove_one x !b
+      | Ok None -> equal (list int) [] !b
+      | Error e -> raise e)
     Bag.take_any
 ```
 

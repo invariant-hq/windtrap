@@ -1110,8 +1110,9 @@ val cover : string -> bool -> unit
     once, as a list of {{!type:command}commands}, each pairing the reference's
     function with the system's under a {{!type:fn}signature}. {!stateful} draws
     programs of calls, runs each call on both sides and fails when the system's
-    outcome is not the reference's. A model written for the test is a reference,
-    and so are another implementation, an older version and the system itself.
+    outcome is not the one the reference predicts, or the reference rejects it.
+    A model written for the test is a reference, and so are another
+    implementation, an older version and the system itself.
 
     {[
     module R = Set.Make (Int)
@@ -1161,10 +1162,10 @@ val cover : string -> bool -> unit
 
     {b A call} runs the system, then the reference, which judges the system's
     outcome: under {!returns} and {!makes} the two outcomes compare, and under
-    {!chooses} the reference accepts one. Then the invariant of every abstract
-    type runs on each of its values. The first failure ends the program. On
-    several domains the calls after the prefix run and are judged differently
-    (see {!stateful}).
+    {!judges} the reference accepts the system's or rejects it. Then the
+    invariant of every abstract type runs on each of its values. The first
+    failure ends the program. On several domains the calls after the prefix run
+    and are judged differently (see {!stateful}).
 
     {b Outcomes.} An outcome is a result or a raised exception. Two results
     compare under the signature's witness, which must be reflexive on every
@@ -1185,8 +1186,9 @@ val cover : string -> bool -> unit
     - From a reference function, it breaks the reference, and so does anything a
       [~pre] raises. A case that broke the reference shrinks among the programs
       that break it, and the search of any other failure rejects a candidate
-      that breaks it. From a {!chooses} reference a verb's failure or a broken
-      contract is the system's mismatch instead.
+      that breaks it. From a {!judges} reference a verb's failure, a broken
+      contract or the system's own exception raised again rejects the system's
+      outcome instead.
     - {!assume} and {!reject} in either function fail the case, since a call's
       legality is its [~pre]'s.
     - A {!skip}, a timeout and an [exit] keep their meaning everywhere.
@@ -1210,12 +1212,13 @@ val cover : string -> bool -> unit
     or {!Gen.bind} as its pre-image, in parentheses when it holds a space or
     starts with [-]. An abstract argument prints as its value's name. When an
     argument's abstract type has [~pp], a [reference before] column shows the
-    reference side of such arguments before the call. The failing call is the
-    last row. Under the table it is named, as [call 3 of 3: push q1 0], above
-    the pair of its outcomes, the reference's as [expected], with its command's
-    location. A broken reference reads [reference of call 3 of 3: pop q1] above
-    its failure, and an invariant's failure [after call 3 of 3, on s2] above the
-    verb's lines.
+    reference side of such arguments before the call. A program with a call
+    whose signature ends in {!judges} adds a [result] column, the system's
+    outcome of each call. The failing call is the last row. Under the table it
+    is named, as [call 3 of 3: push q1 0], above the pair of its outcomes, the
+    reference's as [expected], with its command's location. A broken reference
+    reads [reference of call 3 of 3: pop q1] above its failure, and an
+    invariant's failure [after call 3 of 3, on s2] above the verb's lines.
 
     On several domains the table adds a [domain] column, the branch of each
     parallel call, and a [result] column, the system's outcome in the failing
@@ -1281,7 +1284,7 @@ type ('r, 's, 'p) fn
     [Set.add : elt -> t -> t] takes [elt @-> set ^-> makes set] and no wrapper.
     It has at least one argument, so an operation without one takes
     [Gen.unit @-> …]. It ends in one result form, {!returns}, {!makes} or
-    {!chooses}, and the types keep a result form out of argument position. *)
+    {!judges}, and the types keep a result form out of argument position. *)
 
 val ( @-> ) : 'a Gen.t -> ('r, 's, 'p) fn -> ('a -> 'r, 'a -> 's, 'a -> 'p) fn
 (** [gen @-> fn] takes an argument drawn from [gen], the same value on both
@@ -1310,13 +1313,39 @@ val makes : ('r, 's) abstract -> ('r, 's, bool) fn
     even when the reference raised. When both sides raise an equal exception, no
     value is made. *)
 
-val chooses : 'a testable -> (('a, exn) result -> 'a, 'a, bool) fn
-(** [chooses w] is for an outcome the API leaves open, such as the element that
-    a [take_any] returns. The reference receives the system's outcome, [Ok v] or
-    [Error e], as its last argument, and returns or raises the outcome it
-    accepts, updating its state to follow the choice. That outcome compares with
-    the system's as any outcome does, so an illegal choice prints as an
-    [expected] and [actual] pair. *)
+val judges : 'a testable -> (('a, exn) result -> unit, 'a, bool) fn
+(** [judges w] is for an outcome the reference rules on instead of predicting:
+    one the API leaves open, such as the element that a [take_any] returns, or
+    one the test states only in part, such as a policy's decision. The system
+    runs, then the reference receives the system's outcome, [Ok v] or [Error e],
+    as its last argument, and updates its state to follow it.
+    - Returning accepts the outcome.
+    - A verb's failure, [Assert_failure] or [Match_failure] rejects it: the call
+      fails with the verb's lines.
+    - The system's own exception raised again rejects it too, and prints as an
+      exception no reference predicted, with the system's backtrace, as under
+      {!returns}. It is recognised by physical equality, so a judge whose own
+      bug raises the very constant the system raised, a [Not_found] after the
+      system's [Not_found], reads as rejecting the outcome.
+    - Any other exception breaks the reference, as
+      [reference of call 3 of 3: pop q1], and so do {!assume} and {!reject}. A
+      {!skip}, a timeout and an [exit] keep their meaning.
+
+    [Error e] never carries a verb's failure, [Assert_failure] or
+    [Match_failure]: from the system those fail the case first.
+
+    On several domains the reference is replayed along each order of the calls,
+    so a judge also receives outcomes in states that only an order the system
+    did not take reaches. A rejection there rules that order out. A crash there
+    breaks the reference even when another order would explain the outcomes, and
+    its label names the order it replayed, as
+    [reference of call 2 of 3, in the order 2 then 3: pop q1]. A judge must
+    therefore reject, with a verb, every outcome it does not accept, in every
+    state.
+
+    The report's table has a [result] column when the program holds a judging
+    call: the system's outcome of each call, a result as its witness prints it
+    or [exception E]. *)
 
 type command
 (** The type for commands: one operation of an API, on the reference and on the
@@ -1391,9 +1420,10 @@ val stateful :
     once, and the prefix and the suffix run on the test's domain. Each program
     runs 50 times from no value, and the test fails when no order of the calls,
     each branch keeping its order and the suffix last, replayed on the
-    reference, gives every outcome that the system gave. The search follows
-    program order and never real time, so every linearizable history passes. The
-    invariant runs after the prefix's calls only.
+    reference, gives every outcome the system gave where the reference predicts,
+    and is accepted where it judges. The search follows program order and never
+    real time, so every linearizable history passes. The invariant runs after
+    the prefix's calls only.
 
     The contract differs from one domain's in four ways:
     - a replay draws the same programs, not the same schedules, and may pass;

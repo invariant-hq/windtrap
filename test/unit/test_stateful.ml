@@ -27,7 +27,7 @@ let ( @-> ) = Stateful.( @-> )
 let ( ^-> ) = Stateful.( ^-> )
 let returns = Stateful.returns
 let makes = Stateful.makes
-let chooses = Stateful.chooses
+let judges = Stateful.judges
 let command = Stateful.command
 
 (* Drawing and reading programs *)
@@ -888,25 +888,6 @@ let never_rows =
       pre ^ discard );
   ]
 
-let chosen_rows =
-  let call = "failure [call 1 of 1: take ()] " in
-  [
-    ("a verb's failure", (fun () _ -> fail "nope"), call ^ {|message "nope"|});
-    ( "Assert_failure",
-      (fun () _ -> raise (Assert_failure ("x.ml", 1, 2))),
-      call
-      ^ {|raise actual File "x.ml", line 1, characters 2-8: Assertion failed|}
-    );
-    ( "assume",
-      (fun () _ ->
-        assume false;
-        0),
-      strf "oracle [reference of call 1 of 1: take ()] message %S" discarded );
-  ]
-
-let take reference system =
-  one_call (command "take" (Gen.unit @-> chooses int) reference system)
-
 let system_first () =
   let c =
     unit_call "f"
@@ -935,9 +916,9 @@ let raising_in place e =
   | `Pre -> one_call (unit_call "f" ~pre:raise_it ignore ignore)
   | `Reference -> one_call (unit_call "f" raise_it ignore)
   | `System -> one_call (unit_call "f" ignore raise_it)
-  | `Chosen ->
+  | `Judging ->
       one_call
-        (command "f" (Gen.unit @-> chooses unit) (fun () _ -> raise e) ignore)
+        (command "f" (Gen.unit @-> judges unit) (fun () _ -> raise e) ignore)
   | `Invariant ->
       one_call (made "f" (abstract "r" ~invariant:(fun () () -> raise e)))
   | `Release -> one_call (made "f" (abstract "r" ~release:raise_it))
@@ -947,7 +928,7 @@ let places =
     ("pre", `Pre);
     ("the reference", `Reference);
     ("the system", `System);
-    ("a chooses reference", `Chosen);
+    ("a judges reference", `Judging);
     ("an invariant", `Invariant);
     ("a release", `Release);
   ]
@@ -985,13 +966,6 @@ let never_outcomes =
         (fun (_, pre, reference, system, expected) ->
           equal string expected
             (ended (execute (one_call (unit_call "f" ?pre reference system)))));
-      cases
-        "in a chooses reference, a verb's failure or a broken contract is the \
-         system's mismatch, and a discard breaks the reference"
-        ~name:(fun (n, _, _) -> n)
-        chosen_rows
-        (fun (_, reference, expected) ->
-          equal string expected (ended (execute (take reference (fun () -> 1)))));
       test "a never-outcome of the system ends its call before the reference"
         system_first;
       test "the call whose pre raised is the last of the record" broken_pre_row;
@@ -1005,15 +979,17 @@ let never_outcomes =
           equal string (raised e) (raising_cell e));
     ]
 
-(* Choosing *)
+(* Judging *)
 
-let chooses_order () =
+let judge reference system =
+  one_call (command "take" (Gen.unit @-> judges int) reference system)
+
+let judges_order () =
   let reference () seen =
     note
       (match seen with
       | Ok v -> strf "reference Ok %d" v
-      | Error e -> "reference Error " ^ Printexc.to_string e);
-    match seen with Ok v -> v | Error e -> raise e
+      | Error e -> "reference Error " ^ Printexc.to_string e)
   in
   let system raises () =
     note "system";
@@ -1025,41 +1001,93 @@ let chooses_order () =
       [ "system"; "reference Ok 1" ]; [ "system"; "reference Error Not_found" ];
     ]
     [
-      notes (execute (take reference (system false)));
-      notes (execute (take reference (system true)));
+      notes (execute (judge reference (system false)));
+      notes (execute (judge reference (system true)));
     ]
 
-let accept () = function Ok v -> v | Error e -> raise e
-
-let choosing_rows =
+let verdict_rows =
+  let call = "failure [call 1 of 1: take ()] " in
+  let reference = "oracle [reference of call 1 of 1: take ()] " in
+  let returning () = 1 and raising () = raise Not_found in
+  (* A string made at run time: two raises, two values. *)
+  let alike () = failwith (String.make 1 'a') in
   [
-    ( "the reference accepts the system's result",
-      accept,
-      (fun () -> 1),
-      "returned" );
-    ( "the reference accepts another result",
-      (fun () _ -> 2),
-      (fun () -> 1),
-      "failure [call 1 of 1: take ()] equality 2, 1" );
-    ( "the reference raises the system's exception again",
-      accept,
-      (fun () -> raise Not_found),
-      "returned" );
-    ( "the reference raises where the system returned",
+    ("returning accepts a result", (fun () _ -> ()), returning, "returned");
+    ("returning accepts an exception", (fun () _ -> ()), raising, "returned");
+    ( "a verb's failure rejects",
+      (fun () _ -> fail "nope"),
+      returning,
+      call ^ {|message "nope"|} );
+    ( "Assert_failure rejects",
+      (fun () _ -> broken ()),
+      returning,
+      call
+      ^ {|raise actual File "x.ml", line 1, characters 2-8: Assertion failed|}
+    );
+    ( "Match_failure rejects",
+      (fun () _ -> unmatched ()),
+      returning,
+      call
+      ^ {|raise actual File "x.ml", line 3, characters 4-9: Pattern matching failed|}
+    );
+    ( "the system's exception raised again rejects",
+      (fun () -> function Ok _ -> () | Error e -> raise e),
+      raising,
+      call ^ "raise actual Not_found" );
+    ( "the system's constant raised by the judge itself rejects",
       (fun () _ -> raise Not_found),
-      (fun () -> 1),
-      "failure [call 1 of 1: take ()] raise expected Not_found" );
+      raising,
+      call ^ "raise actual Not_found" );
+    ( "an exception built alike breaks the reference",
+      (fun () _ -> alike ()),
+      alike,
+      reference ^ {|raise actual Failure("a")|} );
+    ( "another exception breaks the reference",
+      (fun () _ -> raise Not_found),
+      returning,
+      reference ^ "raise actual Not_found" );
+    ( "assume breaks the reference",
+      (fun () _ -> assume false),
+      returning,
+      reference ^ strf "message %S" discarded );
+    ( "reject breaks the reference",
+      (fun () _ -> reject ()),
+      returning,
+      reference ^ strf "message %S" discarded );
   ]
 
-let choosing =
-  group "Choosing"
+(* The system's exception raised again prints as under [returns]. *)
+let reraised () =
+  let[@inline never] system () = raise A.Full in
+  let failed c = require_some (failure (execute (one_call c))) in
+  let predicted = failed (int_call "take" (fun () -> 1) system) in
+  let judged =
+    failed
+      (command "take"
+         (Gen.unit @-> judges int)
+         (fun () -> function Ok _ -> () | Error e -> raise e)
+         system)
+  in
+  let backtrace (f : Failure.t) =
+    match f.kind with
+    | Raise { backtrace = Some bt; _ } -> Some bt.kept
+    | _ -> None
+  in
+  equal string (row predicted) (row judged);
+  contains ~sub:"test_stateful.ml" (require_some (backtrace judged));
+  equal (option string) (backtrace predicted) (backtrace judged)
+
+let judging =
+  group "Judging"
     [
-      test "the reference receives the system's outcome" chooses_order;
-      cases "the reference's outcome compares with the system's"
+      test "the reference receives the system's outcome" judges_order;
+      cases "returning accepts; a verb, a broken contract or a re-raise rejects"
         ~name:(fun (n, _, _, _) -> n)
-        choosing_rows
+        verdict_rows
         (fun (_, reference, system, expected) ->
-          equal string expected (ended (execute (take reference system))));
+          equal string expected (ended (execute (judge reference system))));
+      test "a re-raise prints the system's exception with its backtrace"
+        reraised;
     ]
 
 (* Invariants *)
@@ -1499,6 +1527,52 @@ let raising_pp () =
  7  0                      bump c4
  8                         let c5 = new ()|}
 
+(* Stdlib's queue, whose [pop] ends in [result], under a reference that
+   accepts or gives every outcome. *)
+let popped result =
+  let q = abstract "q" in
+  [
+    command "create" (Gen.unit @-> makes q) ignore Queue.create;
+    command "push"
+      (q ^-> Gen.int_range 0 9 @-> returns unit)
+      (fun () _ -> ())
+      (fun q x -> Queue.push x q);
+    (match result with
+    | `Returns -> command "pop" (q ^-> returns int) (fun () -> 0) Queue.pop
+    | `Judges -> command "pop" (q ^-> judges int) (fun () _ -> ()) Queue.pop);
+  ]
+
+let result_column () =
+  let gen = Stateful.program ~steps:5 (popped `Judges) in
+  let lines record = String.split_on_char '\n' record in
+  let popped_value line =
+    occurs "pop q1" line && not (occurs "exception" line)
+  in
+  let tree =
+    find gen (fun record ->
+        occurs "exception Stdlib.Queue.Empty" record
+        && List.exists popped_value (lines record))
+  in
+  expect_exact (printed gen (value tree))
+  @@ __POS_OF__
+       {| #  call                result
+ 1  let q1 = create ()
+ 2  push q1 7           ()
+ 3  pop q1              7
+ 4  pop q1              exception Stdlib.Queue.Empty
+ 5  pop q1              exception Stdlib.Queue.Empty|}
+
+(* The words of a record's header row. *)
+let header record =
+  let line = List.hd (String.split_on_char '\n' record) in
+  List.filter (fun w -> w <> "") (String.split_on_char ' ' line)
+
+let result_headers =
+  [
+    ("returns", `Returns, [ "#"; "call" ]);
+    ("judges", `Judges, [ "#"; "call"; "result" ]);
+  ]
+
 let cut steps =
   let rows = String.split_on_char '\n' (table (ticks steps)) in
   let omission = List.filter (String.starts_with ~prefix:"\u{2026}") rows in
@@ -1551,6 +1625,17 @@ let the_record =
       test "a cell joins the reference sides of two arguments" joined_cell;
       test "a reference before cell is cut at 60 code points" long_cell;
       test "a printer that raises costs its own cell" raising_pp;
+      test
+        "a judging call adds a result column, each call's outcome as its \
+         witness prints it"
+        result_column;
+      cases "only a judging call adds a result column"
+        ~name:(fun (n, _, _) -> n)
+        result_headers
+        (fun (_, result, expected) ->
+          let gen = Stateful.program ~steps:5 (popped result) in
+          let tree = find gen (occurs "pop q1") in
+          equal (list string) expected (header (printed gen (value tree))));
       test "a record of more than 40 calls prints its first and last 20"
         (fun () ->
           expect_exact (table (ticks 50))
@@ -1775,6 +1860,50 @@ let queue_commands () =
       Model.size Bounded_queue.size;
   ]
 
+(* A queue whose [pop] invents a value when it holds three. *)
+module Inventing_queue = struct
+  let pop q =
+    let x = Queue.pop q in
+    if Queue.length q >= 2 then 42 else x
+end
+
+(* The monitor of a queue: a pop returns a value pushed and not yet taken, in
+   any order. The reference is the values pushed and not yet taken. *)
+module Pushed = struct
+  let at line = ("test/test_queue_monitor.ml", line, 4, 80)
+  let create () = ref []
+  let push m x = m := x :: !m
+
+  let rec remove x = function
+    | [] -> []
+    | y :: l -> if y = x then l else y :: remove x l
+
+  let pop m = function
+    | Ok v ->
+        mem ~__POS__:(at 16) ~msg:"pop returns a value pushed and not yet taken"
+          int v !m;
+        m := remove v !m
+    | Error Queue.Empty ->
+        equal ~__POS__:(at 19) ~msg:"pop raises Empty only when empty"
+          (list int) [] !m
+    | Error e -> raise e
+end
+
+let monitor_commands () =
+  let queue = abstract "q" ~pp:(fun ppf m -> Testable.pp (list int) ppf !m) in
+  [
+    command ~__POS__:(Pushed.at 25) "create"
+      (Gen.unit @-> makes queue)
+      Pushed.create Queue.create;
+    command ~__POS__:(Pushed.at 26) "push"
+      (queue ^-> Gen.int_range 0 9 @-> returns unit)
+      Pushed.push
+      (fun q x -> Queue.push x q);
+    command ~__POS__:(Pushed.at 28) "pop"
+      (queue ^-> judges int)
+      Pushed.pop Inventing_queue.pop;
+  ]
+
 let property_failure = function
   | Property.Fail { failure; _ } -> Some failure
   | Pass _ | Coverage_failed _ | Gave_up _ -> None
@@ -1835,6 +1964,26 @@ let screens =
       call 3 of 3: push q1 0
       expected exception  Test_stateful.Bounded_queue.Full
       but no exception was raised
+|});
+      test "a judge's rejection under a queue's monitor" (fun () ->
+          expect_exact
+            (screen
+               ~loc:("test/test_queue_monitor.ml", 31, 0, 10)
+               (monitor_commands ()))
+          @@ __POS_OF__
+               {|    test/test_queue_monitor.ml:31
+    counterexample (case 10, shrunk 7 steps): 5 calls, last: pop
+       #  reference before  call                result
+       1                    let q1 = create ()
+       2  []                push q1 0           ()
+       3  [0]               push q1 0           ()
+       4  [0; 0]            push q1 0           ()
+       5  [0; 0; 0]         pop q1              42
+    which failed at:
+      test/test_queue_monitor.ml:16
+      call 5 of 5: pop q1; pop returns a value pushed and not yet taken
+      expected  a list containing 42
+      actual    [0; 0; 0]
 |});
     ]
 
@@ -2190,7 +2339,7 @@ let () =
          legality;
          outcomes;
          never_outcomes;
-         choosing;
+         judging;
          invariants;
          releases;
          the_record;

@@ -108,7 +108,7 @@ let ( @-> ) = Stateful.( @-> )
 let ( ^-> ) = Stateful.( ^-> )
 let returns = Stateful.returns
 let makes = Stateful.makes
-let chooses = Stateful.chooses
+let judges = Stateful.judges
 let command = Stateful.command
 
 (* Unlike [Run.prop], [Stateful.stateful] adds the ["prop"] tag itself. *)

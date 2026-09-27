@@ -55,7 +55,7 @@ let abstract ?pp ?invariant ?release prefix =
 type ('r, 's) form =
   | Returns : 'a Testable.t -> ('a, 'a) form
   | Makes : ('r, 's) abstract -> ('r, 's) form
-  | Chooses : 'a Testable.t -> (('a, exn) result -> 'a, 'a) form
+  | Judges : 'a Testable.t -> (('a, exn) result -> unit, 'a) form
 
 type ('r, 's, 'p) fn =
   | Result : ('r, 's) form -> ('r, 's, bool) fn
@@ -68,7 +68,7 @@ let ( @-> ) gen fn = Drawn (gen, fn)
 let ( ^-> ) t fn = Chosen (t, fn)
 let returns w = Result (Returns w)
 let makes t = Result (Makes t)
-let chooses w = Result (Chooses w)
+let judges w = Result (Judges w)
 
 (* Commands *)
 
@@ -97,7 +97,7 @@ let type_id (Any t) = t.id
 
 let rec shape : type r s p. (r, s, p) fn -> shape = function
   | Result (Makes t) -> { takes = []; makes = Some (Any t) }
-  | Result (Returns _ | Chooses _) -> { takes = []; makes = None }
+  | Result (Returns _ | Judges _) -> { takes = []; makes = None }
   | Drawn (_, fn) -> shape fn
   | Chosen (t, fn) ->
       let shape = shape fn in
@@ -212,6 +212,7 @@ type row = {
   domain : int option; (* the branch of a parallel call, from 1 *)
   before : string option; (* the [reference before] cell *)
   call : string Lazy.t; (* [name a1 … an] *)
+  judging : bool; (* its signature ends in [judges] *)
   mutable made : string option;
   mutable result : string Lazy.t option;
 }
@@ -250,9 +251,9 @@ let row_text row =
 let is_parallel row = Option.is_some row.domain
 
 (* The columns after [#]: [reference before] when a shown row has a cell,
-   then [call], between [domain] and [result] when the record has a parallel
-   call. *)
-let columns ~parallel rows =
+   [domain] when the record has a parallel call, [call], then [result] when
+   it has a parallel or a judging call. *)
+let columns ~parallel ~judging rows =
   let before row = Option.value row.before ~default:"" in
   let domain row = Option.fold ~none:"" ~some:string_of_int row.domain in
   let result row = Option.fold ~none:"" ~some:Lazy.force row.result in
@@ -263,7 +264,7 @@ let columns ~parallel rows =
        else []);
       (if parallel then [ ("domain", domain) ] else []);
       [ ("call", row_text) ];
-      (if parallel then [ ("result", result) ] else []);
+      (if parallel || judging then [ ("result", result) ] else []);
     ]
 
 (* Hard newlines and padding only: the engine renders through
@@ -286,7 +287,12 @@ let record_text = function
             List.filteri (fun i _ -> i >= total - context_calls) numbered )
       in
       let shown = List.map snd (head @ tail) in
-      let columns = columns ~parallel:(List.exists is_parallel rows) shown in
+      let columns =
+        columns
+          ~parallel:(List.exists is_parallel rows)
+          ~judging:(List.exists (fun row -> row.judging) rows)
+          shown
+      in
       let widths =
         List.map
           (fun (header, cell) ->
@@ -795,7 +801,7 @@ let result_text : type r s. (r, s) form -> s outcome -> string Lazy.t option =
   match (outcome, form) with
   | Raised (exn, _), _ -> Some (lazy ("exception " ^ Failure.exn_to_string exn))
   | Returned v, Returns w -> Some (printed w v)
-  | Returned v, Chooses w -> Some (printed w v)
+  | Returned v, Judges w -> Some (printed w v)
   | Returned _, Makes _ -> None
 
 (* Executing *)
@@ -811,8 +817,12 @@ let attribute ?loc label (failure : Failure.t) =
   let loc = match failure.loc with None -> loc | Some _ -> failure.loc in
   { failure with msg = Some (Failure.text msg); loc }
 
-let call_label what ~total (Pending p) =
-  Pp.str "%scall %d of %d: %s" what p.number total (Lazy.force p.row.call)
+(* [order] is the order of the calls that the judge of several domains was
+   replaying. *)
+let call_label ?order what ~total (Pending p) =
+  let order = match order with None -> "" | Some o -> ", in the order " ^ o in
+  Pp.str "%scall %d of %d%s: %s" what p.number total order
+    (Lazy.force p.row.call)
 
 let fresh_run () =
   {
@@ -875,6 +885,8 @@ let pending ?before ~domain (Call c) (Ready r) =
       domain;
       before;
       call = text;
+      judging =
+        (match r.form with Judges _ -> true | Returns _ | Makes _ -> false);
       made = None;
       result = None;
     }
@@ -922,22 +934,24 @@ let made run (Pending p) =
   match (p.form, p.ended) with
   | Makes t, Some (Ok (Returned s)) ->
       p.row.made <- Some (make run ~step:p.step t s)
-  | (Makes _ | Returns _ | Chooses _), _ -> ()
+  | (Makes _ | Returns _ | Judges _), _ -> ()
 
-(* [judge_call ~total sides pending] is the difference between the outcome
-   of [pending]'s system and the one its reference gives on [sides]:
+(* [judge_call ?order ~total sides pending] is the difference between the
+   outcome of [pending]'s system and the one its reference gives on [sides]:
    [returns] compares, [makes] keeps the reference's side in [sides], and
-   [chooses] gives the reference the outcome to accept, where a verb's
-   failure is the system's mismatch. A broken reference is raised as
-   [Property.Oracle_failure]. *)
-let judge_call ~total sides (Pending p as pending) =
+   [judges] gives the reference the outcome to rule on, where a verb's
+   failure or the system's own exception raised again is the system's
+   mismatch. A broken reference is raised as [Property.Oracle_failure], its
+   label naming [order], the order the judge of several domains replays. *)
+let judge_call ?order ~total sides (Pending p as pending) =
   let outcome =
     match p.ended with
     | Some (Ok outcome) -> outcome
     | Some (Error _) | None -> assert false (* only an outcome is judged *)
   in
   let break what failure =
-    let label = call_label what ~total pending in
+    let order = Option.map Lazy.force order in
+    let label = call_label ?order what ~total pending in
     raise (Property.Oracle_failure (attribute ?loc:p.loc label failure))
   in
   let reference fn =
@@ -955,11 +969,18 @@ let judge_call ~total sides (Pending p as pending) =
           None
       | Raised (a, _), Raised (b, _) when same_constructor a b -> None
       | expected, _ -> Some (mismatch expected outcome))
-  | Chooses w -> (
-      match side (fun () -> fn () (seen outcome)) with
-      | Ok expected -> differ w expected outcome
-      | Error (Failed failure) -> Some failure
-      | Error Discarded -> break "reference of " (failure_of `Discard))
+  | Judges _ -> (
+      match (side (fun () -> fn () (seen outcome)), outcome) with
+      | Ok (Returned ()), _ -> None
+      (* The system's own exception raised again rejects the outcome, as a
+         reference that returned would; an exception built alike breaks the
+         reference. *)
+      | Ok (Raised (exn, _)), Raised (raised, _) when exn == raised ->
+          Some (mismatch (Returned ()) outcome)
+      | Ok (Raised (exn, backtrace)), _ ->
+          break "reference of " (failure_of (`Exception (exn, backtrace)))
+      | Error (Failed failure), _ -> Some failure
+      | Error Discarded, _ -> break "reference of " (failure_of `Discard))
 
 (* A call on one domain or in the prefix: the system runs, then the
    reference judges its outcome on the run's sides. The first failure ends
@@ -1021,6 +1042,11 @@ let release_all run ending =
 type verdict =
   | Explained of int list
   | Unexplained of { order : int list; at : int; failure : Failure.t }
+
+(* [completed taken numbers] is [taken] followed by the calls of [numbers]
+   that it does not hold, in their order. *)
+let completed taken numbers =
+  taken @ List.filter (fun number -> not (List.mem number taken)) numbers
 
 (* Depth first over the orders that keep each branch's order, each followed
    by the suffix. The first child of a branch point continues on the state
@@ -1089,20 +1115,18 @@ let judge ~fresh ~branches ~suffix =
   match (explore [], !closest) with
   | Some order, _ -> Explained order
   | None, Some (_, ((at, _) :: _ as path), failure) ->
-      let taken = List.rev_map fst path in
-      let untaken =
-        List.filter
-          (fun number -> not (List.mem number taken))
-          (List.map fst (List.concat branches @ suffix))
-      in
-      Unexplained { order = taken @ untaken; at; failure }
+      let numbers = List.map fst (List.concat branches @ suffix) in
+      Unexplained
+        { order = completed (List.rev_map fst path) numbers; at; failure }
   | None, (Some (_, [], _) | None) ->
       assert false (* an order either ends or reaches a call that differs *)
 
 (* Several domains *)
 
-let order_text numbers =
-  match List.rev_map string_of_int numbers with
+(* The parallel calls of [order], as [2, 4 then 3]. *)
+let order_text ~parallel order =
+  let calls = List.filter (fun n -> List.mem n parallel) order in
+  match List.rev_map string_of_int calls with
   | [] -> ""
   | [ last ] -> last
   | last :: rest -> String.concat ", " (List.rev rest) ^ " then " ^ last
@@ -1120,7 +1144,7 @@ let unexplained ~total ~parallel pendings ~order ~at (failure : Failure.t) =
       Pp.str
         "no order of the calls gives these results\n\
          the closest order, %s, differs at call %d: %s"
-        (order_text (List.filter (fun n -> List.mem n parallel) order))
+        (order_text ~parallel order)
         at (Lazy.force p.row.call)
     in
     let msg =
@@ -1192,9 +1216,15 @@ let run_parallel ~first ~workers ~stuck run program =
   let suffix = List.filter_map run_suffix program.suffix in
   let branches = Array.to_list (Array.map (List.filter has_run) branches) in
   let pendings = List.concat branches @ suffix in
+  let numbers = List.map (fun (Pending p) -> p.number) pendings in
+  let parallel =
+    List.map (fun (Pending p) -> p.number) (List.concat branches)
+  in
   let total = total () in
   let prefix = List.rev run.ran in
-  (* Every call of the prefix passed, so a replay that differs drifted. *)
+  (* A state of the search is the reference's sides and the calls replayed
+     on them, newest first. Every call of the prefix passed, so a replay
+     that differs drifted. *)
   let fresh () =
     let sides = Hashtbl.create 8 in
     let replay (Pending p as pending) =
@@ -1204,11 +1234,25 @@ let run_parallel ~first ~workers ~stuck run program =
           (Property.Oracle_failure (attribute ?loc:p.loc label (drifted ())))
     in
     List.iter replay prefix;
-    sides
+    (sides, ref [])
   in
+  (* A reference that breaks names the order being replayed, completed as
+     the closest order is. *)
   let steps =
     List.map (fun (Pending p as pending) ->
-        (p.number, fun sides -> judge_call ~total sides pending))
+        let step (sides, replayed) =
+          replayed := p.number :: !replayed;
+          let order =
+            if parallel = [] then None
+            else
+              Some
+                (lazy
+                  (order_text ~parallel
+                     (completed (List.rev !replayed) numbers)))
+          in
+          judge_call ?order ~total sides pending
+        in
+        (p.number, step))
   in
   let verdict =
     Run.without_labels (fun () ->
@@ -1218,7 +1262,7 @@ let run_parallel ~first ~workers ~stuck run program =
   | Explained order ->
       (* Labels count along the accepted order, once per case. *)
       if first then begin
-        let sides = Run.without_labels fresh in
+        let sides, _ = Run.without_labels fresh in
         let replay number =
           let pending =
             List.find (fun (Pending p) -> p.number = number) pendings
@@ -1228,9 +1272,6 @@ let run_parallel ~first ~workers ~stuck run program =
         List.iter replay order
       end
   | Unexplained { order; at; failure } ->
-      let parallel =
-        List.map (fun (Pending p) -> p.number) (List.concat branches)
-      in
       raise
         (Failure.Check_failure
            (unexplained ~total ~parallel pendings ~order ~at failure))

@@ -101,11 +101,13 @@ val makes : ('r, 's) abstract -> ('r, 's, bool) fn
     the system returns, and whose reference's result is that value's reference
     side. *)
 
-val chooses : 'a Testable.t -> (('a, exn) result -> 'a, 'a, bool) fn
-(** [chooses w] ends a signature whose outcome the API leaves open. The system's
-    outcome, [Ok v] or [Error e], is the reference's last argument. The
-    reference returns or raises the outcome it accepts, which compares with the
-    system's under [w] and the exception rule (see {!execute}). *)
+val judges : 'a Testable.t -> (('a, exn) result -> unit, 'a, bool) fn
+(** [judges w] ends a signature whose outcome the reference rules on instead of
+    predicting. The system's outcome, [Ok v] or [Error e], is the reference's
+    last argument. The reference returns to accept it, and rejects it with a
+    verb's failure, a broken contract or the system's own exception raised
+    again, the same value (see {!execute}). The record prints the outcome
+    through [w]. *)
 
 (** {1:commands Commands} *)
 
@@ -199,8 +201,8 @@ val execute : ?workers:Workers.t -> program -> unit
     + The system runs. Under {!makes}, a system that returns makes a value.
     + The reference judges the system's outcome. Under {!returns} and {!makes}
       it runs and the two outcomes compare, and under {!makes} its result is the
-      value's reference side. Under {!chooses} it receives the system's outcome,
-      and the outcome it accepts compares with the system's.
+      value's reference side. Under {!judges} it receives the system's outcome
+      and accepts or rejects it.
     + The invariant of each abstract type runs on every value of the type, in
       the order the values were made.
 
@@ -218,8 +220,11 @@ val execute : ?workers:Workers.t -> program -> unit
     - From a function of the reference, the same breaks the reference, and so
       does anything that a [pre] raises: {!execute} raises
       {!Property.Oracle_failure}.
-    - From a {!chooses} reference, a verb's failure or a broken contract fails
-      the run at that call, as a mismatch. A discard there breaks the reference.
+    - From a {!judges} reference, a verb's failure or a broken contract fails
+      the run at that call, and so does the system's own exception raised again,
+      recognised by physical equality, as a [Failure.Raise] failure with the
+      system's exception as [actual] and its backtrace. Any other exception, and
+      a discard, break the reference.
     - Every other control passes as it is, so a skip, a timeout and an [exit]
       keep the meaning they have in any law.
 
@@ -230,9 +235,12 @@ val execute : ?workers:Workers.t -> program -> unit
     [Property.Oracle_failure] for a broken reference, whose [msg] starts with a
     label, followed by the failure's own [msg] after ["; "], flattened to one
     line:
-    - [call 3 of 3: push q1 0] for a call's mismatch or a never-outcome of its
-      system or {!chooses} reference;
+    - [call 3 of 3: push q1 0] for a call's mismatch, a never-outcome of its
+      system, or a rejection by its {!judges} reference;
     - [reference of call 3 of 3: pop q1] for a broken reference function;
+    - [reference of call 2 of 3, in the order 2 then 3: pop q1] for a reference
+      function that broke while the judge replayed an order on several domains
+      (see {{!section-several}several domains});
     - [~pre of call 3 of 3: pop q1] for a broken [pre];
     - [after call 3 of 3, on s2] for an invariant;
     - [release of q1] for a release;
@@ -275,8 +283,9 @@ val execute : ?workers:Workers.t -> program -> unit
     the branch of a parallel call and blank for the others, and [result], after
     it, the system's outcome in the run: a result as its witness prints it, cut
     at 60 code points, or [exception E], and blank for a call that made a value.
-    Only the prefix's rows have [reference before] cells. No line ends on a
-    blank. *)
+    A record with a call whose signature ends in {!judges} has the [result]
+    column too. Only the prefix's rows have [reference before] cells. No line
+    ends on a blank. *)
 
 (** {2:several Several domains}
 
@@ -296,10 +305,12 @@ val execute : ?workers:Workers.t -> program -> unit
       their systems run, on the calling domain.
     + {b The judge} (see {!judge}) looks for an order of the calls that ran,
       each branch in its order, then the suffix, whose replay on the reference
-      gives every outcome the system gave. A replay starts from a reference
-      replayed along the prefix. A {!chooses} reference receives the system's
-      recorded outcome in every replay. When no order explains the outcomes, the
-      run fails with [no order of the calls gives these results], then
+      gives every outcome the system gave where the reference predicts it, and
+      is accepted where it judges it. A replay starts from a reference replayed
+      along the prefix. A {!judges} reference receives the system's recorded
+      outcome in every replay, and its rejection rules the order out. When no
+      order explains the outcomes, the run fails with
+      [no order of the calls gives these results], then
       [the closest order, 2 then 3, differs at call 4: length q1], naming the
       parallel calls of the order whose first difference comes latest, over that
       difference's own failure. With no parallel call there is one order, and
@@ -311,6 +322,12 @@ val execute : ?workers:Workers.t -> program -> unit
     [a replay of the reference differs from this run; the reference must behave
      the same from run to run], since the judge would otherwise blame the system
     for it.
+
+    A reference function that breaks while the judge replays an order ends the
+    run as a broken reference, even when another order would explain the
+    outcomes. With a parallel call, its label names the order the judge
+    replayed, completed as the closest order is:
+    [reference of call 2 of 3, in the order 2 then 3: pop q1].
 
     No invariant runs after the prefix: several orders may explain a run, and no
     one reference state exists after the branches. Labels count in the prefix's

@@ -34,7 +34,7 @@ let ( @-> ) = Stateful.( @-> )
 let ( ^-> ) = Stateful.( ^-> )
 let returns = Stateful.returns
 let makes = Stateful.makes
-let chooses = Stateful.chooses
+let judges = Stateful.judges
 let command = Stateful.command
 
 (* Programs *)
@@ -705,8 +705,8 @@ let report =
    accepts; the system logs it. *)
 let where () =
   command "where"
-    (Gen.unit @-> chooses int)
-    (fun () seen -> match seen with Ok d -> d | Error e -> raise e)
+    (Gen.unit @-> judges int)
+    (fun () _ -> ())
     (fun () ->
       Log.add (self ());
       self ())
@@ -782,7 +782,7 @@ let witnessed () =
    every later one, and whose [mem1] always holds: the second run's
    outcomes after the prefix are the first's, and only the prefix's [take]
    tells them apart. *)
-let prefix_chooses () =
+let prefix_judged () =
   let runs = ref 0 in
   let bag = abstract "b" in
   let commands =
@@ -792,13 +792,11 @@ let prefix_chooses () =
         (fun () -> ref [ 1; 2 ])
         (fun () -> incr runs);
       command "take"
-        (bag ^-> chooses int)
+        (bag ^-> judges int)
         (fun b seen ->
           match seen with
-          | Ok x when List.mem x !b ->
-              b := List.filter (fun y -> y <> x) !b;
-              x
-          | Ok _ | Error _ -> raise Not_found)
+          | Ok x when List.mem x !b -> b := List.filter (fun y -> y <> x) !b
+          | Ok _ | Error _ -> fail "not in the bag")
         (fun () -> if !runs = 1 then 2 else 1);
       command "mem1"
         (bag ^-> returns bool)
@@ -819,14 +817,13 @@ let prefix_chooses () =
   starts_with ~affix:"failure [no order of the calls gives these results\n"
     (ended (execute ~workers (value tree)))
 
-let chosen () =
+let judged () =
   let next = ref 0 in
   let take =
     command "take"
-      (Gen.unit @-> chooses int)
+      (Gen.unit @-> judges int)
       (fun () seen ->
-        (match seen with Ok v -> Log.add (-v) | Error _ -> Log.add 0);
-        match seen with Ok v -> v | Error e -> raise e)
+        match seen with Ok v -> Log.add (-v) | Error _ -> Log.add 0)
       (fun () ->
         incr next;
         Log.add !next;
@@ -944,16 +941,136 @@ let judging =
   group "Judging runs"
     [
       test
-        "a chooses reference receives the system's recorded outcome in every \
+        "a judges reference receives the system's recorded outcome in every \
          replay"
-        chosen;
+        judged;
       test "every run is judged on its own outcomes" witnessed;
-      test "a chooses call in the prefix is replayed on each run's outcome"
-        prefix_chooses;
+      test "a judges call in the prefix is replayed on each run's outcome"
+        prefix_judged;
       test "a reference that drifts from the run breaks, and blames no system"
         drifting;
       test "the invariant runs after the prefix's calls only" invariants;
       test "every system side a run made is released, newest first" released;
+    ]
+
+(* Judging calls *)
+
+(* A queue whose [pop] always gives [Some popped]: beside a push of
+   [popped] in parallel, the outcome of a run in which the push went first.
+   The reference is the queue's contents, and [!judge] rules on each pop. *)
+let lying_queue ~popped judge =
+  let queue = abstract "q" in
+  [
+    command "create" (Gen.unit @-> makes queue) (fun () -> ref []) ignore;
+    command "push"
+      (queue ^-> Gen.int_range 0 9 @-> returns unit)
+      (fun q x -> q := !q @ [ x ])
+      (fun () _ -> ());
+    command "pop"
+      (queue ^-> judges (option int))
+      (fun q seen -> !judge q seen)
+      (fun () -> Some popped);
+  ]
+
+(* A judge that rejects, with a verb, every outcome it does not accept. *)
+let strict q = function
+  | Ok None -> equal (list int) [] !q
+  | Ok (Some v) -> (
+      match !q with
+      | [] -> failf "pop gave %d from an empty queue" v
+      | x :: rest ->
+          equal int x v;
+          q := rest)
+  | Error e -> raise e
+
+(* A judge that reads the queue without checking it. *)
+let careless q = function
+  | Ok None -> equal (list int) [] !q
+  | Ok (Some v) ->
+      equal int (List.hd !q) v;
+      q := List.tl !q
+  | Error e -> raise e
+
+(* The descendant of [tree] that taking the first child whose record
+   [accept] holds reaches, run on the calling domain. *)
+let rec smallest gen tree accept =
+  match
+    Seq.find
+      (fun child -> accept (recorded gen (value child)))
+      (Shrink_tree.children tree)
+  with
+  | None -> tree
+  | Some child -> smallest gen child accept
+
+(* The program [create], then [pop] in branch 1 beside [push 0] in branch 2,
+   under a strict judge until [judge] is set. *)
+let pop_beside_push ~popped judge =
+  let gen = Stateful.program ~steps:2 ~domains:2 (lying_queue ~popped judge) in
+  let accept record =
+    let calls = calls record in
+    List.mem ("1", "pop q1") calls
+    && List.exists
+         (fun (d, c) -> d = "2" && String.starts_with ~prefix:"push q1" c)
+         calls
+  in
+  let tree = smallest gen (find gen accept) accept in
+  equal
+    (list (pair string string))
+    [ ("", "let q1 = create ()"); ("1", "pop q1"); ("2", "push q1 0") ]
+    (calls (recorded gen (value tree)));
+  (gen, tree)
+
+let rejected_order () =
+  let judge = ref strict in
+  let _, tree = pop_beside_push ~popped:0 judge in
+  equal string "returned" (ended (execute (value tree)))
+
+let rejected_everywhere () =
+  let judge = ref strict in
+  let _, tree = pop_beside_push ~popped:7 judge in
+  equal string
+    "failure [no order of the calls gives these results\n\
+     the closest order, 3 then 2, differs at call 2: pop q1] equality 0, 7"
+    (ended (execute (value tree)))
+
+let crashed_order () =
+  let judge = ref strict in
+  let _, tree = pop_beside_push ~popped:0 judge in
+  judge := careless;
+  equal string
+    {|oracle [reference of call 2 of 3, in the order 2 then 3: pop q1] raise actual Failure("hd")|}
+    (ended (execute (value tree)))
+
+(* With the pop moved to the suffix and the push deleted, no call is
+   parallel and one order remains. *)
+let crashed_alone () =
+  let judge = ref strict in
+  let gen, tree = pop_beside_push ~popped:0 judge in
+  let moved record =
+    calls record
+    = [ ("", "let q1 = create ()"); ("2", "push q1 0"); ("", "pop q1") ]
+  in
+  let alone record =
+    calls record = [ ("", "let q1 = create ()"); ("", "pop q1") ]
+  in
+  let tree = smallest gen (smallest gen tree moved) alone in
+  judge := careless;
+  equal string
+    {|oracle [reference of call 2 of 2: pop q1] raise actual Failure("hd")|}
+    (ended (execute (value tree)))
+
+let judging_calls =
+  group "Judging calls"
+    [
+      test "a rejection rules an order out, and the judge tries the next"
+        rejected_order;
+      test "a judge that rejects in every order fails at the closest"
+        rejected_everywhere;
+      test
+        "a crash breaks the reference in an order another would explain, and \
+         names that order"
+        crashed_order;
+      test "a crash names no order when no call is parallel" crashed_alone;
     ]
 
 (* Workers *)
@@ -1408,6 +1525,7 @@ let () =
          shrinking;
          judge_group;
          judging;
+         judging_calls;
          report;
          executor;
          mutation;
