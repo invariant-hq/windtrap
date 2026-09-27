@@ -27,7 +27,7 @@ let key (type a) () : a key =
    case, in drawing and in the check of the prefixes. Each side has its own
    key, since a run holds a value's sides apart: the system's in its pool,
    the reference's by the step that made it. *)
-type ('r, 's) abstract = {
+type ('r, 's) values = {
   id : int;
   prefix : string;
   pp : (Format.formatter -> 'r -> unit) option;
@@ -37,18 +37,45 @@ type ('r, 's) abstract = {
   system : 's key;
 }
 
+(* A type of values, which calls make, or of the elements that a value of
+   [listed] lists, which a call takes from its own argument of that type. An
+   element is the same on both sides; [key] carries it to an element listed
+   in turn. *)
+type ('r, 's) abstract =
+  | Values : ('r, 's) values -> ('r, 's) abstract
+  | Among : 'a among -> ('a, 'a) abstract
+
+and 'a among =
+  | Listing : {
+      id : int;
+      witness : 'a Testable.t;
+      listed : ('r, 's) abstract;
+      candidates : 'r -> 'a list;
+      key : 'a key;
+    }
+      -> 'a among
+
 let next_id = Atomic.make 0
 
 let abstract ?pp ?invariant ?release prefix =
-  {
-    id = Atomic.fetch_and_add next_id 1;
-    prefix;
-    pp;
-    invariant;
-    release;
-    reference = key ();
-    system = key ();
-  }
+  Values
+    {
+      id = Atomic.fetch_and_add next_id 1;
+      prefix;
+      pp;
+      invariant;
+      release;
+      reference = key ();
+      system = key ();
+    }
+
+let among witness listed candidates =
+  let id = Atomic.fetch_and_add next_id 1 in
+  Among (Listing { id; witness; listed; candidates; key = key () })
+
+let reference_key : type r s. (r, s) abstract -> r key = function
+  | Values t -> t.reference
+  | Among (Listing l) -> l.key
 
 (* Signatures *)
 
@@ -89,27 +116,34 @@ let command ?__POS__ ?pre name fn reference system =
   Command { name = one_line name; loc; fn; pre; reference; system }
 
 (* The abstract types of a command, for drawing and for the check of the
-   prefixes: those it takes and the one it makes. *)
+   prefixes: the types of the values it takes, the one it makes, and whether
+   it takes an element, which one of those values lists. *)
 type any = Any : ('r, 's) abstract -> any
-type shape = { takes : any list; makes : any option }
+type shape = { takes : any list; makes : any option; takes_element : bool }
 
-let type_id (Any t) = t.id
+let type_id (Any t) =
+  match t with Values t -> t.id | Among (Listing l) -> l.id
 
 let rec shape : type r s p. (r, s, p) fn -> shape = function
-  | Result (Makes t) -> { takes = []; makes = Some (Any t) }
-  | Result (Returns _ | Judges _) -> { takes = []; makes = None }
+  | Result (Makes t) ->
+      { takes = []; makes = Some (Any t); takes_element = false }
+  | Result (Returns _ | Judges _) ->
+      { takes = []; makes = None; takes_element = false }
   | Drawn (_, fn) -> shape fn
-  | Chosen (t, fn) ->
+  | Chosen ((Values _ as t), fn) ->
       let shape = shape fn in
       { shape with takes = Any t :: shape.takes }
+  | Chosen (Among _, fn) -> { (shape fn) with takes_element = true }
 
 let command_shape (Command c) = shape c.fn
 
 (* On several domains only the prefix has one reference state, so only there
-   can a value be named or a [pre] be asked: after it, a command runs only
-   when it makes no value and has no [pre]. *)
+   can a value be named, a [pre] be asked or a value's elements be listed:
+   after it, a command runs only when it makes no value, has no [pre] and
+   takes no element. *)
 let runs_anywhere (Command c as command) =
-  Option.is_none c.pre && Option.is_none (command_shape command).makes
+  let shape = command_shape command in
+  Option.is_none c.pre && Option.is_none shape.makes && not shape.takes_element
 
 (* [first_positions commands] is, for each command, the position of its first
    occurrence in [commands], so a command listed twice is one command. *)
@@ -144,21 +178,65 @@ let check_prefix prefix =
   | '0' .. '9' -> fail "ends with a digit"
   | _ -> ()
 
-(* The types are gathered first, so that no frame of the standard library
-   stands between a raise and the test in the printed backtrace. *)
+(* How a message names an argument of type [t]. *)
+let rec argument_name (Any t) =
+  match t with
+  | Values t -> Pp.str "a value of '%s'" t.prefix
+  | Among (Listing { listed = Values t; _ }) ->
+      Pp.str "an element of '%s'" t.prefix
+  | Among (Listing { listed = Among _ as listed; _ }) ->
+      "an element of " ^ argument_name (Any listed)
+
+(* The first rule of elements that the command breaks, as a message: an
+   element is never made, and the call takes a value of the type that lists
+   it. *)
+let element_error (Command c) =
+  let rec taken : type r s p. (r, s, p) fn -> int list = function
+    | Result _ -> []
+    | Drawn (_, fn) -> taken fn
+    | Chosen (t, fn) -> type_id (Any t) :: taken fn
+  in
+  let taken = taken c.fn in
+  let rec walk : type r s p. (r, s, p) fn -> string option = function
+    | Result (Makes (Among _ as t)) ->
+        Some
+          (Pp.str
+             "Windtrap.stateful: %s makes %s; an element is listed by a value, \
+              never made"
+             c.name (argument_name (Any t)))
+    | Result (Returns _ | Makes (Values _) | Judges _) -> None
+    | Drawn (_, fn) -> walk fn
+    | Chosen (Values _, fn) -> walk fn
+    | Chosen ((Among (Listing l) as t), fn) ->
+        if List.mem (type_id (Any l.listed)) taken then walk fn
+        else
+          Some
+            (Pp.str
+               "Windtrap.stateful: %s takes %s without %s; an element is \
+                listed by a value its call takes"
+               c.name (argument_name (Any t))
+               (argument_name (Any l.listed)))
+  in
+  walk c.fn
+
+(* The types and the elements' errors are gathered first, so that no frame
+   of the standard library stands between a raise and the test in the
+   printed backtrace. *)
 let check ~steps ~domains commands =
   if Array.length commands = 0 then
     invalid_arg "Windtrap.stateful: no commands to draw from";
   if steps < 0 then invalid_arg "Windtrap.stateful: negative steps";
   if domains < 1 then invalid_arg "Windtrap.stateful: domains below 1";
   let types command =
-    let { takes; makes } = command_shape command in
+    let { takes; makes; takes_element = _ } = command_shape command in
     takes @ Option.to_list makes
   in
   let owners = Hashtbl.create 8 in
   let rec check_all = function
     | [] -> ()
-    | Any t :: types ->
+    (* An element has no prefix, and no command makes one. *)
+    | Any (Among _) :: types -> check_all types
+    | Any (Values t) :: types ->
         check_prefix t.prefix;
         (match Hashtbl.find_opt owners t.prefix with
         | Some owner when owner <> t.id ->
@@ -171,25 +249,42 @@ let check ~steps ~domains commands =
         check_all types
   in
   check_all (List.concat_map types (Array.to_list commands));
+  (match List.find_map element_error (Array.to_list commands) with
+  | Some message -> invalid_arg message
+  | None -> ());
   if domains > 1 && not (Array.exists runs_anywhere commands) then
     invalid_arg
-      "Windtrap.stateful: on several domains every command makes a value or \
-       has a ~pre, so no call can run after the prefix"
+      "Windtrap.stateful: on several domains every command makes a value, has \
+       a ~pre or takes an element, so no call can run after the prefix"
 
 (* Programs *)
 
-(* A drawn call's signature with every argument filled: a sample, or the
+(* An element's place in the list that its value lists, of [n] candidates.
+   A drawn place is a position [k] below [2^position_bits], which takes the
+   candidate at [k * n / 2^position_bits], so a shrink that deletes an
+   earlier call, which changes [n], keeps its relative place. [Below (place,
+   slot)] takes an index below the one [place] takes in the same run: the
+   [slot]th of the first eight candidates that the index shrinks through and
+   the index before it, each once. It takes none past them, and none when
+   [place] takes index [0], so no two candidates of a place take the same
+   index, and none takes the place's own. *)
+type place = Drawn of int | Below of place * int
+
+(* A drawn call's signature with every argument filled: a sample, the
    choice of a value of an abstract type as the step of the drawn call that
-   makes it. The call names the value while it makes one, so deleting other
-   calls does not move the choice. *)
+   makes it, or an element's place. The call names the value while it makes
+   one, so deleting other calls does not move the choice. *)
 type ('r, 's, 'p) args =
   | Last : ('r, 's) form -> ('r, 's, bool) args
   | Sample :
       'a Gen.Engine.sample * ('r, 's, 'p) args
       -> ('a -> 'r, 'a -> 's, 'a -> 'p) args
   | Index :
-      ('ra, 'sa) abstract * int * ('r, 's, 'p) args
+      ('ra, 'sa) values * int * ('r, 's, 'p) args
       -> ('ra -> 'r, 'sa -> 's, 'ra -> 'p) args
+  | Element :
+      'a among * place * ('r, 's, 'p) args
+      -> ('a -> 'r, 'a -> 's, 'a -> 'p) args
 
 type call =
   | Call : {
@@ -237,12 +332,26 @@ let cell_chars = 60
 let context_calls = 20
 let call_count n = Pp.str "%d call%s" n (if n = 1 then "" else "s")
 
-let argument_text sample =
-  let text = match Gen.Engine.render sample with Value t | Pre_image t -> t in
+let argument_word text =
   let text = Text.truncate_bytes_utf8 argument_bytes (one_line text) in
   if String.contains text ' ' || String.starts_with ~prefix:"-" text then
     "(" ^ text ^ ")"
   else text
+
+let argument_text sample =
+  argument_word
+    (match Gen.Engine.render sample with Value t | Pre_image t -> t)
+
+(* An element prints through its witness, and as [_] when the call failed
+   before taking it. It prints only when the call's row is printed or named,
+   so whatever the printer raises then is the text. *)
+let element_text witness = function
+  | None -> "_"
+  | Some v ->
+      argument_word
+        (match Failure.catch (fun () -> Testable.to_string witness v) with
+        | Ok text -> text
+        | Error c -> Pp.str "<pp raised %s>" (Failure.caught_to_string c))
 
 let row_text row =
   let call = Lazy.force row.call in
@@ -346,15 +455,18 @@ let summary program =
 
 (* An index shrinks toward [0], the newest maker, as [Gen]'s integers do:
    [0] first, then candidates that each close half the gap to [k]. *)
-let rec index_tree k =
+let index_candidates k =
   let rec candidates current () =
     if current = k then Seq.Nil
     else
       let gap = (k / 2) - (current / 2) in
       let rest = if gap = 0 then Seq.empty else candidates (current + gap) in
-      Seq.Cons (index_tree current, rest)
+      Seq.Cons (current, rest)
   in
-  Shrink_tree.make ~root:k ~children:(candidates 0)
+  candidates 0
+
+let rec index_tree k =
+  Shrink_tree.make ~root:k ~children:(Seq.map index_tree (index_candidates k))
 
 (* The newest value with probability 1/2, else any of the [count]. *)
 let draw_index count state =
@@ -363,6 +475,39 @@ let draw_index count state =
   else
     let k, state = Seed.below ~bound:(Int64.of_int count) state in
     (Int64.to_int k, state)
+
+let position_bits = 30
+
+(* A place's candidates are the places below it, one per slot, which take
+   every candidate of an index up to [256]. *)
+let below_slots = 9
+
+let rec place_tree place =
+  Shrink_tree.make ~root:place
+    ~children:
+      (Seq.map
+         (fun slot -> place_tree (Below (place, slot)))
+         (Seq.init below_slots Fun.id))
+
+let draw_place state =
+  let k, state = Seed.below ~bound:(Int64.shift_left 1L position_bits) state in
+  (Drawn (Int64.to_int k), state)
+
+(* The indices that the slots below index [i] take: its first eight
+   candidates, then [i - 1] unless they end with it. *)
+let below_indices i =
+  let firsts = List.of_seq (Seq.take (below_slots - 1) (index_candidates i)) in
+  if List.mem (i - 1) firsts then firsts else firsts @ [ i - 1 ]
+
+(* [place_index place n] is the index that [place] takes among [n]
+   candidates, and [None] when it takes none. *)
+let rec place_index place n =
+  match place with
+  | Drawn k -> Some ((k * n) lsr position_bits)
+  | Below (above, slot) -> (
+      match place_index above n with
+      | None | Some 0 -> None
+      | Some i -> List.nth_opt (below_indices i) slot)
 
 (* Arguments are counted from one, abstract ones included. *)
 let rec draw_args : type r s p.
@@ -384,13 +529,19 @@ let rec draw_args : type r s p.
       let args, state = draw_args ~name ~makers (position + 1) fn state in
       let tree = Shrink_tree.pair sample args in
       (Shrink_tree.map (fun (sample, args) -> Sample (sample, args)) tree, state)
-  | Chosen (t, fn) ->
+  | Chosen (Values t, fn) ->
       let steps = makers t.id in
       let k, state = draw_index (List.length steps) state in
       let args, state = draw_args ~name ~makers (position + 1) fn state in
       let maker k = List.nth steps k in
       let tree = Shrink_tree.pair (Shrink_tree.map maker (index_tree k)) args in
       (Shrink_tree.map (fun (maker, args) -> Index (t, maker, args)) tree, state)
+  | Chosen (Among l, fn) ->
+      let place, state = draw_place state in
+      let args, state = draw_args ~name ~makers (position + 1) fn state in
+      let tree = Shrink_tree.pair (place_tree place) args in
+      ( Shrink_tree.map (fun (place, args) -> Element (l, place, args)) tree,
+        state )
 
 (* Each command joins the subset with probability 3/4, every command when
    none does, and a command in the subset brings the makers of the types it
@@ -619,7 +770,7 @@ type run = {
    value that a later call or an invariant reads has one. A replay by the
    judge replays the prefix, whose outcomes it checks, so it has a side
    wherever the run has one. *)
-let reference_side sides (t : (_, _) abstract) step =
+let reference_side sides (t : (_, _) values) step =
   match Option.bind (Hashtbl.find_opt sides step) t.reference.project with
   | Some r -> r
   | None -> assert false
@@ -627,7 +778,7 @@ let reference_side sides (t : (_, _) abstract) step =
 (* [resolve pool t maker] is the value of [t] that the call at step [maker]
    made, or when it made none, the newest value of [t], with its system
    side. *)
-let resolve pool (t : (_, _) abstract) maker =
+let resolve pool (t : (_, _) values) maker =
   let of_type value =
     Option.map (fun s -> (value, s)) (t.system.project value.system)
   in
@@ -635,14 +786,20 @@ let resolve pool (t : (_, _) abstract) maker =
   | Some value -> of_type value
   | None -> List.find_map of_type pool
 
-(* A call whose arguments resolved. Its functions apply their arguments
-   when called, so that no code of the user runs before [pre] holds. The
+(* How a call's elements fared: every one taken, or not, since a value
+   listed no element or a place took none. *)
+type taking = Taken | Unlisted | Unplaced
+
+(* A call whose values resolved. Its functions apply their arguments when
+   called, so that no code of the user runs before [pre] holds, and they
+   read its elements, so they run once [take] has taken every one. The
    reference reads its arguments' sides from the [sides] it is given, so
-   the judge replays it on sides of its own; [pre] and the cells read the
-   run's. *)
+   the judge replays it on sides of its own; [take], [pre] and the cells
+   read the run's. *)
 type ready =
   | Ready : {
       form : ('r, 's) form;
+      take : unit -> taking;
       pre : (unit -> bool) option;
       reference : sides -> unit -> 'r;
       system : unit -> 's;
@@ -660,29 +817,47 @@ let reference_cell pp r =
       Pp.str "<pp raised %s>" (Failure.caught_to_string c)
   | Error (#Failure.control as c) -> Failure.reraise c
 
-(* [bind run call] is [call] with its abstract arguments resolved among the
-   values of [run], and [None] when one does not resolve. *)
+(* [bind run call] is [call] with its values resolved among the values of
+   [run], and [None] when one does not resolve. An element is taken from
+   the call's nearest argument of the type that lists it before it, else
+   the first after it, which may be an element taken first. *)
 let bind run (Call c) =
+  (* The call's values and elements, last first: the argument's position,
+     its type's id and its reference side, or why an element has none. *)
+  let arguments = ref [] in
+  (* The side of type [id] that the element at [position] reads: the nearest
+     before it, else the first after it. *)
+  let read ~position id =
+    let of_type = List.filter (fun (_, id', _) -> id' = id) !arguments in
+    let earlier, later =
+      List.partition (fun (p, _, _) -> p < position) of_type
+    in
+    match (earlier, List.rev later) with
+    | (_, _, side) :: _, _ | [], (_, _, side) :: _ -> side ()
+    | [], [] -> assert false (* [check] gives an element a value to list it *)
+  in
   let rec apply : type r s p.
+      int ->
       (r, s, p) args ->
+      (unit -> taking) ->
       (unit -> p) option ->
       (sides -> unit -> r) ->
       (unit -> s) ->
       string Lazy.t list ->
       (unit -> string) list ->
       ready option =
-   fun args pre reference system words cells ->
+   fun position args take pre reference system words cells ->
     match args with
     | Last form ->
         let words = List.rev words and cells = List.rev cells in
-        Some (Ready { form; pre; reference; system; words; cells })
+        Some (Ready { form; take; pre; reference; system; words; cells })
     | Sample (sample, args) ->
         let v = Gen.Engine.value sample in
         let reference sides =
           let f = reference sides in
           fun () -> f () v
         in
-        apply args
+        apply (position + 1) args take
           (Option.map (fun pre () -> pre () v) pre)
           reference
           (fun () -> system () v)
@@ -693,6 +868,9 @@ let bind run (Call c) =
         | None -> None
         | Some (value, s) ->
             let r = reference_side run.sides t value.step in
+            arguments :=
+              (position, t.id, fun () -> Ok (t.reference.inject r))
+              :: !arguments;
             let reference sides =
               let f = reference sides in
               fun () -> f () (reference_side sides t value.step)
@@ -702,14 +880,71 @@ let bind run (Call c) =
               | None -> cells
               | Some pp -> (fun () -> reference_cell pp r) :: cells
             in
-            apply args
+            apply (position + 1) args take
               (Option.map (fun pre () -> pre () r) pre)
               reference
               (fun () -> system () s)
               (Lazy.from_val value.name :: words)
               cells)
+    | Element (Listing l, place, args) ->
+        let element = ref None in
+        let take_element () =
+          match !element with
+          | Some taken -> taken
+          | None ->
+              let taken =
+                match read ~position (type_id (Any l.listed)) with
+                | Error untaken -> Error untaken
+                | Ok side -> (
+                    let r =
+                      match (reference_key l.listed).project side with
+                      | Some r -> r
+                      | None -> assert false (* a side of [listed]'s key *)
+                    in
+                    match l.candidates r with
+                    | [] -> Error Unlisted
+                    | candidates -> (
+                        match place_index place (List.length candidates) with
+                        | Some i -> Ok (List.nth candidates i)
+                        | None -> Error Unplaced))
+              in
+              element := Some taken;
+              taken
+        in
+        arguments :=
+          (position, l.id, fun () -> Result.map l.key.inject (take_element ()))
+          :: !arguments;
+        let take () =
+          match take () with
+          | Taken -> (
+              match take_element () with
+              | Ok _ -> Taken
+              | Error untaken -> untaken)
+          | untaken -> untaken
+        in
+        let taken () =
+          match !element with
+          | Some (Ok x) -> x
+          | Some (Error _) | None -> assert false (* the call runs once taken *)
+        in
+        let reference sides =
+          let f = reference sides in
+          fun () -> f () (taken ())
+        in
+        let printed () =
+          match !element with
+          | Some (Ok x) -> Some x
+          | Some (Error _) | None -> None
+        in
+        apply (position + 1) args take
+          (Option.map (fun pre () -> pre () (taken ())) pre)
+          reference
+          (fun () -> system () (taken ()))
+          (lazy (element_text l.witness (printed ())) :: words)
+          cells
   in
-  apply c.args
+  apply 1 c.args
+    (fun () -> Taken)
     (Option.map (fun pre () -> pre) c.pre)
     (fun _ () -> c.reference)
     (fun () -> c.system)
@@ -837,7 +1072,7 @@ let fresh_run () =
 (* A system side is released once per type: an earlier value of its type
    that holds it physically registered its release already. [Obj] alone
    would compare across types. *)
-let add_release run (t : (_, _) abstract) s ~label =
+let add_release run (t : (_, _) values) s ~label =
   let holds value =
     match t.system.project value.system with
     | Some s' -> s' == s
@@ -849,7 +1084,7 @@ let add_release run (t : (_, _) abstract) s ~label =
   | Some _ | None -> ()
 
 (* A value is made when its system returns, and named then. *)
-let make run ~step (t : (_, _) abstract) s =
+let make run ~step (t : (_, _) values) s =
   let count =
     1 + Option.value ~default:0 (Hashtbl.find_opt run.counts t.prefix)
   in
@@ -932,7 +1167,7 @@ let fail_never ~total (Pending p as pending) =
 
 let made run (Pending p) =
   match (p.form, p.ended) with
-  | Makes t, Some (Ok (Returned s)) ->
+  | Makes (Values t), Some (Ok (Returned s)) ->
       p.row.made <- Some (make run ~step:p.step t s)
   | (Makes _ | Returns _ | Judges _), _ -> ()
 
@@ -965,7 +1200,7 @@ let judge_call ?order ~total sides (Pending p as pending) =
   | Makes t -> (
       match (reference fn, outcome) with
       | Returned r, Returned _ ->
-          Hashtbl.replace sides p.step (t.reference.inject r);
+          Hashtbl.replace sides p.step ((reference_key t).inject r);
           None
       | Raised (a, _), Raised (b, _) when same_constructor a b -> None
       | expected, _ -> Some (mismatch expected outcome))
@@ -982,16 +1217,30 @@ let judge_call ?order ~total sides (Pending p as pending) =
       | Error (Failed failure), _ -> Some failure
       | Error Discarded, _ -> break "reference of " (failure_of `Discard))
 
-(* A call on one domain or in the prefix: the system runs, then the
-   reference judges its outcome on the run's sides. The first failure ends
-   the run, and the call that failed is the last row. *)
+(* A call on one domain or in the prefix: its elements are taken and its
+   [pre] asked, the system runs, then the reference judges its outcome on
+   the run's sides. The first failure ends the run, and the call that failed
+   is the last row. *)
 let run_call run (Call c as call) =
   match bind run call with
   | None -> ()
   | Some (Ready r as ready) -> (
-      match match r.pre with None -> Ok true | Some pre -> guard pre with
+      let legal =
+        match guard r.take with
+        | Ok Unlisted -> Ok false
+        (* Only a shrink candidate has a place below another, and one that
+           takes no element is no candidate. *)
+        | Ok Unplaced -> raise (Failure.Control `Discard)
+        | Error f -> Error ("reference of ", f)
+        | Ok Taken -> (
+            match r.pre with
+            | None -> Ok true
+            | Some pre ->
+                Result.map_error (fun f -> ("~pre of ", f)) (guard pre))
+      in
+      match legal with
       | Ok false -> ()
-      | pre ->
+      | legal ->
           let before =
             match r.cells with
             | [] -> None
@@ -1006,11 +1255,10 @@ let run_call run (Call c as call) =
           in
           add_row run pending;
           let label what = call_label what ~total:p.number pending in
-          (match pre with
-          | Error f ->
+          (match legal with
+          | Error (what, f) ->
               raise
-                (Property.Oracle_failure
-                   (attribute ?loc:c.loc (label "~pre of ") f))
+                (Property.Oracle_failure (attribute ?loc:c.loc (label what) f))
           | Ok _ -> ());
           ignore (run_system pending : bool);
           fail_never ~total:p.number pending;
@@ -1203,7 +1451,7 @@ let run_parallel ~first ~workers ~stuck run program =
     (fun (exn, backtrace) -> Printexc.raise_with_backtrace exn backtrace)
     raised;
   Array.iter (List.iter (fail_never ~total:(total ()))) branches;
-  (* A suffix call makes no value and has no [pre]. *)
+  (* A suffix call makes no value, has no [pre] and takes no element. *)
   let run_suffix call =
     Option.map
       (fun pending ->
@@ -1310,13 +1558,14 @@ let execute ?workers program =
 
 (* Declaring *)
 
-let never_called ?loc ~cases names =
+let never_called ?loc ~cases ~elements names =
   Failure.message ?loc
     (Pp.str
        "never called: %s (over %d passing cases); a call runs only where its \
-        arguments resolve and its ~pre holds"
+        arguments resolve%s and its ~pre holds"
        (String.concat ", " (List.map (Pp.str "%S") names))
-       cases)
+       cases
+       (if elements then ", its value lists an element" else ""))
 
 let mutating () =
   match (Run.config (Run.current ())).mutation with
@@ -1380,8 +1629,11 @@ let stateful ?__POS__ ?tags ?timeout ?count ?(steps = 20) ?(domains = 1) name
     | _ when !cases = 0 -> ()
     | never ->
         let name (Command c) = c.name in
+        let elements =
+          List.exists (fun c -> (command_shape c).takes_element) never
+        in
         raise
           (Failure.Check_failure
-             (never_called ?loc ~cases:!cases (List.map name never)))
+             (never_called ?loc ~cases:!cases ~elements (List.map name never)))
   in
   Test_tree.test ?__POS__ ~tags ?timeout ?retries name body

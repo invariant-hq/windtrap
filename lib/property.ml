@@ -114,7 +114,9 @@ let same_class a b = failure_class a = failure_class b
 
 (* The search terminates: [shrink_budget] bounds the runs of the law, and a
    node's candidates that run no law (a discarding re-generation, a filtered
-   candidate) are finite for [Gen]'s generators. *)
+   candidate) are finite for [Gen]'s generators. A candidate that discards
+   costs one run, since a law that repeats its case discards before it
+   repeats. *)
 let shrink ~cost law tree fault =
   let scratch = make_context () in
   (* A timeout can fire at any poll point of the search, which then ends at
@@ -136,6 +138,7 @@ let shrink ~cost law tree fault =
           | Error (#Failure.fault as accepted) when same_class fault accepted ->
               best := (candidate, steps + 1, accepted);
               descend ~runs:(runs + cost) (steps + 1) candidate
+          | Error `Discard -> first_accepted ~runs:(runs + 1) rest
           | Ok () | Error (#Failure.fault | #Failure.control) ->
               first_accepted ~runs:(runs + cost) rest)
     in

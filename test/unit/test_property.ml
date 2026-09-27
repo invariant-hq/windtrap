@@ -976,6 +976,23 @@ let shrinking =
               Property.run ~cost:0 ~root ~path:"budget"
                 (drawn (chain 1))
                 (fun _ _ -> ())));
+      test "a candidate that discards costs one run, whatever the cost"
+        (fun () ->
+          let discarding = Seq.init 300 (fun _ -> Shrink_tree.leaf (-1)) in
+          let tree =
+            Shrink_tree.make ~root:0
+              ~children:
+                (Seq.append discarding (Seq.return (Shrink_tree.leaf 1)))
+          in
+          let o =
+            Property.run ~cost:50 ~root ~path:"budget" (drawn tree) (fun _ n ->
+                if n < 0 then Property.reject ();
+                raise Not_found)
+          in
+          equal string
+            "fail, 0 cases, 0 discards; case 0, 1 steps, converged: 1; raise \
+             Not_found"
+            (outcome_row o));
       test "the budget counts every candidate probed" budget_runs;
       test "a quad of int64 converges within 256 steps" quad;
       test "a candidate whose forcing raises ends the search" raising_candidate;

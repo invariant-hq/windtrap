@@ -193,7 +193,9 @@ val run :
       [Some line] iff [gen] prints [v] as a table (see {!Failure.Property}).
       Defaults to [Fun.const None].
     - [cost] is the share of {!shrink_budget} that one run of [law] spends, for
-      a law that runs its case several times. Defaults to [1].
+      a law that runs its case several times. A run that discards spends [1],
+      which assumes that such a law discards before it repeats its case.
+      Defaults to [1].
 
     {b Examples.} The examples run first, in order, unshrunk and without a seed.
     A passing example commits its labels and counts in [cases], a discarding one
@@ -219,10 +221,11 @@ val run :
     raises a control other than [`Timeout] is rejected.
 
     The search ends at a node with no accepted candidate, [Failure.Converged].
-    It also ends when its runs of [law], each costing [cost], have spent
-    {!shrink_budget}, [Failure.Budget_spent], and when the forcing of a
-    candidate raises anything but a [`Timeout]: [Failure.Candidate_raised] with
-    that exception as [Failure.exn_to_string] prints it.
+    It also ends when its runs of [law], each costing [cost] or [1] when it
+    discards, have spent {!shrink_budget}, [Failure.Budget_spent], and when the
+    forcing of a candidate raises anything but a [`Timeout]:
+    [Failure.Candidate_raised] with that exception as [Failure.exn_to_string]
+    prints it.
 
     A [`Timeout] raised anywhere in the search ends it as well,
     [Failure.Timed_out] with the limit. The failure then describes the last

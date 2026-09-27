@@ -36,6 +36,7 @@ let returns = Stateful.returns
 let makes = Stateful.makes
 let judges = Stateful.judges
 let command = Stateful.command
+let among = Stateful.among
 
 (* Programs *)
 
@@ -238,8 +239,8 @@ let tags t =
 let tick = command "tick" (Gen.unit @-> returns unit) ignore ignore
 
 let refused =
-  "Windtrap.stateful: on several domains every command makes a value or has a \
-   ~pre, so no call can run after the prefix"
+  "Windtrap.stateful: on several domains every command makes a value, has a \
+   ~pre or takes an element, so no call can run after the prefix"
 
 (* Every command makes a value or has a ~pre, so no call could run after the
    prefix. *)
@@ -251,6 +252,18 @@ let prefix_only () =
       (fun () -> ref 1)
       (fun () -> ref 1);
     command "decr" ~pre:(fun c -> !c > 0) (counter ^-> returns unit) decr decr;
+  ]
+
+(* Every command makes a value or takes an element. *)
+let listing_only () =
+  let d = abstract "d" in
+  let index = among int d (fun m -> List.init (List.length m) Fun.id) in
+  [
+    command "create" (Gen.unit @-> makes d) (fun () -> [ 0 ]) ignore;
+    command "get"
+      (d ^-> index ^-> returns unit)
+      (fun _ _ -> ())
+      (fun () _ -> ());
   ]
 
 let checking =
@@ -288,6 +301,13 @@ let checking =
       test "and allowed on one" (fun () ->
           let t = Stateful.stateful ~count:3 "t" (prefix_only ()) in
           equal string "returned" (ended (body t)));
+      test
+        "a command list whose commands make a value or take an element is \
+         refused on several domains" (fun () ->
+          let t = Stateful.stateful ~domains:2 "t" (listing_only ()) in
+          equal string
+            (strf "raised Invalid_argument(%S)" refused)
+            (ended (body t)));
     ]
 
 (* Drawing *)
@@ -361,6 +381,43 @@ let guarded_after_prefix () =
     (Seq.init 300 Fun.id);
   is_true ~msg:"some program has parallel calls" (!parallel > 0)
 
+(* A counter that lists the counts below it; [below] takes one. *)
+let listing_commands () =
+  let counter = abstract "c" in
+  let below = among int counter (fun c -> List.init !c Fun.id) in
+  [
+    command "create"
+      (Gen.unit @-> makes counter)
+      (fun () -> ref 0)
+      (fun () -> ref 0);
+    command "incr" (counter ^-> returns unit) incr incr;
+    command "below"
+      (counter ^-> below ^-> returns bool)
+      (fun c i -> i < !c)
+      (fun c i -> i < !c);
+  ]
+
+let listing_after_prefix () =
+  let gen = Stateful.program ~steps:3 ~domains:2 (listing_commands ()) in
+  let parallel = ref 0 and listed = ref 0 in
+  Seq.iter
+    (fun index ->
+      let rows = table (recorded gen (value (drawn gen index))) in
+      if List.exists in_branch rows then incr parallel;
+      List.iter
+        (fun row ->
+          if String.starts_with ~prefix:"below " (cell "call" row) then
+            incr listed)
+        rows;
+      List.iter
+        (fun row ->
+          starts_with ~msg:"only incr runs after the prefix" ~affix:"incr "
+            (cell "call" row))
+        (after_prefix rows))
+    (Seq.init 300 Fun.id);
+  is_true ~msg:"some program has parallel calls" (!parallel > 0);
+  is_true ~msg:"some prefix takes an element" (!listed > 0)
+
 let drawing =
   group "Drawing"
     [
@@ -372,6 +429,8 @@ let drawing =
         (fun row -> shape row ());
       test "a branch and the suffix draw no command that has a ~pre"
         guarded_after_prefix;
+      test "a branch and the suffix draw no command that takes an element"
+        listing_after_prefix;
     ]
 
 (* Shrinking moves *)

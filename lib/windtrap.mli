@@ -1072,9 +1072,10 @@ val prop :
     {!assume}, {!reject}, {!collect}, {!classify} and {!cover} work in the law
     of a {!prop}. {!assume} and {!reject} work too in a function given to a
     generator, where a discard drops the case or the shrink candidate. In a
-    {!stateful} test the labels work in a command's functions, a [~pre], an
-    invariant and a release, where a label counts once per case, and a discard
-    fails the case (see {{!section-stateful_tests}stateful tests}). *)
+    {!stateful} test the labels work in a command's functions, a [~pre], the
+    [candidates] of an {!among} type, an invariant and a release, where a label
+    counts once per case, and a discard fails the case (see
+    {{!section-stateful_tests}stateful tests}). *)
 
 val assume : bool -> unit
 (** [assume cond] discards the current case unless [cond] holds. A discarded
@@ -1139,11 +1140,12 @@ val cover : string -> bool -> unit
     {b Drawing.} A program is drawn without running anything, and makes at most
     [steps] calls. A command listed twice is drawn twice as often. A command is
     drawn only when every abstract type it takes has a value that an earlier
-    call of the program makes. Each case draws from a subset of the commands
-    (swarm testing). The subset, the drawing of an abstract argument and the
-    order in which shrinking tries candidates are not part of the contract, so
-    the calls that a seed draws and the counterexample that shrinking reaches
-    can change between versions of windtrap, as every generator's draws can (see
+    call of the program makes, for an {!among} type a value of the type it
+    lists. Each case draws from a subset of the commands (swarm testing). The
+    subset, the drawing of an abstract argument and the order in which shrinking
+    tries candidates are not part of the contract, so the calls that a seed
+    draws and the counterexample that shrinking reaches can change between
+    versions of windtrap, as every generator's draws can (see
     {{!section-properties}Seeds}).
 
     {b Values.} Only a call whose signature ends in {!makes} makes a value of an
@@ -1154,11 +1156,12 @@ val cover : string -> bool -> unit
     global state, a counter or a registry, carries it from run to run and shares
     it between the two sides when it is its own reference.
 
-    {b Legality.} A call's abstract arguments resolve, and its [~pre] is asked,
-    when the program runs, of the reference as the run left it. A call whose
-    arguments do not resolve or whose [~pre] fails is skipped on both sides and
-    is absent from the report. No call the reference forbids is made, and a
-    program with many preconditions makes fewer than [steps] calls.
+    {b Legality.} A call's abstract arguments resolve, its elements of {!among}
+    types are taken and its [~pre] is asked when the program runs, of the
+    reference as the run left it. A call whose arguments do not resolve, whose
+    value lists no element or whose [~pre] fails is skipped on both sides and is
+    absent from the report. No call the reference forbids is made, and a program
+    with many preconditions makes fewer than [steps] calls.
 
     {b A call} runs the system, then the reference, which judges the system's
     outcome: under {!returns} and {!makes} the two outcomes compare, and under
@@ -1184,21 +1187,21 @@ val cover : string -> bool -> unit
     - From a system function, a verb's failure or a broken contract fails the
       case at that call, before the reference runs.
     - From a reference function, it breaks the reference, and so does anything a
-      [~pre] raises. A case that broke the reference shrinks among the programs
-      that break it, and the search of any other failure rejects a candidate
-      that breaks it. From a {!judges} reference a verb's failure, a broken
-      contract or the system's own exception raised again rejects the system's
-      outcome instead.
+      [~pre] or the [candidates] of an {!among} type raise. A case that broke
+      the reference shrinks among the programs that break it, and the search of
+      any other failure rejects a candidate that breaks it. From a {!judges}
+      reference a verb's failure, a broken contract or the system's own
+      exception raised again rejects the system's outcome instead.
     - {!assume} and {!reject} in either function fail the case, since a call's
       legality is its [~pre]'s.
     - A {!skip}, a timeout and an [exit] keep their meaning everywhere.
 
     {b Labels.} {!collect}, {!classify} and {!cover} in a command's functions, a
-    [~pre], an invariant or a release count once per case, in the run that
-    executes it. Shrinking counts nothing. On several domains the reference runs
-    again for every order the judge tries, and those runs count nothing: the
-    labels of the calls after the prefix count along the order the judge
-    accepted for the case's first run.
+    [~pre], the [candidates] of an {!among} type, an invariant or a release
+    count once per case, in the run that executes it. Shrinking counts nothing.
+    On several domains the reference runs again for every order the judge tries,
+    and those runs count nothing: the labels of the calls after the prefix count
+    along the order the judge accepted for the case's first run.
 
     {b The reference behaves the same from run to run}, since shrinking and
     retries run it again. Drift comes from [Random], a [Hashtbl] whose order a
@@ -1210,15 +1213,17 @@ val cover : string -> bool -> unit
     [name a1 … an], and [let v = name a1 … an] when it made the value [v]. A
     drawn argument prints as its generator renders it, a printerless {!Gen.map}
     or {!Gen.bind} as its pre-image, in parentheses when it holds a space or
-    starts with [-]. An abstract argument prints as its value's name. When an
-    argument's abstract type has [~pp], a [reference before] column shows the
-    reference side of such arguments before the call. A program with a call
-    whose signature ends in {!judges} adds a [result] column, the system's
-    outcome of each call. The failing call is the last row. Under the table it
-    is named, as [call 3 of 3: push q1 0], above the pair of its outcomes, the
-    reference's as [expected], with its command's location. A broken reference
-    reads [reference of call 3 of 3: pop q1] above its failure, and an
-    invariant's failure [after call 3 of 3, on s2] above the verb's lines.
+    starts with [-]. An abstract argument prints as its value's name, and an
+    element of an {!among} type as its witness prints it, in parentheses as a
+    drawn argument is. When an argument's abstract type has [~pp], a
+    [reference before] column shows the reference side of such arguments before
+    the call. A program with a call whose signature ends in {!judges} adds a
+    [result] column, the system's outcome of each call. The failing call is the
+    last row. Under the table it is named, as [call 3 of 3: push q1 0], above
+    the pair of its outcomes, the reference's as [expected], with its command's
+    location. A broken reference reads [reference of call 3 of 3: pop q1] above
+    its failure, and an invariant's failure [after call 3 of 3, on s2] above the
+    verb's lines.
 
     On several domains the table adds a [domain] column, the branch of each
     parallel call, and a [result] column, the system's outcome in the failing
@@ -1275,6 +1280,55 @@ val abstract :
     lowercase OCaml identifier, if it ends with a digit, or if two abstract
     types of its commands have it. *)
 
+val among :
+  'a testable -> ('r, 's) abstract -> ('r -> 'a list) -> ('a, 'a) abstract
+(** [among w t candidates] is the abstract type of the elements that a value of
+    [t] lists, such as the indices an array has or the keys a map holds. A call
+    takes an element with [^->], and its signature takes the value of [t] that
+    lists it:
+
+    {[
+    let index = among int darr (fun m -> List.init (Darr.length m) Fun.id)
+
+    let get =
+      command "get" (darr ^-> index ^-> returns int) Darr.get Dynarray.get
+    ]}
+
+    The element reads the nearest value of [t] before it in the signature, else
+    the first after it, so [Map.find k m] takes [key ^-> map ^-> returns int]
+    with no wrapper, and in [blit src i dst j] each index reads its own array.
+    With two values of [t] before it, the element reads the nearer: in
+    [transfer src dst amount], an amount among [src]'s balance would read [dst],
+    so the signature takes [dst] first and each side reorders the arguments with
+    a function.
+    - When the call runs, after its values resolve and before its [~pre], it
+      takes one of [candidates r], [r] being the reference side of the value it
+      reads. When [candidates r] is empty the call is skipped, as when its
+      [~pre] fails.
+    - The element is drawn with the program as a place in the list relative to
+      its length, so deleting an earlier call, which changes the list, keeps the
+      element's place in it. It shrinks as a drawn index does, toward the head
+      of the list: each candidate takes an element from an earlier place in the
+      list that its run lists, never from its parent's place, so a failure from
+      index [1] on shrinks to index [1] however long the list.
+    - The same element goes to the reference, the [~pre] and the system, so
+      neither side may mutate it. The report prints it as [w] prints it, in
+      parentheses as a drawn argument is, and [w]'s equality is not used.
+    - [candidates] must not change [r] and must behave the same from run to run,
+      as a [~pre] must. What it raises breaks the reference, as
+      [reference of call 2 of 2: get d1 _], where [_] is the element it could
+      not give.
+    - On several domains a command that takes an element is drawn in the prefix
+      only, as a command with a [~pre] is.
+
+    An element has no name, invariant or release. {!stateful} raises
+    [Invalid_argument], inside the test and before any case, if a command takes
+    an element without a value of [t]:
+    [Windtrap.stateful: get takes an element of 'd' without a value of 'd'; an
+     element is listed by a value its call takes], or makes one:
+    [Windtrap.stateful: pick makes an element of 'd'; an element is listed by a
+     value, never made]. *)
+
 type ('r, 's, 'p) fn
 (** The type for signatures: what a command's arguments are and how its outcome
     is compared. ['r] is the type of the reference's function, ['s] the system's
@@ -1302,7 +1356,10 @@ val ( ^-> ) :
     drawn as one of the earlier calls that make a value of [t], and takes the
     value that call made. When that call made none, as when shrinking deleted
     it, it takes the newest value of [t]. It shrinks toward the newest value,
-    and deleting other calls never moves it off the value its call made. *)
+    and deleting other calls never moves it off the value its call made.
+
+    When [t] is an {!among} type, [t ^-> fn] takes an element that a value of
+    the call lists instead, read, drawn and shrunk as {!among} says. *)
 
 val returns : 'a testable -> ('a, 'a, bool) fn
 (** [returns w] compares the two results under [w]. *)
@@ -1412,8 +1469,9 @@ val stateful :
     a program has at most 5040 orders up to seven domains; from eight domains,
     one call each gives [n!] orders, and the search of a failing program grows
     with them. Only the prefix has one reference state, so a command that makes
-    a value or has a [~pre] is drawn only there: every branch and the suffix
-    choose among the prefix's values, and no call after the prefix is refused.
+    a value, has a [~pre] or takes an element of an {!among} type is drawn only
+    there: every branch and the suffix choose among the prefix's values, and no
+    call after the prefix is refused.
 
     The test spawns [n] domains before its first case and joins them when it
     ends. Branch [i] runs its system functions on domain [i], every branch at
@@ -1452,9 +1510,10 @@ val stateful :
 
     Raises [Invalid_argument], inside the running test and before any case, if
     [commands] is empty, if [steps] is negative, if [domains] is below [1], if
-    the prefixes of the abstract types break the rules of {!val-abstract}, or if
-    [domains] is above [1] and every command makes a value or has a [~pre], so
-    that no call could run after the prefix. *)
+    the prefixes of the abstract types break the rules of {!val-abstract}, if a
+    command breaks a rule of {!among}, or if [domains] is above [1] and every
+    command makes a value, has a [~pre] or takes an element, so that no call
+    could run after the prefix. *)
 
 (** {1:baselines Baselines}
 

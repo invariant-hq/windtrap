@@ -16,20 +16,24 @@
 
     {b Drawing is structural.} No reference runs while a program is drawn. A
     command is drawn only when every abstract type it takes has a value that an
-    earlier drawn call makes, and an abstract argument is drawn as one of the
-    earlier calls that make its type. The shrink tree is
+    earlier drawn call makes, for an {!among} type a value of the type it lists.
+    An abstract argument is drawn as one of the earlier calls that make its
+    type, and an element as a position. The shrink tree is
     [Gen.Engine.Shrink_tree.list] over the drawn calls, with no repair. A
     candidate deletes calls, reduces one argument or one choice, or moves a
     parallel call out of its branch, and never turns one command into another.
 
     {b Legality is decided when the program runs.} {!execute} resolves each
     call's abstract arguments among the values that the calls before it made,
-    and asks the call's [pre] of the reference as the run left it. A call that
-    does not resolve or whose [pre] fails is skipped on both sides and is absent
-    from the record. A candidate can therefore run the calls its parent ran, and
-    {!Property.run}, which compares failures and never programs, accepts it as a
-    step. Every accepted step descends one level of a tree that is finite in
-    depth when the argument trees are, so the search ends.
+    takes its elements, and asks the call's [pre] of the reference as the run
+    left it. A call that does not resolve, whose value lists no element or whose
+    [pre] fails is skipped on both sides and is absent from the record. A
+    candidate can therefore run the calls its parent ran, and {!Property.run},
+    which compares failures and never programs, accepts it as a step. Every
+    accepted step descends one level of a tree that is finite in depth when the
+    argument trees are, except below an element, where every candidate takes an
+    earlier index than its parent or is discarded (see [^->]); the shrink budget
+    ends that search.
 
     {b Values.} Only a call whose signature ends in {!makes} makes a value, when
     its system returns. A value holds the reference's side and the system's. It
@@ -40,7 +44,7 @@
     a suffix. The branches' calls run at once, on worker domains, and {!execute}
     judges their outcomes against the orders of the calls replayed on the
     reference (see {!judge}). Only the prefix has one reference state, so only
-    the prefix makes values and asks a [pre]. *)
+    the prefix makes values, asks a [pre] and takes elements. *)
 
 (** {1:abstract Abstract types} *)
 
@@ -68,6 +72,24 @@ val abstract :
     [Invalid_argument] if [prefix] is not a lowercase OCaml identifier, if it
     ends with a digit, or if two abstract types of one command list have it. *)
 
+val among :
+  'a Testable.t -> ('r, 's) abstract -> ('r -> 'a list) -> ('a, 'a) abstract
+(** [among w t candidates] is a new abstract type whose values are the elements
+    that a value of [t] lists: [candidates r] of its reference side [r]. A call
+    takes an element with [^->] from a value of [t] of its own signature: the
+    nearest before the element, else the first after it. No call makes one.
+    [candidates] must not change [r]. An element is the same on both sides. It
+    has no name, no invariant and no release, and the record prints it through
+    [w], whose equality is not used.
+
+    Nothing is checked here. {!val-program} and {!stateful} raise
+    [Invalid_argument] if a command makes an element of the type,
+    [Windtrap.stateful: pick makes an element of 'd'; an element is listed by a
+     value, never made], or takes one without a value of [t]:
+    [Windtrap.stateful: get takes an element of 'd' without a value of 'd'; an
+     element is listed by a value its call takes], and [an element of 'd'] in
+    place of [a value of 'd'] when [t] is itself an {!among} type. *)
+
 (** {1:signatures Signatures} *)
 
 type ('r, 's, 'p) fn
@@ -91,7 +113,20 @@ val ( ^-> ) :
     that this call made, or, when it made none, to the newest value of [t] that
     the calls before it made. A choice shrinks toward the newest such call.
     Deleting other calls never moves it off the value its call made. The record
-    prints the value's name. *)
+    prints the value's name.
+
+    When [t] is an {!among} type, [t ^-> fn] takes an element that a value of
+    the call lists (see {!among}), the same on both sides. It is drawn as a
+    position [k] below 2{^ 30}. When the call runs it takes the candidate at
+    [(k * n) lsr 30] of the [n] that the value lists, so deleting another call
+    keeps its relative place. A shrink candidate takes, among the [n] of its own
+    run, one of the first eight indices that its parent's index shrinks through
+    as an integer, or the index before it, and no two candidates take the same
+    one; a candidate that changes the element alone runs with its parent's [n].
+    A candidate left without an index, past those or below index [0], takes
+    nothing, and {!execute} raises [Failure.Control `Discard] at its call, so no
+    candidate takes its parent's index or a sibling's. The record prints the
+    element through its witness, as a drawn argument prints. *)
 
 val returns : 'a Testable.t -> ('a, 'a, bool) fn
 (** [returns w] ends a signature whose two results compare under [w]. *)
@@ -151,10 +186,10 @@ val program : ?steps:int -> ?domains:int -> command list -> program Gen.t
     suffix. The prefix and the suffix hold at most [steps] calls between them.
     Each branch holds at most five calls for two domains, three for three, two
     for four and one from five domains. After the prefix a command is drawn only
-    when it makes no value and has no [pre], so a branch and the suffix choose
-    among the prefix's values. A branch call's first candidates move it to the
-    end of the prefix, then to the start of the suffix. How the lengths are
-    drawn is not part of the contract.
+    when it makes no value, has no [pre] and takes no element, so a branch and
+    the suffix choose among the prefix's values. A branch call's first
+    candidates move it to the end of the prefix, then to the start of the
+    suffix. How the lengths are drawn is not part of the contract.
 
     Each case draws from a subset of [commands] (swarm testing). When a command
     of the subset takes an abstract type, every command that makes the type is
@@ -167,12 +202,12 @@ val program : ?steps:int -> ?domains:int -> command list -> program Gen.t
 
     Sampling raises [Invalid_argument] if [commands] is empty, if [steps] is
     negative, if [domains] is below [1], if the prefixes break the rules of
-    {!val-abstract}, under [~steps:0] too, or if [domains] is above [1] and
-    every command makes a value or has a [pre]:
-    [Windtrap.stateful: on several domains every command makes a value or has a
-     ~pre, so no call can run after the prefix]. It raises [Invalid_argument]
-    when an argument's sample has nothing to print, as that of a {!Gen.constant}
-    or a {!Gen.of_list} without [~pp] or {!Gen.with_pp}:
+    {!val-abstract} or of {!among}, under [~steps:0] too, or if [domains] is
+    above [1] and every command makes a value, has a [pre] or takes an element:
+    [Windtrap.stateful: on several domains every command makes a value, has a
+     ~pre or takes an element, so no call can run after the prefix]. It raises
+    [Invalid_argument] when an argument's sample has nothing to print, as that
+    of a {!Gen.constant} or a {!Gen.of_list} without [~pp] or {!Gen.with_pp}:
     [push: argument 2 has no printer; attach one with Gen.with_pp], arguments
     counted from one, abstract ones included. *)
 
@@ -194,6 +229,10 @@ val execute : ?workers:Workers.t -> program -> unit
     {b A call.} Each drawn call runs in this order, and the first failure ends
     the run:
     + Its abstract arguments resolve. A call that does not resolve is skipped.
+    + Its elements are taken, each from the [candidates] of the reference side
+      of the value it reads (see {!among}). A call whose value lists no element
+      is skipped. A shrink candidate whose element is left without an index
+      raises [Failure.Control `Discard] here, once the releases ran (see [^->]).
     + Its [pre] is asked of the reference's arguments. A call whose [pre] is
       [false] is skipped.
     + The reference side of each abstract argument whose type has a [pp] is
@@ -218,8 +257,8 @@ val execute : ?workers:Workers.t -> program -> unit
     - From a system function, a verb's failure, a broken contract or a discard
       fails the run at that call, and the reference does not run.
     - From a function of the reference, the same breaks the reference, and so
-      does anything that a [pre] raises: {!execute} raises
-      {!Property.Oracle_failure}.
+      does anything that a [pre] or the [candidates] of an {!among} type raise:
+      {!execute} raises {!Property.Oracle_failure}.
     - From a {!judges} reference, a verb's failure or a broken contract fails
       the run at that call, and so does the system's own exception raised again,
       recognised by physical equality, as a [Failure.Raise] failure with the
@@ -237,7 +276,9 @@ val execute : ?workers:Workers.t -> program -> unit
     line:
     - [call 3 of 3: push q1 0] for a call's mismatch, a never-outcome of its
       system, or a rejection by its {!judges} reference;
-    - [reference of call 3 of 3: pop q1] for a broken reference function;
+    - [reference of call 3 of 3: pop q1] for a broken reference function, and
+      [reference of call 3 of 3: get d1 _] for broken [candidates], [_] being
+      the element they did not give;
     - [reference of call 2 of 3, in the order 2 then 3: pop q1] for a reference
       function that broke while the judge replayed an order on several domains
       (see {{!section-several}several domains});
@@ -273,11 +314,14 @@ val execute : ?workers:Workers.t -> program -> unit
     cell, then [call]. A call reads [name a1 … an], [let v = name a1 … an] when
     it made the value [v]. A drawn argument is its sample's rendering on one
     line, cut at 200 bytes, in parentheses when it holds a space or starts with
-    [-]. An abstract argument is its value's name. A [reference before] cell
-    holds the printed reference sides of the call's abstract arguments whose
-    type has a [pp], joined by [", "] and cut at 60 code points. A [pp] that
-    raises costs its own cell, [<pp raised EXN>]. A record of more than 40 calls
-    prints its first and last 20. A record without calls prints [(no calls)].
+    [-]. An abstract argument is its value's name. An element is its witness's
+    printing, under a drawn argument's rules, [<pp raised EXN>] when the printer
+    raises, and [_] when its call failed before taking it. A [reference before]
+    cell holds the printed reference sides of the call's abstract arguments
+    whose type has a [pp], joined by [", "] and cut at 60 code points. A [pp]
+    that raises costs its own cell, [<pp raised EXN>]. A record of more than 40
+    calls prints its first and last 20. A record without calls prints
+    [(no calls)].
 
     A record with a parallel call has two more columns: [domain], before [call],
     the branch of a parallel call and blank for the others, and [result], after
@@ -403,10 +447,12 @@ val stateful :
     joins them when it ends, however it ends. A spawn that fails fails the test
     with a [Failure.Check_failure] at the declaration site,
     [cannot spawn a worker domain: <message>], and no counterexample. Each run
-    of the law costs [50] of the shrink budget ({!Property.run}'s [cost]). The
-    test takes [~retries:0], so a group's retries do not apply. Under [--mutate]
-    or [--arm] ([config.mutation] is not {!Run.No_mutation}) the body spawns
-    nothing, and each program runs once on the test's domain.
+    of the law costs [50] of the shrink budget ({!Property.run}'s [cost]), and
+    one that discards costs [1]: only an element discards, and it is taken in
+    the prefix of the first repetition. The test takes [~retries:0], so a
+    group's retries do not apply. Under [--mutate] or [--arm] ([config.mutation]
+    is not {!Run.No_mutation}) the body spawns nothing, and each program runs
+    once on the test's domain.
 
     {b A broken reference.} {!execute} raises {!Property.Oracle_failure} for a
     broken reference, so {!Property.run} shrinks a case that broke the reference
@@ -419,8 +465,10 @@ val stateful :
     at the declaration site, whose message names every such command in the order
     of [commands]:
     [never called: "pop", "peek" (over 100 passing cases); a call runs only
-     where its arguments resolve and its ~pre holds]. A command is a value of
-    [commands], compared physically.
+     where its arguments resolve and its ~pre holds]. When one of them takes an
+    element of an {!among} type, the hint reads
+    [where its arguments resolve, its value lists an element and its ~pre holds]
+    instead. A command is a value of [commands], compared physically.
 
     It takes no [examples], since a program is drawn, no [max_discard], the
     budget being {!Property.run}'s default, and no [retries], since a second

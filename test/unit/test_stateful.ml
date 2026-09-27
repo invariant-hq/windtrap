@@ -29,6 +29,7 @@ let returns = Stateful.returns
 let makes = Stateful.makes
 let judges = Stateful.judges
 let command = Stateful.command
+let among = Stateful.among
 
 (* Drawing and reading programs *)
 
@@ -167,6 +168,19 @@ let lowercase prefix =
      OCaml identifier"
     prefix
 
+(* [create] makes a value of [d], which lists one index, and [build d index]
+   is one more command. *)
+let with_index build () =
+  let d = abstract "d" in
+  let index = among int d (fun () -> [ 0 ]) in
+  [ made "create" d; build d index ]
+
+let unlisted_element element listing =
+  strf
+    "Windtrap.stateful: get takes %s without %s; an element is listed by a \
+     value its call takes"
+    element listing
+
 let malformed =
   let prefixed prefix () = [ made "make" (abstract prefix) ] in
   [
@@ -186,6 +200,43 @@ let malformed =
     ( "two types of one prefix",
       (fun () -> [ made "a" (abstract "q"); made "b" (abstract "q") ]),
       "Windtrap.stateful: two abstract types have the prefix 'q'" );
+    ( "an element with a value of another type only",
+      with_index (fun _ index ->
+          let o = abstract "o" in
+          command "get"
+            (o ^-> index ^-> returns unit)
+            (fun () _ -> ())
+            (fun () _ -> ())),
+      unlisted_element "an element of 'd'" "a value of 'd'" );
+    ( "an element with a drawn argument only",
+      with_index (fun _ index ->
+          command "get"
+            (Gen.int_range 0 3 @-> index ^-> returns unit)
+            (fun _ _ -> ())
+            (fun _ _ -> ())),
+      unlisted_element "an element of 'd'" "a value of 'd'" );
+    ( "an element of another type beside an element",
+      with_index (fun d index ->
+          let o = abstract "o" in
+          let other = among int o (fun () -> [ 0 ]) in
+          command "get"
+            (d ^-> index ^-> other ^-> returns unit)
+            (fun () _ _ -> ())
+            (fun () _ _ -> ())),
+      unlisted_element "an element of 'o'" "a value of 'o'" );
+    ( "an element of an element with a value only",
+      with_index (fun d index ->
+          let cell = among int index (fun i -> [ i ]) in
+          command "get"
+            (d ^-> cell ^-> returns unit)
+            (fun () _ -> ())
+            (fun () _ -> ())),
+      unlisted_element "an element of an element of 'd'" "an element of 'd'" );
+    ( "a command that makes an element",
+      with_index (fun d index ->
+          command "pick" (d ^-> makes index) (fun () -> 0) (fun () -> 0)),
+      "Windtrap.stateful: pick makes an element of 'd'; an element is listed \
+       by a value, never made" );
   ]
 
 let malformed_rows =
@@ -242,6 +293,20 @@ let checking =
           let t = Stateful.stateful ~count:0 "t" [] in
           raises
             (Invalid_argument "Windtrap.stateful: no commands to draw from")
+            (body t));
+      test
+        "stateful refuses an element without a value to list it in its body, \
+         before any case" (fun () ->
+          let unlisted _ index =
+            command "get"
+              (Gen.unit @-> index ^-> returns unit)
+              (fun () _ -> ())
+              (fun () _ -> ())
+          in
+          let t = Stateful.stateful ~count:0 "t" (with_index unlisted ()) in
+          raises
+            (Invalid_argument
+               (unlisted_element "an element of 'd'" "a value of 'd'"))
             (body t));
     ]
 
@@ -1904,6 +1969,38 @@ let monitor_commands () =
       Pushed.pop Inventing_queue.pop;
   ]
 
+(* An array whose [get] of the last element, from the second, returns the
+   one before it. *)
+module Off_by_one = struct
+  type t = { mutable items : int list }
+
+  let create () = { items = [] }
+  let add_last d x = d.items <- d.items @ [ x ]
+
+  let get d i =
+    let last = List.length d.items - 1 in
+    List.nth d.items (if i = last && i > 0 then i - 1 else i)
+end
+
+let darr_commands () =
+  let at line = ("test/test_darr.ml", line, 4, 80) in
+  let darr = abstract "d" ~pp:(fun ppf m -> Testable.pp (list int) ppf !m) in
+  let index = among int darr (fun m -> List.init (List.length !m) Fun.id) in
+  [
+    command ~__POS__:(at 8) "create"
+      (Gen.unit @-> makes darr)
+      (fun () -> ref [])
+      Off_by_one.create;
+    command ~__POS__:(at 9) "add_last"
+      (darr ^-> Gen.int_range 0 9 @-> returns unit)
+      (fun m x -> m := !m @ [ x ])
+      Off_by_one.add_last;
+    command ~__POS__:(at 11) "get"
+      (darr ^-> index ^-> returns int)
+      (fun m i -> List.nth !m i)
+      Off_by_one.get;
+  ]
+
 let property_failure = function
   | Property.Fail { failure; _ } -> Some failure
   | Pass _ | Coverage_failed _ | Gave_up _ -> None
@@ -1984,6 +2081,23 @@ let screens =
       call 5 of 5: pop q1; pop returns a value pushed and not yet taken
       expected  a list containing 42
       actual    [0; 0; 0]
+|});
+      test "an off-by-one at an index an array has" (fun () ->
+          expect_exact
+            (screen ~loc:("test/test_darr.ml", 14, 0, 10) (darr_commands ()))
+          @@ __POS_OF__
+               {|    test/test_darr.ml:14
+    counterexample (case 18, shrunk 11 steps): 4 calls, last: get
+       #  reference before  call
+       1                    let d1 = create ()
+       2  []                add_last d1 0
+       3  [0]               add_last d1 1
+       4  [0; 1]            get d1 1
+    which failed at:
+      test/test_darr.ml:11
+      call 4 of 4: get d1 1
+      expected  1
+      actual    0
 |});
     ]
 
@@ -2190,6 +2304,507 @@ let shrinking =
       test "a root seed replays the same programs and counterexample" replay;
     ]
 
+(* Elements *)
+
+(* Two calls over a value whose reference side is [listed], and [use],
+   which takes one of its elements and notes it everywhere. *)
+let using listed =
+  let d = abstract "d" in
+  let element =
+    among int d (fun listed ->
+        note "candidates";
+        listed)
+  in
+  let noting what _ x = note (strf "%s %d" what x) in
+  Stateful.program ~steps:2
+    [
+      command "create" (Gen.unit @-> makes d) (fun () -> listed) ignore;
+      command "use"
+        ~pre:(fun d x ->
+          noting "pre" d x;
+          true)
+        (d ^-> element ^-> returns unit)
+        (noting "reference") (noting "system");
+    ]
+
+let element_trace () =
+  let gen = using [ 20 ] in
+  let tree =
+    find gen (String.equal " #  call\n 1  let d1 = create ()\n 2  use d1 20")
+  in
+  equal (list string)
+    [ "candidates"; "pre 20"; "system 20"; "reference 20" ]
+    (notes (execute (value tree)))
+
+(* Two calls are drawn, so a record of one skipped a [use]. *)
+let unlisted () =
+  let gen = using [] in
+  let tree = find gen (String.equal " #  call\n 1  let d1 = create ()") in
+  equal (list string) [ "candidates" ] (notes (execute (value tree)))
+
+(* [broken] makes no value, both sides raising alike, so a [use] after it
+   never resolves its value of [o] and never lists [d]'s elements. *)
+let unresolved () =
+  let d = abstract "d" and o = abstract "o" in
+  let element =
+    among int d (fun listed ->
+        note "candidates";
+        listed)
+  in
+  let raising () = raise Not_found in
+  let gen =
+    Stateful.program ~steps:3
+      [
+        command "create" (Gen.unit @-> makes d) (fun () -> [ 1 ]) ignore;
+        command "broken" (Gen.unit @-> makes o) raising raising;
+        command "use"
+          (d ^-> element ^-> o ^-> returns unit)
+          (fun _ _ () -> ())
+          (fun () _ () -> ());
+      ]
+  in
+  let tree =
+    find gen (String.equal " #  call\n 1  let d1 = create ()\n 2  broken ()")
+  in
+  equal (list string) [] (notes (execute (value tree)))
+
+let reachable () =
+  let gen = using [ 0; 1; 2 ] in
+  let use i =
+    match calls (recorded gen (value (drawn gen i))) with
+    | [ _; use ] when String.starts_with ~prefix:"use " use -> Some use
+    | _ -> None
+  in
+  equal (list string)
+    [ "use d1 0"; "use d1 1"; "use d1 2" ]
+    (List.sort_uniq String.compare (List.filter_map use (List.init 200 Fun.id)))
+
+(* An array as a list, which [create] makes of three elements and [push]
+   grows by one; [get] takes an index. *)
+let indexed_commands () =
+  let d = abstract "d" in
+  let index = among int d (fun m -> List.init (List.length !m) Fun.id) in
+  let push m = m := !m @ [ List.length !m ] in
+  let create () = ref [ 0; 1; 2 ] in
+  [
+    command "create" (Gen.unit @-> makes d) create create;
+    command "push" (d ^-> returns unit) push push;
+    command "get"
+      (d ^-> index ^-> returns int)
+      (fun m i -> List.nth !m i)
+      (fun m i -> List.nth !m i);
+  ]
+
+(* [get d1 3] takes the last of four; once the [push] is deleted, the last
+   of three. *)
+let kept_place () =
+  let gen = Stateful.program ~steps:3 (indexed_commands ()) in
+  let tree =
+    find gen
+      (String.equal
+         " #  call\n 1  let d1 = create ()\n 2  push d1\n 3  get d1 3")
+  in
+  let without_push record =
+    match calls record with
+    | [ "let d1 = create ()"; get ] when String.starts_with ~prefix:"get" get ->
+        Some get
+    | _ -> None
+  in
+  let gets =
+    List.filter_map
+      (fun child -> without_push (recorded gen (value child)))
+      (List.of_seq (Shrink_tree.children tree))
+  in
+  equal (list string) [ "get d1 2" ] gets
+
+(* A value lists [0 … 999], and [get] is wrong from [least] on. Programs
+   are two calls long, so that every step shrinks the element. *)
+let shrunk_element least =
+  let d = abstract "d" in
+  let index = among int d Fun.id in
+  let commands =
+    [
+      command "create"
+        (Gen.unit @-> makes d)
+        (fun () -> List.init 1000 Fun.id)
+        ignore;
+      command "get"
+        (d ^-> index ^-> returns int)
+        (fun _ i -> i)
+        (fun () i -> if i >= least then i + 1 else i);
+    ]
+  in
+  let outcome =
+    Property.run ~summary:Stateful.summary ~root ~path:"element"
+      (Stateful.program ~steps:2 commands) (fun _ p -> Stateful.execute p)
+  in
+  let f = require_match property_failure outcome in
+  let _, steps = require_match search f in
+  strf "%s\n%s\nshrunk %d steps" (require_match rendered f)
+    (row (require_some (inner f)))
+    steps
+
+(* How each candidate that reduces the element of [get d1 k], over a value
+   that lists ten, ends: the element it takes, or [unplaced] when it takes
+   none. *)
+let unplaced = "raised windtrap discard (assume or reject outside a property)"
+
+let element_candidates k =
+  let d = abstract "d" in
+  let index = among int d Fun.id in
+  let gen =
+    Stateful.program ~steps:2
+      [
+        command "create"
+          (Gen.unit @-> makes d)
+          (fun () -> List.init 10 Fun.id)
+          ignore;
+        command "get"
+          (d ^-> index ^-> returns unit)
+          (fun _ _ -> ())
+          (fun () _ -> ());
+      ]
+  in
+  let tree =
+    find gen
+      (String.equal (strf " #  call\n 1  let d1 = create ()\n 2  get d1 %d" k))
+  in
+  let ending child =
+    let p = value child in
+    match ended (execute p) with
+    | "returned" -> (
+        match calls (printed gen p) with
+        | [ _; get ] when String.starts_with ~prefix:"get" get -> Some get
+        | _ -> None)
+    | ending -> Some ending
+  in
+  List.filter_map ending (List.of_seq (Shrink_tree.children tree))
+
+(* [create] makes a value that lists [0], whose candidates raise what
+   [raising] holds once it is set. *)
+let listing_breaks e =
+  let raising = ref None in
+  let d = abstract "d" in
+  let index =
+    among int d (fun listed ->
+        Option.iter raise !raising;
+        listed)
+  in
+  let gen =
+    Stateful.program ~steps:2
+      [
+        command "create" (Gen.unit @-> makes d) (fun () -> [ 0 ]) ignore;
+        command "get"
+          (d ^-> index ^-> returns int)
+          (fun _ i -> i)
+          (fun () i -> i);
+      ]
+  in
+  let tree =
+    find gen (String.equal " #  call\n 1  let d1 = create ()\n 2  get d1 0")
+  in
+  raising := Some e;
+  let p = value tree in
+  let ending = ended (execute p) in
+  strf "%s\n%s" ending (printed gen p)
+
+let listing_failures =
+  let broken = " #  call\n 1  let d1 = create ()\n 2  get d1 _" in
+  [
+    ( "an assertion",
+      asserted "nope",
+      {|oracle [reference of call 2 of 2: get d1 _] message "nope"|} ^ "\n"
+      ^ broken );
+    ( "an exception",
+      Not_found,
+      "oracle [reference of call 2 of 2: get d1 _] raise actual Not_found\n"
+      ^ broken );
+    ( "a discard",
+      Failure.Control `Discard,
+      strf "oracle [reference of call 2 of 2: get d1 _] message %S\n%s"
+        discarded broken );
+    ( "a skip",
+      Failure.Control (`Skip (Some "why")),
+      "raised windtrap skip: why\n #  call\n 1  let d1 = create ()" );
+  ]
+
+(* The call of [f] over the one element [v] of a value, printed by [w]. *)
+let element_call w v =
+  let d = abstract "d" in
+  let element = among w d (fun () -> [ v ]) in
+  let gen =
+    Stateful.program ~steps:2
+      [
+        made "create" d;
+        command "f"
+          (d ^-> element ^-> returns unit)
+          (fun () _ -> ())
+          (fun () _ -> ());
+      ]
+  in
+  let tree =
+    find gen (fun record ->
+        match calls record with
+        | [ _; call ] -> String.starts_with ~prefix:"f " call
+        | _ -> false)
+  in
+  List.nth (calls (recorded gen (value tree))) 1
+
+let element_rows =
+  let quoted =
+    Testable.make
+      ~pp:(fun ppf s -> Format.fprintf ppf "%S" s)
+      ~equal:String.equal
+  in
+  let raising = Testable.make ~pp:(fun _ _ -> raise Not_found) ~equal:( = ) in
+  [
+    ("an int", (fun () -> element_call int 3), "f d1 3");
+    ("a negative int", (fun () -> element_call int (-3)), "f d1 (-3)");
+    ( "a string with a space",
+      (fun () -> element_call quoted "a b"),
+      {|f d1 ("a b")|} );
+    ("a list", (fun () -> element_call (list int) [ 1; 2 ]), "f d1 ([1; 2])");
+    ( "a printer that raises",
+      (fun () -> element_call raising ()),
+      "f d1 (<pp raised Not_found>)" );
+  ]
+
+(* [one] and [two] make a value whose one element is [1] and [2], and [pick]
+   takes one beside two values, [d1] then [d2]. *)
+let two_values pick =
+  let d = abstract "d" in
+  let tag = among int d (fun r -> [ r ]) in
+  let gen =
+    Stateful.program ~steps:3
+      [
+        command "one" (Gen.unit @-> makes d) (fun () -> 1) ignore;
+        command "two" (Gen.unit @-> makes d) (fun () -> 2) ignore;
+        pick d tag;
+      ]
+  in
+  let is_value word = String.starts_with ~prefix:"d" word in
+  let tree =
+    find gen (fun record ->
+        match calls record with
+        | [ "let d1 = one ()"; "let d2 = two ()"; pick ] ->
+            List.filter is_value (String.split_on_char ' ' pick)
+            = [ "d1"; "d2" ]
+        | _ -> false)
+  in
+  List.nth (calls (recorded gen (value tree))) 2
+
+let ignored _ _ _ = ()
+
+let two_values_rows =
+  [
+    ( "after both, the nearer",
+      (fun d tag ->
+        command "pick" (d ^-> d ^-> tag ^-> returns unit) ignored ignored),
+      "pick d1 d2 2" );
+    ( "between them, the one before",
+      (fun d tag ->
+        command "pick" (d ^-> tag ^-> d ^-> returns unit) ignored ignored),
+      "pick d1 1 d2" );
+    ( "before both, the first after",
+      (fun d tag ->
+        command "pick" (tag ^-> d ^-> d ^-> returns unit) ignored ignored),
+      "pick 1 d1 d2" );
+  ]
+
+module Int_map = Map.Make (Int)
+
+(* A map as an association list, the key added last first. It notes every
+   key it misses. *)
+module Assoc = struct
+  let empty = []
+  let add k v m = (k, v) :: List.remove_assoc k m
+
+  let find k m =
+    match List.assoc_opt k m with
+    | Some v -> v
+    | None ->
+        note (strf "missed %d" k);
+        raise Not_found
+end
+
+(* [Map.find k m] in the API's order: the key reads the map after it. *)
+let map_find () =
+  let m = abstract "m" in
+  let key = among int m (fun r -> List.map fst (Int_map.bindings r)) in
+  let commands =
+    [
+      command "empty"
+        (Gen.unit @-> makes m)
+        (fun () -> Int_map.empty)
+        (fun () -> Assoc.empty);
+      command "add"
+        (Gen.int_range 0 999 @-> Gen.int_range 0 9 @-> m ^-> makes m)
+        Int_map.add Assoc.add;
+      command "find" (key ^-> m ^-> returns int) Int_map.find Assoc.find;
+    ]
+  in
+  let t = Stateful.stateful ~count:50 "find" commands in
+  equal (list string) [ "returned" ] (notes (fun () -> note (ended (body t))))
+
+(* [Set.mem x s] in the API's order, over a set as a sorted list, which
+   notes every element it misses. *)
+let set_mem () =
+  let s = abstract "s" in
+  let member = among int s Int_set.elements in
+  let mem x l =
+    List.mem x l
+    ||
+    (note (strf "missed %d" x);
+     false)
+  in
+  let commands =
+    [
+      command "empty"
+        (Gen.unit @-> makes s)
+        (fun () -> Int_set.empty)
+        (fun () -> []);
+      command "add"
+        (Gen.int_range 0 999 @-> s ^-> makes s)
+        Int_set.add
+        (fun x l -> List.sort_uniq Int.compare (x :: l));
+      command "mem" (member ^-> s ^-> returns bool) Int_set.mem mem;
+    ]
+  in
+  let t = Stateful.stateful ~count:50 "mem" commands in
+  equal (list string) [ "returned" ] (notes (fun () -> note (ended (body t))))
+
+(* [blit src i dst j] copies one element: [i] reads [src] and [j] reads
+   [dst]. The system notes an index beyond its array. *)
+let blit () =
+  let d = abstract "d" in
+  let index = among int d (fun m -> List.init (List.length !m) Fun.id) in
+  let push m = m := !m @ [ List.length !m ] in
+  let create () = ref [ 0 ] in
+  let copy src i dst j =
+    dst := List.mapi (fun k x -> if k = j then List.nth !src i else x) !dst
+  in
+  let checked src i dst j =
+    if i >= List.length !src || j >= List.length !dst then
+      note
+        (strf "beyond: %d of %d, %d of %d" i (List.length !src) j
+           (List.length !dst));
+    copy src i dst j
+  in
+  let commands =
+    [
+      command "create" (Gen.unit @-> makes d) create create;
+      command "push" (d ^-> returns unit) push push;
+      command "blit" (d ^-> index ^-> d ^-> index ^-> returns unit) copy checked;
+    ]
+  in
+  let t = Stateful.stateful ~count:100 "blit" commands in
+  equal (list string) [ "returned" ] (notes (fun () -> note (ended (body t))))
+
+(* A value lists rows, and a row lists its cells. The system notes a cell
+   that is not in its row. [cell] takes the three in the order [signature]
+   gives. *)
+let nested signature =
+  let t = abstract "t" in
+  let row = among (list int) t Fun.id in
+  let cell = among int row Fun.id in
+  let commands =
+    [
+      command "create"
+        (Gen.unit @-> makes t)
+        (fun () -> [ [ 1; 2 ]; [ 3 ] ])
+        ignore;
+      signature t row cell (fun row x ->
+          if not (List.mem x row) then note "outside");
+    ]
+  in
+  let s = Stateful.stateful ~count:50 "nested" commands in
+  equal (list string) [ "returned" ] (notes (fun () -> note (ended (body s))))
+
+let nested_rows =
+  [
+    ( "a value, a row, a cell",
+      fun t row cell check ->
+        command "cell"
+          (t ^-> row ^-> cell ^-> returns unit)
+          (fun _ _ _ -> ())
+          (fun () row x -> check row x) );
+    ( "a cell, a row, a value",
+      fun t row cell check ->
+        command "cell"
+          (cell ^-> row ^-> t ^-> returns unit)
+          (fun _ _ _ -> ())
+          (fun x row () -> check row x) );
+  ]
+
+let elements =
+  group "Elements"
+    [
+      test
+        "a call lists the value's elements after its values resolve, then asks \
+         pre, and the element goes to pre, the system and the reference"
+        element_trace;
+      test "a value that lists no element skips the call, as a refused pre"
+        unlisted;
+      test "a call whose value does not resolve lists nothing" unresolved;
+      test "every candidate can be taken" reachable;
+      test
+        "a candidate that deletes an earlier call keeps the element's relative \
+         place"
+        kept_place;
+      test
+        "an element's candidates take the earlier elements an index shrinks \
+         through, each once" (fun () ->
+          equal (list string)
+            ([ "get d1 0"; "get d1 3"; "get d1 5"; "get d1 6" ]
+            @ List.init 5 (fun _ -> unplaced))
+            (element_candidates 7));
+      test "no candidate of the head's element runs" (fun () ->
+          equal (list string)
+            (List.init 9 (fun _ -> unplaced))
+            (element_candidates 0));
+      cases "an element shrinks toward the head, to the least failing index"
+        ~name:(fun (n, _, _) -> n)
+        [
+          ( "wrong from the second",
+            1,
+            " #  call\n\
+            \ 1  let d1 = create ()\n\
+            \ 2  get d1 1\n\
+             [call 2 of 2: get d1 1] equality 1, 2\n\
+             shrunk 8 steps" );
+          ( "wrong from the middle",
+            500,
+            " #  call\n\
+            \ 1  let d1 = create ()\n\
+            \ 2  get d1 500\n\
+             [call 2 of 2: get d1 500] equality 500, 501\n\
+             shrunk 5 steps" );
+        ]
+        (fun (_, least, expected) ->
+          equal string expected (shrunk_element least));
+      cases
+        "what the candidates raise breaks the reference, the element printed \
+         as _, and a control keeps its meaning"
+        ~name:(fun (n, _, _) -> n)
+        listing_failures
+        (fun (_, e, expected) -> equal string expected (listing_breaks e));
+      cases "an element prints through its witness, as a drawn argument does"
+        ~name:(fun (n, _, _) -> n)
+        element_rows
+        (fun (_, call, expected) -> equal string expected (call ()));
+      cases
+        "an element reads the nearest value of its type before it, else the \
+         first after it"
+        ~name:(fun (n, _, _) -> n)
+        two_values_rows
+        (fun (_, pick, expected) -> equal string expected (two_values pick));
+      test "Map.find takes a key the map holds, in the API's order" map_find;
+      test "Set.mem takes an element the set holds, in the API's order" set_mem;
+      test "blit takes an index of each of its two arrays" blit;
+      cases "an element may list elements in turn, before or after it" ~name:fst
+        nested_rows (fun (_, signature) -> nested signature);
+    ]
+
 (* Declaring *)
 
 let known_tags = [ "absent"; "custom"; "prop"; "stateful" ]
@@ -2226,11 +2841,12 @@ let wiring () =
   equal string "9 calls, 18 invariant checks, 9 releases"
     (strf "%d calls, %d invariant checks, %d releases" !calls !checks !closes)
 
-let never_called names =
+let never_called ?(elements = false) names =
   strf
     "never called: %s (over 20 passing cases); a call runs only where its \
-     arguments resolve and its ~pre holds"
+     arguments resolve%s and its ~pre holds"
     names
+    (if elements then ", its value lists an element" else "")
 
 (* Seeds are the running test's, so every row holds over any seed. *)
 let judged =
@@ -2261,6 +2877,19 @@ let judged =
           command "orphan" (abstract "t" ^-> returns unit) ignore ignore;
         ]),
       never_called {|"orphan"|} );
+    ( "a command whose value lists no element",
+      20,
+      (fun () ->
+        let d = abstract "d" in
+        let index = among int d (fun () -> []) in
+        [
+          made "create" d;
+          command "get"
+            (d ^-> index ^-> returns unit)
+            (fun () _ -> ())
+            (fun () _ -> ());
+        ]),
+      never_called ~elements:true {|"get"|} );
     ( "a command some programs call",
       20,
       (fun () ->
@@ -2303,6 +2932,27 @@ let reading_places =
       fun () ->
         one_call (made "f" (abstract "r" ~invariant:(fun () () -> read ()))) );
     ("a release", fun () -> one_call (made "f" (abstract "r" ~release:read)));
+    ( "the candidates of an among type",
+      fun () ->
+        let d = abstract "d" in
+        let index =
+          among int d (fun () ->
+              read ();
+              [ 0 ])
+        in
+        let gen =
+          Stateful.program ~steps:2
+            [
+              made "create" d;
+              command "get"
+                (d ^-> index ^-> returns unit)
+                (fun () _ -> ())
+                (fun () _ -> ());
+            ]
+        in
+        value
+          (find gen
+             (String.equal " #  call\n 1  let d1 = create ()\n 2  get d1 0")) );
   ]
 
 let declaring =
@@ -2323,8 +2973,8 @@ let declaring =
           raises_match Exn.invalid_arg (fun () ->
               Stateful.stateful ~timeout:0. "t" [ tick () ]));
       cases
-        "a command's functions, pre, an invariant and a release may read the \
-         running test"
+        "a command's functions, pre, the candidates of an among type, an \
+         invariant and a release may read the running test"
         ~name:fst reading_places (fun (_, program) ->
           equal string "returned" (ended (execute (program ()))));
     ]
@@ -2346,5 +2996,6 @@ let () =
          summaries;
          screens;
          shrinking;
+         elements;
          declaring;
        ])

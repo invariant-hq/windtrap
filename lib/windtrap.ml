@@ -104,6 +104,7 @@ type ('r, 's, 'p) fn = ('r, 's, 'p) Stateful.fn
 type command = Stateful.command
 
 let abstract = Stateful.abstract
+let among = Stateful.among
 let ( @-> ) = Stateful.( @-> )
 let ( ^-> ) = Stateful.( ^-> )
 let returns = Stateful.returns
