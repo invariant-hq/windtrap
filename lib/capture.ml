@@ -158,17 +158,37 @@ let output ?__POS__ t =
               c.cursor <- c.cursor + String.length s;
               s))
 
+(* A mark is taken around every run of a law, and the offset of descriptor
+   1, which descriptor 2 shares, costs a fifth of a [stat] of the log. A
+   mark that cannot be taken is none rather than an error: a drain that
+   fails there is no fact about the run. *)
+let mark = function
+  | Capturing { saved = Some _; _ } -> (
+      match
+        drain ();
+        Unix.lseek Unix.stdout 0 Unix.SEEK_CUR
+      with
+      | offset -> Some offset
+      | exception (Sys_error _ | Unix.Unix_error _) -> None)
+  | Capturing { saved = None; _ } | Disabled -> None
+
 (* No drain: the attempt drained its buffers into the log before the real
    descriptors came back, and a drain now would flush those, whose failure is
    no fact about the test. An attempt that wrote nothing after the cursor has
    no tail, so no renderer points at a log that holds nothing unread. *)
-let output_tail = function
+let output_tail ?within = function
   | Disabled -> None
   | Capturing c ->
       let tail path ic =
-        let length = in_channel_length ic in
-        (* The test can truncate its own log below the cursor. *)
-        let unread = min c.cursor length in
+        (* The test can truncate its own log below the cursor or a mark. *)
+        let unread, length =
+          let length = in_channel_length ic in
+          match within with
+          | None -> (min c.cursor length, length)
+          | Some (start, stop) ->
+              let length = min stop length in
+              (min (max c.cursor start) length, length)
+        in
         let start = max unread (length - Failure.tail_bytes) in
         seek_in ic start;
         let s = really_input_string ic (length - start) in

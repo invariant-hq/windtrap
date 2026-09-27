@@ -117,11 +117,14 @@ let same_class a b = failure_class a = failure_class b
    candidate) are finite for [Gen]'s generators. A candidate that discards
    costs one run, since a law that repeats its case discards before it
    repeats. *)
-let shrink ~cost law tree fault =
+let shrink ~cost ~output law tree fault =
   let scratch = make_context () in
   (* A timeout can fire at any poll point of the search, which then ends at
-     the last accepted node. *)
-  let best = ref (tree, 0, fault) in
+     the last accepted node. A node is accepted with the output of its run
+     or not at all, so the two never come from different runs. The failing
+     case is accepted from the start, without output until [output] returns
+     on it. *)
+  let best = ref (tree, 0, fault, None) in
   let rec descend ~runs steps tree =
     let rec first_accepted ~runs candidates =
       match Failure.catch candidates with
@@ -136,7 +139,7 @@ let shrink ~cost law tree fault =
           match run_case scratch law (root_value candidate) with
           | Error (`Timeout _ as timeout) -> Failure.reraise timeout
           | Error (#Failure.fault as accepted) when same_class fault accepted ->
-              best := (candidate, steps + 1, accepted);
+              best := (candidate, steps + 1, accepted, output ());
               descend ~runs:(runs + cost) (steps + 1) candidate
           | Error `Discard -> first_accepted ~runs:(runs + 1) rest
           | Ok () | Error (#Failure.fault | #Failure.control) ->
@@ -144,14 +147,18 @@ let shrink ~cost law tree fault =
     in
     first_accepted ~runs (Gen.Engine.Shrink_tree.children tree)
   in
+  let search () =
+    best := (tree, 0, fault, output ());
+    descend ~runs:0 0 tree
+  in
   let shrink_end =
-    match Failure.catch (fun () -> descend ~runs:0 0 tree) with
+    match Failure.catch search with
     | Ok shrink_end -> shrink_end
     | Error (`Timeout limit) -> Failure.Timed_out limit
     | Error c -> Failure.reraise c
   in
-  let tree, steps, fault = !best in
-  (Gen.Engine.Shrink_tree.root tree, steps, fault, shrink_end)
+  let tree, steps, fault, tail = !best in
+  (Gen.Engine.Shrink_tree.root tree, steps, fault, tail, shrink_end)
 
 (* Running *)
 
@@ -164,7 +171,7 @@ let inner_failure : Failure.fault -> Failure.t = function
   | fault -> Failure.of_fault fault
 
 let run ?loc ?count ?max_discard ?(examples = []) ?(summary = Fun.const None)
-    ?(cost = 1) ~root ~path gen law =
+    ?(cost = 1) ?(output = Fun.const None) ~root ~path gen law =
   let count, config_count =
     match count with
     | None -> (default_count, None)
@@ -182,11 +189,16 @@ let run ?loc ?count ?max_discard ?(examples = []) ?(summary = Fun.const None)
   in
   let ctx = make_context () in
   let fail ~case_index ~examples ?summary ?rendering ?(shrink_steps = 0)
-      ?shrink_end ~rendered fault =
+      ?shrink_end ?tail ~rendered fault =
     let failure =
       Failure.property ?loc ~inner:(inner_failure fault) ?count:config_count
         ?summary ~rendered ~case_index ~shrink_steps ?shrink_end ~root ~examples
         ?rendering ()
+    in
+    let failure =
+      match tail with
+      | Some tail -> Failure.with_output_tail tail failure
+      | None -> failure
     in
     Fail { failure; stats = stats ctx }
   in
@@ -242,8 +254,8 @@ let run ?loc ?count ?max_discard ?(examples = []) ?(summary = Fun.const None)
           | `Timed_out limit ->
               timed_out ~case_index:index ~examples:false limit
           | `Failed fault ->
-              let node, shrink_steps, fault, shrink_end =
-                shrink ~cost law tree fault
+              let node, shrink_steps, fault, tail, shrink_end =
+                shrink ~cost ~output law tree fault
               in
               let rendered, rendering =
                 match Gen.Engine.render node with
@@ -252,7 +264,7 @@ let run ?loc ?count ?max_discard ?(examples = []) ?(summary = Fun.const None)
               in
               fail ~case_index:index ~examples:false
                 ?summary:(summary (Gen.Engine.value node))
-                ~rendering ~shrink_steps ~shrink_end ~rendered fault)
+                ~rendering ~shrink_steps ~shrink_end ?tail ~rendered fault)
   in
   let rec run_examples index = function
     | [] -> generate ~passed:0 0
@@ -261,8 +273,16 @@ let run ?loc ?count ?max_discard ?(examples = []) ?(summary = Fun.const None)
         | `Passed | `Discarded -> run_examples (index + 1) rest
         | `Timed_out limit -> timed_out ~case_index:index ~examples:true limit
         | `Failed fault ->
+            (* The limit can expire while the output is read, after the
+               example failed. *)
+            let tail =
+              match Failure.catch output with
+              | Ok tail -> tail
+              | Error (`Timeout _) -> None
+              | Error c -> Failure.reraise c
+            in
             let rendered = Gen.Engine.render_value gen value in
-            fail ~case_index:index ~examples:true ?summary:(summary value)
+            fail ~case_index:index ~examples:true ?summary:(summary value) ?tail
               ~rendered fault)
   in
   run_examples 0 examples

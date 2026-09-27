@@ -154,6 +154,7 @@ type frame = {
   mutable phase : Failure.phase; (* the phase that runs *)
   mutable skip : string option option; (* the reason of the first skip *)
   mutable prop : Property.context option;
+  mutable law_mark : int option; (* where the law's run began in the log *)
   mutable prop_stats : Property.stats option;
   mutable rev_failures : Failure.t list;
   mutable subtests : string list; (* the open subtests, innermost first *)
@@ -172,6 +173,7 @@ let frame run (case : Test_tree.case) =
     phase = Failure.Body;
     skip = None;
     prop = None;
+    law_mark = None;
     prop_stats = None;
     rev_failures = [];
     subtests = [];
@@ -536,7 +538,7 @@ let gave_up_failure ?loc (stats : Property.stats) =
 
 let property ?loc ?count ?max_discard ?examples ?summary ?cost gen law =
   let frame = current_frame () in
-  let config = frame.run.config in
+  let config = frame.run.config and capture = frame.run.capture in
   let count =
     match count with
     | Some n -> Some (`Declared n)
@@ -545,6 +547,7 @@ let property ?loc ?count ?max_discard ?examples ?summary ?cost gen law =
   (* Not [Fun.protect], whose frames would end the backtrace of every law
      that raises, after the law's own. *)
   let run_law context value =
+    frame.law_mark <- Capture.mark capture;
     let enclosing = frame.prop in
     frame.prop <- Some context;
     match law value with
@@ -554,12 +557,19 @@ let property ?loc ?count ?max_discard ?examples ?summary ?cost gen law =
         frame.prop <- enclosing;
         Printexc.raise_with_backtrace exn backtrace
   in
+  let output () =
+    match frame.law_mark with
+    | None -> None
+    | Some start ->
+        Option.bind (Capture.mark capture) (fun stop ->
+            Capture.output_tail ~within:(start, stop) capture)
+  in
   let fail stats failure =
     frame.prop_stats <- Some stats;
     raise (Failure.Check_failure failure)
   in
   match
-    Property.run ?loc ?count ?max_discard ?examples ?summary ?cost
+    Property.run ?loc ?count ?max_discard ?examples ?summary ?cost ~output
       ~root:config.seed
       ~path:(Test_tree.path_to_string frame.path)
       gen run_law
@@ -571,6 +581,13 @@ let property ?loc ?count ?max_discard ?examples ?summary ?cost gen law =
   | Coverage_failed stats -> fail stats (coverage_failure ?loc:frame.loc stats)
   | Gave_up stats ->
       fail { stats with coverage = [] } (gave_up_failure ?loc:frame.loc stats)
+
+let restart_law_output () =
+  match Atomic.get slot with
+  | Some (In_test ({ prop = Some _; _ } as frame)) when on_run_domain frame.run
+    ->
+      frame.law_mark <- Capture.mark frame.run.capture
+  | Some (In_test _ | In_run _) | None -> ()
 
 (* The enclosing law's context comes back however [fn] ends. *)
 let without_labels fn =
@@ -1065,8 +1082,12 @@ let xpass_failure (case : Test_tree.case) =
   Failure.message ?loc:case.loc
     (Pp.str "expected to fail%s, but the test passed" reason)
 
+(* A property's failure carries the output of its counterexample's run. The
+   tail of the attempt would end on the law's last run, which after a search
+   is a candidate that passed. *)
 let attach_tail capture (outcome : Failure.outcome) =
   match outcome with
+  | Fail ({ kind = Property _; _ } :: _) -> outcome
   | Fail (first :: rest) -> (
       match Capture.output_tail capture with
       | Some tail -> Failure.Fail (Failure.with_output_tail tail first :: rest)

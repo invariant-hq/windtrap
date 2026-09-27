@@ -1722,6 +1722,34 @@ let prop_counted =
       Run.prop ~count:2 "declared fails" Gen.int (fun _ -> fail "no");
     ]
 
+let printing =
+  Recorded.execute
+    [
+      Run.prop "prints every run" (Gen.int_range 0 1000) (fun x ->
+          Printf.printf "checking x = %d\n" x;
+          is_true (x < 10));
+      Run.prop "prints when it passes" (Gen.int_range 0 1000) (fun x ->
+          if x < 10 then Printf.printf "passed x = %d\n" x;
+          is_true (x < 10));
+      Run.prop "prints nothing"
+        (Gen.with_pp Format.pp_print_int
+           (Gen.map
+              (fun x ->
+                Printf.printf "drawn x = %d\n" x;
+                x)
+              (Gen.int_range 0 1000)))
+        (fun x -> is_true (x < 10));
+      stateful "prints every call"
+        [
+          command "check"
+            (Gen.int_range 0 20 @-> returns unit)
+            ignore
+            (fun x ->
+              Printf.printf "check %d\n" x;
+              if x > 10 then fail "big");
+        ];
+    ]
+
 let twice_drawn =
   let tests = [ Run.prop "shrinks" Gen.int (fun n -> equal int n (n + 1)) ] in
   [ Recorded.execute tests; Recorded.execute tests ]
@@ -1897,6 +1925,35 @@ let a_negative_count_fails_the_body () =
       Recorded.row props [ "negative max_discard" ];
     ]
 
+let a_property_tail_is_its_counterexample_run () =
+  equal
+    (list (pair string (option string)))
+    [
+      ("10", Some "checking x = 10\n");
+      ("10", None);
+      ("10", None);
+      (" #  call\n 1  check 11", Some "check 11\n");
+    ]
+    (List.map
+       (fun path ->
+         let failure = failure printing [ path ] in
+         let rendered =
+           match failure.kind with
+           | Failure.Property p -> p.rendered.kept
+           | _ -> "not a property failure"
+         in
+         ( rendered,
+           Option.map (fun (t : Failure.tail) -> t.text) failure.output_tail ))
+       [
+         "prints every run";
+         "prints when it passes";
+         "prints nothing";
+         "prints every call";
+       ]);
+  is_some
+    (Option.bind (failure printing [ "prints every run" ]).output_tail
+       (fun (t : Failure.tail) -> t.log_path))
+
 let a_limit_while_shrinking_keeps_the_counterexample () =
   needs_timeouts ();
   equal (pair string string)
@@ -1939,6 +1996,10 @@ let properties =
           @@ __POS_OF__ {| never covered: "never" (over 100 passing cases) |});
       test "a negative count or max_discard fails the test from its body"
         a_negative_count_fails_the_body;
+      test
+        "a property's tail is the output of the run on its counterexample, and \
+         names the log"
+        a_property_tail_is_its_counterexample_run;
       test "a limit that expires while shrinking keeps the counterexample"
         a_limit_while_shrinking_keeps_the_counterexample;
       test "a limit that expires before a failure names the case it cut"

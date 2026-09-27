@@ -132,6 +132,11 @@ type stats = {
     - [inner] is the failure of the law on the reported counterexample, the
       final node of the search.
 
+    Its [output_tail] is the captured output of the run of the law that failed
+    on the reported counterexample, as [output] gave it, and [None] for a
+    generator that raised or when the test's limit expired before [output]
+    returned on the counterexample.
+
     The [failure] of a [Fail] that a timeout ended before any case failed is
     instead a [Failure.Timeout] located at [loc]. Its case is that of the
     example, the generation or the run that the limit cut, with [passed] the
@@ -169,6 +174,7 @@ val run :
   ?examples:'a list ->
   ?summary:('a -> string option) ->
   ?cost:int ->
+  ?output:(unit -> Failure.tail option) ->
   root:Seed.seed ->
   path:string ->
   'a Gen.t ->
@@ -196,10 +202,17 @@ val run :
       a law that runs its case several times. A run that discards spends [1],
       which assumes that such a law discards before it repeats its case.
       Defaults to [1].
+    - [output ()] is the captured output of the run of [law] that has just
+      ended. [run] calls it right after each run that fails on a case that
+      becomes the counterexample: a failing example, the first failing case, and
+      each candidate that the search accepts. It must not raise, though the
+      test's limit can expire while it runs. Defaults to [Fun.const None].
 
     {b Examples.} The examples run first, in order, unshrunk and without a seed.
     A passing example commits its labels and counts in [cases], a discarding one
     counts in [discards], and a failing one ends the run with [examples = true].
+    A [`Timeout] while [output] runs on a failing example leaves that failure
+    without output.
 
     {b Generated cases.} [index] counts from zero and counts the discarded
     cases, so a discarded seed is never drawn again. The run ends when [count]
@@ -229,9 +242,11 @@ val run :
 
     A [`Timeout] raised anywhere in the search ends it as well,
     [Failure.Timed_out] with the limit. The failure then describes the last
-    accepted node, and the test does not time out. [case_index] is always that
-    of the first failure, so a replay descends the same path, and a timeout
-    changes only where on that path the descent stops.
+    accepted node, a node being accepted once [output] has returned on it, and
+    the test does not time out. The search starts with [output] on the failing
+    case, which a [`Timeout] there reports unshrunk and without output.
+    [case_index] is always that of the first failure, so a replay descends the
+    same path, and a timeout changes only where on that path the descent stops.
 
     Raises [Invalid_argument] if [count] or [max_discard] is negative, or if
     [cost] is not positive, inside the running test, where [run] executes.

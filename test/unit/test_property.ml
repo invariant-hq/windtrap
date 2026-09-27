@@ -1008,6 +1008,95 @@ let shrinking =
           equal string row (rendered (counterexample o)));
     ]
 
+(* Output *)
+
+(* The outcome of [law] on [gen] as a row, its failure's output and the
+   values whose output the engine asked for, under an [output] that is the
+   value of the last run. With [interrupt] as [(n, e)], [output] raises [e]
+   at its [n]th call. *)
+let echoed ?examples ?interrupt gen law =
+  let last = ref None and asked = ref [] in
+  let run ctx x =
+    last := Some x;
+    law ctx x
+  in
+  let output () =
+    let x = require_some !last in
+    (match interrupt with
+    | Some (n, e) when List.length !asked + 1 = n -> raise e
+    | Some _ | None -> ());
+    asked := x :: !asked;
+    Some (Failure.tail (string_of_int x))
+  in
+  let o = Property.run ?examples ~output ~root ~path:"output" gen run in
+  ( outcome_row o,
+    Option.map (fun (t : Failure.tail) -> t.text) (failed o).output_tail,
+    List.rev !asked )
+
+let at_least_10 _ x = if x >= 10 then Check.fail "big"
+
+(* [40] fails, its candidate [5] passes and [20] fails, and [20]'s candidate
+   [10] fails and has none. *)
+let descent = drawn (node 40 [ node 5 []; node 20 [ node 10 []; node 15 [] ] ])
+let outcome_asked = triple string (option string) (list int)
+
+let output =
+  group "Output"
+    [
+      test "a failure carries the output of the run on its counterexample"
+        (fun () ->
+          equal outcome_asked
+            ( "fail, 0 cases, 0 discards; case 0, 2 steps, converged: 10; \
+               message big",
+              Some "10",
+              [ 40; 20; 10 ] )
+            (echoed descent at_least_10));
+      test "a failing example carries the output of its run" (fun () ->
+          equal outcome_asked
+            ( "fail, 1 cases, 0 discards; example 1, 0 steps, converged: 42; \
+               message big",
+              Some "42",
+              [ 42 ] )
+            (echoed ~examples:[ 3; 42; 50 ] descent at_least_10));
+      test "a generator that raises carries no output" (fun () ->
+          equal outcome_asked
+            ( strf
+                "fail, 0 cases, 0 discards; case 0, 0 steps, converged: %s; \
+                 raise Failure(\"drawn\")"
+                unproduced,
+              None,
+              [] )
+            (echoed (Gen.map (fun _ -> failwith "drawn") Gen.int) at_least_10));
+      test
+        "a timeout while the output is read ends the search at the node \
+         before, with its output" (fun () ->
+          equal outcome_asked
+            ( "fail, 0 cases, 0 discards; case 0, 1 steps, timed out after \
+               0.25s: 20; message big",
+              Some "20",
+              [ 40; 20 ] )
+            (echoed ~interrupt:(3, timeout 0.25) descent at_least_10));
+      test
+        "a timeout while the failing case's output is read ends the search \
+         there, without output" (fun () ->
+          equal outcome_asked
+            ( "fail, 0 cases, 0 discards; case 0, 0 steps, timed out after \
+               0.25s: 40; message big",
+              None,
+              [] )
+            (echoed ~interrupt:(1, timeout 0.25) descent at_least_10));
+      test "a timeout while a failing example's output is read leaves no output"
+        (fun () ->
+          equal outcome_asked
+            ( "fail, 1 cases, 0 discards; example 1, 0 steps, converged: 42; \
+               message big",
+              None,
+              [] )
+            (echoed ~examples:[ 3; 42; 50 ]
+               ~interrupt:(1, timeout 0.25)
+               descent at_least_10));
+    ]
+
 let () =
   exit
     (run "property"
@@ -1020,4 +1109,5 @@ let () =
          examples;
          generated;
          shrinking;
+         output;
        ])

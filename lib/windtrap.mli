@@ -1609,9 +1609,11 @@ val expect_file : ?__POS__:pos -> string -> string -> unit
     temporary directory otherwise. [--stream] turns capture off.
 
     The block of a failing test shows the last lines that the test wrote after
-    its last {!output} call, under [captured output], and names the log. What an
-    {!output} call returned is not shown again, so a test whose failure is an
-    expectation on [output ()] shows no captured output. *)
+    its last {!output} call, under [captured output], and names the log. The
+    block of a failing {!prop} or {!stateful} test shows those of the run that
+    failed on the counterexample alone. What an {!output} call returned is not
+    shown again, so a test whose failure is an expectation on [output ()] shows
+    no captured output. *)
 
 val output : unit -> string
 (** [output ()] is what the running test wrote to standard output and standard

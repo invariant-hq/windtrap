@@ -1553,6 +1553,7 @@ let execute ?workers program =
     else 1
   in
   for i = 1 to runs do
+    if i > 1 then Run.restart_law_output ();
     run_once ~first:(i = 1) ~workers program
   done
 

@@ -7,9 +7,10 @@
 
     {!with_capture} redirects file descriptors 1 and 2 into the log file of one
     attempt of a test. {!val-output} reads the file back incrementally, and
-    {!output_tail} reads the bounded end of it that a failure carries. {!create}
-    is the state of a run that captures, and {!disabled} that of a run under
-    [--stream], which captures nothing.
+    {!output_tail} reads the bounded end of it, or of a part of it between two
+    {!mark}s, that a failure carries. {!create} is the state of a run that
+    captures, and {!disabled} that of a run under [--stream], which captures
+    nothing.
 
     The redirection is a [dup2] of the descriptors, so the writes of C stubs and
     of the subprocesses that inherit them are captured too. Both descriptors
@@ -115,19 +116,35 @@ val output : ?__POS__:Loc.pos -> t -> string
     [__POS__] is read in these cases only. Raises [Sys_error] as {!drain} does.
 *)
 
-val output_tail : t -> Failure.tail option
+val mark : t -> int option
+(** [mark t] is, while an attempt runs, the position in its log at which the
+    next byte lands: the offset of descriptor 1 after a {!drain}. Two marks
+    taken inside an attempt delimit what it wrote between them (see
+    {!output_tail}).
+
+    It is [None] when [t] is {!disabled} or no attempt runs, when the drain
+    raises [Sys_error], as on a closed descriptor, and when the offset cannot be
+    read. A test that points descriptor 1 elsewhere gets the offset there. *)
+
+val output_tail : ?within:int * int -> t -> Failure.tail option
 (** [output_tail t] is the end of what the last attempt wrote after the cursor
     of {!val-output}, as the {!type:Failure.tail} that a failure carries. The
     bytes that {!val-output} returned are not in the tail. It reads the log as
     {!with_capture} left it and drains nothing, so a call inside an attempt
     misses what a buffer still holds.
 
+    [within] is a pair of {!mark}s [(start, stop)], and the tail is then that of
+    the bytes between them: it starts past [start] as well as past the cursor,
+    and ends at [stop]. Nothing that was written before [stop] is missed, since
+    a mark drains.
+
     The tail keeps at most the last {!Failure.tail_bytes} bytes after the cursor
     and reads no more than that. [omitted_bytes] counts the bytes between the
-    cursor and them, and [log_path] is the log, which holds every byte. A cut
-    inside a UTF-8 sequence moves past it, the bytes skipped counted as omitted,
-    and invalid UTF-8 is kept as it is.
+    cursor, or [start] when it is later, and them, and [log_path] is the log,
+    which holds every byte. A cut inside a UTF-8 sequence moves past it, the
+    bytes skipped counted as omitted, and invalid UTF-8 is kept as it is.
 
     It is [None] when [t] has no current log, when the log can no longer be
-    opened, and when the attempt wrote nothing after its last {!val-output} or
-    truncated its log below the cursor: a tail is never empty. *)
+    opened, and when the attempt wrote nothing after its last {!val-output},
+    nothing between the marks, or truncated its log below the cursor: a tail is
+    never empty. *)

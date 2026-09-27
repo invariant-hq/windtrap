@@ -120,7 +120,9 @@ geo: 17 passed in 6.0ms (seed s1:296aaf2e3762014b).
 
 When the law fails, the property shrinks the value to a counterexample
 and prints it with the case that found it, the number of shrink steps,
-and the assertion that failed. The report closes on one `replay:` line,
+and the assertion that failed. What the law printed in the run that
+failed on the counterexample, and in no other run, follows under
+`captured output`. The report closes on one `replay:` line,
 above the summary, which runs the run's tests again under its seed, and
 each failed test finds the same counterexample with the same version of
 windtrap. The counterexample transcripts of this page pass

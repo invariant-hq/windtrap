@@ -195,8 +195,11 @@ Read the whole block before editing anything. It holds:
   reference's outcome as `expected` and the system's as `actual`, or
   `reference of call N of N` when the model itself broke.
 - `captured output`, the last lines the test printed after its last
-  `output ()`, and `full log:`, the file with all of them. `[setup]` or
-  `[teardown]` before the location when the failure is in one.
+  `output ()`, and `full log:`, the file with all of them. For a
+  property or a stateful test, the lines are those of the run that
+  failed on the counterexample alone, so a `Printf` in the law shows
+  the counterexample's intermediate values. `[setup]` or `[teardown]`
+  before the location when the failure is in one.
 - A last command when it says something new: under dune, `accept:`
   promotes a baseline's file; `reproduce:` arms a mutant.
 

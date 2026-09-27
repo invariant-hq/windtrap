@@ -335,7 +335,9 @@ val execute : ?workers:Workers.t -> program -> unit
 
     On a program with branches, {!execute} runs the program [50] times with
     [workers], once without, each run from no value, and it fails at the first
-    run that fails. A run goes as follows.
+    run that fails. Each run after the first starts with
+    {!Run.restart_law_output}, so a failure shows the output of the run that
+    failed. A run goes as follows.
     + The prefix runs as a program on one domain does, invariants included.
     + {b The branches.} Their calls resolve among the prefix's values, and a
       call that does not is skipped. Branch [i] runs on worker [i]: only the

@@ -413,9 +413,21 @@ val property :
     failure of any other outcome as a [Failure.Check_failure] (see {!prop}).
     [cost] is {!Property.run}'s. Raises as {!current_frame} does.
 
+    The [output] of {!Property.run} is what a run of [law] wrote from its start,
+    or from the last {!restart_law_output} in it, to its end, as
+    {!Capture.output_tail} gives it within two {!Capture.mark}s. The failure of
+    a [Fail] thus carries the output of the run that failed on its
+    counterexample, and keeps it through {!execute}.
+
     What the law raises reaches the engine through windtrap's frames alone, so
     its backtrace ends on the law's own frames once
     {!Failure.backtrace_to_string} drops the trailing run of windtrap's. *)
+
+val restart_law_output : unit -> unit
+(** [restart_law_output ()] makes the output of the running law's run start
+    here, for a law that runs its case several times: the output that the
+    failure of a case shows is then that of the run that failed. It does nothing
+    outside a law, and on a domain other than the run's. *)
 
 val without_labels : (unit -> 'a) -> 'a
 (** [without_labels fn] is [fn ()] with the labels of the running law going to a
@@ -706,7 +718,9 @@ val list_selection :
     ({!result.counted}), up to [n + 1] attempts. An attempt that kept a
     correction is the last whatever [n], because the next one would be compared
     with the text it recorded. Its first failure carries the tail of what that
-    attempt wrote ({!Capture.output_tail}), unless [config.stream]. *)
+    attempt wrote ({!Capture.output_tail}), unless [config.stream], or unless it
+    is a {!Failure.Property} failure, which carries that of its counterexample's
+    run (see {!property}). *)
 
 (** {2:corrections Corrections}
 

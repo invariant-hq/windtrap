@@ -1365,6 +1365,35 @@ let labels =
     );
   ]
 
+(* [create]'s system prints the number of the case's run, and [check]
+   fails in its third run, so a failing case runs three times. *)
+let failing_run_output () =
+  let runs = Atomic.make 0 in
+  let r = abstract "r" in
+  let gen =
+    Stateful.program ~steps:1 ~domains:2
+      [
+        command "create"
+          (Gen.unit @-> makes r)
+          ignore
+          (fun () ->
+            let n = Atomic.fetch_and_add runs 1 + 1 in
+            Printf.printf "run %d\n" n;
+            n);
+        command "check" (r ^-> returns bool) (fun () -> true) (fun n -> n <> 3);
+      ]
+  in
+  with_pool 2 @@ fun workers ->
+  let law program =
+    Atomic.set runs 0;
+    Stateful.execute ~workers program
+  in
+  match Run.property gen law with
+  | () -> fail "the property passed"
+  | exception Failure.Check_failure f ->
+      equal (option string) (Some "run 3\n")
+        (Option.map (fun (t : Failure.tail) -> t.text) f.output_tail)
+
 let executor =
   group "Workers"
     [
@@ -1386,6 +1415,8 @@ let executor =
         controls;
       test "an exception on a worker keeps its backtrace" backtrace;
       test "what a worker prints reaches the test's output" printed_output;
+      test "a failing case's output is that of the run that failed"
+        failing_run_output;
       test ~timeout:60.
         "an alarm handled on any domain times the test out on its own" alarmed;
       test "a worker blocks the runner's signals, so their handlers run here"

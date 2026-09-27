@@ -174,7 +174,9 @@ cannot read counts as empty.
 The runner captures what a test writes to standard output and standard
 error. A failing test's block shows the last lines it wrote after its
 last `output ()` call under `captured output`, and `full log:` names the
-file that holds all of them, under the log directory that `-o` sets. `-s` turns the capture off, so the output
+file that holds all of them, under the log directory that `-o` sets. A
+failing property or stateful test shows those of the run that failed on
+its counterexample alone. `-s` turns the capture off, so the output
 reaches the terminal as it is written, and a test that calls
 `output ()`, as every `expect (output ())` and `let%expect_test` does,
 fails.

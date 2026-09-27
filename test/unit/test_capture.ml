@@ -592,6 +592,70 @@ let whole_log () =
   equal (option string) (Some log) tail.Failure.log_path;
   equal string payload (read log)
 
+(* The marks taken inside an attempt that wrote [before], [inside] and
+   [after] around them, with [output] called after [read], and the tail
+   within the two marks. *)
+let within ?(read = "") ~before ~inside ~after () =
+  let cap, _ = state () in
+  let start, stop =
+    attempt cap (fun () ->
+        print_string before;
+        let start = Capture.mark cap in
+        print_string read;
+        ignore (Capture.output cap);
+        print_string inside;
+        let stop = Capture.mark cap in
+        print_string after;
+        (require_some start, require_some stop))
+  in
+  strf "%d to %d, %s" start stop
+    (tail_row (Capture.output_tail ~within:(start, stop) cap))
+
+let marks =
+  group "Marks"
+    [
+      cases "mark is None" ~name:fst
+        [
+          ("when disabled", fun () -> Capture.disabled);
+          ("before any attempt", fun () -> fst (state ()));
+          ( "after an attempt",
+            fun () ->
+              let cap, _ = state () in
+              attempt cap (fun () -> print_string "abc");
+              cap );
+        ]
+        (fun (_, make) -> is_none (Capture.mark (make ())));
+      test "mark drains, and is where the next byte lands in the log" (fun () ->
+          let cap, _ = state () in
+          equal (option int) (Some 3)
+            (attempt cap (fun () ->
+                 print_string "abc";
+                 Capture.mark cap)));
+      test "mark is None when the drain fails" (fun () ->
+          posix_only ();
+          let cap, _ = state () in
+          is_none
+            (attempt cap (fun () ->
+                 unwritable_stderr (fun () -> Capture.mark cap))));
+      test "the tail within two marks is what was written between them"
+        (fun () ->
+          equal string "6 to 12, \"inside\", 0 omitted"
+            (within ~before:"before" ~inside:"inside" ~after:"after" ()));
+      test "the tail within two marks starts past the cursor" (fun () ->
+          equal string "0 to 10, \"inside\", 0 omitted"
+            (within ~read:"seen" ~before:"" ~inside:"inside" ~after:"after" ()));
+      test "the tail within two marks is None when nothing was written between"
+        (fun () ->
+          equal string "6 to 6, none"
+            (within ~before:"before" ~inside:"" ~after:"after" ()));
+      test "the tail within two marks keeps the last 8,192 bytes" (fun () ->
+          equal string
+            (strf "0 to 9192, %S, 1000 omitted" (String.make 8_192 'y'))
+            (within ~before:""
+               ~inside:(String.make 1_000 'x' ^ String.make 8_192 'y')
+               ~after:"after" ()));
+    ]
+
 let reading =
   group "Reading captured output"
     [
@@ -656,4 +720,4 @@ let reading =
           equal string "none" (tail_row (Capture.output_tail cap)));
     ]
 
-let () = exit (run "capture" [ state_group; capturing; reading ])
+let () = exit (run "capture" [ state_group; capturing; marks; reading ])

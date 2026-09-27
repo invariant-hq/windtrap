@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+### Property testing
+
+- The captured output in the block of a failing property or stateful
+  test is that of the run that failed on the counterexample, where
+  0.2.0 showed the last lines of the whole search, which end on the
+  last candidate tried.
+
 ### Stateful testing
 
 - (breaking) `judges w` replaces `chooses w`: the reference receives the
