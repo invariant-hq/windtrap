@@ -1,21 +1,23 @@
 ---
 name: windtrap-testing
-description: Guides writing OCaml test suites with windtrap 0.2, the decisions only - which kind of test for which need, the shape of a suite, the commands to run, how to read a failure and accept a baseline, and when to reach for properties, stateful tests, coverage and mutation testing - with the mechanics linked to the manual. Use when writing tests, adding a test suite, fixing a failing test, reviewing tests, or setting up coverage or mutation testing in a project that uses windtrap. Triggers on phrases like "write tests for this", "add a test suite", "test this function", "property test this", "expect test", "snapshot test", "why is this test failing", "check coverage", "run mutation testing", or "review these tests".
+description: Guides writing OCaml test suites with windtrap 0.2, the decisions only - which kind of test for which need, the shape of a suite, the commands to run, how to read a failure and accept a baseline, and when to reach for properties, stateful tests, coverage and mutation testing - with the section of windtrap.mli that holds each mechanism. Use when writing tests, adding a test suite, fixing a failing test, reviewing tests, or setting up coverage or mutation testing in a project that uses windtrap. Triggers on phrases like "write tests for this", "add a test suite", "test this function", "property test this", "expect test", "snapshot test", "why is this test failing", "check coverage", "run mutation testing", or "review these tests".
 ---
 
 # Testing with windtrap
 
 Windtrap runs unit, property, stateful and expect tests from one flat
 interface, `open Windtrap`, with coverage and mutation testing in the
-`ppx_windtrap` package. This file decides; the manual shows how. Each
-section links the page that holds the mechanics.
+`ppx_windtrap` package. This file decides; `windtrap.mli` is the
+contract, and each section below names the sections of it to read.
 
-The manual is `doc/manual/` of the repository,
-<https://github.com/invariant-hq/windtrap/tree/main/doc/manual>. The
-reference is `windtrap.mli`, installed with the library: read it in
+`windtrap.mli` is installed with the library: read it in
 `$(ocamlfind query windtrap)/windtrap.mli`, in the opam switch's
-`lib/windtrap/`, or with `odig doc windtrap`. A name this file does not
-explain is explained there.
+`lib/windtrap/`, or with `odig doc windtrap`. Its sections are, in
+order: Declaring tests (with Resources and Annotations), Assertions
+(with Laws), Witnesses, Properties (with `Gen` and Discarding and
+labelling cases), Stateful tests, Baselines, Captured output, The
+running test, Running (with Exit codes and Command line and
+environment). A name this file does not explain is explained there.
 
 ## Before writing a test
 
@@ -34,13 +36,13 @@ explain is explained there.
 
 Take the first row that fits the behaviour.
 
-| The code under test is | Write | Page |
+| The code under test is | Write | In `windtrap.mli` |
 | --- | --- | --- |
-| A function with a law: round trip, invariant, agreement with a simpler function, algebraic identity | `prop` over a generator, with the `Law` verb when one names the law | [Property testing](https://github.com/invariant-hq/windtrap/blob/main/doc/manual/property-testing.md) |
-| A value with state across calls: container, cache, store, pool | `stateful` against a model or a simpler implementation | [Stateful testing](https://github.com/invariant-hq/windtrap/blob/main/doc/manual/stateful-testing.md) |
-| A function whose results the spec states for chosen inputs | `test` with `equal`, `cases` for a table of inputs | [Assertions](https://github.com/invariant-hq/windtrap/blob/main/doc/manual/assertions.md) |
-| Text too long to write by hand: help, report, pretty-printer output | `expect` or `expect_file`; `let%expect_test` inside a library | [Baselines and expect tests](https://github.com/invariant-hq/windtrap/blob/main/doc/manual/baselines.md) |
-| An executable's command line, output and exit code | a dune cram test (below) | dune's manual |
+| A function with a law: round trip, invariant, agreement with a simpler function, algebraic identity | `prop` over a generator, with the `Law` verb when one names the law | Properties, Laws |
+| A value with state across calls: container, cache, store, pool | `stateful` against a model or a simpler implementation | Stateful tests |
+| A function whose results the spec states for chosen inputs | `test` with `equal`, `cases` for a table of inputs | Declaring tests, Assertions |
+| Text too long to write by hand: help, report, pretty-printer output | `expect` or `expect_file`; `let%expect_test` inside a library | Baselines, Captured output |
+| An executable's command line, output and exit code | a dune cram test (below) | none: dune's cram tests |
 
 Within a test, pick the verb whose failure shows the data:
 
@@ -137,7 +139,7 @@ let () = exit (run "mylib" [ parse ])
    (diff? help.expected help.expected.corrected))))
 ```
 
-Mechanics: [Resources and structure](https://github.com/invariant-hq/windtrap/blob/main/doc/manual/resources-and-structure.md).
+In `windtrap.mli`: Declaring tests, Resources, Annotations, and `run`.
 
 ## Running tests
 
@@ -167,7 +169,7 @@ A suite run through `dune exec` styles its report even into a pipe or a
 file. To read plain text, set `WINDTRAP_COLOR=never`, which
 `windtrap coverage` and `windtrap mutants` read too.
 
-Mechanics: [Running tests](https://github.com/invariant-hq/windtrap/blob/main/doc/manual/running-tests.md),
+In `windtrap.mli`: Running, Exit codes, Command line and environment;
 and `--help` on any suite.
 
 ## Reading a failure
@@ -209,9 +211,9 @@ Then:
 4. After fixing a property's failure, add its counterexample to
    `~examples`, which runs before any generated case on every seed.
 
-A seed replays within one version of windtrap. Mechanics: each verb's
-block in
-[Assertions](https://github.com/invariant-hq/windtrap/blob/main/doc/manual/assertions.md).
+A seed replays within one version of windtrap. Each verb's doc comment
+in the Assertions section of `windtrap.mli` says what its failure
+prints.
 
 ## Accepting a baseline
 
@@ -233,18 +235,34 @@ block in
   before the comparison: in code before `expect`, and with a shadowed
   `Expect_test_config.sanitize` for `let%expect_test`.
 
-Mechanics: [Baselines and expect tests](https://github.com/invariant-hq/windtrap/blob/main/doc/manual/baselines.md).
+In `windtrap.mli`: Baselines, Captured output.
 
 ## Properties and stateful tests
 
 - Laws to look for: decoding what was encoded, agreement with a slower
   or simpler function, an invariant after each operation, algebraic
   identities, a relation between two runs (scaling the input scales the
-  output), and "never raises" on any input. `Law` has a verb for
-  seventeen textbook laws, and
-  [the manual's checklist](https://github.com/invariant-hq/windtrap/blob/main/doc/manual/property-testing.md#choosing-a-law-for-what-you-wrote)
-  maps what you wrote to them. Any other law is an `equal`, the trusted
-  side first.
+  output), and "never raises" on any input. Any law without a name
+  below is an `equal`, the trusted side first.
+- `Law` names seventeen textbook laws. Find what you wrote, and state
+  each law of its row in a `prop` of its own, `Law.x w f` as its body:
+
+  | You wrote | Its laws |
+  | --- | --- |
+  | A witness | `equivalence`, `order`, and `ignores w int hash r` for its hash |
+  | A relation that orders values, such as inclusion | `partial_order`, over three values drawn as a chain |
+  | A merge | `associative`; `commutative` when operand order does not matter; `neutral` for its empty value; `absorbing` for a value that absorbs every other |
+  | An operation that can be undone | `associative`, `neutral` for its identity, `invertible` for its inverse |
+  | Two operations of one type | `distributive op ~over` |
+  | A codec | `round_trip wa wb encode decode`, and `round_trip wb wa decode encode` over canonical texts |
+  | A normaliser | `idempotent`, and `ignores` for each difference it erases |
+  | A reversal | `involutive` |
+  | A map-like function | `commutes` with another transformation, `homomorphic` from one operation to another |
+  | A cost | `monotone` |
+  | An invariant | `preserves` for each operation that must keep it |
+
+  Each law's doc comment in the Laws section of `windtrap.mli` states
+  its equation and argument order.
 - A witness you build with `Testable.make` gets a property of
   `Law.equivalence`, and of `Law.order` when it has an order. When a
   value has several spellings, pass `~respell`, a function that returns
@@ -296,8 +314,8 @@ Mechanics: [Baselines and expect tests](https://github.com/invariant-hq/windtrap
   does not replay its schedule; a structure known to be unsafe is
   `xfail (stateful ~domains:2 …)`.
 
-Mechanics: [Property testing](https://github.com/invariant-hq/windtrap/blob/main/doc/manual/property-testing.md),
-[Stateful testing](https://github.com/invariant-hq/windtrap/blob/main/doc/manual/stateful-testing.md).
+In `windtrap.mli`: Properties, `Gen`, Discarding and labelling cases,
+Laws, Stateful tests (with `stateful`'s `~domains` paragraph).
 
 ## Coverage and mutation testing
 
@@ -352,8 +370,8 @@ dune exec windtrap -- mutants
 ```
 
 Mutation testing forks a child per mutant and is refused on Windows.
-Mechanics: [Coverage](https://github.com/invariant-hq/windtrap/blob/main/doc/manual/coverage.md),
-[Mutation testing](https://github.com/invariant-hq/windtrap/blob/main/doc/manual/mutation.md).
+`windtrap coverage --help`, `windtrap mutants --help` and a suite's
+`--help` (`--mutate`, `--arm`) state the flags.
 
 ## Testing an executable
 
