@@ -15,7 +15,7 @@ module Verdicts = Windtrap_runtime.Verdicts
 module Child = Windtrap_test_support.Child
 
 let strf = Printf.sprintf
-let exe_dir = Filename.dirname Sys.executable_name
+let exe_dir = Filename.dirname Windtrap_runtime.Instr.executable
 let suite_exe = Filename.concat exe_dir "suite_main.exe"
 let plain_exe = Filename.concat exe_dir "plain_main.exe"
 let runaway_exe = Filename.concat exe_dir "runaway/runaway_main.exe"

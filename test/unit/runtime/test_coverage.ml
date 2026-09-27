@@ -123,7 +123,9 @@ let differing_table_warns () =
   equal string (conflict_warning file) (output ())
 
 let child_exe =
-  Filename.concat (Filename.dirname Sys.executable_name) "coverage_child.exe"
+  Filename.concat
+    (Filename.dirname Windtrap_runtime.Instr.executable)
+    "coverage_child.exe"
 
 let exe_line exe =
   let id = Instr.exe_identity ~exe in

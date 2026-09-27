@@ -275,7 +275,8 @@ let signal_the_loop_after_its_last_child () =
              "sh";
              Filename.concat tmp scratch;
              string_of_int loop;
-             Windtrap_runtime.Verdicts.output_file ~exe:Sys.executable_name;
+             Windtrap_runtime.Verdicts.output_file
+               ~exe:Windtrap_runtime.Instr.executable;
            |]
            Unix.stdin Unix.stdout Unix.stderr)
   | _ -> failwith "TMPDIR holds one entry, the loop's scratch directory"

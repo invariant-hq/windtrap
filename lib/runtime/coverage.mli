@@ -40,7 +40,7 @@ val register : file:string -> points:point array -> counts:int array -> unit
 
     The first call of a process installs the [at_exit] dump and resolves where
     the dump goes (see {{!section-ondisk}Dumps}). It reads
-    [WINDTRAP_COVERAGE_FILE], the current directory and [Sys.executable_name]
+    [WINDTRAP_COVERAGE_FILE], the current directory and {!Instr.executable}
     then, and not at exit. If it needs the current directory and cannot read it,
     a warning goes to standard error. The process then writes no dump.
 
@@ -99,7 +99,7 @@ val files : t -> string list
     library that the executable links, whether or not it is the code under test.
 
     By default the dump is a new file [<digest>-<token>.coverage] in the
-    directory [Instr.output_dir format ~exe:Sys.executable_name] (see
+    directory [Instr.output_dir format ~exe:Instr.executable] (see
     {!Instr.output_dir}), named after the digest of its writer. Every run keeps
     a dump of its own there, so the runs of one executable add up in the merge
     of [windtrap coverage]. The directory belongs to the runtime. A dump that

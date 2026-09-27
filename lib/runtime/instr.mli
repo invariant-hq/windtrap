@@ -67,6 +67,11 @@ val absolute : string -> string
 (** [absolute path] is [path] when it is absolute, and [path] below the current
     directory otherwise. It does not normalize. *)
 
+val executable : string
+(** [executable] is [Sys.executable_name] made absolute against the directory
+    the process started in, so a later change of directory leaves it right. It
+    is [Sys.executable_name] unchanged when that directory could not be read. *)
+
 val build_dir : path:string -> string option
 (** [build_dir ~path] is the build directory that [path] lies in, normalized and
     separated by ['/'], or [None] when no component of [path] starts with

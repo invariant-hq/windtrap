@@ -203,7 +203,7 @@ let build_dir () =
   List.find_map
     (fun path -> build_dir_of_path (absolute path))
     (Option.to_list (getenv "INSIDE_DUNE")
-    @ [ Filename.dirname Sys.executable_name ])
+    @ [ Filename.dirname Windtrap_runtime.Instr.executable ])
 
 let is_absolute p =
   String.starts_with ~prefix:"/" p

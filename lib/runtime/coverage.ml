@@ -174,7 +174,7 @@ let dump target ~exe () =
     Option.bind exe (fun exe ->
         Option.map
           (fun digest -> { exe; digest })
-          (Instr.file_digest Sys.executable_name))
+          (Instr.file_digest Instr.executable))
   in
   let data = to_string ~identity t in
   match target with
@@ -212,13 +212,13 @@ let install_dump () =
   let target () =
     match Sys.getenv_opt "WINDTRAP_COVERAGE_FILE" with
     | Some path when path <> "" -> File (Instr.absolute path)
-    | Some _ | None -> Dir (Instr.output_dir format ~exe:Sys.executable_name)
+    | Some _ | None -> Dir (Instr.output_dir format ~exe:Instr.executable)
   in
   match determined target with
   | None -> ()
   | Some target ->
       let exe =
-        determined (fun () -> Instr.exe_identity ~exe:Sys.executable_name)
+        determined (fun () -> Instr.exe_identity ~exe:Instr.executable)
       in
       at_exit (dump target ~exe)
 

@@ -706,7 +706,9 @@ let reset_keeps_armed () =
   equal (list string) [ "true" ] (evaluations g 1)
 
 let child_exe =
-  Filename.concat (Filename.dirname Sys.executable_name) "mutate_child.exe"
+  Filename.concat
+    (Filename.dirname Windtrap_runtime.Instr.executable)
+    "mutate_child.exe"
 
 (* The child runs in an empty directory with an identifier of its own in the
    variable that the core reads. *)

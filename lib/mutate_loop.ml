@@ -645,7 +645,7 @@ let save_verdicts ~scope ~narrowed ~outside ~unreached tested =
         "verdicts not saved: this run's selection narrows the suite, and a \
          partial run's verdicts would stand in the project merge as the whole."
   | None -> (
-      let exe = Sys.executable_name in
+      let exe = Windtrap_runtime.Instr.executable in
       let path = Verdicts.output_file ~exe in
       let identity = Verdicts.writer_identity ~exe in
       let kept =

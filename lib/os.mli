@@ -154,12 +154,12 @@ val atomic_write : ?perm:int -> path:string -> string -> unit
     whose name starts with [_build]. It is [/w/_build] for
     [/w/_build/default/test/t.exe], and [/w/_build_ci] for
     [/w/_build_ci/.sandbox/3f/default]. The path is the value of [INSIDE_DUNE]
-    when it holds such a path, and the directory of [Sys.executable_name]
-    otherwise, so an executable whose own name starts with [_build] lies in
-    none. A relative one is made absolute against the current directory. The
-    rule is lexical, it reads every backslash of the path as a separator, on
-    every platform, and it spells the directory with [/]. No marker file is
-    consulted.
+    when it holds such a path, and the directory of
+    {!Windtrap_runtime.Instr.executable} otherwise, so an executable whose own
+    name starts with [_build] lies in none. A relative one is made absolute
+    against the current directory. The rule is lexical, it reads every backslash
+    of the path as a separator, on every platform, and it spells the directory
+    with [/]. No marker file is consulted.
 
     Reading the current directory raises [Sys_error] when that directory is
     gone, as after a test that removes the directory that it moved into.

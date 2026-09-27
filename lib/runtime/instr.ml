@@ -34,6 +34,15 @@ let absolute path =
   if Filename.is_relative path then Filename.concat (Sys.getcwd ()) path
   else path
 
+(* Outside Linux and macOS, [Sys.executable_name] is [argv.(0)] as the
+   runtime found it, relative to the directory the process started in. It is
+   resolved against that directory here, when the runtime is initialized and
+   before the program can change directory. *)
+let executable =
+  match absolute Sys.executable_name with
+  | path -> path
+  | exception Sys_error _ -> Sys.executable_name
+
 let join = String.concat "/"
 
 (* The root of [path] made absolute ("" for "/x", "C:" for "C:/x"), then its
