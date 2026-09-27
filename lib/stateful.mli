@@ -170,7 +170,7 @@ val program : ?steps:int -> ?domains:int -> command list -> program Gen.t
     [Windtrap.stateful: on several domains every command makes a value or has a
      ~pre, so no call can run after the prefix]. It raises [Invalid_argument]
     when an argument's sample has nothing to print, as that of a {!Gen.constant}
-    or a {!Gen.of_list} without {!Gen.with_pp}:
+    or a {!Gen.of_list} without [~pp] or {!Gen.with_pp}:
     [push: argument 2 has no printer; attach one with Gen.with_pp], arguments
     counted from one, abstract ones included. *)
 

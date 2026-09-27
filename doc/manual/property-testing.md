@@ -704,7 +704,9 @@ A demand that no passing case met fails the property with
 - `an unequal pair`: the witness's equality holds on every pair, as in
   `equal_drawing is an equivalence` above, or the generator draws copies
   of one value.
-- `r a differs from a`: the respelling returns its argument unchanged.
+- `r a differs from a`: the respelling returns its argument unchanged,
+  or a value that `compare` cannot tell from it, as `-0.` for `0.` or
+  one NaN for another.
 - `a strict chain`: no case drew three values, no two of them equal,
   that the relation orders one after another.
 - `f x differs from x`: every drawn value is a fixed point of `f`, as a

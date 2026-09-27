@@ -831,10 +831,10 @@ module Gen : sig
       the constraints of its generator.
 
       {b Printing.} A counterexample prints with its generator's printer. The
-      generators of base types print OCaml literals. A container or a choice
-      prints each component by that component's rule. {!constant} and {!of_list}
-      have no printer. {!map}, {!bind} and the binding operators have none
-      either.
+      generators of base types print OCaml literals. A container prints only
+      when every component prints; a choice prints as the generator that drew
+      the value. {!constant} and {!of_list} print only when given [~pp]. {!map},
+      {!bind} and the binding operators have no printer.
 
       A value that {!map} or {!bind} computed prints as its pre-image. The
       pre-image has the same shape, with each such value replaced by what it was
@@ -1289,7 +1289,7 @@ val ( @-> ) : 'a Gen.t -> ('r, 's, 'p) fn -> ('a -> 'r, 'a -> 's, 'a -> 'p) fn
     shrinks as [gen] does.
 
     A generator that prints nothing, a {!Gen.constant} or a {!Gen.of_list}
-    without {!Gen.with_pp}, fails the test at its first draw:
+    without [~pp] or {!Gen.with_pp}, fails the test at its first draw:
     [push: argument 2 has no printer; attach one with Gen.with_pp]. *)
 
 val ( ^-> ) :
