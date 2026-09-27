@@ -255,6 +255,19 @@ geo: 1 test (seed s1:5b58964be30f69a8)
 1 passed in 1.5ms.
 ```
 
+A `cover` belongs where its scenario is observed. In a stateful test,
+a scenario that a bug needs matters only when a later call reads it, so
+its `cover` goes in the reference function of that call. In a cache's
+model, a `cover` in `to_list` that marks a list that a hit reordered
+counts only the cases where a call listed the reordered cache; the same
+`cover` in `find` also counts cases where no call looked. The demand is
+on presence, so a correct system can fail it by chance: a scenario that
+each case reaches with probability `p` is reached by none of `count`
+cases with probability `(1 - p)^count`. At the default count of 100,
+that is 37% for `p = 1/100` and 0.6% for `p = 1/20`, so a demand fits a
+scenario that at least one case in twenty reaches, and a rarer one
+needs a larger `~count` or a generator that reaches it more often.
+
 ## Generating a recursive type
 
 A generator of a recursive type takes a depth and draws a leaf at depth

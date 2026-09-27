@@ -2,9 +2,10 @@
 
 This page shows how to test code that keeps state across calls:
 describe its operations as commands, read the program a failure prints,
-keep that program as a regression, and test a structure shared between
-domains. Every rule is documented under
-`Windtrap.stateful` in [`lib/windtrap.mli`](../../lib/windtrap.mli).
+keep that program as a regression, state rules over the whole history
+of calls, and test a structure shared between domains. Every rule is
+documented under `Windtrap.stateful` in
+[`lib/windtrap.mli`](../../lib/windtrap.mli).
 
 A stateful test runs the same calls on two implementations of one API
 and compares their outcomes, what each call returned or raised. The
@@ -306,6 +307,204 @@ bounded_queue: 1 test
 1 failed in 0.6ms.
 ```
 
+## Observing the state after every call
+
+A call that corrupts the state fails a program only when a later call
+reads the corrupted part, so the program must draw both calls, in that
+order. `~invariant` reads every value after every call instead: the
+case fails at the call that corrupted the state, and the program needs
+no call that observes it.
+
+The snippets test `Lru`, the project's own cache of integer bindings,
+which evicts its least recently used key. The model keeps the bindings
+in a list, most recently used first, and `Lru.to_list` lists them in
+the same order, so the invariant compares the two lists.
+
+`test/test_lru.ml`:
+
+```ocaml
+module Model = struct
+  (* The bindings, most recently used first. *)
+  type t = { capacity : int; mutable entries : (int * int) list }
+
+  let create capacity = { capacity; entries = [] }
+
+  let add m k v =
+    let rest = List.remove_assoc k m.entries in
+    m.entries <- (k, v) :: List.filteri (fun i _ -> i < m.capacity - 1) rest
+
+  let find m k =
+    let found = List.assoc_opt k m.entries in
+    Option.iter (add m k) found;
+    found
+
+  let length m = List.length m.entries
+  let to_list m = m.entries
+end
+
+let bindings = list (pair int int)
+
+let cache =
+  abstract "c"
+    ~pp:(fun ppf m -> Testable.pp bindings ppf m.Model.entries)
+    ~invariant:(fun m c -> equal bindings (Model.to_list m) (Lru.to_list c))
+```
+
+The commands pair each function of `Model` with `Lru`'s: `create`,
+`add`, `find`, `length` and `to_list`. If `Lru.find` returned a hit
+without making its key the most recently used, the invariant would fail
+right after that `find`:
+
+```
+$ dune exec test/test_lru.exe -- --seed s1:c26eddaeb764a645
+lru: 1 test (seed s1:c26eddaeb764a645)
+──────────────────────── failures ────────────────────────
+  FAIL  Lru › behaves like a list
+    test/test_lru.ml:42
+      42 │ let caches = group "Lru" [ stateful "behaves like a list" commands ]
+
+    counterexample (case 37, shrunk 11 steps): 4 calls, last: find
+       #  reference before  call
+       1                    let c1 = create 2
+       2  []                add c1 3 0
+       3  [(3, 0)]          add c1 0 0
+       4  [(0, 0); (3, 0)]  find c1 3
+    which failed with:
+      after call 4 of 4, on c1
+      expected  [(3, 0); (0, 0)]
+                  ~       ~
+      actual    [(0, 0); (3, 0)]
+                  ~       ~
+──────────────────────────────────────────────────────────
+
+replay: dune exec test/test_lru.exe -- --seed s1:c26eddaeb764a645
+1 failed in 3.8ms.
+```
+
+`after call 4 of 4, on c1` names the call after which the invariant
+failed, and the value it failed on. Without the invariant, the program
+must also draw a call that shows the order after the `find`, such as
+`to_list`. Over 200 seeds, this test finds the bug on 144
+without the invariant and on all 200 with it, and the median case that
+finds it falls from 32 to 11.
+
+The invariant runs on both sides after every call, and no row of the
+report shows it, so it must not change the state. `to_list` qualifies.
+An LRU's `find` does not, since it refreshes the key it finds, and the
+program would then run on states that no row of the report explains.
+
+## Taking an argument from what a value lists
+
+A drawn argument knows nothing of the state. A `get` whose index is
+drawn from `0` to `7` is out of range on most short arrays, and tests
+the bounds check more often than the element it reads.
+`among w t candidates` is the type of the elements that a value of `t`
+lists, such as the indices an array has or the keys a map holds.
+`candidates` lists them from the value's reference side, and a call
+takes one with `^->`, as it takes a value.
+
+The snippets test `Vec`, the project's own growable array of integers,
+against a model that holds an `int list ref`. The model's `get` and
+`set` raise `Invalid_argument` out of range, as `Vec`'s do.
+
+`test/test_vec.ml`:
+
+```ocaml
+let vec = abstract "v" ~pp:(fun ppf m -> Testable.pp (list int) ppf !m)
+let index = among int vec (fun m -> List.init (Model.length m) Fun.id)
+let value = Gen.int_range 0 9
+
+let commands =
+  [
+    command "create" (Gen.unit @-> makes vec) Model.create Vec.create;
+    command "push" (vec ^-> value @-> returns unit) Model.push Vec.push;
+    command "get" (vec ^-> index ^-> returns int) Model.get Vec.get;
+    command "set" (vec ^-> index ^-> value @-> returns unit) Model.set Vec.set;
+    command "get anywhere"
+      (vec ^-> Gen.int_range (-2) 9 @-> returns int)
+      Model.get Vec.get;
+  ]
+```
+
+When `get` runs, its index is one of the indices that its array has at
+that moment, the same on both sides, and the row prints it as `int`
+prints it. An array with no element skips the call, as a `~pre` that
+fails does. `get anywhere` keeps an index drawn around the bounds, for
+the bounds check.
+
+If `Vec.push` copied one element too few when the array grows, the
+third push would lose the element at index 1:
+
+```
+$ dune exec test/test_vec.exe -- --seed s1:3d27fa99e7f6ae87
+vec: 1 test (seed s1:3d27fa99e7f6ae87)
+──────────────────────── failures ────────────────────────
+  FAIL  Vec › behaves like a list
+    test/test_vec.ml:34
+      34 │ let vecs = group "Vec" [ stateful "behaves like a list" commands ]
+
+    counterexample (case 2, shrunk 13 steps): 5 calls, last: get
+       #  reference before  call
+       1                    let v1 = create ()
+       2  []                push v1 0
+       3  [0]               push v1 1
+       4  [0; 1]            push v1 0
+       5  [0; 1; 0]         get v1 1
+    which failed at:
+      test/test_vec.ml:27
+        27 │ command "get" (vec ^-> index ^-> returns int) Model.get Vec.get;
+      call 5 of 5: get v1 1
+      expected  1
+      actual    0
+──────────────────────────────────────────────────────────
+
+replay: dune exec test/test_vec.exe -- --seed s1:3d27fa99e7f6ae87
+1 failed in 1.7ms.
+```
+
+The element is drawn with the program as a place in its list, relative
+to the list's length, so deleting an earlier call keeps its place. It
+shrinks toward the head of the list, here to index 1, the first that
+fails. Over 200 seeds, this test finds the bug on all 200, and on 187
+when `get` and `set` draw their index from `0` to `7`. The median case
+that finds it falls from 22 to 15.
+
+An element reads the nearest value of `t` before it in the signature,
+else the first one after it. A function that takes a key before its map
+therefore takes it with no wrapper, as `Map.find` does here against an
+association list:
+
+```ocaml
+(* fragment: M is Map.Make (Int), and a map's reference side is an association list *)
+let map = abstract "m"
+let key = among int map (List.map fst)
+let find = command "find" (key ^-> map ^-> returns int) List.assoc M.find
+```
+
+With two values of `t` before it, an element reads the nearer one. In
+`transfer src dst amount`, an amount among `src`'s balance would read
+`dst`, so the signature takes `dst` first, and each side reorders the
+arguments with a function.
+
+An element has limits that a value does not have:
+
+- It goes to the reference, the `~pre` and the system alike, so neither
+  side may mutate it. An element is plain data, such as an index, a
+  key or a path.
+- `candidates` must not change the reference, and must give the same
+  list from run to run, as a `~pre` must. What it raises breaks the
+  reference, and the row prints the element it could not give as `_`.
+- It depends on its value only. An argument bounded by another
+  argument, such as the length of `blit src i dst j len`, which must
+  fit after `i`, is drawn and kept legal by a `~pre`.
+- It has no name, invariant or release, and no call makes one.
+- On several domains a command that takes an element runs only in the
+  prefix, as a command with a `~pre` does.
+
+A command whose value never lists an element is never called, and the
+test fails with `never called:` and a hint that names the listing:
+`a call runs only where its arguments resolve, its value lists an element and its ~pre holds`.
+
 ## Checking an outcome the API leaves open
 
 `judges w` ends the signature of an operation whose outcome the API
@@ -336,6 +535,168 @@ let take_any =
       | Error e -> raise e)
     Bag.take_any
 ```
+
+## Judging calls against a rule
+
+A model predicts every outcome. A system with no model worth writing,
+such as a scheduler or the guardrail in front of an agent's tools,
+still follows rules, and a reference whose commands end in `judges`
+states them. It keeps in its state what the rules need to
+know of the calls so far, receives each outcome, and accepts or rejects
+it. In runtime-verification terms, such a reference is a monitor of the
+program's history, written in OCaml: its state is the monitor's memory,
+and each call gets a verdict.
+
+The snippets test `Guard`, the project's own policy layer in front of
+an agent's tools. Its `read_file` and `http_get` return `Ran` with the
+tool's output, or `Blocked` with a reason, and its policy is that no
+network call runs once a secret was read. The reference is the policy,
+and knows nothing of what the tools return.
+
+`test/test_guard.ml`:
+
+```ocaml
+(* Three spellings of one secret file, and a file that holds no secret. *)
+let secrets =
+  [ "secrets/api.key"; "./secrets/api.key"; "notes/../secrets/api.key" ]
+
+let path = Gen.of_list ~pp:Format.pp_print_string ("notes.md" :: secrets)
+let url = Gen.of_list ~pp:Format.pp_print_string [ "https://example.com/" ]
+
+module Policy = struct
+  type t = { mutable secret : string option } (* the first secret read *)
+
+  let create () = { secret = None }
+
+  let read_file m p = function
+    | Ok (Guard.Ran _) ->
+        if List.mem p secrets && m.secret = None then m.secret <- Some p
+    | Ok (Guard.Blocked why) -> failf "read_file %s was blocked: %s" p why
+    | Error e -> raise e
+
+  let http_get m _ = function
+    | Ok (Guard.Ran _) ->
+        Option.iter (failf "http_get ran after %s was read") m.secret
+    | Ok (Guard.Blocked why) ->
+        if m.secret = None then
+          failf "http_get was blocked in a clean session: %s" why
+    | Error e -> raise e
+end
+
+let session =
+  abstract "g" ~pp:(fun ppf m ->
+      match m.Policy.secret with
+      | None -> Format.pp_print_string ppf "clean"
+      | Some p -> Format.fprintf ppf "read %s" p)
+
+let reply = Testable.structural ~pp:Guard.pp_reply
+
+let commands =
+  [
+    command "create" (Gen.unit @-> makes session) Policy.create Guard.create;
+    command "read_file"
+      (session ^-> path @-> judges reply)
+      Policy.read_file Guard.read_file;
+    command "http_get"
+      (session ^-> url @-> judges reply)
+      Policy.http_get Guard.http_get;
+  ]
+```
+
+The reference judges the policy in both directions: `http_get` must be
+blocked after a secret was read, and must run in a clean session, so a
+guard that blocks everything fails too. `path` draws the spellings that
+the policy must treat alike, three names of one secret file.
+
+How the reference ends is its verdict:
+
+- Returning accepts the outcome, and the reference's state follows it.
+- A verb's failure (here `failf`'s), `Assert_failure` or
+  `Match_failure` rejects it, and the call fails with the verb's lines.
+  The system's own exception raised again rejects it too, so
+  `Error e -> raise e` accepts no exception.
+- Any other exception, `assume` and `reject` break the reference. The
+  report names it as `reference of call N of N`, as for a model's bug
+  (see [Reading a failure of the model](#reading-a-failure-of-the-model)).
+
+A judge therefore rejects, with a verb, every outcome it does not
+accept, in every state. A judge that crashes on an outcome it did not
+foresee, as `List.hd` does on an empty list, breaks the reference, and
+the report is then about the test, whatever the system did. On several
+domains the judge also runs along orders of the calls that the system
+did not take, and receives outcomes in states that only those orders
+reach.
+
+If `Guard` tested a path for the `secrets/` prefix before resolving
+it, a read of `./secrets/api.key` would not count, and `http_get` would
+run after it:
+
+```
+$ dune exec test/test_guard.exe -- --seed s1:c26eddaeb764a645
+guard: 1 test (seed s1:c26eddaeb764a645)
+──────────────────────── failures ────────────────────────
+  FAIL  Guard › keeps its policy
+    test/test_guard.ml:49
+      49 │ let guards = group "Guard" [ stateful "keeps its policy" commands ]
+
+    counterexample (case 6, shrunk 7 steps): 3 calls, last: http_get
+       #  reference before        call                              result
+       1                          let g1 = create ()
+       2  clean                   read_file g1 ./secrets/api.key    Ran "read secrets/api.key"
+       3  read ./secrets/api.key  http_get g1 https://example.com/  Ran "200 https://example.com/"
+    which failed at:
+      test/test_guard.ml:44
+        44 │ command "http_get"
+      call 3 of 3: http_get g1 https://example.com/
+      http_get ran after ./secrets/api.key was read
+──────────────────────────────────────────────────────────
+
+replay: dune exec test/test_guard.exe -- --seed s1:c26eddaeb764a645
+1 failed in 1.3ms.
+```
+
+A program that holds a judging call prints a `result` column, the
+system's outcome of each call, since no `expected` value stands for it.
+Under the failing call, the report prints the verb's lines, here the
+message that `failf` formatted. That message, or a `satisfies` claim,
+is all the report says about the rule, so a judge that checks a bound
+puts the bound in it, as in `between 1 and 5 bytes`.
+
+A judge that accepts too much passes silently. Check a new judge
+against a planted bug, kept in the suite as an `xfail`, or with
+[mutation testing](mutation.md).
+
+One test mixes the two forms per command: `returns` where the reference
+predicts, `judges` where it rules. An operation whose outcome the
+reference predicts except in one corner the API leaves open is two
+commands: a `returns` command whose `~pre` excludes the corner, and a
+`judges` command whose `~pre` holds only there.
+
+## Checking an obligation at rest
+
+Some obligations hold only once the system is at rest: every request
+that a server received is answered once the server has drained its
+queue. While requests wait, such an obligation does not hold, so it is
+no invariant. A command that brings the system to rest, then observes
+it, checks the obligation wherever a program draws it.
+
+```ocaml
+(* fragment: Server is the project's own, and the reference holds the requests sent *)
+command "drain"
+  (server ^-> returns (slist int Int.compare))
+  (fun sent -> !sent)
+  (fun s ->
+    Server.drain s;
+    Server.answered s)
+```
+
+`slist` compares the answers in any order, since the obligation is that
+each request is answered. The program goes on after a `drain`, so one
+program can check the obligation in its middle as well as at its end.
+The command finds a bug only when a program draws it after the state
+that triggers the bug. A server that drops the request that arrives
+while three are waiting is found on 148 of 200 seeds at the default
+count, and on 196 at `~count:300`.
 
 ## Releasing what a program made
 
@@ -476,3 +837,107 @@ system is its own reference, as in
 `command "add" (h ^-> key @-> nat @-> returns unit) Hashtbl.add Hashtbl.add`:
 the test then checks that parallel runs agree with sequential runs of
 the same code.
+
+## Running one program twice
+
+A system that is its own reference runs each program twice, one run
+per side, call by call. Where the two sides take the same arguments,
+the runs must agree. Where a call takes a drawn pair and each side
+takes one half, the runs differ in that input only, and no outcome that
+`returns` compares may depend on it. This is noninterference: a secret
+does not reach a public output.
+
+The snippets test `Vault`, the project's own store of a pin, which keeps
+a public log of what was done.
+
+`test/test_vault.ml`:
+
+```ocaml
+let vault = abstract "v"
+let pin = Gen.int_range 0 9999
+
+let commands =
+  [
+    command "create" (Gen.unit @-> makes vault) Vault.create Vault.create;
+    command "store"
+      (vault ^-> Gen.pair pin pin @-> returns unit)
+      (fun v (a, b) ->
+        cover "the pins differ" (a <> b);
+        Vault.store v a)
+      (fun v (_, b) -> Vault.store v b);
+    command "check" (vault ^-> pin @-> returns pass) Vault.check Vault.check;
+    command "log" (vault ^-> returns (list string)) Vault.log Vault.log;
+  ]
+```
+
+`store` stores a different pin in each run, and `log`, the public
+output, must not tell the runs apart. `check` answers whether a pin is
+the stored one, which may differ between the runs, and `returns pass`
+compares nothing, so it declassifies that answer. The `cover` fails the
+test when no case stored two different pins.
+
+If `store` logged the last digit of the pin, the pair would shrink to
+two pins that differ by one:
+
+```
+$ dune exec test/test_vault.exe -- --seed s1:c26eddaeb764a645
+vault: 1 test (seed s1:c26eddaeb764a645)
+──────────────────────── failures ────────────────────────
+  FAIL  Vault › logs nothing of a pin
+    test/test_vault.ml:19
+      19 │ let vaults = group "Vault" [ stateful "logs nothing of a pin" commands ]
+
+    counterexample (case 1, shrunk 21 steps): 3 calls, last: log
+       #  call
+       1  let v1 = create ()
+       2  store v1 ((0, 1))
+       3  log v1
+    which failed at:
+      test/test_vault.ml:16
+        16 │ command "log" (vault ^-> returns (list string)) Vault.log Vault.log;
+      call 3 of 3: log v1
+      expected  ["stored ...0"]
+                            ~
+      actual    ["stored ...1"]
+                            ~
+    labels (1 passing case):
+      100.0%  the pins differ
+──────────────────────────────────────────────────────────
+
+replay: dune exec test/test_vault.exe -- --seed s1:c26eddaeb764a645
+1 failed in 0.9ms.
+```
+
+Draw both halves of the pair. A fixed variation, such as a second pin
+of `p + 5000`, keeps the last digit, so it cannot see a leak of that
+digit, while two drawn pins can differ in any digit.
+
+With every argument shared, the same shape checks determinism. The two
+runs take the same inputs, so their outcomes differ only through what
+each run sees differently. The global `Random` state is one such
+thing: the system's call advances it before the reference's call runs,
+so each run draws from another place in it, and a system whose
+outcomes depend on it fails. The runs see the rest of the process
+alike, such as the environment and the file system, so a pass shows
+only that this one perturbation revealed nothing. For a function,
+`Law.ignores` states noninterference (see
+[Stating a textbook law](property-testing.md#stating-a-textbook-law)).
+
+## Stating a temporal property
+
+Temporal logic states what a history of calls must satisfy. Windtrap
+has no formula language, and each kind of temporal property takes one
+of the forms on this page:
+
+| In temporal logic | In windtrap |
+| --- | --- |
+| always, over the state | `~invariant` on the abstract type |
+| never X after Y, once Y, X since Y | a reference that remembers what it needs of the past, and judges |
+| a monitor | a reference whose commands end in `judges` |
+| eventually, at quiescence | a drawn command that brings the system to rest, then observes it |
+| a scenario that a program must reach | a `cover` in the reference function of the call that observes it |
+| noninterference, determinism | the system as its own reference, run twice |
+
+A `cover` demands its scenario on presence, and
+[Discarding and labelling cases](property-testing.md#discarding-and-labelling-cases)
+gives the count that a rare scenario needs.

@@ -1,5 +1,56 @@
 # Changelog
 
+## Unreleased
+
+### Stateful testing
+
+- (breaking) `judges w` replaces `chooses w`: the reference receives the
+  system's outcome, `Ok v` or `Error e`, and rules on it. Returning
+  accepts it; a verb's failure, `Assert_failure`, `Match_failure` or the
+  system's own exception raised again rejects it; any other exception
+  breaks the reference, so a judge's own bug is reported as the test's,
+  where `chooses` blamed the system (see
+  [Judging calls against a rule](https://github.com/invariant-hq/windtrap/blob/main/doc/manual/stateful-testing.md#judging-calls-against-a-rule)).
+  To migrate, a reference that returned the outcome it received returns
+  `()` instead, one that returned another outcome to reject it fails
+  with a verb such as `equal` or `mem`, and `Error e -> raise e` now
+  rejects the exception. An operation whose outcome the reference
+  predicts except in one corner the API leaves open becomes two
+  commands: a `returns` command whose `~pre` excludes the corner, and a
+  `judges` command whose `~pre` holds only there.
+- `among w t candidates` is the abstract type of the elements that a
+  value of `t` lists, such as an array's indices or a map's keys; a call
+  takes one with `^->`, from the nearest value of `t` before it in the
+  signature, else the first after it, and the element is taken from the
+  value's reference side when the call runs, so a `get` reads an index
+  that its array has (see
+  [Taking an argument from what a value lists](https://github.com/invariant-hq/windtrap/blob/main/doc/manual/stateful-testing.md#taking-an-argument-from-what-a-value-lists)).
+- The subset of commands that a case draws from holds each command with
+  probability 3/4, where 0.2.0 held it with probability 1/2, so more
+  cases hold the commands that a bug needs together: over 200 seeds, a
+  planted recency bug in an LRU cache is found on 142 instead of 82.
+  Stateful suites run about 10% slower, and a `replay:` line that 0.2.0
+  printed draws other programs.
+- A failing program on one domain prints a `result` column, the
+  system's outcome of each call, when it holds a judging call; a table
+  without one is unchanged.
+- On several domains, a judge that breaks while an order is replayed
+  names the order, as
+  `reference of call 2 of 3, in the order 2 then 3: pop q1`.
+- An element prints as its witness prints it, and an element that
+  `candidates` could not give prints as `_`, as in
+  `reference of call 2 of 2: get d1 _`.
+- When a command that takes an element was never called, the
+  `never called:` hint names the listing:
+  `a call runs only where its arguments resolve, its value lists an element and its ~pre holds`.
+- `stateful` raises `Invalid_argument`, before any case, when a command
+  makes an element or takes one without a value of its type, as in
+  `Windtrap.stateful: get takes an element of 'd' without a value of 'd'; an element is listed by a value its call takes`.
+- On several domains a command that takes an element runs only before
+  the parallel calls, and the refusal of a command list with no call to
+  run after the prefix reads
+  `every command makes a value, has a ~pre or takes an element`.
+
 ## v0.2.0 2026-09-26
 
 Windtrap 0.2.0 is a complete rewrite of Windtrap. It keeps the shape of

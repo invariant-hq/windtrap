@@ -319,6 +319,12 @@ In `windtrap.mli`: Baselines, Captured output.
 - A handle that a call makes (a queue, a connection) is a value of an
   `abstract` type: a command ending in `makes q` makes one, and `q ^->`
   takes one. Never draw an index into a table of handles of your own.
+- Take an index or a key that a value holds with `among`:
+  `let index = among int vec (fun m -> List.init (Model.length m) Fun.id)`,
+  then `vec ^-> index ^-> returns int`. The element reads the nearest
+  value of its type before it in the signature, else the first after
+  it, so `Map.find` takes `key ^-> map ^-> returns int` with no
+  wrapper. Keep one command with a drawn index, for the bounds check.
 - `~pre` keeps a call the API forbids (undefined behaviour, a call that
   blocks) from both sides. A call that raises a documented exception
   needs no `~pre`: the raise is compared. Put a `cover` in the reference
@@ -326,6 +332,26 @@ In `windtrap.mli`: Baselines, Captured output.
   program can call, because its `~pre` never holds or no command makes a
   type it takes, fails the test with a `never called:` message that
   names it.
+- Observe after every call: give the abstract type an `~invariant`
+  that compares the two sides through functions that do not change the
+  state, such as `to_list` or `length`, never an LRU's `find`. A bug
+  then fails at the call that caused it.
+- Where the reference cannot predict an outcome (an order the API
+  leaves open, a policy's decision, a system with no model), end the
+  signature with `judges w`. The reference receives `Ok v` or
+  `Error e`, returns to accept it, and rejects it with a verb (`equal`,
+  `mem`, `failf`) or with `Error e -> raise e`. Reject every outcome
+  you do not accept, in every state: a judge that raises anything else
+  breaks the reference, and the failure is the test's.
+- Draw the inputs a policy must treat alike, such as every spelling of
+  one path (`secrets/k`, `./secrets/k`, `notes/../secrets/k`), and judge
+  the policy in both directions, so that a guard that blocks everything
+  fails too.
+- Name the scenario a bug needs with a `cover` in the reference
+  function of the call that observes it. A scenario that a case
+  reaches with probability `p` goes unmet over `count` cases with
+  probability `(1 - p)^count`: raise `~count` for one rarer than one
+  case in twenty.
 - A system that holds a resource (a file, a directory, a socket) is made
   by a command and released by `abstract ~release`, which must also
   accept a closed value. `temp_dir`, `setenv` and `chdir` last for the
@@ -343,7 +369,8 @@ In `windtrap.mli`: Baselines, Captured output.
   `xfail (stateful ~domains:2 …)`.
 
 In `windtrap.mli`: Properties, `Gen`, Discarding and labelling cases,
-Laws, Stateful tests (with `stateful`'s `~domains` paragraph).
+Laws, Stateful tests (with `judges`, `among` and `stateful`'s
+`~domains` paragraph).
 
 ## Coverage and mutation testing
 
