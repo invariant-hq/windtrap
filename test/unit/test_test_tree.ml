@@ -323,8 +323,17 @@ let captured =
     ("a test in a group", (nested_here, [ "g/t" ]));
     ("scoped", (scoped_here, [ "s" ]));
     ("bracket", (bracket_here, [ "b" ]));
-    ("a partial application of bracket", (partial_here, [ "b" ]));
   ]
+
+(* The capture is best-effort: flambda can attribute the call to the line of
+   the partial application, the line before the one [partial_here] returns. *)
+let partial_site () =
+  let line, tree = partial_here () in
+  let either = [ "b: " ^ here (line - 1); "b: " ^ here line ] in
+  satisfies ~claim:"the line of the partial or of the full application"
+    (list string)
+    (function [ site ] -> List.mem site either | _ -> false)
+    (column (fun c -> site c.loc) [ tree ])
 
 let captured_site (_, (declare, paths)) =
   let line, tree = declare () in
@@ -559,6 +568,10 @@ let declaring =
         constructors declared_site;
       cases "without __POS__, a site is the line that applies the constructor"
         ~name:fst captured captured_site;
+      test
+        "without __POS__, a partial application's site is the line of either \
+         application"
+        partial_site;
       test "without __POS__, a group's site is the line that applies it"
         group_site;
       test "a test keeps its own site, not its group's" given_sites;
