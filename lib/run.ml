@@ -553,9 +553,12 @@ let property ?loc ?count ?max_discard ?examples ?summary ?cost gen law =
       gen run_law
   with
   | Pass stats -> frame.prop_stats <- Some stats
-  | Fail { failure; stats } -> fail stats failure
+  (* Coverage is judged once every case has run, so a property that stopped
+     early reports no coverage it did not judge. *)
+  | Fail { failure; stats } -> fail { stats with coverage = [] } failure
   | Coverage_failed stats -> fail stats (coverage_failure ?loc:frame.loc stats)
-  | Gave_up stats -> fail stats (gave_up_failure ?loc:frame.loc stats)
+  | Gave_up stats ->
+      fail { stats with coverage = [] } (gave_up_failure ?loc:frame.loc stats)
 
 (* The enclosing law's context comes back however [fn] ends. *)
 let without_labels fn =

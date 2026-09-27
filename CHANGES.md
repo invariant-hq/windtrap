@@ -269,7 +269,9 @@ Each one is also listed under its area below.
   lowercase hexadecimal digits; any other spelling is a usage error.
 - (breaking) `cover ~label ~at_least cond` is `cover label cond`, which
   fails the property with `never covered: "label"` when no passing case
-  marked `label`.
+  marked `label`. Coverage is judged once every case has run, so a
+  property that fails on a case or gives up lists no label as never
+  covered.
 - A run has one root seed, and every case derives from it, the test's
   path and its index; the header or the summary prints `(seed s1:…)`
   when a property is selected.
