@@ -205,8 +205,9 @@ Each one is also listed under its area below.
 - An uncaught exception prints as `uncaught exception:` with its
   backtrace, which `run` records without `OCAMLRUNPARAM=b`.
 - Exception names print without dune's `Dune__exe__` prefix.
-- `float_exact` compares floats bit for bit and prints the shortest
-  decimal that round-trips.
+- `float_exact` compares floats bit for bit, orders `-0.` below `0.` as
+  its equality tells them apart, and prints the shortest decimal that
+  round-trips.
 - `text` is a string witness printed verbatim, so two multi-line texts
   fail with a line diff.
 - `less`, `at_most`, `greater` and `at_least` compare under the

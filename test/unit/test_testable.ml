@@ -324,6 +324,59 @@ let float_orders =
       Orders (float 0.5, Float.nan, Float.neg_infinity, ordered) );
   ]
 
+(* [float_exact] orders as [Float.compare] does, but for its two zeros. *)
+let exact_orders =
+  let open Testable in
+  let nan = Float.nan in
+  [
+    ("-0. below 0.", Orders (float_exact, -0., 0., ordered));
+    ("-0. and -0.", Orders (float_exact, -0., -0., "same, same, same"));
+    ("0. and 0.", Orders (float_exact, 0., 0., "same, same, same"));
+    ( "neg_infinity below -0.",
+      Orders (float_exact, Float.neg_infinity, -0., ordered) );
+    ("0. below the least subnormal", Orders (float_exact, 0., 5e-324, ordered));
+    ( "-0. above the greatest negative subnormal",
+      Orders (float_exact, -5e-324, -0., ordered) );
+    ( "nan and its negation",
+      Orders (float_exact, nan, -.nan, "same, same, same") );
+    ( "nan below neg_infinity",
+      Orders (float_exact, nan, Float.neg_infinity, ordered) );
+    ( "the negated nan below neg_infinity",
+      Orders (float_exact, -.nan, Float.neg_infinity, ordered) );
+    ("nan below -0.", Orders (float_exact, nan, -0., ordered));
+  ]
+
+let specials =
+  let nan = Float.nan in
+  [
+    nan;
+    -.nan;
+    Float.neg_infinity;
+    -1.;
+    -5e-324;
+    -0.;
+    0.;
+    5e-324;
+    1.;
+    Float.infinity;
+  ]
+
+(* Every triple of [specials], each ordering of it included. *)
+let exact_is_an_order () =
+  List.iter
+    (fun a ->
+      List.iter
+        (fun b ->
+          List.iter (fun c -> Law.order Testable.float_exact (a, b, c)) specials)
+        specials)
+    specials
+
+let exact_is_an_equivalence () =
+  List.iter
+    (fun a ->
+      List.iter (fun b -> Law.equivalence Testable.float_exact (a, b)) specials)
+    specials
+
 let exact_apart (a, b) =
   not_equal string
     (Testable.to_string Testable.float_exact a)
@@ -354,6 +407,16 @@ let floats =
       orderings
         "the float witnesses order with Float.compare, whatever the tolerance"
         float_orders;
+      orderings
+        "float_exact puts -0. below 0., and every nan at one place below every \
+         float"
+        exact_orders;
+      test
+        "float_exact's order agrees with its equality over zeros, nans and \
+         infinities"
+        exact_is_an_order;
+      test "float_exact's equality is an equivalence over the same floats"
+        exact_is_an_equivalence;
       cases "float refuses an eps that is not strictly positive" ~name:fst
         [ ("0.", 0.); ("-0.", -0.); ("-1e-9", -1e-9); ("nan", Float.nan) ]
         (fun (_, eps) -> refuses "float_exact" (fun () -> Testable.float eps));

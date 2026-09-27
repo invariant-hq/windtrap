@@ -103,10 +103,12 @@ val nativeint : nativeint t
 
 (** {2:floats Floats}
 
-    The three witnesses order with [Float.compare], whatever the tolerance. An
-    infinity is equal only to an infinity of the same sign. Under {!float} and
-    {!float_rel}, NaN is equal to nothing and [0.] equals [-0.]. Under
-    {!float_exact}, every NaN equals every NaN and [0.] differs from [-0.]. *)
+    The three witnesses order with [Float.compare], whatever the tolerance,
+    except that {!float_exact} puts [-0.] below [0.], as its equality tells them
+    apart. An infinity is equal only to an infinity of the same sign. Under
+    {!float} and {!float_rel}, NaN is equal to nothing and [0.] equals [-0.].
+    Under {!float_exact}, every NaN equals every NaN and [0.] differs from
+    [-0.]. *)
 
 val float_exact : float t
 (** [float_exact] compares floats bit for bit. It prints the shortest decimal

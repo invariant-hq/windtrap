@@ -72,7 +72,9 @@ let nativeint =
 
 (* Floats *)
 
-(* Not [Float.equal], which makes [0.] and [-0.] equal. *)
+(* Not [Float.equal], which makes [0.] and [-0.] equal. The order agrees:
+   [Float.compare] ties them, and the sign bit breaks the tie. NaNs tie as
+   they are equal, whatever their sign. *)
 let float_exact =
   {
     pp = Pp.float_exact;
@@ -80,7 +82,13 @@ let float_exact =
       (fun a b ->
         (Float.is_nan a && Float.is_nan b)
         || Int64.equal (Int64.bits_of_float a) (Int64.bits_of_float b));
-    compare = Some Float.compare;
+    compare =
+      Some
+        (fun a b ->
+          match Float.compare a b with
+          | 0 when not (Float.is_nan a) ->
+              Bool.compare (Float.sign_bit b) (Float.sign_bit a)
+          | order -> order);
   }
 
 (* A NaN side makes [diff] NaN, which no comparison accepts. With an
