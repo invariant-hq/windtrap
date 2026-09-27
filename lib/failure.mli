@@ -199,10 +199,10 @@ type kind =
       rendering : rendering;
       inner : t option;
           (** The failure of the law on the reported counterexample: the payload
-              of the {!Check_failure} that the law raised, or for any other
-              exception a [Raise] failure with no [expected], the exception as
-              printed, its backtrace and no location. A failure that
-              {!Property.run} builds always has one. *)
+              of the {!Check_failure} or the {!Property.Oracle_failure} that the
+              law raised, or for any other exception a [Raise] failure with no
+              [expected], the exception as printed, its backtrace and no
+              location. A failure that {!Property.run} builds always has one. *)
     }  (** A property failed. *)
   | Timeout of { limit : float; case : timed_case option }
       (** The test's limit, in seconds, expired. [case] is the case of a

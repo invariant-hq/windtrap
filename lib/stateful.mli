@@ -3,185 +3,247 @@
    SPDX-License-Identifier: ISC
   ---------------------------------------------------------------------------*)
 
-(** Stateful property testing.
+(** Stateful testing against a reference.
 
-    A {{!type-command}command} is one operation of a system. It holds a
-    generator of its argument, a precondition and a pure transition on a model
-    of the state, and a body that calls the system and asserts. A
-    {{!type-program}program} is a sequence of calls, each legal in the model
-    that the calls before it produced. {!Property} and the renderers know a
-    program only as a printed table and its one-line summary, so seeds, replay,
-    [--prop-count], the shrink budget, tags and timeouts are those of any
-    property.
+    A {{!type-command}command} pairs a reference's function with a system's
+    under a {{!type-fn}signature}: which arguments are drawn, which are values
+    of {{!type-abstract}abstract types} that earlier calls made, and how the two
+    outcomes compare. A {{!type-program}program} is a drawn sequence of calls.
+    {!execute} runs it and records what ran, and the record is what the program
+    prints. {!Property} and the renderers know a program only as that table and
+    its one-line {!summary}, so seeds, replay, [--prop-count], the shrink
+    budget, labels, tags and timeouts are those of any property.
 
-    {b Repair.} {!val-program} draws a fixed number of calls and repairs them
-    against the model. A call is kept iff its [pre] holds in the model that the
-    kept calls before it produced, and [next] threads through the kept calls
-    only. Repair runs on the drawn calls before the shrink tree is assembled,
-    and again at every node of the tree. {!execute} evaluates no [pre], so the
-    program that a failure shows is the program that ran.
+    {b Drawing is structural.} No reference runs while a program is drawn. A
+    command is drawn only when every abstract type it takes has a value that an
+    earlier drawn call makes, and an abstract argument is drawn as one of the
+    earlier calls that make its type. The shrink tree is
+    [Gen.Engine.Shrink_tree.list] over the drawn calls, with no repair. A
+    candidate deletes calls or reduces one argument or one choice, and never
+    turns one command into another.
 
-    {b Purity.} [pre] and [next] must be pure, and ['model] persistent. The
-    trajectory of the model is folded when a program is drawn, at every node of
-    its shrink tree, when it runs, and when a failing one is printed. The folds
-    must agree, since {!execute} and the printer apply [next] unguarded to the
-    models that repair already applied it to. A mutable model that [next]
-    returns unchanged corrupts generation before any program runs, so a hash
-    table is modelled as a [Map].
+    {b Legality is decided when the program runs.} {!execute} resolves each
+    call's abstract arguments among the values that the calls before it made,
+    and asks the call's [pre] of the reference as the run left it. A call that
+    does not resolve or whose [pre] fails is skipped on both sides and is absent
+    from the record. A candidate can therefore run the calls its parent ran, and
+    {!Property.run}, which compares failures and never programs, accepts it as a
+    step. Every accepted step descends one level of a tree that is finite in
+    depth when the argument trees are, so the search ends.
 
-    {b Exceptions.} In a body and in an invariant, [Failure.Check_failure] and
-    every [Failure.Control] keep the meaning they have in any law (see
-    {!execute}). [pre] and [next] run at generation time, over models that no
-    program may ever run in, and there an assertion does not mean what it says.
-    Raised by [pre] or [next], it is wrapped as any other exception is, and a
-    control keeps its meaning (see {!val-program}). *)
+    {b Values.} Only a call whose signature ends in {!makes} makes a value, when
+    its system returns. A value holds the reference's side and the system's. It
+    is named by its type's prefix and a count per prefix, from [1], in the order
+    of the calls that ran. A run starts with no value. *)
+
+(** {1:abstract Abstract types} *)
+
+type ('r, 's) abstract
+(** The type for abstract types of an API, whose values only calls make. A value
+    holds the reference's side ['r] and the system's side ['s]. *)
+
+val abstract :
+  ?pp:(Format.formatter -> 'r -> unit) ->
+  ?invariant:('r -> 's -> unit) ->
+  ?release:('s -> unit) ->
+  string ->
+  ('r, 's) abstract
+(** [abstract prefix] is a new abstract type, distinct from every other, whose
+    values are named [prefix] and a count.
+    - [pp] prints a reference side in the [reference before] column of a record
+      (see {!execute}).
+    - [invariant r s] runs on the two sides of every value of the type after
+      every call (see {!execute}).
+    - [release s] releases a system side of the type when a run ends (see
+      {!execute}).
+
+    Nothing is checked here. {!val-program} and {!stateful} raise
+    [Invalid_argument] if [prefix] is not a lowercase OCaml identifier, if it
+    ends with a digit, or if two abstract types of one command list have it. *)
+
+(** {1:signatures Signatures} *)
+
+type ('r, 's, 'p) fn
+(** The type for signatures. ['r] is the type of the reference's function, ['s]
+    the system's and ['p] the precondition's, the reference's arguments to
+    [bool]. A signature is one or more arrows ended by one result form, and the
+    left operand of an arrow is a generator or an abstract type, so a result
+    form never stands in argument position. *)
+
+val ( @-> ) : 'a Gen.t -> ('r, 's, 'p) fn -> ('a -> 'r, 'a -> 's, 'a -> 'p) fn
+(** [gen @-> fn] takes an argument drawn from [gen], the same value on both
+    sides and in every run of the program, so neither side may mutate it. It
+    shrinks with [gen], and the record prints it as its sample renders (see
+    {!Gen.Engine.render}), a pre-image included. *)
+
+val ( ^-> ) :
+  ('ra, 'sa) abstract -> ('r, 's, 'p) fn -> ('ra -> 'r, 'sa -> 's, 'ra -> 'p) fn
+(** [t ^-> fn] takes a value of [t]: its reference side for the reference and
+    for [pre], its system side for the system. It is drawn as one of the earlier
+    calls that make a value of [t]. When the call runs, it resolves to the value
+    that this call made, or, when it made none, to the newest value of [t] that
+    the calls before it made. A choice shrinks toward the newest such call.
+    Deleting other calls never moves it off the value its call made. The record
+    prints the value's name. *)
+
+val returns : 'a Testable.t -> ('a, 'a, bool) fn
+(** [returns w] ends a signature whose two results compare under [w]. *)
+
+val makes : ('r, 's) abstract -> ('r, 's, bool) fn
+(** [makes t] ends a signature whose system's result is a new value of [t] when
+    the system returns, and whose reference's result is that value's reference
+    side. *)
+
+val chooses : 'a Testable.t -> (('a, exn) result -> 'a, 'a, bool) fn
+(** [chooses w] ends a signature whose outcome the API leaves open. The system's
+    outcome, [Ok v] or [Error e], is the reference's last argument. The
+    reference returns or raises the outcome it accepts, which compares with the
+    system's under [w] and the exception rule (see {!execute}). *)
 
 (** {1:commands Commands} *)
 
-type ('model, 'sut) command
-(** The type for one operation of a system ['sut] modelled by ['model]. The type
-    of the argument is existential, so one list holds commands whose arguments
-    differ in type. *)
+type command
+(** The type for one operation of an API, on the reference and on the system.
+    Its signature is existential, so one list holds commands of every signature.
+*)
 
 val command :
   ?__POS__:Loc.pos ->
-  ?pre:('model -> 'arg -> bool) ->
+  ?pre:('a -> 'p) ->
   string ->
-  'arg Gen.t ->
-  ?next:('model -> 'arg -> 'model) ->
-  ('model -> 'arg -> 'sut -> unit) ->
-  ('model, 'sut) command
-(** [command name gen body] is the operation [name], whose argument [gen] draws.
-    Every function takes the model first, then the argument, then, for [body],
-    the system.
-    - [pre m arg] is whether the call is legal in the model [m]. Defaults to
-      [fun _ _ -> true].
-    - [next m arg] is the model after the call. Defaults to [m].
-    - [body m arg sut] calls the system and asserts. [m] is the model before the
-      call.
-    - [name] identifies the command in the printed program, in its summary and
-      in the label of the failing call. Its newlines become spaces.
-    - [__POS__] is the declaration site. It defaults to a capture at this call
-      (see {!Loc.resolve}), never at the failure. A failing call reports it when
-      its failure recorded no location, as a body that is one assertion in tail
-      position records none. Nothing is checked at declaration. *)
-
-val call :
-  ?__POS__:Loc.pos ->
-  ?pre:('model -> bool) ->
-  string ->
-  ?next:('model -> 'model) ->
-  ('model -> 'sut -> unit) ->
-  ('model, 'sut) command
-(** [call name body] is {!val-command} at ['arg = unit] over {!Gen.unit}. [pre],
-    [next] and [body] take no argument. [__POS__] is forwarded. Without it,
-    {!val-command}'s capture walks past the frames of this function and lands on
-    the caller. *)
+  ('a -> 'r, 'b -> 's, 'a -> 'p) fn ->
+  ('a -> 'r) ->
+  ('b -> 's) ->
+  command
+(** [command name fn reference system] is the operation [name] of signature
+    [fn], [reference] being the reference's function and [system] the system's.
+    The type demands at least one argument, since the third parameter of every
+    result form is [bool], which is not an arrow.
+    - [pre] is whether a call is legal, over the reference's arguments. It must
+      not change them. Defaults to legal everywhere.
+    - [name] identifies the command in the record, the summary and the label of
+      a failing call. Its newlines become spaces.
+    - [__POS__] is the location of a failure of its calls that recorded none. It
+      defaults to a capture at this call (see {!Loc.resolve}), never at the
+      failure. Nothing is checked at declaration. *)
 
 (** {1:programs Programs} *)
 
-type ('model, 'sut) program
-(** The type for a repaired program: an initial model and the calls made from
-    it, in order, each legal in the model that the calls before it produced. *)
+type program
+(** The type for drawn programs: the calls of one case, the commands that case
+    draws from, and the record of the program's last run. *)
 
-val program :
-  ?steps:int ->
-  ?pp_model:(Format.formatter -> 'model -> unit) ->
-  model:'model ->
-  ('model, 'sut) command list ->
-  ('model, 'sut) program Gen.t
-(** [program ~model commands] generates the programs over [commands] that start
-    from [model].
-    - [steps] is the number of calls drawn. Defaults to [20].
-    - [pp_model] adds a column to the printed program, the model before each
-      call.
+val program : ?steps:int -> command list -> program Gen.t
+(** [program commands] generates the programs over [commands]. [steps] is the
+    number of calls drawn, and defaults to [20]. Fewer are drawn when no command
+    of the case can be drawn.
 
-    A command listed twice is drawn more often than one listed once.
+    Each case draws from a subset of [commands] (swarm testing). When a command
+    of the subset takes an abstract type, every command that makes the type is
+    in the subset. A command listed twice is drawn twice as often, and is one
+    command. Which subset, how a choice is drawn and the order of the candidates
+    are not part of the contract.
 
-    {b Shrinking.} The shrink tree is [Gen.Engine.Shrink_tree.list] over the
-    trees of the kept calls, with repair applied again at every node. A
-    candidate deletes calls or reduces one argument. The choice of a command
-    never shrinks, so every call of a candidate is one that the drawn program
-    made, its argument at most reduced.
+    The generator prints a program as its record (see {!execute}), and never as
+    a pre-image. A program that has not run prints [(not run)].
 
-    No immediate candidate of the drawn program is longer than it, and the
-    guarantee stops there. Under a node whose repair dropped a call, a candidate
-    that deletes that call or reduces its argument can repeat the program of its
-    parent. A candidate that deletes an earlier call can make the dropped call
-    legal again, and then be longer than its parent. {!Property.run} compares
-    failures and never programs, so it accepts such a repeat as a step.
+    Sampling raises [Invalid_argument] if [commands] is empty, if [steps] is
+    negative, or if the prefixes break the rules of {!val-abstract}, under
+    [~steps:0] too. It raises [Invalid_argument] when an argument's sample has
+    nothing to print, as that of a {!Gen.constant} or a {!Gen.of_list} without
+    {!Gen.with_pp}:
+    [push: argument 2 has no printer; attach one with Gen.with_pp], arguments
+    counted from one, abstract ones included. *)
 
-    A search runs one whole program, and calls [scope] once, per candidate. A
-    program of [n] calls has about [2 * n] structural candidates, so the calls
-    that a search executes grow with the square of [steps].
+val summary : program -> string option
+(** [summary program] is the record of [program] in one line, as
+    [5 calls, last: elements], and [None] for a record without calls and for a
+    program that has not run. The last call of a failing run is the call that
+    failed, or the call after which an invariant failed. *)
 
-    {b Printing.} The generator always prints, so a program is never a
-    pre-image. An argument prints through [Gen.Engine.render_value]. It has no
-    pre-image, and without a printer it is the placeholder, the argument of a
-    {!Gen.map} included. A [pp_model] that raises, whatever the exception, costs
-    its own cell, which reads [<pp_model raised EXN>].
+val execute : program -> unit
+(** [execute program] runs [program] from no value and records what ran in
+    [program], in place of any earlier record. It returns [()] iff no call
+    failed, no invariant failed and no release failed.
 
-    Sampling raises [Invalid_argument] if [commands] is empty, under [~steps:0]
-    too, or if [steps] is negative. Both messages name [Windtrap.stateful].
+    {b A call.} Each drawn call runs in this order, and the first failure ends
+    the run:
+    + Its abstract arguments resolve. A call that does not resolve is skipped.
+    + Its [pre] is asked of the reference's arguments. A call whose [pre] is
+      [false] is skipped.
+    + The reference side of each abstract argument whose type has a [pp] is
+      printed, for the record.
+    + The system runs. Under {!makes}, a system that returns makes a value.
+    + The reference judges the system's outcome. Under {!returns} and {!makes}
+      it runs and the two outcomes compare, and under {!makes} its result is the
+      value's reference side. Under {!chooses} it receives the system's outcome,
+      and the outcome it accepts compares with the system's.
+    + The invariant of each abstract type runs on every value of the type, in
+      the order the values were made.
 
-    A [pre] or a [next] that raises escapes repair wrapped in an exception that
-    this interface does not export. It prints as
-    [call 3: close, ~pre raised Failure("nth")], the number counting the kept
-    calls from one, and it keeps the original backtrace. A [Failure.Control]
-    escapes as itself, so a discard there discards the case. The exception
-    escapes [Gen.Engine.sample] when the drawn program is repaired, and the
-    forcing of a candidate when a candidate is (see {!Property.run} for what
-    becomes of each). *)
+    {b Outcomes.} An outcome is a result or a raised exception. Two results
+    compare under the witness, which is applied to the reference's first. Two
+    exceptions are equal iff their constructor names, as [Printexc] gives them,
+    are equal once the module path is removed, so [Stdlib.Queue.Empty] equals
+    [Ring.Empty]. Their payloads are printed and never compared. A result never
+    equals an exception.
 
-val summary : ('model, 'sut) program -> string option
-(** [summary program] is [program]'s table in one line, and [None] for the empty
-    program, which prints no table. It names the last call and never the failing
-    one, since a program does not know which call failed. *)
+    {b Never outcomes.} A verb's failure, [Assert_failure], [Match_failure] and
+    every [Failure.Control] are never outcomes.
+    - From a system function, a verb's failure, a broken contract or a discard
+      fails the run at that call, and the reference does not run.
+    - From a function of the reference, the same breaks the reference, and so
+      does anything that a [pre] raises: {!execute} raises
+      {!Property.Oracle_failure}.
+    - From a {!chooses} reference, a verb's failure or a broken contract fails
+      the run at that call, as a mismatch. A discard there breaks the reference.
+    - Every other control passes as it is, so a skip, a timeout and an [exit]
+      keep the meaning they have in any law.
 
-val execute :
-  ?loc:Loc.t ->
-  ?invariant:('model -> 'sut -> unit) ->
-  scope:(('sut -> unit) -> unit) ->
-  ('model, 'sut) program ->
-  unit
-(** [execute ~scope program] runs [program] against the system that [scope]
-    hands to its callback. It returns [()] iff every body, every check of the
-    invariant and [scope] itself succeeded.
-    - [scope] must call its callback once, with a fresh system. It runs once per
-      generated case and once per shrink candidate, so the system must behave
-      the same from run to run.
-    - [invariant m sut] runs on the initial model and the fresh system before
-      the first call, which makes the empty program a test. It then runs after
-      every call, on the model that follows it.
-    - [loc] locates the failure of a scope that never called back.
+    A discard fails with the message
+    [assume or reject in a command; a call's legality is its ~pre].
 
-    Every call runs its body on the model before it, then applies [next].
+    {b Failures.} A failure is raised as a [Failure.Check_failure], or a
+    [Property.Oracle_failure] for a broken reference, whose [msg] starts with a
+    label, followed by the failure's own [msg] after ["; "], flattened to one
+    line:
+    - [call 3 of 3: push q1 0] for a call's mismatch or a never-outcome of its
+      system or {!chooses} reference;
+    - [reference of call 3 of 3: pop q1] for a broken reference function;
+    - [~pre of call 3 of 3: pop q1] for a broken [pre];
+    - [after call 3 of 3, on s2] for an invariant;
+    - [release of q1] for a release.
 
-    {b Failures.} An exception of a body or of the invariant is raised as a
-    [Failure.Check_failure], which keeps it in the acceptance class of an
-    assertion failure. Its payload is the one that {!Property.run} builds for an
-    exception. [Failure.Check_failure] and [Failure.Control] pass as they are.
+    [N] in [of N] counts the calls that the run executed, the failing one
+    included, so the failing call is the last of the record. A mismatch of two
+    results is an equality failure over the witness's printing. A mismatch
+    involving an exception is a [Failure.Raise] failure, with the reference's
+    exception, if any, as [expected] and the system's, if any, as [actual], its
+    backtrace included. A failure that recorded no location gets its command's.
+    An invariant's and a release's keep their own, and none when they recorded
+    none. Any other exception of an invariant or a release is a [Failure.Raise]
+    failure with its backtrace.
 
-    The [msg] of a [Failure.Check_failure] gets a label that names the call:
-    [call 3 of 5: pop], [invariant after call 3 of 5: pop] or
-    [invariant on the fresh system]. The assertion's own [msg] follows the label
-    after ["; "], flattened to one line. A failing body that recorded no
-    location gets its command's. A failing invariant keeps its own, and none
-    when it recorded none, on the fresh system as after a call.
+    {b Release.} When the run ends, whether it passed, failed or raised a
+    control, [release] runs once per physically distinct system side of its type
+    that the run made, newest first by the call that first made it. Sides are
+    told apart within a type only, so a system side that two types hold is
+    released by each. Reference sides are never released. A release that fails
+    over a passing run fails it. Over a failing run it is dropped, unless it
+    raises a control, which replaces the failure. A fatal exception, [Sys.Break]
+    or [Out_of_memory], skips the releases and the record, as it skips a
+    teardown.
 
-    {b The scope.} When [scope] does not call back once, or raises, [execute]
-    ends as follows:
-    - When [scope] returns without calling back, the case fails with a
-      [Failure.Check_failure] at [loc].
-    - A second call runs nothing and raises [Invalid_argument]. [execute] raises
-      that exception whatever else the case has to say, even when [scope]
-      swallows it.
-    - The exception of a failing program is raised through [scope], and
-      [execute] raises it again when [scope] swallows it.
-    - What [scope] raises over a failing program is dropped, unless it is a
-      [Failure.Control], which replaces the failure of the program.
-    - What [scope] raises before it calls back, or after a passing program,
-      propagates as it is. *)
+    {b The record.} The record is a table with one header row: [#], the call's
+    number among the calls that ran, then [reference before] when a row has a
+    cell, then [call]. A call reads [name a1 … an], [let v = name a1 … an] when
+    it made the value [v]. A drawn argument is its sample's rendering on one
+    line, cut at 200 bytes, in parentheses when it holds a space or starts with
+    [-]. An abstract argument is its value's name. A [reference before] cell
+    holds the printed reference sides of the call's abstract arguments whose
+    type has a [pp], joined by [", "] and cut at 60 code points. A [pp] that
+    raises costs its own cell, [<pp raised EXN>]. A record of more than 40 calls
+    prints its first and last 20. A record without calls prints [(no calls)]. *)
 
 (** {1:declaring Declaring} *)
 
@@ -191,39 +253,38 @@ val stateful :
   ?timeout:float ->
   ?count:int ->
   ?steps:int ->
-  ?pp_model:(Format.formatter -> 'model -> unit) ->
-  ?invariant:('model -> 'sut -> unit) ->
   string ->
-  model:'model ->
-  scope:(('sut -> unit) -> unit) ->
-  ('model, 'sut) command list ->
+  command list ->
   Test_tree.t
-(** [stateful name ~model ~scope commands] is the property test [name] over the
-    programs of [commands]. Its body is {!Run.property} over
-    [program ?steps ?pp_model ~model commands], with
-    [execute ?loc ?invariant ~scope] as its law and {!val-summary} as its
-    summary, then the judgement of the commands never called.
+(** [stateful name commands] is the property test [name] over the programs of
+    [commands]. Its body checks [commands] and [steps] as {!val-program} does,
+    then runs {!Run.property} over [program ?steps commands] with {!execute} as
+    its law and {!summary} as its summary, then judges the commands never
+    called.
     - [timeout] and [count] are {!Run.prop}'s, and so is [--prop-count].
-    - [steps] and [pp_model] are {!val-program}'s. [scope] and [invariant] are
-      {!execute}'s.
     - [__POS__] is the declaration site, resolved once at this call. It is the
-      site of the test and {!execute}'s [loc].
+      site of the test.
     - ["prop"] and ["stateful"] are always added to [tags].
 
-    {b Commands never called.} When {!Run.property} returns, every case has
-    passed. If at least one case passed, a command that no program of the run
-    called then fails the test with a [Failure.Check_failure] at the declaration
-    site, whose message names every such command in the order of [commands]:
-    [never called: "pop", "peek" (over 100 passing cases); a command is called
-     only where its ~pre holds]. A command is a value of [commands], compared
-    physically, so a command listed twice is one command, and two commands of
-    one name are two.
+    {b A broken reference.} {!execute} raises {!Property.Oracle_failure} for a
+    broken reference, so {!Property.run} shrinks a case that broke the reference
+    among the candidates that break it too, and rejects them in the search of a
+    case that failed otherwise.
 
-    It takes no [examples], since a program cannot be written by hand, no
-    [max_discard], the budget being {!Property.run}'s default, and no [retries],
-    since a second attempt would replay the same programs from the root seed.
+    {b Commands never called.} When {!Run.property} returns, every case has
+    passed. If at least one did, a command that some passing case's subset held
+    and that no passing case ran fails the test with a [Failure.Check_failure]
+    at the declaration site, whose message names every such command in the order
+    of [commands]:
+    [never called: "pop", "peek" (over 100 passing cases); a call runs only
+     where its arguments resolve and its ~pre holds]. A command is a value of
+    [commands], compared physically.
+
+    It takes no [examples], since a program is drawn, no [max_discard], the
+    budget being {!Property.run}'s default, and no [retries], since a second
+    attempt would replay the same programs from the root seed.
 
     Raises [Invalid_argument] if [timeout] is given and is not finite and
-    positive. An empty [commands] and a negative [steps] raise at the first
-    sample, inside the running test (see {!val-program}). With [~count:0] no
-    sample is drawn and nothing raises. *)
+    positive. The body raises [Invalid_argument], inside the running test and
+    before any case, under [~count:0] too, where {!val-program}'s sampling
+    would. *)

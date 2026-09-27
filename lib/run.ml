@@ -109,6 +109,7 @@ type result = {
 
 type t = {
   config : config;
+  domain : Domain.id; (* the domain that runs the tests *)
   capture : Capture.t;
   baselines : Baseline.t;
   fixtures : (int, fixture_state) Hashtbl.t; (* by accessor id *)
@@ -123,6 +124,7 @@ type t = {
 let create config ~capture ~baselines =
   {
     config;
+    domain = Domain.self ();
     capture;
     baselines;
     fixtures = Hashtbl.create 8;
@@ -202,17 +204,18 @@ let uncaught frame exn backtrace =
 (* The ambient slot *)
 
 (* The only reference to run state in the library: the run while [execute]
-   runs, and the frame of an attempt over it while one runs. *)
+   runs, and the frame of an attempt over it while one runs. It is atomic
+   because a domain that a test spawned reads it too. *)
 type context = In_test of frame | In_run of t
 
-let slot : context option ref = ref None
+let slot : context option Atomic.t = Atomic.make None
 
 let with_context context fn =
-  let previous = !slot in
-  slot := Some context;
-  Fun.protect ~finally:(fun () -> slot := previous) fn
+  let previous = Atomic.get slot in
+  Atomic.set slot (Some context);
+  Fun.protect ~finally:(fun () -> Atomic.set slot previous) fn
 
-let active () = Option.is_some !slot
+let active () = Option.is_some (Atomic.get slot)
 
 let active_run_error =
   "windtrap: a run is already executing; nothing inside it can start another \
@@ -223,8 +226,20 @@ let outside_run_error =
    or teardown, not at module top level, in a fixture's release or after the \
    run"
 
+let other_domain_error =
+  "a function that reads the running test was called from a domain other than \
+   the one running the tests; hand the result back to the test's domain"
+
+let on_run_domain run = (Domain.self () :> int) = (run.domain :> int)
+
+(* The frame belongs to the run's domain. Another domain gets the refusal
+   raised where it called, like any exception of its own. *)
 let current_frame () =
-  match !slot with
+  match Atomic.get slot with
+  | Some (In_test frame) when not (on_run_domain frame.run) ->
+      raise
+        (Failure.Check_failure
+           (Failure.message ?loc:(Loc.capture ()) other_domain_error))
   | Some (In_test frame) -> frame
   | Some (In_run _) | None -> invalid_arg outside_run_error
 
@@ -1074,7 +1089,7 @@ let interrupt ~on_event run ~started signal =
   Sys.set_signal Sys.sigalrm (Sys.Signal_handle ignore);
   set_alarm 0.;
   let frame =
-    match !slot with
+    match Atomic.get slot with
     | Some (In_test frame) -> Some frame
     | Some (In_run _) | None -> None
   in
@@ -1100,7 +1115,7 @@ let interrupt ~on_event run ~started signal =
 let with_interrupts ~interrupt run fn =
   let handle signal =
     let in_user_code =
-      match !slot with
+      match Atomic.get slot with
       | Some (In_test _) -> true
       | Some (In_run _) | None -> Option.is_some run.releasing
     in

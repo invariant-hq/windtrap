@@ -843,10 +843,11 @@ val prop :
 (** {2:discarding Discarding and labelling cases}
 
     {!assume}, {!reject}, {!collect}, {!classify} and {!cover} work in the law
-    of a {!prop}, and in the bodies and the invariant of a {!stateful} test.
-    There a discard drops the whole program and a label counts once per program.
-    {!assume} and {!reject} work too in a function given to a generator, where a
-    discard drops the case or the shrink candidate. *)
+    of a {!prop}. {!assume} and {!reject} work too in a function given to a
+    generator, where a discard drops the case or the shrink candidate. In a
+    {!stateful} test the labels work in a command's functions, a [~pre], an
+    invariant and a release, where a label counts once per case, and a discard
+    fails the case (see {{!section-stateful_tests}stateful tests}). *)
 
 val assume : bool -> unit
 (** [assume cond] discards the current case unless [cond] holds. A discarded
@@ -878,51 +879,213 @@ val cover : string -> bool -> unit
 
 (** {1:stateful_tests Stateful tests}
 
-    A stateful test checks generated sequences of calls on a system against a
-    model, a pure value that stands for the state of the system. A
-    {{!type:command}command} is one operation of the system. A program is a
-    sequence of calls, each legal in the model that the calls before it
-    produced. *)
+    A stateful test checks an API against a reference. The API is described
+    once, as a list of {{!type:command}commands}, each pairing the reference's
+    function with the system's under a {{!type:fn}signature}. {!stateful} draws
+    programs of calls, runs each call on both sides and fails when the system's
+    outcome is not the reference's. A model written for the test is a reference,
+    and so are another implementation, an older version and the system itself.
 
-type ('model, 'sut) command
-(** The type for operations on a system ['sut] modelled by ['model]. One list
-    holds commands whose arguments differ in type. *)
+    {[
+    module R = Set.Make (Int)
+
+    let set = abstract "s" ~invariant:(fun _ s -> is_true (Fast_set.balanced s))
+    let elt = Gen.int_range 0 15
+
+    let commands =
+      [
+        command "empty"
+          (Gen.unit @-> makes set)
+          (fun () -> R.empty)
+          (fun () -> Fast_set.empty);
+        command "add" (elt @-> set ^-> makes set) R.add Fast_set.add;
+        command "mem" (elt @-> set ^-> returns bool) R.mem Fast_set.mem;
+        command "elements"
+          (set ^-> returns (list int))
+          R.elements Fast_set.elements;
+      ]
+
+    let () = exit (run "fast_set" [ stateful "behaves like Set" commands ])
+    ]}
+
+    {b Drawing.} A program is drawn without running anything, and makes at most
+    [steps] calls. A command listed twice is drawn twice as often. A command is
+    drawn only when every abstract type it takes has a value that an earlier
+    call of the program makes. Each case draws from a subset of the commands
+    (swarm testing). The subset, the drawing of an abstract argument and the
+    order in which shrinking tries candidates are not part of the contract, so
+    the calls that a seed draws and the counterexample that shrinking reaches
+    can change between versions of windtrap, as every generator's draws can (see
+    {{!section-properties}Seeds}).
+
+    {b Values.} Only a call whose signature ends in {!makes} makes a value of an
+    {{!type:abstract}abstract type}, and values are never generated. A value
+    holds the reference's side and the system's. It is named by its type's
+    prefix and a count per prefix, in the order the calls ran: [s1], [s2]. Every
+    run starts with no value, so a system comes from a call. A module that keeps
+    global state, a counter or a registry, carries it from run to run and shares
+    it between the two sides when it is its own reference.
+
+    {b Legality.} A call's abstract arguments resolve, and its [~pre] is asked,
+    when the program runs, of the reference as the run left it. A call whose
+    arguments do not resolve or whose [~pre] fails is skipped on both sides and
+    is absent from the report. No call the reference forbids is made, and a
+    program with many preconditions makes fewer than [steps] calls.
+
+    {b A call} runs the system, then the reference, which judges the system's
+    outcome: under {!returns} and {!makes} the two outcomes compare, and under
+    {!chooses} the reference accepts one. Then the invariant of every abstract
+    type runs on each of its values. The first failure ends the program.
+
+    {b Outcomes.} An outcome is a result or a raised exception. Two results
+    compare under the signature's witness, which must be reflexive on every
+    result the API returns: under [float eps] no NaN equals itself, so a NaN
+    result takes {!float_exact}. Two exceptions are equal when their constructor
+    names match once the module path is removed, so [Stdlib.Queue.Empty] equals
+    [Ring.Empty]. Their payloads print and are not compared, unlike under
+    {!raises}. A result never equals an exception. To compare a payload, or tell
+    two modules' constructors apart, each side wraps its outcome into a result
+    and the signature ends in [returns (result w e)]. Normalising a result is
+    the witness's job: [slist int compare] for an order the API leaves open,
+    {!Testable.contramap} for part of a result, {!pass} to ignore one.
+
+    {b Never outcomes.} A verb's failure, [Assert_failure], [Match_failure] and
+    windtrap's controls are never compared.
+    - From a system function, a verb's failure or a broken contract fails the
+      case at that call, before the reference runs.
+    - From a reference function, it breaks the reference, and so does anything a
+      [~pre] raises. A case that broke the reference shrinks among the programs
+      that break it, and the search of any other failure rejects a candidate
+      that breaks it. From a {!chooses} reference a verb's failure or a broken
+      contract is the system's mismatch instead.
+    - {!assume} and {!reject} in either function fail the case, since a call's
+      legality is its [~pre]'s.
+    - A {!skip}, a timeout and an [exit] keep their meaning everywhere.
+
+    {b Labels.} {!collect}, {!classify} and {!cover} in a command's functions, a
+    [~pre], an invariant or a release count once per case, in the run that
+    executes it. Shrinking counts nothing.
+
+    {b The reference behaves the same from run to run}, since shrinking and
+    retries run it again. Drift comes from [Random], a [Hashtbl] whose order a
+    result or a [~pre] shows, [Weak] and [Ephemeron]. The system must behave the
+    same for a counterexample to shrink.
+
+    {b The report.} A failing case prints the program that its failing run
+    executed, as it ran, as a table of calls under a header row. A call reads
+    [name a1 … an], and [let v = name a1 … an] when it made the value [v]. A
+    drawn argument prints as its generator renders it, a printerless {!Gen.map}
+    or {!Gen.bind} as its pre-image, in parentheses when it holds a space or
+    starts with [-]. An abstract argument prints as its value's name. When an
+    argument's abstract type has [~pp], a [reference before] column shows the
+    reference side of such arguments before the call. The failing call is the
+    last row. Under the table it is named, as [call 3 of 3: push q1 0], above
+    the pair of its outcomes, the reference's as [expected], with its command's
+    location. A broken reference reads [reference of call 3 of 3: pop q1] above
+    its failure, and an invariant's failure [after call 3 of 3, on s2] above the
+    verb's lines. *)
+
+type ('r, 's) abstract
+(** The type for abstract types of an API, whose values only calls make. A value
+    holds the reference's side ['r] and the system's side ['s]. *)
+
+val abstract :
+  ?pp:'r printer ->
+  ?invariant:('r -> 's -> unit) ->
+  ?release:('s -> unit) ->
+  string ->
+  ('r, 's) abstract
+(** [abstract prefix] is a new abstract type whose values are named [prefix] and
+    a count, as [s1] and [s2] under [abstract "s"]. Two calls make two types.
+    - [pp] prints a reference side, in the report's [reference before] column.
+    - [invariant r s] runs after every call on the two sides of every value of
+      the type, and asserts with the verbs. Its failure fails the case.
+    - [release s] runs when a program ends, whether it passed, failed or was cut
+      short, once per physically distinct system side of the type that the
+      program made, newest first. Sides are told apart within the type only, so
+      a system side that two types hold is released by each. It must accept
+      every state the API can reach, a closed or consumed value included. A
+      release that fails over a passing program fails the case, and over a
+      failing program it is dropped. A fatal exception skips the releases, as it
+      skips a {!bracket}'s teardown.
+
+    Reference sides are never released, so a reference must hold nothing that
+    the GC does not reclaim, and a system that holds such a resource cannot be
+    its own reference.
+
+    {!stateful} raises [Invalid_argument], inside the test, if [prefix] is not a
+    lowercase OCaml identifier, if it ends with a digit, or if two abstract
+    types of its commands have it. *)
+
+type ('r, 's, 'p) fn
+(** The type for signatures: what a command's arguments are and how its outcome
+    is compared. ['r] is the type of the reference's function, ['s] the system's
+    and ['p] the precondition's, the reference's arguments to [bool].
+
+    A signature follows the functions' argument order, so
+    [Set.add : elt -> t -> t] takes [elt @-> set ^-> makes set] and no wrapper.
+    It has at least one argument, so an operation without one takes
+    [Gen.unit @-> …]. It ends in one result form, {!returns}, {!makes} or
+    {!chooses}, and the types keep a result form out of argument position. *)
+
+val ( @-> ) : 'a Gen.t -> ('r, 's, 'p) fn -> ('a -> 'r, 'a -> 's, 'a -> 'p) fn
+(** [gen @-> fn] takes an argument drawn from [gen], the same value on both
+    sides and in every run of the program, so neither side may mutate it. It
+    shrinks as [gen] does.
+
+    A generator that prints nothing, a {!Gen.constant} or a {!Gen.of_list}
+    without {!Gen.with_pp}, fails the test at its first draw:
+    [push: argument 2 has no printer; attach one with Gen.with_pp]. *)
+
+val ( ^-> ) :
+  ('ra, 'sa) abstract -> ('r, 's, 'p) fn -> ('ra -> 'r, 'sa -> 's, 'ra -> 'p) fn
+(** [t ^-> fn] takes a value of [t] that an earlier call made: its reference
+    side for the reference and [~pre], its system side for the system. It is
+    drawn as one of the earlier calls that make a value of [t], and takes the
+    value that call made. When that call made none, as when shrinking deleted
+    it, it takes the newest value of [t]. It shrinks toward the newest value,
+    and deleting other calls never moves it off the value its call made. *)
+
+val returns : 'a testable -> ('a, 'a, bool) fn
+(** [returns w] compares the two results under [w]. *)
+
+val makes : ('r, 's) abstract -> ('r, 's, bool) fn
+(** [makes t] keeps the two results as a new value of [t]. The value is made
+    when the system returns, so the report names it and [~release] releases it
+    even when the reference raised. When both sides raise an equal exception, no
+    value is made. *)
+
+val chooses : 'a testable -> (('a, exn) result -> 'a, 'a, bool) fn
+(** [chooses w] is for an outcome the API leaves open, such as the element that
+    a [take_any] returns. The reference receives the system's outcome, [Ok v] or
+    [Error e], as its last argument, and returns or raises the outcome it
+    accepts, updating its state to follow the choice. That outcome compares with
+    the system's as any outcome does, so an illegal choice prints as an
+    [expected] and [actual] pair. *)
+
+type command
+(** The type for commands: one operation of an API, on the reference and on the
+    system. One list holds commands of every signature. *)
 
 val command :
   ?__POS__:pos ->
-  ?pre:('model -> 'arg -> bool) ->
+  ?pre:('a -> 'p) ->
   string ->
-  'arg Gen.t ->
-  ?next:('model -> 'arg -> 'model) ->
-  ('model -> 'arg -> 'sut -> unit) ->
-  ('model, 'sut) command
-(** [command name gen body] is the operation [name], whose argument [gen] draws.
-    Every function takes the model first, then the argument.
-    - [pre m arg] is whether the call is legal in [m]. Defaults to always. The
-      call is generated only where [pre] holds.
-    - [next m arg] is the model after the call. Defaults to [m], the model
-      unchanged.
-    - [body m arg sut] calls the system and asserts with the verbs. [m] is the
-      model before the call.
-    - [__POS__] is the declaration site, which a failing call reports when its
-      assertion recorded no location.
-
-    No call the model forbids is ever made.
-
-    [pre] and [next] must be pure and ['model] persistent, because the model's
-    trajectory is computed again whenever a program is drawn, run or printed.
-
-    A [pre] or [next] that raises while a program is drawn fails the case
-    unshrunk. One that raises only on a shrink candidate stops the search. *)
-
-val call :
-  ?__POS__:pos ->
-  ?pre:('model -> bool) ->
-  string ->
-  ?next:('model -> 'model) ->
-  ('model -> 'sut -> unit) ->
-  ('model, 'sut) command
-(** [call name body] is {!val:command} for an operation without argument. *)
+  ('a -> 'r, 'b -> 's, 'a -> 'p) fn ->
+  ('a -> 'r) ->
+  ('b -> 's) ->
+  command
+(** [command name fn reference system] is the operation [name], whose
+    reference's function is [reference] and system's is [system], the expected
+    side first as in {!equal}.
+    - [pre] is whether a call is legal, given the reference's arguments, an
+      abstract argument as its reference side. It must not change them. Defaults
+      to a [pre] that always holds.
+    - [__POS__] is the location that a failing call reports when its failure
+      recorded none, as a mismatch records none. It defaults to a capture at
+      this call, never at the failure.
+    - [name] names the calls of the command in the report. Its newlines become
+      spaces. *)
 
 val stateful :
   ?__POS__:pos ->
@@ -930,63 +1093,33 @@ val stateful :
   ?timeout:float ->
   ?count:int ->
   ?steps:int ->
-  ?pp_model:'model printer ->
-  ?invariant:('model -> 'sut -> unit) ->
   string ->
-  model:'model ->
-  scope:(('sut -> unit) -> unit) ->
-  ('model, 'sut) command list ->
+  command list ->
   test
-(** [stateful name ~model ~scope commands] is a property test over the programs
-    of [commands], from the initial model [model]. Each case draws a program,
-    runs it against a fresh system, and checks every body and the invariant.
-    - [scope] provides the system (see below).
-    - [invariant m sut] runs on the fresh system before the first call and after
-      every call. The last assertion of an invariant is in tail position.
-      Without [~__POS__] its failure is located at the test's declaration.
+(** [stateful name commands] is a property test over the programs of [commands].
+    Each case draws a program, runs it from no value, and fails at the first
+    call whose outcomes differ.
     - [steps] is the most calls a program makes. Defaults to [20].
-    - [pp_model] adds a column to the printed program: the model before each
-      call.
-    - [count] and [timeout] are {!prop}'s. So are [--prop-count], the seed and
-      the bound on shrinking.
+    - [count] and [timeout] are {!prop}'s. So are [--prop-count], the seed, the
+      bound on shrinking and the [replay:] line.
 
-    A command listed twice is drawn more often than one listed once. Shrinking
-    removes calls and shrinks arguments. The calls that a seed draws and the
-    counterexample that shrinking reaches can change between versions of
-    windtrap, as every generator's draws can (see {{!section-properties}Seeds}).
+    Shrinking removes calls and shrinks arguments, and runs every candidate
+    again.
 
-    {b Commands never called.} When every case has passed, a command that no
-    passing program called fails the test with a message that starts
-    [never called: "pop" (over 100 passing cases)]. This is a demand on presence
-    over the whole run, like {!cover}'s, so a [count] or [steps] too small can
-    miss a command that is legal. When a command omits the [next] it needs and
-    no other command makes that change, every command whose [pre] waits for it
-    is never called. A command listed twice is one command. Under [~count:0]
-    nothing is judged.
-
-    {b The scope.} [scope] takes a callback, calls it once with a fresh system,
-    and releases the system whether the callback returns or raises. It runs once
-    per case and once per shrink candidate.
-
-    A scope that returns without calling back fails the case. A second call
-    raises [Invalid_argument]. What [scope] raises before calling back fails the
-    case, and a {!skip} there skips the test.
-
-    A program's failure is raised again through [scope], so a scope that
-    swallows it cannot pass the case. A release that raises over a failing
-    program is dropped and the counterexample stands, unless the release skips,
-    times out, exits or discards, which keeps its meaning. Over a passing
-    program it fails the case.
-
-    {b Warning.} A scope must make and remove its own files, under absolute
-    paths, and put process state back itself.
+    {b Commands never called.} When every case has passed, a command that a
+    passing case could draw and that no passing case ran fails the test with a
+    message that starts [never called: "pop" (over 100 passing cases)]. This is
+    a demand on presence over the whole run, like {!cover}'s, so a [count] or
+    [steps] too small can miss a legal command. A command listed twice is one
+    command. Under [~count:0] nothing is judged.
 
     A stateful test carries the tags ["prop"] and ["stateful"]. Like a {!prop},
     it inherits the [retries] of an enclosing group, and every retry replays the
-    same programs. The system must behave the same from run to run.
+    same programs.
 
-    Raises [Invalid_argument], inside the running test, if [commands] is empty
-    or if [steps] is negative. *)
+    Raises [Invalid_argument], inside the running test and before any case, if
+    [commands] is empty, if [steps] is negative, or if the prefixes of the
+    abstract types break the rules of {!val-abstract}. *)
 
 (** {1:baselines Baselines}
 
@@ -1103,9 +1236,13 @@ val output : unit -> string
     teardown. Each raises [Invalid_argument] when no test is running: at module
     top level, after the run, in the release of a fixture.
 
-    Tests run one at a time, in one domain, in declaration order, so the
-    environment and the working directory never race between tests. Nothing here
-    is thread-safe.
+    Tests run one at a time, in declaration order, on the domain that called
+    {!run}, so the environment and the working directory never race between
+    tests. Nothing here is thread-safe. Every function here, {!output}, the
+    {{!section-baselines}baseline} checks, {!collect}, {!classify}, {!cover} and
+    a {!fixture}'s accessor raise a failure when called from another domain,
+    which fails the running test when it reaches the test's domain, as through
+    [Domain.join].
 
     A directory, a binding or a working directory made here lasts until the
     attempt ends. Each attempt of a retried test starts without them, and all

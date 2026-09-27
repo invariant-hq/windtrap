@@ -105,7 +105,7 @@ val float_range : float -> float -> float t
 
 val unit : unit t
 (** [unit] generates [()], which has no candidates and prints as [()]. Drawing
-    it consumes no randomness. {!Stateful.call} relies on its [()]. *)
+    it consumes no randomness. *)
 
 val bool : bool t
 (** [bool] generates [true] or [false] with equal probability. [true] has one
@@ -368,7 +368,7 @@ module Engine : sig
   val sample : 'a t -> Seed.state -> 'a sample Shrink_tree.t
   (** [sample gen state] draws one value and its shrink tree from [state]. Only
       the root is drawn, and the candidates are generated and memoized when the
-      tree is traversed. The successor state is dropped, and {!run} returns it.
+      tree is traversed. The successor state is dropped, and {!draw} returns it.
 
       Raises [Failure.Control `Discard] on a discard at generation time,
       [Invalid_argument] on a malformed generator argument, and whatever a
@@ -384,6 +384,10 @@ module Engine : sig
         function builds for a candidate.
       - Whatever the [draw] of a {!make} raises.
       - A [Failure.Control (`Timeout _)] delivered in the meantime. *)
+
+  val draw : 'a t -> Seed.state -> 'a sample Shrink_tree.t * Seed.state
+  (** [draw gen state] is {!val-sample} of [gen] and [state], and the successor
+      state. Raises as {!val-sample} does. *)
 
   val value : 'a sample -> 'a
   (** [value sample] is the drawn value. *)
@@ -412,6 +416,10 @@ module Engine : sig
       [EXN] being the exception as [Failure.exn_to_string] prints it, a
       [Failure.Control] included. The guard is around the whole document, and
       only what [Failure.catch] never returns leaves it. *)
+
+  val prints : 'a sample -> bool
+  (** [prints sample] is [false] iff [sample] has nothing to print, so that
+      {!render} gives its placeholder. It formats nothing. *)
 
   val render_value : 'a t -> 'a -> string
   (** [render_value gen v] is [v] through [gen]'s printer, or {!render}'s

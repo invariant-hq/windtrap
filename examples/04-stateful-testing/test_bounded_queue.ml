@@ -1,45 +1,50 @@
 open Windtrap
 
-let capacity = 4
+module Model = struct
+  type t = { capacity : int; mutable items : int list }
+
+  let create capacity = { capacity; items = [] }
+  let size m = List.length m.items
+
+  let peek m =
+    match m.items with [] -> raise Bounded_queue.Empty | x :: _ -> x
+
+  let pop m =
+    let x = peek m in
+    m.items <- List.tl m.items;
+    x
+
+  let push m x =
+    if size m = m.capacity then raise Bounded_queue.Full;
+    m.items <- m.items @ [ x ];
+    cover "reached capacity" (size m = m.capacity)
+end
+
+let queue =
+  abstract "q" ~pp:(fun ppf m -> Testable.pp (list int) ppf m.Model.items)
 
 let commands =
   [
-    command "push" (Gen.int_range 0 9)
-      ~pre:(fun m _ -> List.length m < capacity)
-      ~next:(fun m x -> m @ [ x ])
-      (fun _ x q -> Bounded_queue.push q x);
-    call "pop"
-      ~pre:(fun m -> m <> [])
-      ~next:List.tl
-      (fun m q -> equal ~__POS__ int (List.hd m) (Bounded_queue.pop q));
-    call "peek"
-      ~pre:(fun m -> m <> [])
-      (fun m q -> equal ~__POS__ int (List.hd m) (Bounded_queue.peek q));
-    call "push when full"
-      ~pre:(fun m -> List.length m = capacity)
-      (fun _ q ->
-        raises ~__POS__ Bounded_queue.Full (fun () -> Bounded_queue.push q 0));
+    command "create"
+      (Gen.int_range 1 4 @-> makes queue)
+      Model.create Bounded_queue.create;
+    command "push"
+      (queue ^-> Gen.int_range 0 9 @-> returns unit)
+      Model.push Bounded_queue.push;
+    command "pop" (queue ^-> returns int) Model.pop Bounded_queue.pop;
+    command "peek" (queue ^-> returns int) Model.peek Bounded_queue.peek;
+    command "size" (queue ^-> returns int) Model.size Bounded_queue.size;
   ]
 
-let queue =
-  group "queue"
-    [
-      stateful "behaves like a list" ~model:[]
-        ~scope:(fun run -> run (Bounded_queue.create capacity))
-        ~pp_model:(Testable.pp (list int))
-        ~invariant:(fun m q ->
-          cover "reached capacity" (List.length m = capacity);
-          equal ~__POS__ int (List.length m) (Bounded_queue.size q))
-        commands;
-    ]
+let queues = group "queue" [ stateful "behaves like a list" commands ]
 
 let regressions =
   group "regressions"
     [
       test "a full queue refuses a push" (fun () ->
-          let q = Bounded_queue.create capacity in
-          List.iter (Bounded_queue.push q) [ 0; 0; 0; 0 ];
+          let q = Bounded_queue.create 1 in
+          Bounded_queue.push q 0;
           raises ~__POS__ Bounded_queue.Full (fun () -> Bounded_queue.push q 0));
     ]
 
-let () = exit (run "bounded_queue" [ queue; regressions ])
+let () = exit (run "bounded_queue" [ queues; regressions ])

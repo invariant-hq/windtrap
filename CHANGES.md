@@ -11,10 +11,14 @@ problems, listed below.
 The main additions are stateful testing and mutation testing.
 
 - A stateful test generates sequences of calls and runs each call on the
-  system under test and on a pure model of its state. When a sequence
+  system under test and on a reference, a model written for the test or
+  another implementation. It fails at the first call where the system
+  does not return or raise what the reference does. When a sequence
   fails, windtrap removes calls and simplifies their arguments for as
   long as the sequence keeps failing, so the report shows a short
-  sequence that reproduces the bug. It follows the sequential mode of
+  sequence that reproduces the bug. It follows
+  [Monolith](https://gitlab.inria.fr/fpottier/monolith) and the
+  sequential mode of
   [qcheck-stm](https://github.com/ocaml-multicore/multicoretests).
 - Mutation testing makes small changes to the code under test, such as
   turning `<` into `<=` or `&&` into `||`, and reports each change that
@@ -29,7 +33,7 @@ Windtrap now runs five kinds of test:
   in any test with `expect`;
 - snapshot tests, now part of the expect API through `expect_file`;
 - property tests, as with [QCheck](https://github.com/c-cube/qcheck);
-- stateful tests, as with qcheck-stm.
+- stateful tests, as with qcheck-stm and Monolith.
 
 It measures a suite in two ways: coverage, as with
 [Bisect_ppx](https://github.com/aantron/bisect_ppx), and mutation
@@ -306,26 +310,54 @@ Each one is also listed under its area below.
 
 ### Stateful testing
 
-- `stateful name ~model ~scope commands` checks generated programs of
-  calls on a system against a pure model (see
+- `stateful name commands` runs generated programs of calls on a system
+  and on a reference, a model written for the test or another
+  implementation, which judges each outcome of the system, and fails at
+  the first call whose outcomes differ (see
   [Writing a stateful test](https://github.com/invariant-hq/windtrap/blob/main/doc/manual/stateful-testing.md#writing-a-stateful-test)).
-- `command name gen body` is an operation with an argument and
-  `call name body` one without; `?next` gives the model after the call,
-  the model unchanged by default, and `?pre` limits either to the models
-  where the call is legal.
-- `~scope` gives each program and each shrink candidate a fresh system,
-  and `?invariant m sut` runs on the fresh system and after every call.
+- `command name signature reference system` is one operation of the
+  API; a signature takes `g @-> …` for an argument drawn from `g`,
+  `t ^-> …` for a value of `t` that an earlier call made, and ends in
+  `returns w`, `makes t` or `chooses w`.
+- `abstract prefix` declares a type whose values only calls make, named
+  `q1`, `q2` under `abstract "q"`; `?pp` prints a value's reference side
+  in a failing program, `?invariant r s` runs on every value after every
+  call, and `?release s` releases a system side when a program ends (see
+  [Releasing what a program made](https://github.com/invariant-hq/windtrap/blob/main/doc/manual/stateful-testing.md#releasing-what-a-program-made)).
+- An exception is an outcome: two exceptions are equal when their
+  constructor names match without the module path, and their payloads
+  are not compared (see
+  [Checking the exceptions an operation raises](https://github.com/invariant-hq/windtrap/blob/main/doc/manual/stateful-testing.md#checking-the-exceptions-an-operation-raises)).
+- `chooses w` compares an outcome the API leaves open: the reference
+  receives the system's outcome and returns or raises the one it
+  accepts (see
+  [Checking an outcome the API leaves open](https://github.com/invariant-hq/windtrap/blob/main/doc/manual/stateful-testing.md#checking-an-outcome-the-api-leaves-open)).
+- `?pre` is asked of the reference's arguments when the program runs,
+  and a call it refuses is skipped on both sides and absent from the
+  report.
 - A stateful test runs `?count` programs (default 100) of at most
   `?steps` calls (default 20).
 - A failing program shrinks by removing calls and shrinking arguments,
-  and prints as a table of its calls, with the model before each under
-  `?pp_model`.
-- A `~pre` or `~next` that raises while a program is drawn fails the
-  case, reported as `call 3: close, ~pre raised <exn>`.
+  and prints as a table of the calls its failing run executed, with the
+  reference side of each argument before the call when its type has a
+  `~pp` (see
+  [Reading a failing program](https://github.com/invariant-hq/windtrap/blob/main/doc/manual/stateful-testing.md#reading-a-failing-program)).
+- A verb's failure, `Assert_failure` or `Match_failure` is never an
+  outcome: in a system function it fails the case at that call, in a
+  reference function, like anything a `~pre` raises, it breaks the
+  reference, whose failure shrinks apart from the system's and prints as
+  `reference of call N of N` (`~pre of call N of N` for a `~pre`), and
+  in a `chooses` reference it is the system's mismatch (see
+  [Reading a failure of the model](https://github.com/invariant-hq/windtrap/blob/main/doc/manual/stateful-testing.md#reading-a-failure-of-the-model)).
+- `assume` or `reject` in a command fails the case with
+  `assume or reject in a command; a call's legality is its ~pre`.
+- A drawn argument whose generator has no printer fails the test with
+  `push: argument 2 has no printer; attach one with Gen.with_pp`.
 - A stateful test fails with
-  `never called: "pop" (over 100 passing cases)` when no passing program
-  calls a command, as when its `~pre` never holds; a command listed
-  twice is one command, and `~count:0` judges nothing (see
+  `never called: "pop" (over 100 passing cases); a call runs only where its arguments resolve and its ~pre holds`
+  when a command that a passing case could draw was called by none; a
+  command listed twice is one command, and `~count:0` judges nothing
+  (see
   [Writing a stateful test](https://github.com/invariant-hq/windtrap/blob/main/doc/manual/stateful-testing.md#writing-a-stateful-test)).
 
 ### Baselines and expect tests
@@ -542,6 +574,11 @@ Each one is also listed under its area below.
 - `WINDTRAP_VERBOSE`, `WINDTRAP_JUNIT`, `WINDTRAP_OUTPUT`,
   `WINDTRAP_SHARD` and `WINDTRAP_SLOW_THRESHOLD` are new mirrors.
 - `--help` lists each flag with its mirror.
+- `output`, `expect`, `expect_exact`, `expect_file`, `collect`,
+  `classify`, `cover`, a fixture's accessor and the functions of the
+  running test raise a failure when called from a domain other than the
+  one that called `run`, which fails the running test when it reaches
+  the test's domain, as through `Domain.join`.
 
 ### Coverage
 

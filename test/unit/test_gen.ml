@@ -2149,6 +2149,37 @@ let never_empty (Any (_, gen)) =
   in
   equal (list string) [] (List.filter (String.equal "") texts)
 
+(* [prints] says whether [render] gives the placeholder, and formats
+   nothing to say it. *)
+let prints_rows =
+  [
+    Any ("int", fun () -> Gen.int);
+    Any ("unit", fun () -> Gen.unit);
+    Any ("a printerless map, as its pre-image", fun () -> Gen.(map succ int));
+    Any ("with_pp over a constant", fun () -> Gen.(with_pp pp_n (constant 3)));
+    Any ("a raising printer", fun () -> raising Not_found);
+    Any ("constant", fun () -> Gen.constant 42);
+    Any ("of_list", fun () -> Gen.of_list [ 10; 20; 30 ]);
+    Any ("a map over a constant", fun () -> Gen.(map succ (constant 1)));
+  ]
+
+let prints_iff_rendered (Any (_, gen)) =
+  let tree = sample (gen ()) 0 in
+  equal bool
+    (not (String.equal placeholder (shown tree)))
+    (Gen_engine.prints (Shrink_tree.root tree))
+
+let prints_formats_nothing () =
+  let calls = ref 0 in
+  let counting ppf v =
+    incr calls;
+    Format.pp_print_int ppf v
+  in
+  let tree = sample (Gen.with_pp counting Gen.int) 0 in
+  let before = !calls in
+  is_true (Gen_engine.prints (Shrink_tree.root tree));
+  equal int before !calls
+
 let rendering =
   group "Rendering"
     [
@@ -2187,6 +2218,10 @@ let rendering =
           let text = Gen_engine.render_value Gen.(pair string (list int)) v in
           not_equal string "" text;
           not_equal string placeholder text);
+      cases "prints is false exactly where render gives the placeholder"
+        ~name:(fun (Any (n, _)) -> n)
+        prints_rows prints_iff_rendered;
+      test "prints formats nothing" prints_formats_nothing;
     ]
 
 (* Building generators *)
@@ -2206,6 +2241,18 @@ let building =
   group "Building generators"
     [
       test "make without pp gives every node nothing to print" unprinted;
+      test
+        "draw returns the tree that sample draws and the state that run returns"
+        (fun () ->
+          let gen = Gen.(list ~size:(int_range 0 4) small_int) in
+          let drawn i = Gen_engine.draw gen (state i) in
+          equal
+            (list (pair (list int) (list int64)))
+            (List.init 10 (fun i ->
+                 (value (sample gen i), words 3 (successor gen (state i)))))
+            (List.init 10 (fun i ->
+                 let tree, next = drawn i in
+                 (value tree, words 3 next))));
       test "run returns the values that sample draws" (fun () ->
           let gen = Gen.(list ~size:(int_range 0 4) small_int) in
           equal

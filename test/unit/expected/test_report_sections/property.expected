@@ -41,17 +41,19 @@
     replay: WINDTRAP_SEED=s1:7be1d2c904aa31f5 dune runtest
 
 === a summarized counterexample: the summary on the head, the table under it
-    counterexample (case 0, shrunk 2 steps): 2 calls, last: get
-       #  model before  call
-       1  0             inc 3
-       2  3             get
+    counterexample (case 0, shrunk 2 steps): 3 calls, last: get
+       #  reference before  call
+       1                    let c1 = create ()
+       2  0                 inc c1 3
+       3  3                 get c1
     replay: WINDTRAP_SEED=s1:7be1d2c904aa31f5 dune runtest
 
 === and only the table's header row is faint
-    counterexample (case 0, shrunk 2 steps): 2 calls, last: get
-      «d| #  model before  call»
-       1  0             inc 3
-       2  3             get
+    counterexample (case 0, shrunk 2 steps): 3 calls, last: get
+      «d| #  reference before  call»
+       1                    let c1 = create ()
+       2  0                 inc c1 3
+       3  3                 get c1
     replay: WINDTRAP_SEED=s1:7be1d2c904aa31f5 dune runtest
 
 === a timed-out search says so under the counterexample

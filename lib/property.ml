@@ -8,6 +8,10 @@
 let reject () = raise (Failure.Control `Discard)
 let assume condition = if not condition then reject ()
 
+(* Broken oracles *)
+
+exception Oracle_failure of Failure.t
+
 (* Labelling *)
 
 (* The bookkeeping of one run. A case runs on fresh [marks], which commit into
@@ -96,12 +100,16 @@ let stats ctx =
 let shrink_budget = 10_000
 let root_value tree = Gen.Engine.value (Gen.Engine.Shrink_tree.root tree)
 
-(* A failure is an assertion or any other exception, and the search keeps to
-   the class of the first. *)
-let same_class (a : Failure.fault) (b : Failure.fault) =
-  match (a, b) with
-  | `Assertion _, `Assertion _ | `Exception _, `Exception _ -> true
-  | `Assertion _, `Exception _ | `Exception _, `Assertion _ -> false
+(* A failure is an assertion, a broken oracle or any other exception, and
+   the search keeps to the class of the first. *)
+type failure_class = Assertion | Oracle | Other
+
+let failure_class : Failure.fault -> failure_class = function
+  | `Assertion _ -> Assertion
+  | `Exception (Oracle_failure _, _) -> Oracle
+  | `Exception _ -> Other
+
+let same_class a b = failure_class a = failure_class b
 
 (* The search terminates: [shrink_budget] bounds the runs of the law, and a
    node's candidates that run no law (a discarding re-generation, a filtered
@@ -146,7 +154,7 @@ let shrink law tree fault =
 let default_count = 100
 
 let inner_failure : Failure.fault -> Failure.t = function
-  | `Assertion failure -> failure
+  | `Assertion failure | `Exception (Oracle_failure failure, _) -> failure
   | `Exception (exn, backtrace) ->
       Failure.raised
         ~actual:(Failure.exn_to_string exn)

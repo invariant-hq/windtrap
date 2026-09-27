@@ -591,8 +591,11 @@ let property_entries () =
       "[2; 3] -> ([1.; 2.], [0.; 0.])"
   in
   let program =
-    prop ~summary:"2 calls, last: get" ~case:0 ~steps:2
-      " #  model before  call\n 1  0             inc 3\n 2  3             get"
+    prop ~summary:"3 calls, last: get" ~case:0 ~steps:2
+      " #  reference before  call\n\
+      \ 1                    let c1 = create ()\n\
+      \ 2  0                 inc c1 3\n\
+      \ 3  3                 get c1"
   in
   [
     ( "the counterexample with its case and steps, the inner failure at its \

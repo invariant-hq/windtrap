@@ -785,6 +785,7 @@ let search first candidate =
 let assertion what = Check.fail what
 let exception_ what = if what = "first" then raise Exit else raise Not_found
 let rejected = "fail, 0 cases, 0 discards; case 0, 1 steps, converged: 2; "
+let oracle what = raise (Property.Oracle_failure (Failure.message what))
 
 let candidates =
   [
@@ -809,6 +810,19 @@ let candidates =
     ( "an exception, then an assertion",
       (exception_, (fun () -> Check.fail "at 1"), rejected ^ "raise Not_found")
     );
+    ( "an assertion, then a broken oracle",
+      (assertion, (fun () -> oracle "at 1"), rejected ^ "message at 2") );
+    ( "an exception, then a broken oracle",
+      (exception_, (fun () -> oracle "at 1"), rejected ^ "raise Not_found") );
+    ( "a broken oracle, then an assertion",
+      (oracle, (fun () -> Check.fail "at 1"), rejected ^ "message at 2") );
+    ( "a broken oracle, then an exception",
+      (oracle, (fun () -> raise Exit), rejected ^ "message at 2") );
+    ( "a broken oracle, then another",
+      ( oracle,
+        (fun () -> oracle "at 1"),
+        "fail, 0 cases, 0 discards; case 0, 1 steps, converged: 1; message at 1"
+      ) );
     ( "an exception, then another exception",
       ( exception_,
         (fun () -> raise Not_found),

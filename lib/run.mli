@@ -7,8 +7,8 @@
     the running test and the runner.
 
     {!execute} runs the selected tests of a {!Test_tree.t} list under one
-    {!type-config}, one at a time and in one domain, and returns an
-    {!type-outcome}. {!list_selection} makes the same selection and runs
+    {!type-config}, one at a time and on the domain that called it, and returns
+    an {!type-outcome}. {!list_selection} makes the same selection and runs
     nothing. This module prints nothing. {!execute} gives its progress to an
     observer as {!type-event}s, and everything else is data of the outcome,
     which {!Report} renders.
@@ -17,7 +17,8 @@
     later run in the same process has its own, so it acquires its fixtures again
     and starts from an empty baseline registry. The operations of
     {{!section-body}the running test} reach the record through
-    {{!section-ambient}one ambient slot}. Nothing here is thread-safe. *)
+    {{!section-ambient}one ambient slot}. Nothing here is thread-safe, and an
+    operation called from another domain raises there (see {!current_frame}). *)
 
 (** {1:config Configuration} *)
 
@@ -200,7 +201,12 @@ val active_run_error : string
 
 val current_frame : unit -> frame
 (** [current_frame ()] is the frame of the attempt that is running. Raises
-    [Invalid_argument] if no test is running. *)
+    [Invalid_argument] if no test is running.
+
+    Called from a domain other than the one that called {!execute}, it raises a
+    [Failure.Check_failure], a message failure located by {!Loc.capture}, in
+    that domain, and records nothing. The failure fails the running test when it
+    reaches the test's domain, as through [Domain.join]. *)
 
 val current : unit -> t
 (** [current ()] is the record of the run that the frame of {!current_frame}
@@ -210,11 +216,11 @@ val current : unit -> t
 
     Operations on the test that is executing, in its setup, its body and its
     teardown. Each reads {!current_frame} before it changes anything, so it
-    raises that function's [Invalid_argument] when no test is running.
-    {!remove_tree} reads nothing, and for {!fixture} the operation is the
-    accessor. What an operation records on the frame lasts for the attempt, and
-    the runner undoes it when the attempt ends (see
-    {{!section-attempts}attempts}). *)
+    raises as that function does: [Invalid_argument] when no test is running,
+    and a refusal when called from another domain. {!remove_tree} reads nothing,
+    and for {!fixture} the operation is the accessor. What an operation records
+    on the frame lasts for the attempt, and the runner undoes it when the
+    attempt ends (see {{!section-attempts}attempts}). *)
 
 (* What a test's author is told about these operations, about [fixture] and
    about [prop] is stated in windtrap.mli. This file states what the other

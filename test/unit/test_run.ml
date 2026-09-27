@@ -411,21 +411,39 @@ let ambient_slot =
 
 (* Frames *)
 
+(* The reference labels each call by its drawn argument. *)
 let stateful_labels =
-  let labelled ~reach =
-    call "tick"
-      ~next:(fun model -> model + 1)
-      (fun model () ->
-        collect "ticked";
-        classify "past three" (model > 3);
-        cover "reached" (model >= reach))
-  in
   let labels name ~reach =
-    stateful ~count:10 ~steps:12 name ~model:0
-      ~scope:(fun run -> run ())
-      [ labelled ~reach ]
+    let tick x =
+      collect "ticked";
+      classify "past three" (x > 3);
+      cover "reached" (x >= reach)
+    in
+    stateful ~count:10 ~steps:12 name
+      [ command "tick" (Gen.int_range 0 9 @-> returns unit) tick ignore ]
   in
   Recorded.execute [ labels "labels" ~reach:5; labels "unreachable" ~reach:500 ]
+
+(* Each case makes three values, so each place labels it several times. *)
+let stateful_places =
+  let r =
+    abstract "r"
+      ~invariant:(fun () _ -> collect "invariant")
+      ~release:(fun _ -> collect "release")
+  in
+  let pre () =
+    collect "pre";
+    true
+  in
+  let system () =
+    collect "system";
+    ref ()
+  in
+  Recorded.execute
+    [
+      stateful ~count:10 ~steps:3 "places"
+        [ command "open" ~pre (Gen.unit @-> makes r) ignore system ];
+    ]
 
 let labels_counted r path =
   let s = require_some (stats r path) in
@@ -453,6 +471,12 @@ let an_unmet_demand_fails () =
     [ ("reached", false) ]
     (snd (labels_counted stateful_labels [ "unreachable" ]))
 
+let every_place_labels_its_case () =
+  equal
+    (list (pair string int))
+    [ ("invariant", 10); ("pre", 10); ("release", 10); ("system", 10) ]
+    (fst (labels_counted stateful_places [ "places" ]))
+
 let frames =
   group "Frames"
     [
@@ -461,10 +485,145 @@ let frames =
           is_none context);
       test "a law runs with the property context on its frame" (fun () ->
           equal (list bool) [ true ] law_contexts);
-      test "the body of a stateful command labels its program's case"
+      test "a stateful reference labels its program's case once"
         a_command_labels_its_case;
-      test "a demand from a stateful command that no case meets fails"
+      test "a demand from a stateful reference that no case meets fails"
         an_unmet_demand_fails;
+      test
+        "a stateful system function, pre, invariant and release label their \
+         program's case"
+        every_place_labels_its_case;
+    ]
+
+(* Refused callers *)
+
+let other_domain_error =
+  "a function that reads the running test was called from a domain other than \
+   the one running the tests; hand the result back to the test's domain"
+
+let reads () = ignore (Run.current_test ())
+
+let refused_operations =
+  let accessor = Run.fixture ignore in
+  [
+    ("current_test", reads);
+    ("subtest", fun () -> Run.subtest "s" ignore);
+    ("output", fun () -> ignore (output ()));
+    ( "check_baseline",
+      fun () -> Run.check_baseline (Baseline.File "x.expected") "x" );
+    ("temp_dir", fun () -> ignore (Run.temp_dir ()));
+    ("temp_file", fun () -> ignore (Run.temp_file ()));
+    ("setenv", fun () -> Run.setenv "WINDTRAP_TEST_REFUSED" (Some "x"));
+    ("chdir", fun () -> Run.chdir ".");
+    ("a fixture's accessor", accessor);
+    ("a label", fun () -> collect "x");
+  ]
+
+let swallowing () = try reads () with Failure.Check_failure _ -> ()
+
+(* The site of the refusal that another domain gets. *)
+let refusal_site () =
+  let refused () =
+    match reads () with
+    | () -> None
+    | exception Failure.Check_failure f -> Option.map Loc.to_string f.loc
+  in
+  starts_with ~affix:"test/unit/test_run.ml:"
+    (require_some (Domain.join (Domain.spawn refused)))
+
+(* A process that has spawned a domain can never fork again, and the
+   mutation loop forks every mutant from this one: the tests that spawn a
+   domain run in a forked child, which hands back their rows on a pipe. *)
+let in_fork fn =
+  if Sys.win32 then None
+  else begin
+    Format.pp_print_flush Format.std_formatter ();
+    Format.pp_print_flush Format.err_formatter ();
+    flush stdout;
+    flush stderr;
+    let read_fd, write_fd = Unix.pipe ~cloexec:true () in
+    match Unix.fork () with
+    | 0 ->
+        Unix.close read_fd;
+        let text = try fn () with e -> "raised " ^ Printexc.to_string e in
+        let oc = Unix.out_channel_of_descr write_fd in
+        output_string oc text;
+        close_out oc;
+        Unix._exit 0
+    | pid ->
+        Unix.close write_fd;
+        let ic = Unix.in_channel_of_descr read_fd in
+        let text = In_channel.input_all ic in
+        close_in ic;
+        ignore (Unix.waitpid [] pid);
+        Some text
+  end
+
+let spawning =
+  List.map
+    (fun (name, operation) ->
+      (name, fun () -> Domain.join (Domain.spawn operation)))
+    refused_operations
+  @ [
+      ("swallowed", fun () -> Domain.join (Domain.spawn swallowing));
+      ("located", refusal_site);
+      ( "untouched",
+        fun () ->
+          ignore (Domain.join (Domain.spawn (fun () -> Sys.opaque_identity 1)))
+      );
+      ("on the run's domain", reads);
+    ]
+
+(* Each test's row, then its failures, one line per test. The child's
+   scratch directory is removed before it leaves by [_exit]. *)
+let from_domains =
+  in_fork (fun () ->
+      let r =
+        Recorded.execute (List.map (fun (n, body) -> test n body) spawning)
+      in
+      let failed (f : Failure.t) =
+        match f.kind with
+        | Failure.Message m -> line f ^ ": " ^ m.kept
+        | _ -> line f
+      in
+      let row (name, _) =
+        String.concat "; "
+          ((name ^ " -> " ^ Recorded.row r [ name ])
+          :: List.map failed (Recorded.failures r [ name ]))
+      in
+      let rows = List.map row spawning in
+      Scratch.remove_tree (Filename.dirname (Recorded.log_dir r));
+      String.concat "\n" rows)
+
+let from_domain name =
+  match from_domains with
+  | None -> skip ~reason:"POSIX only: the domains run in a forked child" ()
+  | Some text ->
+      let prefix = name ^ " -> " in
+      require_some ~msg:text
+        (List.find_opt
+           (String.starts_with ~prefix)
+           (String.split_on_char '\n' text))
+
+let refused_by_domain = "fail body; body message: " ^ other_domain_error
+
+let refused_callers =
+  group "Refused callers"
+    [
+      cases
+        "an operation from another domain raises there, and fails the test \
+         when the join raises it again"
+        ~name:fst refused_operations (fun (name, _) ->
+          equal string (name ^ " -> " ^ refused_by_domain) (from_domain name));
+      test "the refusal is located at the call" (fun () ->
+          equal string "located -> pass" (from_domain "located"));
+      test "a domain that swallows its refusal leaves its test passing"
+        (fun () -> equal string "swallowed -> pass" (from_domain "swallowed"));
+      test "a domain that reads nothing leaves its test passing" (fun () ->
+          equal string "untouched -> pass" (from_domain "untouched"));
+      test "an operation on the run's domain is not refused" (fun () ->
+          equal string "on the run's domain -> pass"
+            (from_domain "on the run's domain"));
     ]
 
 (* The running test *)
@@ -3857,6 +4016,7 @@ let () =
          configuration;
          run_records;
          frames;
+         refused_callers;
          ambient_slot;
          the_running_test;
          temporary_paths;

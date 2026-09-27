@@ -18,10 +18,10 @@
     {b Laws.} A law returns [()] to pass and raises to fail. The engine calls
     it, the generator and the printers through [Failure.catch], and keeps
     {{!Failure.section-catching}its rule} as the owner of [`Discard]. A failure
-    is a [Failure.fault] of one of two classes, an assertion or any other
-    exception, and the shrink search keeps to the class of the first failure
-    (see {!run}). It runs the law again on candidates, so a law must be
-    deterministic.
+    is a [Failure.fault] of one of three classes, an assertion, a broken oracle
+    ({!Oracle_failure}) or any other exception, and the shrink search keeps to
+    the class of the first failure (see {!run}). It runs the law again on
+    candidates, so a law must be deterministic.
     - A [`Discard] discards the case.
     - A [`Timeout] while no case has failed, during an example, a generation or
       the first run of a case, ends the run in a [Fail] whose failure is a
@@ -42,6 +42,15 @@ val assume : bool -> unit
 
 val reject : unit -> 'a
 (** [reject ()] raises [Failure.Control `Discard]. *)
+
+(** {1:oracles Broken oracles} *)
+
+exception Oracle_failure of Failure.t
+(** Raised by a law whose oracle broke, with its failure. The oracle is the part
+    of the law that decides what the code under test must do, as the reference
+    of a stateful test. A broken oracle is a class of failure of its own, so the
+    shrink search of a case that raised it keeps to the candidates that raise
+    it, and the search of any other failure rejects them (see {!run}). *)
 
 (** {1:labelling Labelling}
 
@@ -197,9 +206,9 @@ val run :
     {b Shrinking.} A generated case that fails is shrunk by a search that
     descends the tree of its sample. At each node the search runs [law] on the
     candidates in order and moves to the first that fails in the class of the
-    first failure, either a [Failure.Check_failure] or any other exception. The
-    two failures need not be equal. A candidate that passes or raises a control
-    other than [`Timeout] is rejected.
+    first failure, a [Failure.Check_failure], an {!Oracle_failure} or any other
+    exception. The two failures need not be equal. A candidate that passes or
+    raises a control other than [`Timeout] is rejected.
 
     The search ends at a node with no accepted candidate, [Failure.Converged].
     It also ends when it has run [law] {!shrink_budget} times,

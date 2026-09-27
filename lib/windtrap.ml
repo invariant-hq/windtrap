@@ -96,10 +96,17 @@ let cover label cond = Property.cover (prop_context "cover") label cond
 
 (* Stateful tests *)
 
-type ('model, 'sut) command = ('model, 'sut) Stateful.command
+type ('r, 's) abstract = ('r, 's) Stateful.abstract
+type ('r, 's, 'p) fn = ('r, 's, 'p) Stateful.fn
+type command = Stateful.command
 
+let abstract = Stateful.abstract
+let ( @-> ) = Stateful.( @-> )
+let ( ^-> ) = Stateful.( ^-> )
+let returns = Stateful.returns
+let makes = Stateful.makes
+let chooses = Stateful.chooses
 let command = Stateful.command
-let call = Stateful.call
 
 (* Unlike [Run.prop], [Stateful.stateful] adds the ["prop"] tag itself. *)
 let stateful = Stateful.stateful

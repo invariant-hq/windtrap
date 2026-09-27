@@ -745,7 +745,8 @@ module Engine = struct
 
   type 'a sample = 'a node
 
-  let sample gen state = fst (gen.run state)
+  let draw gen state = gen.run state
+  let sample gen state = fst (draw gen state)
   let value = value
 
   type nonrec 'a rendering = 'a rendering = Value of 'a | Pre_image of 'a
@@ -764,6 +765,8 @@ module Engine = struct
     | None -> Value no_printer
     | Some (Value doc) -> Value (render_with pp_doc doc)
     | Some (Pre_image doc) -> Pre_image (render_with pp_doc doc)
+
+  let prints node = Option.is_some node.shown
 
   let render_value gen v =
     match gen.pp with Some pp -> render_with pp v | None -> no_printer

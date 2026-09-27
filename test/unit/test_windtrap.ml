@@ -241,13 +241,14 @@ let retried, drawn, called =
             prop ~count:5 "p" (Gen.int_range 0 1000) (fun x ->
                 drawn := x :: !drawn;
                 is_true (x < 0));
-            stateful ~count:3 ~steps:5 "s" ~model:0
-              ~scope:(fun k -> k (ref 0))
+            stateful ~count:3 ~steps:5 "s"
               [
-                command "add" (Gen.int_range 0 9) ~next:( + ) (fun _ x r ->
+                command "add"
+                  (Gen.int_range 0 9 @-> returns int)
+                  (fun x ->
                     called := x :: !called;
-                    r := !r + x;
-                    is_true (!r < 5));
+                    x)
+                  (fun x -> if x > 4 then x + 1 else x);
               ];
           ];
       ]
@@ -372,23 +373,27 @@ let properties =
 
 (* Stateful tests *)
 
+(* The system of [tick] fails its first call, whatever the seed, and the
+   system of [open] counts the values it makes. *)
 let programs, opened =
-  let scopes = ref 0 in
-  let counting k =
-    incr scopes;
-    k ()
+  let made = ref 0 in
+  let tick =
+    command "tick" (Gen.unit @-> returns unit) ignore (fun () -> is_true false)
   in
-  let tick = [ call "tick" ~next:succ (fun model () -> is_true (model < 2)) ] in
+  let opening =
+    command "open"
+      (Gen.unit @-> makes (abstract "r"))
+      ignore
+      (fun () -> incr made)
+  in
   let r =
     Recorded.execute
       [
-        stateful ~count:3 ~steps:3 "summary" ~model:0
-          ~scope:(fun k -> k ())
-          tick;
-        stateful ~count:0 "none" ~model:0 ~scope:counting tick;
+        stateful ~count:3 ~steps:3 "summary" [ tick ];
+        stateful ~count:0 "none" [ opening ];
       ]
   in
-  (r, !scopes)
+  (r, !made)
 
 let summary =
   require_match (fun (f : Failure.t) ->
@@ -400,7 +405,7 @@ let stateful_tests =
   group "Stateful tests"
     [
       test "a failing program's summary is the failure's" (fun () ->
-          equal string "3 calls, last: tick"
+          equal string "1 call, last: tick"
             (summary (failure programs [ "summary" ])));
       test "~count:0 draws no case and opens no system" (fun () ->
           equal (pair int int) (0, 0) ((stats programs [ "none" ]).cases, opened));
