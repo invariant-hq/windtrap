@@ -85,12 +85,9 @@ partition.
 
 The stale payload's partition above wrote its correction:
 
-  $ diff inline/stale.ml inline/stale.ml.corrected
-  8c8
-  <   [%expect {| stale payload |}]
-  ---
-  >   [%expect {| fresh output |}]
-  [1]
+  $ diff -U0 inline/stale.ml inline/stale.ml.corrected | grep '^[-+] '
+  -  [%expect {| stale payload |}]
+  +  [%expect {| fresh output |}]
   $ rm inline/stale.ml.corrected
 
 A source that the runner cannot read takes no correction, and the same
@@ -134,12 +131,9 @@ The correction holds the sanitized text, and a node that matched keeps
 its spelling:
 
   $ partition sanitized.ml
-  $ diff inline/sanitized.ml inline/sanitized.ml.corrected
-  18c18
-  <   [%expect {| stale |}];
-  ---
-  >   [%expect {| pid NNNN |}];
-  [1]
+  $ diff -U0 inline/sanitized.ml inline/sanitized.ml.corrected | grep '^[-+] '
+  -  [%expect {| stale |}];
+  +  [%expect {| pid NNNN |}];
 
 Output after a test's last node is checked as the payload of a node
 that is not there, and the correction appends that node, in a nested
@@ -157,26 +151,19 @@ withholds the correction:
     FAIL  Trailing › a body that raises checks nothing after it
   $ cat err
   windtrap: warning: dune registers a correction for promotion only when the run that wrote it exits 0, so the failures above withhold the correction written here. Fix the failures, rerun, then 'dune promote'.
-  $ diff inline/trailing.ml inline/trailing.ml.corrected
-  14c14,15
-  <   print_string "goodbye\n"
-  ---
-  >   print_string "goodbye\n";
-  >   [%expect {| goodbye |}]
-  18c19,23
-  <   print_endline "two"
-  ---
-  >   print_endline "two";
-  >   [%expect {|
-  >     one
-  >     two
-  >     |}]
-  27c32,33
-  <     print_string "inner"
-  ---
-  >     print_string "inner";
-  >     [%expect {| inner |}]
-  [1]
+  $ diff -U0 inline/trailing.ml inline/trailing.ml.corrected | grep '^[-+] '
+  -  print_string "goodbye\n"
+  +  print_string "goodbye\n";
+  +  [%expect {| goodbye |}]
+  -  print_endline "two"
+  +  print_endline "two";
+  +  [%expect {|
+  +    one
+  +    two
+  +    |}]
+  -    print_string "inner"
+  +    print_string "inner";
+  +    [%expect {| inner |}]
 
 A node that a run of its test never reaches fails the test when the
 body returns. The failure is located at the first such node and names

@@ -89,8 +89,8 @@ baselines and nothing else:
   [1]
   $ tail -1 again | scrub
   3 passed, 1 failed, 2 corrections accepted in DURATION.
-  $ diff suite_main.ml test/cram/run/suite_main.ml | grep '^[<>]'
-  <     test "stale literal" (fun () -> expect "fresh" @@ __POS_OF__ "stale");
-  >     test "stale literal" (fun () -> expect "fresh" @@ __POS_OF__ "fresh");
+  $ diff -U0 suite_main.ml test/cram/run/suite_main.ml | grep '^[-+] '
+  -    test "stale literal" (fun () -> expect "fresh" @@ __POS_OF__ "stale");
+  +    test "stale literal" (fun () -> expect "fresh" @@ __POS_OF__ "fresh");
   $ cat test/cram/run/accepts.expected
   fresh from the fixture
