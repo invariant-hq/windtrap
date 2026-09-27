@@ -603,23 +603,24 @@ let quad a b c d =
 
 (* Constants, choices and filters *)
 
-let constant value =
-  {
-    pp = None;
-    run = (fun state -> (Shrink_tree.leaf (unprintable value), state));
-  }
+(* A listed value renders with [pp] when one is given, as under [with_pp]. *)
+let listed ?pp value =
+  match pp with None -> unprintable value | Some pp -> printed pp value
 
-let of_list values =
+let constant ?pp value =
+  { pp; run = (fun state -> (Shrink_tree.leaf (listed ?pp value), state)) }
+
+let of_list ?pp values =
   let values = Array.of_list values in
   let count = Array.length values in
   {
-    pp = None;
+    pp;
     run =
       (fun state ->
         if count = 0 then invalid_arg "Gen.of_list: empty list";
         let index, state = Seed.below ~bound:(Int64.of_int count) state in
         ( tree_towards
-            (fun index -> unprintable values.(index))
+            (fun index -> listed ?pp values.(index))
             (int_towards 0) (Int64.to_int index),
           state ));
   }

@@ -977,13 +977,15 @@ module Gen : sig
 
   (** {1:choice Constants, choices and filters} *)
 
-  val constant : 'a -> 'a t
-  (** [constant v] generates [v], which does not shrink. *)
+  val constant : ?pp:(Format.formatter -> 'a -> unit) -> 'a -> 'a t
+  (** [constant ~pp v] generates [v], which does not shrink. [pp] prints it;
+      without it the value has no printer until {!with_pp} gives one. *)
 
-  val of_list : 'a list -> 'a t
-  (** [of_list values] generates an element of [values], each with equal
-      probability. It shrinks toward the head of [values]. Sampling raises
-      [Invalid_argument] if [values] is empty. *)
+  val of_list : ?pp:(Format.formatter -> 'a -> unit) -> 'a list -> 'a t
+  (** [of_list ~pp values] generates an element of [values], each with equal
+      probability. It shrinks toward the head of [values]. [pp] prints the
+      element; without it the element has no printer until {!with_pp} gives one.
+      Sampling raises [Invalid_argument] if [values] is empty. *)
 
   val one_of : 'a t list -> 'a t
   (** [one_of gens] generates with one generator of [gens], each with equal

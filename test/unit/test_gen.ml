@@ -392,6 +392,8 @@ let pure =
     Any
       ( "of_list",
         fun () -> Gen.(with_pp Format.pp_print_int (of_list [ 1; 2; 3 ])) );
+    Any
+      ("of_list ~pp", fun () -> Gen.of_list ~pp:Format.pp_print_int [ 1; 2; 3 ]);
     Any ("char_range", fun () -> Gen.char_range 'a' 'z');
     Any ("list ~size", fun () -> Gen.(list ~size:(int_range 0 6) nat));
     Any ("such_that", fun () -> Gen.(such_that even int));
@@ -957,6 +959,16 @@ let container_printers =
         (fun () -> Gen.list (printed_of_list ())),
         [ 10; 20 ],
         "[10; 20]" );
+    Printer
+      ( "list of an of_list ~pp",
+        (fun () -> Gen.list (Gen.of_list ~pp:Format.pp_print_int [ 10; 20 ])),
+        [ 20; 10 ],
+        "[20; 10]" );
+    Printer
+      ( "pair of a constant ~pp and nat",
+        (fun () -> Gen.(pair (constant ~pp:Format.pp_print_string "x") nat)),
+        ("x", 3),
+        "(x, 3)" );
     Printer
       ("pair unit nat", (fun () -> Gen.(pair unit nat)), ((), 3), "((), 3)");
     Printer

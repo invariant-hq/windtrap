@@ -80,7 +80,8 @@ its number of cases, and `--prop-count` sets it for the properties
 without one, 100 by default. `Gen` has a generator for each type that
 has a witness, under the same name, and composes them with `map`, `let+`
 and `one_of`. `Gen.with_pp` gives a generator the printer its
-counterexamples print with. Without one, a value that `map` or `let+`
+counterexamples print with, and `Gen.of_list ~pp` and `Gen.constant ~pp`
+take it with the values they list. Without one, a value that `map` or `let+`
 computed prints as what it was computed from, after `computed from`.
 
 `test/test_geo.ml`:

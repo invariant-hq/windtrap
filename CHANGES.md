@@ -252,6 +252,9 @@ Each one is also listed under its area below.
   `Gen.one_of`, `Gen.of_list` and `Gen.constant`; `Gen.list_size sg g`
   is `Gen.list ~size:sg g`, and `Gen.string_size sg cg` is
   `Gen.string_of ~size:sg cg`.
+- `Gen.of_list ~pp` and `Gen.constant ~pp` take the printer of the
+  values they list, so a list of chosen values prints without
+  `Gen.with_pp`.
 - (breaking) `Gen.sized` is removed; `Gen.bind Gen.nat f` replaces
   `Gen.sized f`.
 - (breaking) `( >>= )`, `( >|= )` and `Gen.ap` are removed; `let*`,

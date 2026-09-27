@@ -275,7 +275,8 @@ In `windtrap.mli`: Baselines, Captured output.
   in the generator; `assume` is for rare cases, since a property that
   discards too many gives up.
 - Give a generator of your type a printer with `Gen.with_pp`, the same
-  `pp` its witness uses. `cover "label" cond` fails the property when no
+  `pp` its witness uses; a list of chosen values takes it directly,
+  `Gen.of_list ~pp:Format.pp_print_int [ 0; max_int ]`. `cover "label" cond` fails the property when no
   passing case carries the label; use it for a case the law depends
   on.
 - A stateful test pairs, per operation, the reference's function with
