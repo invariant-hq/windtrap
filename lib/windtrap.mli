@@ -843,9 +843,9 @@ module Gen : sig
       generators of base types print OCaml expressions: literals, and
       [neg_infinity], [Uchar.of_int 0xE9] or [Bytes.of_string "…"] where no
       literal denotes the value. A container prints only when every component
-      prints; a choice prints as the generator that drew the value. {!constant}
-      and {!of_list} print only when given [~pp]. {!map}, {!bind} and the
-      binding operators have no printer.
+      prints; a choice prints as the generator that drew the value. {!constant},
+      {!of_list}, {!subsequence} and {!permutation} print only when given [~pp].
+      {!map}, {!bind} and the binding operators have no printer.
 
       A value that {!map} or {!bind} computed prints as its pre-image. The
       pre-image has the same shape, with each such value replaced by what it was
@@ -1030,6 +1030,22 @@ module Gen : sig
       probability. It shrinks toward the head of [values]. [pp] prints the
       element; without it the element has no printer until {!with_pp} gives one.
       Sampling raises [Invalid_argument] if [values] is empty. *)
+
+  val subsequence : ?pp:(Format.formatter -> 'a -> unit) -> 'a list -> 'a list t
+  (** [subsequence ~pp values] generates some elements of [values], not
+      necessarily adjacent, in their order in [values]. Its length is drawn as
+      [int_range 0 n] draws one, [n] being the length of [values], and every
+      choice of that many positions is equally likely. It shrinks by dropping
+      elements, toward [[]]. [pp] prints an element; without it the subsequence
+      has no printer until {!with_pp} gives one. *)
+
+  val permutation : ?pp:(Format.formatter -> 'a -> unit) -> 'a list -> 'a list t
+  (** [permutation ~pp values] generates [values] shuffled, every ordering
+      equally likely. It shrinks toward [values] as given: each candidate has
+      fewer pairs of elements out of their order in [values], and every swap of
+      two adjacent elements that are out of order is a candidate. [pp] prints an
+      element; without it the permutation has no printer until {!with_pp} gives
+      one. *)
 
   val one_of : 'a t list -> 'a t
   (** [one_of gens] generates with one generator of [gens], each with equal

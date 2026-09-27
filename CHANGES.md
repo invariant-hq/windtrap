@@ -35,6 +35,9 @@
   toward `-0.`, where 0.2.0 shrank it toward `0.`.
 - `Gen.any_float` generates `nan`, `infinity` and `neg_infinity` beside
   the finite floats.
+- `Gen.permutation ~pp values` generates `values` shuffled and shrinks
+  toward their given order, and `Gen.subsequence ~pp values` generates
+  some elements of `values` in their order and shrinks toward `[]`.
 
 ### Stateful testing
 

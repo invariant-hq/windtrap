@@ -1645,6 +1645,211 @@ let choices =
             [ {|"a"|}; {|"-"|} ]);
     ]
 
+(* Permutations and subsequences *)
+
+let one_to n = List.init n (fun i -> i + 1)
+
+(* The inversions of a list: its pairs out of increasing order. *)
+let rec inversions = function
+  | [] -> 0
+  | x :: rest ->
+      List.length (List.filter (fun y -> y < x) rest) + inversions rest
+
+(* The lists that swap two adjacent elements of [l] out of order. *)
+let adjacent_swaps l =
+  let a = Array.of_list l in
+  List.filter_map
+    (fun i ->
+      if a.(i) < a.(i + 1) then None
+      else
+        let b = Array.copy a in
+        b.(i) <- a.(i + 1);
+        b.(i + 1) <- a.(i);
+        Some (Array.to_list b))
+    (List.init (Int.max 0 (Array.length a - 1)) Fun.id)
+
+let rec increasing = function
+  | a :: (b :: _ as rest) -> a < b && increasing rest
+  | [ _ ] | [] -> true
+
+let pp_int = Format.pp_print_int
+let count_of ppf l = Format.pp_print_int ppf (List.length l)
+let inversions_of ppf l = Format.pp_print_int ppf (inversions l)
+
+let selection_kept =
+  [
+    Kept
+      ( "permutation (one_to 8), an ordering of its values",
+        (fun () -> Gen.permutation (one_to 8)),
+        fun _ l -> equal (list int) (one_to 8) (List.sort Int.compare l) );
+    Kept
+      ( "subsequence (one_to 20), its values in their order",
+        (fun () -> Gen.subsequence (one_to 20)),
+        fun _ l ->
+          satisfies ~claim:"increasing" (list int) increasing l;
+          List.iter (within int 1 20) l );
+  ]
+
+let fewer_inversions seed =
+  List.iter
+    (fun (parent, child) ->
+      less int ~than:(inversions parent) (inversions child))
+    (edges ~limit:300 (at_seed (Gen.permutation (one_to 8)) seed))
+
+let offers_every_swap seed =
+  List.iter
+    (fun (node, candidates) ->
+      List.iter
+        (fun swap -> mem (list int) swap candidates)
+        (adjacent_swaps node))
+    (visit ~limit:100
+       (fun tree -> (value tree, candidate_values tree))
+       (at_seed (Gen.permutation (one_to 8)) seed))
+
+(* The six orderings of three values, 1000 draws each on average. *)
+let orderings () =
+  let values = samples (Gen.permutation [ 1; 2; 3 ]) 6_000 in
+  let orders =
+    [
+      [ 1; 2; 3 ];
+      [ 1; 3; 2 ];
+      [ 2; 1; 3 ];
+      [ 2; 3; 1 ];
+      [ 3; 1; 2 ];
+      [ 3; 2; 1 ];
+    ]
+  in
+  equal
+    (list (float 0.02))
+    (List.map (fun _ -> 1. /. 6.) orders)
+    (List.map (fun o -> share values (( = ) o)) orders)
+
+(* [int_range 0 10] draws [0], [1] and [10] as corners, and each length of
+   the range. *)
+let subsequence_lengths () =
+  let lengths =
+    List.map List.length (samples (Gen.subsequence (one_to 10)) 4_000)
+  in
+  equal (list int) (List.init 11 Fun.id) (List.sort_uniq Int.compare lengths);
+  equal (float 0.3) 5. (float_of_int (List.fold_left ( + ) 0 lengths) /. 4_000.)
+
+(* The six choices of two positions among four, among the draws of length
+   2, which are a fifth of the uniform draws. *)
+let subsequence_choices () =
+  let pairs =
+    List.filter
+      (fun l -> List.length l = 2)
+      (samples (Gen.subsequence [ 1; 2; 3; 4 ]) 12_000)
+  in
+  let choices =
+    [ [ 1; 2 ]; [ 1; 3 ]; [ 1; 4 ]; [ 2; 3 ]; [ 2; 4 ]; [ 3; 4 ] ]
+  in
+  equal
+    (list (float 0.03))
+    (List.map (fun _ -> 1. /. 6.) choices)
+    (List.map (fun c -> share pairs (( = ) c)) choices)
+
+let ends_apart l = List.hd l > List.nth l (List.length l - 1)
+
+let rec before a b = function
+  | [] -> false
+  | x :: rest -> x = a || (x <> b && before a b rest)
+
+let collide l =
+  List.exists (fun a -> List.exists (fun b -> a < b && a mod 64 = b mod 64) l) l
+
+let selection_shrink =
+  [
+    Shrinks
+      ( "permutation, to the values as given",
+        (fun () -> Gen.permutation ~pp:pp_int (one_to 5)),
+        always,
+        "[1; 2; 3; 4; 5]" );
+    Shrinks
+      ( "subsequence, to []",
+        (fun () -> Gen.subsequence ~pp:pp_int (one_to 5)),
+        always,
+        "[]" );
+  ]
+
+let selection_literals =
+  [
+    Literal
+      ( "permutation ~pp",
+        (fun () -> Gen.permutation ~pp:pp_int (one_to 5)),
+        fun l -> "[" ^ ints l ^ "]" );
+    Literal
+      ( "subsequence ~pp",
+        (fun () -> Gen.subsequence ~pp:pp_int (one_to 6)),
+        fun l -> "[" ^ ints l ^ "]" );
+  ]
+
+let selections =
+  group "Permutations and subsequences"
+    [
+      group "every candidate is a selection of the values"
+        (List.map keeps selection_kept);
+      cases
+        "a selection from no value or one value draws it, with no candidates"
+        ~name:(fun (One (n, _, _, _)) -> n)
+        [
+          One ("permutation []", (fun () -> Gen.permutation []), list int, []);
+          One
+            ( "permutation [ 7 ]",
+              (fun () -> Gen.permutation [ 7 ]),
+              list int,
+              [ 7 ] );
+          One ("subsequence []", (fun () -> Gen.subsequence []), list int, []);
+        ]
+        draws_one;
+      test "permutation draws each ordering with equal probability" orderings;
+      prop "a permutation's candidates each have fewer inversions" ~count:30
+        Gen.int64 fewer_inversions;
+      prop
+        "a permutation's every node offers each swap of two adjacent elements \
+         out of order"
+        ~count:30 Gen.int64 offers_every_swap;
+      shrinks "a selection shrinks toward its values as given, or toward []"
+        selection_shrink;
+      test
+        "a search for a permutation of 8 with 5 before 3 stops at 2 inversions"
+        (fun () ->
+          equal string "2"
+            (shrinks_to ~failing:(before 5 3)
+               (Gen.with_pp inversions_of (Gen.permutation (one_to 8)))));
+      test
+        "a search for a permutation of 64 whose first element exceeds its last \
+         stops at 63 inversions, within the budget" (fun () ->
+          equal string "63"
+            (shrinks_to ~failing:ends_apart
+               (Gen.with_pp inversions_of (Gen.permutation (one_to 64)))));
+      test
+        "a search for a permutation of 100 whose first element exceeds its \
+         last stops at 99 inversions, within the budget" (fun () ->
+          equal string "99"
+            (shrinks_to ~failing:ends_apart
+               (Gen.with_pp inversions_of (Gen.permutation (one_to 100)))));
+      test "subsequence draws every length of int_range 0 n" subsequence_lengths;
+      test
+        "subsequence draws each choice of positions of a length with equal \
+         probability"
+        subsequence_choices;
+      test
+        "a search for a subsequence of 0..99 holding two keys equal modulo 64 \
+         stops at two keys" (fun () ->
+          equal string "2"
+            (shrinks_to ~failing:collide
+               (Gen.with_pp count_of (Gen.subsequence (List.init 100 Fun.id)))));
+      literals "a selection given ~pp prints as a list" selection_literals;
+      test "a selection without ~pp has no printer" (fun () ->
+          equal (list string)
+            [ placeholder; placeholder ]
+            [
+              shown (sample (Gen.permutation [ 1; 2 ]) 0);
+              shown (sample (Gen.subsequence [ 1; 2 ]) 0);
+            ]);
+    ]
+
 (* Composition *)
 
 let map_forcing () =
@@ -2550,6 +2755,7 @@ let () =
          base;
          containers;
          choices;
+         selections;
          composition;
          shrink_trees;
          rendering;

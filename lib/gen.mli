@@ -252,6 +252,28 @@ val of_list : ?pp:(Format.formatter -> 'a -> unit) -> 'a list -> 'a t
     {!constant}, there is no printer. Sampling raises [Invalid_argument] if
     [values] is empty. *)
 
+val subsequence : ?pp:(Format.formatter -> 'a -> unit) -> 'a list -> 'a list t
+(** [subsequence ~pp values] generates some elements of [values], not
+    necessarily adjacent, in their order in [values]. It draws a length as
+    [int_range 0 n] draws one, [n] being the length of [values], so [0], [1] and
+    [n] are corners, and every choice of positions of that length is equally
+    likely.
+
+    Its tree is {!Engine.Shrink_tree.list} over the kept elements, which have no
+    candidates: a candidate is a shorter subsequence, the empty list first. [pp]
+    prints an element, and a subsequence prints as [[a; b; c]]. Without it there
+    is no printer, as for {!of_list}. *)
+
+val permutation : ?pp:(Format.formatter -> 'a -> unit) -> 'a list -> 'a list t
+(** [permutation ~pp values] generates [values] shuffled: each ordering of its
+    positions is equally likely. Each candidate has fewer pairs of elements out
+    of their order in [values] than its parent, so the tree is finite and
+    shrinks toward [values] as given. Every swap of two adjacent elements that
+    are out of order is a candidate of every node. The order of the candidates
+    is not part of the contract. A candidate can equal its parent as a list when
+    [values] holds equal elements. [pp] prints an element, and a permutation
+    prints as [[a; b; c]]. Without it there is no printer, as for {!of_list}. *)
+
 val one_of : 'a t list -> 'a t
 (** [one_of gens] generates with one generator of [gens], each with equal
     probability. It draws an index, which shrinks toward [0]. A state is split

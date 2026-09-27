@@ -350,6 +350,38 @@ replay: dune exec examples/03-property-testing/test_geo.exe -- --seed s1:5b58964
 1 failed in 26ms.
 ```
 
+## Drawing from a list of generators
+
+`Gen.list` draws every element with one generator. A list with one
+value of each generator of a list, such as the arguments of a call
+drawn from its signature, is a fold of `let+` and `and+` from the
+right. Its elements shrink from the left, each with its own generator,
+and its length never changes. The fold has no printer, and
+`Gen.with_pp` gives it the printer of the witness the law compares it
+under. `Gen.permutation` and `Gen.subsequence` draw from a list of
+values instead: all of them in any order, or some of them in their
+order.
+
+```ocaml
+let each gens =
+  List.fold_right
+    (fun gen rest ->
+      Gen.(
+        let+ x = gen and+ xs = rest in
+        x :: xs))
+    gens (Gen.constant [])
+
+let circle = Gen.map (fun r -> Geo.Circle r) size
+
+let rect =
+  Gen.(
+    let+ w = size and+ h = size in
+    Geo.Rect (w, h))
+
+let circle_then_rect =
+  Gen.with_pp (Testable.pp (list shape)) (each [ circle; rect ])
+```
+
 ## Stating a textbook law
 
 `Law` states seventeen textbook laws by name, such as `Law.associative`

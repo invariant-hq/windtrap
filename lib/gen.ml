@@ -758,6 +758,143 @@ let of_list ?pp values =
           state ));
   }
 
+(* A list of listed values prints its elements with [pp], as [list] does. *)
+let listed_list ?pp values =
+  match pp with
+  | None -> unprintable values
+  | Some pp -> printed (pp_list pp) values
+
+(* The length is [int_range 0 n]'s draw. Selection sampling then keeps the
+   element at each position with probability [wanted / left], which makes
+   every choice of positions of that length equally likely and keeps their
+   order. The kept elements have no candidates, so a candidate drops some. *)
+let subsequence ?pp values =
+  let count = List.length values in
+  let length = int_range 0 count in
+  {
+    pp = Option.map pp_list pp;
+    run =
+      (fun state ->
+        let length_tree, state = length.run state in
+        let rec keep kept wanted left state = function
+          | v :: vs when wanted > 0 ->
+              let pick, state = Seed.below ~bound:(Int64.of_int left) state in
+              let kept, wanted =
+                if Int64.to_int pick < wanted then
+                  (Shrink_tree.leaf v :: kept, wanted - 1)
+                else (kept, wanted)
+              in
+              keep kept wanted (left - 1) state vs
+          | _ -> (List.rev kept, state)
+        in
+        let wanted = (Shrink_tree.root length_tree).value in
+        let kept, state = keep [] wanted count state values in
+        (Shrink_tree.map (listed_list ?pp) (Shrink_tree.list kept), state));
+  }
+
+(* A permutation is its Lehmer code: digit [k] is the index of the element
+   placed at [k] among those not yet placed, taken in their order in
+   [values]. It is below [n - k], so the last digit is [0]; each digit drawn
+   uniformly draws each ordering with equal probability. The sum of the
+   digits is the number of inversions, the pairs out of their order in
+   [values].
+
+   A candidate lowers one digit by the integer scheme, which places at [k] an
+   element that comes earlier in [values]; or moves one element left past
+   the two or more before it that come later in [values], which removes one
+   inversion per element passed; or swaps two adjacent elements out of
+   order, which removes one. The digits are lowered in one pass from the
+   left: a node reached by lowering digit [k] offers the digits from [k] on,
+   and a move or a swap keeps its parent's pass. A swap at [i] changes two
+   digits: the new digit [i] is the old digit [i + 1], and the new digit
+   [i + 1] the old digit [i] less one. A move from [i] to [j] places the
+   element's digit at [j], and each element it passes goes one place right
+   with its digit less one.
+
+   Lowering a digit reorders everything after it, so on a law that pins the
+   last element most lowered candidates pass; the moves spare such a search
+   sorting the rest one swap at a time. *)
+let permutation ?pp values =
+  let values = Array.of_list values in
+  let count = Array.length values in
+  (* The indices of [values] in the order that [code] places them. *)
+  let decode code =
+    let remaining = Array.init count Fun.id in
+    let order = Array.make count 0 in
+    for k = 0 to count - 1 do
+      let digit = code.(k) in
+      order.(k) <- remaining.(digit);
+      Array.blit remaining (digit + 1) remaining digit (count - k - 1 - digit)
+    done;
+    order
+  in
+  let rec node ~from code order =
+    let lowered k =
+      Seq.map
+        (fun digit ->
+          let code = Array.copy code in
+          code.(k) <- digit;
+          node ~from:k code (decode code))
+        (int_towards 0 code.(k))
+    in
+    let swapped i =
+      if order.(i) < order.(i + 1) then None
+      else
+        let code = Array.copy code and order = Array.copy order in
+        let digit = code.(i) and first = order.(i) in
+        code.(i) <- code.(i + 1);
+        code.(i + 1) <- digit - 1;
+        order.(i) <- order.(i + 1);
+        order.(i + 1) <- first;
+        Some (node ~from code order)
+    in
+    let moved i =
+      let element = order.(i) in
+      let rec start j =
+        if j > 0 && order.(j - 1) > element then start (j - 1) else j
+      in
+      let j = start i in
+      if i - j < 2 then None
+      else
+        let code = Array.copy code and order = Array.copy order in
+        let digit = code.(i) in
+        for k = i - 1 downto j do
+          code.(k + 1) <- code.(k) - 1;
+          order.(k + 1) <- order.(k)
+        done;
+        code.(j) <- digit;
+        order.(j) <- element;
+        Some (node ~from code order)
+    in
+    Shrink_tree.make
+      ~root:
+        (listed_list ?pp
+           (Array.fold_right (fun index vs -> values.(index) :: vs) order []))
+      ~children:
+        (Seq.append
+           (Seq.concat_map lowered (Seq.init (count - from) (( + ) from)))
+           (Seq.append
+              (Seq.filter_map moved (Seq.init count Fun.id))
+              (Seq.filter_map swapped (Seq.init (Int.max 0 (count - 1)) Fun.id))))
+  in
+  {
+    pp = Option.map pp_list pp;
+    run =
+      (fun state ->
+        let code = Array.make count 0 in
+        let rec draw k state =
+          if k >= count - 1 then state
+          else
+            let digit, state =
+              Seed.below ~bound:(Int64.of_int (count - k)) state
+            in
+            code.(k) <- Int64.to_int digit;
+            draw (k + 1) state
+        in
+        let state = draw 0 state in
+        (node ~from:0 code (decode code), state));
+  }
+
 (* Branches generate one type, so their printers are expected to agree; a
    sampled value still renders with the branch that drew it. *)
 let branches_pp = function
