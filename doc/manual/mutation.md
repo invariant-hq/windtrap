@@ -305,6 +305,19 @@ reproduce: dune exec --instrument-with ppx_windtrap.mutate ./test_calc.exe -- --
 mutants: 2 survived of 5 reached, 3 killed, 1 executable
 ```
 
+Only code that a suite's own process runs reaches a mutant. A binary
+that is not a suite, such as a command-line tool that a cram test or a
+dune rule runs or that a test starts as a child process, reaches none,
+even when it links the instrumented library. Mutants in code that only
+such a binary runs are listed as never reached when a suite links their
+module, and are missing from the reports when no suite links it.
+`WINDTRAP_MUTATE_ARM` arms a mutant in a suite, never in such a binary.
+[Coverage](coverage.md#where-the-dumps-are) does count that code, as
+each instrumented executable writes its own dump. A command-line tool
+can then be fully covered and have no mutant reached. To test those
+mutants, put the tool's entry point in the library, call it from a
+test, and check what it prints with `expect` or `expect_file`.
+
 ## Killing a survivor
 
 A survivor names a behaviour no test checks. To kill the two survivors

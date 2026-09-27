@@ -273,9 +273,11 @@ total: its `coverage` keyword with the regular expression
 A suite built by dune writes its dumps under `_build/_coverage`, in a
 directory of its own, one file per run. Every run keeps its dump, so a
 tool that a cram test runs several times is measured over every run.
-The first run of a rebuilt executable removes the dumps of its
-predecessors. When nothing a suite depends on has changed, dune does
-not run it again, and the report counts the dump of its last run.
+[Mutation testing](mutation.md#mutation-testing-a-project) does not
+count the runs of such a tool. The first run of a rebuilt executable
+removes the dumps of its predecessors. When nothing a suite depends on
+has changed, dune does not run it again, and the report counts the dump
+of its last run.
 
 An instrumented executable outside any build directory writes under
 `_windtrap/coverage` in its working directory, and `windtrap coverage`
