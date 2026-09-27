@@ -575,13 +575,31 @@ let screen ?workers ~loc commands =
     (fun ppf f -> Sections.pp_failure ~ansi:false ~hints:false ppf f)
     f
 
+(* The case that first loses an update, and the shrink steps that follow it,
+   depend on how the domains are scheduled; the counterexample they end on
+   does not. [unscheduled s] is [s] with the two counts replaced by [_]. *)
+let unscheduled s =
+  let open_ = "(case " in
+  let rec find i =
+    if i + String.length open_ > String.length s then s
+    else if String.sub s i (String.length open_) = open_ then
+      let close = String.index_from s i ')' in
+      String.sub s 0 i ^ "(case _, shrunk _ steps"
+      ^ String.sub s close (String.length s - close)
+    else find (i + 1)
+  in
+  find 0
+
 let lossy_screen () =
   with_pool 2 @@ fun workers ->
   expect_exact
-    (screen ~workers ~loc:("test/test_mpmc.ml", 21, 0, 10) (lossy_commands ()))
+    (unscheduled
+       (screen ~workers
+          ~loc:("test/test_mpmc.ml", 21, 0, 10)
+          (lossy_commands ())))
   @@ __POS_OF__
        {|    test/test_mpmc.ml:21
-    counterexample (case 3, shrunk 10 steps): 4 calls, 2 in parallel
+    counterexample (case _, shrunk _ steps): 4 calls, 2 in parallel
        #  domain  call                result
        1          let q1 = create ()
        2  1       push q1 0           ()
