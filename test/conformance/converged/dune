@@ -1,3 +1,8 @@
+; These runners copy the negative tests' corrected files under the same
+; module names, so they run as suite converged: under suite conformance their
+; capture logs would be the negative tests' own logs, which dune writes at the
+; same time.
+
 (rule
  (copy ../corpus/negative-tests/exact.ml.corrected.expected exact.ml))
 
@@ -89,7 +94,7 @@
    converged
    %{dep:converged_runner.exe}
    inline-test-runner
-   conformance)))
+   converged)))
 
 (rule
  (package ppx_windtrap)
@@ -132,7 +137,7 @@
    chdir
    %{dep:chdir_runner.exe}
    inline-test-runner
-   conformance)))
+   converged)))
 
 (rule
  (package ppx_windtrap)
@@ -183,7 +188,7 @@
    escaped_strings
    %{dep:escaped_strings_runner.exe}
    inline-test-runner
-   conformance)))
+   converged)))
 
 (rule
  (package ppx_windtrap)
