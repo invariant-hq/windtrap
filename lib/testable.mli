@@ -117,8 +117,9 @@ val nativeint : nativeint t
 
 val float_exact : float t
 (** [float_exact] compares floats bit for bit. It prints the shortest decimal
-    that round-trips to the value, [0.1 +. 0.2] as [0.30000000000000004]. Two
-    unequal floats never print alike. *)
+    that round-trips to the value, [0.1 +. 0.2] as [0.30000000000000004], and
+    the infinities and NaN as [infinity], [neg_infinity] and [nan]. Two unequal
+    floats never print alike. *)
 
 val float : float -> float t
 (** [float eps] compares with absolute tolerance [eps]. [a] and [b] are equal

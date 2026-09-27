@@ -495,7 +495,7 @@ let orders =
             "predicate, expected greater than 1.2, actual 1." );
           ( "at_least, nan",
             (fun () -> Check.at_least float_exact ~than:neg_infinity Float.nan),
-            "predicate, expected at least -inf, actual nan" );
+            "predicate, expected at least neg_infinity, actual nan" );
           ( "less, which reads no equality",
             (fun () -> Check.less ordered_explosive ~than:1 2),
             "predicate, expected less than 1, actual 2" );

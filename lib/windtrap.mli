@@ -734,7 +734,8 @@ val nativeint : nativeint testable
 
 val float_exact : float testable
 (** [float_exact] compares floats bit for bit. It prints the shortest decimal
-    that round-trips to the value. *)
+    that round-trips to the value, and the infinities and NaN as [infinity],
+    [neg_infinity] and [nan]. *)
 
 val float : float -> float testable
 (** [float eps] compares with absolute tolerance [eps]. [a] and [b] are equal

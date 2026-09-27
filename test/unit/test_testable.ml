@@ -319,6 +319,12 @@ let float_prints =
     ("float, a whole value", Prints (float 0.1, 1.0, "1."));
     ("float, past the sixth digit", Prints (float 1e-9, 1.0000001, "1.0000001"));
     ("float, nan", Prints (float 0.1, Float.nan, "nan"));
+    ("float, the negated nan", Prints (float 0.1, -.Float.nan, "nan"));
+    ("float, infinity", Prints (float 0.1, Float.infinity, "infinity"));
+    ( "float_rel, neg_infinity",
+      Prints (float_rel ~rel:0.1 ~abs:0.1, Float.neg_infinity, "neg_infinity")
+    );
+    ("float_exact, infinity", Prints (float_exact, Float.infinity, "infinity"));
     ("float_rel", Prints (float_rel ~rel:0.1 ~abs:0.1, 2.5, "2.5"));
     ( "float_rel, a large value",
       Prints (float_rel ~rel:1e-12 ~abs:0., 123456789.0, "123456789.") );
@@ -406,7 +412,9 @@ let floats =
         "float_rel holds when a = b, within abs, or within rel of the larger \
          magnitude, never on nan"
         ~name:fst rel_rows within_rel;
-      printings "a float witness prints the shortest decimal that round-trips"
+      printings
+        "a float witness prints the shortest decimal that round-trips, and the \
+         names of the others"
         float_prints;
       cases "float_exact prints two unequal floats apart" ~name:fst
         [ ("0.3 and 0.1 +. 0.2", (0.3, 0.1 +. 0.2)); ("0. and -0.", (0., -0.)) ]

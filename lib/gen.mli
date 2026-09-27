@@ -47,8 +47,9 @@ type 'a t
 
 (** {1:numeric Numbers}
 
-    The twelve generators print OCaml literals ([3], [3l], [3L], [3n]). A float
-    prints as the shortest decimal that round-trips.
+    The twelve generators print OCaml literals ([3], [3l], [3L], [3n]). A finite
+    float prints as the shortest decimal that round-trips, the others as
+    [infinity], [neg_infinity] and [nan].
 
     {!int}, {!int32}, {!int64}, {!nativeint} and their ranges draw a corner case
     with probability 0.1, each corner equally likely, and draw uniformly

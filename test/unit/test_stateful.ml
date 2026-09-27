@@ -1487,6 +1487,12 @@ let argument_rows =
     ( "a printerless map, as its pre-image",
       (fun () -> argument (Gen.map succ (Gen.int_range 4 4))),
       "f 4" );
+    ( "a negative float",
+      (fun () -> argument (Gen.float_range (-2.) (-2.))),
+      "f (-2.)" );
+    ( "neg_infinity, a name",
+      (fun () -> printed_as (Testable.pp float_exact) Float.neg_infinity),
+      "f neg_infinity" );
   ]
 
 let long_argument () =

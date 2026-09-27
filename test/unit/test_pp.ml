@@ -126,11 +126,20 @@ let printers =
           Prints ("-0.", Pp.float_exact, -0., "-0.");
           Prints ("1e300", Pp.float_exact, 1e300, "1e+300");
         ];
-      prints "float_exact formats nan, inf and -inf"
+      prints
+        "float_exact formats the infinities and every NaN as the Stdlib values \
+         that denote them"
         [
           Prints ("nan", Pp.float_exact, Float.nan, "nan");
-          Prints ("infinity", Pp.float_exact, Float.infinity, "inf");
-          Prints ("neg_infinity", Pp.float_exact, Float.neg_infinity, "-inf");
+          Prints ("the negated nan", Pp.float_exact, -.Float.nan, "nan");
+          Prints
+            ( "a signalling nan",
+              Pp.float_exact,
+              Int64.float_of_bits 0x7FF0000000000001L,
+              "nan" );
+          Prints ("infinity", Pp.float_exact, Float.infinity, "infinity");
+          Prints
+            ("neg_infinity", Pp.float_exact, Float.neg_infinity, "neg_infinity");
         ];
       prop "float_exact reads back to the same bits"
         ~examples:

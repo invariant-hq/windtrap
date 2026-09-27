@@ -78,8 +78,9 @@ val float_exact : float t
 (** [float_exact] formats a float as the shortest decimal that reads back to the
     same bits. A whole value keeps its point, and a rendering with an exponent
     gets none, so [1.] prints as [1.], [-0.] as [-0.] and [1e300] as [1e+300].
-    [Float.nan], [infinity] and [neg_infinity] print as [nan], [inf] and [-inf],
-    which are no OCaml expressions. *)
+    The values that no literal denotes print as the [Stdlib] values that do:
+    [infinity], [neg_infinity], and [nan] for every NaN, whatever its sign and
+    payload. *)
 
 val bool : bool t
 (** [bool] formats [true] and [false]. *)

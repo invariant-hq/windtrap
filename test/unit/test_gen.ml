@@ -2246,6 +2246,16 @@ let printers_rows =
               (with_pp Format.pp_print_int (of_list [ 10; 20; 30 ])))),
         (30, ()),
         placeholder );
+    Printer
+      ( "float, an example it never draws",
+        (fun () -> Gen.float),
+        Float.neg_infinity,
+        "neg_infinity" );
+    Printer
+      ( "float_range, an example it never draws",
+        (fun () -> Gen.float_range 0. 1.),
+        Float.nan,
+        "nan" );
     Printer ("constant", (fun () -> Gen.constant 42), 42, placeholder);
     Printer ("of_list", (fun () -> Gen.of_list [ 10; 20; 30 ]), 20, placeholder);
   ]

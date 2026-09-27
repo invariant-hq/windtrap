@@ -6,6 +6,9 @@
 
 - `uchar` is the witness for `Uchar.t`, printed in the Unicode notation,
   as `U+00E9`.
+- `float_exact`, `float eps`, `float_rel` and the float generators
+  print `infinity`, `neg_infinity` and `nan`, where 0.2.0 printed
+  `inf`, `-inf` and, under some C libraries, `-nan`.
 
 ### Property testing
 

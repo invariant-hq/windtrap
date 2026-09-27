@@ -37,14 +37,20 @@ let shortest fmt ~from f =
 (* No exponent, so a configured [0.00001] prints as typed. *)
 let decimal ppf f = string ppf (shortest "%.*f" ~from:0 f)
 
-(* [%g] drops the point on a whole value, and [1] is an int literal where a
-   reader pastes a float back, into [~examples] or a [let]. *)
+(* A reader pastes a float back, into [~examples] or a [let]. [%g] drops the
+   point on a whole value, and [1] is an int literal. It spells the
+   infinities [inf] and [-inf], and a negative NaN [-nan] under some C
+   libraries, none of which is an OCaml expression. *)
 let float_exact ppf f =
-  let s = shortest "%.*g" ~from:15 f in
-  let is_int_literal =
-    Float.is_finite f && not (String.exists (fun c -> c = '.' || c = 'e') s)
-  in
-  string ppf (if is_int_literal then s ^ "." else s)
+  match Float.classify_float f with
+  | FP_nan -> string ppf "nan"
+  | FP_infinite -> string ppf (if f > 0. then "infinity" else "neg_infinity")
+  | FP_normal | FP_subnormal | FP_zero ->
+      let s = shortest "%.*g" ~from:15 f in
+      let is_int_literal =
+        not (String.exists (fun c -> c = '.' || c = 'e') s)
+      in
+      string ppf (if is_int_literal then s ^ "." else s)
 
 let bool = Format.pp_print_bool
 let semi ppf () = pf ppf ";@ "
