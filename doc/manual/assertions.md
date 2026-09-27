@@ -176,9 +176,13 @@ A container witness takes the witnesses of its components, as in
 `list string`, `option item` or `pair string int`. For a type of your
 own, `Testable.make` builds the witness from a printer and an equality,
 and `Testable.with_compare` adds an order, which the ordering verbs
-need. `Windtrap.Testable` has the other constructors. A printer that
-shows less than the equality compares leaves nothing to diff, and the
-block then prints the one rendering under `both sides render as:`.
+need. `Windtrap.Testable` has the other constructors. `Law.equivalence`
+and `Law.order` check a witness's equality and order, and `Law` states
+the other textbook laws (see
+[Stating a textbook law](property-testing.md#stating-a-textbook-law)).
+A printer that shows less than the equality compares leaves nothing to
+diff, and the block then prints the one rendering under
+`both sides render as:`.
 
 `test/test_assertions.ml`:
 

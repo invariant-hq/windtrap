@@ -56,11 +56,11 @@ test "splits on commas" (fun () ->
 ### Property tests
 
 `prop` checks a law over values generated with `Gen`. A failing input is
-reduced to a smaller one that still fails.
+reduced to a smaller one that still fails. `Law` states textbook laws,
+such as an involution or a round trip, and a failure names each term.
 
 ```ocaml
-prop "rev is an involution" Gen.(list int) (fun l ->
-    equal (list int) l (List.rev (List.rev l)))
+prop "rev is an involution" Gen.(list int) (Law.involutive (list int) List.rev)
 ```
 
 ### Stateful tests

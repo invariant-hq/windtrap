@@ -8,8 +8,9 @@ of them. `dune runtest` builds and runs every example, and each passes.
   [Getting started](../doc/manual/getting-started.md).
 - `02-assertions`: `Shop`, a module of shopping carts, and one group per
   section of [Assertions](../doc/manual/assertions.md).
-- `03-property-testing`: `Geo`, a module of shapes, and properties over
-  a shape generator, for [Property testing](../doc/manual/property-testing.md).
+- `03-property-testing`: `Geo`, a module of shapes and drawings, and
+  properties over their generators, textbook laws included, for
+  [Property testing](../doc/manual/property-testing.md).
 - `04-stateful-testing`: `Bounded_queue` checked against a model, a
   list with the queue's capacity, and a failing program kept as a test,
   for

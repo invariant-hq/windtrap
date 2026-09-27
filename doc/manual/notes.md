@@ -48,6 +48,36 @@ code of its own. Witnesses compose like the types they describe, as
 a test is about. Generation lives in `Gen` and never in a witness, so a
 witness stays two functions and an order.
 
+## A law is an assertion
+
+A textbook law, such as associativity, is an assertion, and nothing in
+`Law` returns a test. `Law.associative w op` has the type of a
+property's body, so `prop` quantifies it, `cases` tabulates it and
+`test` applies it to one value. A law constructor would add a second
+kind of test, with a selection and a report of its own, for an equation
+that a verb states. A law's failure is a verb's failure, printed where
+any other is, and it names each term where `equal` prints two sides.
+
+A law gets a name when its statement recurs across libraries and its
+named terms read better than `equal`'s two sides. A law whose correct
+statement is easy to get wrong gets one too. Antisymmetry must be stated
+on signs and transitivity on `<=`, and `Law.order` states them so. Any
+other law stays an `equal`, which the manual spells. A bundle, such as
+the laws of a monoid, is one property per law, so a broken law never
+hides behind another's failure.
+
+Two values drawn from a rich generator are almost never equal, so a
+law that skipped the cases missing its premise would pass having tested
+nothing. A law therefore never skips a case. It builds its premise,
+with a respelling or by sorting its pair, or asserts it, as `preserves`
+does. Where cases are drawn, a law also demands, as `cover` does, a
+case that is not trivial. The values of a `cases` row or a `test` are
+chosen in view, and a law demands nothing of them.
+
+A law takes no tolerance, since its witness carries one. A witness's
+order must agree with its equality, and `float_exact` orders `-0.`
+below `0.` because its equality tells them apart.
+
 ## Generators shrink as they generate
 
 A generator draws a value together with the tree of its smaller

@@ -16,8 +16,8 @@ what is non-obvious.
   internals through `Windtrap.Private` (the re-export block that exists
   for them and for `bin/`; never named by user code). `test_ppx_runtime`
   pins `ppx/runtime` and `ppx/config`. `Run.execute` refuses to nest
-  inside a run, so `test_run`, `test_windtrap` and `test_ppx_runtime`
-  record their runs as they initialise, before their own run.
+  inside a run, so `test_run`, `test_windtrap`, `test_ppx_runtime` and
+  `test_law` record their runs as they initialise, before their own run.
   `render_fixtures.ml` is the synthetic run data the report suites
   render, and `gallery.ml` marks the escape sequences of the report
   galleries by their role. Address one suite by running it:
@@ -150,10 +150,10 @@ mutation loop forks from the test's process.
 
 `Recorded` makes a suite's `Run.execute` and `Run.list_selection` calls
 as it initialises, in a stated environment and with a scratch log
-directory, for `test_run` and `test_windtrap` to judge with windtrap's
-verbs. `drive/drive.exe` is the transcript driver of the conformance
-corpus's rules: it spawns a runner through `Child.run` (dune's
-`INSIDE_DUNE` passed through), masks what is measured rather than
+directory, for `test_run`, `test_windtrap` and `test_law` to judge with
+windtrap's verbs. `drive/drive.exe` is the transcript driver of the
+conformance corpus's rules: it spawns a runner through `Child.run`
+(dune's `INSIDE_DUNE` passed through), masks what is measured rather than
 computed, and records the standard output, then the standard error
 under a `--- stderr ---` line, and the exit code, each diffed against a
 golden. A diff rule needs its file even when the runner corrected

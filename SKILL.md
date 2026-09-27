@@ -36,7 +36,7 @@ Take the first row that fits the behaviour.
 
 | The code under test is | Write | Page |
 | --- | --- | --- |
-| A function with a law: round trip, invariant, agreement with a simpler function, algebraic identity | `prop` over a generator | [Property testing](https://github.com/invariant-hq/windtrap/blob/main/doc/manual/property-testing.md) |
+| A function with a law: round trip, invariant, agreement with a simpler function, algebraic identity | `prop` over a generator, with the `Law` verb when one names the law | [Property testing](https://github.com/invariant-hq/windtrap/blob/main/doc/manual/property-testing.md) |
 | A value with state across calls: container, cache, store, pool | `stateful` against a model or a simpler implementation | [Stateful testing](https://github.com/invariant-hq/windtrap/blob/main/doc/manual/stateful-testing.md) |
 | A function whose results the spec states for chosen inputs | `test` with `equal`, `cases` for a table of inputs | [Assertions](https://github.com/invariant-hq/windtrap/blob/main/doc/manual/assertions.md) |
 | Text too long to write by hand: help, report, pretty-printer output | `expect` or `expect_file`; `let%expect_test` inside a library | [Baselines and expect tests](https://github.com/invariant-hq/windtrap/blob/main/doc/manual/baselines.md) |
@@ -54,6 +54,8 @@ Within a test, pick the verb whose failure shows the data:
   continue with its payload.
 - `raises e f` for an exact exception, `raises_match` with an `Exn`
   predicate for a message you check in part.
+- A `Law` verb, such as `Law.round_trip` or `Law.associative`, for a
+  textbook law. Its failure names the law and prints each term.
 - `satisfies ~claim` only when no witness verb states the claim.
 
 Rules for every test:
@@ -238,7 +240,18 @@ Mechanics: [Baselines and expect tests](https://github.com/invariant-hq/windtrap
 - Laws to look for: decoding what was encoded, agreement with a slower
   or simpler function, an invariant after each operation, algebraic
   identities, a relation between two runs (scaling the input scales the
-  output), and "never raises" on any input.
+  output), and "never raises" on any input. `Law` has a verb for
+  seventeen textbook laws, and
+  [the manual's checklist](https://github.com/invariant-hq/windtrap/blob/main/doc/manual/property-testing.md#choosing-a-law-for-what-you-wrote)
+  maps what you wrote to them. Any other law is an `equal`, the trusted
+  side first.
+- A witness you build with `Testable.make` gets a property of
+  `Law.equivalence`, and of `Law.order` when it has an order. When a
+  value has several spellings, pass `~respell`, a function that returns
+  an equal value built differently. An equality that is always true
+  passes every `equal` that uses it.
+- A law's `never covered:` failure says no drawn case exercised the
+  law. Fix the generator, the respelling or the witness, never the law.
 - Draw sizes and indices from `Gen.nat` or `Gen.int_range 0 n`, and
   magnitudes from `Gen.small_int`, not the full range of `int`. A structural precondition (non-empty, sorted) belongs
   in the generator; `assume` is for rare cases, since a property that
