@@ -1297,6 +1297,9 @@ let in_fork fn =
         Some text
   end
 
+(* The timeout covers the whole body, the spawn of the workers included: it
+   must outlast that spawn on a loaded builder, or it fires before the call
+   starts, and the test then times out without a stuck call. *)
 let stuck =
   in_fork (fun () ->
       let block =
@@ -1308,7 +1311,7 @@ let stuck =
       let r =
         Recorded.execute
           [
-            Stateful.stateful ~steps:0 ~domains:2 ~count:1 ~timeout:0.2 "stuck"
+            Stateful.stateful ~steps:0 ~domains:2 ~count:1 ~timeout:1. "stuck"
               [ block ];
             test "after" ignore;
           ]
