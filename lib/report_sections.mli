@@ -110,6 +110,15 @@ val pp_failure :
     entry of the inner failure comes last. It is an entry as above, nested, with
     no blank line after its source line and no hint lines.
 
+    {b Law.} The head is the law's name, its clause in parentheses when it has
+    one, then [": "] and the equation. A row follows for each term, its name and
+    then its value, every value at the column two past the longest name. A
+    multi-line value prints under its name instead. The two sides print last, as
+    an equality's expected and actual sides do, under their own names and the
+    left side as the expected one. A failed term prints [<name> failed at:], or
+    [failed with:] when its failure has no location, then its entry nested as a
+    property's inner failure is.
+
     {b Bounds and escaping.} A single-line value, a needle and a source line
     included, prints whole up to 800 bytes ([max_value_bytes]). A longer one
     prints at most 400 bytes from each end around the number of bytes left out,

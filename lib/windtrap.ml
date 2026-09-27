@@ -33,6 +33,7 @@ let xfail = Test_tree.xfail
 (* [Check] is the assertion verbs, with the types [pos], [printer] and
    [testable] they take. *)
 include Check
+module Law = Law
 
 (* Inside a run the runner consumes a failure. One raised outside a run, at
    module top level or in a script, escapes uncaught and prints as its
@@ -81,8 +82,10 @@ let prop ?__POS__ ?tags ?timeout ?count ?max_discard ?examples name gen law =
 let assume = Property.assume
 let reject = Property.reject
 
+(* The frame refuses first, outside a test and on another domain. *)
 let prop_context op =
-  match Run.prop_context (Run.current_frame ()) with
+  let (_ : Run.frame) = Run.current_frame () in
+  match Run.prop_context () with
   | Some context -> context
   | None ->
       invalid_arg

@@ -64,6 +64,7 @@ let line (f : Failure.t) =
     | Failure.Baseline { state = Failure.Unresolvable _; _ } ->
         "unresolvable baseline"
     | Failure.Property _ -> "property"
+    | Failure.Law _ -> "law"
     | Failure.Equality _ -> "equality"
     | Failure.Containment _ -> "containment"
   in
@@ -314,11 +315,7 @@ let ambient, in_body, observed =
     observed := strf "active: %b, %s" (Run.active ()) frame :: !observed
   in
   let body () =
-    in_body :=
-      Some
-        ( Run.current (),
-          Run.current_test (),
-          Run.prop_context (Run.current_frame ()) )
+    in_body := Some (Run.current (), Run.current_test (), Run.prop_context ())
   in
   let r = Recorded.execute ~on_event:observe [ group "g" [ test "t" body ] ] in
   (r, !in_body, List.rev !observed)
@@ -468,9 +465,7 @@ let muted_labels =
 
 let law_contexts =
   let seen = ref [] in
-  let law _ =
-    seen := Option.is_some (Run.prop_context (Run.current_frame ())) :: !seen
-  in
+  let law _ = seen := Option.is_some (Run.prop_context ()) :: !seen in
   ignore (Recorded.execute [ Run.prop ~count:5 "reads its frame" gen law ]);
   List.sort_uniq Bool.compare !seen
 
@@ -558,34 +553,6 @@ let refusal_site () =
   starts_with ~affix:"test/unit/test_run.ml:"
     (require_some (Domain.join (Domain.spawn refused)))
 
-(* A process that has spawned a domain can never fork again, and the
-   mutation loop forks every mutant from this one: the tests that spawn a
-   domain run in a forked child, which hands back their rows on a pipe. *)
-let in_fork fn =
-  if Sys.win32 then None
-  else begin
-    Format.pp_print_flush Format.std_formatter ();
-    Format.pp_print_flush Format.err_formatter ();
-    flush stdout;
-    flush stderr;
-    let read_fd, write_fd = Unix.pipe ~cloexec:true () in
-    match Unix.fork () with
-    | 0 ->
-        Unix.close read_fd;
-        let text = try fn () with e -> "raised " ^ Printexc.to_string e in
-        let oc = Unix.out_channel_of_descr write_fd in
-        output_string oc text;
-        close_out oc;
-        Unix._exit 0
-    | pid ->
-        Unix.close write_fd;
-        let ic = Unix.in_channel_of_descr read_fd in
-        let text = In_channel.input_all ic in
-        close_in ic;
-        ignore (Unix.waitpid [] pid);
-        Some text
-  end
-
 let spawning =
   List.map
     (fun (name, operation) ->
@@ -601,10 +568,11 @@ let spawning =
       ("on the run's domain", reads);
     ]
 
-(* Each test's row, then its failures, one line per test. The child's
+(* The tests that spawn a domain run in a forked child, which hands back
+   each test's row, then its failures, one line per test. The child's
    scratch directory is removed before it leaves by [_exit]. *)
 let from_domains =
-  in_fork (fun () ->
+  Windtrap_test_support.Child.forked (fun () ->
       let r =
         Recorded.execute (List.map (fun (n, body) -> test n body) spawning)
       in

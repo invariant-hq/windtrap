@@ -313,6 +313,8 @@ let failing =
             Render_fixtures.snap_mismatch;
         ];
       Render_fixtures.subtest_result;
+      fail [ "laws"; "a law" ] [ Render_fixtures.law_failure ];
+      fail [ "laws"; "a failed term" ] [ Render_fixtures.law_term_failure ];
     ]
 
 let release_failures = [ Render_fixtures.release_failure ]
@@ -479,6 +481,26 @@ let first_tail () =
     (rows doc);
   equal (list string) [ "first tail\n" ] (texts "system-out" doc)
 
+let law_projection () =
+  let doc =
+    junit
+      [
+        fail [ "laws"; "a law" ] [ Render_fixtures.law_failure ];
+        fail [ "laws"; "a failed term" ] [ Render_fixtures.law_term_failure ];
+      ]
+  in
+  equal (list string)
+    [
+      "associative: op (op a b) c = op a (op b c)"; "round trip: g (f x) failed";
+    ]
+    (messages "failure" doc);
+  match texts "failure" doc with
+  | [ law; term ] ->
+      contains ~sub:"    op b c         -1\n    op (op a b) c  -4\n" law;
+      contains ~sub:"    g (f x) failed at:\n      test/test_version.ml:32\n"
+        term
+  | texts -> failf "%d failure texts" (List.length texts)
+
 let exe = `Exe "dune exec qa/x/t.exe --"
 let armed = "lib/a.ml:1:0:add"
 
@@ -526,6 +548,9 @@ let testcases =
         "a system-out follows the failures and holds the first captured tail, \
          a subtest's included"
         first_tail;
+      test
+        "a law's failure is its law and equation, and its text lists its terms"
+        law_projection;
     ]
 
 (* Subtests *)

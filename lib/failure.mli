@@ -198,12 +198,27 @@ type kind =
               never seeded or shrunk. *)
       rendering : rendering;
       inner : t option;
-          (** The failure of the law on the reported counterexample: the payload
-              of the {!Check_failure} or the {!Property.Oracle_failure} that the
-              law raised, or for any other exception a [Raise] failure with no
-              [expected], the exception as printed, its backtrace and no
-              location. A failure that {!Property.run} builds always has one. *)
+          (** The failure of the law on the reported counterexample, as
+              {!of_fault} makes it of what the law raised, or the payload of a
+              {!Property.Oracle_failure} that the law raised. A failure that
+              {!Property.run} builds always has one. *)
     }  (** A property failed. *)
+  | Law of {
+      law : string;
+      clause : string option;
+      equation : string;
+      terms : law_term list;
+    }
+      (** A law did not hold. [law] names it, as ["round trip"]. [clause] names
+          the part of it that failed when the law states several, as
+          ["agrees with equal"]. [equation] states that part over the names of
+          the terms, as ["g (f x) = x"].
+
+          [terms] are what the law was given and computed for the part, in the
+          order it computed them. A {!Failed} term ends the list, or else the
+          two {!Side}s of the equation do, or else a {!Term} whose value shows
+          the violation, as a [false] does. A term is listed once, so a value
+          that is a side is listed as a side only. *)
   | Timeout of { limit : float; case : timed_case option }
       (** The test's limit, in seconds, expired. [case] is the case of a
           property that was running then, when no case had failed before it, and
@@ -211,6 +226,19 @@ type kind =
   | Message of text
       (** A direct failure: the text of a [fail], or a failure that the library
           words itself, as it does an intercepted [exit]. *)
+
+(** The type for a term of a {!constructor-Law} failure. [name] spells the term
+    as the equation does, as ["f x"]. *)
+and law_term =
+  | Term of { name : string; value : text }
+      (** A value that the law was given or computed, printed by its witness. *)
+  | Side of { name : string; value : text }
+      (** A side of the equation, printed by the witness under which the two
+          sides are unequal. The left side comes first, and a renderer diffs the
+          pair as the [expected] and [actual] of an {!constructor-Equality}. *)
+  | Failed of { name : string; failure : t }
+      (** A term whose function failed or raised, which ended the law. [failure]
+          is what {!of_fault} makes of it. *)
 
 and timed_case = {
   case_index : int;
@@ -450,8 +478,26 @@ val timeout : ?loc:Loc.t -> ?case:timed_case -> float -> t
 (** [timeout ?case limit] is a {!constructor-Timeout} failure for [limit]
     seconds, in [case] when given. *)
 
+val law :
+  ?loc:Loc.t ->
+  ?msg:string ->
+  ?clause:string ->
+  law:string ->
+  equation:string ->
+  law_term list ->
+  t
+(** [law ~law ~equation terms] is a {!constructor-Law} failure with the fields
+    given. [clause] defaults to [None]. Nothing is validated, so the order of
+    [terms] that {!type-kind} states is the producer's to keep. *)
+
 val message : ?loc:Loc.t -> string -> t
 (** [message text] is a {!Message} failure that carries [text]. *)
+
+val of_fault : fault -> t
+(** [of_fault f] is the failure that [f] reports: the payload of an
+    [`Assertion], or for an [`Exception] a {!Raise} failure with no [expected],
+    the exception through {!exn_to_string}, its backtrace through
+    {!backtrace_to_string} and no location. *)
 
 (** {1:updating Updating} *)
 
@@ -466,8 +512,9 @@ val with_withheld : withheld -> t -> t
 (** [with_withheld why f] is [f] with its correction withheld for [why] when [f]
     is a {!constructor-Baseline} failure, in any state, and [f] otherwise. A
     failure already marked {!Refused} or {!Conflict} keeps that mark, because it
-    holds whatever the rest of the attempt does. It does not reach the [inner]
-    of a {!constructor-Property} failure. *)
+    holds whatever the rest of the attempt does. It does not reach a nested
+    failure: the [inner] of a {!constructor-Property} failure, or the failure of
+    a {!constructor-Law} failure's term. *)
 
 (** {1:tails Captured-output tails} *)
 

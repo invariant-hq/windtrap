@@ -178,11 +178,6 @@ type frame
     The runner makes a fresh frame for every attempt, so a retry starts from
     none of it. *)
 
-val prop_context : frame -> Property.context option
-(** [prop_context frame] is the label context of the law that is running (see
-    {!Property.context}), or [None] when no law is. An operation that labels a
-    case reads it, and the error on [None] is that operation's. *)
-
 (** {1:ambient The ambient slot}
 
     The slot is the one reference to run state in the library. It holds the run
@@ -222,6 +217,14 @@ val stop : unit -> unit
     when a call on another domain outlives the test's limit, since that domain
     would run the test's code inside the next test. Raises as {!current_frame}
     does. *)
+
+val prop_context : unit -> Property.context option
+(** [prop_context ()] is the label context of the law of a property that is
+    running (see {!Property.context}), when it is read on the domain that called
+    {!execute}, and [None] otherwise: outside a test, outside the law of a
+    property and on another domain. It never raises and records nothing. An
+    operation that labels a case reads {!current_frame} first, so that it
+    refuses as that function does, and the error on [None] is its own. *)
 
 (** {1:body The running test}
 
@@ -438,10 +441,9 @@ val prop :
     [prop] adds no tag, so a caller must add {!Test_tree.Tag.prop} to [tags].
 
     The engine draws from [config.seed] and from the path string of the test.
-    Its context is the {!prop_context} of the frame while [law] runs. A [Fail]
-    adds the {!Failure.Property} failure of the engine. [Coverage_failed] and
-    [Gave_up] each add a message failure, located at the declaration of the
-    test.
+    Its context is {!prop_context} while [law] runs. A [Fail] adds the
+    {!Failure.Property} failure of the engine. [Coverage_failed] and [Gave_up]
+    each add a message failure, located at the declaration of the test.
 
     Raises [Invalid_argument] as {!Test_tree.test} does. A negative [count] or
     [max_discard] makes {!Property.run} raise inside the body, which fails the

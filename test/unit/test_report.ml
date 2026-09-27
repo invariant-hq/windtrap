@@ -1515,6 +1515,21 @@ let annotation_rows =
           Fixtures.prop_failure,
         "%0A    replay: dune exec qa/x/t.exe -- --seed " ^ seed
         ^ " -f 'geo \u{203a} area non-negative'" ) );
+    ( "a law's annotation is at its site and titled by its test",
+      ( annotation ~path:[ "merge"; "associative" ] Fixtures.law_failure,
+        "file=test/test_merge.ml,line=12,title=Test failure%3A merge \u{203a} \
+         associative::" ) );
+    ( "and carries the law, its equation and its terms",
+      ( annotation ~path:[ "merge"; "associative" ] Fixtures.law_failure,
+        "::    test/test_merge.ml:12%0A    associative: op (op a b) c = op a \
+         (op b c)%0A    a              1%0A" ) );
+    ( "its sides last",
+      ( annotation ~path:[ "merge"; "associative" ] Fixtures.law_failure,
+        "%0A    op (op a b) c  -4%0A    op a (op b c)  2" ) );
+    ( "a failed term's entry nests in it",
+      ( annotation ~path:[ "version"; "of_string" ] Fixtures.law_term_failure,
+        "%0A    g (f x) failed at:%0A      test/test_version.ml:32%0A      \
+         expected  Some _%0A      actual    None" ) );
     ( "a compared value keeps its bytes, escaped",
       ( annotation
           (Failure.equality ~expected:"\027[32mgreen\027[0m" ~actual:"plain" ()),

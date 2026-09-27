@@ -36,6 +36,15 @@
  (libraries windtrap))
 
 (test
+ (name test_law)
+ (modules test_law)
+ (libraries windtrap recorded windtrap_test_support)
+ (action
+  (progn
+   (run %{test} --corrected)
+   (diff? test_law.ml test_law.ml.corrected))))
+
+(test
  (name test_baseline)
  (modules test_baseline)
  (libraries windtrap windtrap_test_support unix))
@@ -140,6 +149,9 @@
    (diff?
     expected/test_report_sections/equality.expected
     expected/test_report_sections/equality.expected.corrected)
+   (diff?
+    expected/test_report_sections/law.expected
+    expected/test_report_sections/law.expected.corrected)
    (diff?
     expected/test_report_sections/mutation.expected
     expected/test_report_sections/mutation.expected.corrected)

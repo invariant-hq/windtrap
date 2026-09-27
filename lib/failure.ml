@@ -82,8 +82,19 @@ type kind =
       rendering : rendering;
       inner : t option;
     }
+  | Law of {
+      law : string;
+      clause : string option;
+      equation : string;
+      terms : law_term list;
+    }
   | Timeout of { limit : float; case : timed_case option }
   | Message of text
+
+and law_term =
+  | Term of { name : string; value : text }
+  | Side of { name : string; value : text }
+  | Failed of { name : string; failure : t }
 
 and timed_case = {
   case_index : int;
@@ -339,8 +350,18 @@ let property ?loc ?inner ?count ?summary ~rendered ~case_index ~shrink_steps
          inner;
        })
 
+let law ?loc ?msg ?clause ~law ~equation terms =
+  make ?loc ?msg (Law { law; clause; equation; terms })
+
 let timeout ?loc ?case limit = make ?loc (Timeout { limit; case })
 let message ?loc s = make ?loc (Message (text s))
+
+let of_fault : fault -> t = function
+  | `Assertion failure -> failure
+  | `Exception (exn, backtrace) ->
+      raised ~actual:(exn_to_string exn)
+        ~backtrace:(backtrace_to_string backtrace)
+        ()
 
 (* Updating *)
 
@@ -351,7 +372,8 @@ let with_withheld withheld t =
   match t.kind with
   | Baseline { withheld = Some (Refused _ | Conflict); _ } -> t
   | Baseline b -> { t with kind = Baseline { b with withheld = Some withheld } }
-  | Equality _ | Containment _ | Raise _ | Property _ | Timeout _ | Message _ ->
+  | Equality _ | Containment _ | Raise _ | Property _ | Law _ | Timeout _
+  | Message _ ->
       t
 
 (* Captured-output tails *)

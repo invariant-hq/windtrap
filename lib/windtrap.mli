@@ -436,6 +436,228 @@ module Exn : sig
   (** [sys_error ?substring e] is {!invalid_arg} for [Sys_error m]. *)
 end
 
+(** {2:laws Laws}
+
+    A law is a verb that asserts a textbook equation about the functions it is
+    given. Its last argument is the value the equation is asserted on, a tuple
+    when there are several, as {!Gen.triple} draws one. Partially applied, it is
+    the law of a {!prop} and the function of a {!cases}; applied to a value, it
+    is a line of a {!val:test}.
+
+    A law returns when its equations hold. Otherwise it raises one failure that
+    names the law, states the equation that failed and prints every term
+    computed for it, the two sides last and diffed. A term whose function raises
+    or fails, {!require_some} included, fails the law.
+
+    A law never skips a case. It meets a premise by construction or asserts it.
+    [equivalence], [order], [partial_order], [idempotent], [involutive],
+    [monotone] and [ignores] could hold on every case for want of one that tests
+    them. Wherever {!cover} registers a demand, in the law of a {!prop} and in a
+    {!stateful} test, each also demands such a case, as {!cover} does, under a
+    label that starts with the law's name and ends with its [msg] when given.
+    Two calls of one law share their demands unless their [msg]s differ, and a
+    case of either meets them. Elsewhere, as in a {!val:test}, in a {!cases} row
+    or on another domain, a law demands nothing.
+
+    A law takes no tolerance; its witness carries one. A witness with a
+    tolerance is no equivalence, and float addition is not associative. *)
+module Law : sig
+  val equivalence :
+    ?__POS__:pos ->
+    ?msg:string ->
+    ?respell:('a -> 'a) ->
+    'a testable ->
+    'a * 'a ->
+    unit
+  (** [equivalence ?respell w (a, b)] asserts that [w]'s equality is reflexive
+      and symmetric on [a], [b]. [respell] ([r]) returns an equal value built
+      differently, [1.2.0] for [1.2]; it adds [a = r a] both ways,
+      [a = r (r a)], and [r a = b] iff [a = b]. Demands a case where [a] and [b]
+      are unequal and, given [r], one where [r a] differs structurally from [a].
+  *)
+
+  val order :
+    ?__POS__:pos ->
+    ?msg:string ->
+    ?respell:('a -> 'a) ->
+    'a testable ->
+    'a * 'a * 'a ->
+    unit
+  (** [order ?respell w (a, b, c)] asserts that [w]'s order [cmp] is total and
+      agrees with its equality: [cmp x x = 0]; [cmp x y] and [cmp y x] have
+      opposite signs or are both [0]; [cmp x y <= 0] and [cmp y z <= 0] imply
+      [cmp x z <= 0], over every ordering of the three; [cmp x y = 0] iff [x]
+      and [y] are equal. [respell] ([r]), as in {!equivalence}, adds
+      [cmp a (r a) = 0], the agreement over [a] and [r a], and [cmp (r a) b]
+      with the sign of [cmp a b]. Demands as {!equivalence}. Raises
+      [Invalid_argument] if [w] has no order. *)
+
+  val partial_order :
+    ?__POS__:pos ->
+    ?msg:string ->
+    'a testable ->
+    ('a -> 'a -> bool) ->
+    'a * 'a * 'a ->
+    unit
+  (** [partial_order w leq (a, b, c)] asserts that [leq] is reflexive on each
+      value, antisymmetric under [w]'s equality ([leq x y] and [leq y x] imply
+      [x = y]), and transitive over every ordering of the three. Demands a
+      strict chain: an ordering [x], [y], [z] of the three with [leq x y] and
+      [leq y z], no two of them equal. Independent draws rarely give one; draw
+      [b] and [c] from [a]. A preorder is a partial order under the witness
+      whose equality is [leq x y && leq y x]. *)
+
+  val associative :
+    ?__POS__:pos ->
+    ?msg:string ->
+    'a testable ->
+    ('a -> 'a -> 'a) ->
+    'a * 'a * 'a ->
+    unit
+  (** [associative w op (a, b, c)] asserts [op (op a b) c = op a (op b c)]. *)
+
+  val commutative :
+    ?__POS__:pos ->
+    ?msg:string ->
+    'a testable ->
+    ('a -> 'a -> 'a) ->
+    'a * 'a ->
+    unit
+  (** [commutative w op (a, b)] asserts [op a b = op b a]. *)
+
+  val neutral :
+    ?__POS__:pos ->
+    ?msg:string ->
+    'a testable ->
+    ('a -> 'a -> 'a) ->
+    'a ->
+    'a ->
+    unit
+  (** [neutral w op e x] asserts [op e x = x] and [op x e = x]. *)
+
+  val absorbing :
+    ?__POS__:pos ->
+    ?msg:string ->
+    'a testable ->
+    ('a -> 'a -> 'a) ->
+    'a ->
+    'a ->
+    unit
+  (** [absorbing w op z x] asserts [op z x = z] and [op x z = z]. *)
+
+  val invertible :
+    ?__POS__:pos ->
+    ?msg:string ->
+    'a testable ->
+    ('a -> 'a -> 'a) ->
+    'a ->
+    ('a -> 'a) ->
+    'a ->
+    unit
+  (** [invertible w op e inv x] asserts [op x (inv x) = e] and
+      [op (inv x) x = e]. [e] is the neutral element of [op], which {!neutral}
+      asserts. *)
+
+  val distributive :
+    ?__POS__:pos ->
+    ?msg:string ->
+    'a testable ->
+    ('a -> 'a -> 'a) ->
+    over:('a -> 'a -> 'a) ->
+    'a * 'a * 'a ->
+    unit
+  (** [distributive w op ~over (a, b, c)] asserts
+      [op a (over b c) = over (op a b) (op a c)] and
+      [op (over a b) c = over (op a c) (op b c)]. *)
+
+  val idempotent :
+    ?__POS__:pos -> ?msg:string -> 'a testable -> ('a -> 'a) -> 'a -> unit
+  (** [idempotent w f x] asserts [f (f x) = f x]. Demands a case where [f x]
+      differs structurally from [x]. *)
+
+  val involutive :
+    ?__POS__:pos -> ?msg:string -> 'a testable -> ('a -> 'a) -> 'a -> unit
+  (** [involutive w f x] asserts [f (f x) = x]. Demands a case where [f x]
+      differs structurally from [x]. *)
+
+  val commutes :
+    ?__POS__:pos ->
+    ?msg:string ->
+    'a testable ->
+    ('a -> 'a) ->
+    ('a -> 'a) ->
+    'a ->
+    unit
+  (** [commutes w f g x] asserts [f (g x) = g (f x)]. *)
+
+  val homomorphic :
+    ?__POS__:pos ->
+    ?msg:string ->
+    'a testable ->
+    'b testable ->
+    ('a -> 'b) ->
+    ('a -> 'a -> 'a) ->
+    ('b -> 'b -> 'b) ->
+    'a * 'a ->
+    unit
+  (** [homomorphic wa wb f op op' (a, b)] asserts [f (op a b) = op' (f a) (f b)]
+      under [wb]. *)
+
+  val round_trip :
+    ?__POS__:pos ->
+    ?msg:string ->
+    'a testable ->
+    'b testable ->
+    ('a -> 'b) ->
+    ('b -> 'a) ->
+    'a ->
+    unit
+  (** [round_trip wa wb f g x] asserts [g (f x) = x] under [wa]. A [g] that
+      returns an option or a result, composed with {!require_some} or
+      {!require_ok}, fails the law on [None] or [Error _]. From text to a value
+      and back, [round_trip string w decode encode s] asserts that [s] is
+      canonical. *)
+
+  val monotone :
+    ?__POS__:pos ->
+    ?msg:string ->
+    'a testable ->
+    'b testable ->
+    ('a -> 'b) ->
+    'a * 'a ->
+    unit
+  (** [monotone wa wb f (a, b)] sorts the pair by [wa] and asserts that [a <= b]
+      implies [f a <= f b] under the witnesses' orders. When [wa]'s order
+      returns [0] on [a] and [b], each is below the other, and [wb]'s order must
+      return [0] on [f a] and [f b]. Demands a strict pair, [a] below [b].
+      Raises [Invalid_argument] if [wa] or [wb] has no order. *)
+
+  val ignores :
+    ?__POS__:pos ->
+    ?msg:string ->
+    'a testable ->
+    'b testable ->
+    ('a -> 'b) ->
+    ('a -> 'a) ->
+    'a ->
+    unit
+  (** [ignores wa wb f g x] asserts [f (g x) = f x] under [wb]. Demands a case
+      where [g x] differs structurally from [x]. Hash consistency is
+      [ignores w int hash r], [r] a respelling as {!equivalence} takes. *)
+
+  val preserves :
+    ?__POS__:pos ->
+    ?msg:string ->
+    'a testable ->
+    ('a -> 'a) ->
+    ('a -> bool) ->
+    'a ->
+    unit
+  (** [preserves w f inv x] asserts [inv x], then [inv (f x)]. A false [inv x]
+      fails the law. The generator of a {!prop} must draw only values that
+      satisfy [inv]. *)
+end
+
 (** {2:ending Failing and skipping} *)
 
 val fail : ?__POS__:pos -> string -> 'a
@@ -497,8 +719,9 @@ val nativeint : nativeint testable
 
 (** {2:floats Floats}
 
-    The three witnesses order with [Float.compare], whatever the tolerance.
-    Under [float 0.5], [1.0] is below [1.2]. NaN is below every float.
+    The three witnesses order with [Float.compare], whatever the tolerance,
+    except that {!float_exact} puts [-0.] below [0.], as its equality tells them
+    apart. Under [float 0.5], [1.0] is below [1.2]. NaN is below every float.
 
     An infinity is equal only to an infinity of the same sign. Under {!float}
     and {!float_rel}, NaN is equal to nothing and [0.] equals [-0.]. Under

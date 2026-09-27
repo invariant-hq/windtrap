@@ -302,7 +302,8 @@ let failure_block t (r : Run.result) =
         | Failure.Baseline
             { state = Failure.Mismatch _ | Failure.Unresolvable _; _ }
         | Failure.Equality _ | Failure.Containment _ | Failure.Raise _
-        | Failure.Property _ | Failure.Timeout _ | Failure.Message _ ->
+        | Failure.Property _ | Failure.Law _ | Failure.Timeout _
+        | Failure.Message _ ->
             false)
       failures
   in

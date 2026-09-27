@@ -197,6 +197,24 @@ let headline_rows =
     ( "a property's timeout in a case",
       ( timed_case ~examples:false 7 7,
         "timed out after 0.5s in case 7 (7 passed)" ) );
+    ( "a law names itself, then its equation",
+      (Fixtures.law_failure, "associative: op (op a b) c = op a (op b c)") );
+    ( "a law's clause is in parentheses",
+      ( Failure.law ~clause:"agrees with equal" ~law:"order"
+          ~equation:"cmp a b = 0 iff a = b" [],
+        "order (agrees with equal): cmp a b = 0 iff a = b" ) );
+    ( "a law whose term failed names the term",
+      (Fixtures.law_term_failure, "round trip: g (f x) failed") );
+    ( "and its clause",
+      ( Failure.law ~clause:"respelled" ~law:"equivalence" ~equation:"a = r a"
+          [ Failure.Failed { name = "r a"; failure = Failure.message "boom" } ],
+        "equivalence (respelled): r a failed" ) );
+    ( "a law's user message leads",
+      ( with_msg "merge" Fixtures.law_failure,
+        "merge: associative: op (op a b) c = op a (op b c)" ) );
+    ( "a law's long equation is cut",
+      ( Failure.law ~law:"l" ~equation:(String.make 100 'x') [],
+        "l: " ^ String.make 77 'x' ^ "\u{2026}" ) );
     ("a message", (Failure.message "boom", "boom"));
     ( "an empty message is named",
       (Failure.message "", "(empty failure message)") );
@@ -637,6 +655,98 @@ let property_entries () =
     );
   ]
 
+let law_term name value = Failure.Term { name; value = Failure.text value }
+let law_side name value = Failure.Side { name; value = Failure.text value }
+
+let law ?clause ~equation name terms =
+  Failure.law ?clause ~law:name ~equation terms
+
+let law_entries () =
+  let associative = caught (fun () -> Law.associative int ( - ) (1, 2, 3)) in
+  let o_to_zero s = String.map (fun c -> if c = 'o' then '0' else c) s in
+  let marked =
+    caught (fun () ->
+        Law.round_trip string string Fun.id o_to_zero "the quick brown fox")
+  in
+  let lines =
+    caught (fun () ->
+        Law.commutative Testable.text (fun a b -> a ^ "\n" ^ b) ("a\nb", "c"))
+  in
+  let opaque =
+    Testable.make
+      ~pp:(fun ppf _ -> Format.pp_print_string ppf "<v>")
+      ~equal:( = )
+  in
+  let tied_mod10 =
+    Testable.with_compare (fun x y -> Int.compare (x mod 10) (y mod 10)) int
+  in
+  let head = String.make 65_536 'a' in
+  let uncaught =
+    Failure.raised ~actual:{|Failure("boom")|}
+      ~backtrace:"Raised at Version.pad in file \"lib/version.ml\", line 3" ()
+  in
+  [
+    ( "the law and its equation, a row per term at one column, the two sides \
+       last as an equality's",
+      entry associative );
+    ( "a clause in parentheses; a clause over booleans ends on the fact that \
+       breaks it",
+      entry (caught (fun () -> Law.order tied_mod10 (1, 11, 2))) );
+    ( "the column is two past the longest name, a side's included",
+      entry
+        (caught (fun () -> Law.distributive int ( + ) ~over:( * ) (1, 2, 3))) );
+    ("two single-line sides are marked under their names", entry marked);
+    ( "on a terminal, colour marks the changed spans and no ~ line prints",
+      entry ~ansi:true marked );
+    ( "under colour off a terminal, the ~ lines print too",
+      entry ~ansi:true ~terminal:false marked );
+    ( "a multi-line term prints under its name, multi-line sides diff under \
+       theirs",
+      entry lines );
+    ( "two sides a printer shows alike print once",
+      entry (caught (fun () -> Law.commutative opaque ( - ) (1, 2))) );
+    ( "two sides cut to the same kept bytes say what they agree on",
+      entry
+        (law ~equation:"f x = x" "idempotent"
+           [ law_side "f x" (head ^ "x"); law_side "x" (head ^ "y") ]) );
+    ( "two sides that differ by a final newline name the side that has it",
+      entry
+        (law ~equation:"f x = x" "idempotent"
+           [ law_side "f x" "a\nb"; law_side "x" "a\nb\n" ]) );
+    ( "a term over 800 bytes is elided",
+      entry
+        (law ~equation:"f (f x) = f x" "idempotent"
+           [
+             law_term "x" (String.make 900 'v');
+             law_side "f (f x)" "1";
+             law_side "f x" "2";
+           ]) );
+    ( "a failed term at a location: failed at, then its entry nested, its name \
+       outside the column",
+      entry { Fixtures.law_term_failure with loc = None } );
+    ( "a failed term without one: failed with",
+      entry
+        (law ~clause:"respelled" ~equation:"a = r a" "equivalence"
+           [
+             law_term "a" "1.2";
+             Failure.Failed { name = "r a"; failure = uncaught };
+           ]) );
+    ( "a ?msg prints above the law",
+      entry
+        (caught (fun () -> Law.neutral ~msg:"zero is neutral" int ( - ) 0 5)) );
+    ( "a law's failure is a property's inner failure",
+      entry
+        (Failure.property ~inner:associative ~rendered:"(1, 2, 3)" ~case_index:2
+           ~shrink_steps:6 ~root ~examples:false ()) );
+    ( "and a failed term nests inside it",
+      entry
+        (Failure.property
+           ~inner:{ Fixtures.law_term_failure with loc = None }
+           ~rendered:"0.0.0-a.1" ~case_index:0 ~shrink_steps:0 ~root
+           ~examples:false ()) );
+    ("under colour the names are faint", entry ~ansi:true associative);
+  ]
+
 (* Located failures of every kind, at one site. *)
 let declared = Fixtures.loc "test/test_users.ml" 88
 let located f = { f with Failure.loc = Some declared }
@@ -981,6 +1091,30 @@ let both_sides_cut () =
        the first 65536 of the 70003 bytes of actual)\n"
     b;
   not_contains ~sub:"trailing newline" b
+
+let law_sides_cut () =
+  let b =
+    entry
+      (Failure.law ~law:"idempotent" ~equation:"f (f x) = f x"
+         [
+           Side
+             {
+               name = "f (f x)";
+               value = Failure.text ("a\n" ^ String.make 70_000 'x');
+             };
+           Side
+             {
+               name = "f x";
+               value = Failure.text ("b\n" ^ String.make 70_001 'x');
+             };
+         ])
+  in
+  contains
+    ~sub:
+      "\n\
+      \    (the diff covers the first 65536 of the 70002 bytes of f (f x) and \
+       the first 65536 of the 70003 bytes of f x)\n"
+    b
 
 let head_window () =
   let b =
@@ -1506,6 +1640,8 @@ let failure_projections =
               gallery "baseline" (baseline_entries ()));
           test "property entries print as their gallery" (fun () ->
               gallery "property" (property_entries ()));
+          test "law entries print as their gallery" (fun () ->
+              gallery "law" (law_entries ()));
           test "an entry's lines print as their gallery" (fun () ->
               gallery "entry" (entry_entries ()));
           cases "on a terminal, colour replaces the ~ lines and nothing else"
@@ -1553,6 +1689,8 @@ let failure_projections =
               test "one cut side: a line after the hunks names the cut"
                 one_side_cut;
               test "two cut sides are both named" both_sides_cut;
+              test "a law's two cut sides are named as their terms"
+                law_sides_cut;
               test "a missing needle shows the haystack's first KiB" head_window;
               test "a found needle shows the whole stored window" found_window;
               test "the window of an element out of order is not cut"

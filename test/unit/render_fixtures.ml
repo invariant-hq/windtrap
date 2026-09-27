@@ -195,3 +195,36 @@ let results =
   ]
 
 let duration = 6.5
+
+(* A law's failure, its terms at one column and its two sides last, and one
+   that ended on a term whose function failed at a location of its own. *)
+let law_failure =
+  Failure.law
+    ~loc:(loc "test/test_merge.ml" 12)
+    ~law:"associative" ~equation:"op (op a b) c = op a (op b c)"
+    [
+      Failure.Term { name = "a"; value = Failure.text "1" };
+      Failure.Term { name = "b"; value = Failure.text "2" };
+      Failure.Term { name = "c"; value = Failure.text "3" };
+      Failure.Term { name = "op a b"; value = Failure.text "-1" };
+      Failure.Term { name = "op b c"; value = Failure.text "-1" };
+      Failure.Side { name = "op (op a b) c"; value = Failure.text "-4" };
+      Failure.Side { name = "op a (op b c)"; value = Failure.text "2" };
+    ]
+
+let law_term_failure =
+  Failure.law
+    ~loc:(loc "test/test_version.ml" 31)
+    ~law:"round trip" ~equation:"g (f x) = x"
+    [
+      Failure.Term { name = "x"; value = Failure.text "0.0.0-a.1" };
+      Failure.Term { name = "f x"; value = Failure.text {|"0.0.0-a.1"|} };
+      Failure.Failed
+        {
+          name = "g (f x)";
+          failure =
+            Failure.equality
+              ~loc:(loc "test/test_version.ml" 32)
+              ~expected:"Some _" ~actual:"None" ();
+        };
+    ]

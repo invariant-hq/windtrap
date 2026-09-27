@@ -181,8 +181,6 @@ let frame run (case : Test_tree.case) =
     cwd = None;
   }
 
-let prop_context frame = frame.prop
-
 (* A failure without a location was raised in tail position, past
    [Loc.capture]'s delimiter; it takes the declaration site. A nested failure,
    the [inner] of a property failure, keeps its own. *)
@@ -250,6 +248,13 @@ let current () = (current_frame ()).run
 let stop () =
   let frame = current_frame () in
   frame.run.stopped <- Some frame.path
+
+(* Where a label may be placed: in the law of a property, on the test's
+   domain. It raises and records nothing. *)
+let prop_context () =
+  match Atomic.get slot with
+  | Some (In_test frame) when on_run_domain frame.run -> frame.prop
+  | Some (In_test _ | In_run _) | None -> None
 
 (* The running test *)
 
@@ -989,15 +994,16 @@ let run_attempt frame (case : Test_tree.case) ~limit ~groups ~test_name =
 let is_baseline (failure : Failure.t) =
   match failure.kind with
   | Baseline _ -> true
-  | Equality _ | Containment _ | Raise _ | Property _ | Timeout _ | Message _ ->
+  | Equality _ | Containment _ | Raise _ | Property _ | Law _ | Timeout _
+  | Message _ ->
       false
 
 let carries_correction (failure : Failure.t) =
   match failure.kind with
   | Baseline { baseline = File _; state = Missing _; _ } -> false
   | Baseline { state = Missing _ | Mismatch _; withheld = None; _ } -> true
-  | Baseline _ | Equality _ | Containment _ | Raise _ | Property _ | Timeout _
-  | Message _ ->
+  | Baseline _ | Equality _ | Containment _ | Raise _ | Property _ | Law _
+  | Timeout _ | Message _ ->
       false
 
 (* The outcome of an attempt, whether each of its failures carries a kept

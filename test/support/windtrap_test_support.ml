@@ -123,4 +123,31 @@ module Child = struct
     | Unix.WEXITED code -> code
     | Unix.WSIGNALED _ | Unix.WSTOPPED _ ->
         invalid_arg "Child.exit_code: the child did not exit"
+
+  (* The buffers are flushed first, or the child would write the parent's
+     pending output a second time. *)
+  let forked fn =
+    if Sys.win32 then None
+    else begin
+      Format.pp_print_flush Format.std_formatter ();
+      Format.pp_print_flush Format.err_formatter ();
+      flush stdout;
+      flush stderr;
+      let read_fd, write_fd = Unix.pipe ~cloexec:true () in
+      match Unix.fork () with
+      | 0 ->
+          Unix.close read_fd;
+          let text = try fn () with e -> "raised " ^ Printexc.to_string e in
+          let oc = Unix.out_channel_of_descr write_fd in
+          output_string oc text;
+          close_out oc;
+          Unix._exit 0
+      | pid ->
+          Unix.close write_fd;
+          let ic = Unix.in_channel_of_descr read_fd in
+          let text = In_channel.input_all ic in
+          close_in ic;
+          ignore (Unix.waitpid [] pid);
+          Some text
+    end
 end

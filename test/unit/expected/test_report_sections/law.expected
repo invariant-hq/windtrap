@@ -1,0 +1,143 @@
+=== the law and its equation, a row per term at one column, the two sides last as an equality's
+    associative: op (op a b) c = op a (op b c)
+    a              1
+    b              2
+    c              3
+    op a b         -1
+    op b c         -1
+    op (op a b) c  -4
+    op a (op b c)  2
+
+=== a clause in parentheses; a clause over booleans ends on the fact that breaks it
+    order (agrees with equal): cmp a b = 0 iff a = b
+    a        1
+    b        11
+    cmp a b  0
+    a = b    false
+
+=== the column is two past the longest name, a side's included
+    distributive: op a (over b c) = over (op a b) (op a c)
+    a                       1
+    b                       2
+    c                       3
+    over b c                6
+    op a b                  3
+    op a c                  4
+    op a (over b c)         7
+    over (op a b) (op a c)  12
+
+=== two single-line sides are marked under their names
+    round trip: g (f x) = x
+    f x      "the quick brown fox"
+    g (f x)  "the quick br0wn f0x"
+                          ~    ~
+    x        "the quick brown fox"
+                          ~    ~
+
+=== on a terminal, colour marks the changed spans and no ~ line prints
+    round trip: g (f x) = x
+    «d|f x»      "the quick brown fox"
+    «d|g (f x)»  "the quick br«G|0»wn f«G|0»x"
+    «d|x»        "the quick br«R|o»wn f«R|o»x"
+
+=== under colour off a terminal, the ~ lines print too
+    round trip: g (f x) = x
+    «d|f x»      "the quick brown fox"
+    «d|g (f x)»  "the quick br«G|0»wn f«G|0»x"
+                          «G|~    ~»
+    «d|x»        "the quick br«R|o»wn f«R|o»x"
+                          «R|~    ~»
+
+=== a multi-line term prints under its name, multi-line sides diff under theirs
+    commutative: op a b = op b a
+    a:
+      a
+      b
+    b       c
+    --- op a b
+    +++ op b a
+    @@ -1,3 +1,3 @@
+    + c
+      a
+      b
+    - c
+
+=== two sides a printer shows alike print once
+    commutative: op a b = op b a
+    a       <v>
+    b       <v>
+    both sides render as: <v>
+    the printer shows less than the equality compares
+
+=== two sides cut to the same kept bytes say what they agree on
+    idempotent: f x = x
+    the sides agree on the 65536 bytes a failure keeps of each (f x 65537 bytes, x 65537 bytes)
+
+=== two sides that differ by a final newline name the side that has it
+    idempotent: f x = x
+    values differ only by a trailing newline (on the x side)
+
+=== a term over 800 bytes is elided
+    idempotent: f (f x) = f x
+    x        vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv… (100 bytes elided)vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv
+    f (f x)  1
+    f x      2
+
+=== a failed term at a location: failed at, then its entry nested, its name outside the column
+    round trip: g (f x) = x
+    x    0.0.0-a.1
+    f x  "0.0.0-a.1"
+    g (f x) failed at:
+      test/test_version.ml:32
+      expected  Some _
+      actual    None
+
+=== a failed term without one: failed with
+    equivalence (respelled): a = r a
+    a  1.2
+    r a failed with:
+      uncaught exception:
+        Failure("boom")
+      Raised at Version.pad in file "lib/version.ml", line 3
+
+=== a ?msg prints above the law
+    zero is neutral
+    neutral: op e x = x
+    e       0
+    op e x  -5
+    x       5
+
+=== a law's failure is a property's inner failure
+    counterexample (case 2, shrunk 6 steps): (1, 2, 3)
+    which failed with:
+      associative: op (op a b) c = op a (op b c)
+      a              1
+      b              2
+      c              3
+      op a b         -1
+      op b c         -1
+      op (op a b) c  -4
+      op a (op b c)  2
+    replay: WINDTRAP_SEED=s1:7be1d2c904aa31f5 dune runtest
+
+=== and a failed term nests inside it
+    counterexample (case 0): 0.0.0-a.1
+    which failed with:
+      round trip: g (f x) = x
+      x    0.0.0-a.1
+      f x  "0.0.0-a.1"
+      g (f x) failed at:
+        test/test_version.ml:32
+        expected  Some _
+        actual    None
+    replay: WINDTRAP_SEED=s1:7be1d2c904aa31f5 dune runtest
+
+=== under colour the names are faint
+    associative: op (op a b) c = op a (op b c)
+    «d|a»              1
+    «d|b»              2
+    «d|c»              3
+    «d|op a b»         -1
+    «d|op b c»         -1
+    «d|op (op a b) c»  «g|-4»
+    «d|op a (op b c)»  «r|2»

@@ -143,7 +143,10 @@ whole environment (`PATH`, `HOME`, the temporary directory variables,
 test gives), and `Child.run` keeps its standard output and standard
 error apart and gives it an empty standard input. A child started this
 way sees no `WINDTRAP_*`, `CI` or `GITHUB_ACTIONS` of the machine it
-runs on.
+runs on. `Child.forked fn` runs `fn` in a forked child and hands back
+the string it returns: a test that spawns a domain spawns it there,
+since a process that has spawned one can never fork again, and the
+mutation loop forks from the test's process.
 
 `Recorded` makes a suite's `Run.execute` and `Run.list_selection` calls
 as it initialises, in a stated environment and with a scratch log

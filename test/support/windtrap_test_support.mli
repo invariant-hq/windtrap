@@ -61,4 +61,13 @@ module Child : sig
   val exit_code : result -> int
   (** [exit_code r] is the code [r]'s child exited with. Raises
       [Invalid_argument] if it was killed or stopped by a signal. *)
+
+  val forked : (unit -> string) -> string option
+  (** [forked fn] is [Some s], [s] the string that [fn ()] returns in a forked
+      child, or ["raised "] followed by the exception it raises, and [None] on
+      Windows, where no process forks. The child leaves by [Unix._exit], so it
+      runs no [at_exit] function and removes no {!Scratch.dir}. A process that
+      has spawned a domain can never fork again, and the mutation loop forks
+      every mutant from a test's process: a test that spawns a domain spawns it
+      here. *)
 end

@@ -52,6 +52,7 @@ let payload (f : Failure.t) =
   | Message t -> strf "message %S" t.kept
   | Baseline _ -> "baseline"
   | Property _ -> "property"
+  | Law _ -> "law"
   | Timeout _ -> "timeout"
 
 let control = function

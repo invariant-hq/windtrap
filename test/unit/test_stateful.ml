@@ -66,6 +66,7 @@ let kind (f : Failure.t) =
   | Containment _ -> "containment"
   | Baseline _ -> "baseline"
   | Property _ -> "property"
+  | Law _ -> "law"
   | Timeout _ -> "timeout"
 
 let label (f : Failure.t) =

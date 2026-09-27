@@ -65,6 +65,7 @@ let kind (f : Failure.t) =
       "raise" ^ side "expected" expected ^ side "actual" actual
   | Equality { expected; actual; _ } ->
       strf "equality %s, %s" expected.kept actual.kept
+  | Law _ -> "law"
   | Timeout _ -> "timeout"
   | Containment _ | Baseline _ | Property _ -> "other"
 

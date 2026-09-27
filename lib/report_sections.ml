@@ -129,6 +129,9 @@ let timeout_fact ~limit (case : Failure.timed_case option) =
         (case_name ~examples ~case_index ~shrink_steps:0)
         passed
 
+let law_head ~law ~clause =
+  match clause with None -> law | Some clause -> strf "%s (%s)" law clause
+
 (* Plain quotes, not [%S]: a path's UTF-8 is not byte-escaped. *)
 let baseline_subject = function
   | Failure.Literal { exact = false } -> "expect"
@@ -152,25 +155,31 @@ let containment_verdict ~demand ~found_at =
   | Failure.Suffix, Some at -> strf "found at byte %d, not at the end" at
   | (Failure.Anywhere | Failure.Prefix | Failure.Suffix), None -> "not found"
 
+(* The names of an equality's two sides. A law's sides take the names of their
+   terms instead. *)
+let expected_actual = ("expected", "actual")
+
 (* Two renderings with equal lines differ by one trailing newline, which a
    line diff cannot show. *)
-let newline_fact ~expected ~actual =
+let newline_fact ~anchors:(expected_anchor, actual_anchor) ~expected ~actual =
   strf "values differ only by a trailing newline (on the %s side)"
-    (if String.length actual > String.length expected then "actual"
-     else "expected")
+    (if String.length actual > String.length expected then actual_anchor
+     else expected_anchor)
 
 (* A cut side is compared on what the failure kept of it. *)
 let whole (expected : Failure.text) (actual : Failure.text) =
   not (Failure.is_cut expected || Failure.is_cut actual)
 
-let agree_fact ~(expected : Failure.text) ~(actual : Failure.text) =
+let agree_fact ~anchors:(expected_anchor, actual_anchor)
+    ~(expected : Failure.text) ~(actual : Failure.text) =
   strf
-    "the sides agree on the %d bytes a failure keeps of each (expected %d \
-     bytes, actual %d bytes)"
+    "the sides agree on the %d bytes a failure keeps of each (%s %d bytes, %s \
+     %d bytes)"
     (String.length expected.kept)
-    expected.length actual.length
+    expected_anchor expected.length actual_anchor actual.length
 
-let cut_fact ~(expected : Failure.text) ~(actual : Failure.text) =
+let cut_fact ~anchors:(expected_anchor, actual_anchor)
+    ~(expected : Failure.text) ~(actual : Failure.text) =
   let side (name, (t : Failure.text)) =
     if not (Failure.is_cut t) then None
     else
@@ -180,7 +189,8 @@ let cut_fact ~(expected : Failure.text) ~(actual : Failure.text) =
   in
   "the diff covers "
   ^ String.concat " and "
-      (List.filter_map side [ ("expected", expected); ("actual", actual) ])
+      (List.filter_map side
+         [ (expected_anchor, expected); (actual_anchor, actual) ])
 
 let diff_lines hunks =
   List.fold_left (fun n h -> n + 1 + List.length h.Diff.lines) 0 hunks
@@ -208,14 +218,15 @@ let headline (f : Failure.t) =
         let whole = whole e a and expected = e.kept and actual = a.kept in
         if String.equal expected actual then
           if whole then "both sides render as: " ^ expected
-          else agree_fact ~expected:e ~actual:a
+          else agree_fact ~anchors:expected_actual ~expected:e ~actual:a
         else if
           not (String.contains expected '\n' || String.contains actual '\n')
         then strf "expected %s, got %s" (shown_text e) (shown_text a)
         else
           match Diff.hunks ~expected ~actual () with
-          | [] when whole -> newline_fact ~expected ~actual
-          | [] -> cut_fact ~expected:e ~actual:a
+          | [] when whole ->
+              newline_fact ~anchors:expected_actual ~expected ~actual
+          | [] -> cut_fact ~anchors:expected_actual ~expected:e ~actual:a
           | hunks ->
               strf "expected and actual differ (%d diff lines)"
                 (diff_lines hunks))
@@ -277,6 +288,12 @@ let headline (f : Failure.t) =
           | Failure.Pre_image -> " computed from "
           | Failure.Value -> " ")
           (shown_text (Option.value summary ~default:rendered))
+    | Failure.Law { law; clause; equation; terms } -> (
+        let head = law_head ~law ~clause in
+        match List.rev terms with
+        | Failure.Failed { name; _ } :: _ -> strf "%s: %s failed" head name
+        | (Failure.Term _ | Failure.Side _) :: _ | [] ->
+            strf "%s: %s" head equation)
     | Failure.Timeout { limit; case } -> timeout_fact ~limit case
     | Failure.Message m -> (
         match shown_text m with "" -> "(empty failure message)" | m -> m)
@@ -319,7 +336,8 @@ let acceptable (f : Failure.t) =
   | Failure.Baseline { withheld = Some _; _ }
   | Failure.Baseline { state = Failure.Unresolvable _; _ }
   | Failure.Equality _ | Failure.Containment _ | Failure.Raise _
-  | Failure.Property _ | Failure.Timeout _ | Failure.Message _ ->
+  | Failure.Property _ | Failure.Law _ | Failure.Timeout _ | Failure.Message _
+    ->
       None
 
 (* Promotion fills a file and never creates one: a missing file must exist
@@ -361,8 +379,8 @@ let withheld_fact (f : Failure.t) =
             "the test also skipped; skip before the expectation or not at all, \
              and rerun")
   | Failure.Baseline _ | Failure.Equality _ | Failure.Containment _
-  | Failure.Raise _ | Failure.Property _ | Failure.Timeout _ | Failure.Message _
-    ->
+  | Failure.Raise _ | Failure.Property _ | Failure.Law _ | Failure.Timeout _
+  | Failure.Message _ ->
       None
 
 let hints ?armed ?(invocation = `Mirrors) failures =
@@ -441,7 +459,7 @@ let drawn (f : Failure.t) =
   | Failure.Property { examples = true; _ }
   | Failure.Timeout { case = Some { examples = true; _ } | None; _ }
   | Failure.Equality _ | Failure.Containment _ | Failure.Raise _
-  | Failure.Baseline _ | Failure.Message _ ->
+  | Failure.Baseline _ | Failure.Law _ | Failure.Message _ ->
       None
 
 (* A late case replays only under at least as many cases as the failing run
@@ -657,14 +675,12 @@ let hunk_lines hunks =
   List.concat
     (capped max_diff_lines rows ~more:(fun n -> [ more "diff lines" n ]))
 
-(* Two single-line renderings after their anchors. What changed is marked
-   when [marked] and no side is elided, since an elided side has no columns
-   left to mark; otherwise each side prints whole in its colour. *)
-let sides ~seen ~anchors:(expected_anchor, actual_anchor) ~marked ~expected
-    ~actual =
-  let gutter =
-    2 + max (String.length expected_anchor) (String.length actual_anchor)
-  in
+(* Two single-line renderings after their anchors, at column [gutter]. What
+   changed is marked when [marked] and no side is elided, since an elided side
+   has no columns left to mark; otherwise each side prints whole in its
+   colour. *)
+let sides ~seen ~gutter ~anchors:(expected_anchor, actual_anchor) ~marked
+    ~expected ~actual =
   let expected_spans, actual_spans =
     match
       if marked && not (elided expected || elided actual) then
@@ -687,28 +703,33 @@ let sides ~seen ~anchors:(expected_anchor, actual_anchor) ~marked ~expected
   @ side actual_anchor ~colour:`Red ~style:`Bold_red actual actual_spans
 
 (* A cut pair that kept the same bytes says so instead of a diff, and a
-   difference in a final newline is a fact of two whole texts only. *)
-let text_diff ~headers ~show ~(expected : Failure.text) ~(actual : Failure.text)
-    =
+   difference in a final newline is a fact of two whole texts only. The facts
+   name the two sides by their [anchors], and so do the [headers] above the
+   hunks. *)
+let text_diff ~anchors ~headers ~show ~(expected : Failure.text)
+    ~(actual : Failure.text) =
   let whole = whole expected actual in
   if (not whole) && String.equal expected.kept actual.kept then
-    [ line (agree_fact ~expected ~actual) ]
+    [ line (agree_fact ~anchors ~expected ~actual) ]
   else
     let e = show expected.kept and a = show actual.kept in
     let diff =
       match Diff.hunks ~expected:e ~actual:a () with
-      | [] when whole -> [ line (newline_fact ~expected:e ~actual:a) ]
+      | [] when whole -> [ line (newline_fact ~anchors ~expected:e ~actual:a) ]
       | [] -> []
       | hunks when headers ->
-          [ styled `Faint "--- expected" ]
-          :: [ styled `Faint "+++ actual" ]
+          let expected_anchor, actual_anchor = anchors in
+          [ styled `Faint ("--- " ^ expected_anchor) ]
+          :: [ styled `Faint ("+++ " ^ actual_anchor) ]
           :: hunk_lines hunks
       | hunks -> hunk_lines hunks
     in
     if whole then diff
-    else diff @ [ faint ("(" ^ cut_fact ~expected ~actual ^ ")") ]
+    else diff @ [ faint ("(" ^ cut_fact ~anchors ~expected ~actual ^ ")") ]
 
-let equality ~seen ~show ~(expected : Failure.text) ~(actual : Failure.text) =
+(* Two printed values that had to be equal, under their [anchors]. *)
+let equality ~seen ~show ~anchors ~gutter ~(expected : Failure.text)
+    ~(actual : Failure.text) =
   if whole expected actual && String.equal expected.kept actual.kept then
     let value = show expected.kept in
     let render_as = styled `Faint "both sides render as:" in
@@ -719,9 +740,9 @@ let equality ~seen ~show ~(expected : Failure.text) ~(actual : Failure.text) =
     String.equal expected.kept actual.kept
     || String.contains (show expected.kept) '\n'
     || String.contains (show actual.kept) '\n'
-  then text_diff ~headers:true ~show ~expected ~actual
+  then text_diff ~anchors ~headers:true ~show ~expected ~actual
   else
-    sides ~seen ~anchors:("expected", "actual") ~marked:true
+    sides ~seen ~gutter ~anchors ~marked:true
       ~expected:(show (shown_text expected))
       ~actual:(show (shown_text actual))
 
@@ -732,6 +753,7 @@ let raise_sides ~seen ~expected ~actual =
   match actual with
   | Some actual when not (spans_lines expected || spans_lines actual) ->
       sides ~seen
+        ~gutter:(2 + String.length "expected exception")
         ~anchors:("expected exception", "raised")
         ~marked:false ~expected ~actual
   | Some _ | None -> (
@@ -837,7 +859,8 @@ and facts ~seen ~excerpt = function
       (if String.contains value '\n' then faint "actual:" :: block `Red value
        else [ field "actual" @ [ styled `Red (shown value) ] ])
   | Failure.Equality { expected; actual; _ } ->
-      equality ~seen ~show:Fun.id ~expected ~actual
+      equality ~seen ~show:Fun.id ~anchors:expected_actual ~gutter:10 ~expected
+        ~actual
   | Failure.Containment
       {
         needle;
@@ -919,8 +942,8 @@ and facts ~seen ~excerpt = function
         | Some { Failure.constructor; expected_message; actual_message }, _, _
           ->
             line (strf "raised %s with the wrong message:" constructor)
-            :: equality ~seen ~show:(strf "%S") ~expected:expected_message
-                 ~actual:actual_message
+            :: equality ~seen ~show:(strf "%S") ~anchors:expected_actual
+                 ~gutter:10 ~expected:expected_message ~actual:actual_message
         | None, Some expected, actual ->
             raise_sides ~seen ~expected:(shown_text expected)
               ~actual:(Option.map shown_text actual)
@@ -959,7 +982,8 @@ and facts ~seen ~excerpt = function
                ~more:(fun n -> plain "  " :: more "lines" n)
       | Failure.Mismatch { expected; actual } ->
           line (subject ^ ": mismatch")
-          :: text_diff ~headers:false ~show:Fun.id ~expected ~actual
+          :: text_diff ~anchors:expected_actual ~headers:false ~show:Fun.id
+               ~expected ~actual
       | Failure.Unresolvable { candidate } ->
           List.map line
             [
@@ -1063,11 +1087,47 @@ and facts ~seen ~excerpt = function
             :: List.map (indented "  ") (entry ~seen ~excerpt ~inner:true i)
       in
       counterexample @ pre_image @ stop @ inner
+  | Failure.Law { law; clause; equation; terms } ->
+      line (strf "%s: %s" (law_head ~law ~clause) equation)
+      :: law_terms ~seen ~excerpt terms
   | Failure.Timeout { limit; case } -> [ line (timeout_fact ~limit case) ]
   | Failure.Message m -> (
       match shown_text m with
       | "" -> [ line "(empty failure message)" ]
       | m -> lines ~lead:"" m)
+
+(* A row per term, every value at one column; the two sides close the list as
+   an equality's do, and a failed term as a property's inner failure does. *)
+and law_terms ~seen ~excerpt terms =
+  let gutter =
+    List.fold_left
+      (fun gutter -> function
+        | Failure.Term { name; _ } | Failure.Side { name; _ } ->
+            max gutter (2 + String.length name)
+        | Failure.Failed _ -> gutter)
+      0 terms
+  in
+  let row name value =
+    let value = shown_text value in
+    if String.contains value '\n' then
+      faint (name ^ ":") :: lines ~lead:"  " value
+    else [ field ~gutter name @ [ plain (shown value) ] ]
+  in
+  let rec rows = function
+    | [] -> []
+    | [ Failure.Side left; Failure.Side right ] ->
+        equality ~seen ~show:Fun.id ~anchors:(left.name, right.name) ~gutter
+          ~expected:left.value ~actual:right.value
+    | (Failure.Term { name; value } | Failure.Side { name; value }) :: rest ->
+        row name value @ rows rest
+    | Failure.Failed { name; failure } :: rest ->
+        line
+          (strf "%s failed %s:" name
+             (if Option.is_some failure.loc then "at" else "with"))
+        :: List.map (indented "  ") (entry ~seen ~excerpt ~inner:true failure)
+        @ rows rest
+  in
+  rows terms
 
 (* Colour alone shows a changed span only on a terminal a reader watches:
    elsewhere the escapes may be stripped (dune strips an action's output when

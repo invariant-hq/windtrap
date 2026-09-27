@@ -305,6 +305,7 @@ let constructed =
         ~examples:false () );
     ("timeout", Failure.timeout 1.5);
     ("message", Failure.message "boom");
+    ("law", Failure.law ~law:"idempotent" ~equation:"f (f x) = f x" []);
   ]
 
 let texts_of (f : Failure.t) =
@@ -336,6 +337,13 @@ let texts_of (f : Failure.t) =
   | Baseline { state = Unresolvable _; _ } -> []
   | Property { rendered; summary; _ } ->
       ("rendered", rendered) :: Option.to_list (some "summary" summary)
+  | Law { terms; _ } ->
+      List.filter_map
+        (function
+          | Failure.Term { name; value } | Side { name; value } ->
+              Some (name, value)
+          | Failed _ -> None)
+        terms
   | Timeout _ -> []
   | Message t -> [ ("message", t) ]
 
@@ -367,6 +375,7 @@ let defaults (f : Failure.t) =
         | Converged -> "converged"
         | Budget_spent | Candidate_raised _ | Timed_out _ -> "not converged")
         (match rendering with Value -> "value" | Pre_image -> "pre-image")
+  | Law { clause; _ } -> "clause " ^ present clause
   | Containment _ | Timeout _ | Message _ -> "no default"
 
 let window (f : Failure.t) =
@@ -374,8 +383,8 @@ let window (f : Failure.t) =
     (function
       | Failure.Containment { excerpt; excerpt_offset; haystack_length; _ } ->
           Some (excerpt_offset, excerpt, haystack_length)
-      | Equality _ | Raise _ | Baseline _ | Property _ | Timeout _ | Message _
-        ->
+      | Equality _ | Raise _ | Baseline _ | Property _ | Law _ | Timeout _
+      | Message _ ->
           None)
     f.kind
 
@@ -469,8 +478,8 @@ let baseline_names = function
   | Failure.Baseline
       { baseline = File p; state = Unresolvable { candidate }; _ } ->
       Some (p, candidate)
-  | Baseline _ | Equality _ | Containment _ | Raise _ | Property _ | Timeout _
-  | Message _ ->
+  | Baseline _ | Equality _ | Containment _ | Raise _ | Property _ | Law _
+  | Timeout _ | Message _ ->
       None
 
 let names_whole () =
@@ -479,6 +488,30 @@ let names_whole () =
   let p, candidate = require_match baseline_names f.kind in
   equal (pair int int) (100_000, 100_000)
     (String.length p, String.length candidate)
+
+let law_fields () =
+  let inner = Failure.message "inner" in
+  let terms =
+    [
+      Failure.Term { name = "x"; value = Failure.text "1" };
+      Failed { name = "f x"; failure = inner };
+      Side { name = "x"; value = Failure.text "2" };
+    ]
+  in
+  let f =
+    Failure.law
+      ~loc:{ Loc.file = "l.ml"; line = 3; column = 0 }
+      ~msg:"why" ~clause:"c" ~law:"l" ~equation:"e" terms
+  in
+  match f.kind with
+  | Law { law; clause; equation; terms = kept } ->
+      equal (list string) [ "l"; "c"; "e" ]
+        [ law; Option.value ~default:"none" clause; equation ];
+      is_true ~msg:"the terms as given" (kept == terms);
+      equal (option string) (Some "why")
+        (Option.map (fun (t : Failure.text) -> t.kept) f.msg);
+      equal (option int) (Some 3) (Option.map (fun (l : Loc.t) -> l.line) f.loc)
+  | _ -> fail "not a law failure"
 
 let constructors =
   group "Constructors"
@@ -522,6 +555,13 @@ let constructors =
                 ~shrink_steps:0 ~root:1L ~examples:false (),
               [ "rendered"; "summary" ] ) );
           ("message", (Failure.message big, [ "message" ]));
+          ( "law",
+            ( Failure.law ~msg:big ~law:"idempotent" ~equation:"f (f x) = f x"
+                [
+                  Term { name = "x"; value = Failure.text big };
+                  Side { name = "f (f x)"; value = Failure.text big };
+                ],
+              [ "msg"; "x"; "f (f x)" ] ) );
         ]
         bounded_texts;
       test "a baseline keeps its path and its unresolvable candidate whole"
@@ -556,8 +596,15 @@ let constructors =
             ( Failure.property ~rendered:"[]" ~case_index:0 ~shrink_steps:0
                 ~root:1L ~examples:false (),
               "inner none, count none, summary none, converged, value" ) );
+          ( "law",
+            ( Failure.law ~law:"idempotent" ~equation:"f (f x) = f x" [],
+              "clause none" ) );
+          ( "law, a clause",
+            ( Failure.law ~clause:"premise" ~law:"preserves" ~equation:"inv x" [],
+              "clause given" ) );
         ]
         (fun (_, (f, row)) -> equal string row (defaults f));
+      test "law keeps its fields and its terms in the order given" law_fields;
       cases "containment checks found_at and resumed_at against the haystack"
         ~name:fst
         [
@@ -587,6 +634,49 @@ let constructors =
       test "an ordered demand anchors its excerpt on resumed_at" ordered_anchor;
     ]
 
+(* Faults *)
+
+let of_assertion () =
+  is_true ~msg:"the payload itself" (Failure.of_fault (`Assertion boom) == boom)
+
+let of_exception () =
+  let c = require_error (Failure.catch raise_not_found) in
+  let raw = require_match exception_backtrace (Error c) in
+  let f = Failure.of_fault (`Exception (Not_found, raw)) in
+  equal string "body, no loc, no msg, no subtest, no output" (frame f);
+  match f.kind with
+  | Raise { expected; actual; predicate; backtrace; message_diff } ->
+      equal (option string) None
+        (Option.map (fun (t : Failure.text) -> t.kept) expected);
+      equal (option string) (Some "Not_found")
+        (Option.map (fun (t : Failure.text) -> t.kept) actual);
+      is_false predicate;
+      is_none message_diff;
+      equal (option string)
+        (Some (Failure.backtrace_to_string raw))
+        (Option.map (fun (t : Failure.text) -> t.kept) backtrace)
+  | _ -> fail "not a raise"
+
+let of_named_exception () =
+  let f = Failure.of_fault (`Exception (Full, Printexc.get_callstack 0)) in
+  match f.kind with
+  | Raise { actual = Some actual; _ } ->
+      equal string "Test_failure.Full" actual.kept
+  | _ -> fail "not a raise"
+
+let faults =
+  group "Faults"
+    [
+      test "of_fault is the payload of an assertion, as it was raised"
+        of_assertion;
+      test
+        "of_fault makes an exception an uncaught raise with its backtrace and \
+         no location"
+        of_exception;
+      test "of_fault names the exception as exn_to_string does"
+        of_named_exception;
+    ]
+
 (* Updating *)
 
 let withheld (f : Failure.t) =
@@ -597,7 +687,8 @@ let withheld (f : Failure.t) =
   | Baseline { withheld = Some (Refused { line; reason }); _ } ->
       strf "refused %d: %s" line reason
   | Baseline { withheld = Some Conflict; _ } -> "conflict"
-  | Equality _ | Containment _ | Raise _ | Property _ | Timeout _ | Message _ ->
+  | Equality _ | Containment _ | Raise _ | Property _ | Law _ | Timeout _
+  | Message _ ->
       "no baseline"
 
 let baseline state = Failure.baseline (File "p") state
@@ -609,7 +700,7 @@ let property_inner (f : Failure.t) =
   require_match
     (function
       | Failure.Property { inner; _ } -> inner
-      | Equality _ | Containment _ | Raise _ | Baseline _ | Timeout _
+      | Equality _ | Containment _ | Raise _ | Baseline _ | Law _ | Timeout _
       | Message _ ->
           None)
     f.kind
@@ -627,6 +718,20 @@ let inner_unmarked () =
   in
   equal string "none"
     (withheld (property_inner (Failure.with_withheld Skipped f)))
+
+let failed_term_unmarked () =
+  let f =
+    Failure.law ~law:"l" ~equation:"e"
+      [ Failed { name = "g (f x)"; failure = baseline mismatch } ]
+  in
+  let nested (f : Failure.t) =
+    require_match
+      (function
+        | Failure.Law { terms = [ Failed { failure; _ } ]; _ } -> Some failure
+        | _ -> None)
+      f.kind
+  in
+  equal string "none" (withheld (nested (Failure.with_withheld Skipped f)))
 
 let updating =
   group "Updating"
@@ -653,6 +758,12 @@ let updating =
           equal string "no baseline" (withheld f));
       test "with_withheld does not reach the inner failure of a property"
         inner_unmarked;
+      test "with_withheld leaves a law's failure unmarked" (fun () ->
+          let f = Failure.law ~law:"l" ~equation:"e" [] in
+          equal string "no baseline"
+            (withheld (Failure.with_withheld Skipped f)));
+      test "with_withheld does not reach the failure of a law's failed term"
+        failed_term_unmarked;
     ]
 
 (* Captured-output tails *)
@@ -691,4 +802,13 @@ let tails =
 let () =
   exit
     (run "failure"
-       [ texts; control; catching; backtraces; constructors; updating; tails ])
+       [
+         texts;
+         control;
+         catching;
+         backtraces;
+         constructors;
+         faults;
+         updating;
+         tails;
+       ])

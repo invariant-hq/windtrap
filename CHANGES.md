@@ -226,6 +226,12 @@ Each one is also listed under its area below.
   that `xs` holds `x`; both print the values with `t`'s printer.
 - `Exn.invalid_arg`, `Exn.failure` and `Exn.sys_error` are predicates
   for `raises_match`, each with `?substring`.
+- `Law` asserts seventeen textbook laws, such as
+  `Law.associative w op (a, b, c)`, and a failure names the law, states
+  its equation and prints every term it computed;
+  `prop "…" Gen.(triple g g g) (Law.associative w op)` checks one over
+  drawn values (see
+  [Stating a textbook law](https://github.com/invariant-hq/windtrap/blob/main/doc/manual/property-testing.md#stating-a-textbook-law)).
 
 ### Property testing
 

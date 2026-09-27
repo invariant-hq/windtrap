@@ -154,13 +154,11 @@ let shrink ~cost law tree fault =
 
 let default_count = 100
 
+(* What the law raised, as a failure: an [Oracle_failure]'s payload as it
+   is. *)
 let inner_failure : Failure.fault -> Failure.t = function
-  | `Assertion failure | `Exception (Oracle_failure failure, _) -> failure
-  | `Exception (exn, backtrace) ->
-      Failure.raised
-        ~actual:(Failure.exn_to_string exn)
-        ~backtrace:(Failure.backtrace_to_string backtrace)
-        ()
+  | `Exception (Oracle_failure failure, _) -> failure
+  | fault -> Failure.of_fault fault
 
 let run ?loc ?count ?max_discard ?(examples = []) ?(summary = Fun.const None)
     ?(cost = 1) ~root ~path gen law =
