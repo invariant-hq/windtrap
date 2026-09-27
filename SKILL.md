@@ -37,7 +37,7 @@ Take the first row that fits the behaviour.
 | The code under test is | Write | Page |
 | --- | --- | --- |
 | A function with a law: round trip, invariant, agreement with a simpler function, algebraic identity | `prop` over a generator | [Property testing](https://github.com/invariant-hq/windtrap/blob/main/doc/manual/property-testing.md) |
-| A value with state across calls: container, cache, store, pool | `stateful` against a model | [Stateful testing](https://github.com/invariant-hq/windtrap/blob/main/doc/manual/stateful-testing.md) |
+| A value with state across calls: container, cache, store, pool | `stateful` against a model or a simpler implementation | [Stateful testing](https://github.com/invariant-hq/windtrap/blob/main/doc/manual/stateful-testing.md) |
 | A function whose results the spec states for chosen inputs | `test` with `equal`, `cases` for a table of inputs | [Assertions](https://github.com/invariant-hq/windtrap/blob/main/doc/manual/assertions.md) |
 | Text too long to write by hand: help, report, pretty-printer output | `expect` or `expect_file`; `let%expect_test` inside a library | [Baselines and expect tests](https://github.com/invariant-hq/windtrap/blob/main/doc/manual/baselines.md) |
 | An executable's command line, output and exit code | a dune cram test (below) | dune's manual |
@@ -73,7 +73,7 @@ Rules for every test:
   of an unordered list (`slist`), never a time or an absolute path.
 - A baseline pins what the code does today. Every module also needs
   tests that state what it must do: `equal` from the spec, properties,
-  stateful models.
+  stateful tests against a model.
 
 ## The shape of a suite
 
@@ -180,7 +180,9 @@ Read the whole block before editing anything. It holds:
   and `+` for the actual; for a property, `counterexample (case K,
   shrunk N steps):` with the value, `which failed at:` and the
   assertion's failure; for a stateful test, the shrunk program as a
-  table of calls with the model before each.
+  table of the calls that ran, then the failing call with the
+  reference's outcome as `expected` and the system's as `actual`, or
+  `reference of call N of N` when the model itself broke.
 - `captured output`, the last lines the test printed after its last
   `output ()`, and `full log:`, the file with all of them. `[setup]` or
   `[teardown]` before the location when the failure is in one.
@@ -245,19 +247,32 @@ Mechanics: [Baselines and expect tests](https://github.com/invariant-hq/windtrap
   `pp` its witness uses. `cover "label" cond` fails the property when no
   passing case carries the label; use it for a case the law depends
   on.
-- A stateful model is a persistent value, such as a list or a `Map`,
-  and `~pre` and `~next` are pure. A command that leaves the model as
-  it is, such as a read, omits `~next`. `~pre` both forbids a call and
-  selects the state it needs. A command whose `~pre` no program meets
-  is never called, which fails the test with a `never called:` message
-  that names it.
-- A command's argument cannot name a handle that does not exist yet:
-  generate an index into the model's live handles, and let `~pre` keep
-  the lookup defined.
-- `~scope` builds a fresh system for each program and each shrink
-  candidate, many times in one test. `temp_dir`, `setenv` and `chdir`
-  last for the whole test, so a scope creates and removes its own
-  scratch files.
+- A stateful test pairs, per operation, the reference's function with
+  the system's: `command name signature reference system`. The
+  reference is a model written for the test, with the API's functions
+  and argument order, or another implementation, such as `Set.Make` for
+  a faster set. It behaves the same from run to run: no `Random`, no
+  `Hashtbl` order in a result.
+- An exception is an outcome. The reference raises what the API
+  documents, `Full` on a full queue, and the system must raise a
+  constructor of the same name. To compare a payload, both functions
+  return a `result`.
+- A handle that a call makes (a queue, a connection) is a value of an
+  `abstract` type: a command ending in `makes q` makes one, and `q ^->`
+  takes one. Never draw an index into a table of handles of your own.
+- `~pre` keeps a call the API forbids (undefined behaviour, a call that
+  blocks) from both sides. A call that raises a documented exception
+  needs no `~pre`: the raise is compared. Put a `cover` in the reference
+  for a state that matters, such as a full queue. A command that no
+  program can call, because its `~pre` never holds or no command makes a
+  type it takes, fails the test with a `never called:` message that
+  names it.
+- A system that holds a resource (a file, a directory, a socket) is made
+  by a command and released by `abstract ~release`, which must also
+  accept a closed value. `temp_dir`, `setenv` and `chdir` last for the
+  whole test, so the command makes its own scratch directory and the
+  release removes it. A system whose calls perform effects, as Eio's
+  do, runs with their handler around `run`.
 - A program that failed is kept by copying its calls into a `test`.
 
 Mechanics: [Property testing](https://github.com/invariant-hq/windtrap/blob/main/doc/manual/property-testing.md),

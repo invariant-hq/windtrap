@@ -10,8 +10,9 @@ of them. `dune runtest` builds and runs every example, and each passes.
   section of [Assertions](../doc/manual/assertions.md).
 - `03-property-testing`: `Geo`, a module of shapes, and properties over
   a shape generator, for [Property testing](../doc/manual/property-testing.md).
-- `04-stateful-testing`: `Bounded_queue` checked against a list, and a
-  failing program kept as a test, for
+- `04-stateful-testing`: `Bounded_queue` checked against a model, a
+  list with the queue's capacity, and a failing program kept as a test,
+  for
   [Stateful testing](../doc/manual/stateful-testing.md).
 - `05-baselines`: `expect` literals and an `expect_file` baseline in a
   stanza run with `--corrected`, and a library of `let%expect_test`, for

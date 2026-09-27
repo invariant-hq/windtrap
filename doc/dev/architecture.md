@@ -84,9 +84,10 @@ The rows group by role, not by layer: `Os`, `Pp`, `Text`, `Loc` and
 that reaches every other; between them the executor (`Run`) sits over
 the producers it drives, the report over the executor and the mutation
 loop over the report, with `Stateful` and `Cli` reaching `Run` (for
-`Run.prop` and `Run.config`). `Windtrap.Private` re-exports these
-modules for windtrap's own test suite and its binary; it is not part of the public API and
-carries no stability guarantee, and nothing in it escapes into scope on
+`Run.property` and `Run.config`).
+`Windtrap.Private` re-exports these modules for windtrap's own test
+suite and its binary; it is not part of the public API and carries no
+stability guarantee, and nothing in it escapes into scope on
 `open Windtrap`. Everything user-facing is the documented surface above
 (`doc/dev/testing.md` says what each test family reaches through it).
 
@@ -122,6 +123,11 @@ module.
   selection knob `for_subset` does not clear gives a child a selection
   its parent's tree already applied, which is how a deterministic suite
   comes to look non-deterministic.
+- The ambient slot is an `Atomic.t`, and `Run.t` records the domain
+  that called `execute`, so a read from another domain is defined and
+  refused instead of racing. The refusal is raised in the calling domain
+  and recorded nowhere: like any exception of that domain, it fails the
+  test only when it reaches the test's domain.
 - `Run.active_run_error` is one string because three already-active
   checks each matter: the executor's two halves, and the facade's, which
   must fire before `Cli.parse` can exit on `--help`. The sentence a
@@ -135,6 +141,23 @@ module.
   is a test. Renderers classify a failing row from `counted` and `xfail`
   alone (an uncounted `Fail` is an excused expected failure), never by
   reconstructing executor decisions from messages.
+
+**Stateful.** A call runs its system, then its reference judges the
+outcome, one order for every result form. A value is made when its
+system returns, so it is named and released even when the reference
+then disagrees. An abstract type has a key per side, and a side rides
+an exception that the key's local module declares. A local exception is
+generative, so only the type that made a side projects it back: the
+run's pool holds the system sides of every type, and its table the
+reference sides by the step of the call that made them, with no `Obj`
+and no `Type.Id` (absent from OCaml 5.0). The same reason makes release
+deduplication per type, since `==` compares two system sides only when
+they have one type. A choice of a value names the drawn call that made
+it, and falls back to the newest value of its type, so a shrink
+candidate that deletes an unrelated maker moves no later choice. A
+broken reference is `Property.Oracle_failure`, a failure class of its
+own: its case shrinks as any other, and neither search accepts a
+candidate of the other class.
 
 **Loc.** `Loc.capture` takes the first call-stack slot whose
 compilation unit is neither windtrap's nor the stdlib's, via

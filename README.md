@@ -65,13 +65,13 @@ prop "rev is an involution" Gen.(list int) (fun l ->
 
 ### Stateful tests
 
-`stateful` checks a system against a model of its state on generated
-sequences of calls. A failing sequence is reduced to a shorter one and
-printed with the model before each call.
+`stateful` runs generated programs of calls on a system and on a
+reference, such as a model of its state or another implementation, and
+compares what each call returns or raises. A failing program is reduced
+to a shorter one and printed as the calls that ran.
 
 ```ocaml
-call "pop" ~pre:(fun m -> m <> []) ~next:List.tl (fun m q ->
-    equal int (List.hd m) (Queue.pop q))
+command "pop" (queue ^-> returns int) Model.pop Bounded_queue.pop
 ```
 
 ### Expect tests
@@ -117,7 +117,7 @@ The manual, [`doc/manual/`](doc/manual/), has one page per need:
 - How-to:
   - [Assertions](doc/manual/assertions.md): values, bounds, strings, results and exceptions.
   - [Property testing](doc/manual/property-testing.md): laws over generated values.
-  - [Stateful testing](doc/manual/stateful-testing.md): a system against a model.
+  - [Stateful testing](doc/manual/stateful-testing.md): a system against a reference.
   - [Baselines and expect tests](doc/manual/baselines.md): `expect`, `expect_file`, `let%expect_test`.
   - [Resources and structure](doc/manual/resources-and-structure.md): a suite's layout and resources.
   - [Running tests](doc/manual/running-tests.md): selection, reruns, `dune runtest` and CI.

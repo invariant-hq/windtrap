@@ -69,6 +69,36 @@ and what a generator draws from it is fixed within one version of
 windtrap. The shrink budget is fixed too, with no option to change it,
 so a replay descends to the same counterexample.
 
+## A stateful test compares a system with a reference
+
+A command pairs the reference's function with the system's, and the
+test compares what the two calls returned or raised. A model is one
+kind of reference, so a test against a model and a test against the
+module before a refactor are written the same way. A command whose
+body asserted on the system would state every outcome by hand and
+bridge the two sides' exceptions, where a compared outcome prints both
+sides.
+
+Exceptions compare by constructor name without the module path,
+because two implementations of one API raise their own `Empty`, and
+their messages differ as a rule. A test that means a payload says so by
+returning a `result`, where a rule comparing payloads would have to
+guess which parts matter.
+
+A program is drawn without running the reference, and a call's
+legality is decided when it runs. Shrinking can then delete any call
+with no repair step, and the printed program is the record of the run
+that failed, never a replay: a skipped call is absent, and a value
+prints as the name that run gave it.
+
+A call runs the system first, and the reference judges its outcome. One
+order serves every signature: an outcome the API leaves open reaches
+the reference before it chooses, and a value exists as soon as the
+system made it, so a report names it and its release runs even when the
+reference disagrees. A reference that breaks is a bug of the test, the
+common one while a model is being written, so its failure shrinks as
+the system's does, and the two never stand for each other.
+
 ## Baselines are where the source says
 
 A baseline is the literal at an `expect` call or the file an
