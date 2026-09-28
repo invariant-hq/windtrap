@@ -15,6 +15,7 @@ let rec search p = function [] -> false | x :: rest -> p x || search p rest
    stays the [else] branch with no point, in tail position and bound by a
    [let]. *)
 let positive x = x > 0 || failwith "positive"
+let nonzero x = x <> 0 || invalid_arg "nonzero"
 
 let bound x =
   let ok = x > 0 || raise Exit in

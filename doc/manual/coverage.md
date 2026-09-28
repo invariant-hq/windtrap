@@ -120,10 +120,13 @@ entry of a block, such as a function body, a `match` arm or an `if`
 branch, or the return of a call. A call that raises leaves its point
 unvisited, except in tail position, where it has no point of its own. A
 raising call still reads covered when it shares its point with the block
-it opens, and calls of `raise`, `failwith` and the other trivial
-primitives have no point for their return. A row lists at most eight
-line ranges, then `(+N more)`. `-u` shows every one, with `▌` on each
-line an unvisited point touches. The percentage counts points:
+it opens, and calls of `raise`, `failwith`, `invalid_arg` and `exit`,
+which never return, and of trivial primitives such as `/` have no point
+for their return. These calls are matched by name as written, so
+`Stdlib.exit 1` has a point for its return and a function of one's own
+called `exit` has none. A row lists at most eight line ranges, then
+`(+N more)`. `-u` shows every one, with `▌` on each line an unvisited
+point touches. The percentage counts points:
 
 ```
 $ dune exec windtrap -- coverage -u

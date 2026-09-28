@@ -33,6 +33,17 @@ let bare a b =
   let r = a + b in
   r
 
+(* So are the functions that never return: [Stdlib.invalid_arg s] is
+   wrapped, and a call of a function of one's own named [exit] is not. *)
+let qualified_failure s =
+  let r = Stdlib.invalid_arg s in
+  r
+
+let shadowed x =
+  let exit () = () in
+  exit ();
+  x
+
 (* The scrutinee of a [match] has no out-edge. *)
 let scrutinee l = match List.rev l with [] -> 0 | x :: _ -> x
 

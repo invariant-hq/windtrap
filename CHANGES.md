@@ -90,10 +90,14 @@
 
 ### Coverage
 
-- The right operand of `||` that is a call of `raise`, `raise_notrace`
-  or `failwith` has no point, where 0.2.0 gave it one for being true,
-  which it never is: `n > 0 || failwith "negative"` read uncovered even
-  when a test ran both of its paths.
+- The right operand of `||` that is a call of `raise`, `raise_notrace`,
+  `failwith`, `invalid_arg` or `exit` has no point, where 0.2.0 gave it
+  one for being true, which it never is: `n > 0 || failwith "negative"`
+  read uncovered even when a test ran both of its paths.
+- A call of `invalid_arg` or `exit` has no point for its return, which
+  never comes, as a call of `raise` or `failwith` has none:
+  `if n < 1 then invalid_arg "n < 1";` read uncovered even when a test
+  ran it.
 - A call through `@@` or `|>` of a function that never returns has no
   point for its return, as a direct call has none:
   `if n < 1 then failwith @@ msg;` read uncovered even when a test ran

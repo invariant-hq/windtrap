@@ -162,6 +162,10 @@ let tap_raise f =
    of a check visits every point of it. *)
 let positive n = n > 0 || failwith "positive"
 
+let checked n =
+  if n < 1 then invalid_arg "checked";
+  n
+
 let bound n =
   let ok = n > 0 || "bound" |> failwith in
   ok

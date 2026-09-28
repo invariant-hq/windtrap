@@ -187,7 +187,8 @@ let is_trivial_function e =
 (* The functions that never return, matched by spelling as the primitives
    are. A visit after their call could never run, so the call takes no
    out-edge, and as the right operand of [||] no point for being true. *)
-let never_returning = [ "raise"; "raise_notrace"; "failwith" ]
+let never_returning =
+  [ "raise"; "raise_notrace"; "failwith"; "invalid_arg"; "exit" ]
 
 let is_never_returning e =
   match e.pexp_desc with

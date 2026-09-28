@@ -310,6 +310,11 @@ let never_returning =
       fun () ->
         is_true (Covsem_fixtures.positive 1);
         raises (Failure "positive") (fun () -> Covsem_fixtures.positive 0) );
+    ( "invalid_arg in a branch out of tail position",
+      fun () ->
+        equal int 1 (Covsem_fixtures.checked 1);
+        raises (Invalid_argument "checked") (fun () ->
+            Covsem_fixtures.checked 0) );
     ( "failwith through |> as the right operand of || out of tail position",
       fun () ->
         is_true (Covsem_fixtures.bound 1);

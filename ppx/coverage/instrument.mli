@@ -87,8 +87,10 @@
       and [##].
     - a call of a function that never returns, whose out-edge could never be
       visited: an application of one, directly or through [@@], [|>] or [|.].
-      These functions are matched by their spelling too, and are [raise],
-      [raise_notrace] and [failwith].
+      These functions are matched by their spelling too, so
+      [Stdlib.invalid_arg s] is wrapped and a call of a function of one's own
+      named [exit] is not. They are [raise], [raise_notrace], [failwith],
+      [invalid_arg] and [exit].
     - an application whose every argument is labelled or optional. The test
       reads the labels alone, so it holds for a total application of that shape
       as for a partial one.

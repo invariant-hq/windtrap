@@ -71,11 +71,13 @@ module of any other shape as it is.
     9: 543-554
     10: 770-775
     11: 770-798
-    12: 825-830
-    13: 816-852
-    14: 924-929
-    15: 959-965
-    16: 910-1004
+    12: 815-821
+    13: 815-846
+    14: 873-878
+    15: 864-900
+    16: 972-977
+    17: 1007-1013
+    18: 958-1052
   let both x y = ___windtrap_visit___ 1; x && ((___windtrap_visit___ 0; y))
   let either x y =
     ___windtrap_visit___ 2;
@@ -101,16 +103,19 @@ module of any other shape as it is.
   let positive x =
     ___windtrap_visit___ 11;
     if x > 0 then (___windtrap_visit___ 10; true) else failwith "positive"
-  let bound x =
+  let nonzero x =
     ___windtrap_visit___ 13;
-    (let ok = if x > 0 then (___windtrap_visit___ 12; true) else raise Exit in
+    if x <> 0 then (___windtrap_visit___ 12; true) else invalid_arg "nonzero"
+  let bound x =
+    ___windtrap_visit___ 15;
+    (let ok = if x > 0 then (___windtrap_visit___ 14; true) else raise Exit in
      ok)
   let through x =
-    ___windtrap_visit___ 16;
+    ___windtrap_visit___ 18;
     (let applied =
-       if x > 0 then (___windtrap_visit___ 14; true) else raise @@ Exit
+       if x > 0 then (___windtrap_visit___ 16; true) else raise @@ Exit
      and piped =
-       if x < 10 then (___windtrap_visit___ 15; true) else Exit |> raise in
+       if x < 10 then (___windtrap_visit___ 17; true) else Exit |> raise in
      (applied, piped))
 
   $ cov --impl ./fixture_apply.ml | ../elide.exe
@@ -631,23 +636,27 @@ module of any other shape as it is.
     8: 703-719
     9: 695-726
     10: 745-765
-    11: 857-864
-    12: 867-878
-    13: 835-878
-    14: 974-975
-    15: 967-968
-    16: 946-975
-    17: 1137-1143
-    18: 1114-1143
-    19: 1106-1150
-    20: 1225-1243
-    21: 1217-1250
-    22: 1378-1381
-    23: 1408-1426
-    24: 1400-1433
-    25: 1455-1473
-    26: 1626-1633
-    27: 1618-1640
+    11: 946-966
+    12: 938-973
+    13: 1008-1010
+    14: 994-1028
+    15: 1120-1127
+    16: 1130-1141
+    17: 1098-1141
+    18: 1237-1238
+    19: 1230-1231
+    20: 1209-1238
+    21: 1400-1406
+    22: 1377-1406
+    23: 1369-1413
+    24: 1488-1506
+    25: 1480-1513
+    26: 1641-1644
+    27: 1671-1689
+    28: 1663-1696
+    29: 1718-1736
+    30: 1889-1896
+    31: 1881-1903
   class counter = object method get = ___windtrap_visit___ 0; 0 end
   let make () = ___windtrap_visit___ 1; new counter
   let kept () =
@@ -661,40 +670,46 @@ module of any other shape as it is.
     ___windtrap_visit___ 9;
     (let r = ___windtrap_post_visit___ 8 (Stdlib.(+) a b) in r)
   let bare a b = ___windtrap_visit___ 10; (let r = a + b in r)
+  let qualified_failure s =
+    ___windtrap_visit___ 12;
+    (let r = ___windtrap_post_visit___ 11 (Stdlib.invalid_arg s) in r)
+  let shadowed x =
+    ___windtrap_visit___ 14;
+    (let exit () = ___windtrap_visit___ 13; () in exit (); x)
   let scrutinee l =
-    ___windtrap_visit___ 13;
+    ___windtrap_visit___ 17;
     (match List.rev l with
-     | [] -> (___windtrap_visit___ 11; 0)
-     | x::_ -> (___windtrap_visit___ 12; x))
+     | [] -> (___windtrap_visit___ 15; 0)
+     | x::_ -> (___windtrap_visit___ 16; x))
   let condition l =
-    ___windtrap_visit___ 16;
+    ___windtrap_visit___ 20;
     if List.mem 0 l
-    then (___windtrap_visit___ 15; 1)
-    else (___windtrap_visit___ 14; 2)
+    then (___windtrap_visit___ 19; 1)
+    else (___windtrap_visit___ 18; 2)
   let at x =
-    ___windtrap_visit___ 19;
+    ___windtrap_visit___ 23;
     (let r =
-       ___windtrap_post_visit___ 18
-         ((Printf.sprintf "%d") @@ (___windtrap_post_visit___ 17 (succ x))) in
+       ___windtrap_post_visit___ 22
+         ((Printf.sprintf "%d") @@ (___windtrap_post_visit___ 21 (succ x))) in
      r)
   let piped l =
-    ___windtrap_visit___ 21;
-    (let r = ___windtrap_post_visit___ 20 (l |> (List.map succ)) in r)
-  let (|.) x f = ___windtrap_visit___ 22; f x
+    ___windtrap_visit___ 25;
+    (let r = ___windtrap_post_visit___ 24 (l |> (List.map succ)) in r)
+  let (|.) x f = ___windtrap_visit___ 26; f x
   let dotted l =
-    ___windtrap_visit___ 24;
-    (let r = ___windtrap_post_visit___ 23 (l |. (List.map succ)) in r)
-  let dotted_tail l = ___windtrap_visit___ 25; l |. (List.map succ)
+    ___windtrap_visit___ 28;
+    (let r = ___windtrap_post_visit___ 27 (l |. (List.map succ)) in r)
+  let dotted_tail l = ___windtrap_visit___ 29; l |. (List.map succ)
   let callee (o : < get: int -> int   > ) x =
-    ___windtrap_visit___ 27;
-    (let r = ___windtrap_post_visit___ 26 (o#get x) in r)
+    ___windtrap_visit___ 31;
+    (let r = ___windtrap_post_visit___ 30 (o#get x) in r)
 
   $ cov --impl ./fixture_primitives.ml | ../elide.exe
   coverage points of "./fixture_primitives.ml" in Windtrap_cov_________fixture_primitives___ml, with ___windtrap_post_visit___:
     0: 329-330
     1: 348-349
-    2: 1173-1176
-    3: 316-1184
+    2: 1220-1223
+    3: 316-1231
   let primitives a b x y r l s e f =
     ___windtrap_visit___ 3;
     (let _ = a && (___windtrap_visit___ 0; b) in
@@ -731,6 +746,8 @@ module of any other shape as it is.
      let _ = raise e in
      let _ = raise_notrace e in
      let _ = failwith s in
+     let _ = invalid_arg s in
+     let _ = exit x in
      let _ = failwith @@ s in
      let _ = s |> failwith in
      let _ = ignore x in
