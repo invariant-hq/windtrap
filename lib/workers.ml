@@ -119,28 +119,6 @@ let tell_quit t =
    the runner's handlers, not even in its first instructions. *)
 let runner_signals = [ Sys.sigalrm; Sys.sigint; Sys.sigterm; Sys.sighup ]
 
-(* [masked fn] is [fn ()] with [runner_signals] blocked on the calling
-   domain, whose mask is put back however [fn] ends. The mask is read before
-   it changes, so a handler that raises in the change still has it put back.
-   A signal that arrived meanwhile is handled when the mask is put back; over
-   an exception of [fn], what its handler raises is dropped for [fn]'s. *)
-let masked fn =
-  if Sys.win32 then fn ()
-  else
-    let previous = Unix.sigprocmask Unix.SIG_BLOCK [] in
-    let restore () =
-      ignore (Unix.sigprocmask Unix.SIG_SETMASK previous : int list)
-    in
-    match
-      ignore (Unix.sigprocmask Unix.SIG_BLOCK runner_signals : int list);
-      fn ()
-    with
-    | () -> restore ()
-    | exception exn ->
-        let backtrace = Printexc.get_raw_backtrace () in
-        (try restore () with _ -> ());
-        Printexc.raise_with_backtrace exn backtrace
-
 let spawn n =
   if n < 1 then invalid_arg "Workers.spawn: no worker";
   let t =
@@ -169,7 +147,7 @@ let spawn n =
     done
   in
   (* A worker whose domain was lost to a raise still exits on [quit]. *)
-  match masked start_all with
+  match Os.with_blocked runner_signals start_all with
   | () -> t
   | exception exn ->
       let backtrace = Printexc.get_raw_backtrace () in

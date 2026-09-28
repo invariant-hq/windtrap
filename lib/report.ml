@@ -140,31 +140,44 @@ let header t ~suite ~tests ?(declared = tests) ?selection ~seed () =
 let selected t = match t.header with Some h -> h.tests | None -> 0
 
 (* The live line is cut as it prints, after escaping, so the cut never
-   splits an escape. *)
-let draw_live t ~width text =
-  let text = Text.truncate_utf8 width (Text.escape_controls text) in
+   splits an escape. A [tail] is the report's own words, kept whole. *)
+let draw_live ?(tail = "") t ~width text =
+  let width = width - Text.length_utf8 tail in
+  let text = Text.truncate_utf8 width (Text.escape_controls text) ^ tail in
   Pp.pf t.out "%s" (Sections.render ~ansi:t.ansi [ styled `Faint text ]);
   Pp.flush t.out ();
   t.live_pending <- true
 
 (* The progress of a test or of a mutant, over the previous one. *)
-let progress t text =
+let progress ?tail t text =
   if t.live then begin
     clear_live t;
     Pp.pf t.out "\r\027[2K";
-    draw_live t ~width:(columns - 2) ("  " ^ text)
+    draw_live ?tail t ~width:(columns - 2) ("  " ^ text)
   end
 
-(* The denominator follows the count when more results arrive than [header]
-   announced, so the counter never reads [5/4]. *)
-let begin_test t ~path =
+(* The running test and its position. The denominator follows the count
+   when more results arrive than [header] announced, so the counter never
+   reads [5/4]. *)
+let running t path =
   let n = t.seen + 1 in
-  progress t
-    (strf "%s[%d/%d] %s\u{2026}"
-       (if t.config.verbose then "Running " else "")
-       n
-       (max (selected t) n)
-       (Test_tree.path_to_string path))
+  strf "%s[%d/%d] %s"
+    (if t.config.verbose then "Running " else "")
+    n
+    (max (selected t) n)
+    (Test_tree.path_to_string path)
+
+let begin_test t ~path = progress t (running t path ^ "\u{2026}")
+
+(* How far the search has gone is what the line is for, so a cut shortens
+   the path and never the count. A search at its start has no step to
+   count. *)
+let shrinking t ~path ~steps =
+  let tail =
+    if steps = 0 then ": shrinking\u{2026}"
+    else strf ": shrinking, %d step%s\u{2026}" steps (plural steps)
+  in
+  progress ~tail t (running t path)
 
 (* A result is classified by its record, never by a failure message: a
    failure that did not count is an excused expected failure. *)
@@ -775,7 +788,8 @@ let observe t ~seed ~selection = function
       header t ~suite ~tests:selected ~declared:total ?selection
         ~seed:(if properties then Some seed else None)
         ()
-  | Run.Test_started { path } -> begin_test t ~path
+  | Run.Test_started { path } | Run.Shrunk { path } -> begin_test t ~path
+  | Run.Shrinking { path; steps } -> shrinking t ~path ~steps
   | Run.Test_finished r -> result t r
   | Run.Fixture_release { name } -> note t ("releasing " ^ name)
   | Run.Interrupted { running; releasing; results; duration } ->
@@ -945,8 +959,8 @@ let run ?(on_event = fun (_ : Run.event) -> ()) ~suite (config : Run.config)
         interrupted renderer ?releasing ~running ~results ~duration
           ~before_summary:(close_envelope ~release_failures:[] results)
           ()
-    | Run.Run_started _ | Run.Test_started _ | Run.Test_finished _
-    | Run.Fixture_release _ ->
+    | Run.Run_started _ | Run.Test_started _ | Run.Shrinking _ | Run.Shrunk _
+    | Run.Test_finished _ | Run.Fixture_release _ ->
         transcript event);
     on_event event
   in

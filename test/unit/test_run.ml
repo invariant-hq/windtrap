@@ -1188,8 +1188,8 @@ let environment, bound_inside, bound_after, rejections =
   let on_event = function
     | Run.Test_finished row ->
         after := (path_string row.path, bindings ()) :: !after
-    | Run.Run_started _ | Run.Test_started _ | Run.Fixture_release _
-    | Run.Interrupted _ ->
+    | Run.Run_started _ | Run.Test_started _ | Run.Shrinking _ | Run.Shrunk _
+    | Run.Fixture_release _ | Run.Interrupted _ ->
         ()
   in
   let binds () =
@@ -1264,7 +1264,9 @@ let moved =
   in
   let on_event = function
     | Run.Test_started _ | Run.Test_finished _ -> between := cwd () :: !between
-    | Run.Run_started _ | Run.Fixture_release _ | Run.Interrupted _ -> ()
+    | Run.Run_started _ | Run.Shrinking _ | Run.Shrunk _ | Run.Fixture_release _
+    | Run.Interrupted _ ->
+        ()
   in
   ignore (Recorded.execute ~on_event [ test ~retries:2 "moves" moves ]);
   let final = cwd () in
@@ -1397,8 +1399,8 @@ let process_state =
 
 let on_release note = function
   | Run.Fixture_release { name } -> note name
-  | Run.Run_started _ | Run.Test_started _ | Run.Test_finished _
-  | Run.Interrupted _ ->
+  | Run.Run_started _ | Run.Test_started _ | Run.Shrinking _ | Run.Shrunk _
+  | Run.Test_finished _ | Run.Interrupted _ ->
       ()
 
 let shared_values, next_run_values =
@@ -2071,6 +2073,9 @@ let event_line = function
       strf "run started: %s, %d of %d%s" suite selected total
         (if properties then ", properties" else "")
   | Run.Test_started { path } -> "started " ^ path_string path
+  | Run.Shrinking { path; steps } ->
+      strf "shrinking %s, %d steps" (path_string path) steps
+  | Run.Shrunk { path } -> "shrunk " ^ path_string path
   | Run.Test_finished row -> "finished " ^ path_string row.path
   | Run.Fixture_release _ -> "release"
   | Run.Interrupted _ -> "interrupted"
@@ -2103,8 +2108,8 @@ let property_flags =
     let on_event = function
       | Run.Run_started { properties; selected; _ } ->
           seen := strf "%d selected, properties: %b" selected properties
-      | Run.Test_started _ | Run.Test_finished _ | Run.Fixture_release _
-      | Run.Interrupted _ ->
+      | Run.Test_started _ | Run.Shrinking _ | Run.Shrunk _
+      | Run.Test_finished _ | Run.Fixture_release _ | Run.Interrupted _ ->
           ()
     in
     ignore
@@ -2117,8 +2122,8 @@ let observer_exit, observer_called =
   let called = ref false in
   let observer = function
     | Run.Test_finished _ -> exit 3
-    | Run.Run_started _ | Run.Test_started _ | Run.Fixture_release _
-    | Run.Interrupted _ ->
+    | Run.Run_started _ | Run.Test_started _ | Run.Shrinking _ | Run.Shrunk _
+    | Run.Fixture_release _ | Run.Interrupted _ ->
         called := true
   in
   let raised =
@@ -2139,6 +2144,144 @@ let events_come_in_order () =
     ]
     event_log
 
+(* A search's events. The observer of [searched] prints each on standard
+   output, which the log of the test must not hold. A search of more than a
+   tenth of a second gives [Shrinking] as its steps grow, so the timelines
+   drop it past [0] steps. *)
+let searched =
+  let events = ref [] in
+  let on_event event =
+    (match event with
+    | Run.Shrinking _ | Run.Shrunk _ ->
+        print_string ("observer: " ^ event_line event ^ "\n")
+    | Run.Run_started _ | Run.Test_started _ | Run.Test_finished _
+    | Run.Fixture_release _ | Run.Interrupted _ ->
+        ());
+    events := event :: !events
+  in
+  let big x =
+    print_string "law ran\n";
+    is_true (x < 10)
+  in
+  let r =
+    Recorded.execute ~on_event
+      [
+        Run.prop "fails" (Gen.int_range 0 1000) big;
+        Run.prop "fails on an example" ~examples:[ 42 ] (Gen.int_range 0 9) big;
+        Run.prop "fails with no candidate" (Gen.int_range 10 10) big;
+        Run.prop "holds" (Gen.int_range 0 9) big;
+        test "plain" ignore;
+      ]
+  in
+  (r, List.rev !events)
+
+let search_timeline =
+  List.filter_map
+    (function
+      | Run.Run_started _ -> None
+      | Run.Shrinking { steps; _ } when steps > 0 -> None
+      | event -> Some (event_line event))
+    (snd searched)
+
+let steps_given events =
+  List.filter_map
+    (function
+      | Run.Shrinking { steps; _ } -> Some steps
+      | Run.Run_started _ | Run.Test_started _ | Run.Shrunk _
+      | Run.Test_finished _ | Run.Fixture_release _ | Run.Interrupted _ ->
+          None)
+    events
+
+let a_search_is_given_from_its_start_to_its_end () =
+  equal (list string)
+    [
+      "started fails";
+      "shrinking fails, 0 steps";
+      "shrunk fails";
+      "finished fails";
+      "started fails on an example";
+      "finished fails on an example";
+      "started fails with no candidate";
+      "finished fails with no candidate";
+      "started holds";
+      "finished holds";
+      "started plain";
+      "finished plain";
+    ]
+    search_timeline;
+  let steps = steps_given (snd searched) in
+  equal (list int) (List.sort_uniq Int.compare steps) steps
+
+let a_search_observer_writes_past_the_log () =
+  let r = fst searched in
+  let tail = require_some (failure r [ "fails" ]).output_tail in
+  let log = require_some (contents (require_some tail.log_path)) in
+  contains ~sub:"observer: shrinking fails, 0 steps" (Recorded.out r);
+  contains ~sub:"law ran" log;
+  not_contains ~sub:"observer" log
+
+(* A threshold law that sleeps: its search descends by halves, some tenths
+   of a second long. *)
+let paced =
+  let given = ref [] in
+  let on_event = function
+    | Run.Shrinking { steps; _ } ->
+        given := (Unix.gettimeofday (), steps) :: !given
+    | Run.Run_started _ | Run.Test_started _ | Run.Shrunk _
+    | Run.Test_finished _ | Run.Fixture_release _ | Run.Interrupted _ ->
+        ()
+  in
+  let slow x =
+    Unix.sleepf 0.005;
+    is_true (x < 500)
+  in
+  ignore
+    (Recorded.execute ~on_event
+       [ Run.prop "slow" (Gen.int_range 0 1_000_000) slow ]);
+  List.rev !given
+
+(* The pace is measured between the observer's calls, a little after the
+   runner's own clock reads, hence the margin. *)
+let a_slow_search_is_given_as_it_grows () =
+  let rec gaps = function
+    | (a, _) :: ((b, _) :: _ as rest) -> (b -. a) :: gaps rest
+    | [ _ ] | [] -> []
+  in
+  let steps = List.map snd paced in
+  at_least int ~than:2 (List.length paced);
+  equal (list int) (List.sort_uniq Int.compare steps) steps;
+  at_least float_exact ~than:0.09
+    (List.fold_left Float.min Float.infinity (gaps paced))
+
+let raising_observer =
+  let on_event = function
+    | Run.Shrinking _ | Run.Shrunk _ -> raise Exit
+    | Run.Run_started _ | Run.Test_started _ | Run.Test_finished _
+    | Run.Fixture_release _ | Run.Interrupted _ ->
+        ()
+  in
+  Recorded.execute ~on_event
+    [ Run.prop "fails" (Gen.int_range 0 1000) (fun x -> is_true (x < 10)) ]
+
+(* The observer sleeps past the limit on the search's first event. Were the
+   limit not held, it would cut the observer, and the search would run on. *)
+let held_limit =
+  let slept = ref false in
+  let on_event = function
+    | Run.Shrinking _ ->
+        Unix.sleepf 0.3;
+        slept := true
+    | Run.Run_started _ | Run.Test_started _ | Run.Shrunk _
+    | Run.Test_finished _ | Run.Fixture_release _ | Run.Interrupted _ ->
+        ()
+  in
+  let r =
+    Recorded.execute ~on_event
+      ~config:(fun c -> { c with timeout = Some 0.2 })
+      [ Run.prop "fails" (Gen.int_range 10 1000) (fun x -> is_true (x < 10)) ]
+  in
+  (r, !slept)
+
 let run_started_says_whether_properties_run () =
   equal (list string)
     [
@@ -2158,6 +2301,29 @@ let events =
       test "an exit in an observer is that observer's exception" (fun () ->
           is_true observer_called;
           equal (option exn) (Some (Failure.Control `Exit)) observer_exit);
+      test
+        "a search is given as Shrinking when it first runs the law, and as \
+         Shrunk when it ends"
+        a_search_is_given_from_its_start_to_its_end;
+      test "the observer of a search writes to the real descriptors"
+        a_search_observer_writes_past_the_log;
+      test
+        "a slow search is given again as its steps grow, at most ten times a \
+         second"
+        a_slow_search_is_given_as_it_grows;
+      test "what the observer of a search raises is ignored" (fun () ->
+          equal
+            (pair (option exn) string)
+            (None, "fail body")
+            ( Recorded.escaped raising_observer,
+              Recorded.row raising_observer [ "fails" ] );
+          equal string "converged" (shrink_end raising_observer [ "fails" ]));
+      test "the test's limit is held while the observer of a search runs"
+        (fun () ->
+          needs_timeouts ();
+          let r, slept = held_limit in
+          is_true slept;
+          equal string "timed out after 0.2s" (shrink_end r [ "fails" ]));
     ]
 
 (* Startup errors *)
@@ -4015,8 +4181,8 @@ let observer_ended =
   ended_by_exception
     ~on_event:(function
       | Run.Test_finished _ -> raise Boom
-      | Run.Run_started _ | Run.Test_started _ | Run.Fixture_release _
-      | Run.Interrupted _ ->
+      | Run.Run_started _ | Run.Test_started _ | Run.Shrinking _ | Run.Shrunk _
+      | Run.Fixture_release _ | Run.Interrupted _ ->
           ())
     ~tests:(fun fx -> [ corrects fx ])
 
@@ -4031,8 +4197,8 @@ let release_event_ended =
     ended_by_exception
       ~on_event:(function
         | Run.Fixture_release _ -> raise Boom
-        | Run.Run_started _ | Run.Test_started _ | Run.Test_finished _
-        | Run.Interrupted _ ->
+        | Run.Run_started _ | Run.Test_started _ | Run.Shrinking _
+        | Run.Shrunk _ | Run.Test_finished _ | Run.Interrupted _ ->
             ())
       ~tests:(fun fx ->
         [

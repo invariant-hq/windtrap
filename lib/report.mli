@@ -29,11 +29,11 @@ val create :
     - [ansi] is whether styling is emitted.
     - [terminal] is whether [out] is a terminal that a reader watches. Defaults
       to [false]. It is the [terminal] of every {!Report_sections.pp_failure}
-      entry. It is also whether {!begin_test}, {!note} and {!mutation_testing}
-      draw the live line, which the next write erases. The live line is off
-      whatever [terminal] is under [ansi:false] and under [config.stream]. It is
-      the one line that is cut to a width, which is 80 columns ([columns] in
-      [report.ml]).
+      entry. It is also whether {!begin_test}, {!shrinking}, {!note} and
+      {!mutation_testing} draw the live line, which the next write erases. The
+      live line is off whatever [terminal] is under [ansi:false] and under
+      [config.stream]. It is the one line that is cut to a width, which is 80
+      columns ([columns] in [report.ml]).
 
     The renderer keeps [config]. [create] reads [config.stream],
     [config.slow_threshold] and the identifier of a [config.mutation] that is
@@ -99,6 +99,14 @@ val begin_test : t -> path:string list -> unit
     position among the selected tests. The line shows only while the live line
     is on (see {!create}). *)
 
+val shrinking : t -> path:string list -> steps:int -> unit
+(** [shrinking t ~path ~steps] draws the live line of {!begin_test} for the test
+    at [path], saying that a property of it is shrinking a counterexample and,
+    when [steps > 0], how many steps the search has taken, as in
+    [[3/10] suite › prop: shrinking, 12 steps…]. A cut to the width shortens the
+    path and never what follows it. The line shows only while the live line is
+    on (see {!create}). *)
+
 val result : t -> Run.result -> unit
 (** [result t r] commits what [r] is owed. A client must call it once per
     finished test and in the order of the tests, because {!finish} relies on the
@@ -135,6 +143,8 @@ val observe :
       and with [seed] iff the event's [properties] is [true], that is iff a
       selected test is a property.
     - [Test_started] is {!begin_test}, and [Test_finished] is {!result}.
+    - [Shrinking] is {!shrinking}, and [Shrunk] is {!begin_test}, which draws
+      the line of the running test again.
     - [Fixture_release] is [note t ("releasing " ^ name)].
     - [Interrupted] is {!interrupted}, without [before_summary].
 

@@ -1090,6 +1090,62 @@ let forked_inside () =
              raise_signal usr1;
              until never)))
 
+(* Whether SIGUSR1 is blocked in the calling thread. *)
+let usr1_blocked () = List.mem usr1 (Unix.sigprocmask Unix.SIG_BLOCK [])
+
+(* Whether a SIGUSR1 sent inside [with_blocked] was handled there, whether it
+   was handled once [with_blocked] returned, and whether SIGUSR1 was then
+   blocked. *)
+let held_until_return () =
+  posix_only ();
+  let handled = ref false in
+  let found = Sys.signal usr1 (Sys.Signal_handle (fun _ -> handled := true)) in
+  let inside =
+    Os.with_blocked [ usr1 ] (fun () ->
+        raise_signal usr1;
+        until ~tries:10 (fun () -> !handled);
+        !handled)
+  in
+  let after = !handled and blocked = usr1_blocked () in
+  Sys.set_signal usr1 found;
+  equal (triple bool bool bool) (false, true, false) (inside, after, blocked)
+
+(* What [with_blocked] raised when the handler of a signal held while [fn]
+   ran raises [Exit], and whether SIGUSR1 was then blocked. *)
+let handler_raises ~fn_raises =
+  posix_only ();
+  let found = Sys.signal usr1 (Sys.Signal_handle (fun _ -> raise Exit)) in
+  let raised =
+    match
+      Os.with_blocked [ usr1 ] (fun () ->
+          raise_signal usr1;
+          if fn_raises then raise Not_found)
+    with
+    | () -> "returned"
+    | exception e -> Printexc.to_string e
+  in
+  let blocked = usr1_blocked () in
+  Sys.set_signal usr1 found;
+  (raised, blocked)
+
+let unblocked_after_raise () =
+  posix_only ();
+  let raised =
+    match Os.with_blocked [ usr1 ] (fun () -> raise Not_found) with
+    | () -> "returned"
+    | exception e -> Printexc.to_string e
+  in
+  equal (pair string bool) ("Not_found", false) (raised, usr1_blocked ())
+
+(* A signal blocked before [with_blocked] is blocked after it. *)
+let blocked_before () =
+  posix_only ();
+  let found = Unix.sigprocmask Unix.SIG_BLOCK [ usr1 ] in
+  Os.with_blocked [ usr1; usr2 ] ignore;
+  let blocked = usr1_blocked () in
+  ignore (Unix.sigprocmask Unix.SIG_SETMASK found : int list);
+  is_true blocked
+
 let dies_by signal () =
   Sys.set_signal signal (Sys.Signal_handle ignore);
   ignore (Unix.sigprocmask Unix.SIG_BLOCK [ signal ]);
@@ -1121,6 +1177,23 @@ let signals =
       test "a process forked inside dies by the signal" (fun () ->
           posix_only ();
           killed_by usr1 (forked_inside ()));
+      test
+        "with_blocked holds a signal until its function returns, and unblocks \
+         it"
+        held_until_return;
+      test "with_blocked puts the mask back when its function raises"
+        unblocked_after_raise;
+      test "with_blocked puts back the mask it found" blocked_before;
+      cases
+        "what the handler of a held signal raises, with_blocked raises in \
+         place of its function's value, not of its exception"
+        ~name:fst
+        [
+          ("the function returns", (false, "Stdlib.Exit"));
+          ("the function raises", (true, "Not_found"));
+        ]
+        (fun (_, (fn_raises, raised)) ->
+          equal (pair string bool) (raised, false) (handler_raises ~fn_raises));
       cases "die_by ends the process by the signal, though handled and blocked"
         ~name:signal_name [ Sys.sighup; Sys.sigint; Sys.sigpipe; Sys.sigterm ]
         (fun signal ->

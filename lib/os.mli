@@ -326,6 +326,16 @@ val with_signals : int list -> (int -> unit) -> (unit -> 'a) -> 'a
     - In a process forked inside [fn], [handle] does not run. [signals] go back
       to their default disposition and the process is sent the signal again. *)
 
+val with_blocked : int list -> (unit -> 'a) -> 'a
+(** [with_blocked signals fn] is [fn ()] with [signals] blocked in the calling
+    thread, so that a handler of one of them never interrupts [fn]. The previous
+    mask is put back however [fn] ends, and a signal that arrived meanwhile is
+    handled then: what its handler raises, [with_blocked] raises in place of
+    what [fn] returned, and drops for what [fn] raised. A signal pending before
+    the call can be handled as [signals] are blocked: what its handler raises
+    leaves [with_blocked] before [fn] runs, with the mask put back. On Windows
+    it is [fn ()]. *)
+
 val die_by : int -> 'a
 (** [die_by signal] sends the process [signal] under its default disposition,
     unblocked, so that its parent sees a death by signal and no [at_exit]

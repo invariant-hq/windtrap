@@ -110,7 +110,9 @@ let evaluated_outside reach =
    evaluated is drained and dropped. *)
 let observe reach (event : Run.event) =
   match event with
-  | Run.Run_started _ | Run.Fixture_release _ | Run.Interrupted _ -> ()
+  | Run.Run_started _ | Run.Shrinking _ | Run.Shrunk _ | Run.Fixture_release _
+  | Run.Interrupted _ ->
+      ()
   | Run.Test_started _ ->
       evaluated_outside reach;
       Mutate.next_epoch ()
@@ -804,7 +806,8 @@ let count_xfail_hits counter (event : Run.event) =
       counter.hits <-
         (if counter.hits > max_int - hits then max_int else counter.hits + hits)
   | Run.Test_finished { xfail = None; _ }
-  | Run.Run_started _ | Run.Fixture_release _ | Run.Interrupted _ ->
+  | Run.Run_started _ | Run.Shrinking _ | Run.Shrunk _ | Run.Fixture_release _
+  | Run.Interrupted _ ->
       ()
 
 let xfail_failed (outcome : Run.outcome) =

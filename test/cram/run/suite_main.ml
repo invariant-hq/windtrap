@@ -147,7 +147,9 @@ let between () =
   let signal_self = function
     | Run.Test_finished _ -> Unix.kill (Unix.getpid ()) Sys.sigterm
     | Run.Interrupted _ -> raise Exit
-    | Run.Run_started _ | Run.Test_started _ | Run.Fixture_release _ -> ()
+    | Run.Run_started _ | Run.Test_started _ | Run.Shrinking _ | Run.Shrunk _
+    | Run.Fixture_release _ ->
+        ()
   in
   let config =
     {

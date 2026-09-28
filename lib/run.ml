@@ -141,6 +141,29 @@ let baselines t = t.baselines
 let results t = List.rev t.rev_results
 let stopped t = t.stopped
 
+(* Events *)
+
+(* Declared before the frames, which give [Shrinking] and [Shrunk] from
+   inside an attempt. *)
+type event =
+  | Run_started of {
+      suite : string;
+      total : int;
+      selected : int;
+      properties : bool;
+    }
+  | Test_started of { path : string list }
+  | Shrinking of { path : string list; steps : int }
+  | Shrunk of { path : string list }
+  | Test_finished of result
+  | Fixture_release of { name : string }
+  | Interrupted of {
+      running : string list option;
+      releasing : string option;
+      results : result list;
+      duration : float;
+    }
+
 (* Frames *)
 
 (* What a [setenv] changed, put back when the attempt ends. *)
@@ -148,6 +171,7 @@ type binding = { name : string; prior : string option; loc : Loc.t option }
 
 type frame = {
   run : t;
+  on_event : event -> unit; (* the run's observer *)
   path : string list;
   loc : Loc.t option; (* the declaration site *)
   corrections : bool; (* whether a check may record a correction *)
@@ -164,9 +188,10 @@ type frame = {
   mutable cwd : (string * Loc.t option) option; (* left by the first chdir *)
 }
 
-let frame run (case : Test_tree.case) =
+let frame ~on_event run (case : Test_tree.case) =
   {
     run;
+    on_event;
     path = case.path;
     loc = case.loc;
     corrections = Option.is_none case.xfail;
@@ -536,6 +561,24 @@ let gave_up_failure ?loc (stats : Property.stats) =
         cases passed)"
        stats.discards stats.cases)
 
+(* The signals that end a run (see [with_interrupts]). *)
+let interrupting = [ Sys.sigint; Sys.sigterm; Sys.sighup ]
+
+(* An event given inside an attempt reaches the observer as the others do:
+   on the real descriptors, and with neither the test's limit nor a signal
+   able to cut the observer mid-line. The alarm or a signal that arrives
+   meanwhile is handled when it returns, in the attempt. What it raises
+   would fail a test that it does not own, so it is dropped. *)
+let give_in_attempt frame event =
+  Os.with_blocked (Sys.sigalrm :: interrupting) (fun () ->
+      try Capture.outside frame.run.capture (fun () -> frame.on_event event)
+      with _ -> ())
+
+(* A fast law accepts thousands of candidates a second, and a terminal would
+   draw each: after its start a search is given at most ten times a
+   second. *)
+let shrink_interval = 0.1
+
 let property ?loc ?count ?max_discard ?examples ?summary ?prints_run ?cost
     ?deterministic gen law =
   let frame = current_frame () in
@@ -565,16 +608,41 @@ let property ?loc ?count ?max_discard ?examples ?summary ?prints_run ?cost
         Option.bind (Capture.mark capture) (fun stop ->
             Capture.output_tail ~within:(start, stop) capture)
   in
+  (* The steps last given and when, while a search runs. *)
+  let given = ref None in
+  let shrinking steps =
+    match !given with
+    | Some (last, at) when steps = last || Os.count_s at < shrink_interval -> ()
+    | Some _ | None ->
+        given := Some (steps, Os.counter ());
+        give_in_attempt frame (Shrinking { path = frame.path; steps })
+  in
+  let shrunk () =
+    if Option.is_some !given then begin
+      given := None;
+      give_in_attempt frame (Shrunk { path = frame.path })
+    end
+  in
   let fail stats failure =
     frame.prop_stats <- Some stats;
     raise (Failure.Check_failure failure)
   in
-  match
-    Property.run ?loc ?count ?max_discard ?examples ?summary ?prints_run ?cost
-      ?deterministic ~output ~root:config.seed
-      ~path:(Test_tree.path_to_string frame.path)
-      gen run_law
-  with
+  let outcome =
+    match
+      Property.run ?loc ?count ?max_discard ?examples ?summary ?prints_run ?cost
+        ?deterministic ~output ~shrinking ~root:config.seed
+        ~path:(Test_tree.path_to_string frame.path)
+        gen run_law
+    with
+    | outcome ->
+        shrunk ();
+        outcome
+    | exception exn ->
+        let backtrace = Printexc.get_raw_backtrace () in
+        shrunk ();
+        Printexc.raise_with_backtrace exn backtrace
+  in
+  match outcome with
   | Pass stats -> frame.prop_stats <- Some stats
   (* Coverage is judged once every case has run, so a property that stopped
      early reports no coverage it did not judge. *)
@@ -604,25 +672,6 @@ let prop ?__POS__ ?tags ?timeout ?count ?max_discard ?examples ?summary name gen
   let loc = Loc.resolve ?__POS__ () in
   Test_tree.test ?__POS__ ?tags ?timeout name (fun () ->
       property ?loc ?count ?max_discard ?examples ?summary gen law)
-
-(* Events *)
-
-type event =
-  | Run_started of {
-      suite : string;
-      total : int;
-      selected : int;
-      properties : bool;
-    }
-  | Test_started of { path : string list }
-  | Test_finished of result
-  | Fixture_release of { name : string }
-  | Interrupted of {
-      running : string list option;
-      releasing : string option;
-      results : result list;
-      duration : float;
-    }
 
 (* Startup errors *)
 
@@ -1104,7 +1153,7 @@ let run_case ~on_event run (case : Test_tree.case) =
   in
   let groups, test_name = split_last case.path in
   let rec attempt number spent =
-    let frame = frame run case in
+    let frame = frame ~on_event run case in
     let start = Os.counter () in
     run_attempt frame case ~limit ~groups ~test_name;
     let outcome, corrected, last = settle frame in
@@ -1175,7 +1224,7 @@ let with_interrupts ~interrupt run fn =
     in
     if in_user_code then interrupt signal else run.interrupted <- Some signal
   in
-  Os.with_signals [ Sys.sigint; Sys.sigterm; Sys.sighup ] handle fn
+  Os.with_signals interrupting handle fn
 
 (* Executing *)
 

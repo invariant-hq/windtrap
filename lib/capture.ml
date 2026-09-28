@@ -116,6 +116,50 @@ let with_capture t ~groups ~test_name fn =
           ignore (release c);
           Printexc.raise_with_backtrace exn bt)
 
+(* What the test buffered is drained into its log before the switch, and
+   what [fn] buffered to the real descriptors before the switch back. The
+   descriptors of the attempt are kept apart from [saved], which still holds
+   the real ones for [abandon]. *)
+let outside t fn =
+  match t with
+  | Disabled | Capturing { saved = None; _ } -> fn ()
+  | Capturing { saved = Some (real_out, real_err); _ } -> (
+      drain ();
+      let out = Unix.dup ~cloexec:true Unix.stdout in
+      let err =
+        try Unix.dup ~cloexec:true Unix.stderr
+        with exn ->
+          Unix.close out;
+          raise exn
+      in
+      let point out err =
+        Unix.dup2 out Unix.stdout;
+        Unix.dup2 err Unix.stderr
+      in
+      let back () =
+        point out err;
+        Unix.close out;
+        Unix.close err
+      in
+      match
+        point real_out real_err;
+        fn ()
+      with
+      | value -> (
+          match drain () with
+          | () ->
+              back ();
+              value
+          | exception (Sys_error _ as exn) ->
+              let bt = Printexc.get_raw_backtrace () in
+              back ();
+              Printexc.raise_with_backtrace exn bt)
+      | exception exn ->
+          let bt = Printexc.get_raw_backtrace () in
+          (try drain () with Sys_error _ -> ());
+          back ();
+          Printexc.raise_with_backtrace exn bt)
+
 let abandon = function Disabled -> () | Capturing c -> ignore (release c)
 
 (* Reading captured output *)

@@ -423,6 +423,60 @@ let abandon_unredirected () =
   Capture.abandon cap;
   equal string "as before, as before" (pointing ~before ~log)
 
+(* Inside an attempt, where [fn] found descriptors 1 and 2 under [outside],
+   where they pointed after it, and the log: what [fn] wrote is not in it. *)
+let outside () =
+  let cap, log = state () in
+  let before = descriptors () in
+  let inside, after =
+    attempt cap (fun () ->
+        print_string "buffered, ";
+        let inside =
+          Capture.outside cap (fun () ->
+              print_string "outside";
+              pointing ~before ~log)
+        in
+        print_string "after";
+        (inside, pointing ~before ~log))
+  in
+  equal (list string)
+    [ "as before, as before"; "log, log"; "buffered, after" ]
+    [ inside; after; read log ]
+
+(* A test that pointed descriptor 1 at a file of its own finds it there
+   again. *)
+let outside_elsewhere () =
+  let cap, log = state () in
+  let before = descriptors () in
+  let own = Filename.concat (temp_dir ()) "own" in
+  let after =
+    attempt cap (fun () ->
+        let fd =
+          Unix.openfile own Unix.[ O_WRONLY; O_CREAT; O_CLOEXEC ] 0o600
+        in
+        Unix.dup2 fd Unix.stdout;
+        Unix.close fd;
+        Capture.outside cap ignore;
+        pointing ~before ~log)
+  in
+  equal string "elsewhere, log" after
+
+let outside_raises () =
+  let cap, log = state () in
+  let before = descriptors () in
+  let after =
+    attempt cap (fun () ->
+        (try Capture.outside cap (fun () -> raise Not_found)
+         with Not_found -> ());
+        pointing ~before ~log)
+  in
+  equal string "log, log" after
+
+let outside_unredirected cap =
+  let before = descriptors () in
+  equal string "as before, as before"
+    (Capture.outside cap (fun () -> pointing ~before ~log:""))
+
 let capturing =
   group "Capturing"
     [
@@ -468,6 +522,20 @@ let capturing =
       test "abandon ignores a failed drain" abandon_failed_drain;
       test "abandon with nothing redirected restores nothing"
         abandon_unredirected;
+      test
+        "outside runs its function on the real descriptors, then points them \
+         back at the log"
+        outside;
+      test "outside points descriptor 1 back where the test pointed it"
+        outside_elsewhere;
+      test "outside points the descriptors back when its function raises"
+        outside_raises;
+      cases "outside with nothing redirected is its function" ~name:fst
+        [
+          ("no attempt running", fun () -> fst (state ()));
+          ("disabled", fun () -> Capture.disabled);
+        ]
+        (fun (_, cap) -> outside_unredirected (cap ()));
     ]
 
 (* Reading captured output *)

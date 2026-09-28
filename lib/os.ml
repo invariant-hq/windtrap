@@ -439,6 +439,28 @@ let with_signals signals handle fn =
       fn
   end
 
+(* The runtime runs a pending handler after the mask changes, inside the
+   [sigprocmask] that changes it. The mask is read before it changes, so a
+   handler that raises as [signals] are blocked still has it put back. *)
+let with_blocked signals fn =
+  if Sys.win32 then fn ()
+  else
+    let previous = Unix.sigprocmask Unix.SIG_BLOCK [] in
+    let restore () =
+      ignore (Unix.sigprocmask Unix.SIG_SETMASK previous : int list)
+    in
+    match
+      ignore (Unix.sigprocmask Unix.SIG_BLOCK signals : int list);
+      fn ()
+    with
+    | value ->
+        restore ();
+        value
+    | exception exn ->
+        let backtrace = Printexc.get_raw_backtrace () in
+        (try restore () with _ -> ());
+        Printexc.raise_with_backtrace exn backtrace
+
 let die_by signal =
   default_signals [ signal ];
   Unix.kill (Unix.getpid ()) signal;

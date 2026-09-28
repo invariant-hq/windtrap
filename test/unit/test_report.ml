@@ -233,7 +233,7 @@ let unit_after_rounding () =
        (List.map summary_in (around 9_900 10_050 @ around 999_000 1_000_600)))
 
 let off_live_rows =
-  (* What [begin_test] wrote, after the header. *)
+  (* What [begin_test] and [shrinking] wrote, after the header. *)
   let draw ?(verbose = false) ?(stream = false) ~ansi ~terminal () =
     let b = Buffer.create 64 in
     let ppf = Format.formatter_of_buffer b in
@@ -245,6 +245,7 @@ let off_live_rows =
     Format.pp_print_flush ppf ();
     Buffer.clear b;
     Report.begin_test r ~path:[ "math"; "addition" ];
+    Report.shrinking r ~path:[ "math"; "addition" ] ~steps:12;
     Format.pp_print_flush ppf ();
     Buffer.contents b
   in
@@ -268,6 +269,20 @@ let live_line_cut () =
   in
   at_most int ~than:80 (Text.length_utf8 line);
   not_contains ~sub:long line
+
+let shrinking_line_cut () =
+  let long = String.make 200 'n' in
+  let drawn =
+    rendered ~ansi:true ~terminal:true (fun r ->
+        Report.header r ~suite:"s" ~tests:1 ~seed:None ();
+        Report.shrinking r ~path:[ long ] ~steps:12)
+  in
+  let line =
+    Gallery.unstyled (String.concat "" (String.split_on_char '\r' drawn))
+  in
+  at_most int ~than:80 (Text.length_utf8 line);
+  not_contains ~sub:long line;
+  ends_with ~affix:"...: shrinking, 12 steps\u{2026}" line
 
 let label_stats collected =
   { Property.cases = 100; discards = 0; collected; coverage = [] }
@@ -390,6 +405,44 @@ let timeline_entries () =
               Report.finish r ~release_failures:[]
                 ~results:[ pass "a" ]
                 ~duration:0.01 () );
+        ] );
+    ( "a property's search shows on the live line, which is erased before its \
+       block",
+      timeline ~ansi:true ~terminal:true
+        [
+          ("Run_started", fun r -> observe r (started ~total:2 ()));
+          ( "Test_started",
+            fun r -> observe r (Run.Test_started { path = [ "lists"; "rev" ] })
+          );
+          ( "Shrinking, 0 steps",
+            fun r ->
+              observe r (Run.Shrinking { path = [ "lists"; "rev" ]; steps = 0 })
+          );
+          ( "Shrinking, 1 step",
+            fun r ->
+              observe r (Run.Shrinking { path = [ "lists"; "rev" ]; steps = 1 })
+          );
+          ( "Shrinking, 12 steps",
+            fun r ->
+              observe r
+                (Run.Shrinking { path = [ "lists"; "rev" ]; steps = 12 }) );
+          ( "Shrunk",
+            fun r -> observe r (Run.Shrunk { path = [ "lists"; "rev" ] }) );
+          ( "Test_finished, a failure",
+            fun r ->
+              observe r
+                (Run.Test_finished
+                   (result [ "lists"; "rev" ]
+                      (Failure.Fail [ Failure.message "boom" ]))) );
+        ] );
+    ( "under -v the search shows on the running test's live line",
+      timeline ~ansi:true ~terminal:true ~config:(config ~verbose:true ())
+        [
+          ( "header",
+            fun r -> Report.header r ~suite:"mylib" ~tests:2 ~seed:None () );
+          ("begin_test", fun r -> Report.begin_test r ~path:[ "lists"; "rev" ]);
+          ( "shrinking",
+            fun r -> Report.shrinking r ~path:[ "lists"; "rev" ] ~steps:3 );
         ] );
     ( "under -v every event has its line",
       timeline ~config:(config ~verbose:true ())
@@ -572,6 +625,8 @@ let observe_raises_nothing () =
          observe r (Run.Test_finished fail);
          observe r (Run.Fixture_release { name = "" });
          observe r (Run.Test_started { path = [] });
+         observe r (Run.Shrinking { path = []; steps = -1 });
+         observe r (Run.Shrunk { path = [ "\027" ] });
          observe r
            (Run.Run_started
               { suite = ""; total = 0; selected = 5; properties = true });
@@ -1381,6 +1436,8 @@ let transcript_group =
       cases "the live line is off" ~name:fst off_live_rows (fun (_, draw) ->
           equal string "" (draw ()));
       test "the live line is cut to 80 columns" live_line_cut;
+      test "a search's live line is cut in its path, never in its count"
+        shrinking_line_cut;
       cases
         "a compact run prints nothing of a result that is no counted failure"
         ~name:fst silent_rows silent;

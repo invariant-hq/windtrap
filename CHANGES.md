@@ -41,6 +41,11 @@
 - `Gen.permutation ~pp values` generates `values` shuffled and shrinks
   toward their given order, and `Gen.subsequence ~pp values` generates
   some elements of `values` in their order and shrinks toward `[]`.
+- On a terminal, the line that names the running test says when a
+  property or stateful test is shrinking a counterexample, and how many
+  steps the search has taken, as
+  `[3/10] lists › rev: shrinking, 12 steps…`, where 0.2.0 named the test
+  alone while it searched.
 
 ### Stateful testing
 

@@ -87,6 +87,32 @@ mylib: 2 tests
 --- finish
 «erase»s: «g|1 passed», 1 not run in 10ms.
 
+=== a property's search shows on the live line, which is erased before its block
+--- Run_started
+--- Test_started
+«erase»«d|  [1/2] lists › rev…» [no newline]
+--- Shrinking, 0 steps
+«erase»«erase»«d|  [1/2] lists › rev: shrinking…» [no newline]
+--- Shrinking, 1 step
+«erase»«erase»«d|  [1/2] lists › rev: shrinking, 1 step…» [no newline]
+--- Shrinking, 12 steps
+«erase»«erase»«d|  [1/2] lists › rev: shrinking, 12 steps…» [no newline]
+--- Shrunk
+«erase»«erase»«d|  [1/2] lists › rev…» [no newline]
+--- Test_finished, a failure
+«erase»s: 2 tests
+«d|──────────────────────── failures ────────────────────────»
+  «r|FAIL»  «b|lists › rev»
+    boom
+
+=== under -v the search shows on the running test's live line
+--- header
+mylib: 2 tests
+--- begin_test
+«erase»«d|  Running [1/2] lists › rev…» [no newline]
+--- shrinking
+«erase»«erase»«d|  Running [1/2] lists › rev: shrinking, 3 steps…» [no newline]
+
 === under -v every event has its line
 --- Run_started
 s: 1 test

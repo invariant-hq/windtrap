@@ -84,6 +84,18 @@ val with_capture :
     failed last drain. Raises [Unix.Unix_error] if the descriptors cannot be
     restored. *)
 
+val outside : t -> (unit -> 'a) -> 'a
+(** [outside t fn] is [fn ()] run on the real descriptors 1 and 2 while an
+    attempt of [t] is redirected, for the runner to write from inside the
+    attempt. It drains into the log, points descriptors 1 and 2 at the real
+    ones, runs [fn], drains what [fn] left in a buffer, and points descriptors 1
+    and 2 back at what they were, the log or where the test pointed them,
+    whatever [fn] does. When nothing is redirected it is [fn ()].
+
+    Raises [Sys_error] if the first drain fails, before [fn] runs, and if the
+    last one fails. What [fn] raised wins over a failed last drain. Raises
+    [Unix.Unix_error] if a descriptor cannot be duplicated. *)
+
 val abandon : t -> unit
 (** [abandon t] ends the redirection of an attempt that is still running, from
     outside {!with_capture}, for a run that stops inside a test and never

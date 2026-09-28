@@ -1098,6 +1098,68 @@ let output =
                descent at_least_10));
     ]
 
+(* Progress *)
+
+(* The runs of the law and the calls of [shrinking], in order, and the
+   outcome. With [interrupt] as [(n, e)], [shrinking] raises [e] at its [n]th
+   call. *)
+let told ?examples ?interrupt gen =
+  let trace = ref [] and calls = ref 0 in
+  let note line = trace := line :: !trace in
+  let shrinking steps =
+    incr calls;
+    (match interrupt with
+    | Some (n, e) when !calls = n -> raise e
+    | Some _ | None -> ());
+    note (strf "shrinking %d" steps)
+  in
+  let law ctx x =
+    note (strf "run %d" x);
+    at_least_10 ctx x
+  in
+  let o = Property.run ?examples ~shrinking ~root ~path:"progress" gen law in
+  (outcome_row o, List.rev !trace)
+
+let outcome_trace = pair string (list string)
+
+let progress =
+  group "Progress"
+    [
+      test "shrinking is told the steps taken before each run on a candidate"
+        (fun () ->
+          equal outcome_trace
+            ( "fail, 0 cases, 0 discards; case 0, 2 steps, converged: 10; \
+               message big",
+              [
+                "run 40";
+                "shrinking 0";
+                "run 5";
+                "shrinking 0";
+                "run 20";
+                "shrinking 1";
+                "run 10";
+                "run 10";
+              ] )
+            (told descent));
+      cases "shrinking is not told of a failure that has no candidate" ~name:fst
+        [
+          ("a failing example", fun () -> told ~examples:[ 42 ] descent);
+          ("a case whose sample has none", fun () -> told (drawn (node 40 [])));
+        ]
+        (fun (_, run) ->
+          is_false
+            (List.exists
+               (String.starts_with ~prefix:"shrinking")
+               (snd (run ()))));
+      test
+        "a timeout while shrinking is told ends the search at the last \
+         accepted node" (fun () ->
+          equal string
+            "fail, 0 cases, 0 discards; case 0, 1 steps, timed out after \
+             0.25s: 20; message big"
+            (fst (told ~interrupt:(3, timeout 0.25) descent)));
+    ]
+
 (* Printing *)
 
 (* A cell prints what it holds when it is printed. [empties] fails on a cell
@@ -1399,6 +1461,7 @@ let () =
          generated;
          shrinking;
          output;
+         progress;
          printing;
          running_again;
        ])

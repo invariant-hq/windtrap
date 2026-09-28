@@ -117,16 +117,16 @@ let same_class a b = failure_class a = failure_class b
    candidate) are finite for [Gen]'s generators. A candidate that discards
    costs one run, since a law that repeats its case discards before it
    repeats. *)
-let shrink ~cost ~output law tree fault =
+let shrink ~cost ~output ~shrinking law tree fault =
   let scratch = make_context () in
   (* A timeout can fire at any poll point of the search, which then ends at
      the last accepted node. A node is accepted with the output of its run
      or not at all, so the two never come from different runs. The failing
      case is accepted from the start, without output until [output] returns
      on it. A route holds the index of each accepted candidate among its
-     siblings, the last first. *)
+     siblings, the last first, and [steps] is its length. *)
   let best = ref (tree, [], fault, None) in
-  let rec descend ~runs route tree =
+  let rec descend ~runs ~steps route tree =
     let rec first_accepted ~runs index candidates =
       match Failure.catch candidates with
       | Error (`Timeout _ as timeout) -> Failure.reraise timeout
@@ -137,12 +137,13 @@ let shrink ~cost ~output law tree fault =
       | Ok Seq.Nil -> Failure.Converged
       | Ok (Seq.Cons _) when runs >= shrink_budget -> Failure.Budget_spent
       | Ok (Seq.Cons (candidate, rest)) -> (
+          shrinking steps;
           match run_case scratch law (root_value candidate) with
           | Error (`Timeout _ as timeout) -> Failure.reraise timeout
           | Error (#Failure.fault as accepted) when same_class fault accepted ->
               let route = index :: route in
               best := (candidate, route, accepted, output ());
-              descend ~runs:(runs + cost) route candidate
+              descend ~runs:(runs + cost) ~steps:(steps + 1) route candidate
           | Error `Discard -> first_accepted ~runs:(runs + 1) (index + 1) rest
           | Ok () | Error (#Failure.fault | #Failure.control) ->
               first_accepted ~runs:(runs + cost) (index + 1) rest)
@@ -151,7 +152,7 @@ let shrink ~cost ~output law tree fault =
   in
   let search () =
     best := (tree, [], fault, output ());
-    descend ~runs:0 [] tree
+    descend ~runs:0 ~steps:0 [] tree
   in
   let shrink_end =
     match Failure.catch search with
@@ -184,7 +185,7 @@ let inner_failure : Failure.fault -> Failure.t = function
 
 let run ?loc ?count ?max_discard ?(examples = []) ?(summary = Fun.const None)
     ?(prints_run = false) ?(cost = 1) ?(deterministic = true)
-    ?(output = Fun.const None) ~root ~path gen law =
+    ?(output = Fun.const None) ?(shrinking = ignore) ~root ~path gen law =
   let count, config_count =
     match count with
     | None -> (default_count, None)
@@ -292,7 +293,7 @@ let run ?loc ?count ?max_discard ?(examples = []) ?(summary = Fun.const None)
               timed_out ~case_index:index ~examples:false limit
           | `Failed fault ->
               let node, route, fault, tail, shrink_end =
-                shrink ~cost ~output law tree fault
+                shrink ~cost ~output ~shrinking law tree fault
               in
               (* A run can change the value it is given, so the
                  counterexample prints drawn again, unless [gen]'s printer

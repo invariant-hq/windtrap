@@ -181,6 +181,7 @@ val run :
   ?cost:int ->
   ?deterministic:bool ->
   ?output:(unit -> Failure.tail option) ->
+  ?shrinking:(int -> unit) ->
   root:Seed.seed ->
   path:string ->
   'a Gen.t ->
@@ -219,6 +220,11 @@ val run :
       becomes the counterexample: a failing example, the first failing case, and
       each candidate that the search accepts. It must not raise, though the
       test's limit can expire while it runs. Defaults to [Fun.const None].
+    - [shrinking steps] tells how far the shrink search has gone: [run] calls it
+      before each run of [law] on a candidate, with the number of candidates
+      that the search has accepted. It is first called with [0], and never for
+      an example or for a case whose sample has no candidate. It must not raise,
+      though the test's limit can expire while it runs. Defaults to [ignore].
 
     {b Examples.} The examples run first, in order, unshrunk and without a seed.
     A passing example commits its labels and counts in [cases], a discarding one

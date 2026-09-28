@@ -422,6 +422,10 @@ val property :
     a [Fail] thus carries the output of the run that failed on its
     counterexample, and keeps it through {!execute}.
 
+    Its [shrinking] gives the search to the observer of the run, as {!Shrinking}
+    events, and [property] gives {!Shrunk} when {!Property.run} returns or
+    raises after one.
+
     What the law raises reaches the engine through windtrap's frames alone, so
     its backtrace ends on the law's own frames once
     {!Failure.backtrace_to_string} drops the trailing run of windtrap's. *)
@@ -479,7 +483,12 @@ val prop :
     order of execution. An event carries data that is already decided and never
     the record of the run, so an observer changes no status, no count and no
     order. The record is read off the {!type-outcome}. An observer can end the
-    run, by raising (see {!execute}). *)
+    run, by raising (see {!execute}).
+
+    {!Shrinking} and {!Shrunk} are given inside an attempt. The observer then
+    runs on the real descriptors 1 and 2 ({!Capture.outside}), the test's limit
+    and the {{!section-signals}signals} are held until it returns, and what it
+    raises is ignored, since it would fail the test that runs. *)
 type event =
   | Run_started of {
       suite : string;
@@ -494,6 +503,15 @@ type event =
   | Test_started of { path : string list }
       (** The test at [path] is about to run. It is given once per test, before
           its first attempt and before anything of the test runs. *)
+  | Shrinking of { path : string list; steps : int }
+      (** A property of the test at [path] failed on a case, and the search
+          shrinks it: it has accepted [steps] candidates (see {!Property.run}).
+          It is given as the search first runs the law on a candidate, with
+          [steps = 0], then as [steps] grows, at most ten times a second. *)
+  | Shrunk of { path : string list }
+      (** The search that the last {!Shrinking} of the test at [path] announced
+          ended. It is given once per search, whatever ended it, and the test
+          runs on: to its end, or to its next subtest or attempt. *)
   | Test_finished of result
       (** The test finished and its row is recorded. It is given once per test,
           after its last attempt ended and was undone. *)
@@ -612,9 +630,9 @@ val execute :
     each of them.
 
     An exception that [on_event] raises leaves [execute], except on
-    {!Interrupted}, where it is ignored. The run then updates no store and
-    writes no correction, and what becomes of the acquired fixtures depends on
-    the event:
+    {!Interrupted}, {!Shrinking} and {!Shrunk}, where it is ignored. The run
+    then updates no store and writes no correction, and what becomes of the
+    acquired fixtures depends on the event:
     - on {!Test_started} or {!Test_finished} they are released first, as far as
       they can be;
     - on an {!event.Fixture_release} during the release at the end of the run,
@@ -795,9 +813,10 @@ val list_selection :
     ignored, and it puts the previous handlers back when the run ends. On the
     first signal the three go back to their default disposition, so a second one
     kills at once. A signal that arrives while an attempt or the release of a
-    fixture runs acts at once. One that arrives in the runner's own code, or in
-    an observer, acts before the next test, after the last one, or after the
-    corrections are written.
+    fixture runs acts at once, and one that arrives in an observer of
+    {!Shrinking} or {!Shrunk} when the observer returns. One that arrives in the
+    runner's own code, or in another observer, acts before the next test, after
+    the last one, or after the corrections are written.
 
     The runner then, in order:
     + abandons the capture of the attempt ({!Capture.abandon}) and gives

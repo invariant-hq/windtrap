@@ -29,9 +29,11 @@ the stanzas under one directory, as `dune runtest test/unit` does.
 ## Running one suite with flags
 
 `dune exec` runs one suite's executable, and the flags go after `--`. On
-a terminal a dim line names the running test. Under `dune exec` the report is styled even when
-its output goes to a pipe or a file, and `--color=never` turns the
-styling off. `-v` prints a line per test:
+a terminal a dim line names the running test, and while a property
+shrinks a counterexample it says so, with the steps taken. Under
+`dune exec` the report is styled even when its output goes to a pipe or
+a file, and `--color=never` turns the styling off. `-v` prints a line
+per test:
 
 ```
 $ dune exec examples/06-resources-and-structure/test_storage.exe -- -v -f 'process state'
