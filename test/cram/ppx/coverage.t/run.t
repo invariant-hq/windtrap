@@ -69,6 +69,13 @@ module of any other shape as it is.
     7: 570-573
     8: 570-573
     9: 543-554
+    10: 770-775
+    11: 770-798
+    12: 825-830
+    13: 816-852
+    14: 924-929
+    15: 959-965
+    16: 910-1004
   let both x y = ___windtrap_visit___ 1; x && ((___windtrap_visit___ 0; y))
   let either x y =
     ___windtrap_visit___ 2;
@@ -91,6 +98,20 @@ module of any other shape as it is.
          if ___windtrap_post_visit___ 8 (p x)
          then (___windtrap_visit___ 7; true)
          else search p rest)
+  let positive x =
+    ___windtrap_visit___ 11;
+    if x > 0 then (___windtrap_visit___ 10; true) else failwith "positive"
+  let bound x =
+    ___windtrap_visit___ 13;
+    (let ok = if x > 0 then (___windtrap_visit___ 12; true) else raise Exit in
+     ok)
+  let through x =
+    ___windtrap_visit___ 16;
+    (let applied =
+       if x > 0 then (___windtrap_visit___ 14; true) else raise @@ Exit
+     and piped =
+       if x < 10 then (___windtrap_visit___ 15; true) else Exit |> raise in
+     (applied, piped))
 
   $ cov --impl ./fixture_apply.ml | ../elide.exe
   coverage points of "./fixture_apply.ml" in Windtrap_cov_________fixture_apply___ml, with ___windtrap_post_visit___:
@@ -670,10 +691,10 @@ module of any other shape as it is.
 
   $ cov --impl ./fixture_primitives.ml | ../elide.exe
   coverage points of "./fixture_primitives.ml" in Windtrap_cov_________fixture_primitives___ml, with ___windtrap_post_visit___:
-    0: 290-291
-    1: 309-310
-    2: 1080-1083
-    3: 277-1091
+    0: 329-330
+    1: 348-349
+    2: 1173-1176
+    3: 316-1184
   let primitives a b x y r l s e f =
     ___windtrap_visit___ 3;
     (let _ = a && (___windtrap_visit___ 0; b) in
@@ -710,6 +731,8 @@ module of any other shape as it is.
      let _ = raise e in
      let _ = raise_notrace e in
      let _ = failwith s in
+     let _ = failwith @@ s in
+     let _ = s |> failwith in
      let _ = ignore x in
      let _ = Sys.opaque_identity x in
      let _ = Obj.magic x in

@@ -1,6 +1,7 @@
-(* An application of a trivial primitive carries no out-edge. Each is bound by a
-   [let], a position where any other application is wrapped, as [f] is at the
-   end; the [&&] and [&] bodies keep the entry point of their right operand. *)
+(* An application of a trivial primitive or of a function that never returns
+   carries no out-edge. Each is bound by a [let], a position where any other
+   application is wrapped, as [f] is at the end; the [&&] and [&] bodies keep
+   the entry point of their right operand. *)
 
 let primitives a b x y r l s e f =
   let _ = a && b in
@@ -37,6 +38,8 @@ let primitives a b x y r l s e f =
   let _ = raise e in
   let _ = raise_notrace e in
   let _ = failwith s in
+  let _ = failwith @@ s in
+  let _ = s |> failwith in
   let _ = ignore x in
   let _ = Sys.opaque_identity x in
   let _ = Obj.magic x in

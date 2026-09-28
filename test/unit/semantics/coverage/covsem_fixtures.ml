@@ -157,6 +157,19 @@ let tap_raise f =
   let () = f () in
   true
 
+(* Checks that raise from a call of a function that never returns. The call
+   has no point for a return it never makes, so a test that runs both paths
+   of a check visits every point of it. *)
+let positive n = n > 0 || failwith "positive"
+
+let bound n =
+  let ok = n > 0 || "bound" |> failwith in
+  ok
+
+let applied n =
+  if n < 1 then failwith @@ "applied";
+  n
+
 (* Pipelines compute what they computed uninstrumented. *)
 let double x = x * 2
 let pipeline x = x |> double |> double

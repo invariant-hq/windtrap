@@ -10,3 +10,17 @@ let both x y = x && y
 let either x y = x || y
 let chain a b c = a || b || c
 let rec search p = function [] -> false | x :: rest -> p x || search p rest
+
+(* A right arm that calls a function that never returns is never true: it
+   stays the [else] branch with no point, in tail position and bound by a
+   [let]. *)
+let positive x = x > 0 || failwith "positive"
+
+let bound x =
+  let ok = x > 0 || raise Exit in
+  ok
+
+(* The same through [@@] and [|>]. *)
+let through x =
+  let applied = x > 0 || raise @@ Exit and piped = x < 10 || Exit |> raise in
+  (applied, piped)

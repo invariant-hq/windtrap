@@ -88,6 +88,17 @@
   run after the prefix reads
   `every command makes a value, has a ~pre or takes an element`.
 
+### Coverage
+
+- The right operand of `||` that is a call of `raise`, `raise_notrace`
+  or `failwith` has no point, where 0.2.0 gave it one for being true,
+  which it never is: `n > 0 || failwith "negative"` read uncovered even
+  when a test ran both of its paths.
+- A call through `@@` or `|>` of a function that never returns has no
+  point for its return, as a direct call has none:
+  `if n < 1 then failwith @@ msg;` read uncovered even when a test ran
+  it.
+
 ## v0.2.0 2026-09-26
 
 Windtrap 0.2.0 is a complete rewrite of Windtrap. It keeps the shape of

@@ -62,7 +62,9 @@
     {{!section-out_edges}trivial primitive}, and of a method call. It is also
     the case of a [let], [let module], [let exception], [let open], [match],
     [try], [if], sequence, binding operator form, type constraint and coercion.
-*)
+    In any position, the right operand of a [||] that is a
+    {{!section-out_edges}call of a function that never returns} gives up its
+    point, since it is never true, and stays the [else] branch as written. *)
 
 (** {2:out_edges Out-edge points}
 
@@ -81,8 +83,12 @@
       their spelling, so [Stdlib.( + ) a b] is wrapped. They are [&&], [&],
       [not], [=], [<>], [<], [<=], [>], [>=], [==], [!=], [ref], [!], [:=], [@],
       [^], [+], [-], [*], [/], [+.], [-.], [*.], [/.], [mod], [land], [lor],
-      [lxor], [lsl], [lsr], [asr], [raise], [raise_notrace], [failwith],
-      [ignore], [Sys.opaque_identity], [Obj.magic] and [##].
+      [lxor], [lsl], [lsr], [asr], [ignore], [Sys.opaque_identity], [Obj.magic]
+      and [##].
+    - a call of a function that never returns, whose out-edge could never be
+      visited: an application of one, directly or through [@@], [|>] or [|.].
+      These functions are matched by their spelling too, and are [raise],
+      [raise_notrace] and [failwith].
     - an application whose every argument is labelled or optional. The test
       reads the labels alone, so it holds for a total application of that shape
       as for a partial one.

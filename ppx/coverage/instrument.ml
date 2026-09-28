@@ -164,13 +164,13 @@ let rec is_trivial_syntactic_value e =
       is_trivial_syntactic_value inner
   | _ -> false
 
-(* The primitives whose applications take no out-edge, as Bisect_ppx lists
-   them. They cannot fail interestingly or never return, and an out-edge on
-   every operator would double the table for no signal. *)
+(* The primitives whose applications take no out-edge, from Bisect_ppx's
+   list. They cannot fail interestingly, and an out-edge on every operator
+   would double the table for no signal. *)
 let trivial_primitives =
   String.split_on_char ' '
     "&& & not = <> < <= > >= == != ref ! := @ ^ + - * / +. -. *. /. mod land \
-     lor lxor lsl lsr asr raise raise_notrace failwith ignore ##"
+     lor lxor lsl lsr asr ignore ##"
 
 let is_trivial_function e =
   match e.pexp_desc with
@@ -182,6 +182,26 @@ let is_trivial_function e =
         _;
       } ->
       true
+  | _ -> false
+
+(* The functions that never return, matched by spelling as the primitives
+   are. A visit after their call could never run, so the call takes no
+   out-edge, and as the right operand of [||] no point for being true. *)
+let never_returning = [ "raise"; "raise_notrace"; "failwith" ]
+
+let is_never_returning e =
+  match e.pexp_desc with
+  | Pexp_ident { txt = Lident name; _ } -> List.mem name never_returning
+  | _ -> false
+
+(* Whether [e] calls a function that never returns, directly or through
+   [@@], [|>] or [|.]. *)
+let calls_never_returning e =
+  match e.pexp_desc with
+  | Pexp_apply ([%expr ( @@ )], [ (_, f); _ ])
+  | Pexp_apply (([%expr ( |> )] | [%expr ( |. )]), [ _; (_, f) ])
+  | Pexp_apply (f, _) ->
+      is_never_returning f
   | _ -> false
 
 (* Whether a tail call can sit in [e] when [e] is in tail position. The
@@ -265,7 +285,8 @@ class instrumenter st =
                 let apply =
                   Exp.apply ~loc ~attrs pipe [ (l, lhs'); (l', rhs') ]
                 in
-                out_edge st position ~callee:(head_callee rhs) apply
+                if calls_never_returning e then apply
+                else out_edge st position ~callee:(head_callee rhs) apply
             | Pexp_apply
                 (([%expr ( || )] | [%expr ( or )]), [ (_, left); (_, right) ])
               ->
@@ -279,6 +300,8 @@ class instrumenter st =
                 let right' =
                   match right.pexp_desc with
                   | Pexp_apply (([%expr ( || )] | [%expr ( or )]), _) ->
+                      traverse (inherited position) right
+                  | _ when calls_never_returning right ->
                       traverse (inherited position) right
                   | _ when is_tail position && holds_tail_call right ->
                       traverse Tail right
@@ -325,8 +348,10 @@ class instrumenter st =
                       | (Labelled _ | Optional _), _ -> true)
                     args
                 in
-                if in_tmc_body || all_labelled || is_trivial_function fn then
-                  apply
+                if
+                  in_tmc_body || all_labelled || is_trivial_function fn
+                  || calls_never_returning e
+                then apply
                 else
                   let callee =
                     match (fn, args) with

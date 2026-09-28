@@ -283,6 +283,43 @@ let raising_out_edge () =
   equal (pair bool int) (true, 3) (returned, List.length ok);
   equal (pair string int) ("raised Exit", 2) (outcome, List.length raising)
 
+(* [unvisited_inside f] is the extents of the points left unvisited, once [f]
+   ran, inside the widest extent [f] visits: the body of the fixture function
+   [f] calls. *)
+let unvisited_inside f =
+  let (), visited = hits f in
+  let width (start, stop) = stop - start in
+  let wider x y = if width y > width x then y else x in
+  let start, stop =
+    match extents visited with
+    | [] -> fail "the fixture function visited no point"
+    | x :: xs -> List.fold_left wider x xs
+  in
+  let inside (p : Coverage.point) =
+    if start <= p.start_ofs && p.end_ofs <= stop then
+      Some (p.start_ofs, p.end_ofs)
+    else None
+  in
+  List.filter_map inside (fixture_report ()).uncovered_extents
+
+(* Each row runs both paths of a check that raises from a call of a function
+   that never returns. *)
+let never_returning =
+  [
+    ( "failwith as the right operand of ||",
+      fun () ->
+        is_true (Covsem_fixtures.positive 1);
+        raises (Failure "positive") (fun () -> Covsem_fixtures.positive 0) );
+    ( "failwith through |> as the right operand of || out of tail position",
+      fun () ->
+        is_true (Covsem_fixtures.bound 1);
+        raises (Failure "bound") (fun () -> Covsem_fixtures.bound 0) );
+    ( "failwith through @@ in a branch out of tail position",
+      fun () ->
+        equal int 1 (Covsem_fixtures.applied 1);
+        raises (Failure "applied") (fun () -> Covsem_fixtures.applied 0) );
+  ]
+
 (* [poke]'s body entry, the body of the method [total] and the out-edge of
    [a#total]. *)
 let send_out_edge () =
@@ -307,6 +344,9 @@ let points =
       test "forcing a lazy visits its body's point once" lazy_points;
       test "a raising application leaves its out-edge unvisited"
         raising_out_edge;
+      cases "a call that never returns leaves no point of its check unvisited"
+        ~name:fst never_returning (fun (_, run) ->
+          equal (list extent) [] (unvisited_inside run));
       test "a send with a successor visits its out-edge" send_out_edge;
       test "an arm that is a function has a point visited when it is applied"
         function_arm;
