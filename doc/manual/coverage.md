@@ -282,10 +282,18 @@ removes the dumps of its predecessors. When nothing a suite depends on
 has changed, dune does not run it again, and the report counts the dump
 of its last run.
 
+Any executable that links an instrumented library writes a dump when it
+exits, not only a suite: a command-line tool that a cram test runs
+counts toward the report. The cram stanza depends on the tool, as in
+`(deps %{bin:mytool})`, so that dune builds it instrumented before the
+session and runs the session again when the tool changes. A process that
+ends on a signal or through `Unix._exit` writes no dump.
+
 An instrumented executable outside any build directory writes under
 `_windtrap/coverage` in its working directory, and `windtrap coverage`
-finds that directory from it or from below it. Under `dune exec` the command reads the build directory dune names, so a
-build with `--build-dir` reports its own dumps.
+finds that directory from it or from below it. Under `dune exec` the
+command reads the build directory dune names, so a build with
+`--build-dir` reports its own dumps.
 
 ## Instrumenting without dune
 
