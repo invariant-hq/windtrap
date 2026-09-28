@@ -2017,7 +2017,8 @@ let screen ~loc commands =
   let loc = Loc.of_pos loc in
   let law _ p = Stateful.execute p in
   let outcome =
-    Property.run ~loc ~summary:Stateful.summary ~root ~path:"screen"
+    Property.run ~loc ~summary:Stateful.summary ~prints_run:true ~root
+      ~path:"screen"
       (Stateful.program commands)
       law
   in
@@ -2188,8 +2189,8 @@ let run_property ?(count = 100) ~path commands =
   let gen = Stateful.program commands in
   let law _ p = Stateful.execute p in
   let outcome =
-    Property.run ~count:(`Declared count) ~summary:Stateful.summary ~root ~path
-      gen law
+    Property.run ~count:(`Declared count) ~summary:Stateful.summary
+      ~prints_run:true ~root ~path gen law
   in
   (gen, require_match property_failure outcome)
 
@@ -2267,7 +2268,8 @@ let replayed () =
       (fun () -> Stateful.execute p)
   in
   let outcome =
-    Property.run ~count:(`Declared 40) ~root ~path:"replay" gen law
+    Property.run ~count:(`Declared 40) ~prints_run:true ~root ~path:"replay" gen
+      law
   in
   let f = require_match property_failure outcome in
   let case, steps = require_match search f in
@@ -2441,8 +2443,9 @@ let shrunk_element least =
     ]
   in
   let outcome =
-    Property.run ~summary:Stateful.summary ~root ~path:"element"
-      (Stateful.program ~steps:2 commands) (fun _ p -> Stateful.execute p)
+    Property.run ~summary:Stateful.summary ~prints_run:true ~root
+      ~path:"element" (Stateful.program ~steps:2 commands) (fun _ p ->
+        Stateful.execute p)
   in
   let f = require_match property_failure outcome in
   let _, steps = require_match search f in

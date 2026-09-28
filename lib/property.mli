@@ -122,9 +122,10 @@ type stats = {
     The [failure] of a [Fail] is a {!Failure.Property} failure located at
     {!run}'s [loc]. {!Failure.Property} documents its payload, and {!run}
     decides the following:
-    - [rendered] is the final node of the shrink search through
-      [Gen.Engine.render], a failing example through [Gen.Engine.render_value],
-      or [<generator raised before producing a value>]. [rendering] can be a
+    - [rendered] is the final node of the shrink search, drawn again (see
+      {!run}), through [Gen.Engine.render], a failing example before its run
+      through [Gen.Engine.render_value], or
+      [<generator raised before producing a value>]. [rendering] can be a
       pre-image in the first case only.
     - [case_index] counts the discarded cases. For a failing example it is the
       zero-based position in [examples].
@@ -176,6 +177,7 @@ val run :
   ?max_discard:int ->
   ?examples:'a list ->
   ?summary:('a -> string option) ->
+  ?prints_run:bool ->
   ?cost:int ->
   ?deterministic:bool ->
   ?output:(unit -> Failure.tail option) ->
@@ -199,9 +201,13 @@ val run :
     - [examples] are the inputs that run before any generated case. Defaults to
       [[]].
     - [summary v] is the [summary] of the failure whose counterexample is [v],
-      the final node of the search or the failing example. It must be
-      [Some line] iff [gen] prints [v] as a table (see {!Failure.Property}).
+      the value that [rendered] describes. It must be [Some line] iff [gen]
+      prints [v] as a table (see {!Failure.Property}), and must not raise.
       Defaults to [Fun.const None].
+    - [prints_run] is whether [gen]'s printer prints what a run of [law] left in
+      the value, as a stateful program prints the record of its run. The final
+      node of the search then prints as the search's run on it left it. Defaults
+      to [false].
     - [cost] is the share of {!shrink_budget} that one run of [law] spends, for
       a law that runs its case several times. A run that discards spends [1],
       which assumes that such a law discards before it repeats its case.
@@ -219,6 +225,11 @@ val run :
     counts in [discards], and a failing one ends the run with [examples = true].
     A [`Timeout] while [output] runs on a failing example leaves that failure
     without output.
+
+    An example is formatted, and given to [summary], at the start of its run,
+    before [law], which can change it. A failing example thus prints as it was
+    given, whatever [prints_run]. A control that the printer raises acts as one
+    that [law] raises.
 
     {b Generated cases.} [index] counts from zero and counts the discarded
     cases, so a discarded seed is never drawn again. The run ends when [count]
@@ -254,22 +265,32 @@ val run :
     [case_index] is always that of the first failure, so a replay descends the
     same path, and a timeout changes only where on that path the descent stops.
 
+    {b Printing.} The runs of the search can change the value of the final node,
+    so the counterexample prints drawn again, as a replay draws it: [gen]
+    samples the case's seed again, and the draw descends to the candidate that
+    the search accepted at each step. A pure [gen] draws the counterexample as
+    it was first generated, whatever a run of [law] did to the value it was
+    given, and nothing runs on the value drawn before it is printed. The final
+    node prints as the search left it under [prints_run], and when the draw does
+    not reach the counterexample, which an impure [gen] or the test's limit can
+    cause. An impure [gen] can also draw another value along the same route, and
+    that value prints.
+
     {b Running again.} After the search, a [deterministic] law runs once more on
-    the reported counterexample, drawn again as a replay draws it: [gen] samples
-    the case's seed again, and the draw descends to the candidate that the
-    search accepted at each step. A pure [gen] draws the counterexample as it
-    was first generated, whatever a run of [law] did to the value it was given.
-    The run's labels go to a {!scratch} context. The [failed_again] of the
-    failure is [Some true] when that run raises a [Failure.fault], in any class,
-    [Some false] when it returns or raises a control other than [`Timeout], and
-    [None] when the test's limit expires during the draw or the run. The law
-    does not run again, and [failed_again] is [None], when [deterministic] is
-    [false], after a search that a timeout ended, for a failing example, which
-    no seed draws, and for a generator that raised.
+    the counterexample drawn again as for printing. One draw serves both, and
+    the run comes after the printing. The run's labels go to a {!scratch}
+    context. The [failed_again] of the failure is [Some true] when that run
+    raises a [Failure.fault], in any class, [Some false] when it returns or
+    raises a control other than [`Timeout], and [None] when the test's limit
+    expires during the draw or the run. The law does not run again, and
+    [failed_again] is [None], when [deterministic] is [false], after a search
+    that a timeout ended, for a failing example, which no seed draws, and for a
+    generator that raised.
 
     Raises [Invalid_argument] if [count] or [max_discard] is negative, or if
     [cost] is not positive, inside the running test, where [run] executes.
     Raises a [Failure.Control] other than [`Discard] and [`Timeout] when [law]
-    or [gen] raises it outside the search, and no outcome then exists. A control
-    delivered while the counterexample is formatted does not leave [run], since
-    the guard of [Gen.Engine.render] turns it into text. *)
+    or [gen] raises it outside the search, or [gen]'s printer on an example, and
+    no outcome then exists. A control delivered while the final node is
+    formatted does not leave [run], since the guard of [Gen.Engine.render] turns
+    it into text. *)

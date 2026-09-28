@@ -820,6 +820,10 @@ val pass : 'a testable
     fail, the report says that the test is not deterministic. A failing example
     does not run again.
 
+    A law may change its value in place, as one that sorts an array does. The
+    report prints the counterexample as it was drawn, and a failing example as
+    it was given, whatever the law did to them.
+
     Shrinking runs the law at most [10_000] times, accepted and rejected
     candidates alike, and a search stopped there reports that the counterexample
     may not be minimal. It also stops when a function of the generator raises on

@@ -16,6 +16,9 @@
   test is that of the run that failed on the counterexample, where
   0.2.0 showed the last lines of the whole search, which end on the
   last candidate tried.
+- A counterexample prints as it was drawn, and a failing example as it
+  was given, where 0.2.0 printed them as the law left them, so that a
+  law that fills its `bytes` in place printed bytes it passes on.
 - After the search the law runs once more on the counterexample, and
   when that run does not fail the block says
   `the test did not fail again on this counterexample; it is not deterministic`.

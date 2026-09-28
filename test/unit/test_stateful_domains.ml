@@ -626,7 +626,8 @@ let screen ?workers ~loc commands =
   let loc = Loc.of_pos loc in
   let law _ p = Stateful.execute ?workers p in
   let outcome =
-    Property.run ~loc ~summary:Stateful.summary ~root ~path:"screen"
+    Property.run ~loc ~summary:Stateful.summary ~prints_run:true ~root
+      ~path:"screen"
       (Stateful.program ~domains:2 commands)
       law
   in

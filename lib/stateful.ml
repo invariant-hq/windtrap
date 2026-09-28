@@ -1619,8 +1619,9 @@ let stateful ?__POS__ ?tags ?timeout ?count ?(steps = 20) ?(domains = 1) name
         let cost = if Option.is_some workers then repetitions else 1 in
         (* On the workers a failing program depends on a schedule. *)
         let deterministic = Option.is_none workers in
-        Run.property ?loc ?count ~summary ~cost ~deterministic gen
-          (fun program ->
+        (* A program prints the record of its run. *)
+        Run.property ?loc ?count ~summary ~prints_run:true ~cost ~deterministic
+          gen (fun program ->
             execute ?workers program;
             incr cases;
             Array.iteri (fun i h -> if h then held.(i) <- true) program.held;

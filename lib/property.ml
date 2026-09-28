@@ -183,8 +183,8 @@ let inner_failure : Failure.fault -> Failure.t = function
   | fault -> Failure.of_fault fault
 
 let run ?loc ?count ?max_discard ?(examples = []) ?(summary = Fun.const None)
-    ?(cost = 1) ?(deterministic = true) ?(output = Fun.const None) ~root ~path
-    gen law =
+    ?(prints_run = false) ?(cost = 1) ?(deterministic = true)
+    ?(output = Fun.const None) ~root ~path gen law =
   let count, config_count =
     match count with
     | None -> (default_count, None)
@@ -215,21 +215,26 @@ let run ?loc ?count ?max_discard ?(examples = []) ?(summary = Fun.const None)
     in
     Fail { failure; stats = stats ctx }
   in
+  (* The counterexample drawn again from the case's [state] along the
+     search's [route], as a replay draws it: a pure [gen] draws it as it was
+     first drawn, whatever a run did to the value it was given. That path was
+     drawn once, so only the limit can cut the draw. *)
+  let draw_again state route =
+    match
+      Failure.catch (fun () -> follow (Gen.Engine.sample gen state) route)
+    with
+    | Ok tree -> Option.map Gen.Engine.Shrink_tree.root tree
+    | Error _ -> None
+  in
   (* A law that does not fail again on its own counterexample is no function
-     of it. It runs on the counterexample drawn again from the case's [state]
-     along the search's [route], as a replay draws it, since a run can change
-     the value it is given. That path was drawn once, so only the limit can
-     cut the draw. *)
-  let run_again state route =
+     of it. It runs on the counterexample [drawn] again. *)
+  let run_again drawn =
     if not deterministic then None
     else
-      let drawn () =
-        Option.map root_value (follow (Gen.Engine.sample gen state) route)
-      in
-      match Failure.catch drawn with
-      | Ok None | Error _ -> None
-      | Ok (Some value) -> (
-          match run_case (scratch ()) law value with
+      match Lazy.force drawn with
+      | None -> None
+      | Some node -> (
+          match run_case (scratch ()) law (Gen.Engine.value node) with
           | Error #Failure.fault -> Some true
           | Ok () | Error (`Skip _ | `Exit | `Discard) -> Some false
           | Error (`Timeout _) -> None)
@@ -248,7 +253,7 @@ let run ?loc ?count ?max_discard ?(examples = []) ?(summary = Fun.const None)
     in
     Fail { failure = Failure.timeout ?loc ~case limit; stats = stats ctx }
   in
-  let check value =
+  let check law value =
     match run_case ctx law value with
     | Ok () ->
         commit ctx;
@@ -280,7 +285,7 @@ let run ?loc ?count ?max_discard ?(examples = []) ?(summary = Fun.const None)
           timed_out ~case_index:index ~examples:false limit
       | Error (#Failure.control as control) -> Failure.reraise control
       | Ok tree -> (
-          match check (root_value tree) with
+          match check law (root_value tree) with
           | `Passed -> generate ~passed:(passed + 1) (index + 1)
           | `Discarded -> generate ~passed (index + 1)
           | `Timed_out limit ->
@@ -289,30 +294,49 @@ let run ?loc ?count ?max_discard ?(examples = []) ?(summary = Fun.const None)
               let node, route, fault, tail, shrink_end =
                 shrink ~cost ~output law tree fault
               in
+              (* A run can change the value it is given, so the
+                 counterexample prints drawn again, unless [gen]'s printer
+                 prints the run. The same draw then runs again, once
+                 printed. *)
+              let drawn = lazy (draw_again state route) in
+              let shown =
+                if prints_run then node
+                else Option.value ~default:node (Lazy.force drawn)
+              in
               let rendered, rendering =
-                match Gen.Engine.render node with
+                match Gen.Engine.render shown with
                 | Value text -> (text, Failure.Value)
                 | Pre_image text -> (text, Failure.Pre_image)
               in
+              let summary = summary (Gen.Engine.value shown) in
               (* The timeout spent the test's alarm: a run now has no limit. *)
               let failed_again =
                 match shrink_end with
                 | Failure.Timed_out _ -> None
                 | Converged | Budget_spent | Candidate_raised _ ->
-                    run_again state route
+                    run_again drawn
               in
-              fail ~case_index:index ~examples:false
-                ?summary:(summary (Gen.Engine.value node))
-                ~rendering ~shrink_steps:(List.length route) ~shrink_end ?tail
+              fail ~case_index:index ~examples:false ?summary ~rendering
+                ~shrink_steps:(List.length route) ~shrink_end ?tail
                 ?failed_again ~rendered fault)
   in
   let rec run_examples index = function
     | [] -> generate ~passed:0 0
     | value :: rest -> (
-        match check value with
+        (* An example prints as it was given, before its run can change it.
+           Its printer runs first in that run, so a control that the printer
+           raises acts as the law's would. *)
+        let rendered = ref None in
+        let summarized = ref None in
+        let printed_first ctx value =
+          rendered := Some (Gen.Engine.render_value gen value);
+          summarized := summary value;
+          law ctx value
+        in
+        match check printed_first value with
         | `Passed | `Discarded -> run_examples (index + 1) rest
         | `Timed_out limit -> timed_out ~case_index:index ~examples:true limit
-        | `Failed fault ->
+        | `Failed fault -> (
             (* The limit can expire while the output is read, after the
                example failed. *)
             let tail =
@@ -321,8 +345,12 @@ let run ?loc ?count ?max_discard ?(examples = []) ?(summary = Fun.const None)
               | Error (`Timeout _) -> None
               | Error c -> Failure.reraise c
             in
-            let rendered = Gen.Engine.render_value gen value in
-            fail ~case_index:index ~examples:true ?summary:(summary value) ?tail
-              ~rendered fault)
+            (* [render_value] makes a fault of the printer its text, so the
+               example that failed was rendered. *)
+            match !rendered with
+            | Some rendered ->
+                fail ~case_index:index ~examples:true ?summary:!summarized ?tail
+                  ~rendered fault
+            | None -> assert false))
   in
   run_examples 0 examples

@@ -1098,6 +1098,175 @@ let output =
                descent at_least_10));
     ]
 
+(* Printing *)
+
+(* A cell prints what it holds when it is printed. [empties] fails on a cell
+   that held 10 or more and leaves it holding 0, which passes. *)
+let pp_cell ppf r = Format.pp_print_int ppf !r
+let cells = Gen.with_pp pp_cell (Gen.map ref (Gen.int_range 0 100))
+let held r = Some (strf "held %d" !r)
+
+let empties _ r =
+  let was = !r in
+  r := 0;
+  if was >= 10 then Check.fail "big"
+
+(* The failure of [empties] over [gen], and its summary. *)
+let emptied ?prints_run ?examples gen =
+  let o =
+    Property.run ?prints_run ?examples ~summary:held ~root ~path:"cells" gen
+      empties
+  in
+  (outcome_row o, (counterexample o).summary)
+
+let emptied_row = pair string (option string)
+
+(* A generator whose first sample is [tree], and whose later samples are
+   [later ()]: an impure one, whose draw again reaches no counterexample. *)
+let once tree later =
+  let sampled = ref false in
+  Gen_engine.make ~pp:pp_cell (fun s ->
+      if !sampled then (later (), s)
+      else begin
+        sampled := true;
+        (tree, s)
+      end)
+
+let unreached =
+  [
+    ("a later draw with no candidate", fun () -> node (ref 7) []);
+    ("a later draw that raises", fun () -> failwith "impure");
+  ]
+
+(* How many times a failing case of [descent]'s tree is sampled. *)
+let samples ?prints_run ?deterministic () =
+  let count = ref 0 in
+  let gen =
+    Gen_engine.make ~pp:Format.pp_print_int (fun s ->
+        incr count;
+        (node 40 [ node 5 []; node 20 [ node 10 []; node 15 [] ] ], s))
+  in
+  ignore
+    (Property.run ?prints_run ?deterministic ~root ~path:"samples" gen
+       at_least_10);
+  !count
+
+(* A law that sorts its array in place and fails when the array was not
+   sorted, a function of the value it is given that changes that value, and
+   one that fills its bytes with ['a'] and fails when they held a ['z']. *)
+let sorts_in_place _ a =
+  let given = Array.copy a in
+  Array.sort Int.compare a;
+  if a <> given then Check.fail "unsorted"
+
+let fills _ b =
+  let given = Bytes.to_string b in
+  Bytes.fill b 0 (Bytes.length b) 'a';
+  if String.contains given 'z' then Check.fail "z"
+
+(* The outcome of an example whose printer raises [c], and the values that
+   the law ran on. *)
+let printer_raises c =
+  let law, seen = traced (fun _ _ -> ()) in
+  let gen = Gen.with_pp (fun _ _ -> raise (Failure.Control c)) Gen.int in
+  let row =
+    match
+      Property.run ~count:(`Declared 0) ~max_discard:2 ~examples:[ 1; 2 ] ~root
+        ~path:"printer control" gen law
+    with
+    | o -> outcome_row o
+    | exception e -> Printexc.to_string e
+  in
+  (row, seen ())
+
+let printing =
+  group "Printing"
+    [
+      test "a counterexample that its law changed prints as it was drawn"
+        (fun () ->
+          equal emptied_row
+            ( "fail, 1 cases, 0 discards; case 1, 4 steps, converged: 10; \
+               message big",
+              Some "held 10" )
+            (emptied cells));
+      test "a counterexample whose printer prints the run prints as it ran"
+        (fun () ->
+          equal emptied_row
+            ( "fail, 1 cases, 0 discards; case 1, 4 steps, converged: 0; \
+               message big",
+              Some "held 0" )
+            (emptied ~prints_run:true cells));
+      test "a counterexample of a search that a timeout ended prints as drawn"
+        (fun () ->
+          let runs = ref 0 in
+          let law ctx r =
+            incr runs;
+            if !runs = 4 then raise (timeout 0.25) else empties ctx r
+          in
+          equal string
+            "fail, 1 cases, 0 discards; case 1, 0 steps, timed out after \
+             0.25s: 91; message big"
+            (outcome_row (Property.run ~root ~path:"cells" cells law)));
+      cases
+        "a counterexample that the draw again does not reach prints as the \
+         search left it"
+        ~name:fst unreached (fun (_, later) ->
+          equal emptied_row
+            ( "fail, 0 cases, 0 discards; case 0, 1 steps, converged: 0; \
+               message big",
+              Some "held 0" )
+            (emptied (once (node (ref 40) [ node (ref 20) [] ]) later)));
+      cases "one draw again serves the printing and the run again"
+        ~name:(fun (n, _) -> n)
+        [
+          ("printed and run", ((None, None), 2));
+          ("printed, not run", ((None, Some false), 2));
+          ("printing the run, and run", ((Some true, None), 2));
+          ("printing the run, not run", ((Some true, Some false), 1));
+        ]
+        (fun (_, ((prints_run, deterministic), n)) ->
+          equal int n (samples ?prints_run ?deterministic ()));
+      cases "a failing example prints as it was given, before its run"
+        ~name:(fun (n, _) -> n)
+        [ ("drawn printing", None); ("a printer of the run", Some true) ]
+        (fun (_, prints_run) ->
+          equal emptied_row
+            ( "fail, 0 cases, 0 discards; example 0, 0 steps, converged: 42; \
+               message big",
+              Some "held 42" )
+            (emptied ?prints_run ~examples:[ ref 42 ] cells));
+      test "a bytes counterexample that its law fills prints as it was drawn"
+        (fun () ->
+          equal string
+            "fail, 1 cases, 0 discards; case 1, 1 steps, converged: \
+             Bytes.of_string \"z\"; message z"
+            (outcome_row
+               (Property.run ~root ~path:"fills"
+                  Gen.(bytes_of (char_range 'x' 'z'))
+                  fills)));
+      test "an example that its law sorts prints as it was given" (fun () ->
+          equal string
+            "fail, 0 cases, 0 discards; example 0, 0 steps, converged: [|1; 1; \
+             0|]; message unsorted"
+            (outcome_row
+               (Property.run ~root ~path:"sorts" ~count:(`Declared 0)
+                  ~examples:[ [| 1; 1; 0 |] ]
+                  Gen.(array (int_range 0 9))
+                  sorts_in_place)));
+      cases "a control that an example's printer raises acts as the law's"
+        ~name:fst
+        [
+          ( "a timeout",
+            ( `Timeout 0.25,
+              "fail, 0 cases, 0 discards; timed out after 0.25s at example 0, \
+               0 passed, root c0ffee1234abcd, no count" ) );
+          ("a discard", (`Discard, "pass, 0 cases, 2 discards"));
+          ("a skip", (`Skip (Some "later"), "windtrap skip: later"));
+        ]
+        (fun (_, (c, row)) ->
+          equal (pair string (list int)) (row, []) (printer_raises c));
+    ]
+
 (* Running again *)
 
 (* A law that fails on the first run on each value of at least 10, and does
@@ -1154,13 +1323,6 @@ let timed_out_search () =
       None,
       [ 40; 5; 20 ] )
     (ran_again descent law)
-
-(* A law that sorts its array in place and fails when the array was not
-   sorted, a function of the value it is given that changes that value. *)
-let sorts_in_place _ a =
-  let given = Array.copy a in
-  Array.sort Int.compare a;
-  if a <> given then Check.fail "unsorted"
 
 let changed_in_place () =
   let o =
@@ -1237,5 +1399,6 @@ let () =
          generated;
          shrinking;
          output;
+         printing;
          running_again;
        ])

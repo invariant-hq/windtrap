@@ -492,7 +492,12 @@ module Engine : sig
       placeholder when [gen] has none. It reads the generator's printer and
       never a node, so a value of a {!Gen.map} or a {!Gen.bind} without
       {!Gen.with_pp} is the placeholder here, where a sample of the same
-      generator renders as a pre-image. It has {!render}'s guard. *)
+      generator renders as a pre-image.
+
+      A printer that raises turns the text into [<printer raised EXN>], as under
+      {!render}, except that a [Failure.Control] is raised again: a bare value
+      is formatted before a run, as an example of a property, and the control
+      belongs to that run. *)
 
   (** {1:building Building generators} *)
 

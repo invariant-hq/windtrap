@@ -2604,6 +2604,25 @@ let raised_rows =
     ("Stack_overflow", Stack_overflow, "<printer raised Stack overflow>");
   ]
 
+(* What [render_value] gives when its printer raises [exn]: the text, or
+   what left it. *)
+let bare exn =
+  match Gen_engine.render_value (raising exn) 3 with
+  | text -> text
+  | exception e -> "raised " ^ Printexc.to_string e
+
+let bare_rows =
+  [
+    ("Failure", Stdlib.Failure "boom", {|<printer raised Failure("boom")>|});
+    ("Stack_overflow", Stack_overflow, "<printer raised Stack overflow>");
+    ( "a timeout",
+      Failure.Control (`Timeout 1.5),
+      "raised windtrap timeout after 1.5s" );
+    ( "a skip",
+      Failure.Control (`Skip (Some "later")),
+      "raised windtrap skip: later" );
+  ]
+
 let formats_again () =
   let calls = ref 0 in
   let counting ppf v =
@@ -2673,13 +2692,19 @@ let rendering =
         printers_rows;
       renderings "a sample with nothing to print renders as the placeholder"
         nothing_rows;
-      cases "a raising printer renders as <printer raised EXN>, sampled or bare"
+      cases
+        "a raising printer renders a sample as <printer raised EXN>, a control \
+         included"
         ~name:(fun (n, _, _) -> n)
         raised_rows
         (fun (_, exn, text) ->
-          equal (pair string string) (text, text)
-            ( shown (sample (raising exn) 0),
-              Gen_engine.render_value (raising exn) 3 ));
+          equal string text (shown (sample (raising exn) 0)));
+      cases
+        "render_value renders a printer's fault as <printer raised EXN> and \
+         raises a control again"
+        ~name:(fun (n, _, _) -> n)
+        bare_rows
+        (fun (_, exn, text) -> equal string text (bare exn));
       cases "Sys.Break and Out_of_memory escape a printer's guard"
         ~name:Printexc.to_string [ Sys.Break; Out_of_memory ] (fun exn ->
           equal string (Printexc.to_string exn)

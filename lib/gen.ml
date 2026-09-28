@@ -1024,12 +1024,16 @@ module Engine = struct
 
   let no_printer = "<no printer: attach one with Gen.with_pp>"
 
-  (* A printer runs after a case failed: what it raises, a control included,
-     becomes the text, so nothing replaces the failure found. *)
+  let printer_raised c =
+    Pp.str "<printer raised %s>" (Failure.caught_to_string c)
+
+  (* A sample renders after a case failed: what its printer raises, a
+     control included, becomes the text, so nothing replaces the failure
+     found. *)
   let render_with pp v =
     match Failure.catch (fun () -> Pp.to_string pp v) with
     | Ok text -> text
-    | Error c -> Pp.str "<printer raised %s>" (Failure.caught_to_string c)
+    | Error c -> printer_raised c
 
   let render node =
     match node.shown with
@@ -1039,8 +1043,16 @@ module Engine = struct
 
   let prints node = Option.is_some node.shown
 
+  (* A bare value renders before its run, where a control belongs to its
+     owner: only a fault becomes the text. *)
   let render_value gen v =
-    match gen.pp with Some pp -> render_with pp v | None -> no_printer
+    match gen.pp with
+    | None -> no_printer
+    | Some pp -> (
+        match Failure.catch (fun () -> Pp.to_string pp v) with
+        | Ok text -> text
+        | Error (#Failure.fault as fault) -> printer_raised fault
+        | Error (#Failure.control as control) -> Failure.reraise control)
 
   let run gen state = map_draw value gen.run state
 

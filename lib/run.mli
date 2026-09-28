@@ -404,6 +404,7 @@ val property :
   ?max_discard:int ->
   ?examples:'a list ->
   ?summary:('a -> string option) ->
+  ?prints_run:bool ->
   ?cost:int ->
   ?deterministic:bool ->
   'a Gen.t ->
@@ -412,8 +413,8 @@ val property :
 (** [property gen law] is the body of the test that {!prop} declares, [loc]
     being its declaration site. It returns [()] on a [Pass] and raises the
     failure of any other outcome as a [Failure.Check_failure] (see {!prop}).
-    [cost] and [deterministic] are {!Property.run}'s. Raises as {!current_frame}
-    does.
+    [prints_run], [cost] and [deterministic] are {!Property.run}'s. Raises as
+    {!current_frame} does.
 
     The [output] of {!Property.run} is what a run of [law] wrote from its start,
     or from the last {!restart_law_output} in it, to its end, as

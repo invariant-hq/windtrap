@@ -436,8 +436,9 @@ val stateful :
 (** [stateful name commands] is the property test [name] over the programs of
     [commands]. Its body checks [commands], [steps] and [domains] as
     {!val-program} does, then runs {!Run.property} over
-    [program ?steps ?domains commands] with [execute ?workers] as its law and
-    {!summary} as its summary, then judges the commands never called.
+    [program ?steps ?domains commands] with [execute ?workers] as its law,
+    {!summary} as its summary and [prints_run], since a program prints the
+    record of its run, then judges the commands never called.
     - [timeout] and [count] are {!Run.prop}'s, and so is [--prop-count].
     - [__POS__] is the declaration site, resolved once at this call. It is the
       site of the test.
