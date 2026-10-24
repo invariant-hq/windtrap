@@ -13,6 +13,8 @@ module Report_sections = Windtrap.Private.Report_sections
 module Run = Windtrap.Private.Run
 module Test_tree = Windtrap.Private.Test_tree
 
+let strf = Printf.sprintf
+
 (* The XML reader *)
 
 (* The document is read back as a tree by a reader of the XML 1.0 it uses: an
@@ -873,14 +875,22 @@ let partitions () =
        ])
     (files dir)
 
-(* [root] holds one regular file, and [target root] cannot be written. *)
-let unwritable (_, target) =
+(* [root] holds one regular file, and [target root] cannot be written. The
+   warning names the file, then the reason in words that do not repeat it;
+   the system's words for the error close the line. *)
+let unwritable (_, target, reason) =
   let root = temp_dir () in
   Out_channel.with_open_bin (Filename.concat root "file") ignore;
   write [] (target root);
   equal (list string) [ "file" ] (files root);
-  starts_with ~affix:"windtrap: warning: "
-    (require_match one (String.split_on_char '\n' (String.trim (output ()))))
+  let line =
+    require_match one (String.split_on_char '\n' (String.trim (output ())))
+  in
+  let file, reason = reason root in
+  equal string
+    (strf "windtrap: warning: could not write JUnit report to %s: %s"
+       (Os.display_path file) reason)
+    (String.sub line 0 (String.rindex line ':'))
 
 let writing =
   group "Writing"
@@ -895,12 +905,19 @@ let writing =
         directory_target;
       test "a suite's file is its name made one path component" partitions;
       cases "a report that cannot be written is one warning, and write returns"
-        ~name:fst
+        ~name:(fun (name, _, _) -> name)
         [
           ( "an .xml target whose directory is missing",
-            fun root -> Filename.concat root "missing/r.xml" );
+            (fun root -> Filename.concat root "missing/r.xml"),
+            fun root ->
+              ( Filename.concat root "missing/r.xml",
+                "cannot create temporary file" ) );
           ( "a directory target below a regular file",
-            fun root -> Filename.concat root "file/reports" );
+            (fun root -> Filename.concat root "file/reports"),
+            fun root ->
+              ( Filename.concat root "file/reports/s.xml",
+                strf "cannot create directory %s"
+                  (Os.display_path (Filename.concat root "file/reports")) ) );
         ]
         unwritable;
     ]
