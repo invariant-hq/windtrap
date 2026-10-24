@@ -176,8 +176,8 @@ val settings : parsed -> (Run.config, error) result
       directory when the command line gives it and against {!Os.project_root}
       when its mirror does. It is kept as given when that directory cannot be
       read.
-    - [github] is {!Os.in_github_actions}[ ()], [allow_focus] is [false] and
-      [invocation] is [`Mirrors]. [list_only], [help] and [version] are ignored.
+    - [github] is {!Os.in_github_actions}[ ()] and [invocation] is [`Mirrors].
+      [list_only], [help] and [version] are ignored.
 
     It never raises. It reads the environment and the working directory, and on
     every call it draws a seed from {!Seed.random}, which the result carries

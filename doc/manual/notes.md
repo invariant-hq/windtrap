@@ -309,23 +309,24 @@ data describes a program that no longer exists.
 ## A suite is its own mutation runner
 
 The test executable runs its own mutation run under `--mutate`. It is
-the process that knows which test is running, so it can record which
-tests evaluate each mutant and name them in a survivor's block, which
-turns a score into a list of tests to strengthen. It forks one child per
-reached mutant from its own warm state, and each child runs only the
-tests that reach its mutant, up to the first failure. A tool outside
-the suite would rebuild or restart the suite for each mutant, and could
-not name the tests.
+the program that knows its tests, so its workers can report which tests
+evaluate each mutant and the report name them in a survivor's block,
+which turns a score into a list of tests to strengthen. Each reached
+mutant runs in a worker of its own, forked from the suite's process
+before any test ran, and the worker runs only the tests that reach its
+mutant, up to the first failure. A tool outside the suite would rebuild
+or restart the suite for each mutant, and could not name the tests.
 
-A child inherits what the dry run cached, so a test can pass in it
-without evaluating the mutant's site. The child counts the evaluations
-of its armed site, and a mutant whose site it never evaluated is not
-evaluated. Called a survivor, it would send a reader to strengthen
-tests that were never given the mutant. An `--arm` run starts in a new
-process and judges it.
+A worker that ran another mutant, or the dry run, keeps what they
+cached: measured on windtrap's suites, reusing workers changed a
+verdict. A fresh one starts from module initialization, so a memoised
+site is judged on what its tests do. Its run still counts the
+evaluations of its armed site, and a mutant whose site it never
+evaluated is not evaluated. Called a survivor, it would send a reader
+to strengthen tests that were never given the mutant.
 
-Module initialization runs before a child can arm a mutant, and a
-fixture release belongs to no test, so no child tests a site that only
+Module initialization runs before a worker can arm a mutant, and a
+fixture release belongs to no test, so no run tests a site that only
 they evaluate. Such a site ran and the tests may depend on it. Listed
 as never reached, it would read as a line no test covers, so the report
 lists it as evaluated outside tests.

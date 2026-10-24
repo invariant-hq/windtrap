@@ -153,9 +153,7 @@ let seed value =
     (fun _ -> "an s1: token with 16 lowercase hexadecimal digits")
     (Seed.of_string value)
 
-let replay_token value =
-  Result.map (fun _ -> value) (Choice.of_token value)
-
+let replay_token value = Result.map (fun _ -> value) (Choice.of_token value)
 let add_filter p pattern = { p with filter = p.filter @ [ pattern ] }
 
 (* [color_mode] reads this row alone, so WINDTRAP_COLOR means one thing for
@@ -508,8 +506,6 @@ let settings cli =
         Option.value
           (absolute_path ~cli ~layered (fun p -> p.log_dir))
           ~default:defaults.Run.log_dir;
-      (* Only a forked mutation child focuses, through [Run.for_subset]. *)
-      allow_focus = false;
       color = Option.value layered.color ~default:defaults.Run.color;
       slow_threshold =
         Option.value layered.slow_threshold ~default:defaults.Run.slow_threshold;

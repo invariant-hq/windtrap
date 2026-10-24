@@ -72,9 +72,18 @@ let ended = function
   | Unix.WSIGNALED signal -> "killed by " ^ signal_name signal
   | Unix.WSTOPPED signal -> "stopped by " ^ signal_name signal
 
+(* A deadline is the dry run's own duration and more. *)
+let seconds_masked reason =
+  match String.rindex_opt reason ' ' with
+  | Some i
+    when String.ends_with ~suffix:"s" reason
+         && String.starts_with ~prefix:"its run passed its deadline" reason ->
+      String.sub reason 0 (i + 1) ^ "<time>"
+  | Some _ | None -> reason
+
 let verdict = function
   | Verdicts.Killed -> "killed"
-  | Verdicts.Unknown reason -> "unknown: " ^ reason
+  | Verdicts.Unknown reason -> "unknown: " ^ seconds_masked reason
   | Verdicts.Survived { first; others } ->
       "survived by "
       ^ String.concat ", "
@@ -371,6 +380,9 @@ let green_rows =
 let green_outcome =
   "mutants: 1 survived of 2 reached by this suite, 1 killed, 2 never reached"
 
+let narrowing =
+  "its selection narrowed the suite, so it saved no verdict: run it whole"
+
 let not_saved =
   "windtrap: verdicts not saved: this run's selection narrows the suite, and a \
    partial run's verdicts would stand in the project merge as the whole.\n"
@@ -544,8 +556,11 @@ let dry_run =
 
 (* The determinism probe *)
 
+(* The process that claims this file first is the one that measured. *)
+let measured () = ("MUTATE_MEASURED", Filename.concat (temp_dir ()) "measured")
+
 let disagreeing () =
-  let r = spawn ~env:[ suite "flaky" ] [ mutate ] in
+  let r = spawn ~env:[ suite "flaky"; measured () ] [ mutate ] in
   equal string "exited 1" r.status;
   contains ~sub:"the suite is not deterministic" r.err;
   contains ~sub:"the dry run executed 4 tests, skipping 0 and failing none"
@@ -560,7 +575,7 @@ let probe =
       test "a probe that fails a test is refused, naming the test" disagreeing;
       test "a probe that only skips differently is refused on the skip count"
         (fun () ->
-          let r = spawn ~env:[ suite "skippy" ] [ mutate ] in
+          let r = spawn ~env:[ suite "skippy"; measured () ] [ mutate ] in
           equal string "exited 1" r.status;
           equal text
             "windtrap: the suite is not deterministic: the dry run executed 4 \
@@ -588,7 +603,7 @@ let no_at_exit () =
     (outcome r.out);
   equal int 1 (List.length (pids (read log)))
 
-let release = lazy (spawn ~env:[ suite "release" ] [ mutate ])
+let release = lazy (spawn ~env:[ suite "release"; measured () ] [ mutate ])
 
 (* The inline runtime keeps its correction directory as its working
    directory at module load, so the fixture is staged there under the name
@@ -656,8 +671,13 @@ let crashed () =
   equal string "exited 0" r.status;
   equal text "" r.err;
   equal string
-    "mutants: 1 survived of 3 reached by this suite, 2 killed, 1 never reached"
+    "mutants: 1 survived of 3 reached by this suite, 1 killed, 1 unknown, 1 \
+     never reached"
     (outcome r.out);
+  contains
+    ~sub:
+      (strf "  %s  a - b → a + b\n    its run exited with code 3\n" (site 27))
+    r.out;
   equal
     (option (list string))
     (Some
@@ -666,13 +686,32 @@ let crashed () =
          "subject.ml:18 survived by widen \u{203a} widen is nonzero, widen \
           \u{203a} widen is not 99";
          "subject.ml:21 unreached";
-         "subject.ml:27 killed";
+         "subject.ml:27 unknown: its run exited with code 3";
        ])
     (rows r)
 
-(* [memo] fills a table in the dry run, so the child that arms [widen]'s
-   mutant reads the answer and never evaluates the site. *)
-let memo = lazy (spawn ~env:[ suite "memo" ] [ mutate ])
+(* [memo] fills a table in the dry run, which the job that arms [widen]'s
+   mutant, forked from a process that ran no test, does not see. *)
+let cold_cache () =
+  let r = spawn ~env:[ suite "memo" ] [ mutate ] in
+  equal string "exited 0" r.status;
+  equal string "mutants: 2 reached by this suite, 2 killed, 2 never reached"
+    (outcome r.out);
+  equal
+    (option (list string))
+    (Some
+       [
+         "subject.ml:15 killed";
+         "subject.ml:18 killed";
+         "subject.ml:21 unreached";
+         "subject.ml:27 unreached";
+       ])
+    (rows r)
+
+(* [primed] evaluates [widen] in the dry run because an earlier test, which
+   reaches no mutant, ran first; the mutant's job runs its reaching test
+   alone. *)
+let memo = lazy (spawn ~env:[ suite "primed" ] [ mutate ])
 
 let not_evaluated () =
   let r = Lazy.force memo in
@@ -710,7 +749,7 @@ let verdicts =
         "a pinned mutant is killed, and one no test pins survives naming its \
          reaching tests"
         survivor_named;
-      test "a child that dies without a verdict is killed" crashed;
+      test "a mutant whose run crashes is unknown, never survived" crashed;
       test "a failure in a fixture release kills the mutant" (fun () ->
           let r = Lazy.force release in
           equal string "exited 0" r.status;
@@ -729,10 +768,16 @@ let verdicts =
                  "subject.ml:27 unreached";
                ])
             (rows (Lazy.force memo)));
-      test "its arm command, a new process, kills it" (fun () ->
-          let r = spawn ~env:[ suite "memo" ] [ "--arm"; site 18 ] in
-          equal string "exited 1" r.status;
-          equal string "mutant killed." (outcome r.out));
+      test "its arm command runs the whole suite, which evaluates the site"
+        (fun () ->
+          let r = spawn ~env:[ suite "primed" ] [ "--arm"; site 18 ] in
+          equal string "exited 0" r.status;
+          equal string
+            "mutant survived: the armed site was evaluated 1 time and no test \
+             failed."
+            (outcome r.out));
+      test "a site a warm cache answered reads its mutant's verdict, killed"
+        cold_cache;
       test "every survivor is named" capped;
       test "a loop that kills everything it reaches prints its outcome alone"
         (fun () ->
@@ -842,13 +887,13 @@ let deadline_kill () =
   let b = Lazy.force blocked in
   equal string "exited 0" b.run.status;
   equal text "" b.run.err;
-  equal string "mutants: 1 reached by this suite, 1 killed, 3 never reached"
+  equal string "mutants: 1 reached by this suite, 1 unknown, 3 never reached"
     (outcome b.run.out);
   equal
     (option (list string))
     (Some
        [
-         "subject.ml:15 killed";
+         "subject.ml:15 unknown: its run passed its deadline of <time>";
          "subject.ml:18 unreached";
          "subject.ml:21 unreached";
          "subject.ml:27 unreached";
@@ -916,7 +961,7 @@ let limits =
         [ (5, 0); (5, 1); (50, 0); (50, 1) ]
         budget;
       test "a mutant that never terminates is killed by its hit budget" runaway;
-      test "a mutant that blocks is killed by its child's deadline"
+      test "a mutant whose run hangs is unknown at its job's deadline"
         deadline_kill;
       test "a child's deadline is at least one second" (fun () ->
           let b = Lazy.force blocked in
@@ -1038,17 +1083,26 @@ let verdict_file =
         narrowed;
       test "a scoped run keeps the other files' records only from its own build"
         kept_by_build;
-      cases "every narrowing of the suite writes no verdict file"
+      cases
+        "every narrowing of the suite saves no verdict, and its file names the \
+         suite as not tested"
         ~name:(String.concat " ")
         [
           [ "-e"; "nothing-matches" ];
           [ "--exclude-tag"; "nothing" ];
           [ "--shard"; "1/1" ];
+          [ "--shard"; "2/2" ];
         ]
         (fun flags ->
           let r = spawn ~env:[ suite "weak" ] (mutate :: flags) in
           equal (pair string text) ("exited 0", not_saved) (r.status, r.err);
-          equal (option (list string)) None (rows r));
+          let f = require_some r.file in
+          equal (option string) (Some narrowing) f.refused;
+          equal (list string)
+            (List.map
+               (fun line -> strf "subject.ml:%d unknown: %s" line narrowing)
+               [ 15; 18; 21; 27 ])
+            f.rows);
       test "a --failed run writes no verdict file" failed_run;
       test "a run with an active focus writes no verdict file" (fun () ->
           let r = spawn ~env:[ suite "focused" ] [ mutate ] in
@@ -1197,30 +1251,27 @@ let refusals =
         no_backend;
       test "a scope is refused by name even where there is nothing to mutate"
         loud_scope;
-      test
-        "a suite that spawned a domain is refused, since the loop cannot fork"
+      test "a suite whose test spawns a domain is tested, in its workers"
         (fun () ->
           let r = spawn ~env:[ suite "domain" ] [ mutate ] in
-          equal (pair string text)
-            ("exited 1", "calc: 1 passed in <time>.\n")
-            (r.status, masked r.out);
+          equal string "exited 0" r.status;
+          equal text "" r.err;
+          equal string
+            "mutants: 1 reached by this suite, 1 killed, 3 never reached"
+            (outcome r.out));
+      test
+        "a process that spawned a domain before its run is refused, since it \
+         cannot fork" (fun () ->
+          let r = spawn ~env:[ suite "domain_first" ] [ mutate ] in
+          equal (pair string text) ("exited 1", "") (r.status, r.out);
           equal text
             "windtrap: this process has spawned a domain, and OCaml refuses \
              Unix.fork in a process that has: mutation testing runs every \
-             mutant in a forked child, so it cannot run in this one. Exclude \
-             the tests that spawn a domain (-e) to test the rest\n"
-            r.err);
-      test "a scratch directory that cannot be made is refused before the probe"
-        (fun () ->
-          let r =
-            spawn ~env:[ suite "weak"; ("TMPDIR", temp_file ()) ] [ mutate ]
-          in
-          equal (pair string text)
-            ("exited 1", "calc: 2 passed in <time>.\n")
-            (r.status, masked r.out);
-          starts_with
-            ~affix:"windtrap: could not create the loop's scratch directory: "
-            r.err);
+             mutant in a fork of this one, so it cannot run here. Spawn the \
+             domain in a test instead\n"
+            r.err;
+          equal (option bool) (Some true)
+            (Option.map (fun (f : file) -> Option.is_some f.refused) r.file));
     ]
 
 (* The armed run *)

@@ -61,7 +61,6 @@ val execute :
   ?env:(string * string) list ->
   ?config:(Windtrap.Private.Run.config -> Windtrap.Private.Run.config) ->
   ?on_event:(Windtrap.Private.Run.event -> unit) ->
-  ?allowlist:string list ->
   ?suite:string ->
   Windtrap.test list ->
   execution
@@ -69,7 +68,7 @@ val execute :
     - [env] is set in the stated environment. Defaults to [[]].
     - [config] edits the configuration, which is [Run.default_config ()] with
       the scratch log directory and {!seed}. Defaults to the identity.
-    - [on_event] and [allowlist] are [Run.execute]'s.
+    - [on_event] is [Run.execute]'s.
     - [suite] defaults to ["suite"]. *)
 
 val list_selection :

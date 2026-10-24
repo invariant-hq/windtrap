@@ -7,15 +7,21 @@
 [@@@mutate exclude_file]
 
 module Coverage = Windtrap_runtime.Coverage
+module Mutate = Windtrap_runtime.Mutate
 
 let strf = Printf.sprintf
 let ( let* ) = Result.bind
 
 (* Frames *)
 
-(* What a worker sends: a report of [Run.serve], and the coverage counts it
-   hands over as it ends. *)
-type to_parent = Report of Run.report | Counts of Coverage.t
+(* What a worker sends: a report of [Run.serve], the mutants each test
+   evaluated, and as it ends the coverage counts it hands over and the
+   evaluations of its armed site. *)
+type to_parent =
+  | Report of Run.report
+  | Reached of { test : string list option; sites : (Mutate.id * int) list }
+  | Counts of Coverage.t
+  | Hits of int
 
 (* A frame is a 4-byte length and a [Marshal]led value. Nothing that crosses
    holds a closure, which [Marshal] would refuse at once. *)
@@ -58,12 +64,43 @@ let receive ?(interrupted = ignore) fd =
 
 (* Workers *)
 
+let mutating (config : Run.config) =
+  match config.mutation with
+  | Run.No_mutation -> false
+  | Run.Loop _ | Run.Armed _ -> true
+
+(* Under mutation a test's window opens at its start and closes at its end,
+   so what module initialization and a fixture release evaluate falls in a
+   window of no test. *)
+let window ~send test =
+  (match Mutate.drain () with
+  | [] -> ()
+  | reached ->
+      send test
+        (List.map (fun (r : Mutate.reached) -> (r.mutant.id, r.hits)) reached));
+  Mutate.next_epoch ()
+
+let reach_windows ~send (event : Run.event) =
+  match event with
+  | Test_started _ -> window ~send None
+  | Test_finished result -> window ~send (Some result.path)
+  | Run_started _ | Shrinking _ | Shrunk _ | Fixture_release _ | Interrupted _
+    ->
+      ()
+
 (* The worker is a session of its own, so a terminal's signal reaches the
    parent alone, which forwards it, and the parent kills the group. *)
-let serve config ~suite tests ~temp_dir ~input ~output =
+let serve (config : Run.config) ~suite tests ~temp_dir ~input ~output =
   ignore (Unix.setsid ());
   (* What the parent counted before the fork is the parent's to dump. *)
   ignore (Coverage.take ());
+  (* The parent validated an [--arm] identifier, which a re-executed worker
+     arms anew. Evaluations count from here. *)
+  (match config.mutation with
+  | Run.Armed spec ->
+      ignore (Result.bind (Mutate.id_of_string spec) (fun id -> Mutate.arm id))
+  | Run.No_mutation | Run.Loop _ -> ());
+  if mutating config then Mutate.reset_reach ();
   (* A domain the test left running can call exit while the test's domain
      sends, and two frames must not interleave. *)
   let lock = Mutex.create () in
@@ -71,12 +108,23 @@ let serve config ~suite tests ~temp_dir ~input ~output =
     let frame = frame value in
     Mutex.protect lock (fun () -> write_all output frame 0 (Bytes.length frame))
   in
+  let reached test sites = send (Reached { test; sites }) in
   let last () =
+    (if mutating config then
+       try
+         window ~send:reached None;
+         send (Hits (Mutate.armed_hits ()))
+       with _ -> ());
     let counts = Coverage.take () in
     if Coverage.files counts <> [] then try send (Counts counts) with _ -> ()
   in
-  Run.serve config ~suite tests ~temp_dir
-    ~send:(fun report -> send (Report report))
+  let report = function
+    | Run.Event event as report ->
+        if mutating config then reach_windows ~send:reached event;
+        send (Report report)
+    | report -> send (Report report)
+  in
+  Run.serve config ~suite tests ~temp_dir ~send:report
     ~receive:(fun ~interrupted -> (receive ~interrupted input : Run.request))
     ~last
 
@@ -85,14 +133,14 @@ type worker = {
   requests : Unix.file_descr;
   reports : Unix.file_descr;
   temp_dir : string;
-  mutable job : job option;
+  mutable job : case_job option;
   mutable releasing : string option; (* the fixture it announced last *)
   mutable exited : bool; (* it said that code under test called exit *)
   mutable signalled : bool; (* the parent sent it the run's signal *)
   mutable status : Unix.process_status option; (* once it is reaped *)
 }
 
-and job = {
+and case_job = {
   index : int;
   case : Test_tree.case;
   started : Os.counter;
@@ -143,7 +191,7 @@ let worker pid ~temp_dir (requests, reports) =
 (* A fork of the parent before it ran any test, so the worker starts warm and
    clean. The buffers are drained first, or the worker would write them a
    second time. *)
-let fork config ~suite tests =
+let fork ?(prepare = fun ~temp_dir:_ config -> config) config ~suite tests =
   let temp_dir = make_temp_dir () in
   let (input, output), ends = pipes () in
   Capture.drain ();
@@ -151,7 +199,9 @@ let fork config ~suite tests =
   | 0 -> (
       Unix.close (fst ends);
       Unix.close (snd ends);
-      try serve config ~suite tests ~temp_dir ~input ~output
+      try
+        let config = prepare ~temp_dir config in
+        serve config ~suite tests ~temp_dir ~input ~output
       with _ -> Unix._exit 2)
   | pid ->
       Unix.close input;
@@ -295,7 +345,8 @@ type settled =
   | Served of { served : Run.served; stopped : bool }
   | Lost of Run.result
 
-let supervise ?(on_event = ignore) (config : Run.config) ~suite tests ~spawn =
+let supervise ?(on_event = ignore) ~on_reach (config : Run.config) ~suite tests
+    ~spawn =
   let started = Os.counter () in
   let* selection = Run.select config ~suite tests in
   let run = Run.supervising config ~suite in
@@ -339,7 +390,7 @@ let supervise ?(on_event = ignore) (config : Run.config) ~suite tests ~spawn =
     Capture.drain ()
   in
   let drop w = workers := List.filter (fun x -> x != w) !workers in
-  let lose (job : job) failure =
+  let lose (job : case_job) failure =
     settled.(job.index) <-
       Some
         (Lost (Run.lost run job.case failure ~duration:(Os.count_s job.started)))
@@ -374,7 +425,7 @@ let supervise ?(on_event = ignore) (config : Run.config) ~suite tests ~spawn =
                    (ended status))))
     | None, _, _ -> ()
   in
-  let expire w (job : job) limit =
+  let expire w (job : case_job) limit =
     drop w;
     kill w;
     ignore (reap w);
@@ -429,6 +480,10 @@ let supervise ?(on_event = ignore) (config : Run.config) ~suite tests ~spawn =
     | Counts counts ->
         Coverage.absorb counts;
         drain w
+    | Reached { test; sites } ->
+        on_reach test sites;
+        drain w
+    | Hits _ -> drain w
     | exception Closed -> ()
   in
   let finish w =
@@ -439,7 +494,7 @@ let supervise ?(on_event = ignore) (config : Run.config) ~suite tests ~spawn =
     | Some status when Option.is_none !interrupted -> died w status
     | Some _ | None -> bury w
   in
-  let answer (job : job) =
+  let answer (job : case_job) =
     match job.asked with
     | None -> ()
     | Some (attempt, since) -> (
@@ -522,6 +577,8 @@ let supervise ?(on_event = ignore) (config : Run.config) ~suite tests ~spawn =
     | exception Closed -> (
         match reap w with Some status -> died w status | None -> ())
     | Counts counts, _ -> Coverage.absorb counts
+    | Reached { test; sites }, _ -> on_reach test sites
+    | Hits _, _ -> ()
     | Report (Judge attempt), Some job ->
         job.asked <- Some (attempt, Os.counter ())
     | Report (Done { served; stopped; retire }), Some job ->
@@ -544,7 +601,7 @@ let supervise ?(on_event = ignore) (config : Run.config) ~suite tests ~spawn =
       | exception Unix.Unix_error (Unix.EINTR, _, _) -> dead w status
   in
   let busy () = List.filter (fun w -> Option.is_some w.job) !workers in
-  let remaining (job : job) =
+  let remaining (job : case_job) =
     if Option.is_some job.asked then None
     else Option.map (fun d -> d -. Os.count_s job.started) job.deadline
   in
@@ -658,12 +715,249 @@ let supervise ?(on_event = ignore) (config : Run.config) ~suite tests ~spawn =
         !workers;
       Printexc.raise_with_backtrace exn backtrace
 
-let execute ?on_event (config : Run.config) ~suite tests =
-  if config.in_process || Sys.win32 then
-    Run.execute ?on_event config ~suite tests
+(* The parent's own evaluations, at module initialization, are outside
+   every test. *)
+let execute ?(on_reach = fun _ _ -> ()) ?(on_event = ignore)
+    (config : Run.config) ~suite tests =
+  if mutating config then window ~send:on_reach None;
+  if config.in_process || Sys.win32 then (
+    let on_event event =
+      if mutating config then reach_windows ~send:on_reach event;
+      on_event event
+    in
+    let ran = Run.execute ~on_event config ~suite tests in
+    if mutating config then window ~send:on_reach None;
+    ran)
   else
     let spawn =
       if domain_spawned () then fun () -> exec config
       else fun () -> fork config ~suite tests
     in
-    supervise ?on_event config ~suite tests ~spawn
+    supervise ~on_event ~on_reach config ~suite tests ~spawn
+
+(* Fresh workers *)
+
+let can_fork () = not (Sys.win32 || domain_spawned ())
+
+type job = {
+  cases : string list;
+  deadline : float;
+  bail : bool;
+  arm : unit -> unit;
+}
+
+type ended = Ran | Lost of string | Expired
+
+type ran = {
+  results : Run.result list;
+  release_failures : Failure.t list;
+  armed_hits : int;
+  ended : ended;
+}
+
+let counted_failure (r : Run.result) =
+  r.counted
+  && match r.outcome with Failure.Fail _ -> true | Pass | Skip _ -> false
+
+(* A job's state while its workers run it. A worker that retires leaves the
+   rest of the job's cases to a fresh one. *)
+type state = {
+  index : int;
+  job : job;
+  started : Os.counter;
+  mutable w : worker;
+  mutable pending : string list; (* not yet sent *)
+  mutable finishing : bool; (* Finish was sent *)
+  mutable rev_results : Run.result list;
+  mutable rev_failures : Failure.t list;
+  mutable hits : int;
+}
+
+(* Nothing a mutated program prints reaches the parent's descriptors, and
+   its capture logs live and die with the worker. *)
+let quiet ~temp_dir (config : Run.config) =
+  (match Unix.openfile "/dev/null" [ Unix.O_WRONLY ] 0 with
+  | fd ->
+      Unix.dup2 fd Unix.stdout;
+      Unix.dup2 fd Unix.stderr;
+      Unix.close fd
+  | exception Unix.Unix_error _ -> ());
+  {
+    config with
+    stream = false;
+    baseline = Baseline.Check;
+    junit = None;
+    log_dir = Filename.concat temp_dir "logs";
+  }
+
+let fresh (config : Run.config) ~suite tests jobs ~on_ran ~on_signal =
+  let jobs = Array.of_list jobs in
+  let n = Array.length jobs in
+  let settled = Array.make n None in
+  let running = ref [] and next = ref 0 and delivered = ref 0 in
+  let signal = ref None in
+  let spawn job =
+    let prepare ~temp_dir config =
+      let config = quiet ~temp_dir config in
+      job.arm ();
+      config
+    in
+    fork ~prepare config ~suite tests
+  in
+  let send_next st =
+    match st.pending with
+    | path :: rest ->
+        st.pending <- rest;
+        request st.w (Case path)
+    | [] ->
+        st.finishing <- true;
+        request st.w Finish
+  in
+  let settle st ended =
+    running := List.filter (fun x -> x != st) !running;
+    bury st.w;
+    settled.(st.index) <-
+      Some
+        {
+          results = List.rev st.rev_results;
+          release_failures = List.rev st.rev_failures;
+          armed_hits = st.hits;
+          ended;
+        }
+  in
+  let start () =
+    while
+      !next < n && List.length !running < config.jobs && Option.is_none !signal
+    do
+      let job = jobs.(!next) in
+      let st =
+        {
+          index = !next;
+          job;
+          started = Os.counter ();
+          w = spawn job;
+          pending = job.cases;
+          finishing = false;
+          rev_results = [];
+          rev_failures = [];
+          hits = 0;
+        }
+      in
+      incr next;
+      running := !running @ [ st ];
+      send_next st
+    done
+  in
+  (* A worker that ended after its Finish ran the job; one that retired
+     mid-job hands the rest to a fresh fork; any other end loses the job. *)
+  let closed st =
+    let status = Option.value (reap st.w) ~default:(Unix.WEXITED 255) in
+    match status with
+    | Unix.WEXITED 0 when st.finishing && st.pending = [] -> settle st Ran
+    | Unix.WEXITED 0 when st.finishing ->
+        bury st.w;
+        st.w <- spawn st.job;
+        st.finishing <- false;
+        send_next st
+    | status ->
+        settle st
+          (Lost
+             (if st.w.exited then "ended when code under test called exit"
+              else ended status))
+  in
+  let handle st =
+    match receive st.w.reports with
+    | exception (Closed | Failure _ | End_of_file) -> closed st
+    | Report (Done { served; retire; _ }) ->
+        st.rev_results <- served.result :: st.rev_results;
+        if st.job.bail && counted_failure served.result then st.pending <- [];
+        if retire then begin
+          st.finishing <- true;
+          request st.w Finish
+        end
+        else send_next st
+    | Report (Released failures) ->
+        st.rev_failures <- List.rev_append failures st.rev_failures
+    | Report (Outside failure) -> st.rev_failures <- failure :: st.rev_failures
+    | Report Exited -> st.w.exited <- true
+    | Report (Event _ | Judge _) | Reached _ | Counts _ -> ()
+    | Hits hits -> st.hits <- st.hits + hits
+  in
+  let expired st =
+    kill st.w;
+    ignore (reap st.w);
+    settle st Expired
+  in
+  let rec deliver () =
+    if !delivered < n then
+      match settled.(!delivered) with
+      | None -> ()
+      | Some ran ->
+          let index = !delivered in
+          incr delivered;
+          on_ran index ran;
+          deliver ()
+  in
+  let remaining st = st.job.deadline -. Os.count_s st.started in
+  (* A worker found dead may have left reports in its pipe, which say more
+     than its status: they are read first. *)
+  let rec dead st =
+    if List.memq st !running then
+      match Unix.select [ st.w.reports ] [] [] 0. with
+      | _ :: _, _, _ ->
+          handle st;
+          dead st
+      | [], _, _ -> closed st
+      | exception Unix.Unix_error (Unix.EINTR, _, _) -> dead st
+  in
+  let rec loop () =
+    deliver ();
+    start ();
+    match !running with
+    | [] -> ()
+    | _ when Option.is_some !signal -> ()
+    | running' ->
+        let wait =
+          List.fold_left
+            (fun acc st -> Float.min acc (Float.max 0. (remaining st)))
+            1. running'
+        in
+        let ready =
+          match
+            Unix.select (List.map (fun st -> st.w.reports) running') [] [] wait
+          with
+          | ready, _, _ -> ready
+          | exception Unix.Unix_error (Unix.EINTR, _, _) -> []
+        in
+        List.iter
+          (fun st ->
+            if Option.is_none !signal then
+              if remaining st <= 0. then expired st
+              else if List.mem st.w.reports ready then handle st
+              else if ready = [] then
+                match reap ~flags:[ Unix.WNOHANG ] st.w with
+                | Some _ -> dead st
+                | None -> ())
+          running';
+        loop ()
+  in
+  let stop_all () =
+    List.iter
+      (fun st ->
+        kill st.w;
+        ignore (reap st.w);
+        bury st.w)
+      !running;
+    running := []
+  in
+  (* A reader that went away stops the jobs as an interrupt does. *)
+  Os.with_signals (Sys.sigpipe :: interrupting) (fun s ->
+      if Option.is_none !signal then signal := Some s;
+      on_signal s)
+  @@ fun () ->
+  match loop () with
+  | () -> stop_all ()
+  | exception exn ->
+      let backtrace = Printexc.get_raw_backtrace () in
+      stop_all ();
+      Printexc.raise_with_backtrace exn backtrace

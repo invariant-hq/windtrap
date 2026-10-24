@@ -109,8 +109,8 @@ let () =
 
 To test the mutants a suite reaches, run the suite built with the
 backend and pass `--mutate`. The run executes the suite once, recording
-which tests reach each mutant, then runs each reached mutant in a child
-process with those tests alone. A mutant that no test fails on prints
+which tests reach each mutant, then runs each reached mutant in a
+process of its own with those tests alone. A mutant that no test fails on prints
 as a `SURVIVED` block: its identifier, the rewrite, the source line and
 the tests that ran it. No test calls `sign 0`:
 
@@ -205,27 +205,35 @@ the withheld-correction warning:
 
 - The dry run is the suite's ordinary run. Under `-u` it accepts
   corrections before any mutant is armed.
-- The determinism probe, in a child process, checks that the suite
-  passes again.
-- Each reached mutant runs in a child with its reaching tests, up to the
-  first failure. A child that outruns a deadline taken from the dry run,
-  or evaluates its site more than `hits * 8 + 1000` times, `hits` being
-  the dry run's count, is killed, and its mutant counts as killed.
+- The determinism probe runs the suite again and checks that it passes
+  again.
+- Each reached mutant runs with its reaching tests, up to the first
+  failure. One that evaluates its site more than `hits * 8 + 1000`
+  times, `hits` being the dry run's count, fails its test, and the
+  mutant is killed.
 
-A child starts from the state the dry run left. When a child passes
-without evaluating its mutant's site, as when the dry run cached the
-site's result in a table or a forced lazy value, the mutant is not
-evaluated and is no survivor. The report lists it under `not evaluated`
-with an `arm:` command, which runs the suite in a new process and ends
-on the mutant's verdict.
+Every pass runs in worker processes, and the probe and each mutant in a
+worker of its own, forked before any test ran: none starts from what
+the dry run or another mutant left, a table filled or a lazy value
+forced, so a cache cannot hide a mutant. They run up to `-j` at once,
+as tests do, and are reported in catalogue order.
+
+A mutant whose run ends before its tests do, because the process
+crashed or exited or passed a deadline taken from the dry run, is
+unknown, and so is no survivor. The report lists it under `unknown`
+with the reason and an `arm:` command, which runs the suite with it
+armed and shows what happens. A mutant whose tests pass without
+evaluating its site, as when an earlier test that its run leaves out
+decided whether the site runs, is not evaluated and is no survivor
+either, listed under `not evaluated` with its `arm:` command.
 
 A site that no test runs, and that module initialization or a
-fixture release runs, is evaluated outside tests. No child tests its
+fixture release runs, is evaluated outside tests. No run tests its
 mutant, and the report lists its line under `evaluated outside tests`,
 apart from the lines never reached.
 
 A test marked `xfail` reaches no mutant. The dry run and the probe run
-it, and no child does. A line that only such tests run is never
+it, and no mutant's run does. A line that only such tests run is never
 reached, and an `--arm` run of its mutant ends on `mutant not reached`.
 
 The mutation run exits 0 whatever it finds. It exits 1, with a sentence
@@ -392,11 +400,15 @@ the suite then runs with `--mutate`.
 
 ## When a run cannot mutate
 
-A mutation run forks a child process for each mutant. It is refused on
-Windows, and in a process that has started a domain. `--mutate` and
-`--arm` together are a usage error. An interrupt ends the run: the
-running child is killed, the mutant under test is named on standard
-error, and no verdict file is written.
+A mutation run forks a process for each mutant. It is refused on
+Windows, and in a process that started a domain before its run, which
+cannot fork; a test may start one. A run that is refused, or whose
+selection narrows the suite, still writes its verdict file when this
+build has none, saying why, and the project's merge names the
+executable under `not mutation-tested`. `--mutate` and `--arm` together
+are a usage error. An interrupt ends the run: the running mutants are
+killed, the first not yet reported is named on standard error, and no
+verdict file is written.
 
 ## The command's options
 

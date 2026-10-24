@@ -192,12 +192,20 @@ let list_selection ~suite config tests =
       List.iter (fun path -> print_endline (Text.escape_controls path)) paths;
       0
 
+(* A mutation loop prints neither warning: its dry run is no run of the
+   suite to commit, and its corrections are those of a [-u] or a
+   [--corrected] run. *)
 let execute ~suite (config : Run.config) tests =
+  let loop =
+    match config.mutation with
+    | Run.Loop _ -> true
+    | Run.No_mutation | Run.Armed _ -> false
+  in
   match Mutate_loop.execute_and_report ~suite config tests with
-  | Mutate_loop.Reported code -> code
-  (* [Report.run] said why. *)
-  | Ran (Error _ as refused) -> Run.exit_code refused
-  | Ran (Ok outcome as ran) ->
+  (* [Report.run], or the loop, said why. *)
+  | Error _ as refused -> Run.exit_code refused
+  | Ok _ as ran when loop -> Run.exit_code ran
+  | Ok outcome as ran ->
       if outcome.focus_active && not (Os.in_ci ()) then
         Os.warn
           (Pp.str

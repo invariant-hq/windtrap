@@ -32,7 +32,6 @@ type config = {
   prop_count : int option;
   replay : string option;
   log_dir : string;
-  allow_focus : bool;
   color : Os.color_mode;
   slow_threshold : float;
   verbose : bool;
@@ -63,7 +62,6 @@ let default_config () =
     prop_count = None;
     replay = None;
     log_dir = Os.default_log_dir ();
-    allow_focus = false;
     color = Os.Auto;
     slow_threshold = 1.0;
     verbose = false;
@@ -71,22 +69,6 @@ let default_config () =
     mutation = No_mutation;
     github = false;
     invocation = `Mirrors;
-    broadcast = not_broadcast;
-  }
-
-let for_subset config ~log_dir ~bail =
-  {
-    config with
-    filter = [];
-    exclude = [];
-    shard = None;
-    failed_only = false;
-    bail;
-    stream = false;
-    baseline = Baseline.Check;
-    log_dir;
-    allow_focus = true;
-    junit = None;
     broadcast = not_broadcast;
   }
 
@@ -697,7 +679,8 @@ let property ?loc ?count ?max_discard ?examples ?summary ?prints_run ?cost
   let outcome =
     match
       Property.run ?loc ?count ?max_discard ?examples ?summary ?prints_run ?cost
-        ?deterministic ?replay:config.replay ~output ~shrinking ~root:config.seed
+        ?deterministic ?replay:config.replay ~output ~shrinking
+        ~root:config.seed
         ~path:(Test_tree.path_to_string frame.path)
         gen run_law
     with
@@ -748,6 +731,7 @@ type startup_error =
   | Update_refused_in_ci
   | No_recorded_failures
   | In_process_selects of int
+  | Mutation_refused of string
 
 let startup_message = function
   | Duplicate_paths paths ->
@@ -770,6 +754,7 @@ let startup_message = function
         "--in-process runs one test, and the selection holds %d; narrow it \
          with -f to the test to debug"
         n
+  | Mutation_refused reason -> reason
 
 (* The last-failed store *)
 
@@ -907,9 +892,9 @@ let duplicate_paths paths =
   List.sort_uniq String.compare (List.filter is_duplicate paths)
 
 (* The checks run in the order of [startup_error], so a suite that fails two
-   of them is always told of the same one. The result is the allowlist that
-   [--failed] narrows. *)
-let startup (config : config) ~suite ~focus_sites ~allowlist paths =
+   of them is always told of the same one. The result is the paths that
+   [--failed] keeps. *)
+let startup (config : config) ~suite ~focus_sites paths =
   let in_ci = Os.in_ci () in
   let* () =
     match duplicate_paths paths with
@@ -917,8 +902,7 @@ let startup (config : config) ~suite ~focus_sites ~allowlist paths =
     | duplicates -> Error (Duplicate_paths duplicates)
   in
   let* () =
-    if focus_sites <> [] && in_ci && not config.allow_focus then
-      Error (Focused_in_ci focus_sites)
+    if focus_sites <> [] && in_ci then Error (Focused_in_ci focus_sites)
     else Ok ()
   in
   let* () =
@@ -926,18 +910,11 @@ let startup (config : config) ~suite ~focus_sites ~allowlist paths =
     | Baseline.Update when in_ci -> Error Update_refused_in_ci
     | Baseline.Update | Baseline.Corrected | Baseline.Check -> Ok ()
   in
-  if not config.failed_only then Ok allowlist
+  if not config.failed_only then Ok None
   else
-    (* A caller's allowlist comes from [for_subset], which clears
-       [failed_only]; intersecting the two costs nothing. *)
-    let asked path =
-      match allowlist with
-      | None -> true
-      | Some entries -> List.mem path entries
-    in
     match
       List.filter
-        (fun path -> List.mem path paths && asked path)
+        (fun path -> List.mem path paths)
         (read_store (store_path config ~suite))
     with
     | [] -> Error No_recorded_failures
@@ -949,7 +926,7 @@ type selection = {
   focus_active : bool;
 }
 
-let select ?allowlist (config : config) ~suite tests =
+let select (config : config) ~suite tests =
   (* Left on: without it a report names no raise site unless the user set
      [OCAMLRUNPARAM=b]. *)
   Printexc.record_backtrace true;
@@ -962,10 +939,10 @@ let select ?allowlist (config : config) ~suite tests =
   let paths = List.map case_path cases in
   let focus_sites = Test_tree.focus_sites tests in
   let focus_active = focus_sites <> [] in
-  let* allowlist = startup config ~suite ~focus_sites ~allowlist paths in
-  (* Hashed: a child of the mutation loop names every path its parent ran. *)
+  let* recorded = startup config ~suite ~focus_sites paths in
+  (* Hashed: the store can name every path of the suite. *)
   let allowed =
-    match allowlist with
+    match recorded with
     | None -> fun _ -> true
     | Some entries ->
         let table = Hashtbl.create (List.length entries * 2) in
@@ -1438,10 +1415,10 @@ let conclude run (selection : selection) ~suite ~started ~uncorrected
     uncorrected;
   }
 
-let execute ?(on_event = ignore) ?allowlist config ~suite tests =
+let execute ?(on_event = ignore) config ~suite tests =
   let started = Os.counter () in
   install_exit_guard ();
-  let* selection = select ?allowlist config ~suite tests in
+  let* selection = select config ~suite tests in
   let baselines = Baseline.create ~mode:config.baseline () in
   let capture =
     if config.stream then Capture.disabled
@@ -1473,7 +1450,10 @@ let list_selection config ~suite tests =
 
 let exit_code = function
   | Error (No_recorded_failures | In_process_selects _) -> 2
-  | Error (Duplicate_paths _ | Focused_in_ci _ | Update_refused_in_ci) -> 1
+  | Error
+      ( Duplicate_paths _ | Focused_in_ci _ | Update_refused_in_ci
+      | Mutation_refused _ ) ->
+      1
   | Ok outcome ->
       let refused =
         List.exists

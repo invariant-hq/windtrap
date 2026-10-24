@@ -945,7 +945,9 @@ type executor =
   Test_tree.t list ->
   (Run.outcome, Run.startup_error) result
 
-let run ?(execute : executor = Supervisor.execute)
+let run
+    ?(execute : executor =
+      fun ?on_event config -> Supervisor.execute ?on_event config)
     ?(on_event = fun (_ : Run.event) -> ()) ~suite (config : Run.config) tests =
   let renderer = terminal config in
   let transcript =

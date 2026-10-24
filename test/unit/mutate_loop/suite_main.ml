@@ -75,24 +75,36 @@ let domain =
         equal int 6 (Domain.join (Domain.spawn (fun () -> Subject.sub 10 4))));
   ]
 
-(* Green in the process that measured the reach map and red in every fork
-   of it, the sharpest possible non-determinism, and the one the probe
-   exists to catch: without it the loop would score every mutant against a
-   suite that fails for reasons of its own. *)
-let dry_run_pid = Unix.getpid ()
+(* Whether this process measured the reach map. The dry run's worker is the
+   first of a loop's processes to ask, and claims the file that
+   MUTATE_MEASURED names; without it every process measured. *)
+let measured =
+  lazy
+    (match Sys.getenv_opt "MUTATE_MEASURED" with
+    | None | Some "" -> true
+    | Some path -> (
+        match Unix.openfile path [ O_WRONLY; O_CREAT; O_EXCL ] 0o600 with
+        | fd ->
+            Unix.close fd;
+            true
+        | exception Unix.Unix_error (Unix.EEXIST, _, _) -> false))
 
+(* Green in the process that measured the reach map and red in every other,
+   the sharpest possible non-determinism, and the one the probe exists to
+   catch: without it the loop would score every mutant against a suite that
+   fails for reasons of its own. *)
 let flaky =
   [
     test "passes where it was measured and fails where it is re-run" (fun () ->
-        is_true (Unix.getpid () = dry_run_pid));
+        is_true (Lazy.force measured));
   ]
 
-(* Runs where it was measured and skips in every fork of it: the same
+(* Runs where it was measured and skips in every other process: the same
    tests execute and none fails, so only the skip count disagrees. *)
 let skippy =
   [
     test "runs where it was measured and skips where it is re-run" (fun () ->
-        if Unix.getpid () <> dry_run_pid then skip ());
+        if not (Lazy.force measured) then skip ());
   ]
 
 (* Leaves through [Unix._exit], which the runner's exit guard does not
@@ -247,11 +259,11 @@ let pinned =
     test "crasher subtracts" (fun () -> equal int 2 (Subject.crasher 3 1));
   ]
 
-(* [late] reaches one mutant, so its child is the last. Armed, the test
-   leaves a watcher behind that outlives the child. It waits until the
-   loop's scratch directory, the one entry of TMPDIR, is gone, which the
-   loop removes once its last child has ended, and sends SIGINT to the
-   loop. The harness has put a FIFO where the verdict file goes, and the
+(* [late] reaches one mutant, so its job is the last. Armed, the test
+   leaves a watcher behind that outlives the job, in a session of its own.
+   It waits until the job's temporary directory, the one entry of TMPDIR,
+   is gone, which the loop removes once the job has ended, and sends
+   SIGINT to the loop. The harness has put a FIFO where the verdict file goes, and the
    loop reads the file it replaces: its open blocks until the watcher,
    after the signal, holds the FIFO open, or until the signal interrupts
    it. So the signal lands after the last child and before the loop can
@@ -262,24 +274,28 @@ let pinned =
 let signal_the_loop_after_its_last_child () =
   let tmp = Filename.get_temp_dir_name () in
   match Array.to_list (Sys.readdir tmp) with
-  | [ scratch ] ->
+  | [ scratch ] -> (
       let loop = Unix.getppid () in
-      ignore
-        (Unix.create_process "sh"
-           [|
-             "sh";
-             "-c";
-             "while [ -e \"$1\" ] && kill -0 \"$2\" 2>/dev/null; do sleep \
-              0.01; done; kill -INT \"$2\"; exec 3<>\"$3\"; while [ -p \"$3\" \
-              ] && kill -0 \"$2\" 2>/dev/null; do sleep 0.01; done";
-             "sh";
-             Filename.concat tmp scratch;
-             string_of_int loop;
-             Windtrap_runtime.Verdicts.output_file
-               ~exe:Windtrap_runtime.Instr.executable;
-           |]
-           Unix.stdin Unix.stdout Unix.stderr)
-  | _ -> failwith "TMPDIR holds one entry, the loop's scratch directory"
+      (* A session of its own, which the worker's process group is not, so
+         it outlives the worker's burial. *)
+      match Unix.fork () with
+      | 0 ->
+          ignore (Unix.setsid ());
+          Unix.execvp "sh"
+            [|
+              "sh";
+              "-c";
+              "while [ -e \"$1\" ] && kill -0 \"$2\" 2>/dev/null; do sleep \
+               0.01; done; kill -INT \"$2\"; exec 3<>\"$3\"; while [ -p \"$3\" \
+               ] && kill -0 \"$2\" 2>/dev/null; do sleep 0.01; done";
+              "sh";
+              Filename.concat tmp scratch;
+              string_of_int loop;
+              Windtrap_runtime.Verdicts.output_file
+                ~exe:Windtrap_runtime.Instr.executable;
+            |]
+      | _ -> ())
+  | _ -> failwith "TMPDIR holds one entry, the job's temporary directory"
 
 let late =
   [
@@ -339,7 +355,7 @@ let baseline =
 let released =
   fixture
     ~teardown:(fun () ->
-      if Unix.getpid () <> dry_run_pid then begin
+      if not (Lazy.force measured) then begin
         print_string "a child's release on stdout\n";
         prerr_string "a child's release on stderr\n";
         flush stdout;
@@ -417,6 +433,18 @@ let memoized_widen a b =
 let memoized =
   [ test "memoized widen adds" (fun () -> equal int 7 (memoized_widen 3 4)) ]
 
+(* [primed]'s second test evaluates [widen] only after the first, which
+   reaches no mutant, has run: the job of [widen]'s mutant runs the second
+   alone, which then never evaluates the site. *)
+let primed = ref false
+
+let priming =
+  [
+    test "primes" (fun () -> primed := true);
+    test "widens once primed" (fun () ->
+        if !primed then is_true (Subject.widen 3 4 <> 0));
+  ]
+
 let retried = ref 0
 let handle = fixture ~teardown:(fun () -> ignore (Subject.crasher 3 1)) Fun.id
 
@@ -458,6 +486,8 @@ let () =
   | "focused" -> exit @@ run "calc" [ group "focused" focused ]
   | "known" -> exit @@ run "calc" [ group "known" known ]
   | "memo" -> exit @@ run "calc" [ group "calc" strong; group "memo" memoized ]
+  | "primed" ->
+      exit @@ run "calc" [ group "calc" strong; group "primed" priming ]
   | "crash" ->
       exit
       @@ run "calc"
@@ -478,6 +508,10 @@ let () =
       exit @@ run "calc" [ group "calc" (strong @ red); group "widen" weak ]
   | "flaky" -> exit @@ run "calc" [ group "calc" strong; group "flaky" flaky ]
   | "domain" -> exit @@ run "calc" [ group "domain" domain ]
+  | "domain_first" ->
+      (* Before [run], in the process that runs it. *)
+      Domain.join (Domain.spawn ignore);
+      exit @@ run "calc" [ group "calc" strong ]
   | "skippy" ->
       exit @@ run "calc" [ group "calc" strong; group "skippy" skippy ]
   | "boundary" ->

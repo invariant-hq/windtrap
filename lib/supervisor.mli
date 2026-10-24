@@ -51,9 +51,19 @@
 
     {b Coverage.} A worker hands the parent the coverage it counted as it ends,
     and the parent's dump at exit holds it, so a run leaves one dump. A worker
-    that a signal or [Unix._exit] ended loses what it counted. *)
+    that a signal or [Unix._exit] ended loses what it counted.
+
+    {b Mutants.} Under [--mutate] and [--arm] ({!Run.type-mutation}) a worker
+    also tells its parent which mutants each test evaluated, and how many times:
+    what [Windtrap_runtime.Mutate.drain] gives when the test ends, its window
+    opening when the test starts. What it evaluates outside every test, in a
+    fixture release, and what the parent evaluated as its modules initialised,
+    belong to no test. An [--arm] worker arms its mutant as it starts, and its
+    evaluations count from there. *)
 
 val execute :
+  ?on_reach:
+    (string list option -> (Windtrap_runtime.Mutate.id * int) list -> unit) ->
   ?on_event:(Run.event -> unit) ->
   Run.config ->
   suite:string ->
@@ -61,7 +71,81 @@ val execute :
   (Run.outcome, Run.startup_error) result
 (** [execute config ~suite tests] is [Run.execute config ~suite tests] with the
     tests run by workers, as above. Under [config.in_process], and on Windows,
-    which has no [fork], it is {!Run.execute}. *)
+    which has no [fork], it is {!Run.execute}.
+
+    Under mutation, [on_reach test sites] receives the {{!mutants}evaluations}
+    of each window that evaluated a mutant: [test] is [Some path] for a test's,
+    given before the parent reaches its row, and [None] for those of no test,
+    the parent's first. Defaults to ignoring them. *)
+
+(** {1:fresh Fresh workers}
+
+    A mutant runs in a worker of its own, forked from the parent before any test
+    ran, so it starts from module initialisation and nothing another mutant, or
+    the dry run, left behind: a cache the dry run filled cannot hide it. *)
+
+type job = {
+  cases : string list;  (** The cases to run, by path string, in this order. *)
+  deadline : float;
+      (** The seconds the job may take from its fork, after which its process
+          group is killed. *)
+  bail : bool;  (** Whether the job stops at its first counted failure. *)
+  arm : unit -> unit;
+      (** What the worker does before its first case, as arm a mutant. *)
+}
+(** The type for a job: some cases of the suite, run in one fresh worker. *)
+
+(** The type for how a job ended. *)
+type ended =
+  | Ran  (** It ran its cases, up to its stop, and released its fixtures. *)
+  | Lost of string
+      (** Its worker ended first, which the phrase says, such as
+          ["was killed by SIGSEGV"] or
+          ["ended when code under test called exit"]. *)
+  | Expired  (** It passed its deadline. *)
+
+type ran = {
+  results : Run.result list;  (** The rows of the cases that ended, in order. *)
+  release_failures : Failure.t list;
+      (** The failures of its releases, and those of no case. *)
+  armed_hits : int;
+      (** The evaluations of the armed site that its workers counted
+          ([Windtrap_runtime.Mutate.armed_hits]), [0] when none is armed. *)
+  ended : ended;  (** How it ended. *)
+}
+(** The type for what a job did. *)
+
+val can_fork : unit -> bool
+(** [can_fork ()] is [true] iff this process can fork a worker: it is not on
+    Windows and has spawned no domain. *)
+
+val fresh :
+  Run.config ->
+  suite:string ->
+  Test_tree.t list ->
+  job list ->
+  on_ran:(int -> ran -> unit) ->
+  on_signal:(int -> unit) ->
+  unit
+(** [fresh config ~suite tests jobs ~on_ran ~on_signal] runs each of [jobs] in a
+    fork of this process, up to [config.jobs] at once, in the order of the list,
+    and gives [on_ran i ran] for job [i] in that order, once every earlier one
+    was given. The process must not have spawned a domain.
+
+    A worker of a job serves its cases with {!Run.serve} under [config] with
+    {!Baseline.Check}, no [stream] and no JUnit file, its capture logs under its
+    temporary directory, and [/dev/null] as its standard output and error. The
+    parent sends the job's cases one at a time, and [Finish] after the last, or
+    after the first counted failure under [bail]. A worker that retires leaves
+    the rest of the job to a fresh fork, which [arm]s again. Coverage counted by
+    a worker is dropped, since a mutant changed what the program does.
+
+    While it runs, the parent handles [SIGINT], [SIGTERM], [SIGHUP] and
+    [SIGPIPE], and tells [on_signal] of each as it arrives, in the handler,
+    which must only record it. The first ends every job that runs, with its
+    process group, and [fresh] returns once no worker is left; the jobs not yet
+    given are never given. An exception that [on_ran] raises ends every job
+    likewise, and leaves [fresh]. *)
 
 val enter : suite:string -> Test_tree.t list -> [ `Parent | `Skip ]
 (** [enter ~suite tests] is [`Parent], unless the process is a worker that its

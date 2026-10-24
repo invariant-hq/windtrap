@@ -419,8 +419,8 @@ type executor =
   suite:string ->
   Test_tree.t list ->
   (Run.outcome, Run.startup_error) result
-(** The type for the functions that execute a run: {!Supervisor.execute}, and
-    {!Run.execute} with no allowlist. *)
+(** The type for the functions that execute a run: {!Supervisor.execute}, with
+    or without its [on_reach], and {!Run.execute}. *)
 
 val run :
   ?execute:executor ->
@@ -431,8 +431,8 @@ val run :
   (Run.outcome, Run.startup_error) result
 (** [run ~suite config tests] is [execute config ~suite tests] with the whole
     report of the run written. [execute] defaults to {!Supervisor.execute}; the
-    mutation loop's dry run and an [--arm] run pass {!Run.execute}, which runs
-    in the calling process. It proceeds in this order:
+    mutation loop's dry run and an [--arm] run pass it an [on_reach] that counts
+    the mutants each test evaluates. It proceeds in this order:
     + It builds [terminal config] and, when [config.github] is set, opens the
       envelope with [group_start suite].
     + It executes the run with {!observe} as its observer, over [config.seed]

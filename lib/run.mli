@@ -93,8 +93,8 @@ type config = {
           [None] for no limit. It must be finite and positive, which {!Cli}
           guarantees and {!execute} does not check. *)
   prop_count : int option;
-      (** [--prop-count]: the generated cases of a property, where it raises
-          the declared or default count (see {!prop}). *)
+      (** [--prop-count]: the generated cases of a property, where it raises the
+          declared or default count (see {!prop}). *)
   replay : string option;
       (** [--replay]: the replay token that every property of the run checks
           alone, in place of its examples and generated cases (see
@@ -103,9 +103,6 @@ type config = {
       (** [-o]: the root directory of the capture logs and of the last-failed
           store. {!execute} uses it as given, so a relative one follows a test
           that changes the working directory. *)
-  allow_focus : bool;
-      (** Whether a suite that holds a focused test runs under [CI] (see
-          {!Focused_in_ci}). *)
   color : Os.color_mode;
       (** [--color]: the colour preference. Whoever builds a report resolves it
           against the sink of that report ({!Os.resolve_color}). *)
@@ -142,26 +139,6 @@ val default_config : unit -> config
     [color = Os.Auto], [slow_threshold = 1.], {!No_mutation}, [`Mirrors] and
     nothing broadcast. Every call draws [seed] from {!Seed.random} and takes
     [log_dir] from {!Os.default_log_dir}. *)
-
-val for_subset : config -> log_dir:string -> bail:bool -> config
-(** [for_subset config ~log_dir ~bail] is [config] for a run over part of the
-    selection of a run under [config].
-    - [filter], [exclude], [shard] and [failed_only] are cleared, because the
-      allowlist is that selection.
-    - [tags], [exclude_tags] and [seed] are kept, so the child selects within
-      the tags of its parent and draws the property cases its parent drew.
-    - [baseline] is {!Baseline.Check}, [junit] is [None], nothing is broadcast
-      and [allow_focus] is [true].
-    - [mutation] is kept, so a test that reads it runs in the child as in the
-      run the child was forked from: a stateful test on several domains runs
-      each program on the test's domain in both. No child reads it to test
-      mutants.
-    - [stream] is [false] and [log_dir] is the argument.
-    - [bail] is the argument, and every other field is [config]'s.
-
-    A selection field added to {!type-config} must be cleared here. A child
-    otherwise applies a selection that the tree of its parent already applied,
-    and a deterministic suite then looks non-deterministic. *)
 
 (** {1:runs Run records} *)
 
@@ -558,18 +535,22 @@ type startup_error =
       (** The suite holds a focused node and [CI] is set. The payload is the
           declaration sites of the focused nodes, in declaration order, a
           focused group counting once. The check reads the declared tree,
-          whatever the selection, and [config.allow_focus] lifts it. *)
+          whatever the selection. *)
   | Update_refused_in_ci
       (** [config.baseline] is {!Baseline.Update} and [CI] is set. Nothing lifts
           it. *)
   | No_recorded_failures
       (** [config.failed_only] is set, and the last-failed store names no
-          declared test that [allowlist] admits. The store is read against the
-          declared paths, so a filter that keeps none of the recorded tests
-          gives an empty selection and not this error. *)
+          declared test. The store is read against the declared paths, so a
+          filter that keeps none of the recorded tests gives an empty selection
+          and not this error. *)
   | In_process_selects of int
       (** [config.in_process] is set and the selection holds this many tests,
           more than one. *)
+  | Mutation_refused of string
+      (** A mutation run ({!Loop} or {!Armed}) could not score the suite, for
+          this reason, which it has said. It is no check of {!select}: the
+          mutation loop gives it, after its dry run or in place of it. *)
 
 val startup_message : startup_error -> string
 (** [startup_message error] explains [error] to a user in plain text. It is not
@@ -611,7 +592,6 @@ type outcome = {
 
 val execute :
   ?on_event:(event -> unit) ->
-  ?allowlist:string list ->
   config ->
   suite:string ->
   Test_tree.t list ->
@@ -621,9 +601,6 @@ val execute :
     anything executes.
     - [on_event] receives the {!type-event}s. Defaults to a function that
       ignores them.
-    - [allowlist] keeps the tests whose path string is in the list, within every
-      other layer of the {{!section-selection}selection}. Defaults to no
-      narrowing.
     - [suite] names the directory of the capture logs and of the last-failed
       store, under [config.log_dir].
 
@@ -678,7 +655,8 @@ val exit_code : (outcome, startup_error) Stdlib.result -> int
       [config.broadcast] says the environment alone gave, and that keeps none of
       the tests of a suite that declares some, gives [0] too.
     - For a refused startup, [2] for {!No_recorded_failures} and
-      {!In_process_selects}, since nothing ran, and [1] otherwise. *)
+      {!In_process_selects}, since nothing ran, and [1] otherwise, a refused
+      mutation run included. *)
 
 (** {2:selection Selection}
 
@@ -688,8 +666,7 @@ val exit_code : (outcome, startup_error) Stdlib.result -> int
       [config.filter] and none of [config.exclude].
     - Its tags hold every tag of [config.tags] and none of
       [config.exclude_tags].
-    - [allowlist] admits it, and under [config.failed_only] so does the
-      last-failed store.
+    - Under [config.failed_only] the last-failed store names it.
     - It falls in the bucket of [config.shard].
     - It is focused, when the suite holds a focused node.
 
@@ -815,8 +792,8 @@ val exit_code : (outcome, startup_error) Stdlib.result -> int
     ([Printexc.record_backtrace]) and leave it on. They register an [at_exit]
     function, the exit guard. A supervised run ({!Supervisor}) registers none: a
     worker that code under test exits ends, and its parent records it. The guard
-    serves the runs that stay in one process, [--in-process], Windows, and the
-    mutation loop's dry run, children and [--arm] run.
+    serves the runs that stay in one process, [--in-process] and Windows, which
+    has no fork.
 
     While a run is {!active}, a call to [exit] raises [Failure.Control `Exit]
     from the guard and the process does not end. The exception is classified
@@ -873,7 +850,6 @@ type selection = {
 (** The type for what a run selected. *)
 
 val select :
-  ?allowlist:string list ->
   config ->
   suite:string ->
   Test_tree.t list ->

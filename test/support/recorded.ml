@@ -106,10 +106,9 @@ type execution = (Run.outcome, Run.startup_error) result t
 let configured config log_dir =
   config { (Run.default_config ()) with Run.seed; log_dir }
 
-let execute ?(env = []) ?(config = Fun.id) ?on_event ?allowlist
-    ?(suite = "suite") tests =
+let execute ?(env = []) ?(config = Fun.id) ?on_event ?(suite = "suite") tests =
   record ~env:(Fun.const env) @@ fun log_dir ->
-  Run.execute ?on_event ?allowlist (configured config log_dir) ~suite tests
+  Run.execute ?on_event (configured config log_dir) ~suite tests
 
 let list_selection ?(env = []) ?(config = Fun.id) ?(suite = "suite") tests =
   record ~env:(Fun.const env) @@ fun log_dir ->

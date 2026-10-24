@@ -175,7 +175,6 @@ let fields (c : Run.config) =
     ("timeout", opt string_of_float c.timeout);
     ("prop_count", opt string_of_int c.prop_count);
     ("log_dir", c.log_dir);
-    ("allow_focus", string_of_bool c.allow_focus);
     ("color", color_name c.color);
     ("slow_threshold", string_of_float c.slow_threshold);
     ("verbose", string_of_bool c.verbose);
@@ -206,7 +205,6 @@ let given_no_flag =
     ("baseline", "check");
     ("timeout", "none");
     ("prop_count", "none");
-    ("allow_focus", "false");
     ("color", "auto");
     ("slow_threshold", "1.");
     ("verbose", "false");
@@ -215,76 +213,6 @@ let given_no_flag =
     ("github", "false");
     ("invocation", "mirrors");
     ("broadcast", "none");
-  ]
-
-let parent : Run.config =
-  {
-    seed = 0x5eedL;
-    filter = [ "f" ];
-    exclude = [ "e" ];
-    tags = [ "t" ];
-    exclude_tags = [ "x" ];
-    shard = Some (1, 2);
-    failed_only = true;
-    bail = false;
-    stream = true;
-    jobs = 3;
-    in_process = true;
-    baseline = Baseline.Update;
-    timeout = Some 3.;
-    prop_count = Some 7;
-    replay = None;
-    log_dir = "parent";
-    allow_focus = false;
-    color = Os.Never;
-    slow_threshold = 2.;
-    verbose = true;
-    junit = Some "out.xml";
-    mutation = Run.Loop [ "lib/" ];
-    github = true;
-    invocation = `Exe "suite.exe";
-    broadcast = { selection = true; mutate = true };
-  }
-
-let subset = Run.for_subset parent ~log_dir:"child" ~bail:true
-
-let subset_rules =
-  [
-    ( "clears the selection",
-      [
-        ("filter", "[]");
-        ("exclude", "[]");
-        ("shard", "none");
-        ("failed_only", "false");
-      ] );
-    ( "keeps the tags and the seed",
-      [
-        ("seed", Seed.to_string parent.seed);
-        ("tags", "[t]");
-        ("exclude_tags", "[x]");
-      ] );
-    ( "checks, allows focus and neither reports nor broadcasts",
-      [
-        ("baseline", "check");
-        ("allow_focus", "true");
-        ("junit", "none");
-        ("broadcast", "none");
-      ] );
-    ( "keeps the mutation, which its tests may read",
-      [ ("mutation", "loop lib/") ] );
-    ( "captures into the log directory it is given",
-      [ ("stream", "false"); ("log_dir", "child") ] );
-    ( "bails as told and keeps every other field",
-      [
-        ("bail", "true");
-        ("timeout", "3.");
-        ("prop_count", "7");
-        ("color", "never");
-        ("slow_threshold", "2.");
-        ("verbose", "true");
-        ("github", "true");
-        ("invocation", "exe suite.exe");
-      ] );
   ]
 
 let is_the_configuration_of_no_flag () =
@@ -302,8 +230,6 @@ let configuration =
       test "every default_config draws its own seed" (fun () ->
           let seed () = Seed.to_string (Run.default_config ()).seed in
           not_equal string (seed ()) (seed ()));
-      cases "for_subset" ~name:fst subset_rules (fun (_, expected) ->
-          equal settings expected (project (List.map fst expected) subset));
     ]
 
 (* Run records and the ambient slot *)
@@ -1728,11 +1654,13 @@ let counted_props =
   ]
 
 let prop_counted =
-  Recorded.execute ~config:(fun c -> { c with prop_count = Some 200 })
+  Recorded.execute
+    ~config:(fun c -> { c with prop_count = Some 200 })
     counted_props
 
 let prop_counted_fewer =
-  Recorded.execute ~config:(fun c -> { c with prop_count = Some 5 })
+  Recorded.execute
+    ~config:(fun c -> { c with prop_count = Some 5 })
     counted_props
 
 let printing =
@@ -2060,7 +1988,8 @@ let properties =
           equal
             (list (option int))
             [ Some 100; Some 5; Some 300 ]
-            (List.map (cases_run prop_counted_fewer)
+            (List.map
+               (cases_run prop_counted_fewer)
                [ [ "counted" ]; [ "declared" ]; [ "declared more" ] ]));
       test "a count of 0 runs the examples alone, whatever the configuration"
         (fun () ->
@@ -2387,6 +2316,7 @@ let refusal = function
   | Run.Update_refused_in_ci -> "update refused in CI"
   | Run.No_recorded_failures -> "no recorded failures"
   | Run.In_process_selects n -> strf "%d selected in-process" n
+  | Run.Mutation_refused reason -> "mutation refused: " ^ reason
 
 let refused r = refusal (require_error (Recorded.returned r))
 let in_ci = [ ("CI", "true") ]
@@ -2444,10 +2374,6 @@ let refusals =
 
 let lifted =
   [
-    ( "a focus under CI, with allow_focus",
-      Recorded.execute ~env:in_ci
-        ~config:(fun c -> { c with allow_focus = true })
-        focused_suite );
     ( "--corrected under CI",
       Recorded.execute ~env:in_ci
         ~config:(fun c -> { c with baseline = Baseline.Corrected })
@@ -2575,12 +2501,6 @@ let tag_selected =
         [ "plain"; "tagged" ] );
     ]
 
-let allowed =
-  Recorded.execute
-    ~allowlist:[ "math › add"; "text › trim" ]
-    ~config:(fun c -> { c with filter = [ "math" ] })
-    math_and_text
-
 let focused =
   Recorded.execute [ test "unfocused" ignore; focus (test "starred" ignore) ]
 
@@ -2681,9 +2601,6 @@ let selection =
         tag_selected
         (fun (_, expected, r) ->
           equal (list string) expected (Recorded.executed r));
-      test "an allowlist narrows the selection within the other layers"
-        (fun () ->
-          equal (list string) [ "math › add" ] (Recorded.executed allowed));
       test "a focus narrows the selection to the focused tests"
         a_focus_narrows_the_selection;
       test "1/1 keeps every test" (fun () ->
