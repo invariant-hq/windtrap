@@ -73,7 +73,7 @@ report and the aggregate cannot drift apart.
 | `Windtrap` | the contract and the flat re-exports; the ambient-reading wrappers |
 | `Test_tree` (with `Test_tree.Tag`) | the tree, tags, focus, xfail, flatten, paths |
 | `Testable`, `Check`, `Failure`, `Diff` | witnesses; the verbs, pure, with no run-state dependency; failure data (typed kinds, phase, location, output tail, the `Check_failure` and `Control` exceptions); diff data (Myers hunks and character-refinement spans, no styling) |
-| `Choice`, `Shrink`, `Gen` (with `Gen.Engine.Shrink_tree`), `Property`, `Stateful`, `Workers` | choice sequences (the source a generator parses, spans, dependents, replay tokens); the reducer of a failing sequence; generators; the case loop (examples first, per-case seeds, the discard budget, the shrink search, label tables); commands and programs, compiled into properties, and the judge of a program on several domains; the worker domains that run its branches |
+| `Choice`, `Shrink`, `Gen` (with `Gen.Engine.Shrink_tree`), `Property`, `Stateful`, `Workers` | choice sequences (the source a generator parses, spans, dependents, replay tokens); the reducer of a failing sequence; generators; the case loop (examples first, per-case seeds, the discard budget, the shrink search, replay, label tables); commands and programs, compiled into properties, and the judge of a program on several domains; the worker domains that run its branches |
 | `Baseline`, `Source_patch`, `Capture` | the correction registry keyed by site or path, read-only checking, corrections gated per test and written once as `.corrected` files or in place; literal rewriting inside a source file; fd-level capture into per-test log files |
 | `Cli`, `Run`, `Report`, `Report_sections`, `Report_junit` | one declarative item table (flags and flagless settings) resolved once into the one `Run.config`, each mirror declared beside its flag and read through the flag's parser; the run record and the ambient slot, the sequential executor (startup checks, selection, the per-test boundary, SIGALRM timeouts, retries, fixture release, the last-failed store, the exit guard, the one exit-code function), which prints nothing and emits typed events, and the worker's loop that serves a supervisor; the transcript, the GitHub envelope and `Report.run`, execute reported; the failure projection every transport shares and the section vocabulary the coverage and mutation reports project into; the JUnit document and its file |
 | `Supervisor` | the process boundary: the parent that forks workers (or executes itself again after a domain), hands each a case, gives the events in the order of the selection, judges a correcting mode's checks in its one registry, fails a case whose worker died or outlived its kill, retires a worker after a domain, forwards signals and merges the workers' coverage |
@@ -194,7 +194,9 @@ bound that the parse states when it reads it, and `0` is every choice's
 target, so the value that a generator parses from zeros is its shrink
 target. A replayed choice above its bound reads as the bound, and a
 choice read past the end of a replayed sequence reads `0`, so every
-sequence parses.
+sequence parses. A choice whose bound is `0` is recorded too, so a
+deletion that brings a bound to `0` leaves the choices after it in
+place (the key-value benchmark goes from 45% to 100% at the minimum).
 
 - **Drawing.** A primitive draws its value with 0.2's sampler and
   records the choices that encode it; it never draws a choice by
@@ -207,11 +209,15 @@ sequence parses.
   fixed states, recorded on 0.2: the tolerance is zero, since nothing
   approximates.
 - **Integers.** A value of a range with origin `o` (the point closest
-  to `0`) is one choice, its rank by distance to `o`: `o` is `0`, then
-  `o + 1`, `o - 1`, `o + 2`, … while both sides of the range have room,
-  then the side that is left, in order. The bound is the range's width,
-  so every choice names a value of the range. A whole type is the range
-  of its extremes: `int64`'s ranks fill the 64 bits.
+  to `0`) is its distance to `o`, after a side choice (`0` above) when
+  the range extends on both sides of `o`, as the prototype of
+  `_autoresearch/audits/shrinking.md` reads one. Both sides count from
+  `o`, so `o` has two spellings. One choice of rank by distance,
+  alternating sides, was specified first and measured worse: a leaf of
+  the calculator benchmark is then two choices, an operator and its
+  first leaf three, which no run deletes, and the calculator fell from
+  100% to 65% at the minimum. A whole type is the range of its extremes,
+  so `int64`'s distances fill the 64 bits.
 - **Floats.** A float is a sign choice (`0` is positive), absent where
   the range admits one sign only, then a magnitude choice in the
   lexicographic encoding of Hypothesis (MacIver and Donaldson, ECOOP
@@ -254,7 +260,17 @@ sequence parses.
   span; delete runs of 8, 4, 2 and 1 choices; minimise each choice, to
   `0` and else by binary search. Every run of the law counts against
   the fixed budget of 10,000 at the law's cost, a discard at 1, and a
-  candidate already tried is not run again.
+  candidate already tried, or one whose parse reads no smaller
+  sequence, runs no law. `test_shrink.ml` pins the eight benchmarks of
+  `shrinking.md` through `Property.run`.
+- **Permutations** are drawn as 0.2 drew them, a Lehmer code, and read
+  as their inversion table, so lowering one entry moves one element
+  and leaves the others in order; lowering a Lehmer digit reorders
+  everything after it, which the reducer cannot undo.
+- **Stateful** draws its programs as trees through `Gen.Engine.make`
+  until step 6 parses them: `Property.run` searches such a tree with
+  0.2's descent, and a program's arguments are drawn through
+  `Gen.Engine.draw`, whose tree is a view of the reducer's edits.
 
 **Stateful.** A call runs its system, then its reference judges the
 outcome, one order for every result form. A value is made when its

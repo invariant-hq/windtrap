@@ -78,16 +78,24 @@ A law takes no tolerance, since its witness carries one. A witness's
 order must agree with its equality, and `float_exact` orders `-0.`
 below `0.` because its equality tells them apart.
 
-## Generators shrink as they generate
+## Generators parse choices
 
-A generator draws a value together with the tree of its smaller
-variants. Every generator therefore shrinks, and one built with `map`,
-`bind` or `such_that` shrinks through its parts and keeps their
-constraints, so a counterexample still satisfies what its generator
-promised and no shrinker is written by hand. A generator carries its
-printer too: a composite prints when its parts do, and a value computed
-by a function with no printer prints the input it was computed from.
-`Gen.with_pp` attaches a printer where none derives.
+A generator parses its value from a sequence of bounded choices, and a
+case is the sequence it read. Shrinking edits the sequence of a failing
+case and parses it again: it deletes what one generator call read,
+deletes runs of choices, and lowers each choice, keeping an edit that
+still fails and reads a smaller sequence. Every generator therefore
+shrinks, every candidate is a value of the generator, and no shrinker
+is written by hand. Because a candidate is parsed afresh, it can take a
+shape that no tree of smaller variants holds: two inner lists merged
+into one, a node replaced by its subterm, a value drawn with `Gen.bind`
+from what an earlier draw decided. The generators draw the
+distributions of 0.2 and only encode what they drew, so a sequence of
+choices changes how values shrink, never which values a run draws. A
+generator carries its printer too: a composite prints when its parts
+do, and a value computed by a function with no printer prints the input
+it was computed from. `Gen.with_pp` attaches a printer where none
+derives.
 
 ## Seeds replay from the path
 

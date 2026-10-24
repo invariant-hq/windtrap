@@ -379,7 +379,7 @@ let defaults (f : Failure.t) =
         (match shrink_end with
         | Converged -> "converged"
         | Budget_spent | Candidate_raised _ | Timed_out _ -> "not converged")
-        (match rendering with Value -> "value" | Pre_image -> "pre-image")
+        (match rendering with Ocaml -> "ocaml" | Value -> "value" | Pre_image -> "pre-image")
   | Law { clause; _ } -> "clause " ^ present clause
   | Containment _ | Timeout _ | Message _ -> "no default"
 

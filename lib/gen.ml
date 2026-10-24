@@ -4,13 +4,15 @@
   --------------------------------------------------------------------------*)
 
 (* The distributions (stratified nat, float bit patterns) follow QCheck2's
-   tuning (https://github.com/c-cube/qcheck). *)
+   tuning (https://github.com/c-cube/qcheck); the float encoding is
+   Hypothesis's (MacIver and Donaldson, ECOOP 2020). *)
 
 (* Shrink trees *)
 
 (* A strict root and a memoized sequence of candidate subtrees. A cell is
    forced at most once, an exception included, so a search that visits a
-   branch again never runs user code again. *)
+   branch again never runs user code again. Stateful's programs are trees
+   until they parse choices. *)
 module Shrink_tree = struct
   type 'a t = { root : 'a; children : 'a t Seq.t }
 
@@ -40,18 +42,6 @@ module Shrink_tree = struct
   let rec map f tree =
     make ~root:(f tree.root)
       ~children:(Seq.filter_map (unless_discarded (map f)) tree.children)
-
-  (* [f] generates again at every candidate of [tree]; those come first,
-     then the candidates of the tree [f] drew. *)
-  let rec bind tree f =
-    let bound = f tree.root in
-    make ~root:bound.root
-      ~children:
-        (Seq.append
-           (Seq.filter_map
-              (unless_discarded (fun child -> bind child f))
-              tree.children)
-           bound.children)
 
   let rec pair left right =
     make ~root:(left.root, right.root)
@@ -105,22 +95,27 @@ end
 (* Renderings *)
 
 (* A node carries its value and how the value prints as a counterexample:
-   the two are drawn and shrunk together, so what a search minimises is what
+   both are parsed from the same choices, so what a search minimises is what
    the report prints. [Value] prints the value through its generator's
    printer; [Pre_image] prints what a printerless [map] or [bind] computed
    it from; [None] has nothing to print. A document is formatted only when a
-   failure is reported. *)
+   failure is reported. [literal] says that the value printed through this
+   module's printers alone, which print OCaml. *)
 type 'a rendering = Value of 'a | Pre_image of 'a
 
 (* [Arrow] is a [bind]'s pre-image, [outer -> inner], so an outer that is
    itself an arrow can be parenthesised. *)
 type doc = Atom of (Format.formatter -> unit) | Arrow of doc * doc
-type 'a node = { value : 'a; shown : doc rendering option }
+type 'a node = { value : 'a; shown : doc rendering option; literal : bool }
 
 type 'a t = {
   pp : (Format.formatter -> 'a -> unit) option;
-  run : Seed.state -> 'a node Shrink_tree.t * Seed.state;
+  draw : 'a draw;
 }
+
+and 'a draw =
+  | Parse of (Choice.t -> 'a node)
+  | Tree of (Seed.state -> 'a node Shrink_tree.t * Seed.state)
 
 let atom pp v = Atom (fun ppf -> pp ppf v)
 
@@ -188,8 +183,12 @@ let pp_quad pp_a pp_b pp_c pp_d ppf (a, b, c, d) =
 (* Nodes *)
 
 let value node = node.value
-let printed pp value = { value; shown = Some (Value (atom pp value)) }
-let unprintable value = { value; shown = None }
+
+let printed ?(literal = false) pp value =
+  { value; shown = Some (Value (atom pp value)); literal }
+
+let literal pp value = printed ~literal:true pp value
+let unprintable value = { value; shown = None; literal = false }
 
 (* A composite renders when every part renders, and as a value when every
    part is one; [pp] lays out the parts' documents in order. *)
@@ -204,11 +203,22 @@ let composite pp parts =
   in
   gather false [] parts
 
-let tuple value parts = { value; shown = composite pp_tuple parts }
+(* What a composite reads of each part. *)
+type part = doc rendering option * bool
+
+let part node : part = (node.shown, node.literal)
+
+let composed pp value (parts : part list) =
+  {
+    value;
+    shown = composite pp (List.map fst parts);
+    literal = List.for_all snd parts;
+  }
 
 let constructor name inject node =
   let apply doc = atom (pp_constructor name pp_doc) doc in
   {
+    node with
     value = inject node.value;
     shown =
       Option.map
@@ -232,75 +242,30 @@ let bound outer inner =
         (fun (Value outer | Pre_image outer) -> Pre_image (Arrow (outer, doc)))
         outer
 
-(* Draws *)
+(* Parsing *)
 
-let map_draw f draw state =
-  let tree, state = draw state in
-  (Shrink_tree.map f tree, state)
+(* Every call of a generator is a span. A tree, which no choice describes,
+   parses from a seed it reads as one choice: it replays and never shrinks
+   there. *)
+let parse gen src =
+  match gen.draw with
+  | Parse parse -> Choice.span src (fun () -> parse src)
+  | Tree draw ->
+      let seed =
+        Choice.choice src ~bound:(-1L) (Choice.sample src Seed.bits64)
+      in
+      Shrink_tree.root (fst (draw (Seed.make seed)))
+
+(* The choice that encodes what [sample] draws, through [encode]. *)
+let read src ~bound encode sample =
+  Choice.choice src ~bound
+    (Choice.sample src (fun state ->
+         let x, state = sample state in
+         (encode x, state)))
 
 let word of_bits state =
   let bits, state = Seed.bits64 state in
   (of_bits bits, state)
-
-module type Number = sig
-  type t
-
-  val zero : t
-  val one : t
-  val add : t -> t -> t
-  val sub : t -> t -> t
-  val div : t -> t -> t
-  val equal : t -> t -> bool
-end
-
-module type Integer = sig
-  include Number
-
-  val compare : t -> t -> int
-  val min : t -> t -> t
-  val max : t -> t -> t
-  val pred : t -> t
-  val succ : t -> t
-end
-
-(* The candidates of [x] with origin [origin]: [origin] first, then each
-   closes half the remaining gap, short of [x]. The gap is a difference of
-   halves, since [(x - current) / 2] overflows across the whole range. *)
-let towards (type n) (module N : Number with type t = n) origin x =
-  let two = N.add N.one N.one in
-  let rec steps current () =
-    if N.equal current x then Seq.Nil
-    else
-      let gap = N.sub (N.div x two) (N.div current two) in
-      if N.equal gap N.zero then Seq.Cons (current, Seq.empty)
-      else Seq.Cons (current, steps (N.add current gap))
-  in
-  steps origin
-
-let int_towards origin = towards (module Int) origin
-
-(* Halving floats yields values without end short of [x]. [Float.equal]
-   equates the zeros, so the zero of the other sign gets the origin as its
-   one candidate here; a non-finite [x] gets it from [towards]. *)
-let float_towards origin x =
-  if not (Float.equal origin x) then
-    Seq.take 15 (towards (module Float) origin x)
-  else if Int64.equal (Int64.bits_of_float origin) (Int64.bits_of_float x) then
-    Seq.empty
-  else Seq.return origin
-
-let rec tree_towards node shrink x =
-  Shrink_tree.make ~root:(node x)
-    ~children:(Seq.map (tree_towards node shrink) (shrink x))
-
-let primitive pp shrink draw =
-  {
-    pp = Some pp;
-    run =
-      (fun state ->
-        let x, state = draw state in
-        (tree_towards (printed pp) shrink x, state));
-  }
 
 (* Numbers *)
 
@@ -314,6 +279,89 @@ let with_corners corners draw state =
     (List.nth corners (Int64.to_int index), state)
   else draw state
 
+module type Integer = sig
+  type t
+
+  val zero : t
+  val compare : t -> t -> int
+  val min : t -> t -> t
+  val max : t -> t -> t
+  val pred : t -> t
+  val succ : t -> t
+  val to_int64 : t -> int64
+  val of_int64 : int64 -> t
+end
+
+module Int_ = struct
+  include Int
+
+  let to_int64 = Int64.of_int
+  let of_int64 = Int64.to_int
+end
+
+module Int32_ = struct
+  include Int32
+
+  let to_int64 = Int64.of_int32
+  let of_int64 = Int64.to_int32
+end
+
+module Int64_ = struct
+  include Int64
+
+  let to_int64 = Fun.id
+  let of_int64 = Fun.id
+end
+
+module Nativeint_ = struct
+  include Nativeint
+
+  let to_int64 = Int64.of_nativeint
+  let of_int64 = Int64.to_nativeint
+end
+
+(* The value of \[[low];[high]\] that [sample] draws, read as its distance
+   to [origin], after a side choice ([0] above) when the range extends on
+   both sides of it. Both sides count from [origin], which so has two
+   spellings, as the prototype of shrinking.md reads an integer: one choice
+   of rank, alternating sides, measured worse. [encode] maps a sampled value
+   into the range, as an [int64]. *)
+let ranked src ~low ~high ~origin encode sample =
+  let x =
+    Choice.sample src (fun state ->
+        let x, state = sample state in
+        (encode x, state))
+  in
+  let above = Int64.sub high origin and below = Int64.sub origin low in
+  let below_side =
+    if Int64.equal below 0L then false
+    else if Int64.equal above 0L then true
+    else
+      let side x = if Int64.compare x origin < 0 then 1L else 0L in
+      Int64.equal (Choice.choice src ~bound:1L (Option.map side x)) 1L
+  in
+  if below_side then
+    let distance = Option.map (Int64.sub origin) x in
+    Int64.sub origin (Choice.choice src ~bound:below distance)
+  else
+    let distance = Option.map (fun x -> Int64.sub x origin) x in
+    Int64.add origin (Choice.choice src ~bound:above distance)
+
+(* An integer generator; [check] validates the arguments inside the parse. *)
+let integer (type n) (module N : Integer with type t = n) pp ?(check = ignore)
+    ~low ~high ~origin sample =
+  let low = N.to_int64 low and high = N.to_int64 high in
+  let origin = N.to_int64 origin in
+  {
+    pp = Some pp;
+    draw =
+      Parse
+        (fun src ->
+          check ();
+          let v = ranked src ~low ~high ~origin N.to_int64 sample in
+          literal pp (N.of_int64 v));
+  }
+
 (* The range generator [name] of an integer type: its origin is the point
    closest to [0], and [uniform] draws once [low <= high] holds. *)
 let range (type n) (module N : Integer with type t = n) ~name pp uniform low
@@ -326,23 +374,23 @@ let range (type n) (module N : Integer with type t = n) ~name pp uniform low
       @ (if N.compare origin low > 0 then [ N.pred origin ] else [])
       @ if N.compare origin high < 0 then [ N.succ origin ] else [])
   in
-  primitive pp
-    (towards (module N) origin)
-    (fun state ->
-      if N.compare high low < 0 then invalid_arg (name ^ ": high < low");
-      with_corners corners uniform state)
+  let check () =
+    if N.compare high low < 0 then invalid_arg (name ^ ": high < low")
+  in
+  integer (module N) pp ~check ~low ~high ~origin (with_corners corners uniform)
 
-let int_range low high =
+let range_uniform low high state =
   let low64 = Int64.of_int low in
   let span = Int64.sub (Int64.of_int high) low64 in
-  let uniform state =
-    (* The whole [int] range counts one value more than [Int64.max_int]. *)
-    if Int64.equal span Int64.max_int then word Int64.to_int state
-    else
-      let offset, state = Seed.below ~bound:(Int64.succ span) state in
-      (Int64.to_int (Int64.add low64 offset), state)
-  in
-  range (module Int) ~name:"Gen.int_range" Pp.int uniform low high
+  (* The whole [int] range counts one value more than [Int64.max_int]. *)
+  if Int64.equal span Int64.max_int then word Int64.to_int state
+  else
+    let offset, state = Seed.below ~bound:(Int64.succ span) state in
+    (Int64.to_int (Int64.add low64 offset), state)
+
+let int_range low high =
+  range (module Int_) ~name:"Gen.int_range" Pp.int (range_uniform low high) low
+    high
 
 let int = int_range min_int max_int
 
@@ -377,42 +425,44 @@ let draw_strata (b0, b1, b2, b3) state =
 
 let draw_nat = draw_strata (10L, 100L, 1_000L, 10_000L)
 let draw_length = draw_strata (4L, 8L, 16L, 64L)
-let nat = primitive Pp.int (int_towards 0) draw_nat
+let nat = integer (module Int_) Pp.int ~low:0 ~high:9_999 ~origin:0 draw_nat
 
 let small_int =
-  primitive Pp.int (int_towards 0) (fun state ->
+  integer (module Int_) Pp.int ~low:(-9_999) ~high:9_999 ~origin:0
+    (fun state ->
       let sign, state = Seed.below ~bound:2L state in
       let magnitude, state = draw_nat state in
       ((if Int64.equal sign 1L then -magnitude else magnitude), state))
 
+(* A whole type: its corners are [0], [1], [-1] and its extremes. *)
+let whole (type n) (module N : Integer with type t = n) pp ~min_int ~max_int
+    ~minus_one ~one of_bits =
+  integer (module N) pp ~low:min_int ~high:max_int ~origin:N.zero
+    (with_corners [ min_int; minus_one; N.zero; one; max_int ] (word of_bits))
+
 let int32 =
-  primitive pp_int32
-    (towards (module Int32) 0l)
-    (with_corners
-       [ Int32.min_int; -1l; 0l; 1l; Int32.max_int ]
-       (word Int64.to_int32))
+  whole (module Int32_) pp_int32 ~min_int:Int32.min_int ~max_int:Int32.max_int
+    ~minus_one:(-1l) ~one:1l Int64.to_int32
 
 let int32_range low high =
   let uniform =
     between Int64.to_int32 (Int64.of_int32 low) (Int64.of_int32 high)
   in
-  range (module Int32) ~name:"Gen.int32_range" pp_int32 uniform low high
+  range (module Int32_) ~name:"Gen.int32_range" pp_int32 uniform low high
 
 let int64 =
-  primitive pp_int64
-    (towards (module Int64) 0L)
-    (with_corners [ Int64.min_int; -1L; 0L; 1L; Int64.max_int ] (word Fun.id))
+  whole (module Int64_) pp_int64 ~min_int:Int64.min_int ~max_int:Int64.max_int
+    ~minus_one:(-1L) ~one:1L Fun.id
 
 let int64_range low high =
   let uniform = between Fun.id low high in
-  range (module Int64) ~name:"Gen.int64_range" pp_int64 uniform low high
+  range (module Int64_) ~name:"Gen.int64_range" pp_int64 uniform low high
 
 let nativeint =
-  primitive pp_nativeint
-    (towards (module Nativeint) 0n)
-    (with_corners
-       [ Nativeint.min_int; -1n; 0n; 1n; Nativeint.max_int ]
-       (word Int64.to_nativeint))
+  whole
+    (module Nativeint_)
+    pp_nativeint ~min_int:Nativeint.min_int ~max_int:Nativeint.max_int
+    ~minus_one:(-1n) ~one:1n Int64.to_nativeint
 
 let nativeint_range low high =
   let uniform =
@@ -420,8 +470,100 @@ let nativeint_range low high =
       (Int64.of_nativeint high)
   in
   range
-    (module Nativeint)
+    (module Nativeint_)
     ~name:"Gen.nativeint_range" pp_nativeint uniform low high
+
+(* Floats *)
+
+(* A magnitude's lexicographic encoding, Hypothesis's: an integral float
+   below 2^56 is that integer; any other is the tag 2^63, its exponent
+   reordered and its fraction bits reversed. *)
+let mantissa_bits = 52
+let mantissa_mask = Int64.pred (Int64.shift_left 1L mantissa_bits)
+let tag = Int64.min_int
+let integral_limit = 0x1p56
+let integral_mask = Int64.pred (Int64.shift_left 1L 56)
+
+(* Exponents 0, 1, ... first, then -1, -2, ..., then the non-finite one. *)
+let encoded_exponent biased =
+  if biased = 2047 then 2047
+  else if biased >= 1023 then biased - 1023
+  else 1024 + (1022 - biased)
+
+let decoded_exponent index =
+  if index = 2047 then 2047
+  else if index <= 1023 then index + 1023
+  else 1022 - (index - 1024)
+
+let reverse_bits v count =
+  let rec go v count acc =
+    if count = 0 then acc
+    else
+      go (Int64.shift_right_logical v 1) (count - 1)
+        (Int64.logor (Int64.shift_left acc 1) (Int64.logand v 1L))
+  in
+  go v count 0L
+
+(* An involution on the mantissa of a biased exponent. *)
+let fraction_reversed biased mantissa =
+  let unbiased = biased - 1023 in
+  if unbiased <= 0 then reverse_bits mantissa mantissa_bits
+  else if unbiased <= 51 then
+    let count = mantissa_bits - unbiased in
+    let mask = Int64.pred (Int64.shift_left 1L count) in
+    let fraction = Int64.logand mantissa mask in
+    Int64.logor (Int64.logxor mantissa fraction) (reverse_bits fraction count)
+  else mantissa
+
+let lex_of_magnitude m =
+  if Float.is_integer m && m < integral_limit then Int64.of_float m
+  else
+    let bits = Int64.bits_of_float m in
+    let biased = Int64.to_int (Int64.shift_right_logical bits mantissa_bits) in
+    let mantissa = Int64.logand bits mantissa_mask in
+    let exponent = Int64.of_int (encoded_exponent biased) in
+    Int64.logor tag
+      (Int64.logor
+         (Int64.shift_left exponent mantissa_bits)
+         (fraction_reversed biased mantissa))
+
+let magnitude_of_lex lex =
+  if Int64.compare lex 0L >= 0 then
+    Int64.to_float (Int64.logand lex integral_mask)
+  else
+    let index =
+      Int64.to_int
+        (Int64.logand (Int64.shift_right_logical lex mantissa_bits) 0x7ffL)
+    in
+    let biased = decoded_exponent index in
+    let mantissa = fraction_reversed biased (Int64.logand lex mantissa_mask) in
+    let exponent = Int64.shift_left (Int64.of_int biased) mantissa_bits in
+    Int64.float_of_bits (Int64.logor exponent mantissa)
+
+(* The last finite magnitude of the order: index 2046, the subnormals. *)
+let finite_bound =
+  Int64.logor tag
+    (Int64.logor (Int64.shift_left 2046L mantissa_bits) mantissa_mask)
+
+(* A sign, unless [signs] fixes one, then a magnitude. *)
+let read_finite src ~signs sample =
+  let x = Choice.sample src sample in
+  let negative =
+    match signs with
+    | `Both ->
+        Int64.equal
+          (Choice.choice src ~bound:1L
+             (Option.map (fun x -> if Float.sign_bit x then 1L else 0L) x))
+          1L
+    | `Negative -> true
+    | `Positive -> false
+  in
+  let magnitude =
+    magnitude_of_lex
+      (Choice.choice src ~bound:finite_bound
+         (Option.map (fun x -> lex_of_magnitude (Float.abs x)) x))
+  in
+  if negative then -.magnitude else magnitude
 
 (* The corners are the zeros, [1.] and [-1.], and of each sign the least
    subnormal, the least normal and the greatest finite float. Rejection keeps
@@ -446,16 +588,61 @@ let draw_float =
     ]
     finite
 
-let float = primitive Pp.float_exact (float_towards 0.0) draw_float
+let float =
+  {
+    pp = Some Pp.float_exact;
+    draw =
+      Parse
+        (fun src ->
+          literal Pp.float_exact (read_finite src ~signs:`Both draw_float));
+  }
+
+(* A class first: finite, [infinity], [neg_infinity] or [nan]. A sign and a
+   magnitude follow whatever the class, read as [0] beside a non-finite
+   value, so lowering the class to finite reads no further choice. *)
+let non_finite = [| Float.infinity; Float.neg_infinity; Float.nan |]
+
+let float_class x =
+  if Float.is_nan x then 3L
+  else if Float.equal x Float.infinity then 1L
+  else if Float.equal x Float.neg_infinity then 2L
+  else 0L
 
 let any_float =
-  primitive Pp.float_exact (float_towards 0.0)
-    (with_corners [ Float.nan; Float.infinity; Float.neg_infinity ] draw_float)
+  let sample =
+    with_corners [ Float.nan; Float.infinity; Float.neg_infinity ] draw_float
+  in
+  {
+    pp = Some Pp.float_exact;
+    draw =
+      Parse
+        (fun src ->
+          (* The value is drawn once; its class and its parts encode it. *)
+          let x = Choice.sample src sample in
+          let kind = Choice.choice src ~bound:3L (Option.map float_class x) in
+          let finite state =
+            match x with
+            | Some x when Float.is_finite x -> (x, state)
+            | Some _ | None -> (0.0, state)
+          in
+          let v = read_finite src ~signs:`Both finite in
+          let v =
+            if Int64.equal kind 0L then v
+            else non_finite.(Int64.to_int kind - 1)
+          in
+          literal Pp.float_exact v);
+  }
+
+(* Floats in the order where [-0.] is below [0.]. *)
+let order_key x =
+  let bits = Int64.bits_of_float x in
+  if Int64.compare bits 0L < 0 then Int64.logxor bits Int64.max_int else bits
 
 (* A range whose [high] is [-0.] has [-0.] as its origin, so it shrinks
    toward a value of its own sign. The corners are ordered by their bits,
    which tell the zeros apart; [float_range 0. 1.] means no [-0.], though
-   [0. <= -0.] holds. *)
+   [0. <= -0.] holds. A parsed float is clamped into the range, so its zeros
+   parse to the origin. *)
 let float_range low high =
   let origin =
     if low > 0.0 then low else if Float.sign_bit high then high else 0.0
@@ -481,42 +668,69 @@ let float_range low high =
     let value = low +. (unit_interval *. (high -. low)) in
     ((if value >= high then high else value), state)
   in
-  primitive Pp.float_exact (float_towards origin) (fun state ->
-      if not (Float.is_finite low && Float.is_finite high) then
-        invalid_arg "Gen.float_range: bounds must be finite";
-      if high < low then invalid_arg "Gen.float_range: high < low";
-      if high -. low > Float.max_float then
-        invalid_arg "Gen.float_range: high -. low > max_float";
-      with_corners corners uniform state)
+  let signs =
+    if not (Float.sign_bit low) then `Positive
+    else if Float.sign_bit high then `Negative
+    else `Both
+  in
+  let clamp x =
+    if Int64.compare (order_key x) (order_key low) < 0 then low
+    else if Int64.compare (order_key x) (order_key high) > 0 then high
+    else x
+  in
+  {
+    pp = Some Pp.float_exact;
+    draw =
+      Parse
+        (fun src ->
+          if not (Float.is_finite low && Float.is_finite high) then
+            invalid_arg "Gen.float_range: bounds must be finite";
+          if high < low then invalid_arg "Gen.float_range: high < low";
+          if high -. low > Float.max_float then
+            invalid_arg "Gen.float_range: high -. low > max_float";
+          let x = read_finite src ~signs (with_corners corners uniform) in
+          literal Pp.float_exact (clamp x));
+  }
 
 (* Unit, booleans, characters and strings *)
 
 (* Unlike [constant ()], [unit] prints, so a composition over it keeps its
    printer. *)
 let unit =
-  {
-    pp = Some pp_unit;
-    run = (fun state -> (Shrink_tree.leaf (printed pp_unit ()), state));
-  }
+  { pp = Some pp_unit; draw = Parse (fun _ -> literal pp_unit ()) }
 
 let bool =
-  primitive Pp.bool
-    (fun b -> if b then Seq.return false else Seq.empty)
-    (fun state ->
-      let bit, state = Seed.below ~bound:2L state in
-      (Int64.equal bit 1L, state))
+  {
+    pp = Some Pp.bool;
+    draw =
+      Parse
+        (fun src ->
+          let bit = read src ~bound:1L Fun.id (Seed.below ~bound:2L) in
+          literal Pp.bool (Int64.equal bit 1L));
+  }
 
 let char_range low high =
+  let code c = Int64.of_int (Char.code c) in
   let origin =
     Int.max (Char.code low) (Int.min (Char.code high) (Char.code 'a'))
   in
-  primitive pp_char
-    (fun c -> Seq.map Char.chr (int_towards origin (Char.code c)))
-    (fun state ->
-      if high < low then invalid_arg "Gen.char_range: high < low";
-      let count = Char.code high - Char.code low + 1 in
-      let offset, state = Seed.below ~bound:(Int64.of_int count) state in
-      (Char.chr (Char.code low + Int64.to_int offset), state))
+  let sample state =
+    let count = Char.code high - Char.code low + 1 in
+    let offset, state = Seed.below ~bound:(Int64.of_int count) state in
+    (Char.chr (Char.code low + Int64.to_int offset), state)
+  in
+  {
+    pp = Some pp_char;
+    draw =
+      Parse
+        (fun src ->
+          if high < low then invalid_arg "Gen.char_range: high < low";
+          let v =
+            ranked src ~low:(code low) ~high:(code high)
+              ~origin:(Int64.of_int origin) code sample
+          in
+          literal pp_char (Char.chr (Int64.to_int v)));
+  }
 
 let char = char_range '\000' '\255'
 
@@ -548,60 +762,70 @@ let uchar =
     let offset, state = Seed.below ~bound:(Int64.of_int count) state in
     (uchar_of_index (first + Int64.to_int offset), state)
   in
-  let origin = uchar_index (Uchar.of_char 'a') in
-  primitive pp_uchar
-    (fun u -> Seq.map uchar_of_index (int_towards origin (uchar_index u)))
-    (with_corners corners uniform)
+  let index u = Int64.of_int (uchar_index u) in
+  let origin = index (Uchar.of_char 'a') in
+  {
+    pp = Some pp_uchar;
+    draw =
+      Parse
+        (fun src ->
+          let v =
+            ranked src ~low:0L ~high:(Int64.of_int (starts.(4) - 1)) ~origin
+              index
+              (with_corners corners uniform)
+          in
+          literal pp_uchar (uchar_of_index (Int64.to_int v)));
+  }
 
-(* The element trees of [list ?size gen], which [list], [array] and
-   [string_of] each assemble into their own node. *)
-let elements ?size gen state =
-  let rec draw count trees state =
-    if count = 0 then (List.rev trees, state)
-    else
-      let tree, state = gen.run state in
-      draw (count - 1) (tree :: trees) state
-  in
+(* The elements of [list ?size gen], which [list], [array] and [string_of]
+   each assemble into their own node. Without [size], a "one more" choice
+   comes before each element, the two one span, and [draw_length] samples
+   the length that the choices then encode. *)
+let elements ?size gen src =
   match size with
   | None ->
-      let length, state = draw_length state in
-      let trees, state = draw length [] state in
-      (Shrink_tree.list trees, state)
+      let length = Choice.sample src draw_length in
+      let rec more count nodes =
+        let next =
+          Choice.span src (fun () ->
+              let drawn = Option.map (fun n -> if count < n then 1L else 0L) in
+              if Int64.equal (Choice.choice src ~bound:1L (drawn length)) 0L
+              then None
+              else Some (parse gen src))
+        in
+        match next with
+        | None -> List.rev nodes
+        | Some node -> more (count + 1) (node :: nodes)
+      in
+      more 0 []
   | Some size ->
-      (* Under a given length, only the elements shrink. *)
-      let rec in_place = function
-        | [] -> Shrink_tree.leaf []
-        | tree :: trees ->
-            Shrink_tree.map
-              (fun (v, vs) -> v :: vs)
-              (Shrink_tree.pair tree (in_place trees))
-      in
-      let size_tree, state = size.run state in
-      let fresh, state = Seed.split state in
-      let tree =
-        Shrink_tree.bind size_tree (fun length ->
-            if length.value < 0 then invalid_arg "Gen.list: negative size";
-            in_place (fst (draw length.value [] fresh)))
-      in
-      (tree, state)
+      let length = (parse size src).value in
+      if length < 0 then invalid_arg "Gen.list: negative size";
+      Choice.split src (fun () ->
+          let rec draw count nodes =
+            if count = 0 then List.rev nodes
+            else draw (count - 1) (parse gen src :: nodes)
+          in
+          draw length [])
 
 let string_of ?size char =
   let implode nodes =
     let buffer = Bytes.create (List.length nodes) in
     List.iteri (fun i node -> Bytes.set buffer i node.value) nodes;
-    printed pp_string (Bytes.unsafe_to_string buffer)
+    literal pp_string (Bytes.unsafe_to_string buffer)
   in
-  { pp = Some pp_string; run = map_draw implode (elements ?size char) }
+  {
+    pp = Some pp_string;
+    draw = Parse (fun src -> implode (elements ?size char src));
+  }
 
 let string = string_of char
 
 let bytes_of ?size char =
+  let as_bytes node = literal pp_bytes (Bytes.of_string node.value) in
   {
     pp = Some pp_bytes;
-    run =
-      map_draw
-        (fun node -> printed pp_bytes (Bytes.of_string node.value))
-        (string_of ?size char).run;
+    draw = Parse (fun src -> as_bytes (parse (string_of ?size char) src));
   }
 
 let bytes = bytes_of char
@@ -609,89 +833,90 @@ let bytes = bytes_of char
 (* Containers *)
 
 let list ?size gen =
-  let node nodes =
-    {
-      value = List.map value nodes;
-      shown = composite (pp_list pp_doc) (List.map (fun n -> n.shown) nodes);
-    }
-  in
-  { pp = Option.map pp_list gen.pp; run = map_draw node (elements ?size gen) }
-
-let array ?size gen =
-  let node nodes =
-    {
-      value = Array.of_list (List.map value nodes);
-      shown =
-        composite
-          (fun ppf docs -> pp_array pp_doc ppf (Array.of_list docs))
-          (List.map (fun n -> n.shown) nodes);
-    }
-  in
-  { pp = Option.map pp_array gen.pp; run = map_draw node (elements ?size gen) }
-
-let option gen =
-  let none =
-    Shrink_tree.leaf
-      { value = None; shown = Some (Value (atom Pp.string "None")) }
-  in
-  let rec some tree =
-    Shrink_tree.make
-      ~root:(constructor "Some" Option.some (Shrink_tree.root tree))
-      ~children:(Seq.cons none (Seq.map some (Shrink_tree.children tree)))
-  in
   {
-    pp = Option.map pp_option gen.pp;
-    run =
-      (fun state ->
-        let choice, state = Seed.below ~bound:100L state in
-        if choice < 15L then (none, state)
-        else
-          let tree, state = gen.run state in
-          (some tree, state));
+    pp = Option.map pp_list gen.pp;
+    draw =
+      Parse
+        (fun src ->
+          let nodes = elements ?size gen src in
+          composed (pp_list pp_doc) (List.map value nodes)
+            (List.map part nodes));
   }
 
-let result ok error =
+let array ?size gen =
+  let pp_docs ppf docs = pp_array pp_doc ppf (Array.of_list docs) in
   {
-    pp =
-      (match (ok.pp, error.pp) with
-      | Some pp_ok, Some pp_error -> Some (pp_result pp_ok pp_error)
-      | _ -> None);
-    run =
-      (fun state ->
-        let choice, state = Seed.below ~bound:100L state in
-        if choice < 25L then
-          map_draw (constructor "Error" Result.error) error.run state
-        else map_draw (constructor "Ok" Result.ok) ok.run state);
+    pp = Option.map pp_array gen.pp;
+    draw =
+      Parse
+        (fun src ->
+          let nodes = elements ?size gen src in
+          composed pp_docs
+            (Array.of_list (List.map value nodes))
+            (List.map part nodes));
+  }
+
+(* A choice between two constructors, [0] the first: [sample] draws [1] for
+   the second, with the probability of 0.2's draw. *)
+let second src sample = Int64.equal (read src ~bound:1L Fun.id sample) 1L
+
+let below_percent share state =
+  let choice, state = Seed.below ~bound:100L state in
+  ((if choice < share then 0L else 1L), state)
+
+let option gen =
+  let none = literal Pp.string "None" in
+  {
+    pp = Option.map pp_option gen.pp;
+    draw =
+      Parse
+        (fun src ->
+          if second src (below_percent 15L) then
+            constructor "Some" Option.some (parse gen src)
+          else { none with value = None });
+  }
+
+(* [pp] derives when both parts print. *)
+let both derive a b =
+  match (a.pp, b.pp) with Some a, Some b -> Some (derive a b) | _ -> None
+
+let result ok error =
+  let error_first state =
+    let choice, state = Seed.below ~bound:100L state in
+    ((if choice < 25L then 1L else 0L), state)
+  in
+  {
+    pp = both pp_result ok error;
+    draw =
+      Parse
+        (fun src ->
+          if second src error_first then
+            constructor "Error" Result.error (parse error src)
+          else constructor "Ok" Result.ok (parse ok src));
   }
 
 let either left right =
   {
-    pp =
-      (match (left.pp, right.pp) with
-      | Some pp_left, Some pp_right -> Some (pp_either pp_left pp_right)
-      | _ -> None);
-    run =
-      (fun state ->
-        let side, state = Seed.below ~bound:2L state in
-        if Int64.equal side 0L then
-          map_draw (constructor "Left" Either.left) left.run state
-        else map_draw (constructor "Right" Either.right) right.run state);
+    pp = both pp_either left right;
+    draw =
+      Parse
+        (fun src ->
+          if second src (Seed.below ~bound:2L) then
+            constructor "Right" Either.right (parse right src)
+          else constructor "Left" Either.left (parse left src));
   }
+
+let tuple value nodes = composed pp_tuple value nodes
 
 let pair a b =
   {
-    pp =
-      (match (a.pp, b.pp) with
-      | Some pp_a, Some pp_b -> Some (pp_pair pp_a pp_b)
-      | _ -> None);
-    run =
-      (fun state ->
-        let ta, state = a.run state in
-        let tb, state = b.run state in
-        ( Shrink_tree.map
-            (fun (a, b) -> tuple (a.value, b.value) [ a.shown; b.shown ])
-            (Shrink_tree.pair ta tb),
-          state ));
+    pp = both pp_pair a b;
+    draw =
+      Parse
+        (fun src ->
+          let a = parse a src in
+          let b = parse b src in
+          tuple (a.value, b.value) [ part a; part b ]);
   }
 
 let triple a b c =
@@ -700,16 +925,13 @@ let triple a b c =
       (match (a.pp, b.pp, c.pp) with
       | Some pp_a, Some pp_b, Some pp_c -> Some (pp_triple pp_a pp_b pp_c)
       | _ -> None);
-    run =
-      (fun state ->
-        let ta, state = a.run state in
-        let tb, state = b.run state in
-        let tc, state = c.run state in
-        ( Shrink_tree.map
-            (fun (a, (b, c)) ->
-              tuple (a.value, b.value, c.value) [ a.shown; b.shown; c.shown ])
-            (Shrink_tree.pair ta (Shrink_tree.pair tb tc)),
-          state ));
+    draw =
+      Parse
+        (fun src ->
+          let a = parse a src in
+          let b = parse b src in
+          let c = parse c src in
+          tuple (a.value, b.value, c.value) [ part a; part b; part c ]);
   }
 
 let quad a b c d =
@@ -719,19 +941,16 @@ let quad a b c d =
       | Some pp_a, Some pp_b, Some pp_c, Some pp_d ->
           Some (pp_quad pp_a pp_b pp_c pp_d)
       | _ -> None);
-    run =
-      (fun state ->
-        let ta, state = a.run state in
-        let tb, state = b.run state in
-        let tc, state = c.run state in
-        let td, state = d.run state in
-        ( Shrink_tree.map
-            (fun (a, (b, (c, d))) ->
-              tuple
-                (a.value, b.value, c.value, d.value)
-                [ a.shown; b.shown; c.shown; d.shown ])
-            (Shrink_tree.pair ta (Shrink_tree.pair tb (Shrink_tree.pair tc td))),
-          state ));
+    draw =
+      Parse
+        (fun src ->
+          let a = parse a src in
+          let b = parse b src in
+          let c = parse c src in
+          let d = parse d src in
+          tuple
+            (a.value, b.value, c.value, d.value)
+            [ part a; part b; part c; part d ]);
   }
 
 (* Constants, choices and filters *)
@@ -741,21 +960,24 @@ let listed ?pp value =
   match pp with None -> unprintable value | Some pp -> printed pp value
 
 let constant ?pp value =
-  { pp; run = (fun state -> (Shrink_tree.leaf (listed ?pp value), state)) }
+  { pp; draw = Parse (fun _ -> listed ?pp value) }
+
+(* An index below [count], drawn uniformly. *)
+let index src count =
+  let bound = Int64.of_int count in
+  Int64.to_int
+    (read src ~bound:(Int64.pred bound) Fun.id (Seed.below ~bound))
 
 let of_list ?pp values =
   let values = Array.of_list values in
   let count = Array.length values in
   {
     pp;
-    run =
-      (fun state ->
-        if count = 0 then invalid_arg "Gen.of_list: empty list";
-        let index, state = Seed.below ~bound:(Int64.of_int count) state in
-        ( tree_towards
-            (fun index -> listed ?pp values.(index))
-            (int_towards 0) (Int64.to_int index),
-          state ));
+    draw =
+      Parse
+        (fun src ->
+          if count = 0 then invalid_arg "Gen.of_list: empty list";
+          listed ?pp values.(index src count));
   }
 
 (* A list of listed values prints its elements with [pp], as [list] does. *)
@@ -767,132 +989,110 @@ let listed_list ?pp values =
 (* The length is [int_range 0 n]'s draw. Selection sampling then keeps the
    element at each position with probability [wanted / left], which makes
    every choice of positions of that length equally likely and keeps their
-   order. The kept elements have no candidates, so a candidate drops some. *)
+   order. Each position reads a keep choice, [1] to keep. *)
 let subsequence ?pp values =
   let count = List.length values in
-  let length = int_range 0 count in
+  let length =
+    with_corners
+      (List.sort_uniq Int.compare [ 0; count; Int.min 1 count ])
+      (range_uniform 0 count)
+  in
   {
     pp = Option.map pp_list pp;
-    run =
-      (fun state ->
-        let length_tree, state = length.run state in
-        let rec keep kept wanted left state = function
-          | v :: vs when wanted > 0 ->
-              let pick, state = Seed.below ~bound:(Int64.of_int left) state in
-              let kept, wanted =
-                if Int64.to_int pick < wanted then
-                  (Shrink_tree.leaf v :: kept, wanted - 1)
-                else (kept, wanted)
-              in
-              keep kept wanted (left - 1) state vs
-          | _ -> (List.rev kept, state)
-        in
-        let wanted = (Shrink_tree.root length_tree).value in
-        let kept, state = keep [] wanted count state values in
-        (Shrink_tree.map (listed_list ?pp) (Shrink_tree.list kept), state));
+    draw =
+      Parse
+        (fun src ->
+          let wanted = ref (Choice.sample src length) in
+          let keep left =
+            match !wanted with
+            | Some 0 -> Some 0L
+            | Some w ->
+                let pick =
+                  Choice.sample src (Seed.below ~bound:(Int64.of_int left))
+                in
+                let kept = Int64.to_int (Option.get pick) < w in
+                if kept then wanted := Some (w - 1);
+                Some (if kept then 1L else 0L)
+            | None -> None
+          in
+          let rec select left kept = function
+            | [] -> List.rev kept
+            | v :: vs ->
+                let bit = Choice.choice src ~bound:1L (keep left) in
+                select (left - 1)
+                  (if Int64.equal bit 1L then v :: kept else kept)
+                  vs
+          in
+          listed_list ?pp (select count [] values));
   }
 
-(* A permutation is its Lehmer code: digit [k] is the index of the element
-   placed at [k] among those not yet placed, taken in their order in
-   [values]. It is below [n - k], so the last digit is [0]; each digit drawn
-   uniformly draws each ordering with equal probability. The sum of the
-   digits is the number of inversions, the pairs out of their order in
-   [values].
-
-   A candidate lowers one digit by the integer scheme, which places at [k] an
-   element that comes earlier in [values]; or moves one element left past
-   the two or more before it that come later in [values], which removes one
-   inversion per element passed; or swaps two adjacent elements out of
-   order, which removes one. The digits are lowered in one pass from the
-   left: a node reached by lowering digit [k] offers the digits from [k] on,
-   and a move or a swap keeps its parent's pass. A swap at [i] changes two
-   digits: the new digit [i] is the old digit [i + 1], and the new digit
-   [i + 1] the old digit [i] less one. A move from [i] to [j] places the
-   element's digit at [j], and each element it passes goes one place right
-   with its digit less one.
-
-   Lowering a digit reorders everything after it, so on a law that pins the
-   last element most lowered candidates pass; the moves spare such a search
-   sorting the rest one swap at a time. *)
+(* A permutation is drawn as 0.2 drew it, as its Lehmer code: digit [k] is
+   the index of the element placed at [k] among those not yet placed, taken
+   in their order in [values], drawn uniformly below [n - k]. It is read as
+   its inversion table: for each position [i] of [values], the number of
+   later positions placed before it, below [n - i], so the last is [0] and
+   is not read. Lowering one entry moves one element left past later ones
+   and leaves the others in their order, and the zeros are the given
+   order. *)
 let permutation ?pp values =
   let values = Array.of_list values in
   let count = Array.length values in
-  (* The indices of [values] in the order that [code] places them. *)
-  let decode code =
+  (* The order that a Lehmer code places the indices of [values] in. *)
+  let lehmer code =
     let remaining = Array.init count Fun.id in
-    let order = Array.make count 0 in
-    for k = 0 to count - 1 do
-      let digit = code.(k) in
-      order.(k) <- remaining.(digit);
-      Array.blit remaining (digit + 1) remaining digit (count - k - 1 - digit)
-    done;
-    order
+    Array.init count (fun k ->
+        let digit = code.(k) in
+        let index = remaining.(digit) in
+        Array.blit remaining (digit + 1) remaining digit
+          (count - k - 1 - digit);
+        index)
   in
-  let rec node ~from code order =
-    let lowered k =
-      Seq.map
-        (fun digit ->
-          let code = Array.copy code in
-          code.(k) <- digit;
-          node ~from:k code (decode code))
-        (int_towards 0 code.(k))
-    in
-    let swapped i =
-      if order.(i) < order.(i + 1) then None
+  let draw_order state =
+    let code = Array.make count 0 in
+    let rec draw k state =
+      if k >= count - 1 then state
       else
-        let code = Array.copy code and order = Array.copy order in
-        let digit = code.(i) and first = order.(i) in
-        code.(i) <- code.(i + 1);
-        code.(i + 1) <- digit - 1;
-        order.(i) <- order.(i + 1);
-        order.(i + 1) <- first;
-        Some (node ~from code order)
+        let digit, state = Seed.below ~bound:(Int64.of_int (count - k)) state in
+        code.(k) <- Int64.to_int digit;
+        draw (k + 1) state
     in
-    let moved i =
-      let element = order.(i) in
-      let rec start j =
-        if j > 0 && order.(j - 1) > element then start (j - 1) else j
-      in
-      let j = start i in
-      if i - j < 2 then None
-      else
-        let code = Array.copy code and order = Array.copy order in
-        let digit = code.(i) in
-        for k = i - 1 downto j do
-          code.(k + 1) <- code.(k) - 1;
-          order.(k + 1) <- order.(k)
-        done;
-        code.(j) <- digit;
-        order.(j) <- element;
-        Some (node ~from code order)
-    in
-    Shrink_tree.make
-      ~root:
-        (listed_list ?pp
-           (Array.fold_right (fun index vs -> values.(index) :: vs) order []))
-      ~children:
-        (Seq.append
-           (Seq.concat_map lowered (Seq.init (count - from) (( + ) from)))
-           (Seq.append
-              (Seq.filter_map moved (Seq.init count Fun.id))
-              (Seq.filter_map swapped (Seq.init (Int.max 0 (count - 1)) Fun.id))))
+    let state = draw 0 state in
+    (lehmer code, state)
+  in
+  (* Each index's count of later indices placed before it. *)
+  let inversions order =
+    Array.init count (fun i ->
+        let rec before k later =
+          if order.(k) = i then later
+          else before (k + 1) (if order.(k) > i then later + 1 else later)
+        in
+        before 0 0)
+  in
+  (* [i] goes after [at] of the later indices, which are placed already. *)
+  let rec insert at i = function
+    | order when at = 0 -> i :: order
+    | later :: order -> later :: insert (at - 1) i order
+    | [] -> [ i ]
   in
   {
     pp = Option.map pp_list pp;
-    run =
-      (fun state ->
-        let code = Array.make count 0 in
-        let rec draw k state =
-          if k >= count - 1 then state
-          else
-            let digit, state =
-              Seed.below ~bound:(Int64.of_int (count - k)) state
-            in
-            code.(k) <- Int64.to_int digit;
-            draw (k + 1) state
-        in
-        let state = draw 0 state in
-        (node ~from:0 code (decode code), state));
+    draw =
+      Parse
+        (fun src ->
+          let drawn = Option.map inversions (Choice.sample src draw_order) in
+          let table =
+            Array.init count (fun i ->
+                let entry = Option.map (fun table -> Int64.of_int table.(i)) in
+                Int64.to_int
+                  (Choice.choice src
+                     ~bound:(Int64.of_int (count - 1 - i))
+                     (entry drawn)))
+          in
+          let order = ref [] in
+          for i = count - 1 downto 0 do
+            order := insert table.(i) i !order
+          done;
+          listed_list ?pp (List.map (fun i -> values.(i)) !order));
   }
 
 (* Branches generate one type, so their printers are expected to agree; a
@@ -909,71 +1109,61 @@ let one_of gens =
   let count = Array.length gens in
   {
     pp;
-    run =
-      (fun state ->
-        if count = 0 then invalid_arg "Gen.one_of: empty list";
-        let index, state = Seed.below ~bound:(Int64.of_int count) state in
-        let fresh, state = Seed.split state in
-        let branches =
-          tree_towards Fun.id (int_towards 0) (Int64.to_int index)
-        in
-        ( Shrink_tree.bind branches (fun branch -> fst (gens.(branch).run fresh)),
-          state ));
+    draw =
+      Parse
+        (fun src ->
+          if count = 0 then invalid_arg "Gen.one_of: empty list";
+          let branch = gens.(index src count) in
+          Choice.split src (fun () -> parse branch src));
   }
 
+(* The choice is the weighted point drawn, so a branch of weight [0] is never
+   parsed. *)
 let frequency weighted =
   let pp = branches_pp (List.map snd weighted) in
   let weighted = Array.of_list weighted in
   {
     pp;
-    run =
-      (fun state ->
-        if Array.length weighted = 0 then
-          invalid_arg "Gen.frequency: empty list";
-        let total =
-          Array.fold_left
-            (fun total (weight, _) ->
-              if weight < 0 then invalid_arg "Gen.frequency: negative weight";
-              total + weight)
-            0 weighted
-        in
-        if total < 1 then invalid_arg "Gen.frequency: total weight < 1";
-        let pick, state = Seed.below ~bound:(Int64.of_int total) state in
-        let pick = Int64.to_int pick in
-        let rec choose index consumed =
-          let weight, gen = weighted.(index) in
-          if pick < consumed + weight then gen
-          else choose (index + 1) (consumed + weight)
-        in
-        (choose 0 0).run state);
+    draw =
+      Parse
+        (fun src ->
+          if Array.length weighted = 0 then
+            invalid_arg "Gen.frequency: empty list";
+          let total =
+            Array.fold_left
+              (fun total (weight, _) ->
+                if weight < 0 then invalid_arg "Gen.frequency: negative weight";
+                total + weight)
+              0 weighted
+          in
+          if total < 1 then invalid_arg "Gen.frequency: total weight < 1";
+          let pick = index src total in
+          let rec choose index consumed =
+            let weight, gen = weighted.(index) in
+            if pick < consumed + weight then gen
+            else choose (index + 1) (consumed + weight)
+          in
+          parse (choose 0 0) src);
   }
 
 (* A predicate that needs more draws is a shape to build by construction. *)
 let resample_budget = 100
 
+(* Each attempt is a span, so a deletion removes the attempts that failed
+   [keep]. *)
 let such_that keep gen =
-  let rec filter tree =
-    Shrink_tree.make ~root:(Shrink_tree.root tree)
-      ~children:
-        (Seq.filter_map
-           (fun child ->
-             if keep (Shrink_tree.root child).value then Some (filter child)
-             else None)
-           (Shrink_tree.children tree))
-  in
   {
     pp = gen.pp;
-    run =
-      (fun state ->
-        let rec attempt tries state =
-          if tries = 0 then raise (Failure.Control `Discard)
-          else
-            let fresh, state = Seed.split state in
-            let tree, _ = gen.run fresh in
-            if keep (Shrink_tree.root tree).value then (filter tree, state)
-            else attempt (tries - 1) state
-        in
-        attempt resample_budget state);
+    draw =
+      Parse
+        (fun src ->
+          let rec attempt tries =
+            if tries = 0 then raise (Failure.Control `Discard)
+            else
+              let node = Choice.split src (fun () -> parse gen src) in
+              if keep node.value then node else attempt (tries - 1)
+          in
+          attempt resample_budget);
   }
 
 (* Composition *)
@@ -981,29 +1171,31 @@ let such_that keep gen =
 let map f gen =
   {
     pp = None;
-    run =
-      map_draw
-        (fun node -> { value = f node.value; shown = pre_image node.shown })
-        gen.run;
+    draw =
+      Parse
+        (fun src ->
+          let node = parse gen src in
+          let shown = pre_image node.shown in
+          { value = f node.value; shown; literal = false });
   }
 
 let bind gen f =
   {
     pp = None;
-    run =
-      (fun state ->
-        let outer, state = gen.run state in
-        let fresh, state = Seed.split state in
-        let inner outer =
-          Shrink_tree.map
-            (fun node -> { node with shown = bound outer.shown node.shown })
-            (fst ((f outer.value).run fresh))
-        in
-        (Shrink_tree.bind outer inner, state));
+    draw =
+      Parse
+        (fun src ->
+          let outer = parse gen src in
+          let inner = Choice.split src (fun () -> parse (f outer.value) src) in
+          let shown = bound outer.shown inner.shown in
+          { inner with shown; literal = false });
   }
 
 let with_pp pp gen =
-  { pp = Some pp; run = map_draw (fun node -> printed pp node.value) gen.run }
+  {
+    pp = Some pp;
+    draw = Parse (fun src -> printed pp (parse gen src).value);
+  }
 
 let ( let+ ) gen f = map f gen
 let ( and+ ) = pair
@@ -1016,9 +1208,52 @@ module Engine = struct
 
   type 'a sample = 'a node
 
-  let draw gen state = gen.run state
+  (* A generator's value as a tree, for a reader that searches trees: a
+     node's candidates are the edits of one step of the reducer that parse
+     to a shortlex smaller sequence, each sequence once, and a candidate
+     whose parse discards or raises a fault is skipped. *)
+  let rec tree_of gen (case : Shrink.case) node =
+    let seen = Hashtbl.create 16 in
+    let candidate choices =
+      let src = Choice.replaying choices in
+      match Failure.catch (fun () -> parse gen src) with
+      | Ok node
+        when Shrink.shortlex (Choice.choices src) case.choices < 0
+             && not (Hashtbl.mem seen (Choice.choices src)) ->
+          Hashtbl.add seen (Choice.choices src) ();
+          Some
+            (tree_of gen
+               {
+                 choices = Choice.choices src;
+                 spans = Choice.spans src;
+                 dependents = Choice.dependents src;
+               }
+               node)
+      | Ok _ | Error (`Discard | #Failure.fault) -> None
+      | Error c -> Failure.reraise c
+    in
+    Shrink_tree.make ~root:node
+      ~children:(Seq.filter_map candidate (Shrink.candidates case))
+
+  let draw gen state =
+    match gen.draw with
+    | Tree draw -> draw state
+    | Parse _ ->
+        let src = Choice.generating state in
+        let node = parse gen src in
+        let case : Shrink.case =
+          {
+            choices = Choice.choices src;
+            spans = Choice.spans src;
+            dependents = Choice.dependents src;
+          }
+        in
+        (tree_of gen case node, Option.get (Choice.state src))
+
   let sample gen state = fst (draw gen state)
   let value = value
+  let parse = parse
+  let tree gen = match gen.draw with Tree draw -> Some draw | Parse _ -> None
 
   type nonrec 'a rendering = 'a rendering = Value of 'a | Pre_image of 'a
 
@@ -1043,6 +1278,9 @@ module Engine = struct
 
   let prints node = Option.is_some node.shown
 
+  let literal node =
+    match node.shown with Some (Value _) -> node.literal | _ -> false
+
   (* A bare value renders before its run, where a control belongs to its
      owner: only a fault becomes the text. *)
   let render_value gen v =
@@ -1054,9 +1292,18 @@ module Engine = struct
         | Error (#Failure.fault as fault) -> printer_raised fault
         | Error (#Failure.control as control) -> Failure.reraise control)
 
-  let run gen state = map_draw value gen.run state
+  let run gen state =
+    let tree, state = draw gen state in
+    (Shrink_tree.map value tree, state)
 
   let make ?pp draw =
     let node = match pp with Some pp -> printed pp | None -> unprintable in
-    { pp; run = map_draw node draw }
+    {
+      pp;
+      draw =
+        Tree
+          (fun state ->
+            let tree, state = draw state in
+            (Shrink_tree.map node tree, state));
+    }
 end

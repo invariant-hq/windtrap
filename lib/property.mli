@@ -122,11 +122,15 @@ type stats = {
     The [failure] of a [Fail] is a {!Failure.Property} failure located at
     {!run}'s [loc]. {!Failure.Property} documents its payload, and {!run}
     decides the following:
-    - [rendered] is the final node of the shrink search, drawn again (see
+    - [rendered] is the final case of the shrink search, parsed again (see
       {!run}), through [Gen.Engine.render], a failing example before its run
       through [Gen.Engine.render_value], or
-      [<generator raised before producing a value>]. [rendering] can be a
-      pre-image in the first case only.
+      [<generator raised before producing a value>]. [rendering] can be
+      [Ocaml] or a pre-image in the first case only, and is [Ocaml] when
+      [Gen.Engine.literal] holds of the case.
+    - [token] is the final case's replay token, its choices and the digest of
+      [rendered] (see {!Choice.token}), for a generator that parses choices,
+      and [None] otherwise.
     - [case_index] counts the discarded cases. For a failing example it is the
       zero-based position in [examples].
     - [shrink_steps] is [0] for an example and for a generator that raised.
@@ -161,15 +165,14 @@ type outcome =
 
 val shrink_budget : int
 (** [shrink_budget] is the number of times a shrink search may run the law,
-    [10_000]. Every candidate probed counts, accepted or rejected, so the budget
-    bounds a search over any tree. It is fixed, so a replay under the same root
-    seed descends the same path to the same node, whatever the configuration of
-    the run.
+    [10_000]. Every candidate the law runs on counts, accepted or rejected, so
+    the budget bounds any search. It is fixed, so a replay under the same root
+    seed shrinks to the same counterexample, whatever the configuration of the
+    run.
 
     A search that has spent the budget ends its failure with
     [Failure.Budget_spent] when it reaches a further candidate. A search that
-    reaches a node with no candidate left is [Failure.Converged], whatever it
-    spent. *)
+    reaches a fixed point is [Failure.Converged], whatever it spent. *)
 
 val run :
   ?loc:Loc.t ->
@@ -249,41 +252,44 @@ val run :
     with [<generator raised before producing a value>] as its counterexample and
     the fault as its [inner].
 
-    {b Shrinking.} A generated case that fails is shrunk by a search that
-    descends the tree of its sample. At each node the search runs [law] on the
-    candidates in order and moves to the first that fails in the class of the
-    first failure, a [Failure.Check_failure], an {!Oracle_failure} or any other
-    exception. The two failures need not be equal. A candidate that passes or
-    raises a control other than [`Timeout] is rejected.
+    {b Shrinking.} A generated case that fails is shrunk by {!Shrink.shrink}
+    over the choices it read. A candidate is kept when [law] fails on it in the
+    class of the first failure, a [Failure.Check_failure], an {!Oracle_failure}
+    or any other exception, and its choices are shortlex smaller. The two
+    failures need not be equal. A candidate that passes or raises a control
+    other than [`Timeout] is rejected. A candidate whose parse discards or
+    raises a fault is rejected at the cost of a discard, and one whose parse
+    reads no smaller sequence runs no law.
 
-    The search ends at a node with no accepted candidate, [Failure.Converged].
-    It also ends when its runs of [law], each costing [cost] or [1] when it
-    discards, have spent {!shrink_budget}, [Failure.Budget_spent], and when the
-    forcing of a candidate raises anything but a [`Timeout]:
-    [Failure.Candidate_raised] with that exception as [Failure.exn_to_string]
-    prints it.
+    The search ends at a fixed point, [Failure.Converged], or when its runs of
+    [law], each costing [cost] or [1] when it discards, have spent
+    {!shrink_budget}, [Failure.Budget_spent].
+
+    The program of a stateful test is drawn as a tree ([Gen.Engine.make]),
+    which no choice describes: its search descends the tree, moving at each
+    node to the first candidate that fails in the class of the first failure,
+    with the same budget, and also ends when the forcing of a candidate raises
+    anything but a [`Timeout], [Failure.Candidate_raised] with that exception
+    as [Failure.exn_to_string] prints it.
 
     A [`Timeout] raised anywhere in the search ends it as well,
     [Failure.Timed_out] with the limit. The failure then describes the last
-    accepted node, a node being accepted once [output] has returned on it, and
+    accepted case, a case being accepted once [output] has returned on it, and
     the test does not time out. The search starts with [output] on the failing
     case, which a [`Timeout] there reports unshrunk and without output.
-    [case_index] is always that of the first failure, so a replay descends the
-    same path, and a timeout changes only where on that path the descent stops.
+    [case_index] is always that of the first failure, so a replay takes the
+    same steps, and a timeout changes only where among them the search stops.
 
-    {b Printing.} The runs of the search can change the value of the final node,
-    so the counterexample prints drawn again, as a replay draws it: [gen]
-    samples the case's seed again, and the draw descends to the candidate that
-    the search accepted at each step. A pure [gen] draws the counterexample as
-    it was first generated, whatever a run of [law] did to the value it was
-    given, and nothing runs on the value drawn before it is printed. The final
-    node prints as the search left it under [prints_run], and when the draw does
-    not reach the counterexample, which an impure [gen] or the test's limit can
-    cause. An impure [gen] can also draw another value along the same route, and
-    that value prints.
+    {b Printing.} The runs of the search can change the value of the final case,
+    so the counterexample prints parsed again from its choices, or for a tree
+    drawn again along the search's route. A pure [gen] builds the counterexample
+    as it was first generated, whatever a run of [law] did to the value it was
+    given, and nothing runs on the value before it is printed. The final case
+    prints as the search left it under [prints_run], and when the parse fails,
+    which an impure [gen] or the test's limit can cause.
 
     {b Running again.} After the search, a [deterministic] law runs once more on
-    the counterexample drawn again as for printing. One draw serves both, and
+    the counterexample parsed again as for printing. One draw serves both, and
     the run comes after the printing. The run's labels go to a {!scratch}
     context. The [failed_again] of the failure is [Some true] when that run
     raises a [Failure.fault], in any class, [Some false] when it returns or

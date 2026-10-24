@@ -46,6 +46,15 @@
   steps the search has taken, as
   `[3/10] lists › rev: shrinking, 12 steps…`, where 0.2.0 named the test
   alone while it searched.
+- Generators parse a sequence of bounded choices, and shrinking deletes
+  what a generator call read, deletes runs of choices and lowers each
+  one, so a counterexample can merge two inner lists, replace a node by
+  its subterm or shrink a `Gen.bind`, which 0.2.0's trees could not;
+  each generator keeps its distribution and its shrink target
+  (doc/manual/property-testing.md#reading-a-counterexample).
+- `Gen.result`, `Gen.either` and `Gen.frequency` shrink toward `Ok`,
+  `Left` and the first generator of positive weight, where 0.2.0 kept
+  the drawn constructor or generator.
 
 ### Stateful testing
 

@@ -832,11 +832,17 @@ val pass : 'a testable
     report prints the counterexample as it was drawn, and a failing example as
     it was given, whatever the law did to them.
 
-    Shrinking runs the law at most [10_000] times, accepted and rejected
-    candidates alike, and a search stopped there reports that the counterexample
-    may not be minimal. It also stops when a function of the generator raises on
-    a candidate. A function of the generator that raises while a case is drawn
-    fails the case. *)
+    {b Shrinking.} A case is the sequence of bounded choices that its generator
+    read, and shrinking edits the sequence of a failing case and parses the
+    edit again, so every candidate is a value of the generator. Three passes
+    run to a fixed point: delete the choices that one generator call read (a
+    list element and its "one more" choice are one such call), delete runs of
+    8, 4, 2 and 1 choices, and lower each choice by binary search. A step is
+    kept when the case still fails and its choices are fewer, or as many and
+    smaller. Shrinking runs the law at most [10_000] times, and a search stopped
+    there reports that the counterexample may not be minimal. A candidate on
+    which a function of the generator raises is skipped, and a function of the
+    generator that raises while a case is drawn fails the case. *)
 
 (**/**)
 
@@ -848,8 +854,12 @@ module Gen_engine = Gen.Engine
 module Gen : sig
   (** Random generators with integrated shrinking and printing.
 
-      {b Shrinking.} Every generator shrinks, and a shrink candidate satisfies
-      the constraints of its generator.
+      {b Shrinking.} A generator parses a sequence of choices, and shrinking
+      edits the sequence (see {{!section-properties}Properties}), so every
+      generator shrinks, a candidate satisfies the constraints of its
+      generator, and a {!bind} shrinks as any generator does. Each generator
+      states its target, the value it parses from choices that are all
+      zero.
 
       {b Printing.} A counterexample prints with its generator's printer. The
       generators of base types print OCaml expressions: literals, and
@@ -930,13 +940,14 @@ module Gen : sig
       corners are [0.], [-0.], [1.], [-1.], and of each sign the least
       subnormal, the least normal and the greatest finite float. Unlike {!int}
       and {!char}, it leaves out part of its type, the non-finite values;
-      {!any_float} draws them. It shrinks toward [0.], and [-0.] shrinks to
-      [0.]. *)
+      {!any_float} draws them. It shrinks toward [0.], an integer before a
+      fraction and a fraction with fewer bits before one with more, and [-0.]
+      shrinks to [0.]. *)
 
   val any_float : float t
   (** [any_float] generates [nan], [infinity] or [neg_infinity] with probability
-      0.1, each equally likely, and a {!float} otherwise. A non-finite value
-      shrinks to [0.]. NaN is equal to nothing under a tolerance, so a law over
+      0.1, each equally likely, and a {!float} otherwise. It shrinks as
+      {!float} does, and a non-finite value toward a finite one. NaN is equal to nothing under a tolerance, so a law over
       [any_float] compares under {!Windtrap.float_exact}. *)
 
   val float_range : float -> float -> float t
@@ -996,10 +1007,10 @@ module Gen : sig
   (** [list ?size gen] generates a list of [gen] values whose length follows
       [size]. Without [size], the length is below [64] and about 5 on average.
 
-      A list shrinks to shorter lists and by shrinking its elements, in an order
-      that is not part of the contract. With an explicit [size] the length
-      shrinks as [size] does, so [~size:(int_range 2 5)] holds for every
-      candidate.
+      A list shrinks toward [[]]: a candidate drops elements, shrinks them or,
+      in a list of lists, merges two lists, in an order that is not part of the
+      contract. With an explicit [size] the length shrinks
+      as [size] does, so [~size:(int_range 2 5)] holds for every candidate.
 
       Sampling raises [Invalid_argument] if [size] generates a negative length.
   *)
@@ -1009,27 +1020,28 @@ module Gen : sig
 
   val option : 'a t -> 'a option t
   (** [option gen] generates [None] with probability 0.15 and [Some v]
-      otherwise, with [v] drawn from [gen]. [Some v] shrinks first to [None],
-      then as [v] does. *)
+      otherwise, with [v] drawn from [gen]. It shrinks toward [None], and [v]
+      as [gen] does. *)
 
   val result : 'a t -> 'e t -> ('a, 'e) result t
   (** [result ok error] generates [Ok] of an [ok] value with probability 0.75
-      and [Error] of an [error] value otherwise. A payload shrinks with its
-      generator, and no candidate changes constructor. *)
+      and [Error] of an [error] value otherwise. It shrinks toward [Ok], and a
+      payload with its generator. *)
 
   val either : 'a t -> 'b t -> ('a, 'b) Either.t t
   (** [either left right] generates [Left] of a [left] value or [Right] of a
-      [right] value with equal probability. It shrinks as {!result} does. *)
+      [right] value with equal probability. It shrinks toward [Left], and a
+      payload with its generator. *)
 
   val pair : 'a t -> 'b t -> ('a * 'b) t
-  (** [pair a b] generates both components. It shrinks the first component, then
-      the second. *)
+  (** [pair a b] generates both components, the first first, and shrinks
+      both. *)
 
   val triple : 'a t -> 'b t -> 'c t -> ('a * 'b * 'c) t
-  (** [triple a b c] is {!pair} for three components, shrunk from the left. *)
+  (** [triple a b c] is {!pair} for three components. *)
 
   val quad : 'a t -> 'b t -> 'c t -> 'd t -> ('a * 'b * 'c * 'd) t
-  (** [quad a b c d] is {!pair} for four components, shrunk from the left. *)
+  (** [quad a b c d] is {!pair} for four components. *)
 
   (** {1:choice Constants, choices and filters} *)
 
@@ -1053,9 +1065,8 @@ module Gen : sig
 
   val permutation : ?pp:(Format.formatter -> 'a -> unit) -> 'a list -> 'a list t
   (** [permutation ~pp values] generates [values] shuffled, every ordering
-      equally likely. It shrinks toward [values] as given: each candidate has
-      fewer pairs of elements out of their order in [values], and every swap of
-      two adjacent elements that are out of order is a candidate. [pp] prints an
+      equally likely. It shrinks toward [values] as given, a candidate moving
+      an element left past elements that come later in [values]. [pp] prints an
       element; without it the permutation has no printer until {!with_pp} gives
       one. *)
 
@@ -1067,16 +1078,17 @@ module Gen : sig
 
   val frequency : (int * 'a t) list -> 'a t
   (** [frequency weighted] generates with one generator of [weighted], each with
-      a probability proportional to its weight. The value shrinks with the
-      generator that drew it, and every candidate is a value of one of the
-      generators. Sampling raises [Invalid_argument] if [weighted] is empty, if
-      a weight is negative, or if the weights sum to less than [1]. *)
+      a probability proportional to its weight. It shrinks toward the first
+      generator of positive weight, as {!one_of} does, and every candidate is a
+      value of one of the generators of positive weight. Sampling raises
+      [Invalid_argument] if [weighted] is empty, if a weight is negative, or if
+      the weights sum to less than [1]. *)
 
   val such_that : ('a -> bool) -> 'a t -> 'a t
   (** [such_that p gen] generates [gen] values that satisfy [p], in at most 100
       draws. When none of them satisfies [p] the case is discarded, as
-      {!Windtrap.reject} discards one. Shrink candidates that fail [p] are
-      dropped. It keeps [gen]'s printer.
+      {!Windtrap.reject} discards one. Every candidate satisfies [p]: shrinking
+      drops the draws that failed it. It keeps [gen]'s printer.
 
       Prefer a generator that satisfies a structural constraint by construction.
   *)
@@ -1089,8 +1101,8 @@ module Gen : sig
 
   val bind : 'a t -> ('a -> 'b t) -> 'b t
   (** [bind gen f] generates [v] with [gen], then a value with [f v]. It shrinks
-      [v] first, and generates again with [f] for each candidate. It then
-      shrinks the inner value. The value prints as the inner value when [f v]
+      [v] and the inner value together: a candidate of [v] parses the inner
+      value from what follows. The value prints as the inner value when [f v]
       prints, and as the pre-image [v -> inner] otherwise. *)
 
   val with_pp : (Format.formatter -> 'a -> unit) -> 'a t -> 'a t

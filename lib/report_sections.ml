@@ -286,7 +286,7 @@ let headline (f : Failure.t) =
              | Failure.Timed_out _ -> ", shrinking timed out")
           (match rendering with
           | Failure.Pre_image -> " computed from "
-          | Failure.Value -> " ")
+          | Failure.Ocaml | Failure.Value -> " ")
           (shown_text (Option.value summary ~default:rendered))
     | Failure.Law { law; clause; equation; terms } -> (
         let head = law_head ~law ~clause in
@@ -1004,6 +1004,7 @@ and facts ~seen ~excerpt = function
         rendering;
         inner;
         failed_again;
+        token = _;
         root = _;
         count = _;
       } ->
@@ -1014,7 +1015,7 @@ and facts ~seen ~excerpt = function
         strf "counterexample (%s):%s"
           (case_name ~examples ~case_index ~shrink_steps)
           (match rendering with
-          | Failure.Value -> ""
+          | Failure.Ocaml | Failure.Value -> ""
           | Failure.Pre_image -> " computed from")
       in
       (* A summary takes the value's place on the head, and the rendering
@@ -1031,7 +1032,7 @@ and facts ~seen ~excerpt = function
       in
       let pre_image =
         match rendering with
-        | Failure.Value -> []
+        | Failure.Ocaml | Failure.Value -> []
         | Failure.Pre_image ->
             [
               [

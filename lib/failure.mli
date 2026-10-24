@@ -207,6 +207,10 @@ type kind =
               counterexample, drawn again, after the search. [None] when it did
               not run again or the test's limit cut that run (see
               {!Property.run}). *)
+      token : string option;
+          (** The replay token of the counterexample, which [--replay] checks
+              alone (see {!Choice.token}). [None] for an example and for a
+              case that no choice sequence describes. *)
     }  (** A property failed. *)
   | Law of {
       law : string;
@@ -274,6 +278,9 @@ and shrink_end =
 
 (** The type for what the [rendered] of a {!constructor-Property} failure is. *)
 and rendering =
+  | Ocaml
+      (** The counterexample as an OCaml value, printed by [Gen]'s own
+          printers alone, which a test can paste into its [~examples]. *)
   | Value
       (** The text of the counterexample itself: a value through the printer of
           its generator, a failing example, or a placeholder that says why no
@@ -472,12 +479,13 @@ val property :
   examples:bool ->
   ?rendering:rendering ->
   ?failed_again:bool ->
+  ?token:string ->
   unit ->
   t
 (** [property ~rendered ~case_index ~shrink_steps ~root ~examples ()] is a
     {!constructor-Property} failure with the fields given. [inner], [count],
-    [summary] and [failed_again] default to [None], [shrink_end] to {!Converged}
-    and [rendering] to {!Value}. Nothing is validated, so the invariants that
+    [summary], [failed_again] and [token] default to [None], [shrink_end] to
+    {!Converged} and [rendering] to {!Value}. Nothing is validated, so the invariants that
     {!type-kind} states are the producer's to keep. *)
 
 val timeout : ?loc:Loc.t -> ?case:timed_case -> float -> t

@@ -1807,7 +1807,7 @@ let proposal =
               test/unit/test_law.ml:102
                 102 │ prop "Version.compare is a total order"
 
-              counterexample (case 1, shrunk 5 steps): (0.0, 0.0, 0.0)
+              counterexample (case 1, shrunk 1 step): (0.0, 0.0, 0.0)
               which failed with:
                 order (agrees with equal): cmp a (r a) = 0 iff a = r a
                 a            0.0

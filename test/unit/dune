@@ -264,7 +264,11 @@
 (test
  (name test_shrink)
  (modules test_shrink)
- (libraries windtrap))
+ (libraries windtrap)
+ (action
+  (progn
+   (run %{test} --corrected)
+   (diff? test_shrink.ml test_shrink.ml.corrected))))
 
 (test
  (name test_choice)

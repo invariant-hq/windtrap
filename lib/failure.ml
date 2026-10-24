@@ -82,6 +82,7 @@ type kind =
       rendering : rendering;
       inner : t option;
       failed_again : bool option;
+      token : string option;
     }
   | Law of {
       law : string;
@@ -111,7 +112,7 @@ and shrink_end =
   | Candidate_raised of text
   | Timed_out of float
 
-and rendering = Value | Pre_image
+and rendering = Ocaml | Value | Pre_image
 
 and t = {
   kind : kind;
@@ -336,7 +337,7 @@ let baseline ?loc baseline state =
 
 let property ?loc ?inner ?count ?summary ~rendered ~case_index ~shrink_steps
     ?(shrink_end = Converged) ~root ~examples ?(rendering = Value) ?failed_again
-    () =
+    ?token () =
   make ?loc
     (Property
        {
@@ -351,6 +352,7 @@ let property ?loc ?inner ?count ?summary ~rendered ~case_index ~shrink_steps
          rendering;
          inner;
          failed_again;
+         token;
        })
 
 let law ?loc ?msg ?clause ~law ~equation terms =

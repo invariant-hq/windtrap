@@ -75,7 +75,7 @@ let count = function None -> "no count" | Some n -> strf "count %d" n
 
 let rendered p =
   match p.rendering with
-  | Failure.Value -> p.rendered
+  | Failure.Ocaml | Failure.Value -> p.rendered
   | Pre_image -> p.rendered ^ " (pre-image)"
 
 let payload_row p =
@@ -1392,7 +1392,7 @@ let changed_in_place () =
   in
   equal
     (pair string (option bool))
-    ( "fail, 0 cases, 0 discards; case 0, 7 steps, converged: [|1; 0|]; \
+    ( "fail, 0 cases, 0 discards; case 0, 9 steps, converged: [|1; 0|]; \
        message unsorted",
       Some true )
     (outcome_row o, failed_again o)

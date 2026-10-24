@@ -120,9 +120,16 @@ geo: 17 passed in 6.0ms (seed s1:296aaf2e3762014b).
 
 When the law fails, the property shrinks the value to a counterexample
 and prints it with the case that found it, the number of shrink steps,
-and the assertion that failed. The counterexample prints as the
-generator drew it, and a failing example as the test gave it, even when
-the law changed it in place, as a law that sorts its array does. What
+and the assertion that failed. A generator
+parses its value from a sequence of bounded choices, and shrinking
+edits the choices of the failing case and parses them again: it deletes
+what one generator call read, such as a list element, deletes runs of
+choices, and lowers each choice, keeping an edit that still fails. So
+every candidate is a value of the generator, a counterexample needs no
+shrinker written by hand, and a value drawn with `Gen.bind` shrinks as
+well as any other. The counterexample prints as the generator drew it,
+and a failing example as the test gave it, even when the law changed it
+in place, as a law that sorts its array does. What
 the law printed in the run that failed on the counterexample, and in no
 other run, follows under `captured output`. The report closes on one
 `replay:` line, above the summary, which runs the run's tests again
@@ -153,7 +160,7 @@ let to_string =
 ```
 
 If `of_string` swapped the sides of a rectangle, shrinking would reduce
-the failing rectangle to `Rect (0, 1)`:
+the failing rectangle to `Rect (1, 0)`:
 
 ```
 $ dune exec examples/03-property-testing/test_geo.exe -- --seed s1:5b58964be30f69a8 -f to_string
@@ -163,18 +170,18 @@ geo: 1 test (seed s1:5b58964be30f69a8)
     examples/03-property-testing/test_geo.ml:27
       27 │ prop "is read back by of_string" gen_shape (fun s ->
 
-    counterexample (case 0, shrunk 7 steps): Rect (0, 1)
+    counterexample (case 0, shrunk 1 step): Rect (1, 0)
     which failed at:
       examples/03-property-testing/test_geo.ml:28
         28 │ equal ~__POS__ (option shape) (Some s)
-      expected  Some Rect (0, 1)
+      expected  Some Rect (1, 0)
                            ~  ~
-      actual    Some Rect (1, 0)
+      actual    Some Rect (0, 1)
                            ~  ~
 ──────────────────────────────────────────────────────────
 
 replay: dune exec examples/03-property-testing/test_geo.exe -- --seed s1:5b58964be30f69a8 -f 'to_string'
-1 failed in 2.1ms.
+1 failed in 0.3ms.
 ```
 
 ## Keeping a counterexample as a regression
@@ -205,7 +212,7 @@ before any generated case:
 
 ```
 $ dune exec examples/03-property-testing/test_geo.exe -- -f 'k squared'
-geo: 1 test (seed s1:96b69c9ed18d0547)
+geo: 1 test (seed s1:23117273368ad709)
 ──────────────────────── failures ────────────────────────
   FAIL  scale › multiplies the area by k squared
     examples/03-property-testing/test_geo.ml:37
@@ -219,7 +226,7 @@ geo: 1 test (seed s1:96b69c9ed18d0547)
       actual    6.
 ──────────────────────────────────────────────────────────
 
-1 failed in 1.4ms.
+1 failed in 0.4ms.
 ```
 
 ## Discarding and labelling cases
@@ -257,11 +264,11 @@ label:
 ```
 $ dune exec examples/03-property-testing/test_geo.exe -- -v --seed s1:5b58964be30f69a8 --prop-count 1000 -f 'undoes scale'
 geo: 1 test (seed s1:5b58964be30f69a8)
-  PASS  inverse › undoes scale by k                1.7ms
+  PASS  inverse › undoes scale by k                1.2ms
     labels (1000 passing cases):
        51.0%  circle
        49.0%  rect
-1 passed in 2.3ms.
+1 passed in 1.3ms.
 ```
 
 A `cover` belongs where its scenario is observed. In a stateful test,
@@ -341,7 +348,7 @@ geo: 1 test (seed s1:5b58964be30f69a8)
     examples/03-property-testing/test_geo.ml:72
       72 │ prop "is never negative"
 
-    counterexample (case 6, shrunk 7 steps): Group [Circle 1]
+    counterexample (case 6, shrunk 2 steps): Group [Circle 1]
     which failed at:
       examples/03-property-testing/test_geo.ml:77
         77 │ (fun d -> at_least ~__POS__ float_exact ~than:0. (Geo.total_area d));
@@ -350,7 +357,7 @@ geo: 1 test (seed s1:5b58964be30f69a8)
 ──────────────────────────────────────────────────────────
 
 replay: dune exec examples/03-property-testing/test_geo.exe -- --seed s1:5b58964be30f69a8 -f 'total_area'
-1 failed in 26ms.
+1 failed in 0.5ms.
 ```
 
 ## Drawing from a list of generators
@@ -427,13 +434,13 @@ geo: 4 tests (seed s1:5b58964be30f69a8)
     examples/03-property-testing/test_geo.ml:85
       85 │ prop "reads back what it prints" gen_shape
 
-    counterexample (case 0, shrunk 2 steps): Rect (0, 1)
+    counterexample (case 0, shrunk 1 step): Rect (1, 0)
     which failed with:
       round trip: g (f x) = x
-      f x      "rect 0 0"
-      g (f x)  Rect (0, 0)
+      f x      "rect 1 1"
+      g (f x)  Rect (1, 1)
                         ~
-      x        Rect (0, 1)
+      x        Rect (1, 0)
                         ~
 
   FAIL  codec › prints what it reads › rect 2 0.5
@@ -449,7 +456,7 @@ geo: 4 tests (seed s1:5b58964be30f69a8)
 ──────────────────────────────────────────────────────────
 
 replay: dune exec examples/03-property-testing/test_geo.exe -- --seed s1:5b58964be30f69a8 -f 'codec'
-2 passed, 2 failed in 2.0ms.
+2 passed, 2 failed in 0.4ms.
 ```
 
 ### Checking a witness's equality and order
@@ -530,17 +537,17 @@ geo: 3 tests (seed s1:5b58964be30f69a8)
     examples/03-property-testing/test_geo.ml:113
       113 │ prop "compare_drawing is a total order"
 
-    counterexample (case 0, shrunk 12 steps): (Circle 0, Circle 0, Circle 1)
+    counterexample (case 0, shrunk 4 steps): (Rect (0, 0), Circle 0, Circle 0)
     which failed with:
-      order (agrees with equal): cmp a c = 0 iff a = c
-      a        Circle 0
-      c        Circle 1
-      cmp a c  -1
-      a = c    true
+      order (agrees with equal): cmp a b = 0 iff a = b
+      a        Rect (0, 0)
+      b        Circle 0
+      cmp a b  1
+      a = b    true
 ──────────────────────────────────────────────────────────
 
 replay: dune exec examples/03-property-testing/test_geo.exe -- --seed s1:5b58964be30f69a8 -f 'witness'
-1 passed, 2 failed in 2.0ms.
+1 passed, 2 failed in 7.9ms.
 ```
 
 ### Choosing a law for what you wrote
@@ -640,7 +647,7 @@ geo: 3 tests (seed s1:5b58964be30f69a8)
 ──────────────────────────────────────────────────────────
 
 replay: dune exec examples/03-property-testing/test_geo.exe -- --seed s1:5b58964be30f69a8 -f 'turn'
-2 passed, 1 failed in 0.9ms.
+2 passed, 1 failed in 0.5ms.
 ```
 
 ### Stating a law with no name
@@ -749,7 +756,7 @@ geo: 1 test (seed s1:5b58964be30f69a8)
     never covered: "partial order: a strict chain" (over 100 passing cases)
 ──────────────────────────────────────────────────────────
 
-1 failed in 2.2ms.
+1 failed in 1.0ms.
 ```
 
 A demand that no passing case met fails the property with

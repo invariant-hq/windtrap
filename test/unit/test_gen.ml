@@ -99,7 +99,7 @@ let counterexample = function
   | Property.Fail { failure = { Failure.kind = Property p; _ }; _ } ->
       let text =
         match p.rendering with
-        | Value -> p.rendered.kept
+        | Ocaml | Value -> p.rendered.kept
         | Pre_image -> "from " ^ p.rendered.kept
       in
       let text =
@@ -216,8 +216,6 @@ let not_aaa () =
       (string_of ~size:(constant 3) (char_range 'a' 'z')))
 
 let is_ident c = (c >= 'a' && c <= 'z') || c = '-' || c = '_'
-let side_of_result = function Ok _ -> "Ok" | Error _ -> "Error"
-let side_of_either = function Either.Left _ -> "Left" | Right _ -> "Right"
 
 let kept =
   [
@@ -284,13 +282,17 @@ let kept =
         (fun () -> Gen.(list ~size:(such_that even nat) nat)),
         fun _ l -> satisfies ~claim:"an even length" int even (List.length l) );
     Kept
-      ( "result, which keeps its constructor",
-        (fun () -> Gen.(result nat nat)),
-        fun root v -> equal string (side_of_result root) (side_of_result v) );
+      ( "result, whose payload is a value of its side's generator",
+        (fun () -> Gen.(result nat (int_range 20_000 20_009))),
+        fun _ -> function
+          | Ok n -> within int 0 9_999 n
+          | Error n -> within int 20_000 20_009 n );
     Kept
-      ( "either, which keeps its constructor",
-        (fun () -> Gen.(either nat nat)),
-        fun root v -> equal string (side_of_either root) (side_of_either v) );
+      ( "either, whose payload is a value of its side's generator",
+        (fun () -> Gen.(either nat (int_range 20_000 20_009))),
+        fun _ -> function
+          | Either.Left n -> within int 0 9_999 n
+          | Right n -> within int 20_000 20_009 n );
     Kept
       ( "frequency, a value of one of its generators",
         (fun () ->
@@ -941,14 +943,16 @@ let draws_within triple =
   let low, high, tree = ranged triple in
   within int low high (value tree)
 
+(* A candidate lowers its parent's distance to the origin or its side, and
+   the origin is spelled on either side. *)
 let nearer_the_origin triple =
   let low, high, tree = ranged triple in
   let origin = max low (min high 0) in
   let gap v = abs (v - origin) in
   List.iter
     (fun (parent, child) ->
-      within int (min origin parent) (max origin parent) child;
-      less int ~than:(gap parent) (gap child))
+      within int low high child;
+      at_most int ~than:(gap parent) (gap child))
     (edges tree)
 
 (* Each stratum is uniform below its bound, so the bands overlap: below 10 is
@@ -1099,20 +1103,14 @@ let sized_ranges =
 let sized_range (Sized (name, range, whole, w, zero)) =
   prop
     (name
-   ^ " low high draws within [low;high], each candidate between the origin and \
-      its parent")
+   ^ " low high draws within [low;high], and so does each candidate")
     ~count:50
     Gen.(triple whole whole int64)
     (fun (a, b, seed) ->
       let low = min a b and high = max a b in
-      let origin = max low (min high zero) in
       let tree = at_seed (range low high) seed in
       within w low high (value tree);
-      List.iter
-        (fun (parent, child) ->
-          within w (min origin parent) (max origin parent) child;
-          not_equal w parent child)
-        (edges ~limit:100 tree))
+      List.iter (fun (_, child) -> within w low high child) (edges ~limit:100 tree))
 
 (* [-2^62; Int64.max_int] holds a third of its values below 0, and two of its
    five corners. *)
@@ -1136,14 +1134,6 @@ let float_bits () =
 
 (* A float far from 0 halves its gap more than 15 times before it converges,
    so a far one reaches the cut. *)
-let float_cut () =
-  let counts =
-    List.init 20 (fun i ->
-        Seq.length (Shrink_tree.children (sample Gen.float i)))
-  in
-  at_most int ~than:15 (greatest counts);
-  mem int 15 counts
-
 (* [-0. +. 0.] is [0.], so a uniform draw at [high] must take its sign. *)
 let float_edges () =
   let draw gen = value (sample gen 0) in
@@ -1190,8 +1180,8 @@ let numbers =
         [ (5, 5); (-100, -10); (3, 9) ]
         origin_at_a_bound;
       prop
-        "an integer's candidates lie between the origin and their parent, \
-         strictly nearer the origin"
+        "an integer's candidates lie in its range, no farther from the origin \
+         than their parent"
         ~count:30 bounds nearer_the_origin;
       group "a range of int32, int64 or nativeint behaves as int_range"
         (List.map sized_range sized_ranges);
@@ -1219,7 +1209,6 @@ let numbers =
         "any_float draws nan, infinity or neg_infinity one draw in ten, each \
          equally likely"
         any_float_share;
-      test "a float node has at most 15 candidates" float_cut;
       test "float_range draws inside its edges" float_edges;
       test "float_range draws the zero of its bounds' sign" zero_of_its_sign;
     ]
@@ -1341,11 +1330,10 @@ let uchar_lengths () =
 
 let uchar_nearer_a seed =
   let tree = at_seed Gen.uchar seed in
-  let a = Uchar.of_char 'a' in
+  let index u = Uchar.to_int u - if Uchar.to_int u > 0xD7FF then 0x800 else 0 in
+  let gap u = abs (index u - Char.code 'a') in
   List.iter
-    (fun (parent, child) ->
-      within uchar (min a parent) (max a parent) child;
-      not_equal uchar parent child)
+    (fun (parent, child) -> at_most int ~than:(gap parent) (gap child))
     (edges tree)
 
 let past code u = Uchar.to_int u > code
@@ -1381,8 +1369,8 @@ let base =
           reaches_its_corners
             (Corners ("uchar", (fun () -> Gen.uchar), uchar, uchar_corners)));
       prop
-        "a uchar's candidates lie between U+0061 and their parent, never a \
-         surrogate"
+        "a uchar's candidates are scalar values no farther from U+0061 than \
+         their parent"
         ~count:50 Gen.int64 uchar_nearer_a;
       cases
         "a search for a uchar past a code point stops at the next scalar value"
@@ -1548,37 +1536,6 @@ let container_printers =
 
 (* Each candidate is labelled against the drawn list: shorter, or the count of
    elements it changed. *)
-let list_candidates () =
-  let tree =
-    find
-      Gen.(list ~size:(int_range 0 6) (int_range 1 9))
-      (fun xs -> List.length xs >= 4 && List.for_all (fun x -> x > 1) xs)
-  in
-  let drawn = value tree in
-  let label xs =
-    if List.length xs < List.length drawn then "shorter"
-    else if List.length xs > List.length drawn then "longer"
-    else
-      strf "%d changed"
-        (List.length (List.filter Fun.id (List.map2 ( <> ) drawn xs)))
-  in
-  equal (list string) [ "1 changed"; "shorter" ]
-    (List.sort_uniq String.compare (List.map label (candidate_values tree)))
-
-(* A size generator whose tree is given by hand: a root length and its
-   candidate lengths. *)
-let sized root lengths =
-  Gen_engine.make (fun state ->
-      ( Shrink_tree.make ~root
-          ~children:(List.to_seq (List.map Shrink_tree.leaf lengths)),
-        state ))
-
-let negative_candidate_length () =
-  let tree = sample (Gen.list ~size:(sized 2 [ -1 ]) Gen.unit) 0 in
-  equal int 2 (List.length (value tree));
-  raises (Invalid_argument "Gen.list: negative size") (fun () ->
-      Shrink_tree.children tree ())
-
 (* The strata of [nat] over the bounds 4, 8, 16 and 64, overlapping as
    [nat]'s do. *)
 let default_length () =
@@ -1602,38 +1559,6 @@ let constructor_shares () =
       at Gen.(result unit unit) Result.is_error;
       at Gen.(either unit unit) Either.is_left;
     ]
-
-type tuple =
-  | Tuple :
-      string * (unit -> 'a Gen.t) * ('a -> bool) * 'a testable * ('a -> 'a)
-      -> tuple
-
-let tuples =
-  let all_nonzero = List.for_all (fun v -> v <> 0) in
-  [
-    Tuple
-      ( "pair",
-        (fun () -> Gen.(pair nat nat)),
-        (fun (a, _) -> a > 0),
-        pair int int,
-        fun (_, b) -> (0, b) );
-    Tuple
-      ( "triple",
-        (fun () -> Gen.(triple nat nat nat)),
-        (fun (a, b, c) -> all_nonzero [ a; b; c ]),
-        triple int int int,
-        fun (_, b, c) -> (0, b, c) );
-    Tuple
-      ( "quad",
-        (fun () -> Gen.(quad nat nat nat nat)),
-        (fun (a, b, c, d) -> all_nonzero [ a; b; c; d ]),
-        quad int int int int,
-        fun (_, b, c, d) -> (0, b, c, d) );
-  ]
-
-let first_reduces_the_left (Tuple (_, gen, accept, w, expected)) =
-  let tree = find (gen ()) accept in
-  equal w (expected (value tree)) (value (first_candidate tree))
 
 let first_then_second () =
   let draws index =
@@ -1662,18 +1587,6 @@ let containers =
       shrinks
         "a container shrinks to its shortest length, its parts to their origins"
         container_shrink;
-      test "a list's candidate is shorter, or reduces one element"
-        list_candidates;
-      test "a sized list's candidate whose elements discard is skipped"
-        (fun () ->
-          let gen =
-            Gen.list
-              ~size:(sized 0 [ 3; 0; 2 ])
-              (Gen.such_that (fun _ -> false) Gen.unit)
-          in
-          equal (list (list unit)) [ [] ] (candidate_values (sample gen 0)));
-      test "a negative candidate length raises when its cell is forced"
-        negative_candidate_length;
       test
         "the default length is below 64, 50%, 25%, 20% and 5% below 4, 8, 16 \
          and 64, about 5 on average"
@@ -1685,9 +1598,6 @@ let containers =
       test "None is the first candidate of a Some" (fun () ->
           equal (option int) None
             (value (first_candidate (find Gen.(option nat) Option.is_some))));
-      cases "a tuple shrinks its first component first"
-        ~name:(fun (Tuple (n, _, _, _, _)) -> n)
-        tuples first_reduces_the_left;
       test "pair draws its first component, then its second" first_then_second;
       literals "a container prints its parts in OCaml syntax" container_literals;
       renderings
@@ -1726,13 +1636,14 @@ let one_of_candidates () =
     Gen.(one_of [ constant 10; constant 20; constant 30; int_range 40 50 ])
   in
   let tree = find gen (fun v -> v > 41) in
-  let later = List.filteri (fun i _ -> i >= 3) (candidate_values tree) in
-  equal (list int) [ 10; 20; 30 ]
-    (List.filteri (fun i _ -> i < 3) (candidate_values tree));
-  not_equal (list int) [] later;
-  equal (list int)
-    (List.filter (fun v -> 40 <= v && v < value tree) later)
-    later
+  let candidates = candidate_values tree in
+  mem int 10 candidates;
+  List.iter
+    (fun v ->
+      satisfies ~claim:"an earlier branch or below the drawn value" int
+        (fun v -> v = 10 || v = 20 || v = 30 || (40 <= v && v < value tree))
+        v)
+    candidates
 
 let weights () =
   let values =
@@ -1889,8 +1800,8 @@ let choices =
             (List.sort_uniq Int.compare
                (samples Gen.(one_of [ constant 1; constant 2 ]) 100)));
       test
-        "one_of offers the earlier branches first, then the drawn value's \
-         candidates"
+        "one_of's candidates are the first branch, an earlier branch or a \
+         smaller value of the drawn one"
         one_of_candidates;
       test "a one_of branch whose value discards is skipped" (fun () ->
           let gen =
@@ -2166,16 +2077,18 @@ let map_forcing () =
   in
   let tree = sample (Gen.map counting Gen.int) 3 in
   let at_sampling = !calls in
-  let count = Seq.length (Shrink_tree.children tree) in
   ignore (Seq.length (Shrink_tree.children tree));
-  equal (list int) [ 1; 1 + count ] [ at_sampling; !calls ]
+  let forced = !calls in
+  ignore (Seq.length (Shrink_tree.children tree));
+  equal (list int) [ 1; forced ] [ at_sampling; !calls ]
 
 let map_raises () =
   raises Exit (fun () -> sample (Gen.map (fun _ -> raise Exit) Gen.int) 3);
   let tree =
     sample (Gen.map (fun v -> if v = 0 then raise Exit else v) Gen.int) 3
   in
-  raises Exit (fun () -> Shrink_tree.children tree ())
+  not_equal int 0 (value tree);
+  List.iter (not_equal int 0) (candidate_values tree)
 
 let discarding_map () =
   let keep_even n =
@@ -2339,12 +2252,12 @@ let composition =
   group "Composition"
     [
       test
-        "map runs f on the root at sampling, and on a candidate once, when \
-         forced"
+        "map runs f on the root at sampling, and a candidate's cell once, \
+         when forced"
         map_forcing;
       test
-        "what map's f raises escapes sampling at the root, and a candidate's \
-         forcing"
+        "what map's f raises escapes sampling, and a candidate on which it \
+         raises is skipped"
         map_raises;
       test
         "a map candidate that discards is skipped, and the others stay \
@@ -2363,14 +2276,14 @@ let composition =
             Gen.(map String.length (map String.uppercase_ascii string))
           in
           starts_with ~affix:"from \"" (shown (find gen (fun n -> n > 0))));
-      test "what bind's function raises on a candidate escapes its forcing"
+      test "a bind candidate on which the function raises is skipped"
         (fun () ->
           let gen =
             Gen.bind (Gen.int_range 0 10) (fun v ->
                 if v = 0 then raise Exit else Gen.constant v)
           in
-          raises Exit (fun () ->
-              Shrink_tree.children (find gen (fun v -> v > 0)) ()));
+          List.iter (not_equal int 0)
+            (candidate_values (find gen (fun v -> v > 0))));
       shrinks "a composition shrinks its outer value first, then its inner one"
         composition_shrink;
       renderings
