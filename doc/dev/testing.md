@@ -49,7 +49,9 @@ what is non-obvious.
   through a real spawned process (a loop that forks cannot be observed
   from inside its own image), with `plain_main.exe` as the zero-mutant
   control that must be declined by name, `runaway/` for the hit-count
-  budget and `inline/` for an armed inline partition.
+  budget and `inline/` for an armed inline partition. Its scenarios
+  share `suite_main.exe`'s one verdict file, so the stanza runs `-j 1`,
+  whatever `WINDTRAP_JOBS` the environment holds.
   Under `semantics/`, `coverage/` and `mutate/` are the
   semantics-preservation suites: a fixture library instrumented
   unconditionally through `(pps)`, run and compared with the
