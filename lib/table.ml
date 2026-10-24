@@ -114,7 +114,7 @@ let check ?loc ?label w rows fn =
         { f with kind = Property { p with table = true; label } }
     | _ -> f
   in
-  match Run.property ?loc ~count:n ?only gen law with
+  match Run.property ?loc ~count:n ?only ~table:true gen law with
   | () -> ()
   | exception Failure.Check_failure ({ kind = Property p; _ } as f)
     when Option.is_some p.domain ->

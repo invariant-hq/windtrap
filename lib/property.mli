@@ -122,12 +122,15 @@ type stats = {
   cases : int;
       (** The cases that ran the law to completion and passed, the examples
           included. *)
+  examples : int;  (** The examples among [cases]. *)
   discards : int;
       (** The discarded cases, the examples included, whether the law or the
           generation discarded them. *)
   whole : int option;
       (** [Some n] when the domain was checked whole, its [n] values (see
           {!run}). *)
+  count : int;
+      (** The generated cases that the run demands pass: [count] of {!run}. *)
   collected : (string * int) list;
       (** The distribution of the labels over the passing cases, sorted by
           label. A {!cover} label counts here too. *)

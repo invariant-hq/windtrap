@@ -187,3 +187,41 @@ checks one: it draws nothing, so its report needs no replay line.
   $ grep 'counterexample (replayed case)' out | sed 's/.*: //' > after
   $ diff before after && echo same counterexamples
   same counterexamples
+
+--json writes the results as one JSON document, a test per line, each
+with the scope of its verdict, then the closing counts: what a property,
+a table and a stateful test ran, a vacuous test's reason, and an empty
+scope for a test that ran no case. The durations are masked:
+
+  $ run env FACADE_FIXTURE=scope ./suite_main.exe --seed s1:0000000000000001 --json scope.json > out 2>&1
+  [1]
+  $ sed -E 's/"duration": [0-9.e-]+/"duration": D/g' scope.json
+  {"version": 1, "suite": "fixture", "seed": "s1:0000000000000001", "tests": [
+    {"path": ["labels"], "verdict": "pass", "attempts": 1, "duration": D, "failures": [], "scope": {"cases": 200, "examples": 1, "count": 200, "discards": 26, "labels": [{"label": "even", "cases": 77}, {"label": "small", "cases": 26}], "cover": [{"label": "small", "cases": 26, "met": true}]}},
+    {"path": ["rows"], "verdict": "pass", "attempts": 1, "duration": D, "failures": [], "scope": {"cases": 3, "examples": 0, "count": 3, "discards": 0, "rows": 3, "labels": [], "cover": []}},
+    {"path": ["counter"], "verdict": "pass", "attempts": 1, "duration": D, "failures": [], "scope": {"cases": 20, "examples": 0, "count": 20, "discards": 0, "labels": [], "cover": []}},
+    {"path": ["plain"], "verdict": "pass", "attempts": 1, "duration": D, "failures": [], "scope": {}},
+    {"path": ["nothing"], "verdict": "vacuous", "reason": "no case and no example ran: ~count:0 runs the examples alone, and there are none", "attempts": 1, "duration": D, "failures": [{"headline": "vacuous: no case and no example ran: ~count:0 runs the examples alone, and there…", "file": "test/cram/run/suite_main.ml", "line": 133}], "scope": {"cases": 0, "examples": 0, "count": 0, "discards": 0, "labels": [], "cover": []}},
+    {"path": ["skips"], "verdict": "skip", "reason": "later", "attempts": 1, "duration": D, "failures": [], "scope": {}}
+  ], "counts": {"tests": 6, "passed": 4, "failed": 0, "vacuous": 1, "skipped": 1, "expected_failures": 0, "flaky": 0, "not_run": 0, "release_failures": 0, "duration": D}}
+  $ tail -1 out | scrub
+  4 passed, 1 skipped, 1 vacuous in DURATION.
+
+Under -v the terminal says the same of each passing test, on its row:
+
+  $ run env FACADE_FIXTURE=scope ./suite_main.exe --seed s1:0000000000000001 -v -f labels -f rows -f counter | sed -E 's/  [0-9.]+m?s/  DURATION/' | scrub
+  fixture: 3 tests (seed SEED)
+    PASS  labels                                     DURATION (200 cases, 1 example, 26 discards)
+      labels (201 passing cases):
+         38.3%  even
+         12.9%  small
+    PASS  rows                                       DURATION (holds on all 3 rows)
+    PASS  counter                                    DURATION (20 cases)
+  3 passed in DURATION.
+
+A target that does not end in .json is a directory, which gets one file
+per suite, and the mirror's relative path is read from the project root:
+
+  $ run env FACADE_FIXTURE=scope WINDTRAP_JSON=reports ./suite_main.exe -f plain > /dev/null
+  $ ls reports
+  fixture.json

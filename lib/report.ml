@@ -265,6 +265,24 @@ let label_table t (s : Property.stats) =
       s.coverage
   end
 
+(* What a property ran, each count that is not zero: the generated cases,
+   or the values of a domain checked whole, then the examples and the
+   discards. A verdict says what held, and a failure what passed before
+   it. *)
+let ran ~verdict (r : Run.result) (s : Property.stats) =
+  let some ?(passed = "") n what =
+    if n > 0 then [ strf "%d %s%s%s" n what (plural n) passed ] else []
+  in
+  let passed = if verdict then "" else " passed" in
+  let drawn = s.cases - s.examples in
+  let unit = if r.table then "row" else "value" in
+  (match s.whole with
+    | Some n when verdict -> [ strf "holds on all %d %s%s" n unit (plural n) ]
+    | Some n -> [ strf "%d of %d %s%s passed" drawn n unit (plural n) ]
+    | None -> some ~passed drawn "case")
+  @ some ~passed s.examples "example"
+  @ some s.discards "discard"
+
 (* The heading counts every byte before the first line shown: what the
    capture cut and the lines the cap drops. *)
 let captured_output t (tail : Failure.tail) =
@@ -300,7 +318,17 @@ let block_body t ~hints (r : Run.result) failures =
       Sections.pp_failure ~ansi:t.ansi ~terminal:t.terminal ~excerpt:true
         ~hints:false t.out f)
     failures;
-  Option.iter (label_table t) r.prop_stats;
+  Option.iter
+    (fun s ->
+      (match ran ~verdict:false r s with
+      | [] -> ()
+      | facts ->
+          put t
+            [
+              plain indent; styled `Faint ("scope: " ^ String.concat ", " facts);
+            ]);
+      label_table t s)
+    r.prop_stats;
   Option.iter (captured_output t)
     (List.find_map (fun (f : Failure.t) -> f.output_tail) failures);
   if hints then
@@ -387,11 +415,9 @@ let commit t block x =
   t.blocks <- t.blocks + 1;
   Pp.flush t.out ()
 
-(* A property whose domain was checked whole says so. *)
-let whole_domain (r : Run.result) =
-  match r.prop_stats with
-  | Some { whole = Some n; _ } -> [ strf "holds on all %d values" n ]
-  | Some { whole = None; _ } | None -> []
+(* A passing property says what it ran. *)
+let scope_qualifiers (r : Run.result) =
+  match r.prop_stats with Some s -> ran ~verdict:true r s | None -> []
 
 (* The verbose row of a result that is not a counted failure. *)
 let row t (r : Run.result) =
@@ -401,7 +427,7 @@ let row t (r : Run.result) =
   | Failure.Pass -> (
       put t
         (test_line ~tag:"PASS" ~style:`Green ~name
-           ~qualifiers:(attempts r @ whole_domain r)
+           ~qualifiers:(attempts r @ scope_qualifiers r)
            ~timing ());
       match r.prop_stats with
       | Some s when s.collected <> [] -> label_table t s
@@ -1015,6 +1041,11 @@ let run
         (Report_junit.write ~invocation:config.invocation ?armed:renderer.armed
            ~suite ~duration:outcome.duration ~results ~release_failures)
         config.junit;
+      Option.iter
+        (Report_json.write ~suite ~seed:config.seed
+           ~selected:(selected renderer) ~duration:outcome.duration ~results
+           ~release_failures)
+        config.json;
       Pp.flush Format.std_formatter ();
       Pp.flush Format.err_formatter ();
       Ok outcome

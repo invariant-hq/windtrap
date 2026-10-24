@@ -27,6 +27,7 @@ type parsed = {
   case : string option;
   verbose : bool option;
   junit : string option;
+  json : string option;
   color : Os.color_mode option;
   log_dir : string option;
   mutate : string list option;
@@ -60,6 +61,7 @@ let empty =
     case = None;
     verbose = None;
     junit = None;
+    json = None;
     color = None;
     log_dir = None;
     mutate = None;
@@ -272,6 +274,11 @@ let entries =
       ~mirror:(mirrored "WINDTRAP_JUNIT" (fun p -> p.junit = None))
       "Also write a JUnit XML report to PATH, or to PATH/<suite>.xml when PATH \
        does not end in .xml.";
+    row "--json"
+      (value "PATH" any (fun p path -> { p with json = Some path }))
+      ~mirror:(mirrored "WINDTRAP_JSON" (fun p -> p.json = None))
+      "Also write a JSON report of the results and their scope to PATH, or to \
+       PATH/<suite>.json when PATH does not end in .json.";
     color_entry;
     row ~short:"-o" "--output"
       (value "DIR" any (fun p dir -> { p with log_dir = Some dir }))
@@ -590,6 +597,7 @@ let settings cli =
         Option.value layered.slow_threshold ~default:defaults.Run.slow_threshold;
       verbose = layered.verbose = Some true;
       junit = absolute_path ~cli ~layered (fun p -> p.junit);
+      json = absolute_path ~cli ~layered (fun p -> p.json);
       mutation;
       github = Os.in_github_actions ();
       (* The facade, which alone holds argv, computes it. *)

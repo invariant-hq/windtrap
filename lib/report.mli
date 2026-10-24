@@ -15,7 +15,8 @@
     payloads in them, written under one [ansi] decision made at {!create}.
     Nothing here alters a status, a count or the scheduling of a run. The
     entries of a failure block and the sections of a mutation report are
-    {!Report_sections}', and the JUnit document is {!Report_junit}'s. *)
+    {!Report_sections}', the JUnit document is {!Report_junit}'s and the JSON
+    document {!Report_json}'s. *)
 
 (** {1:renderer The renderer} *)
 
@@ -445,7 +446,8 @@ val run :
       The [before_summary] closes the envelope and then writes the
       {!val:annotations}.
     + It writes the JUnit file with {!Report_junit.write} when [config.junit] is
-      set.
+      set, then the JSON file with {!Report_json.write}, over the tests that
+      {!header} announced, when [config.json] is.
     + It flushes both standard formatters and returns [Ok] of the executor's
       outcome.
 
@@ -456,7 +458,7 @@ val run :
     An interrupted run does not return. On [Interrupted], [run] ends the
     transcript with {!interrupted}, whose [before_summary] is the close of the
     envelope and the annotations, and calls [on_event]. The process then dies by
-    the signal, with no refusal said and no JUnit file written.
+    the signal, with no refusal said and no JUnit or JSON file written.
 
     [on_event] is a second observer of the run, called after the transcript's
     for every event. It must not raise (see {!Run.execute}) and defaults to
@@ -466,6 +468,6 @@ val run :
     descriptors. A caller that forks must therefore first flush both standard
     formatters and both descriptors, or the child prints the buffered bytes
     again. Beyond what {!Run.execute} does, [run] reads the environment
-    ({!terminal}) and writes standard output, standard error and the JUnit file.
-    Each block also reads the source file of a located failure and
-    {!Os.project_root}. *)
+    ({!terminal}) and writes standard output, standard error, the JUnit file and
+    the JSON file. Each block also reads the source file of a located failure
+    and {!Os.project_root}. *)

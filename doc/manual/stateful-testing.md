@@ -155,10 +155,10 @@ queue:
 ```
 $ dune exec examples/04-stateful-testing/test_bounded_queue.exe -- -v --seed s1:c26eddaeb764a645 -f behaves
 bounded_queue: 1 test (seed s1:c26eddaeb764a645)
-  PASS  queue › behaves like a list                3.3ms
+  PASS  queue › behaves like a list                5.8ms (100 cases)
     labels (100 passing cases):
        46.0%  reached capacity
-1 passed in 4.1ms.
+1 passed in 7.3ms.
 ```
 
 ## Checking the exceptions an operation raises

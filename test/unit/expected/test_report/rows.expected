@@ -74,18 +74,19 @@
   PASS  t                                          0.2ms
 
 === a passing property prints its label table
-  PASS  labels visible                             1.2ms
+  PASS  labels visible                             1.2ms (100 cases)
     labels (100 passing cases):
        46.0%  even
 
 === and none without collected labels
-  PASS  no labels                                  0.2ms
+  PASS  no labels                                  0.2ms (100 cases)
 
 === an expected failure's table is in its block
   XFAIL  known › broken carry                      0.2ms (expected failure: issue #42)
     test/test_carry.ml:5
     expected  1
     actual    2
+    scope: 100 cases passed
     labels (100 passing cases):
        46.0%  even
 

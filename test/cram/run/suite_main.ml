@@ -117,6 +117,23 @@ let accepts =
     prop "small" Gen.int (fun n -> is_true (abs n < 1000));
   ]
 
+(* The scope that --json gives each kind of test: a property with labels,
+   a cover demand, examples and discards, a table, a stateful test, a plain
+   test, a vacuous property and a skip. *)
+let scope =
+  [
+    prop "labels" ~count:200 ~examples:[ 0; 1 ] (Gen.int_range 0 999) (fun n ->
+        assume (n mod 10 <> 0);
+        classify "even" (n mod 2 = 0);
+        cover "small" (n < 100));
+    cases "rows" int [ 1; 2; 3 ] (fun n -> is_true (n > 0));
+    stateful ~count:20 "counter"
+      [ command "incr" (Gen.unit @-> returns unit) ignore ignore ];
+    test "plain" ignore;
+    prop ~count:0 "nothing" Gen.int ignore;
+    test "skips" (fun () -> skip ~reason:"later" ());
+  ]
+
 (* Signals *)
 
 (* The declarations signals.t stops with a signal. A test or a release says
@@ -319,6 +336,7 @@ let declared = function
   | Some "property" -> property
   | Some "properties" -> properties
   | Some "accepts" -> accepts
+  | Some "scope" -> scope
   | Some "waiting" -> waiting
   | Some "releasing" -> releasing
   | Some "leaving" -> leaving

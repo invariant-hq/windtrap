@@ -198,8 +198,8 @@ written, and `-v` says how many rows held:
 ```
 $ dune exec examples/06-resources-and-structure/test_storage.exe -- -v -f 'a name is stored'
 storage: 1 test
-  PASS  database › a name is stored                0.2ms (holds on all 3 values)
-1 passed in 1.5ms.
+  PASS  database › a name is stored                0.1ms (holds on all 3 rows)
+1 passed in 1.2ms.
 ```
 
 A row is identified by how the witness `w` prints it, here `string`'s

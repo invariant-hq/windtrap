@@ -30,8 +30,10 @@ type context = {
   counts : (string, int) Hashtbl.t; (* passing cases per label *)
   demands : (string, unit) Hashtbl.t; (* the [cover] labels reached *)
   mutable cases : int; (* the passing cases *)
+  mutable examples : int; (* the passing examples, among [cases] *)
   mutable discards : int;
   mutable whole : int option; (* the values of a domain checked whole *)
+  mutable count : int; (* the generated cases that must pass *)
 }
 
 let make_context () =
@@ -40,8 +42,10 @@ let make_context () =
     counts = Hashtbl.create 32;
     demands = Hashtbl.create 16;
     cases = 0;
+    examples = 0;
     discards = 0;
     whole = None;
+    count = 0;
   }
 
 let scratch = make_context
@@ -84,8 +88,10 @@ type cover_status = { label : string; hits : int; satisfied : bool }
 
 type stats = {
   cases : int;
+  examples : int;
   discards : int;
   whole : int option;
+  count : int;
   collected : (string * int) list;
   coverage : cover_status list;
 }
@@ -109,8 +115,10 @@ let stats ctx =
   in
   {
     cases = ctx.cases;
+    examples = ctx.examples;
     discards = ctx.discards;
     whole = ctx.whole;
+    count = ctx.count;
     collected = sorted_bindings ctx.counts;
     coverage = List.map status (sorted_bindings ctx.demands);
   }
@@ -331,6 +339,7 @@ let run ?loc ?count ?max_discard ?(examples = []) ?(summary = Fun.const None)
     | Some limit -> limit
   in
   let ctx = make_context () in
+  ctx.count <- count;
   let fail ~case_index ~examples ?record ?summary ?rendering ?(shrink_steps = 0)
       ?shrink_end ?tail ?failed_again ?token ~rendered fault =
     let summary =
@@ -515,7 +524,10 @@ let run ?loc ?count ?max_discard ?(examples = []) ?(summary = Fun.const None)
           law ctx value
         in
         match check printed_first value with
-        | `Passed | `Discarded -> run_examples (index + 1) rest
+        | `Passed ->
+            ctx.examples <- ctx.examples + 1;
+            run_examples (index + 1) rest
+        | `Discarded -> run_examples (index + 1) rest
         | `Timed_out limit -> timed_out ~case_index:index ~examples:true limit
         | `Failed (fault, record) -> (
             let tail = output_after_failure () in

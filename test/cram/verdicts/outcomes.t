@@ -160,6 +160,7 @@ the discards stay within the budget:
     VACUOUS  discards every value
       test/cram/verdicts/verdict_main.ml:N
       every case was discarded (4 discards), so no case ran
+      scope: 0 of 4 values passed, 4 discards
   ──────────────────────────────────────────────────────────
   
   1 vacuous in DURATION.
@@ -174,6 +175,7 @@ label:
     VACUOUS  never covers
       test/cram/verdicts/verdict_main.ml:N
       never covered: "above a million" (over 100 passing cases)
+      scope: 100 cases passed
   ──────────────────────────────────────────────────────────
   
   1 vacuous in DURATION.
@@ -188,6 +190,7 @@ vacuous, naming the command:
     VACUOUS  never calls
       test/cram/verdicts/verdict_main.ml:N
       never called: "never" (over 5 passing cases); a call runs only where its arguments resolve and its ~pre holds
+      scope: 5 cases passed
   ──────────────────────────────────────────────────────────
   
   1 vacuous in DURATION.

@@ -228,6 +228,15 @@ storage: 13 tests
 9 passed, 2 skipped, 1 expected failure, 1 failed in 2.6ms.
 ```
 
+`--json PATH` writes the results as one JSON document, a test per
+line, each with its verdict and its scope, which states what the test
+ran: a property's cases, examples, discards, labels and `cover`
+demands, a table's rows. A vacuous test carries its reason. The
+document closes on the counts of the summary line. A `PATH` that ends
+in `.json` is the file, and any other a directory that gets
+`<suite>.json`; its mirror is `WINDTRAP_JSON`. The document's fields
+are in `lib/report_json.mli`.
+
 `--junit PATH` also writes the report as a JUnit file. A `PATH` that
 ends in `.xml` is the file, and any other is a directory that gets
 `<suite>.xml`. The mirror's relative path is read from the project root,
@@ -378,6 +387,10 @@ OPTIONS:
   --junit=PATH (env WINDTRAP_JUNIT)
       Also write a JUnit XML report to PATH, or to PATH/<suite>.xml when PATH
       does not end in .xml.
+
+  --json=PATH (env WINDTRAP_JSON)
+      Also write a JSON report of the results and their scope to PATH, or to
+      PATH/<suite>.json when PATH does not end in .json.
 
   --color=MODE (env WINDTRAP_COLOR)
       Color output: always, never or auto.

@@ -82,6 +82,7 @@ type parsed = {
       (** [--case PATH]: a path, read by {!settings}. It has no mirror. *)
   verbose : bool option;  (** [-v], [--verbose]. *)
   junit : string option;  (** [--junit PATH]. *)
+  json : string option;  (** [--json PATH]. *)
   color : Os.color_mode option;
       (** [--color MODE]: [always], [never] or [auto], in any case. *)
   log_dir : string option;  (** [-o DIR], [--output DIR]. *)
@@ -188,10 +189,10 @@ val settings : parsed -> (Run.config, error) result
       are ignored. Both at once is [Error (Incompatible_flags _)], whichever
       layer gave each, and it is checked after every mirror. A prefix that
       spells a boolean cannot go through the variable.
-    - A relative path of [--junit] or [-o] is made absolute, against the working
-      directory when the command line gives it and against {!Os.project_root}
-      when its mirror does. It is kept as given when that directory cannot be
-      read.
+    - A relative path of [--junit], [--json] or [-o] is made absolute, against
+      the working directory when the command line gives it and against
+      {!Os.project_root} when its mirror does. It is kept as given when that
+      directory cannot be read.
     - [case_file] is the bytes of the file of [case], read whole through
       {!Choice.of_bytes}, its path relative to the working directory. A file
       that cannot be read is [Error (Invalid_value _)], and a replay token from

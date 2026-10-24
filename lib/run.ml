@@ -43,6 +43,7 @@ type config = {
   slow_threshold : float;
   verbose : bool;
   junit : string option;
+  json : string option;
   mutation : mutation;
   github : bool;
   invocation : invocation;
@@ -75,6 +76,7 @@ let default_config () =
     slow_threshold = 1.0;
     verbose = false;
     junit = None;
+    json = None;
     mutation = No_mutation;
     github = false;
     invocation = `Mirrors;
@@ -104,6 +106,7 @@ type result = {
   duration : float;
   attempts : int;
   prop_stats : Property.stats option;
+  table : bool;
   refuted : case_id list;
 }
 
@@ -227,6 +230,7 @@ type frame = {
   mutable prop : Property.context option;
   mutable law_mark : int option; (* where the law's run began in the log *)
   mutable prop_stats : Property.stats option;
+  mutable table : bool; (* the property is a table's *)
   mutable rev_failures : Failure.t list;
   mutable rev_checks : check list; (* left to the parent, newest first *)
   mutable rev_rows : row list; (* the rows of a table, newest first *)
@@ -249,6 +253,7 @@ let frame ~on_event run (case : Test_tree.case) =
     prop = None;
     law_mark = None;
     prop_stats = None;
+    table = false;
     rev_failures = [];
     rev_checks = [];
     rev_rows = [];
@@ -696,8 +701,10 @@ let recorded () =
   Option.value ~default:[]
     (Hashtbl.find_opt frame.run.recorded (Test_tree.path_to_string frame.path))
 
-let property ?loc ?count ?max_discard ?examples ?summary ?runs ?only gen law =
+let property ?loc ?count ?max_discard ?examples ?summary ?runs ?only
+    ?(table = false) gen law =
   let frame = current_frame () in
+  frame.table <- table;
   let config = frame.run.config and capture = frame.run.capture in
   (* The command line raises a count and never lowers one, so a long run
      scales every property; an examples-only property stays one. *)
@@ -1565,7 +1572,7 @@ let attach_tail tail (outcome : Failure.outcome) =
 
 (* The row of [case] from the outcome of its last attempt. *)
 let result_of (case : Test_tree.case) ~tail ~duration ~attempts ~prop_stats
-    ?(refuted = []) outcome =
+    ?(table = false) ?(refuted = []) outcome =
   let counted = counts_failed ~xfail:case.xfail outcome in
   let outcome =
     match (outcome, case.xfail) with
@@ -1581,6 +1588,7 @@ let result_of (case : Test_tree.case) ~tail ~duration ~attempts ~prop_stats
     duration;
     attempts;
     prop_stats;
+    table;
     refuted = (if counted then refuted else []);
   }
 
@@ -1637,7 +1645,7 @@ let run_case ~on_event run (case : Test_tree.case) =
       let tail () = Capture.output_tail run.capture in
       let result =
         result_of case ~tail ~duration ~attempts:number
-          ~prop_stats:frame.prop_stats ~refuted outcome
+          ~prop_stats:frame.prop_stats ~table:frame.table ~refuted outcome
       in
       run.rev_results <- result :: run.rev_results;
       on_event (Test_finished result);
@@ -2013,11 +2021,11 @@ let adjudicate run case served =
   match served.deferred with
   | None -> (served.result, served.corrected)
   | Some (attempt, tail) ->
-      let { duration; attempts; prop_stats; _ } = served.result in
+      let { duration; attempts; prop_stats; table; _ } = served.result in
       let outcome, corrected, _, refuted = judge run.baselines case attempt in
       ( result_of case
           ~tail:(fun () -> tail)
-          ~duration ~attempts ~prop_stats ~refuted outcome,
+          ~duration ~attempts ~prop_stats ~table ~refuted outcome,
         corrected )
 
 let lost run (case : Test_tree.case) failure ~duration =

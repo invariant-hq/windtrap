@@ -223,6 +223,11 @@
     expected/test_report_junit/subtests.expected
     expected/test_report_junit/subtests.expected.corrected))))
 
+(test
+ (name test_report_json)
+ (modules test_report_json)
+ (libraries windtrap render_fixtures))
+
 (library
  (name gallery)
  (modules gallery)

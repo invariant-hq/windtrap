@@ -76,6 +76,7 @@ let flags (p : Cli.parsed) =
         some "prop_count" string_of_int p.prop_count;
         switch "verbose" p.verbose;
         some "junit" Fun.id p.junit;
+        some "json" Fun.id p.json;
         some "color" color_name p.color;
         some "log_dir" Fun.id p.log_dir;
         some "mutate" words p.mutate;
@@ -142,6 +143,7 @@ let changes (c : Run.config) =
         field "slow_threshold" (strf "%g") (fun c -> c.Run.slow_threshold);
         field "verbose" bool (fun c -> c.Run.verbose);
         field "junit" (opt Fun.id) (fun c -> c.Run.junit);
+        field "json" (opt Fun.id) (fun c -> c.Run.json);
         field "mutation" mutation_name (fun c -> c.Run.mutation);
         field "github" bool (fun c -> c.Run.github);
         field "invocation" invocation_name (fun c -> c.Run.invocation);
@@ -229,6 +231,7 @@ let mirrors =
           ("WINDTRAP_JOBS", "4", "jobs 4");
           ("WINDTRAP_VERBOSE", "1", "verbose");
           ("WINDTRAP_JUNIT", "/reports/junit.xml", "junit /reports/junit.xml");
+          ("WINDTRAP_JSON", "/reports/run.json", "json /reports/run.json");
           ("WINDTRAP_COLOR", "never", "color never");
           ("WINDTRAP_OUTPUT", "/custom-logs", "log_dir /custom-logs");
         ];
@@ -535,6 +538,7 @@ let parsing =
           ([ "-v" ], "verbose");
           ([ "--verbose" ], "verbose");
           ([ "--junit"; "out.xml" ], "junit out.xml");
+          ([ "--json"; "out.json" ], "json out.json");
           ([ "--color"; "never" ], "color never");
           ([ "--color=ALWAYS" ], "color always");
           ([ "--color"; "Auto" ], "color auto");

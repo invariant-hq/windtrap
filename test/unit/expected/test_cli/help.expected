@@ -71,6 +71,10 @@ OPTIONS:
       Also write a JUnit XML report to PATH, or to PATH/<suite>.xml when PATH
       does not end in .xml.
 
+  --json=PATH (env WINDTRAP_JSON)
+      Also write a JSON report of the results and their scope to PATH, or to
+      PATH/<suite>.json when PATH does not end in .json.
+
   --color=MODE (env WINDTRAP_COLOR)
       Color output: always, never or auto.
 

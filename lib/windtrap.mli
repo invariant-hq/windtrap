@@ -182,7 +182,7 @@ val cases :
     [w], whose domain is finite and so {{!section-properties} checked whole}:
     every row runs, in order, and the test fails when [fn] raises on a row or a
     row records a failure. Every row refuted is reported, each as it was given,
-    none shrunk, and [-v] says [holds on all N values] of a table that passed.
+    none shrunk, and [-v] says [holds on all N rows] of a table that passed.
 
     {b Rows.} A row is identified by its printed value under [w], which
     [--failed] records. Two rows that print alike, byte for byte, are
@@ -2014,8 +2014,9 @@ val run : ?argv:string array -> string -> test list -> int
     - [WINDTRAP_MUTATE] on an executable that has no mutant to test, or whose
       selection keeps no test, runs the suite without mutation. [--mutate] there
       returns [1].
-    - A relative path in [WINDTRAP_JUNIT] or [WINDTRAP_OUTPUT] is read from the
-      project root, and one on the command line from the working directory.
+    - A relative path in [WINDTRAP_JUNIT], [WINDTRAP_JSON] or [WINDTRAP_OUTPUT]
+      is read from the project root, and one on the command line from the
+      working directory.
 
     {b Warning.} A changed variable does not make dune run a test again. On a
     stanza that already passed, a mirror does nothing without
@@ -2110,6 +2111,7 @@ module Private : sig
   module Property = Property
   module Report = Report
   module Report_junit = Report_junit
+  module Report_json = Report_json
   module Report_sections = Report_sections
   module Run = Run
   module Seed = Seed

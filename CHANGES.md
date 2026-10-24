@@ -17,9 +17,9 @@
   witness `(Testable.contramap f text)`, which keeps the names as the
   rows' identities. Because a table is one test, `-f` selects a table
   and not one row, `-v` prints one line,
-  `PASS  t (holds on all 3 values)`, `timeout` and `retries` cover the
+  `PASS  t (holds on all 3 rows)`, `timeout` and `retries` cover the
   whole table, the summary counts a table once, and a table with no row
-  fails, since it checks nothing, where 0.2.0 declared no test.
+  is vacuous, since it checks nothing, where 0.2.0 declared no test.
 - Each row of a table keeps or withholds its baseline corrections as a
   test of its own would, in the order of the rows and at every `-j`: a
   row that also fails another way keeps none, and the next rows are
@@ -191,6 +191,19 @@
 
 ### Running
 
+- `--json PATH` (`WINDTRAP_JSON`) also writes the results as one JSON
+  document, versioned, a test per line, closed by the summary's counts.
+  Each test carries its verdict (`pass`, `fail`, `vacuous`, `skip`,
+  `xfail`), the reason of a vacuous test or a skip, its failures and
+  its scope: what a property, a table or a stateful test ran (its
+  cases, examples, count, discards, the values or rows of a domain
+  checked whole, its labels and its `cover` demands). A `PATH` that
+  ends in `.json` is the file, and any other a directory with one file
+  per suite, as for `--junit`.
+- Under `-v` a passing property's row says what it ran, as
+  `PASS  sorts  1.2ms (100 cases, 2 examples, 14 discards)`, and a
+  table's says `holds on all 3 rows`; a failing property's block says
+  what passed before it failed, as `scope: 37 cases passed, 3 discards`.
 - The process that calls `run` runs no test. Worker processes forked
   from it run the tests, and it decides each verdict from what a worker
   reports, how it ends and how long it takes. A test that calls `exit`

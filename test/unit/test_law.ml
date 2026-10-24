@@ -1826,6 +1826,7 @@ let proposal =
                 r a          0.0.0
                 cmp a (r a)  0
                 a = r a      false
+              scope: 1 case passed
               labels (1 passing case):
                 100.0%  order: an unequal pair
 
@@ -1841,12 +1842,14 @@ let proposal =
                 g (f x) failed with:
                   expected  Some _
                   actual    None
+              scope: 1 of 2 rows passed
 
             VACUOUS  path › Path.equal is an equivalence
               test/unit/test_law.ml:113
                 113 │ prop "Path.equal is an equivalence"
 
               never covered: "equivalence: an unequal pair" (over 100 passing cases)
+              scope: 100 cases passed
               labels (100 passing cases):
                 100.0%  equivalence: r a differs from a
               covered labels:

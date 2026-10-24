@@ -250,7 +250,7 @@ before any generated case:
 
 ```
 $ dune exec examples/03-property-testing/test_geo.exe -- -f 'k squared'
-geo: 1 test (seed s1:e9468f9856a0f875)
+geo: 1 test (seed s1:24a5d4724889f425)
 ──────────────────────── failures ────────────────────────
   FAIL  scale › multiplies the area by k squared
     examples/03-property-testing/test_geo.ml:37
@@ -264,7 +264,7 @@ geo: 1 test (seed s1:e9468f9856a0f875)
       actual    6.
 ──────────────────────────────────────────────────────────
 
-1 failed in 1.6ms.
+1 failed in 1.5ms.
 ```
 
 ## Discarding and labelling cases
@@ -304,17 +304,17 @@ let inverse =
     ]
 ```
 
-Under `-v` the passing property prints the share of its cases under each
-label:
+Under `-v` the passing property says what it ran, its cases and its
+discards, and prints the share of its cases under each label:
 
 ```
 $ dune exec examples/03-property-testing/test_geo.exe -- -v --seed s1:5b58964be30f69a8 --prop-count 1000 -f 'undoes scale'
 geo: 1 test (seed s1:5b58964be30f69a8)
-  PASS  inverse › undoes scale by k                1.1ms
+  PASS  inverse › undoes scale by k                2.2ms (1000 cases, 77 discards)
     labels (1000 passing cases):
        51.0%  circle
        49.0%  rect
-1 passed in 1.3ms.
+1 passed in 2.9ms.
 ```
 
 A `cover` belongs where its scenario is observed. In a stateful test,
@@ -401,10 +401,11 @@ geo: 1 test (seed s1:5b58964be30f69a8)
         77 │ (fun d -> at_least ~__POS__ float_exact ~than:0. (Geo.total_area d));
       expected  at least 0.
       actual    -3.141592653589793
+    scope: 6 cases passed
 ──────────────────────────────────────────────────────────
 
 replay: dune exec examples/03-property-testing/test_geo.exe -- --seed s1:5b58964be30f69a8 -f 'total_area'
-1 failed in 1.6ms.
+1 failed in 2.4ms.
 ```
 
 ## Drawing from a list of generators
@@ -503,10 +504,11 @@ geo: 3 tests (seed s1:5b58964be30f69a8)
                        ~
       x        "rect 2 0.5"
                        ~~~
+    scope: 1 of 2 rows passed
 ──────────────────────────────────────────────────────────
 
 replay: dune exec examples/03-property-testing/test_geo.exe -- --seed s1:5b58964be30f69a8 -f 'codec'
-1 passed, 2 failed in 1.7ms.
+1 passed, 2 failed in 2.4ms.
 ```
 
 ### Checking a witness's equality and order
@@ -577,6 +579,7 @@ geo: 3 tests (seed s1:5b58964be30f69a8)
       110 │ prop "equal_drawing is an equivalence"
 
     never covered: "equivalence: an unequal pair" (over 100 passing cases)
+    scope: 100 cases passed
     labels (100 passing cases):
       100.0%  equivalence: r a differs from a
     covered labels:
@@ -598,7 +601,7 @@ geo: 3 tests (seed s1:5b58964be30f69a8)
 ──────────────────────────────────────────────────────────
 
 replay: dune exec examples/03-property-testing/test_geo.exe -- --seed s1:5b58964be30f69a8 -f 'witness'
-1 passed, 1 failed, 1 vacuous in 5.6ms.
+1 passed, 1 failed, 1 vacuous in 3.8ms.
 ```
 
 ### Choosing a law for what you wrote
@@ -720,9 +723,10 @@ geo: 3 tests (seed s1:5b58964be30f69a8)
       inv x         0
       op x (inv x)  3
       e             0
+    scope: 0 of 4 values passed
 ──────────────────────────────────────────────────────────
 
-2 passed, 1 failed in 0.3ms.
+2 passed, 1 failed in 1.5ms.
 ```
 
 ### Stating a law with no name
@@ -829,9 +833,10 @@ geo: 1 test (seed s1:5b58964be30f69a8)
       166 │ prop "is a partial order"
 
     never covered: "partial order: a strict chain" (over 100 passing cases)
+    scope: 100 cases passed
 ──────────────────────────────────────────────────────────
 
-1 vacuous in 4.3ms.
+1 vacuous in 3.5ms.
 ```
 
 A demand that no passing case met makes the property vacuous, with

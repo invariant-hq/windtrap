@@ -146,6 +146,10 @@ type config = {
   junit : string option;
       (** [--junit]: a file, or a directory, where a JUnit report is written
           too. [None] writes none. *)
+  json : string option;
+      (** [--json]: a file, or a directory, where a JSON report of the results
+          and their scope is written too ({!Report_json}). [None] writes none.
+      *)
   mutation : mutation;  (** [--mutate] and [--arm]. *)
   github : bool;
       (** Whether the report is written for GitHub Actions, with its group and
@@ -161,8 +165,8 @@ type config = {
     its command line, its mirrors and the defaults, in that precedence (see
     {!Cli.settings}). It is resolved once, and nothing reads a flag or a mirror
     again while the run executes. {!Report} alone reads [color],
-    [slow_threshold], [verbose], [junit], [github] and [invocation], so they
-    change no outcome and no exit code. *)
+    [slow_threshold], [verbose], [junit], [json], [github] and [invocation], so
+    they change no outcome and no exit code. *)
 
 val default_config : unit -> config
 (** [default_config ()] is the configuration of a run given no flag: no
@@ -419,6 +423,9 @@ type result = {
           outcome, which a timeout in a case does. [None] for any other test,
           and for a property that a skip ended, or a timeout outside its cases.
       *)
+  table : bool;
+      (** [true] iff the test is a table: its property was given [table] (see
+          {!property}), so its cases are rows. *)
   refuted : case_id list;
       (** For a row that counts as failed, the cases that its last attempt
           refuted, when each of its failures belongs to one: the rows of a table
@@ -449,13 +456,16 @@ val property :
   ?summary:('a -> string option) ->
   ?runs:int ->
   ?only:(int -> bool) ->
+  ?table:bool ->
   'a Gen.t ->
   ('a -> unit) ->
   unit
 (** [property gen law] is the body of the test that {!prop} declares, [loc]
     being its declaration site. It returns [()] on a [Pass] and raises the
     failure of any other outcome as a [Failure.Check_failure] (see {!prop}).
-    [runs] and [only] are {!Property.run}'s. Raises as {!current_frame} does.
+    [runs] and [only] are {!Property.run}'s. [table], [false] by default, says
+    that the test is a table, whose row says so ([table]). Raises as
+    {!current_frame} does.
 
     [config.replay] is the token that the engine replays. Otherwise, under
     [config.failed_only], the {!recorded} counterexamples of the test are

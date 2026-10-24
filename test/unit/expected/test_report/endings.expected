@@ -106,6 +106,7 @@ flaky tests (1):
 ──────────────────────── failures ────────────────────────
   FAIL  p
     coverage unsatisfied
+    scope: 100 cases passed, 3 discards
     labels (100 passing cases):
        36.0%  empty
        64.0%  nonempty
@@ -120,6 +121,7 @@ flaky tests (1):
 ──────────────────────── failures ────────────────────────
   FAIL  p
     coverage unsatisfied
+    scope: 100 cases passed, 3 discards
     labels (100 passing cases):
        36.0%  empty
        64.0%  nonempty

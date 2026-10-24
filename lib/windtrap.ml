@@ -287,6 +287,7 @@ module Private = struct
   module Property = Property
   module Report = Report
   module Report_junit = Report_junit
+  module Report_json = Report_json
   module Report_sections = Report_sections
   module Run = Run
   module Seed = Seed
