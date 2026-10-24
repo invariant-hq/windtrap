@@ -128,6 +128,12 @@ let shrink ?(from = fun _ -> true) ?(failing = fun _ -> true) gen =
 
 let shrinks_to ?from ?failing gen = fst (shrink ?from ?failing gen)
 
+(* A domain of at most the count is checked whole and nothing shrinks, so a
+   search over a small range draws an [int64] beside the value: the domain
+   is then endless, and [gen]'s printer [pp] prints the value. *)
+let endless pp gen = Gen.with_pp pp (Gen.map fst (Gen.pair gen Gen.int64))
+let pp_char ppf c = Format.fprintf ppf "%C" c
+
 (* A discard and the exceptions [Failure.catch] never returns escape the
    verbs, which run the code under that guard, so they are caught here. *)
 let ended f =
@@ -832,7 +838,7 @@ let numbers_shrink =
   let nonzero v = v <> 0 in
   [
     Shrinks ("int", (fun () -> Gen.int), nonzero, "0");
-    Shrinks ("nat", (fun () -> Gen.nat), nonzero, "0");
+    Shrinks ("nat", (fun () -> endless Pp.int Gen.nat), nonzero, "0");
     Shrinks
       ( "small_int, from a negative value",
         (fun () -> Gen.small_int),
@@ -840,12 +846,12 @@ let numbers_shrink =
         "0" );
     Shrinks
       ( "int_range 10 100",
-        (fun () -> Gen.int_range 10 100),
+        (fun () -> endless Pp.int (Gen.int_range 10 100)),
         (fun v -> v > 10),
         "10" );
     Shrinks
       ( "int_range (-100) (-10)",
-        (fun () -> Gen.int_range (-100) (-10)),
+        (fun () -> endless Pp.int (Gen.int_range (-100) (-10))),
         (fun v -> v < -10),
         "-10" );
     Shrinks
@@ -864,12 +870,12 @@ let numbers_shrink =
         "0n" );
     Shrinks
       ( "int32_range 10l 100l",
-        (fun () -> Gen.int32_range 10l 100l),
+        (fun () -> endless (fun ppf n -> Format.fprintf ppf "%ldl" n) (Gen.int32_range 10l 100l)),
         (fun v -> v > 10l),
         "10l" );
     Shrinks
       ( "int64_range (-100L) (-10L)",
-        (fun () -> Gen.int64_range (-100L) (-10L)),
+        (fun () -> endless (fun ppf n -> Format.fprintf ppf "%LdL" n) (Gen.int64_range (-100L) (-10L))),
         (fun v -> v < -10L),
         "-10L" );
     Shrinks
@@ -1267,20 +1273,21 @@ let base_literals =
 let base_shrink =
   let longer s = String.length s >= 2 in
   [
-    Shrinks ("char", (fun () -> Gen.char), (fun c -> c <> 'a'), "'a'");
+    Shrinks
+      ("char", (fun () -> endless pp_char Gen.char), (fun c -> c <> 'a'), "'a'");
     Shrinks
       ( "char_range 'b' 'y'",
-        (fun () -> Gen.char_range 'b' 'y'),
+        (fun () -> endless pp_char (Gen.char_range 'b' 'y')),
         (fun c -> c > 'b'),
         "'b'" );
     Shrinks
       ( "char_range 'A' 'Z'",
-        (fun () -> Gen.char_range 'A' 'Z'),
+        (fun () -> endless pp_char (Gen.char_range 'A' 'Z')),
         (fun c -> c < 'Z'),
         "'Z'" );
     Shrinks
       ( "char_range '0' '9'",
-        (fun () -> Gen.char_range '0' '9'),
+        (fun () -> endless pp_char (Gen.char_range '0' '9')),
         (fun c -> c < '9'),
         "'9'" );
     Shrinks ("uchar", (fun () -> Gen.uchar), always, "Uchar.of_int 0x61");
@@ -1629,7 +1636,7 @@ let of_list_values () =
   equal (list int) [ 10; 20; 30 ] (List.sort_uniq Int.compare (samples gen 100));
   equal (list int) [ 10; 20 ] (candidate_values (find gen (fun v -> v = 30)));
   equal string "10"
-    (shrinks_to ~from:(fun v -> v = 30) (Gen.with_pp Format.pp_print_int gen))
+    (shrinks_to ~from:(fun v -> v = 30) (endless Format.pp_print_int gen))
 
 let one_of_candidates () =
   let gen =

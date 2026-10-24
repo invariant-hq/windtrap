@@ -117,8 +117,11 @@ let shown s = Text.elide_middle max_value_bytes ~show:Fun.id s
 
 (* An example is never shrunk. *)
 (* A replayed case is reported as an example is, and keeps its token. *)
-let case_name ?(replayed = false) ~examples ~case_index ~shrink_steps () =
+let case_name ?(replayed = false) ?domain ~examples ~case_index ~shrink_steps
+    () =
   if replayed then "replayed case"
+  else if Option.is_some domain then
+    strf "value %d of %d" (case_index + 1) (Option.get domain)
   else if examples then strf "example %d" (case_index + 1)
   else if shrink_steps = 0 then strf "case %d" case_index
   else strf "case %d, shrunk %s" case_index (counted shrink_steps "step")
@@ -275,13 +278,19 @@ let headline (f : Failure.t) =
           examples;
           rendering;
           token;
+          domain;
+          also;
           _;
         } ->
         (* [shrunk 100 steps] alone reads as a converged search. *)
         strf "property failed (%s%s):%s%s"
           (case_name
              ~replayed:(examples && Option.is_some token)
-             ~examples ~case_index ~shrink_steps ())
+             ?domain ~examples ~case_index ~shrink_steps ()
+          ^
+          match also with
+          | [] -> ""
+          | also -> strf ", %d refuted" (List.length also + 1))
           (if examples then ""
            else
              match shrink_end with
@@ -455,13 +464,15 @@ let accept ?armed ?(invocation = `Mirrors) ~tests failures =
              | `Run config -> selection_words invocation config
              | `Filter filter -> filter_flag filter))
 
-(* The seed and the case count of a failure whose case was generated. *)
+(* The seed and the case count of a failure whose case was generated. A
+   domain checked whole fails again under any seed. *)
 let drawn (f : Failure.t) =
   match f.kind with
-  | Failure.Property { examples = false; root; count; _ }
+  | Failure.Property { examples = false; domain = None; root; count; _ }
   | Failure.Timeout { case = Some { examples = false; root; count; _ }; _ } ->
       Some (root, count)
   | Failure.Property { examples = true; _ }
+  | Failure.Property { domain = Some _; _ }
   | Failure.Timeout { case = Some { examples = true; _ } | None; _ }
   | Failure.Equality _ | Failure.Containment _ | Failure.Raise _
   | Failure.Baseline _ | Failure.Law _ | Failure.Message _ ->
@@ -1010,6 +1021,8 @@ and facts ~seen ~excerpt = function
         inner;
         failed_again;
         token;
+        domain;
+        also;
         root = _;
         count = _;
       } ->
@@ -1020,7 +1033,7 @@ and facts ~seen ~excerpt = function
         strf "counterexample (%s):%s"
           (case_name
              ~replayed:(examples && Option.is_some token)
-             ~examples ~case_index ~shrink_steps ())
+             ?domain ~examples ~case_index ~shrink_steps ())
           (match rendering with
           | Failure.Ocaml | Failure.Value -> ""
           | Failure.Pre_image -> " computed from")
@@ -1106,9 +1119,11 @@ and facts ~seen ~excerpt = function
             :: List.map (indented "  ") (entry ~seen ~excerpt ~inner:true i)
       in
       (* The line that keeps the case: an example to paste where its value
-         prints as OCaml, else the token that replays it. *)
+         prints as OCaml, else the token that replays it. A domain checked
+         whole checks the value again on every run, and needs neither. *)
       let keep =
         match (rendering, token) with
+        | _ when Option.is_some domain -> []
         | Failure.Ocaml, _ ->
             let value = List.map String.trim (Text.split_lines rendered) in
             let value = String.concat " " value in
@@ -1117,7 +1132,14 @@ and facts ~seen ~excerpt = function
             [ line ("replay it: --replay " ^ token) ]
         | (Failure.Value | Failure.Pre_image), None -> []
       in
-      counterexample @ pre_image @ stop @ again @ keep @ inner
+      (* A domain checked whole reports every value it refuted, each as the
+         first is. *)
+      let others =
+        List.concat_map
+          (fun (f : Failure.t) -> [] :: facts ~seen ~excerpt f.kind)
+          also
+      in
+      counterexample @ pre_image @ stop @ again @ keep @ inner @ others
   | Failure.Law { law; clause; equation; terms } ->
       line (strf "%s: %s" (law_head ~law ~clause) equation)
       :: law_terms ~seen ~excerpt terms

@@ -1447,7 +1447,8 @@ let no_order =
 
 (* Demands *)
 
-(* The law of a property that draws [value] in each of five cases. *)
+(* The law of a property over [value] alone, a domain of one value, which
+   is checked whole. *)
 let demanded value law =
   match Run.property ~count:5 (Gen.constant value) law with
   | () -> "covered"
@@ -1461,7 +1462,7 @@ let fn =
 let applied h = h 0
 let wrapped h y = h y
 let paired = Testable.make ~pp:(fun ppf (n, _) -> pp_int ppf n) ~equal:( == )
-let never label = strf "never covered: %S (over 5 passing cases)" label
+let never label = strf "never covered: %S (over 1 passing cases)" label
 
 let demand_rows =
   [
@@ -1487,7 +1488,7 @@ let demand_rows =
       "covered" );
     ( "equivalence, both demands unmet",
       (fun () -> demanded (1, 1) (Law.equivalence ~respell:Fun.id int)),
-      {|never covered: "equivalence: an unequal pair", "equivalence: r a differs from a" (over 5 passing cases)|}
+      {|never covered: "equivalence: an unequal pair", "equivalence: r a differs from a" (over 1 passing cases)|}
     );
     ( "order, a equal to b and apart from c",
       (fun () -> demanded (1, 1, 2) (Law.order int)),
@@ -1696,7 +1697,7 @@ let demands =
       test "a prop's law registers its demands" (fun () ->
           equal string "fail body" (Recorded.row where [ "prop" ]);
           equal string
-            {|never covered: "ignores: g x differs from x" (over 10 passing cases)|}
+            {|never covered: "ignores: g x differs from x" (over 1 passing cases)|}
             (message where [ "prop" ]));
       test "a stateful test's law registers its demands" (fun () ->
           equal string "fail body" (Recorded.row where [ "stateful" ]);

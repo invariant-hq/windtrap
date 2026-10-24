@@ -211,6 +211,14 @@ type kind =
           (** The replay token of the counterexample, which [--replay] checks
               alone (see {!Choice.token}). [None] for an example and for a
               case that no choice sequence describes. *)
+      domain : int option;
+          (** [Some n] when the property's domain was checked whole, its [n]
+              values: [case_index] is then the position of the value among
+              them, and nothing is shrunk. *)
+      also : t list;
+          (** The other values that a domain checked whole refuted, in order,
+              each a {!constructor-Property} failure of its own, and [[]]
+              otherwise. *)
     }  (** A property failed. *)
   | Law of {
       law : string;
@@ -480,12 +488,14 @@ val property :
   ?rendering:rendering ->
   ?failed_again:bool ->
   ?token:string ->
+  ?domain:int ->
+  ?also:t list ->
   unit ->
   t
 (** [property ~rendered ~case_index ~shrink_steps ~root ~examples ()] is a
     {!constructor-Property} failure with the fields given. [inner], [count],
-    [summary], [failed_again] and [token] default to [None], [shrink_end] to
-    {!Converged} and [rendering] to {!Value}. Nothing is validated, so the invariants that
+    [summary], [failed_again], [token] and [domain] default to [None], [also]
+    to [[]], [shrink_end] to {!Converged} and [rendering] to {!Value}. Nothing is validated, so the invariants that
     {!type-kind} states are the producer's to keep. *)
 
 val timeout : ?loc:Loc.t -> ?case:timed_case -> float -> t

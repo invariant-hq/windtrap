@@ -83,6 +83,8 @@ type kind =
       inner : t option;
       failed_again : bool option;
       token : string option;
+      domain : int option;
+      also : t list;
     }
   | Law of {
       law : string;
@@ -337,7 +339,7 @@ let baseline ?loc baseline state =
 
 let property ?loc ?inner ?count ?summary ~rendered ~case_index ~shrink_steps
     ?(shrink_end = Converged) ~root ~examples ?(rendering = Value) ?failed_again
-    ?token () =
+    ?token ?domain ?(also = []) () =
   make ?loc
     (Property
        {
@@ -353,6 +355,8 @@ let property ?loc ?inner ?count ?summary ~rendered ~case_index ~shrink_steps
          inner;
          failed_again;
          token;
+         domain;
+         also;
        })
 
 let law ?loc ?msg ?clause ~law ~equation terms =

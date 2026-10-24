@@ -285,7 +285,7 @@ let shrinking_line_cut () =
   ends_with ~affix:"...: shrinking, 12 steps\u{2026}" line
 
 let label_stats collected =
-  { Property.cases = 100; discards = 0; collected; coverage = [] }
+  { Property.cases = 100; discards = 0; whole = None; collected; coverage = [] }
 
 let silent_rows =
   [
@@ -1093,6 +1093,7 @@ let endings_entries () =
             ~prop_stats:
               {
                 Property.cases = 100;
+                whole = None;
                 discards = 3;
                 collected = [ ("empty", 36); ("nonempty", 64) ];
                 coverage =
@@ -1115,6 +1116,7 @@ let endings_entries () =
             ~prop_stats:
               {
                 Property.cases = 100;
+                whole = None;
                 discards = 3;
                 collected = [ ("empty", 36); ("nonempty", 64) ];
                 coverage =

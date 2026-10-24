@@ -52,6 +52,10 @@
   its subterm or shrink a `Gen.bind`, which 0.2.0's trees could not;
   each generator keeps its distribution and its shrink target
   (doc/manual/property-testing.md#reading-a-counterexample).
+- A property whose generator has no more values than its count, as
+  `Gen.bool` or `Gen.int_range 0 3` have, runs its law on every value
+  once instead of sampling: `-v` says `holds on all N values`, and a
+  failure reports every value refuted, none shrunk.
 - `Gen.result`, `Gen.either` and `Gen.frequency` shrink toward `Ok`,
   `Left` and the first generator of positive weight, where 0.2.0 kept
   the drawn constructor or generator.

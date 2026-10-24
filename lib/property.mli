@@ -108,6 +108,9 @@ type stats = {
   discards : int;
       (** The discarded cases, the examples included, whether the law or the
           generation discarded them. *)
+  whole : int option;
+      (** [Some n] when the domain was checked whole, its [n] values (see
+          {!run}). *)
   collected : (string * int) list;
       (** The distribution of the labels over the passing cases, sorted by
           label. A {!cover} label counts here too. *)
@@ -254,6 +257,18 @@ val run :
     before [law], which can change it. A failing example thus prints as it was
     given, whatever [prints_run]. A control that the printer raises acts as one
     that [law] raises.
+
+    {b Finite domains.} After the examples, unless [count] is [0] or [gen] is
+    a tree of [Gen.Engine.make], the run parses [gen]'s sequences in
+    lexicographic order, each reading zeros past its prefix, to find whether
+    its domain has at most [count] values; a sequence that discards or that
+    {!Choice.respelled} is no value. It stops as soon as the domain proves
+    larger, endless or raising (see the bounds in [property.ml]). A domain of
+    at most [count] values is checked whole, in place of the generated cases:
+    the law runs on every value in that order, [stats.whole] is [Some n], and
+    when values fail the [Fail]'s failure is the first, with [domain]
+    [Some n], [case_index] its position, no shrink step, and the others in
+    [also]. Discards and demands are judged as after generated cases.
 
     {b Generated cases.} [index] counts from zero and counts the discarded
     cases, so a discarded seed is never drawn again. The run ends when [count]

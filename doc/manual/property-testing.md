@@ -76,14 +76,18 @@ them.
 
 `prop name gen law` is a test that runs `law` on the values `gen` draws
 and asserts with the verbs of [Assertions](assertions.md). `~count` sets
-its number of cases, 100 by default, and `--prop-count` raises the
-count of every property whose count is smaller, so a long run scales
-them all. `Gen` has a generator for each type that
-has a witness, under the same name, and composes them with `map`, `let+`
-and `one_of`. `Gen.with_pp` gives a generator the printer its
-counterexamples print with, and `Gen.of_list ~pp` and `Gen.constant ~pp`
-take it with the values they list. Without one, a value that `map` or `let+`
-computed prints as what it was computed from, after `computed from`.
+its number of cases, 100 by default, and `--prop-count` raises the count
+of every property whose count is smaller, so a long run scales them all.
+A generator with no more values than the count, as `Gen.bool`,
+`Gen.int_range 0 3` or a pair of them, is not sampled: the law runs on
+every value once, `-v` says `holds on all N values`, and a failure
+reports every value refuted, none shrunk. `Gen` has a generator for each
+type that has a witness, under the same name, and composes them with
+`map`, `let+` and `one_of`. `Gen.with_pp` gives a generator the printer
+its counterexamples print with, and `Gen.of_list ~pp` and `Gen.constant
+~pp` take it with the values they list. Without one, a value that `map`
+or `let+` computed prints as what it was computed from, after `computed
+from`.
 
 `test/test_geo.ml`:
 
@@ -183,7 +187,7 @@ geo: 1 test (seed s1:5b58964be30f69a8)
 ──────────────────────────────────────────────────────────
 
 replay: dune exec examples/03-property-testing/test_geo.exe -- --seed s1:5b58964be30f69a8 -f 'to_string'
-1 failed in 0.3ms.
+1 failed in 0.4ms.
 ```
 
 ## Keeping a counterexample as a regression
@@ -225,7 +229,7 @@ before any generated case:
 
 ```
 $ dune exec examples/03-property-testing/test_geo.exe -- -f 'k squared'
-geo: 1 test (seed s1:331b97cef172ecb7)
+geo: 1 test (seed s1:276f049bf74a4ded)
 ──────────────────────── failures ────────────────────────
   FAIL  scale › multiplies the area by k squared
     examples/03-property-testing/test_geo.ml:37
@@ -239,7 +243,7 @@ geo: 1 test (seed s1:331b97cef172ecb7)
       actual    6.
 ──────────────────────────────────────────────────────────
 
-1 failed in 0.4ms.
+1 failed in 0.5ms.
 ```
 
 ## Discarding and labelling cases
@@ -277,11 +281,11 @@ label:
 ```
 $ dune exec examples/03-property-testing/test_geo.exe -- -v --seed s1:5b58964be30f69a8 --prop-count 1000 -f 'undoes scale'
 geo: 1 test (seed s1:5b58964be30f69a8)
-  PASS  inverse › undoes scale by k                1.5ms
+  PASS  inverse › undoes scale by k                1.1ms
     labels (1000 passing cases):
        51.0%  circle
        49.0%  rect
-1 passed in 11ms.
+1 passed in 1.3ms.
 ```
 
 A `cover` belongs where its scenario is observed. In a stateful test,
@@ -371,7 +375,7 @@ geo: 1 test (seed s1:5b58964be30f69a8)
 ──────────────────────────────────────────────────────────
 
 replay: dune exec examples/03-property-testing/test_geo.exe -- --seed s1:5b58964be30f69a8 -f 'total_area'
-1 failed in 5.7ms.
+1 failed in 1.6ms.
 ```
 
 ## Drawing from a list of generators
@@ -471,7 +475,7 @@ geo: 4 tests (seed s1:5b58964be30f69a8)
 ──────────────────────────────────────────────────────────
 
 replay: dune exec examples/03-property-testing/test_geo.exe -- --seed s1:5b58964be30f69a8 -f 'codec'
-2 passed, 2 failed in 1.7ms.
+2 passed, 2 failed in 0.4ms.
 ```
 
 ### Checking a witness's equality and order
@@ -563,7 +567,7 @@ geo: 3 tests (seed s1:5b58964be30f69a8)
 ──────────────────────────────────────────────────────────
 
 replay: dune exec examples/03-property-testing/test_geo.exe -- --seed s1:5b58964be30f69a8 -f 'witness'
-1 passed, 2 failed in 1.9ms.
+1 passed, 2 failed in 1.1ms.
 ```
 
 ### Choosing a law for what you wrote
@@ -643,7 +647,8 @@ let turn =
 ```
 
 If `undo` returned `3 - t`, one quarter turn short, the inverse would
-fail with the turn it returned:
+fail on each of the four turns, which `turns` draws all of, with the
+turn it returned:
 
 ```
 $ dune exec examples/03-property-testing/test_geo.exe -- --seed s1:5b58964be30f69a8 -f turn
@@ -653,18 +658,40 @@ geo: 3 tests (seed s1:5b58964be30f69a8)
     examples/03-property-testing/test_geo.ml:143
       143 │ prop "has undo as its inverse" turns
 
-    counterexample (case 0, shrunk 1 step): 0
-    keep it: ~examples:[ 0 ]
+    counterexample (value 1 of 4): 0
     which failed with:
       invertible: op x (inv x) = e
       x             0
       inv x         3
       op x (inv x)  3
       e             0
+
+    counterexample (value 2 of 4): 1
+    which failed with:
+      invertible: op x (inv x) = e
+      x             1
+      inv x         2
+      op x (inv x)  3
+      e             0
+
+    counterexample (value 3 of 4): 2
+    which failed with:
+      invertible: op x (inv x) = e
+      x             2
+      inv x         1
+      op x (inv x)  3
+      e             0
+
+    counterexample (value 4 of 4): 3
+    which failed with:
+      invertible: op x (inv x) = e
+      x             3
+      inv x         0
+      op x (inv x)  3
+      e             0
 ──────────────────────────────────────────────────────────
 
-replay: dune exec examples/03-property-testing/test_geo.exe -- --seed s1:5b58964be30f69a8 -f 'turn'
-2 passed, 1 failed in 0.5ms.
+2 passed, 1 failed in 0.3ms.
 ```
 
 ### Stating a law with no name
@@ -773,7 +800,7 @@ geo: 1 test (seed s1:5b58964be30f69a8)
     never covered: "partial order: a strict chain" (over 100 passing cases)
 ──────────────────────────────────────────────────────────
 
-1 failed in 2.0ms.
+1 failed in 0.8ms.
 ```
 
 A demand that no passing case met fails the property with

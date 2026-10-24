@@ -844,6 +844,15 @@ val pass : 'a testable
     which a function of the generator raises is skipped, and a function of the
     generator that raises while a case is drawn fails the case.
 
+    {b Finite domains are checked whole.} A generator whose domain has at most
+    [count] values, as [Gen.bool], [Gen.of_list], a small range and their
+    products have, is not sampled: every value runs, in order, the verdict
+    ([-v]) says [holds on all N values], and every value refuted is reported,
+    each as it was drawn, none shrunk. A domain without end, or larger than
+    [count], is sampled as above, and its first failure stops the cases and
+    shrinks. Finding which a domain is parses the generator's first sequences
+    once, before any case, and runs no law.
+
     {b Keeping a counterexample.} Under its counterexample, a failure prints
     the line that keeps it. Where the generators print OCaml, it is an entry to
     paste into [~examples], [keep it: ~examples:[ (3, "a") ]]. Otherwise it is

@@ -378,6 +378,12 @@ let commit t block x =
   t.blocks <- t.blocks + 1;
   Pp.flush t.out ()
 
+(* A property whose domain was checked whole says so. *)
+let whole_domain (r : Run.result) =
+  match r.prop_stats with
+  | Some { whole = Some n; _ } -> [ strf "holds on all %d values" n ]
+  | Some { whole = None; _ } | None -> []
+
 (* The verbose row of a result that is not a counted failure. *)
 let row t (r : Run.result) =
   let name = Test_tree.path_to_string r.path in
@@ -385,7 +391,8 @@ let row t (r : Run.result) =
   match r.outcome with
   | Failure.Pass -> (
       put t
-        (test_line ~tag:"PASS" ~style:`Green ~name ~qualifiers:(attempts r)
+        (test_line ~tag:"PASS" ~style:`Green ~name
+           ~qualifiers:(attempts r @ whole_domain r)
            ~timing ());
       match r.prop_stats with
       | Some s when s.collected <> [] -> label_table t s

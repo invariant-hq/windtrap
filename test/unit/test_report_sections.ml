@@ -677,6 +677,17 @@ let property_entries () =
       entry
         (Failure.property ~rendered:"Rect (1, 0)" ~token:"r1:AQEA:3e9ef408"
            ~case_index:0 ~shrink_steps:1 ~root ~examples:false ()) );
+    ( "a domain checked whole reports every value it refuted, keeping none",
+      entry
+        (Failure.property ~rendered:"1" ~token:"r1:AQ:aa" ~domain:4
+           ~case_index:1 ~shrink_steps:0 ~root ~examples:false
+           ~also:
+             [
+               Failure.property ~inner:(unequal "0" "3") ~rendered:"3"
+                 ~token:"r1:Aw:bb" ~domain:4 ~case_index:3 ~shrink_steps:0
+                 ~root ~examples:false ();
+             ]
+           ()) );
     ( "a replayed case is named so, and keeps its token",
       entry
         (Failure.property ~rendered:"Rect (1, 0)" ~token:"r1:AQEA:3e9ef408"

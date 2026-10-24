@@ -249,6 +249,16 @@ place (the key-value benchmark goes from 45% to 100% at the minimum).
   whose zeros are the given order; `such_that` reads attempts, each one
   span, until one satisfies its predicate, at most 100, and discards
   after.
+- **Finite domains.** `Property.run` counts a domain by parsing its
+  sequences in lexicographic order, each prefix reading zeros past its
+  end, the next raising the last choice below its bound. A sequence
+  that discards or that a parse marks `respelled` (the origin's second
+  spelling, a `frequency` point past its branch's first, a `such_that`
+  value after a refused draw) is no value. Counting stops when the
+  values exceed the count, when the parses have read 16 choices per
+  value allowed, when one reads more than 64, as a list's do, and when a
+  bound alone exceeds that budget, as an `int`'s does, so an endless
+  domain costs a few parses.
 - **Spans and dependents.** A parse marks a span over the choices that
   one generator call read. A parse can also say that a choice counts
   past some earlier positions (a reference to the k-th newest value

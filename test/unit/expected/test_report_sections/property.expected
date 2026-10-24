@@ -114,6 +114,14 @@
     replay it: --replay r1:AQEA:3e9ef408
     replay: WINDTRAP_SEED=s1:7be1d2c904aa31f5 dune runtest
 
+=== a domain checked whole reports every value it refuted, keeping none
+    counterexample (value 2 of 4): 1
+
+    counterexample (value 4 of 4): 3
+    which failed with:
+      expected  0
+      actual    3
+
 === a replayed case is named so, and keeps its token
     counterexample (replayed case): Rect (1, 0)
     replay it: --replay r1:AQEA:3e9ef408

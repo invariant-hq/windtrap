@@ -22,6 +22,7 @@ type context = {
   demands : (string, unit) Hashtbl.t; (* the [cover] labels reached *)
   mutable cases : int; (* the passing cases *)
   mutable discards : int;
+  mutable whole : int option; (* the values of a domain checked whole *)
 }
 
 let make_context () =
@@ -31,6 +32,7 @@ let make_context () =
     demands = Hashtbl.create 16;
     cases = 0;
     discards = 0;
+    whole = None;
   }
 
 let scratch = make_context
@@ -61,6 +63,7 @@ type cover_status = { label : string; hits : int; satisfied : bool }
 type stats = {
   cases : int;
   discards : int;
+  whole : int option;
   collected : (string * int) list;
   coverage : cover_status list;
 }
@@ -84,6 +87,7 @@ let stats ctx =
   {
     cases = ctx.cases;
     discards = ctx.discards;
+    whole = ctx.whole;
     collected = sorted_bindings ctx.counts;
     coverage = List.map status (sorted_bindings ctx.demands);
   }
@@ -275,6 +279,56 @@ let shrink_tree ~cost ~output ~shrinking ~prints_run gen law state tree fault =
   in
   { shown; again; fault; tail; steps = List.length route; ending; token = None }
 
+(* Finite domains *)
+
+(* The values of [gen], every sequence it reads, in lexicographic order:
+   each parse reads zeros past its prefix, and the next prefix raises the
+   last choice below its bound. [None] once more than [limit] values are
+   found, or when a parse raises a fault, which a generated case then
+   reports. A domain without end gives [None] early: once the parses have
+   read [16 * (limit + 1)] choices, when a parse reads more than
+   [longest] choices, as a list does, and when a choice's bound alone
+   exceeds that budget, as an [int]'s does. A sequence that discards or
+   that spells again another's value is no value. *)
+let longest = 64
+
+let enumerate gen limit =
+  let budget = 16 * (limit + 1) in
+  let wide bound = Int64.unsigned_compare bound (Int64.of_int budget) > 0 in
+  let rec next prefix ~read values count =
+    if count > limit || read > budget then None
+    else
+      let src = Choice.replaying prefix in
+      let parsed = Failure.catch (fun () -> Gen.Engine.parse gen src) in
+      let choices = Choice.choices src and bounds = Choice.bounds src in
+      let count =
+        if Array.length choices > longest || Array.exists wide bounds then
+          limit + 1
+        else count
+      in
+      let values, count =
+        match parsed with
+        | Ok node when not (Choice.redundant src) ->
+            ((choices, node) :: values, count + 1)
+        | Ok _ | Error `Discard -> (values, count)
+        | Error (`Timeout _ as timeout) -> Failure.reraise timeout
+        | Error (#Failure.fault | #Failure.control) -> (values, limit + 1)
+      in
+      let rec raised i =
+        if i < 0 then None
+        else if Int64.unsigned_compare choices.(i) bounds.(i) < 0 then
+          Some (Array.append (Array.sub choices 0 i) [| Int64.succ choices.(i) |])
+        else raised (i - 1)
+      in
+      if count > limit then None
+      else
+        match raised (Array.length choices - 1) with
+        | None -> Some (List.rev values)
+        | Some prefix ->
+            next prefix ~read:(read + Array.length choices) values count
+  in
+  next [||] ~read:0 [] 0
+
 (* Running *)
 
 let default_count = 100
@@ -372,13 +426,17 @@ let run ?loc ?count ?max_discard ?(examples = []) ?(summary = Fun.const None)
           shrink_choices ~cost ~output ~shrinking ~prints_run gen law
             (case_of src) node )
   in
-  let rec generate ~passed index =
+  let judged () =
     if ctx.discards > max_discard then Gave_up (stats ctx)
-    else if passed >= count then
+    else
       let stats = stats ctx in
       if List.for_all (fun status -> status.satisfied) stats.coverage then
         Pass stats
       else Coverage_failed stats
+  in
+  let rec generate ~passed index =
+    if ctx.discards > max_discard then Gave_up (stats ctx)
+    else if passed >= count then judged ()
     else
       let state = Seed.make (Seed.derive ~root ~path ~index) in
       match Failure.catch (fun () -> draw state) with
@@ -420,8 +478,56 @@ let run ?loc ?count ?max_discard ?(examples = []) ?(summary = Fun.const None)
     | Error (`Timeout _) -> None
     | Error c -> Failure.reraise c
   in
+  (* A domain of at most [count] values is checked whole, in place of the
+     generated cases: every value runs, every value refuted is reported, as
+     it was drawn, and none is shrunk. *)
+  let whole values =
+    let domain = List.length values in
+    ctx.whole <- Some domain;
+    let refuted ?also (index, choices, node, fault, tail) =
+      let node = Option.value ~default:node (parse_again gen choices) in
+      let rendered, rendering = rendered node in
+      let token = Choice.token choices ~digest:(digest rendered) in
+      let failure =
+        Failure.property ?loc ~inner:(inner_failure fault) ?count:config_count
+          ~rendered ~case_index:index ~shrink_steps:0 ~root ~examples:false
+          ~rendering ~token ~domain ?also ()
+      in
+      match tail with
+      | Some tail -> Failure.with_output_tail tail failure
+      | None -> failure
+    in
+    let rec check_all index found = function
+      | [] -> (
+          match List.rev found with
+          | [] -> judged ()
+          | first :: rest ->
+              let also = List.map refuted rest in
+              Fail { failure = refuted ~also first; stats = stats ctx })
+      | (choices, node) :: rest -> (
+          match check law (Gen.Engine.value node) with
+          | `Passed | `Discarded -> check_all (index + 1) found rest
+          | `Timed_out limit -> timed_out ~case_index:index ~examples:false limit
+          | `Failed fault ->
+              let tail = output_after_failure () in
+              let found = (index, choices, node, fault, tail) :: found in
+              check_all (index + 1) found rest)
+    in
+    check_all 0 [] values
+  in
+  let generated () =
+    let finite () =
+      if count = 0 || Option.is_some (Gen.Engine.tree gen) then None
+      else enumerate gen count
+    in
+    match Failure.catch finite with
+    | Ok (Some values) -> whole values
+    | Ok None -> generate ~passed:0 0
+    | Error (`Timeout limit) -> timed_out ~case_index:0 ~examples:false limit
+    | Error c -> Failure.reraise c
+  in
   let rec run_examples index = function
-    | [] -> generate ~passed:0 0
+    | [] -> generated ()
     | value :: rest -> (
         (* An example prints as it was given, before its run can change it.
            Its printer runs first in that run, so a control that the printer

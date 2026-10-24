@@ -244,13 +244,14 @@ let escapes =
     ]
 
 let timeouts =
+  (* The first parse finds the domain endless, then cases 0 and 1 pass. *)
   let from_gen () =
     let draws = ref 0 in
     let gen =
       Gen.map
         (fun n ->
           incr draws;
-          if !draws = 3 then raise (timeout 0.5) else n)
+          if !draws = 4 then raise (timeout 0.5) else n)
         Gen.int
     in
     Property.run ~count:(`Config 50) ~root ~path:"gen timeout" gen (fun _ _ ->
@@ -360,9 +361,9 @@ let discarded_cases_commit_nothing () =
     Property.assume (even x)
   in
   let o =
-    Property.run ~root ~path ~count:(`Declared 10) (Gen.int_range 0 9) law
+    Property.run ~root ~path ~count:(`Declared 10) (Gen.int_range 0 999) law
   in
-  let discards = discarded (Gen.int_range 0 9) ~path ~keep:even 10 in
+  let discards = discarded (Gen.int_range 0 999) ~path ~keep:even 10 in
   equal string (strf "pass, 10 cases, %d discards" discards) (verdict o);
   equal (list (pair string int)) [ ("attempt", 10) ] (stats o).collected
 
@@ -391,10 +392,15 @@ let late_context () =
 
 (* Each row runs a law over [Gen.constant 1] with [0] as the examples it lists,
    so a label on zero is an example's. *)
+(* Endless domains whose every value is [1], or [0], so that cases are
+   sampled, where a domain of one value is checked whole. *)
+let ones = Gen.map (fun _ -> 1) Gen.int
+let zeros = Gen.map (fun _ -> 0) Gen.int
+
 let covers =
   let run ?(count = 10) ?(examples = []) law () =
-    Property.run ~root ~path:"cover" ~count:(`Declared count) ~examples
-      (Gen.constant 1) law
+    Property.run ~root ~path:"cover" ~count:(`Declared count) ~examples ones
+      law
   in
   let zero ctx x = Property.cover ctx "zero" (x = 0) in
   [
@@ -483,10 +489,10 @@ let summarized =
   ]
 
 let replayed count max_discard =
-  let law _ x = Check.is_true (x < 700) in
+  let law _ x = Check.is_true (x < 700_000) in
   let o =
     Property.run ~count ?max_discard ~root ~path:"replay path"
-      (Gen.int_range 0 1000) law
+      (Gen.int_range 0 1_000_000) law
   in
   payload_row (counterexample o)
 
@@ -595,7 +601,7 @@ let examples =
       test "a discarding example counts in discards" (fun () ->
           let o =
             Property.run ~root ~path:"example discard" ~count:(`Declared 2)
-              ~examples:[ 1; 2; 3 ] (Gen.constant 0) (fun _ x ->
+              ~examples:[ 1; 2; 3 ] zeros (fun _ x ->
                 Property.assume (x <> 2))
           in
           equal string "pass, 4 cases, 1 discards" (verdict o));
@@ -625,12 +631,10 @@ let give_ups =
       ( run ~count:5 ~max_discard:0 Gen.int (fun _ _ -> ()),
         "pass, 5 cases, 0 discards" ) );
     ( "discarding examples",
-      ( run ~count:3 ~max_discard:2 ~examples:[ 1; 1; 1 ] (Gen.constant 0)
-          not_one,
+      ( run ~count:3 ~max_discard:2 ~examples:[ 1; 1; 1 ] zeros not_one,
         "gave up, 0 cases, 3 discards" ) );
     ( "passing examples",
-      ( run ~count:3 ~max_discard:0 ~examples:[ 1; 2; 3 ] (Gen.constant 0)
-          (fun _ _ -> ()),
+      ( run ~count:3 ~max_discard:0 ~examples:[ 1; 2; 3 ] zeros (fun _ _ -> ()),
         "pass, 6 cases, 0 discards" ) );
     ( "a count of 0 already met",
       ( run ~count:0 ~max_discard:0 ~examples:[ 1 ] (Gen.constant 0) not_one,
@@ -639,7 +643,7 @@ let give_ups =
 
 let mixed_discards () =
   let path = "mixed discards" in
-  let gen = Gen.int_range 0 9 in
+  let gen = Gen.int_range 0 999 in
   let o =
     Property.run ~root ~path ~count:(`Declared 20) gen (fun _ x ->
         Property.assume (even x))
@@ -660,12 +664,13 @@ let generator_discards () =
   let discards = discarded Gen.int ~path ~keep:even 100 in
   equal string (strf "pass, 100 cases, %d discards" discards) (verdict o)
 
-let spent_index discarding =
-  let first = ref true in
+(* The generator runs once before the cases, to find its domain endless,
+   so its first case is its second run. *)
+let spent_index ?(before = 0) discarding =
+  let runs = ref 0 in
   let discard_first () =
-    if !first then (
-      first := false;
-      Property.reject ())
+    incr runs;
+    if !runs = before + 1 then Property.reject ()
   in
   let gen, law = discarding discard_first in
   let p = counterexample (Property.run ~root ~path:"discard index" gen law) in
@@ -736,7 +741,9 @@ let generated =
           equal string row (verdict (run ())));
       test "discards within max_discard leave the run to pass" mixed_discards;
       cases "a discard spends its index" ~name:fst spenders
-        (fun (_, discarding) -> equal int 1 (spent_index discarding));
+        (fun (name, discarding) ->
+          let before = if name = "by the generator" then 1 else 0 in
+          equal int 1 (spent_index ~before discarding));
       test "a generation that discards discards the case" generator_discards;
       test "a generation that always discards gives up" (fun () ->
           let law, seen = traced (fun _ _ -> ()) in
@@ -1448,6 +1455,76 @@ let running_again =
         past_discards;
     ]
 
+(* Finite domains *)
+
+let whole_of o = (stats o).whole
+
+let also_of o =
+  match (failed o).kind with
+  | Property { also; _ } ->
+      List.map (fun f -> (require_match payload f).rendered) also
+  | _ -> fail "not a property failure"
+
+let domains =
+  group "Finite domains"
+    [
+      test "a domain of at most count values is checked whole" (fun () ->
+          let o = Property.run ~root ~path:"bool" Gen.bool (fun _ _ -> ()) in
+          equal
+            (pair string (option int))
+            ("pass, 2 cases, 0 discards", Some 2)
+            (verdict o, whole_of o));
+      test "a domain of more values than count is sampled" (fun () ->
+          let o =
+            Property.run ~count:(`Declared 50) ~root ~path:"range"
+              (Gen.int_range 0 100) (fun _ _ -> ())
+          in
+          equal
+            (pair string (option int))
+            ("pass, 50 cases, 0 discards", None)
+            (verdict o, whole_of o));
+      test "a value spelled twice counts once" (fun () ->
+          let count gen =
+            whole_of (Property.run ~root ~path:"p" gen (fun _ _ -> ()))
+          in
+          equal (list (option int)) [ Some 5; Some 2 ]
+            [
+              count (Gen.int_range (-2) 2);
+              count
+                (Gen.frequency [ (3, Gen.constant 'a'); (1, Gen.constant 'b') ]);
+            ]);
+      test "a filter that refuses a value makes its domain endless" (fun () ->
+          (* Each refused draw is followed by another, up to a hundred. *)
+          let o =
+            Property.run ~root ~path:"p"
+              (Gen.such_that (fun n -> n <> 1) (Gen.int_range 0 3))
+              (fun _ _ -> ())
+          in
+          equal (option int) None (whole_of o));
+      test "every refuted value is reported, in order, and none shrinks"
+        (fun () ->
+          let o =
+            Property.run ~root ~path:"odd" (Gen.int_range 0 9) (fun _ x ->
+                if x mod 2 = 1 then Check.fail "odd")
+          in
+          let p = counterexample o in
+          equal
+            (pair string (list string))
+            ("value 2, 0 steps, converged: 1", [ "3"; "5"; "7"; "9" ])
+            (strf "value %d, %d steps, %s: %s" (p.case_index + 1) p.steps
+               (ending p.ending) p.rendered,
+             also_of o));
+      test "a count of 0 checks no domain" (fun () ->
+          let o =
+            Property.run ~count:(`Declared 0) ~root ~path:"none" Gen.bool
+              (fun _ _ -> Check.fail "no")
+          in
+          equal
+            (pair string (option int))
+            ("pass, 0 cases, 0 discards", None)
+            (verdict o, whole_of o));
+    ]
+
 (* Replaying *)
 
 let token_of o =
@@ -1543,5 +1620,6 @@ let () =
          progress;
          printing;
          running_again;
+         domains;
          replaying;
        ])

@@ -342,7 +342,9 @@ let ranked src ~low ~high ~origin encode sample =
   in
   if below_side then
     let distance = Option.map (Int64.sub origin) x in
-    Int64.sub origin (Choice.choice src ~bound:below distance)
+    let d = Choice.choice src ~bound:below distance in
+    if Int64.equal d 0L && not (Int64.equal above 0L) then Choice.respelled src;
+    Int64.sub origin d
   else
     let distance = Option.map (fun x -> Int64.sub x origin) x in
     Int64.add origin (Choice.choice src ~bound:above distance)
@@ -1138,9 +1140,13 @@ let frequency weighted =
           in
           if total < 1 then invalid_arg "Gen.frequency: total weight < 1";
           let pick = index src total in
+          (* Each point of a branch but its first spells it again. *)
           let rec choose index consumed =
             let weight, gen = weighted.(index) in
-            if pick < consumed + weight then gen
+            if pick < consumed + weight then begin
+              if pick > consumed then Choice.respelled src;
+              gen
+            end
             else choose (index + 1) (consumed + weight)
           in
           parse (choose 0 0) src);
@@ -1157,11 +1163,17 @@ let such_that keep gen =
     draw =
       Parse
         (fun src ->
+          (* A value found after a failed attempt is the value of its own
+             attempt alone too. *)
           let rec attempt tries =
             if tries = 0 then raise (Failure.Control `Discard)
             else
               let node = Choice.split src (fun () -> parse gen src) in
-              if keep node.value then node else attempt (tries - 1)
+              if keep node.value then begin
+                if tries < resample_budget then Choice.respelled src;
+                node
+              end
+              else attempt (tries - 1)
           in
           attempt resample_budget);
   }

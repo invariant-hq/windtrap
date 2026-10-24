@@ -61,6 +61,11 @@ val span : t -> (unit -> 'a) -> 'a
 (** [span src f] is [f ()], and marks the choices that [f] read as one span when
     it read any. *)
 
+val respelled : t -> unit
+(** [respelled src] records that what [src] parses has another spelling,
+    smaller or not: the value is a value of another sequence too. Counting the
+    values of a domain skips such a sequence. *)
+
 val counts_past : t -> at:int -> int list -> unit
 (** [counts_past src ~at over] records that the choice at position [at] counts
     past the positions [over], as a reference to the k-th newest value of a
@@ -84,6 +89,9 @@ val spans : t -> span list
 
 val dependents : t -> dependent list
 (** [dependents src] is the dependents recorded, in no particular order. *)
+
+val redundant : t -> bool
+(** [redundant src] is whether a parse called {!respelled} on [src]. *)
 
 val state : t -> Seed.state option
 (** [state src] is the stream that a generating [src] goes on from, and [None]

@@ -18,6 +18,7 @@ type t = {
   mutable length : int;
   mutable spans : span list;
   mutable dependents : dependent list;
+  mutable redundant : bool;
 }
 
 let make prefix state =
@@ -29,6 +30,7 @@ let make prefix state =
     length = 0;
     spans = [];
     dependents = [];
+    redundant = false;
   }
 
 let generating state = make [||] (Some state)
@@ -39,6 +41,8 @@ let choices src = Array.of_list (List.rev src.read)
 let bounds src = Array.of_list (List.rev src.bounds)
 let spans src = src.spans
 let dependents src = src.dependents
+let redundant src = src.redundant
+let respelled src = src.redundant <- true
 
 let sample src draw =
   match src.state with
