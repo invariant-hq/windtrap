@@ -471,6 +471,11 @@ let absolute_path ~cli ~layered field =
    here. [broadcast] keeps what the mirrors alone asked for: a mirror reaches
    every stanza of a project, and a stanza that cannot honour it is not in
    error. *)
+(* The root under [--mutate] and [--arm], so that the dry run, the probe,
+   every mutant and every later run of the binary draw the same cases: a
+   random root made a mutant that some cases kill flip from run to run. *)
+let mutation_seed = 0x6d7574616e747321L (* "mutants!" *)
+
 let settings cli =
   let* layered = layer_entries entries cli in
   let* mutation =
@@ -483,7 +488,11 @@ let settings cli =
   let defaults = Run.default_config () in
   Ok
     {
-      Run.seed = Option.value layered.seed ~default:defaults.Run.seed;
+      Run.seed =
+        (match (layered.seed, mutation) with
+        | Some seed, _ -> seed
+        | None, (Run.Loop _ | Run.Armed _) -> mutation_seed
+        | None, Run.No_mutation -> defaults.Run.seed);
       filter = layered.filter;
       exclude = layered.exclude;
       tags = layered.tags;

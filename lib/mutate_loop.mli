@@ -68,6 +68,10 @@ val execute_and_report :
     what its tests do. Nothing that a job prints is visible, its baselines are
     checked read-only and no correction is recorded.
 
+    The root seed is {!Cli.mutation_seed} unless [--seed] gives one
+    ({!Cli.settings}), so a property draws the same cases in the dry run, the
+    probe and every job, and on every run of one binary.
+
     {b Verdicts.} A mutant is {!Windtrap_runtime.Verdicts.Killed} when its job
     counted a failure, that of a fixture release included. It is
     {!Windtrap_runtime.Verdicts.Unknown} when its job ended before its tests

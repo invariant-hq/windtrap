@@ -707,6 +707,20 @@ let resolution =
     [
       test "with no flag and no mirror, every field but the seed is the default"
         (fun () -> equal string "defaults" (resolved []));
+      test "--mutate and --arm fix the seed, which --seed still gives"
+        (fun () ->
+          let seed args = Seed.to_string (config args).seed in
+          equal (list string)
+            [
+              Seed.to_string Cli.mutation_seed;
+              Seed.to_string Cli.mutation_seed;
+              "s1:0000000000000005";
+            ]
+            [
+              seed [ "--mutate" ];
+              seed [ "--arm"; "a.ml:1:0:add" ];
+              seed [ "--mutate"; "--seed"; "s1:0000000000000005" ];
+            ]);
       test "invocation is `Mirrors" (fun () ->
           equal string "mirrors" (invocation_name (config []).invocation));
       test "list_only, help and version are ignored" (fun () ->

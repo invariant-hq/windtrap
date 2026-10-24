@@ -20,10 +20,10 @@ let widen a b = a + b
 (* Unreached: nothing calls it. *)
 let orphan a b = a + b
 
-(* Killed by a crash: the [crash] fixture's test leaves through
-   [Unix._exit] when this answer changes, so the child dies without
-   writing a verdict line and the parent has to conclude one from the
-   silence (child hygiene). *)
+(* Unknown by a crash: the [crash] fixture's test leaves through
+   [Unix._exit] when this answer changes, so the mutant's worker dies
+   before its tests end and the loop has to conclude from the silence
+   that it judged nothing. *)
 let crasher a b = a - b
 
 (* Dismissed, and reached: a test below runs it and does not pin it, so

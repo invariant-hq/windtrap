@@ -176,12 +176,19 @@ val settings : parsed -> (Run.config, error) result
       directory when the command line gives it and against {!Os.project_root}
       when its mirror does. It is kept as given when that directory cannot be
       read.
+    - [seed] is the layers', and else {!mutation_seed} under [--mutate] and
+      [--arm], so that a mutation run judges every mutant on the same cases, run
+      after run of one binary.
     - [github] is {!Os.in_github_actions}[ ()] and [invocation] is [`Mirrors].
       [list_only], [help] and [version] are ignored.
 
     It never raises. It reads the environment and the working directory, and on
     every call it draws a seed from {!Seed.random}, which the result carries
-    when no layer gives one. *)
+    when no layer gives one and no mutation is asked for. *)
+
+val mutation_seed : Seed.seed
+(** [mutation_seed] is the root seed of a mutation run that no layer gives one,
+    [s1:6d7574616e747321]. *)
 
 val color_mode : unit -> (Os.color_mode, error) result
 (** [color_mode ()] is the colour mode that [WINDTRAP_COLOR] gives, read by the

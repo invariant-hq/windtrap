@@ -742,6 +742,41 @@ let capped () =
        ])
     (rows r)
 
+(* [seeded]'s one case kills [sub]'s mutant under one root and not under
+   the other, so only a fixed root gives one verdict. *)
+let under_seed args =
+  let r = spawn ~env:[ suite "seeded" ] (mutate :: args) in
+  equal string "exited 0" r.status;
+  r
+
+let seed_decides () =
+  let row args = rows (under_seed args) in
+  equal
+    (pair (option (list string)) (option (list string)))
+    ( Some
+        [
+          "subject.ml:15 killed";
+          "subject.ml:18 unreached";
+          "subject.ml:21 unreached";
+          "subject.ml:27 unreached";
+        ],
+      Some
+        [
+          "subject.ml:15 survived by seeded \u{203a} sub takes what it draws \
+           away from 10";
+          "subject.ml:18 unreached";
+          "subject.ml:21 unreached";
+          "subject.ml:27 unreached";
+        ] )
+    ( row [ "--seed"; "s1:0000000000000000" ],
+      row [ "--seed"; "s1:0000000000000001" ] )
+
+let seeds_stable () =
+  let raw () = Option.map (fun (f : file) -> f.raw) (under_seed []).file in
+  let first = raw () in
+  is_true (Option.is_some first);
+  List.iter (fun () -> equal (option text) first (raw ())) [ (); (); () ]
+
 let verdicts =
   group "Verdicts"
     [
@@ -750,6 +785,9 @@ let verdicts =
          reaching tests"
         survivor_named;
       test "a mutant whose run crashes is unknown, never survived" crashed;
+      test "a property's root seed can decide a mutant's verdict" seed_decides;
+      test "with no --seed, four runs of one binary write one verdict file"
+        seeds_stable;
       test "a failure in a fixture release kills the mutant" (fun () ->
           let r = Lazy.force release in
           equal string "exited 0" r.status;

@@ -216,7 +216,10 @@ Every pass runs in worker processes, and the probe and each mutant in a
 worker of its own, forked before any test ran: none starts from what
 the dry run or another mutant left, a table filled or a lazy value
 forced, so a cache cannot hide a mutant. They run up to `-j` at once,
-as tests do, and are reported in catalogue order.
+as tests do, and are reported in catalogue order. Unless `--seed` is
+given, a mutation run draws its property cases from one fixed seed,
+`s1:6d7574616e747321`, so a verdict is the same on every run of one
+binary.
 
 A mutant whose run ends before its tests do, because the process
 crashed or exited or passed a deadline taken from the dry run, is

@@ -325,6 +325,12 @@ evaluations of its armed site, and a mutant whose site it never
 evaluated is not evaluated. Called a survivor, it would send a reader
 to strengthen tests that were never given the mutant.
 
+The cases of a property derive from the root seed and the test's path,
+and a mutation run fixes the root, so the same mutant meets the same
+cases on every run of one binary. With a random root, a mutant that only
+some cases kill would flip between killed and survived from run to run,
+and the merge would change with no change to the code.
+
 Module initialization runs before a worker can arm a mutant, and a
 fixture release belongs to no test, so no run tests a site that only
 they evaluate. Such a site ran and the tests may depend on it. Listed

@@ -433,6 +433,15 @@ let memoized_widen a b =
 let memoized =
   [ test "memoized widen adds" (fun () -> equal int 7 (memoized_widen 3 4)) ]
 
+(* [seeded]'s one case kills [sub]'s mutant unless it draws 0, so the
+   mutant's verdict is the root seed's: a run that drew a fresh root each
+   time would flip it. *)
+let seeded =
+  [
+    prop ~count:1 "sub takes what it draws away from 10" (Gen.int_range 0 3)
+      (fun b -> equal int (10 - b) (Subject.sub 10 b));
+  ]
+
 (* [primed]'s second test evaluates [widen] only after the first, which
    reaches no mutant, has run: the job of [widen]'s mutant runs the second
    alone, which then never evaluates the site. *)
@@ -486,6 +495,7 @@ let () =
   | "focused" -> exit @@ run "calc" [ group "focused" focused ]
   | "known" -> exit @@ run "calc" [ group "known" known ]
   | "memo" -> exit @@ run "calc" [ group "calc" strong; group "memo" memoized ]
+  | "seeded" -> exit @@ run "calc" [ group "seeded" seeded ]
   | "primed" ->
       exit @@ run "calc" [ group "calc" strong; group "primed" priming ]
   | "crash" ->
