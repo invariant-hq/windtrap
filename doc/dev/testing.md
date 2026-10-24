@@ -74,8 +74,9 @@ what is non-obvious.
   streams that only a real process has.
   `broadcast.t` lays out two stanzas in a scratch project, as dune does,
   and runs both under the same variables: a mirror's emptied selection,
-  `WINDTRAP_MUTATE` on a suite with no mutant and a mirror's relative
-  path. Its second stanza runs `mutant_main.exe`, whose library is
+  `WINDTRAP_MUTATE` on a suite with no mutant, a mirror's narrowing of a
+  mutation run (its note on the verdict file said above its outcome, the
+  two streams merged) and a mirror's relative path. Its second stanza runs `mutant_main.exe`, whose library is
   instrumented in every build.
   `signals.t` sends INT, TERM and HUP to a waiting run through
   `send_signal.exe`, which holds the run's pid since a shell's

@@ -54,6 +54,19 @@ standard error, while the instrumented suite tests its mutant:
   mutants: 1 reached by this suite, 1 killed
   [mutants: 0]
 
+A filter broadcast with it narrows the instrumented suite, whose loop
+then keeps no verdict file. It says so on standard error just above its
+outcome line, which stays the last line of the two streams as one:
+
+  $ runtest WINDTRAP_MUTATE=test/cram/run/mutant_subject.ml WINDTRAP_FILTER=adds 2>&1 | scrub
+  windtrap: WINDTRAP_MUTATE is set, but no mutant of this executable's catalogue is under test/cram/run/mutant_subject.ml, so the suite runs without mutation
+  fixture: 1 passed in DURATION.
+  [unit: 0]
+  mutant: 1 passed in DURATION.
+  windtrap: verdicts not saved: this run's selection narrows the suite, and a partial run's verdicts would stand in the project merge as the whole.
+  mutants: 1 reached by the 1 selected test, 1 killed
+  [mutants: 0]
+
 A relative path in WINDTRAP_JUNIT or WINDTRAP_OUTPUT is read from the
 project root, so both stanzas write under the root's _build:
 
