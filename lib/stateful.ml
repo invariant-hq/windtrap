@@ -1574,7 +1574,7 @@ let repetitions = 50
 (* Declaring *)
 
 let never_called ?loc ~cases ~elements names =
-  Failure.message ?loc
+  Failure.vacuous ?loc
     (Pp.str
        "never called: %s (over %d passing cases); a call runs only where its \
         arguments resolve%s and its ~pre holds"

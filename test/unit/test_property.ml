@@ -56,11 +56,13 @@ let tally (s : Property.stats) = strf "%d cases, %d discards" s.cases s.discards
 let verdict = function
   | Property.Pass s -> "pass, " ^ tally s
   | Fail { stats; _ } -> "fail, " ^ tally stats
-  | Coverage_failed s -> "coverage failed, " ^ tally s
-  | Gave_up s -> "gave up, " ^ tally s
+  | Vacuous { why = Uncovered; stats = s } -> "coverage failed, " ^ tally s
+  | Vacuous { why = Gave_up; stats = s } -> "gave up, " ^ tally s
+  | Vacuous { why = Discarded; stats = s } -> "all discarded, " ^ tally s
+  | Vacuous { why = No_case; stats = s } -> "no case, " ^ tally s
 
 let stats = function
-  | Property.Pass s | Fail { stats = s; _ } | Coverage_failed s | Gave_up s -> s
+  | Property.Pass s | Fail { stats = s; _ } | Vacuous { stats = s; _ } -> s
 
 let ending = function
   | Failure.Converged -> "converged"
@@ -434,7 +436,8 @@ let covers =
             if x = 0 then Property.cover ctx "unreached" true),
         "pass, 5 cases, 0 discards; no demand" ) );
     ( "no cover",
-      (run ~count:0 (fun _ _ -> ()), "pass, 0 cases, 0 discards; no demand") );
+      (run ~count:0 (fun _ _ -> ()), "no case, 0 cases, 0 discards; no demand")
+    );
   ]
 
 let labelling =
@@ -721,8 +724,29 @@ let generated =
           let o =
             Property.run ~root ~path:"zero" ~count:(`Declared 0) Gen.int law
           in
-          equal string "pass, 0 cases, 0 discards" (verdict o);
+          equal string "no case, 0 cases, 0 discards" (verdict o);
           equal (list int) [] (seen ()));
+      cases "a run that passes no case is vacuous, whatever its count"
+        (Testable.contramap fst Testable.text)
+        [
+          ( "a domain checked whole whose every value discards",
+            ( (fun () ->
+                Property.run ~root ~path:"whole" (Gen.int_range 0 3) (fun _ _ ->
+                    Property.reject ())),
+              "all discarded, 0 cases, 4 discards" ) );
+          ( "examples alone, each discarded within the budget",
+            ( (fun () ->
+                Property.run ~root ~path:"examples" ~count:(`Declared 0)
+                  ~max_discard:5 ~examples:[ 1; 2 ] Gen.int (fun _ _ ->
+                    Property.reject ())),
+              "all discarded, 0 cases, 2 discards" ) );
+          ( "no case and no example",
+            ( (fun () ->
+                Property.run ~root ~path:"none" ~count:(`Declared 0) Gen.int
+                  (fun _ _ -> ())),
+              "no case, 0 cases, 0 discards" ) );
+        ]
+        (fun (_, (run, row)) -> equal string row (verdict (run ())));
       cases "a count or max_discard below 0 raises Invalid_argument"
         (Testable.contramap fst Testable.text)
         [
@@ -1332,7 +1356,7 @@ let printing =
             ( `Timeout 0.25,
               "fail, 0 cases, 0 discards; timed out after 0.25s at example 0, \
                0 passed, root c0ffee1234abcd, no count" ) );
-          ("a discard", (`Discard, "pass, 0 cases, 2 discards"));
+          ("a discard", (`Discard, "all discarded, 0 cases, 2 discards"));
           ("a skip", (`Skip (Some "later"), "windtrap skip: later"));
         ]
         (fun (_, (c, row)) ->
@@ -1554,7 +1578,7 @@ let domains =
           in
           equal
             (pair string (option int))
-            ("pass, 0 cases, 0 discards", None)
+            ("no case, 0 cases, 0 discards", None)
             (verdict o, whole_of o));
     ]
 

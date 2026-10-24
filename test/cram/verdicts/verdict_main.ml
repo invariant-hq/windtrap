@@ -217,6 +217,24 @@ let suite = function
         prop ~count:0 "never runs" Gen.int (fun _ -> fail "the law ran");
         prop "fails" Gen.int (fun _ -> fail "the law ran");
       ]
+  | "prop_discard_whole" ->
+      [ prop "discards every value" (Gen.int_range 0 3) (fun _ -> reject ()) ]
+  | "cover_unmet" ->
+      [
+        prop "never covers" (Gen.int_range 0 1000) (fun n ->
+            cover "above a million" (n > 1_000_000));
+      ]
+  | "never_called" ->
+      [
+        stateful ~count:5 "never calls"
+          [
+            command "always" (Gen.unit @-> returns unit) ignore ignore;
+            command "never"
+              ~pre:(fun () -> false)
+              (Gen.unit @-> returns unit)
+              ignore ignore;
+          ];
+      ]
   | "table_zero" -> [ cases "rows" Testable.text [] ignore ]
   | "table_zero_plus" -> [ cases "rows" Testable.text [] ignore; passes ]
   | "baseline_literal" ->

@@ -322,6 +322,7 @@ let headline (f : Failure.t) =
     | Failure.Timeout { limit; case } -> timeout_fact ~limit case
     | Failure.Message m -> (
         match shown_text m with "" -> "(empty failure message)" | m -> m)
+    | Failure.Vacuous reason -> "vacuous: " ^ shown_text reason
   in
   let line =
     String.map
@@ -362,7 +363,7 @@ let acceptable (f : Failure.t) =
   | Failure.Baseline { state = Failure.Unresolvable _; _ }
   | Failure.Equality _ | Failure.Containment _ | Failure.Raise _
   | Failure.Property _ | Failure.Law _ | Failure.Timeout _ | Failure.Message _
-    ->
+  | Failure.Vacuous _ ->
       None
 
 (* Promotion fills a file and never creates one: a missing file must exist
@@ -406,7 +407,7 @@ let withheld_fact (f : Failure.t) =
       | Failure.In_law -> None)
   | Failure.Baseline _ | Failure.Equality _ | Failure.Containment _
   | Failure.Raise _ | Failure.Property _ | Failure.Law _ | Failure.Timeout _
-  | Failure.Message _ ->
+  | Failure.Message _ | Failure.Vacuous _ ->
       None
 
 let hints ?armed ?(invocation = `Mirrors) failures =
@@ -487,7 +488,8 @@ let drawn (f : Failure.t) =
   | Failure.Property { domain = Some _; _ }
   | Failure.Timeout { case = Some { examples = true; _ } | None; _ }
   | Failure.Equality _ | Failure.Containment _ | Failure.Raise _
-  | Failure.Baseline _ | Failure.Law _ | Failure.Message _ ->
+  | Failure.Baseline _ | Failure.Law _ | Failure.Message _ | Failure.Vacuous _
+    ->
       None
 
 (* A late case replays only under at least as many cases as the failing run
@@ -1172,6 +1174,7 @@ and facts ~seen ~excerpt = function
       match shown_text m with
       | "" -> [ line "(empty failure message)" ]
       | m -> lines ~lead:"" m)
+  | Failure.Vacuous reason -> [ line (shown_text reason) ]
 
 (* A row per term, every value at one column; the two sides close the list as
    an equality's do, and a failed term as a property's inner failure does. *)

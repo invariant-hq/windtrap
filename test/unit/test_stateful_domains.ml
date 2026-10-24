@@ -120,6 +120,7 @@ let kind (f : Failure.t) =
   in
   match f.kind with
   | Message m -> strf "message %S" m.kept
+  | Vacuous m -> strf "vacuous %S" m.kept
   | Raise { expected; actual; _ } ->
       "raise" ^ side "expected" expected ^ side "actual" actual
   | Equality { expected; actual; _ } ->
@@ -712,7 +713,7 @@ let judge_group =
 
 let property_failure = function
   | Property.Fail { failure; _ } -> Some failure
-  | Pass _ | Coverage_failed _ | Gave_up _ -> None
+  | Pass _ | Vacuous _ -> None
 
 (* The entry of the failure that [commands] give on two domains, as the
    report prints it, under the test's declaration at [loc]. *)
@@ -1603,7 +1604,7 @@ let labels =
     ("an order the judge rejects counts nothing", false, "returned");
     ( "the order it accepts counts",
       true,
-      {|failure message "never covered: \"first, second before: true\" (over 1 passing cases)"|}
+      {|failure vacuous "never covered: \"first, second before: true\" (over 1 passing cases)"|}
     );
   ]
 

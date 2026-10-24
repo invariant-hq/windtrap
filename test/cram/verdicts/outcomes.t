@@ -25,7 +25,7 @@ first of standard error. A block whose point is a code of 0 echoes it.
   $ brief() {
   >   run "$@" > /dev/null
   >   code=$?
-  >   grep '^  FAIL  ' out
+  >   grep -E '^  (FAIL|VACUOUS)  ' out
   >   tail -1 out | scrub
   >   if [ -s err ]; then echo '--- stderr'; head -1 err | scrub; fi
   >   return $code
@@ -139,23 +139,73 @@ expected failure that passes fails:
   $ grep 'expected to fail' out
       expected to fail, but the test passed
 
-A property whose every case is discarded gives up and fails, whether it
-assumes, filters or rejects:
+A property whose every case is discarded gives up and is vacuous, a
+verdict that fails, whether it assumes, filters or rejects:
 
   $ brief VERDICT_SUITE=prop_discard ./verdict_main.exe
-    FAIL  assumes
-    FAIL  filters
-    FAIL  rejects
-  3 failed in DURATION.
+    VACUOUS  assumes
+    VACUOUS  filters
+    VACUOUS  rejects
+  3 vacuous in DURATION.
   [1]
   $ grep -c 'property gave up: 201 discards exhausted the generation budget (0 cases passed)' out
   3
 
-Held for the redesign (doc/dev/testing.md): a property of count 0 with no example passes having judged nothing.
+Every value of a domain checked whole discarded is vacuous too, though
+the discards stay within the budget:
+
+  $ run VERDICT_SUITE=prop_discard_whole ./verdict_main.exe
+  prop_discard_whole: 1 test (seed SEED)
+  ──────────────────────── failures ────────────────────────
+    VACUOUS  discards every value
+      test/cram/verdicts/verdict_main.ml:N
+      every case was discarded (4 discards), so no case ran
+  ──────────────────────────────────────────────────────────
+  
+  1 vacuous in DURATION.
+  [1]
+
+A demand of cover that no passing case meets is vacuous, naming the
+label:
+
+  $ run VERDICT_SUITE=cover_unmet ./verdict_main.exe
+  cover_unmet: 1 test (seed SEED)
+  ──────────────────────── failures ────────────────────────
+    VACUOUS  never covers
+      test/cram/verdicts/verdict_main.ml:N
+      never covered: "above a million" (over 100 passing cases)
+  ──────────────────────────────────────────────────────────
+  
+  1 vacuous in DURATION.
+  [1]
+
+A stateful command that a passing case could call and none called is
+vacuous, naming the command:
+
+  $ run VERDICT_SUITE=never_called ./verdict_main.exe
+  never_called: 1 test (seed SEED)
+  ──────────────────────── failures ────────────────────────
+    VACUOUS  never calls
+      test/cram/verdicts/verdict_main.ml:N
+      never called: "never" (over 5 passing cases); a call runs only where its arguments resolve and its ~pre holds
+  ──────────────────────────────────────────────────────────
+  
+  1 vacuous in DURATION.
+  [1]
+
+A property of count 0 with no example runs nothing, and is vacuous: it
+fails, saying why, and the summary counts it apart from a failure:
 
   $ run VERDICT_SUITE=prop_count_zero ./verdict_main.exe -f 'never runs'; echo "exit $?"
-  prop_count_zero: 1 passed in DURATION (seed SEED).
-  exit 0
+  prop_count_zero: 1 test (seed SEED)
+  ──────────────────────── failures ────────────────────────
+    VACUOUS  never runs
+      test/cram/verdicts/verdict_main.ml:N
+      no case and no example ran: ~count:0 runs the examples alone, and there are none
+  ──────────────────────────────────────────────────────────
+  
+  1 vacuous in DURATION.
+  exit 1
 
 The count cannot be broadcast as 0: the mirror refuses it.
 
@@ -165,31 +215,32 @@ The count cannot be broadcast as 0: the mirror refuses it.
   usage: verdict_main.exe [OPTIONS] [PATTERN...]
   [2]
 
-A table with no row is a test that checks nothing, and fails. A mirror's
-selection that leaves it out exits 0, as it does for any test:
+A table with no row is a test that checks nothing, and is vacuous. A
+mirror's selection that leaves it out exits 0, as it does for any test:
 
   $ run VERDICT_SUITE=table_zero ./verdict_main.exe
   table_zero: 1 test
   ──────────────────────── failures ────────────────────────
-    FAIL  rows
+    VACUOUS  rows
       test/cram/verdicts/verdict_main.ml:N
       the table has no row, so it checks nothing
   ──────────────────────────────────────────────────────────
   
-  1 failed in DURATION.
+  1 vacuous in DURATION.
   [1]
   $ run VERDICT_SUITE=table_zero WINDTRAP_FILTER=nomatch ./verdict_main.exe
   table_zero: no tests ran: filter "nomatch" matched none of 1 test.
 
-A table with no row beside a passing test fails, and the run exits 1:
+A table with no row beside a passing test is vacuous, and the run exits
+1, as for a failure:
 
   $ run VERDICT_SUITE=table_zero_plus ./verdict_main.exe; echo "exit $?"
   table_zero_plus: 2 tests
   ──────────────────────── failures ────────────────────────
-    FAIL  rows
+    VACUOUS  rows
       test/cram/verdicts/verdict_main.ml:N
       the table has no row, so it checks nothing
   ──────────────────────────────────────────────────────────
   
-  1 passed, 1 failed in DURATION.
+  1 passed, 1 vacuous in DURATION.
   exit 1

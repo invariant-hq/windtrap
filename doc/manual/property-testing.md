@@ -250,7 +250,7 @@ before any generated case:
 
 ```
 $ dune exec examples/03-property-testing/test_geo.exe -- -f 'k squared'
-geo: 1 test (seed s1:276f049bf74a4ded)
+geo: 1 test (seed s1:e9468f9856a0f875)
 ──────────────────────── failures ────────────────────────
   FAIL  scale › multiplies the area by k squared
     examples/03-property-testing/test_geo.ml:37
@@ -264,18 +264,26 @@ geo: 1 test (seed s1:276f049bf74a4ded)
       actual    6.
 ──────────────────────────────────────────────────────────
 
-1 failed in 0.5ms.
+1 failed in 1.6ms.
 ```
 
 ## Discarding and labelling cases
 
 `assume cond` discards a case the law does not apply to (see
 `Windtrap.assume`). A property that discards more than `~max_discard`
-cases fails with `property gave up:` and its counts. A precondition on
-the value's structure belongs in the generator, built in or with
-`Gen.such_that`. `classify` and `collect` label a case, and `cover`
-fails the property when no passing case carries its label (see
-`Windtrap.cover`). `undoes scale by k` holds only where `1. /. k` is
+cases is vacuous, with `property gave up:` and its counts. A
+precondition on the value's structure belongs in the generator, built in
+or with `Gen.such_that`. `classify` and `collect` label a case, and
+`cover` makes the property vacuous when no passing case carries its
+label (see `Windtrap.cover`).
+
+A vacuous test refuted nothing and checked less than it claims. Its
+block is tagged `VACUOUS` above one line that says why, the summary
+counts it apart from the failures, as `1 vacuous`, and it exits `1` as
+a failure does. Every case discarded, a table with no row, a property of
+`~count:0` with no example, an unmet `cover` and a stateful command
+never called are vacuous (see the vacuity section of
+`lib/windtrap.mli`). `undoes scale by k` holds only where `1. /. k` is
 finite: `float_range 0. 10.` draws `0.` and the least subnormal float
 among its corners, and their reciprocals are `infinity`.
 
@@ -564,7 +572,7 @@ equality:
 $ dune exec examples/03-property-testing/test_geo.exe -- --seed s1:5b58964be30f69a8 -f witness
 geo: 3 tests (seed s1:5b58964be30f69a8)
 ──────────────────────── failures ────────────────────────
-  FAIL  witness › equal_drawing is an equivalence
+  VACUOUS  witness › equal_drawing is an equivalence
     examples/03-property-testing/test_geo.ml:110
       110 │ prop "equal_drawing is an equivalence"
 
@@ -590,7 +598,7 @@ geo: 3 tests (seed s1:5b58964be30f69a8)
 ──────────────────────────────────────────────────────────
 
 replay: dune exec examples/03-property-testing/test_geo.exe -- --seed s1:5b58964be30f69a8 -f 'witness'
-1 passed, 2 failed in 1.1ms.
+1 passed, 1 failed, 1 vacuous in 5.6ms.
 ```
 
 ### Choosing a law for what you wrote
@@ -816,17 +824,17 @@ form a chain:
 $ dune exec examples/03-property-testing/test_geo.exe -- --seed s1:5b58964be30f69a8 -f part_of
 geo: 1 test (seed s1:5b58964be30f69a8)
 ──────────────────────── failures ────────────────────────
-  FAIL  part_of › is a partial order
+  VACUOUS  part_of › is a partial order
     examples/03-property-testing/test_geo.ml:166
       166 │ prop "is a partial order"
 
     never covered: "partial order: a strict chain" (over 100 passing cases)
 ──────────────────────────────────────────────────────────
 
-1 failed in 0.8ms.
+1 vacuous in 4.3ms.
 ```
 
-A demand that no passing case met fails the property with
+A demand that no passing case met makes the property vacuous, with
 `never covered:` and its label, the law's name followed by one of these:
 
 - `an unequal pair`: the witness's equality holds on every pair, as in

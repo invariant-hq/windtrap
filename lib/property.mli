@@ -105,7 +105,8 @@ val cover : context -> string -> bool -> unit
     empty table of demands is a satisfied one.
 
     The demands are judged once, when the run has passed its full case count,
-    and an unmarked label then makes the outcome {!Coverage_failed}. *)
+    and an unmarked label then makes the outcome {!Vacuous} with {!Uncovered}.
+*)
 
 (** {1:outcomes Outcomes} *)
 
@@ -173,12 +174,23 @@ type stats = {
     The [stats] of a [Fail] are those of the moment the case failed, and an
     unmarked {!cover} label never turns a [Fail] into another outcome. *)
 type outcome =
-  | Pass of stats  (** Every case passed and every {!cover} label was marked. *)
+  | Pass of stats
+      (** At least one case passed, every case passed, and every {!cover} label
+          was marked. *)
   | Fail of { failure : Failure.t; stats : stats }  (** A case failed. *)
-  | Coverage_failed of stats
-      (** The full case count passed and an entry of [coverage] is unsatisfied.
-      *)
-  | Gave_up of stats  (** More than [max_discard] cases were discarded. *)
+  | Vacuous of { why : vacuity; stats : stats }
+      (** No case failed, and the run checked less than it claims. *)
+
+(** The type for why a run that refuted nothing is vacuous. *)
+and vacuity =
+  | Gave_up  (** More than [max_discard] cases were discarded. *)
+  | Discarded
+      (** No case passed, and at least one was discarded, or the domain checked
+          whole has no value. *)
+  | No_case
+      (** No case and no example ran: a [count] of [0] and no [examples]. *)
+  | Uncovered
+      (** Every case passed, and an entry of [coverage] is unsatisfied. *)
 
 (** {1:running Running} *)
 
@@ -304,10 +316,19 @@ val run :
 
     {b Generated cases.} [index] counts from zero and counts the discarded
     cases, so a discarded seed is never drawn again. The run ends when [count]
-    cases have passed. It gives up as soon as more than [max_discard] cases are
-    discarded, the examples included, so a [max_discard] of [0] gives up on the
-    first discard. It gives up even when [count] is already met, as under
-    [~count:0] with examples that discard past the budget.
+    cases have passed. It gives up, {!Vacuous} with {!Gave_up}, as soon as more
+    than [max_discard] cases are discarded, the examples included, so a
+    [max_discard] of [0] gives up on the first discard. It gives up even when
+    [count] is already met, as under [~count:0] with examples that discard past
+    the budget.
+
+    {b Vacuity.} A run that refuted nothing and passed no case, an example
+    included, checked nothing, and is {!Vacuous} whatever its count: with
+    {!Discarded} when a case was discarded or the domain checked whole has no
+    value, and with {!No_case} when nothing ran, as under [~count:0] without
+    [examples]. A case read from bytes ([case]) is never vacuous: bytes from
+    elsewhere that the law discards are outside its domain and say nothing of
+    the property, so the run skips instead.
 
     A [gen] that discards discards the case, and one that raises any other
     control raises it through [run]. A fault of [gen] fails the case unshrunk,

@@ -492,9 +492,9 @@ val stateful :
 
     {b Commands never called.} When {!Run.property} returns, every case has
     passed. If at least one did, a command that some passing case's subset held
-    and that no passing case ran fails the test with a [Failure.Check_failure]
-    at the declaration site, whose message names every such command in the order
-    of [commands]:
+    and that no passing case ran makes the test vacuous, with a
+    [Failure.Check_failure] of a {!Failure.Vacuous} failure at the declaration
+    site, whose text names every such command in the order of [commands]:
     [never called: "pop", "peek" (over 100 passing cases); a call runs only
      where its arguments resolve and its ~pre holds]. When one of them takes an
     element of an {!among} type, the hint reads

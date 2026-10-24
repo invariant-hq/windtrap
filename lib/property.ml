@@ -90,11 +90,12 @@ type stats = {
   coverage : cover_status list;
 }
 
+type vacuity = Gave_up | Discarded | No_case | Uncovered
+
 type outcome =
   | Pass of stats
   | Fail of { failure : Failure.t; stats : stats }
-  | Coverage_failed of stats
-  | Gave_up of stats
+  | Vacuous of { why : vacuity; stats : stats }
 
 let sorted_bindings table =
   List.sort
@@ -393,16 +394,21 @@ let run ?loc ?count ?max_discard ?(examples = []) ?(summary = Fun.const None)
     let node = Gen.Engine.parse gen src in
     (node, shrink_choices ~runs ~output ~shrinking gen law (case_of src) node)
   in
+  let vacuous why = Vacuous { why; stats = stats ctx } in
+  (* A run that passed no case checked nothing, whatever its count. *)
   let judged () =
-    if ctx.discards > max_discard then Gave_up (stats ctx)
+    if ctx.discards > max_discard then vacuous Gave_up
+    else if ctx.cases = 0 then
+      vacuous
+        (if ctx.discards > 0 || ctx.whole = Some 0 then Discarded else No_case)
     else
       let stats = stats ctx in
       if List.for_all (fun status -> status.satisfied) stats.coverage then
         Pass stats
-      else Coverage_failed stats
+      else Vacuous { why = Uncovered; stats }
   in
   let rec generate ~passed index =
-    if ctx.discards > max_discard then Gave_up (stats ctx)
+    if ctx.discards > max_discard then vacuous Gave_up
     else if passed >= count then judged ()
     else
       let state = Seed.make (Seed.derive ~root ~path ~index) in

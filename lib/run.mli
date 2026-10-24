@@ -539,8 +539,9 @@ val prop :
 
     The engine draws from [config.seed] and from the path string of the test.
     Its context is {!prop_context} while [law] runs. A [Fail] adds the
-    {!Failure.Property} failure of the engine. [Coverage_failed] and [Gave_up]
-    each add a message failure, located at the declaration of the test.
+    {!Failure.Property} failure of the engine. A [Vacuous] outcome adds a
+    {!Failure.Vacuous} failure, located at the declaration of the test, whose
+    one line says why.
 
     Raises [Invalid_argument] as {!Test_tree.test} does. A negative [count] or
     [max_discard] makes {!Property.run} raise inside the body, which fails the

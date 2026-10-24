@@ -428,6 +428,7 @@ let texts_of (f : Failure.t) =
         terms
   | Timeout _ -> []
   | Message t -> [ ("message", t) ]
+  | Vacuous t -> [ ("vacuous", t) ]
 
 let bounded_texts (_, (f, fields)) =
   let row (name, (t : Failure.text)) =
@@ -461,7 +462,7 @@ let defaults (f : Failure.t) =
         | Value -> "value"
         | Pre_image -> "pre-image")
   | Law { clause; _ } -> "clause " ^ present clause
-  | Containment _ | Timeout _ | Message _ -> "no default"
+  | Containment _ | Timeout _ | Message _ | Vacuous _ -> "no default"
 
 let window (f : Failure.t) =
   require_match
@@ -469,7 +470,7 @@ let window (f : Failure.t) =
       | Failure.Containment { excerpt; excerpt_offset; haystack_length; _ } ->
           Some (excerpt_offset, excerpt, haystack_length)
       | Equality _ | Raise _ | Baseline _ | Property _ | Law _ | Timeout _
-      | Message _ ->
+      | Message _ | Vacuous _ ->
           None)
     f.kind
 
@@ -564,7 +565,7 @@ let baseline_names = function
       { baseline = File p; state = Unresolvable { candidate }; _ } ->
       Some (p, candidate)
   | Baseline _ | Equality _ | Containment _ | Raise _ | Property _ | Law _
-  | Timeout _ | Message _ ->
+  | Timeout _ | Message _ | Vacuous _ ->
       None
 
 let names_whole () =
@@ -775,7 +776,7 @@ let withheld (f : Failure.t) =
   | Baseline { withheld = Some Conflict; _ } -> "conflict"
   | Baseline { withheld = Some In_law; _ } -> "in a law"
   | Equality _ | Containment _ | Raise _ | Property _ | Law _ | Timeout _
-  | Message _ ->
+  | Message _ | Vacuous _ ->
       "no baseline"
 
 let baseline state = Failure.baseline (File "p") state
@@ -788,7 +789,7 @@ let property_inner (f : Failure.t) =
     (function
       | Failure.Property { inner; _ } -> inner
       | Equality _ | Containment _ | Raise _ | Baseline _ | Law _ | Timeout _
-      | Message _ ->
+      | Message _ | Vacuous _ ->
           None)
     f.kind
 

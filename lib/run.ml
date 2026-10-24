@@ -646,21 +646,30 @@ let release_fixtures t ~announce =
 
 (* Properties *)
 
-let coverage_failure ?loc (stats : Property.stats) =
-  let unsatisfied (c : Property.cover_status) =
-    if c.satisfied then None else Some (Pp.str "%S" c.label)
-  in
-  Failure.message ?loc
-    (Pp.str "never covered: %s (over %d passing cases)"
-       (String.concat ", " (List.filter_map unsatisfied stats.coverage))
-       stats.cases)
-
-let gave_up_failure ?loc (stats : Property.stats) =
-  Failure.message ?loc
-    (Pp.str
-       "property gave up: %d discards exhausted the generation budget (%d \
-        cases passed)"
-       stats.discards stats.cases)
+(* Why a property that refuted nothing is vacuous, in one line. *)
+let vacuity_failure ?loc (why : Property.vacuity) (stats : Property.stats) =
+  Failure.vacuous ?loc
+    (match why with
+    | Gave_up ->
+        Pp.str
+          "property gave up: %d discards exhausted the generation budget (%d \
+           cases passed)"
+          stats.discards stats.cases
+    | Discarded when stats.discards = 0 ->
+        "the generator discards every value of its domain, so no case ran"
+    | Discarded ->
+        Pp.str "every case was discarded (%d discards), so no case ran"
+          stats.discards
+    | No_case ->
+        "no case and no example ran: ~count:0 runs the examples alone, and \
+         there are none"
+    | Uncovered ->
+        let unsatisfied (c : Property.cover_status) =
+          if c.satisfied then None else Some (Pp.str "%S" c.label)
+        in
+        Pp.str "never covered: %s (over %d passing cases)"
+          (String.concat ", " (List.filter_map unsatisfied stats.coverage))
+          stats.cases)
 
 (* The signals that end a run (see [with_interrupts]). *)
 let interrupting = [ Sys.sigint; Sys.sigterm; Sys.sighup ]
@@ -768,10 +777,12 @@ let property ?loc ?count ?max_discard ?examples ?summary ?runs ?only gen law =
     (* Coverage is judged once every case has run, so a property that
        stopped early reports no coverage it did not judge. *)
     | Fail { failure; stats } -> fail { stats with coverage = [] } failure
-    | Coverage_failed stats ->
-        fail stats (coverage_failure ?loc:frame.loc stats)
-    | Gave_up stats ->
-        fail { stats with coverage = [] } (gave_up_failure ?loc:frame.loc stats)
+    | Vacuous { why = Uncovered; stats } ->
+        fail stats (vacuity_failure ?loc:frame.loc Uncovered stats)
+    | Vacuous { why; stats } ->
+        fail
+          { stats with coverage = [] }
+          (vacuity_failure ?loc:frame.loc why stats)
   in
   (* [--replay] checks its token. Under [--failed] a property checks again
      each counterexample it recorded, by its token, and a table its rows,
@@ -1321,7 +1332,7 @@ let is_baseline (failure : Failure.t) =
   match failure.kind with
   | Baseline _ -> true
   | Equality _ | Containment _ | Raise _ | Property _ | Law _ | Timeout _
-  | Message _ ->
+  | Message _ | Vacuous _ ->
       false
 
 let carries_correction (failure : Failure.t) =
@@ -1329,7 +1340,7 @@ let carries_correction (failure : Failure.t) =
   | Baseline { baseline = File _; state = Missing _; _ } -> false
   | Baseline { state = Missing _ | Mismatch _; withheld = None; _ } -> true
   | Baseline _ | Equality _ | Containment _ | Raise _ | Property _ | Law _
-  | Timeout _ | Message _ ->
+  | Timeout _ | Message _ | Vacuous _ ->
       false
 
 (* A part of an attempt settles as a whole: the attempt, or a row of a

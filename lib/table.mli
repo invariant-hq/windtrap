@@ -25,7 +25,8 @@ val check :
 (** [check w rows fn] is the body of the test that {!cases} declares, [loc]
     being its declaration site. It prints every row with [w], once, and applies
     [label] to each, an empty label showing as none.
-    - A table with no row fails with a message that says it checks nothing.
+    - A table with no row is vacuous, with a {!Failure.Vacuous} failure that
+      says it checks nothing.
     - Two rows that print alike, byte for byte, are duplicates: the table fails
       with a message that names their positions and runs no row.
     - Under [--failed] the table runs only the rows that {!Run.recorded} names.

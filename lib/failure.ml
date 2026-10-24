@@ -97,6 +97,7 @@ type kind =
     }
   | Timeout of { limit : float; case : timed_case option }
   | Message of text
+  | Vacuous of text
 
 and law_term =
   | Term of { name : string; value : text }
@@ -413,6 +414,8 @@ let law ?loc ?msg ?clause ~law ~equation terms =
 
 let timeout ?loc ?case limit = make ?loc (Timeout { limit; case })
 let message ?loc s = make ?loc (Message (text s))
+let vacuous ?loc s = make ?loc (Vacuous (text s))
+let is_vacuous t = match t.kind with Vacuous _ -> true | _ -> false
 
 let of_fault : fault -> t = function
   | `Assertion failure -> failure
@@ -431,7 +434,7 @@ let with_withheld withheld t =
   | Baseline { withheld = Some (Refused _ | Conflict | In_law); _ } -> t
   | Baseline b -> { t with kind = Baseline { b with withheld = Some withheld } }
   | Equality _ | Containment _ | Raise _ | Property _ | Law _ | Timeout _
-  | Message _ ->
+  | Message _ | Vacuous _ ->
       t
 
 (* Captured-output tails *)

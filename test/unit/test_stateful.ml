@@ -118,6 +118,7 @@ let kind (f : Failure.t) =
   in
   match f.kind with
   | Message m -> strf "message %S" m.kept
+  | Vacuous m -> strf "vacuous %S" m.kept
   | Raise { expected; actual; _ } ->
       "raise" ^ side "expected" expected ^ side "actual" actual
   | Equality { expected; actual; _ } ->
@@ -2084,7 +2085,7 @@ let darr_commands () =
 
 let property_failure = function
   | Property.Fail { failure; _ } -> Some failure
-  | Pass _ | Coverage_failed _ | Gave_up _ -> None
+  | Pass _ | Vacuous _ -> None
 
 (* The entry of the failure that [commands] give, as the report prints it,
    under the test's declaration at [loc]. *)
@@ -2897,14 +2898,18 @@ let judged =
             ignore ignore;
         ]),
       "passed" );
-    ("no case", 0, (fun () -> [ dead "never" ]), "passed");
+    ( "no case",
+      0,
+      (fun () -> [ dead "never" ]),
+      "no case and no example ran: ~count:0 runs the examples alone, and there \
+       are none" );
   ]
 
 let verdict (_, count, commands, _) =
   let t = Stateful.stateful ~count ~steps:3 "spec" (commands ()) in
   match body t () with
   | () -> "passed"
-  | exception Failure.Check_failure { kind = Message m; _ } -> m.kept
+  | exception Failure.Check_failure { kind = Vacuous m; _ } -> m.kept
 
 let declaration_site () =
   let pos = ("spec.ml", 42, 0, 7) in

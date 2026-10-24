@@ -50,6 +50,7 @@ let payload (f : Failure.t) =
         (kept expected) (kept actual) (message_diff d)
         (if Option.is_some backtrace then ", with a backtrace" else "")
   | Message t -> strf "message %S" t.kept
+  | Vacuous t -> strf "vacuous %S" t.kept
   | Baseline _ -> "baseline"
   | Property _ -> "property"
   | Law _ -> "law"

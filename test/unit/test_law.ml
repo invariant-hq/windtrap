@@ -140,6 +140,7 @@ let nested (f : Failure.t) =
         strf "uncaught %s%s" actual.kept
           (if Option.is_some backtrace then ", with a backtrace" else "")
     | Message m -> "message " ^ m.kept
+    | Vacuous m -> "vacuous " ^ m.kept
     | Raise _ | Containment _ | Baseline _ | Property _ | Law _ | Timeout _ ->
         "another failure"
   in
@@ -161,7 +162,7 @@ let payload (f : Failure.t) =
       String.concat "\n"
         (strf "%s%s: %s" law clause equation :: List.map term terms)
   | Equality _ | Containment _ | Raise _ | Baseline _ | Property _ | Timeout _
-  | Message _ ->
+  | Message _ | Vacuous _ ->
       "not a law's failure: " ^ nested f
 
 let control = function
@@ -1466,7 +1467,7 @@ let no_order =
 let demanded value law =
   match Run.property ~count:5 (Gen.constant value) law with
   | () -> "covered"
-  | exception Failure.Check_failure { kind = Message m; _ } -> m.kept
+  | exception Failure.Check_failure { kind = Vacuous m; _ } -> m.kept
 
 let fn =
   Testable.make
@@ -1691,8 +1692,8 @@ let from_domain name =
 
 let message r path =
   match Recorded.failures r path with
-  | [ { kind = Message m; _ } ] -> m.kept
-  | _ -> "not one message"
+  | [ { kind = Vacuous m; _ } ] -> m.kept
+  | _ -> "not one vacuous failure"
 
 let prop_stats r path =
   let at (row : Run.result) = List.equal String.equal row.path path in
@@ -1841,7 +1842,7 @@ let proposal =
                   expected  Some _
                   actual    None
 
-            FAIL  path › Path.equal is an equivalence
+            VACUOUS  path › Path.equal is an equivalence
               test/unit/test_law.ml:113
                 113 │ prop "Path.equal is an equivalence"
 

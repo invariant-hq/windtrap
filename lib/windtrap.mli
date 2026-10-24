@@ -193,7 +193,7 @@ val cases :
     of 80 bytes, and in full where the report prints a counterexample.
     [label row], when given, shows beside the row's position, as in
     [row 2 of 5, LABEL], and identifies nothing; an empty label shows as none. A
-    table with no row fails, since it checks nothing.
+    table with no row is {{!section-vacuity}vacuous}, since it checks nothing.
 
     {b Baselines.} Each row settles its baseline corrections alone, as a test of
     its own would: a row whose failures are all baseline failures keeps its
@@ -956,7 +956,31 @@ val pass : 'a testable
     outside the law's domain and checks nothing, so the test skips, saying why.
     A test that checks no property fails. A selection of another number of tests
     than one, a file that cannot be read and a [--replay] beside it are refused,
-    and exit [2]. *)
+    and exit [2].
+
+    {2:vacuity Vacuity}
+
+    A test that refuted nothing and checked less than it claims is {e vacuous},
+    a verdict of its own that fails, as a failure does. Its report block is
+    tagged [VACUOUS], with one line that says why, the summary counts it as
+    [N vacuous] apart from the failures, and [--json] gives it the verdict
+    ["vacuous"]. A test is vacuous when:
+    - every case of a generated run was discarded, or more than its
+      [max_discard] were, which reads [property gave up: …]. A case that
+      [--case] reads from bytes and the law discards is no such run: bytes from
+      elsewhere that fall outside the law's domain say nothing of the property,
+      so the test skips (see above), and failing it would only be noise;
+    - a table has no row;
+    - no case and no example ran, as under [~count:0] without [~examples];
+    - a {!cover} demand is unmet, which reads [never covered: …];
+    - a {!stateful} command that a passing program could call was never called,
+      which reads [never called: …].
+
+    A vacuous test returns the exit code of a failure, [1]: a run that claims
+    more than it checked must not end green, and a gate that reads the code has
+    no other remedy for it than for a failure, an edit of the test. The two
+    differ only in what the reader is told, and the report and [--json] tell it.
+    A vacuous test enters the record that [--failed] reads. *)
 
 (**/**)
 
@@ -1249,10 +1273,10 @@ val prop :
     - [count] is the number of generated cases that must pass. Defaults to
       [100]. [--prop-count] raises it, and never lowers it, so a long run scales
       every property. With [0] the examples run alone, whatever [--prop-count]
-      says.
+      says, and a property with none is {{!section-vacuity}vacuous}.
     - [max_discard] is the number of discarded cases (see {!assume}) past which
-      the property gives up and fails. Defaults to twice the effective [count].
-      No flag sets it.
+      the property gives up, and is {{!section-vacuity}vacuous}. Defaults to
+      twice the effective [count]. No flag sets it.
     - [examples] are inputs that the law runs on before any generated case. They
       are not shrunk and do not depend on the seed.
     - [timeout] covers generation and shrinking together. When it expires before
@@ -1297,9 +1321,9 @@ val classify : string -> bool -> unit
     Raises as {!collect} does, whatever [cond]. *)
 
 val cover : string -> bool -> unit
-(** [cover label cond] is [classify label cond] with a demand. The property
-    fails unless a passing case marked [label]. The demand is on presence, never
-    on a proportion.
+(** [cover label cond] is [classify label cond] with a demand. The property is
+    {{!section-vacuity}vacuous} unless a passing case marked [label]. The demand
+    is on presence, never on a proportion.
 
     The demand registers when [cover] is called, whatever [cond], so a [cover]
     the law does not always reach may register nothing. It is judged when the
@@ -1653,11 +1677,12 @@ val stateful :
     that checks it alone, [replay it: --replay TOKEN], as a {!prop} does.
 
     {b Commands never called.} When every case has passed, a command that a
-    passing case could draw and that no passing case ran fails the test with a
-    message that starts [never called: "pop" (over 100 passing cases)]. This is
-    a demand on presence over the whole run, like {!cover}'s, so a [count] or
-    [steps] too small can miss a legal command. A command listed twice is one
-    command. Under [~count:0] nothing is judged.
+    passing case could draw and that no passing case ran makes the test
+    {{!section-vacuity}vacuous}, with a line that starts
+    [never called: "pop" (over 100 passing cases)]. This is a demand on presence
+    over the whole run, like {!cover}'s, so a [count] or [steps] too small can
+    miss a legal command. A command listed twice is one command. Under
+    [~count:0] no program runs, and the test is vacuous.
 
     A stateful test carries the tags ["prop"] and ["stateful"]. Like a {!prop},
     it inherits the [retries] of an enclosing group, and every retry replays the
@@ -1941,11 +1966,11 @@ val run : ?argv:string array -> string -> test list -> int
     {!run} returns:
     - [0] when no selected test failed. A skip and an expected failure are no
       failure. [--help], [--version] and [-l] print and return [0].
-    - [1] when a test failed, or when a fixture's release or the writing of a
-      correction failed. It is also the code of a run refused before anything
-      executed, under [-l] too. The refusals are two tests with one path, a
-      {!focus} under [CI] and [-u] under [CI]. A test that ended its worker
-      process is a failed test.
+    - [1] when a test failed or was {{!section-vacuity}vacuous}, or when a
+      fixture's release or the writing of a correction failed. It is also the
+      code of a run refused before anything executed, under [-l] too. The
+      refusals are two tests with one path, a {!focus} under [CI] and [-u] under
+      [CI]. A test that ended its worker process is a failed test.
     - [2] when no test ran, as with a mistyped filter, or when the command line
       does not parse. An empty [--shard] bucket and a [--failed] with nothing
       recorded are cases of the first, and the second returns [2] under [-l]

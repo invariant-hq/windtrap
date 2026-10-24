@@ -119,7 +119,8 @@ val result : t -> Run.result -> unit
     A counted failure commits its block in both kinds of run. In a compact run
     nothing else prints, and the first block follows the header and the rule
     that opens the failures. A block holds, in this order:
-    - the title.
+    - the title, tagged [VACUOUS] when every failure of [r] is a
+      {!Failure.Vacuous} one, and [FAIL] otherwise.
     - one {!Report_sections.pp_failure} entry per failure of [r], with its
       source line.
     - the label table of a property.
@@ -228,8 +229,9 @@ val finish :
     there is no section and the summary has no corrections term.
 
     {b Summary.} A flaky test counts as passed, an excused result as an expected
-    failure only, and a failed fixture release as failed although it is no test.
-    The tests not run are the [tests] of {!header} less the length of [results],
+    failure only, a counted failure tagged [VACUOUS] as vacuous and not as
+    failed, and a failed fixture release as failed although it is no test. The
+    tests not run are the [tests] of {!header} less the length of [results],
     never below [0]. Subtest failures are the entries of counted failures for
     which {!is_subtest_failure} holds, and corrections and files not written
     count files.

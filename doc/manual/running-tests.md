@@ -247,7 +247,9 @@ process state › a build writes in the working directory
 
 `run` returns `0`, `1` or `2`, and the suite's last line hands the code
 to `exit`. The exit codes section of `Windtrap.run` says which runs
-return which. Code under test that calls `exit` does not end the run;
+return which. A vacuous test, one that checked less than it claims,
+returns `1` as a failure does: the summary and the report tell the two
+apart, and a gate needs no other code to go red. Code under test that calls `exit` does not end the run;
 the call fails its test.
 
 ## Bounding a test in time

@@ -73,6 +73,9 @@ let pass ?duration ?attempts name =
 let failed ?duration ?attempts name msg =
   result ?duration ?attempts [ name ] (Failure.Fail [ Failure.message msg ])
 
+let vacuous name reason =
+  result [ name ] (Failure.Fail [ Failure.vacuous reason ])
+
 let run_through ?(tests = None) ?(suite = "s") ?(results = [])
     ?(release_failures = []) ?baselines ?(duration = 0.1) r =
   (match tests with
@@ -660,6 +663,12 @@ let stream_rows =
         false,
         "s: 2 tests\n" ^ failures_rule ^ "\n  FAIL  bad\n    b\n" ^ closing_rule
         ^ "\n\n1 passed, 1 failed in 500ms.\n" ) );
+    ( "a vacuous test is tagged and counted apart from a failure",
+      ( [ pass "ok"; vacuous "empty" "no row"; failed "bad" "b" ],
+        false,
+        "s: 3 tests\n" ^ failures_rule
+        ^ "\n  VACUOUS  empty\n    no row\n\n  FAIL  bad\n    b\n"
+        ^ closing_rule ^ "\n\n1 passed, 1 failed, 1 vacuous in 500ms.\n" ) );
     ( "under -v the rows are -v's",
       ( [ pass "ok" ],
         true,

@@ -51,6 +51,14 @@
 
 ### Property testing
 
+- (breaking) A test that refuted nothing and checked less than it
+  claims is vacuous, a verdict of its own that fails and exits `1`:
+  every case of a property discarded, a table with no row, no case and
+  no example run, an unmet `cover`, and a stateful command never
+  called. Its block is tagged `VACUOUS` above one line that says why,
+  and the summary counts it apart from the failures, as `1 vacuous`.
+  A property of `~count:0` with no example passed in 0.2.0 and fails
+  now; the others failed as plain failures.
 - The captured output in the block of a failing property or stateful
   test is that of the run that failed on the counterexample, where
   0.2.0 showed the last lines of the whole search, which end on the

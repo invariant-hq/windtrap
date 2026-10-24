@@ -37,7 +37,10 @@ let numbered positions =
 let check ?loc ?label w rows fn =
   let rows = Array.of_list rows in
   let n = Array.length rows in
-  if n = 0 then refuse ?loc "the table has no row, so it checks nothing";
+  if n = 0 then
+    raise
+      (Failure.Check_failure
+         (Failure.vacuous ?loc "the table has no row, so it checks nothing"));
   let printed = Array.map (Testable.to_string w) rows in
   (match duplicates printed with
   | [] -> ()

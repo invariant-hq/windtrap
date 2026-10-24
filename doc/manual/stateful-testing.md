@@ -144,7 +144,8 @@ let queues = group "queue" [ stateful "behaves like a list" commands ]
 calls, 100 and 20 by default. It runs each call on the system, then on
 the reference, and fails at the first call whose outcomes differ. A
 command listed twice is drawn twice as often, and a command that no
-passing program calls fails the test with `never called:` and its name.
+passing program calls makes the test vacuous, a verdict that fails,
+with `never called:` and its name.
 The `cover` in `Model.push` fails the test when no program fills a
 queue.
 
@@ -511,7 +512,7 @@ An element has limits that a value does not have:
   prefix, as a command with a `~pre` does.
 
 A command whose value never lists an element is never called, and the
-test fails with `never called:` and a hint that names the listing:
+test is vacuous, with `never called:` and a hint that names the listing:
 `a call runs only where its arguments resolve, its value lists an element and its ~pre holds`.
 
 ## Checking an outcome the API leaves open

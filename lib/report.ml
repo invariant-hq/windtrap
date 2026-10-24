@@ -192,6 +192,13 @@ let failures (r : Run.result) =
   | Failure.Fail failures -> failures
   | Failure.Pass | Failure.Skip _ -> []
 
+(* A counted failure that refuted nothing: each of its failures says the
+   test checked less than it claims. *)
+let vacuous (r : Run.result) =
+  match failures r with
+  | [] -> false
+  | failures -> List.for_all Failure.is_vacuous failures
+
 let attempts (r : Run.result) =
   if r.attempts > 1 then [ strf "%d attempts" r.attempts ] else []
 
@@ -313,12 +320,14 @@ let failure_block t (r : Run.result) =
             { state = Failure.Mismatch _ | Failure.Unresolvable _; _ }
         | Failure.Equality _ | Failure.Containment _ | Failure.Raise _
         | Failure.Property _ | Failure.Law _ | Failure.Timeout _
-        | Failure.Message _ ->
+        | Failure.Message _ | Failure.Vacuous _ ->
             false)
       failures
   in
   put t
-    (test_line ~title:true ~tag:"FAIL" ~style:`Red
+    (test_line ~title:true
+       ~tag:(if vacuous r then "VACUOUS" else "FAIL")
+       ~style:`Red
        ~name:(Test_tree.path_to_string r.path)
        ~qualifiers:
          (attempts r
@@ -501,6 +510,7 @@ type summary = {
   skipped : int;
   excused : int;
   failed : int;
+  vacuous : int;
   subtests : int;
   not_run : int;
   corrections : int; (* files written *)
@@ -513,7 +523,8 @@ type summary = {
 let summary_line t (c : summary) ~duration =
   let named = if t.header_printed then None else t.header in
   let prefix = match named with Some h -> h.suite ^ ": " | None -> "" in
-  if c.passed + c.failed + c.skipped + c.excused + c.not_run = 0 then begin
+  if c.passed + c.failed + c.vacuous + c.skipped + c.excused + c.not_run = 0
+  then begin
     let reason =
       match t.header with
       | Some h ->
@@ -546,7 +557,9 @@ let summary_line t (c : summary) ~duration =
       List.concat
         [
           term c.passed
-            ((if c.failed = 0 && c.not_written = 0 then styled `Green else plain)
+            ((if c.failed = 0 && c.vacuous = 0 && c.not_written = 0 then
+                styled `Green
+              else plain)
                (strf "%d passed" c.passed)
             ::
             (if c.flaky > 0 then
@@ -567,6 +580,7 @@ let summary_line t (c : summary) ~duration =
                         (plural c.subtests)
                     else ""));
             ];
+          term c.vacuous [ styled `Red (strf "%d vacuous" c.vacuous) ];
           term c.not_run [ plain (strf "%d not run" c.not_run) ];
           term c.corrections
             [
@@ -675,6 +689,7 @@ let close t ~commands ~results ~release_failures ~duration ?baselines ?stopped
   clear_live t;
   let count s = List.length (List.filter (fun r -> status r = s) results) in
   let failed = List.filter (fun r -> status r = `Failed) results in
+  let refuted = List.filter (fun r -> not (vacuous r)) failed in
   let slow = List.filter (over_threshold t) results in
   let flaky =
     List.filter
@@ -699,7 +714,8 @@ let close t ~commands ~results ~release_failures ~duration ?baselines ?stopped
       flaky = List.length flaky;
       skipped = count `Skipped;
       excused = count `Excused;
-      failed = List.length failed + List.length release_failures;
+      failed = List.length refuted + List.length release_failures;
+      vacuous = List.length failed - List.length refuted;
       subtests =
         List.length
           (List.filter Sections.is_subtest_failure

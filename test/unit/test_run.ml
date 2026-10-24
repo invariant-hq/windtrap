@@ -54,6 +54,7 @@ let line (f : Failure.t) =
   let kind =
     match f.kind with
     | Failure.Message _ -> "message"
+    | Failure.Vacuous _ -> "vacuous"
     | Failure.Timeout { limit; case = None } -> strf "timeout %gs" limit
     | Failure.Timeout { limit; case = Some _ } ->
         strf "timeout %gs in a case" limit
@@ -83,7 +84,9 @@ let failure r path = require_match only (Recorded.failures r path)
 
 let message =
   require_match (fun (f : Failure.t) ->
-      match f.kind with Failure.Message m -> Some m.kept | _ -> None)
+      match f.kind with
+      | Failure.Message m | Failure.Vacuous m -> Some m.kept
+      | _ -> None)
 
 let rows_of r = Run.results (Recorded.outcome r).run
 
@@ -873,7 +876,7 @@ let the_running_test =
           equal (list string) [ "body timeout 0.02s" ]
             (lines subtests [ "times out" ]));
       test "an assume in a subtest in a law discards the case" (fun () ->
-          equal (list string) [ "body message" ] (lines subtests [ "discards" ]);
+          equal (list string) [ "body vacuous" ] (lines subtests [ "discards" ]);
           contains ~sub:"property gave up"
             (message (failure subtests [ "discards" ])));
       test "a subtest failure stays in the body, in a setup and a teardown"

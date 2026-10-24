@@ -252,6 +252,13 @@ type kind =
   | Message of text
       (** A direct failure: the text of a [fail], or a failure that the library
           words itself, as it does an intercepted [exit]. *)
+  | Vacuous of text
+      (** The test refuted nothing, and checked less than it claims: every case
+          of a property was discarded, a table has no row, no case and no
+          example ran, a {!Property.cover} demand is unmet, or a stateful
+          command was never called. The text says which, in one line. A renderer
+          reports a test whose every failure is [Vacuous] as vacuous, and never
+          as refuted. *)
 
 (** The type for a term of a {!constructor-Law} failure. [name] spells the term
     as the equation does, as ["f x"]. *)
@@ -563,6 +570,12 @@ val law :
 
 val message : ?loc:Loc.t -> string -> t
 (** [message text] is a {!Message} failure that carries [text]. *)
+
+val vacuous : ?loc:Loc.t -> string -> t
+(** [vacuous reason] is a {!Vacuous} failure that carries [reason]. *)
+
+val is_vacuous : t -> bool
+(** [is_vacuous f] is [true] iff [f] is a {!Vacuous} failure. *)
 
 val of_fault : fault -> t
 (** [of_fault f] is the failure that [f] reports: the payload of an
