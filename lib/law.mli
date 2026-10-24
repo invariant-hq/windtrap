@@ -35,6 +35,10 @@
     as the [int] it returned, a [leq] as the [bool] it returned, and a [=]
     between two terms prints as the [bool] of the witness's equality. *)
 
+(* The facade ([module Law] in windtrap.mli) states each law's contract for a
+   test's author. The docs here state only what it does not: the clauses, their
+   terms and the labels of their demands. *)
+
 (** {1:witnesses Equivalences and orders} *)
 
 val equivalence :
@@ -92,8 +96,7 @@ val partial_order :
       [a c], [b c], [x = y] computed only when the premise holds.
     - ["transitive"] [leq x y and leq y z imply leq x z] for each of the six
       orderings of the three, [leq x z] computed only when the premise holds.
-      Demands ["a strict chain"]: an ordering whose premise holds, over three
-      values no two of which are equal. *)
+      Demands ["a strict chain"]. *)
 
 (** {1:operations Laws of operations} *)
 
@@ -222,9 +225,7 @@ val monotone :
   unit
 (** [monotone wa wb f (a, b)] sorts the pair by [wa]'s order and checks
     [a <= b implies f a <= f b] as ["monotone"], over [cmp a b], [f a], [f b]
-    and [cmp (f a) (f b)]. When [cmp a b = 0] it holds iff
-    [cmp (f a) (f b) = 0], since each of [a] and [b] is below the other. Demands
-    ["a strict pair"].
+    and [cmp (f a) (f b)]. Demands ["a strict pair"].
 
     Raises [Invalid_argument] if [wa] or [wb] has no order, before any clause.
 *)

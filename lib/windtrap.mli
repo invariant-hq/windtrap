@@ -338,8 +338,9 @@ val xfail : ?reason:string -> test -> test
     The four ordering verbs read its order and never its equality.
 
     An ordering verb on a witness without order raises [Invalid_argument],
-    whether or not its claim holds. The {{!section-witnesses}witnesses} section
-    says which witnesses carry an order. *)
+    whether or not its claim holds, with a message that names the verb and
+    [Testable.with_compare]. The {{!section-witnesses}witnesses} section says
+    which witnesses carry an order. *)
 
 val equal : ?__POS__:pos -> ?msg:string -> 'a testable -> 'a -> 'a -> unit
 (** [equal t expected actual] asserts that [expected] and [actual] are equal
@@ -351,7 +352,8 @@ val equal : ?__POS__:pos -> ?msg:string -> 'a testable -> 'a -> 'a -> unit
     at the test's declaration. *)
 
 val not_equal : ?__POS__:pos -> ?msg:string -> 'a testable -> 'a -> 'a -> unit
-(** [not_equal t a b] asserts that [a] and [b] are not equal under [t]. *)
+(** [not_equal t a b] asserts that [a] and [b] are not equal under [t]. Its
+    failure prints [a] and never [b]. *)
 
 val less : ?__POS__:pos -> ?msg:string -> 'a testable -> than:'a -> 'a -> unit
 (** [less t ~than v] asserts that [v] is strictly below [than] under [t]'s
@@ -467,9 +469,10 @@ val raises : ?__POS__:pos -> ?msg:string -> exn -> (unit -> 'a) -> unit
     [e].
 
     An exception that carries what structural equality cannot compare, such as a
-    function, needs {!raises_match}. A verb's failure, a {!skip}, a timeout, a
-    call to [exit] or an {!assume} that [f] raises is not the exception [raises]
-    waits for. It passes through. *)
+    function, can make the comparison raise [Invalid_argument], which escapes
+    [raises] in place of what [f] raised: it needs {!raises_match}. A verb's
+    failure, a {!skip}, a timeout, a call to [exit] or an {!assume} that [f]
+    raises is not the exception [raises] waits for. It passes through. *)
 
 val raises_match :
   ?__POS__:pos -> ?msg:string -> (exn -> bool) -> (unit -> 'a) -> unit
@@ -479,8 +482,9 @@ val raises_match :
 
 (** Exception predicates for {!raises_match}.
 
-    A predicate checks the constructor, and the message when [substring] is
-    given. An empty [substring] matches every message. *)
+    A predicate checks the constructor, and the message, as bytes, when
+    [substring] is given. An empty [substring] matches every message. A
+    predicate never raises. *)
 module Exn : sig
   val invalid_arg : ?substring:string -> exn -> bool
   (** [invalid_arg ?substring e] is [true] iff [e] is [Invalid_argument m] and
@@ -721,10 +725,10 @@ val eventually : within:float -> (unit -> 'a) -> 'a
 (** [eventually ~within f] calls [f ()] until a call returns, and is its value:
     for a claim that comes to hold, on what another domain, a process or a timer
     builds. A call that fails or raises is followed by another after at most ten
-    milliseconds, until [within] seconds have passed since the first began. The
-    last call's failure fails the test, and those of the calls before it are not
-    recorded. A {!skip}, a timeout, a call to [exit] or an {!assume} ends it at
-    once.
+    milliseconds, until [within] seconds have passed on the monotonic clock
+    since the first began, and no pause runs past them. The last call's failure
+    fails the test, and those of the calls before it are not recorded. A
+    {!skip}, a timeout, a call to [exit] or an {!assume} ends it at once.
 
     {[
     test "the worker drains the queue" (fun () ->
@@ -742,7 +746,8 @@ val eventually : within:float -> (unit -> 'a) -> 'a
     what it checks. A choice between claims is {!mem}, {!satisfies} or a [match]
     on the value.
 
-    Raises [Invalid_argument] if [within] is not finite and positive. *)
+    Raises [Invalid_argument] if [within] is not finite and positive, before any
+    call. *)
 
 (** {2:ending Failing and skipping} *)
 
@@ -820,8 +825,9 @@ val nativeint : nativeint testable
 
 val float_exact : float testable
 (** [float_exact] compares floats bit for bit. It prints the shortest decimal
-    that round-trips to the value, and the infinities and NaN as [infinity],
-    [neg_infinity] and [nan]. *)
+    that round-trips to the value, [0.1 +. 0.2] as [0.30000000000000004], and
+    the infinities and NaN as [infinity], [neg_infinity] and [nan]. Two unequal
+    floats never print alike. *)
 
 val float : float -> float testable
 (** [float eps] compares with absolute tolerance [eps]. [a] and [b] are equal
@@ -841,28 +847,36 @@ val float_rel : rel:float -> abs:float -> float testable
     it is given. {!pass} in the place of a component ignores that component. *)
 
 val option : 'a testable -> 'a option testable
-(** [option t] is the witness for ['a option] with elements under [t]. *)
+(** [option t] is the witness for ['a option] with elements under [t]. [Some a]
+    and [Some b] are equal iff [a] and [b] are equal under [t]. [None] is equal
+    only to [None]. *)
 
 val result : 'a testable -> 'e testable -> ('a, 'e) result testable
 (** [result ok error] is the witness for [('a, 'e) result], [ok] for the [Ok]
-    side and [error] for the [Error] side. *)
+    side and [error] for the [Error] side. Two values are equal iff they are on
+    the same side and equal under that side's witness. *)
 
 val either : 'a testable -> 'b testable -> ('a, 'b) Either.t testable
 (** [either left right] is {!result} for [Either.t], [left] for the [Left] side
-    and [right] for the [Right] side. *)
+    and [right] for the [Right] side. A value prints as [Left (v)] or
+    [Right (v)]. *)
 
 val list : 'a testable -> 'a list testable
-(** [list t] is the witness for ['a list] with elements under [t]. *)
+(** [list t] is the witness for ['a list] with elements under [t]. Two lists are
+    equal iff they have the same length and are equal element by element. A list
+    prints as [[a; b; c]]. *)
 
 val array : 'a testable -> 'a array testable
-(** [array t] is {!list} for ['a array]. *)
+(** [array t] is {!list} for ['a array]. An array prints as [[|a; b; c|]]. *)
 
 val slist : 'a testable -> ('a -> 'a -> int) -> 'a list testable
-(** [slist t cmp] is [Testable.contramap (List.sort cmp) (list t)]. *)
+(** [slist t cmp] is [Testable.contramap (List.sort cmp) (list t)]. It compares
+    and prints lists as multisets, sorted with [cmp]. *)
 
 val pair : 'a testable -> 'b testable -> ('a * 'b) testable
 (** [pair a b] is the witness for pairs, [a] for the first component and [b] for
-    the second. *)
+    the second. Two pairs are equal iff their components are equal under [a] and
+    [b]. *)
 
 val triple :
   'a testable -> 'b testable -> 'c testable -> ('a * 'b * 'c) testable
@@ -1029,10 +1043,14 @@ module Gen : sig
 
   (** {1:numeric Numbers}
 
+      The thirteen generators print OCaml literals, as [3], [3l], [3L] and [3n],
+      and a finite float as the shortest decimal that round-trips.
+
       {!int}, {!int32}, {!int64}, {!nativeint}, {!float} and their ranges draw a
-      corner case with probability 0.1 and draw uniformly otherwise. The corners
-      of a range are its bounds, the point closest to [0] and that point's
-      neighbours inside the range, and [-0.] too for a float range whose [low]
+      corner case with probability 0.1, each corner equally likely, and draw
+      uniformly otherwise. The corners of a range are its bounds, the point
+      closest to [0] and that point's neighbours inside the range ([Float.pred]
+      and [Float.succ] of a float), and [-0.] too for a float range whose [low]
       is negative and whose [high] is not. The corners of a whole integer type
       are [0], [1], [-1] and the type's two extremes. *)
 
@@ -1046,8 +1064,9 @@ module Gen : sig
       shrinks toward [0]. *)
 
   val small_int : int t
-  (** [small_int] generates an integer of either sign whose magnitude follows
-      {!nat}, so a value in \[[-9_999];[9_999]\]. It shrinks toward [0]. *)
+  (** [small_int] generates an integer whose magnitude follows {!nat}, negated
+      with probability 0.5, so a value in \[[-9_999];[9_999]\]. It shrinks
+      toward [0]. *)
 
   val int_range : int -> int -> int t
   (** [int_range low high] generates an integer in \[[low];[high]\]. It shrinks
@@ -1097,8 +1116,8 @@ module Gen : sig
   (** [float_range low high] generates a finite float in \[[low];[high]\],
       uniformly apart from its corners. It shrinks toward the point of the range
       closest to [0.], and toward [-0.] when [high] is [-0.]. Sampling raises
-      [Invalid_argument] if [high < low], if a bound is not finite, or if
-      [high -. low] overflows. *)
+      [Invalid_argument] if a bound is not finite, if [high < low], or if
+      [high -. low] overflows, checked in that order. *)
 
   (** {1:base Unit, booleans, characters and strings} *)
 
@@ -1111,7 +1130,8 @@ module Gen : sig
 
   val char : char t
   (** [char] generates a byte uniformly: each of the 256 characters, ['\x00']
-      and the bytes above 127 included. It shrinks toward ['a']. *)
+      and the bytes above 127 included. It shrinks toward ['a'], and prints with
+      [%C]. *)
 
   val char_range : char -> char -> char t
   (** [char_range low high] generates a character in \[[low];[high]\], in byte
@@ -1121,12 +1141,13 @@ module Gen : sig
 
   val uchar : Uchar.t t
   (** [uchar] generates a Unicode scalar value, never a surrogate. Its UTF-8
-      encoding is 1, 2, 3 or 4 bytes long with equal probability, so ASCII is
-      drawn as often as all the 4-byte values together. It draws a corner with
-      probability 0.1: the bounds of the lengths (U+0000, U+007F, U+0080,
+      encoding is 1, 2, 3 or 4 bytes long with equal probability, and the value
+      uniform among those of that length, so ASCII is drawn as often as all the
+      4-byte values together. It draws a corner with probability 0.1, each
+      corner equally likely: the bounds of the lengths (U+0000, U+007F, U+0080,
       U+07FF, U+0800, U+FFFF, U+10000, U+10FFFF), the edges of the surrogates
       (U+D7FF, U+E000) and U+FFFD. It shrinks toward [Uchar.of_char 'a'], and
-      prints as [Uchar.of_int 0xE9]. *)
+      prints as [Uchar.of_int 0xE9], the code point in uppercase hexadecimal. *)
 
   val string : string t
   (** [string] is [string_of char]. *)
@@ -1134,9 +1155,9 @@ module Gen : sig
   val string_of : ?size:int t -> char t -> string t
   (** [string_of ?size char] generates a string whose length follows [size] and
       whose characters follow [char]. [size] defaults to the length of {!list}.
-      It shrinks as {!list} does. It always prints, as a quoted string, even
-      when [char] has no printer. Sampling raises [Invalid_argument] if [size]
-      generates a negative length. *)
+      It shrinks as {!list} does. It always prints, with [%S], from the values
+      of its characters: [char]'s printer is never used, and none is needed.
+      Sampling raises [Invalid_argument] as {!list} does. *)
 
   val bytes : bytes t
   (** [bytes] is [bytes_of char]. *)
@@ -1148,7 +1169,12 @@ module Gen : sig
 
   val list : ?size:int t -> 'a t -> 'a list t
   (** [list ?size gen] generates a list of [gen] values whose length follows
-      [size]. Without [size], the length is below [64] and about 5 on average.
+      [size]. It prints as [[a; b; c]].
+
+      Without [size], the length is below [4] in 50% of the draws, below [8] in
+      25%, below [16] in 20% and below [64] in 5%, uniformly within each
+      stratum. The mean is about 5, so a [list (list int)] holds about 22
+      integers and a case draws in microseconds.
 
       A list shrinks toward [[]]: a candidate drops elements, shrinks them or,
       in a list of lists, merges two lists, in an order that is not part of the
@@ -1156,15 +1182,17 @@ module Gen : sig
       [~size:(int_range 2 5)] holds for every candidate.
 
       Sampling raises [Invalid_argument] if [size] generates a negative length.
-  *)
+      The message names [Gen.list], whichever of {!list}, {!array}, {!string_of}
+      and {!bytes_of} raised. *)
 
   val array : ?size:int t -> 'a t -> 'a array t
-  (** [array ?size gen] is {!list} for arrays. *)
+  (** [array ?size gen] is {!list} for arrays. It prints as [[|a; b; c|]]. *)
 
   val option : 'a t -> 'a option t
   (** [option gen] generates [None] with probability 0.15 and [Some v]
       otherwise, with [v] drawn from [gen]. It shrinks toward [None], and [v] as
-      [gen] does. *)
+      [gen] does. A drawn [None] prints as [None] even when [gen] has no
+      printer. *)
 
   val result : 'a t -> 'e t -> ('a, 'e) result t
   (** [result ok error] generates [Ok] of an [ok] value with probability 0.75
@@ -1203,15 +1231,15 @@ module Gen : sig
       necessarily adjacent, in their order in [values]. Its length is drawn as
       [int_range 0 n] draws one, [n] being the length of [values], and every
       choice of that many positions is equally likely. It shrinks by dropping
-      elements, toward [[]]. [pp] prints an element; without it the subsequence
-      has no printer until {!with_pp} gives one. *)
+      elements, toward [[]]. [pp] prints an element, and a subsequence prints as
+      [[a; b; c]]; without [pp] it has no printer until {!with_pp} gives one. *)
 
   val permutation : ?pp:(Format.formatter -> 'a -> unit) -> 'a list -> 'a list t
   (** [permutation ~pp values] generates [values] shuffled, every ordering
       equally likely. It shrinks toward [values] as given, a candidate moving an
       element left past elements that come later in [values]. [pp] prints an
-      element; without it the permutation has no printer until {!with_pp} gives
-      one. *)
+      element, and a permutation prints as [[a; b; c]]; without [pp] it has no
+      printer until {!with_pp} gives one. *)
 
   val one_of : 'a t list -> 'a t
   (** [one_of gens] generates with one generator of [gens], each with equal
@@ -1225,7 +1253,7 @@ module Gen : sig
       generator of positive weight, as {!one_of} does, and every candidate is a
       value of one of the generators of positive weight. Sampling raises
       [Invalid_argument] if [weighted] is empty, if a weight is negative, or if
-      the weights sum to less than [1]. *)
+      the weights sum to less than [1], checked in that order. *)
 
   val such_that : ('a -> bool) -> 'a t -> 'a t
   (** [such_that p gen] generates [gen] values that satisfy [p], in at most 100
@@ -1245,8 +1273,9 @@ module Gen : sig
   val bind : 'a t -> ('a -> 'b t) -> 'b t
   (** [bind gen f] generates [v] with [gen], then a value with [f v]. It shrinks
       [v] and the inner value together: a candidate of [v] parses the inner
-      value from what follows. The value prints as the inner value when [f v]
-      prints, and as the pre-image [v -> inner] otherwise. *)
+      value from what follows. The value prints as the inner value does. When
+      the inner value prints as a pre-image, the value prints as the pre-image
+      [v -> inner], or not at all when [v] does not print. *)
 
   val with_pp : (Format.formatter -> 'a -> unit) -> 'a t -> 'a t
   (** [with_pp pp gen] is [gen] printing with [pp], which wins over a pre-image

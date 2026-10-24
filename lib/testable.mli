@@ -13,14 +13,7 @@
 (** {1:witnesses Witnesses} *)
 
 type 'a t
-(** The type for witnesses of ['a] values: a printer, an equality and an
-    optional order. The printer and the equality must be total, and an exception
-    from either escapes the verb. The equality is applied to the expected value
-    first and the actual value second.
-
-    The equality verbs never read the order, and the ordering verbs never read
-    the equality. An ordering verb on a witness without order raises
-    [Invalid_argument] (see {!with_compare}). *)
+(** The type for witnesses of ['a] values (see {!Windtrap.type-testable}). *)
 
 val make :
   pp:(Format.formatter -> 'a -> unit) -> equal:('a -> 'a -> bool) -> 'a t
@@ -47,9 +40,7 @@ val contramap : ('a -> 'b) -> 'b t -> 'a t
     [contramap String.length int] compares and orders strings by length. *)
 
 val pass : 'a t
-(** [pass] is the witness under which all values are equal. It prints every
-    value as [<pass>] and carries no order. [pair string pass] compares pairs by
-    their first component. *)
+(** See {!Windtrap.pass}. *)
 
 val pp : 'a t -> Format.formatter -> 'a -> unit
 (** [pp w] is [w]'s printer. *)
@@ -63,75 +54,51 @@ val compare : 'a t -> ('a -> 'a -> int) option
 val to_string : 'a t -> 'a -> string
 (** [to_string w v] is [v] printed with [w]'s printer, as a string. *)
 
-(** {1:instances Instances}
-
-    Each instance carries the order of its type's module, [Int.compare] for
-    {!int}. *)
+(** {1:instances Instances} *)
 
 val unit : unit t
-(** [unit] is the witness for [unit]. *)
+(** See {!Windtrap.unit}. *)
 
 val bool : bool t
-(** [bool] is the witness for [bool]. *)
+(** See {!Windtrap.bool}. *)
 
 val char : char t
-(** [char] is the witness for [char], printed with [%C]. *)
+(** See {!Windtrap.char}. *)
 
 val uchar : Uchar.t t
-(** [uchar] is the witness for [Uchar.t], printed in the Unicode notation: [U+]
-    and the code point in at least four uppercase hexadecimal digits, as
-    [U+00E9] and [U+1F600]. *)
+(** See {!Windtrap.uchar}. *)
 
 val string : string t
-(** [string] is the witness for [string], printed with [%S]: quoted, escaped, on
-    one line. *)
+(** See {!Windtrap.string}. *)
 
 val text : string t
-(** [text] is {!string} printed verbatim, newlines kept. Multi-line values take
-    [text]. Single-line values take {!string}, whose quotes tell [""], [" "] and
-    ["\t"] apart. *)
+(** See {!Windtrap.text}. *)
 
 val bytes : bytes t
-(** [bytes] is the witness for [bytes], printed as a string literal. *)
+(** See {!Windtrap.bytes}. *)
 
 val int : int t
-(** [int] is the witness for [int]. *)
+(** See {!Windtrap.int}. *)
 
 val int32 : int32 t
-(** [int32] is the witness for [int32]. *)
+(** See {!Windtrap.int32}. *)
 
 val int64 : int64 t
-(** [int64] is the witness for [int64]. *)
+(** See {!Windtrap.int64}. *)
 
 val nativeint : nativeint t
-(** [nativeint] is the witness for [nativeint]. *)
+(** See {!Windtrap.nativeint}. *)
 
-(** {2:floats Floats}
-
-    The three witnesses order with [Float.compare], whatever the tolerance,
-    except that {!float_exact} puts [-0.] below [0.], as its equality tells them
-    apart. An infinity is equal only to an infinity of the same sign. Under
-    {!float} and {!float_rel}, NaN is equal to nothing and [0.] equals [-0.].
-    Under {!float_exact}, every NaN equals every NaN and [0.] differs from
-    [-0.]. *)
+(** {2:floats Floats} *)
 
 val float_exact : float t
-(** [float_exact] compares floats bit for bit. It prints the shortest decimal
-    that round-trips to the value, [0.1 +. 0.2] as [0.30000000000000004], and
-    the infinities and NaN as [infinity], [neg_infinity] and [nan]. Two unequal
-    floats never print alike. *)
+(** See {!Windtrap.float_exact}. *)
 
 val float : float -> float t
-(** [float eps] compares with absolute tolerance [eps]. [a] and [b] are equal
-    when [a = b] or [|a -. b| <= eps]. It prints as {!float_exact} does. Raises
-    [Invalid_argument] if [eps] is not strictly positive, NaN included. *)
+(** See {!Windtrap.float}. *)
 
 val float_rel : rel:float -> abs:float -> float t
-(** [float_rel ~rel ~abs] compares with relative tolerance [rel] and absolute
-    tolerance [abs]. [a] and [b] are equal when [a = b], when [|a -. b| <= abs],
-    or when [|a -. b| <= rel *. Float.max (abs_float a) (abs_float b)]. One zero
-    bound switches that component off. It prints as {!float_exact} does. Raises
-    [Invalid_argument] if a bound is negative or NaN, or if both are zero. *)
+(** See {!Windtrap.float_rel}. *)
 
 (** {2:observed Observed errors}
 
@@ -156,45 +123,31 @@ val observed : (unit -> 'a) -> 'a * error option
     made none. An [observed] within [fn] keeps its comparisons from the
     enclosing one. What [fn] raises is raised again. *)
 
-(** {1:containers Containers}
-
-    No container witness carries an order, whatever its components carry.
-    {!with_compare} gives one. *)
+(** {1:containers Containers} *)
 
 val option : 'a t -> 'a option t
-(** [option w] is the witness for ['a option] with elements under [w]. [Some a]
-    and [Some b] are equal iff [a] and [b] are equal under [w]. [None] is equal
-    only to [None]. *)
+(** See {!Windtrap.option}. *)
 
 val result : 'a t -> 'e t -> ('a, 'e) result t
-(** [result ok error] is the witness for [('a, 'e) result], [ok] for the [Ok]
-    side and [error] for the [Error] side. Two values are equal iff they are on
-    the same side and equal under that side's witness. *)
+(** See {!Windtrap.result}. *)
 
 val either : 'a t -> 'b t -> ('a, 'b) Either.t t
-(** [either left right] is {!result} for [Either.t], [left] for the [Left] side
-    and [right] for the [Right] side. A value prints as [Left (v)] or
-    [Right (v)]. *)
+(** See {!Windtrap.either}. *)
 
 val list : 'a t -> 'a list t
-(** [list w] is the witness for ['a list] with elements under [w]. Two lists are
-    equal iff they have the same length and are equal element by element. A list
-    prints as [[a; b; c]]. *)
+(** See {!Windtrap.list}. *)
 
 val array : 'a t -> 'a array t
-(** [array w] is {!list} for ['a array]. An array prints as [[|a; b; c|]]. *)
+(** See {!Windtrap.array}. *)
 
 val slist : 'a t -> ('a -> 'a -> int) -> 'a list t
-(** [slist w cmp] is [contramap (List.sort cmp) (list w)]. It compares and
-    prints lists as multisets, sorted with [cmp]. *)
+(** See {!Windtrap.slist}. *)
 
 val pair : 'a t -> 'b t -> ('a * 'b) t
-(** [pair a b] is the witness for pairs, [a] for the first component and [b] for
-    the second. Two pairs are equal iff their components are equal under [a] and
-    [b]. *)
+(** See {!Windtrap.pair}. *)
 
 val triple : 'a t -> 'b t -> 'c t -> ('a * 'b * 'c) t
-(** [triple a b c] is {!pair} for triples. *)
+(** See {!Windtrap.triple}. *)
 
 val quad : 'a t -> 'b t -> 'c t -> 'd t -> ('a * 'b * 'c * 'd) t
-(** [quad a b c d] is {!pair} for quadruples. *)
+(** See {!Windtrap.quad}. *)
