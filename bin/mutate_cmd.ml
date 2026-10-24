@@ -172,7 +172,11 @@ let merge ~source files =
   let mutant (r : Verdicts.record) : Sections.mutant =
     {
       id = Mutate.id_to_string r.id;
+      file = r.id.file;
       line = r.id.line;
+      col = r.id.col;
+      end_line = r.end_line;
+      end_col = r.end_col;
       before = r.before;
       after = r.after;
       source = source r.id.file;

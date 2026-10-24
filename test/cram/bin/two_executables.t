@@ -39,6 +39,7 @@ neither reached:
 
   $ run windtrap mutants
   ───────────────────── survivors (1) ──────────────────────
+  File "test/cram/bin/calc.ml", line 14, characters 17-22:
     SURVIVED  test/cram/bin/calc.ml:14:17:sub  a + b → a - b
         14 │ let shared a b = a + b
   

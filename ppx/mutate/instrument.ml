@@ -372,6 +372,8 @@ let is_opaque e =
 type site = {
   line : int;
   col : int;
+  end_line : int;
+  end_col : int;
   rewrite : string;
   before : string;
   after : string;
@@ -395,7 +397,7 @@ class instrumenter ~keeps ~module_name =
        It is [None], with nothing recorded, for generated code and for a site
        whose identifier another one has, as a deriver's copy does. *)
     method private site e (mutant : mutant) ~dismissed =
-      let start = e.pexp_loc.loc_start in
+      let start = e.pexp_loc.loc_start and stop = e.pexp_loc.loc_end in
       let line = start.pos_lnum and col = start.pos_cnum - start.pos_bol in
       let key = (line, col, mutant.rewrite) in
       if e.pexp_loc.loc_ghost || Hashtbl.mem seen key then None
@@ -406,6 +408,8 @@ class instrumenter ~keeps ~module_name =
           {
             line;
             col;
+            end_line = stop.pos_lnum;
+            end_col = stop.pos_cnum - stop.pos_bol;
             rewrite = mutant.rewrite;
             before = render e;
             after = mutant.after;
@@ -585,7 +589,7 @@ class instrumenter ~keeps ~module_name =
    guard cannot. *)
 let runtime_initialization ~file ~module_name ~sites ~pins =
   let loc = { (Location.in_file file) with loc_ghost = true } in
-  let site { line; col; rewrite; before; after; dismissed } =
+  let site { line; col; end_line; end_col; rewrite; before; after; dismissed } =
     let dismissed =
       match dismissed with
       | None -> [%expr None]
@@ -595,6 +599,8 @@ let runtime_initialization ~file ~module_name ~sites ~pins =
       {
         line = [%e eint ~loc line];
         col = [%e eint ~loc col];
+        end_line = [%e eint ~loc end_line];
+        end_col = [%e eint ~loc end_col];
         rewrite = [%e estring ~loc rewrite];
         before = [%e estring ~loc before];
         after = [%e estring ~loc after];
@@ -606,6 +612,8 @@ let runtime_initialization ~file ~module_name ~sites ~pins =
       type site = Windtrap_runtime.Mutate.site = {
         line : int;
         col : int;
+        end_line : int;
+        end_col : int;
         rewrite : string;
         before : string;
         after : string;

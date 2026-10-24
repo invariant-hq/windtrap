@@ -15,6 +15,8 @@ in full. The file is mutated under its own name:
         {
         line: int ;
         col: int ;
+        end_line: int ;
+        end_col: int ;
         rewrite: string ;
         before: string ;
         after: string ;
@@ -25,6 +27,8 @@ in full. The file is mutated under its own name:
           ~sites:[|{
                      line = 5;
                      col = 16;
+                     end_line = 5;
+                     end_col = 21;
                      rewrite = "ge";
                      before = "n > 0";
                      after = "n >= 0";
@@ -43,12 +47,12 @@ in full. The file is mutated under its own name:
     else 0
 
 Every other expansion shows that module condensed by elide.exe to its
-file and its sites: the line and column, the rewrite, the text before and
-after, and the reason of a dismissed site.
+file and its sites: where each starts and ends, the rewrite, the text
+before and after, and the reason of a dismissed site.
 
   $ mut --impl ./fixture_all_dismissed.ml | ../elide.exe
   mutation sites of "./fixture_all_dismissed.ml" in Windtrap_mut_________fixture_all_dismissed___ml:
-    0: 8:5 "ge" "want > 16" -> "want >= 16", dismissed "both arms yield 16 at the boundary"
+    0: 8:5-8:16 "ge" "want > 16" -> "want >= 16", dismissed "both arms yield 16 at the boundary"
   let cap want =
     if ((want > 16)[@mutate off "both arms yield 16 at the boundary"])
     then want
@@ -56,12 +60,12 @@ after, and the reason of a dismissed site.
 
   $ mut --impl ./fixture_ari.ml | ../elide.exe
   mutation sites of "./fixture_ari.ml" in Windtrap_mut_________fixture_ari___ml:
-    0: 5:14 "sub" "a + b" -> "a - b"
-    1: 6:15 "add" "a - b" -> "a + b"
-    2: 7:15 "fsub" "a +. b" -> "a -. b"
-    3: 8:16 "fadd" "a -. b" -> "a +. b"
-    4: 13:13 "sub" "1 + 2" -> "1 - 2"
-    5: 17:17 "sub" "a + b" -> "a - b"
+    0: 5:14-5:19 "sub" "a + b" -> "a - b"
+    1: 6:15-6:20 "add" "a - b" -> "a + b"
+    2: 7:15-7:21 "fsub" "a +. b" -> "a -. b"
+    3: 8:16-8:22 "fadd" "a -. b" -> "a +. b"
+    4: 13:13-13:18 "sub" "1 + 2" -> "1 - 2"
+    5: 17:17-17:24 "sub" "a + b" -> "a - b"
   let sum a b =
     let (__windtrap_mut_0_l, __windtrap_mut_0_r) = (a, b) in
     if Windtrap_mut_________fixture_ari___ml.___windtrap_armed___ 0
@@ -96,10 +100,10 @@ after, and the reason of a dismissed site.
 
   $ mut --impl ./fixture_assert.ml | ../elide.exe
   mutation sites of "./fixture_assert.ml" in Windtrap_mut_________fixture_assert___ml, with type 'a operands:
-    0: 7:2 "sub" "a + b" -> "a - b"
-    1: 17:21 "or" "(a < b) && (assert false)" -> "(a < b) || (assert false)"
-    2: 17:21 "le" "a < b" -> "a <= b"
-    3: 25:4 "not" "assert (a < b); a > b" -> "not (assert (a < b); a > b)"
+    0: 7:2-7:7 "sub" "a + b" -> "a - b"
+    1: 17:21-17:42 "or" "(a < b) && (assert false)" -> "(a < b) || (assert false)"
+    2: 17:21-17:26 "le" "a < b" -> "a <= b"
+    3: 25:4-26:9 "not" "assert (a < b); a > b" -> "not (assert (a < b); a > b)"
   let checked a b =
     assert (a < b);
     (let (__windtrap_mut_0_l, __windtrap_mut_0_r) = (a, b) in
@@ -132,18 +136,18 @@ after, and the reason of a dismissed site.
 
   $ mut --impl ./fixture_chain.ml | ../elide.exe
   mutation sites of "./fixture_chain.ml" in Windtrap_mut_________fixture_chain___ml, with type 'a operands:
-    0: 19:18 "sub" "(a + b) + c" -> "(a + b) - c"
-    1: 20:18 "add" "(a - b) - c" -> "(a - b) + c"
-    2: 21:19 "fsub" "(a +. b) +. c" -> "(a +. b) -. c"
-    3: 22:25 "or" "b && c" -> "b || c"
-    4: 31:26 "sub" "(a + b) + c" -> "(a + b) - c"
-    5: 32:23 "sub" "(a + b) + c" -> "(a + b) - c"
-    6: 33:31 "or" "b && c" -> "b || c"
-    7: 39:23 "sub" "(a + b) + (c + d)" -> "(a + b) - (c + d)"
-    8: 39:31 "sub" "c + d" -> "c - d"
-    9: 43:18 "add" "(a + b) - c" -> "(a + b) + c"
-    10: 43:18 "sub" "a + b" -> "a - b"
-    11: 48:23 "le" "(a < b) < c" -> "(a < b) <= c"
+    0: 19:18-19:27 "sub" "(a + b) + c" -> "(a + b) - c"
+    1: 20:18-20:27 "add" "(a - b) - c" -> "(a - b) + c"
+    2: 21:19-21:30 "fsub" "(a +. b) +. c" -> "(a +. b) -. c"
+    3: 22:25-22:31 "or" "b && c" -> "b || c"
+    4: 31:26-31:37 "sub" "(a + b) + c" -> "(a + b) - c"
+    5: 32:23-32:34 "sub" "(a + b) + c" -> "(a + b) - c"
+    6: 33:31-33:37 "or" "b && c" -> "b || c"
+    7: 39:23-39:38 "sub" "(a + b) + (c + d)" -> "(a + b) - (c + d)"
+    8: 39:31-39:38 "sub" "c + d" -> "c - d"
+    9: 43:18-43:27 "add" "(a + b) - c" -> "(a + b) + c"
+    10: 43:18-43:23 "sub" "a + b" -> "a - b"
+    11: 48:23-48:32 "le" "(a < b) < c" -> "(a < b) <= c"
   let three a b c =
     let (__windtrap_mut_0_l, __windtrap_mut_0_r) = ((a + b), c) in
     if Windtrap_mut_________fixture_chain___ml.___windtrap_armed___ 0
@@ -222,7 +226,7 @@ after, and the reason of a dismissed site.
 
   $ mut --impl ./fixture_chain_off.ml | ../elide.exe
   mutation sites of "./fixture_chain_off.ml" in Windtrap_mut_________fixture_chain_off___ml:
-    0: 4:19 "sub" "((a + (b - d))[@mutate off]) + c" -> "((a + (b - d))[@mutate off]) - c"
+    0: 4:19-4:50 "sub" "((a + (b - d))[@mutate off]) + c" -> "((a + (b - d))[@mutate off]) - c"
   let link a b c d =
     let (__windtrap_mut_0_l, __windtrap_mut_0_r) =
       (((a + (b - d))[@mutate off]), c) in
@@ -232,15 +236,15 @@ after, and the reason of a dismissed site.
 
   $ mut --impl ./fixture_cmp.ml | ../elide.exe
   mutation sites of "./fixture_cmp.ml" in Windtrap_mut_________fixture_cmp___ml, with type 'a operands:
-    0: 7:19 "le" "a < b" -> "a <= b"
-    1: 8:21 "lt" "a <= b" -> "a < b"
-    2: 11:8 "ge" "a > b" -> "a >= b"
-    3: 15:39 "gt" "a >= b" -> "a > b"
-    4: 16:18 "neq" "a = b" -> "a <> b"
-    5: 17:21 "eq" "a <> b" -> "a = b"
-    6: 20:21 "or" "(x >= lo) && (x <= hi)" -> "(x >= lo) || (x <= hi)"
-    7: 20:21 "gt" "x >= lo" -> "x > lo"
-    8: 20:32 "lt" "x <= hi" -> "x < hi"
+    0: 7:19-7:24 "le" "a < b" -> "a <= b"
+    1: 8:21-8:27 "lt" "a <= b" -> "a < b"
+    2: 11:8-11:13 "ge" "a > b" -> "a >= b"
+    3: 15:39-15:45 "gt" "a >= b" -> "a > b"
+    4: 16:18-16:23 "neq" "a = b" -> "a <> b"
+    5: 17:21-17:27 "eq" "a <> b" -> "a = b"
+    6: 20:21-20:39 "or" "(x >= lo) && (x <= hi)" -> "(x >= lo) || (x <= hi)"
+    7: 20:21-20:28 "gt" "x >= lo" -> "x > lo"
+    8: 20:32-20:39 "lt" "x <= hi" -> "x < hi"
   let below a b =
     if
       let (__windtrap_mut_0_l, __windtrap_mut_0_r) =
@@ -313,10 +317,10 @@ after, and the reason of a dismissed site.
 
   $ mut --impl ./fixture_con.ml | ../elide.exe
   mutation sites of "./fixture_con.ml" in Windtrap_mut_________fixture_con___ml:
-    0: 8:15 "or" "a && b" -> "a || b"
-    1: 9:17 "and" "a || b" -> "a && b"
-    2: 10:22 "or" "ready && x" -> "ready || x"
-    3: 11:55 "and" "(p x) || (search p rest)" -> "(p x) && (search p rest)"
+    0: 8:15-8:21 "or" "a && b" -> "a || b"
+    1: 9:17-9:23 "and" "a || b" -> "a && b"
+    2: 10:22-10:32 "or" "ready && x" -> "ready || x"
+    3: 11:55-11:75 "and" "(p x) || (search p rest)" -> "(p x) && (search p rest)"
   let both a b =
     let __windtrap_mut_0_p = a in
     if
@@ -354,16 +358,16 @@ after, and the reason of a dismissed site.
 
   $ mut --impl ./fixture_contexts.ml | ../elide.exe
   mutation sites of "./fixture_contexts.ml" in Windtrap_mut_________fixture_contexts___ml, with type 'a operands:
-    0: 5:19 "and" "(a < b) || c" -> "(a < b) && c"
-    1: 5:19 "le" "a < b" -> "a <= b"
-    2: 12:4 "not" "let x = a in x < b" -> "not (let x = a in x < b)"
-    3: 17:32 "not" "(a < b : bool)" -> "not (a < b : bool)"
-    4: 18:25 "not" "not (a < b)" -> "not (not (a < b))"
-    5: 23:34 "and" "c || d" -> "c && d"
-    6: 23:25 "le" "a < b" -> "a <= b"
-    7: 29:27 "not" "a & b" -> "not (a & b)"
-    8: 34:33 "not" "Float.(<) a b" -> "not (Float.(<) a b)"
-    9: 40:16 "sub" "a + b" -> "a - b"
+    0: 5:19-5:29 "and" "(a < b) || c" -> "(a < b) && c"
+    1: 5:19-5:24 "le" "a < b" -> "a <= b"
+    2: 12:4-13:9 "not" "let x = a in x < b" -> "not (let x = a in x < b)"
+    3: 17:32-17:46 "not" "(a < b : bool)" -> "not (a < b : bool)"
+    4: 18:25-18:36 "not" "not (a < b)" -> "not (not (a < b))"
+    5: 23:34-23:42 "and" "c || d" -> "c && d"
+    6: 23:25-23:30 "le" "a < b" -> "a <= b"
+    7: 29:27-29:32 "not" "a & b" -> "not (a & b)"
+    8: 34:33-34:48 "not" "Float.(<) a b" -> "not (Float.(<) a b)"
+    9: 40:16-40:21 "sub" "a + b" -> "a - b"
   let either a b c =
     let __windtrap_mut_0_p =
       let (__windtrap_mut_1_l, __windtrap_mut_1_r) =
@@ -458,8 +462,8 @@ after, and the reason of a dismissed site.
 
   $ mut --impl ./fixture_inline_tests.ml | ../elide.exe
   mutation sites of "./fixture_inline_tests.ml" in Windtrap_mut_________fixture_inline_tests___ml, with type 'a operands:
-    0: 6:14 "sub" "a + b" -> "a - b"
-    1: 7:21 "le" "a < b" -> "a <= b"
+    0: 6:14-6:19 "sub" "a + b" -> "a - b"
+    1: 7:21-7:26 "le" "a < b" -> "a <= b"
   let sum a b =
     let (__windtrap_mut_0_l, __windtrap_mut_0_r) = (a, b) in
     if Windtrap_mut_________fixture_inline_tests___ml.___windtrap_armed___ 0
@@ -487,8 +491,8 @@ after, and the reason of a dismissed site.
 
   $ ../pp.exe -apply ppx_windtrap,windtrap_mutate --impl ./fixture_inline_tests.ml | ../elide.exe
   mutation sites of "./fixture_inline_tests.ml" in Windtrap_mut_________fixture_inline_tests___ml, with type 'a operands:
-    0: 6:14 "sub" "a + b" -> "a - b"
-    1: 7:21 "le" "a < b" -> "a <= b"
+    0: 6:14-6:19 "sub" "a + b" -> "a - b"
+    1: 7:21-7:26 "le" "a < b" -> "a <= b"
   let sum a b =
     let (__windtrap_mut_0_l, __windtrap_mut_0_r) = (a, b) in
     if Windtrap_mut_________fixture_inline_tests___ml.___windtrap_armed___ 0
@@ -557,8 +561,8 @@ after, and the reason of a dismissed site.
 
   $ mut --impl ./fixture_lazy.ml | ../elide.exe
   mutation sites of "./fixture_lazy.ml" in Windtrap_mut_________fixture_lazy___ml:
-    0: 10:22 "sub" "a + b" -> "a - b"
-    1: 17:25 "sub" "a + b" -> "a - b"
+    0: 10:22-10:29 "sub" "a + b" -> "a - b"
+    1: 17:25-17:30 "sub" "a + b" -> "a - b"
   let thunk a b = lazy (fun () -> a + b)
   let forced a b =
     lazy
@@ -577,7 +581,7 @@ after, and the reason of a dismissed site.
 
   $ mut --impl ./fixture_lazy_condition.ml | ../elide.exe
   mutation sites of "./fixture_lazy_condition.ml" in Windtrap_mut_________fixture_lazy_condition___ml:
-    0: 4:17 "not" "x" -> "not x"
+    0: 4:17-4:18 "not" "x" -> "not x"
   let deferred x = if lazy x then 1 else 0
   let plain x =
     if
@@ -592,10 +596,10 @@ after, and the reason of a dismissed site.
 
   $ mut --impl ./fixture_lost_cmp.ml | ../elide.exe
   mutation sites of "./fixture_lost_cmp.ml" in Windtrap_mut_________fixture_lost_cmp___ml:
-    0: 10:43 "add" "a - b" -> "a + b"
-    1: 10:32 "sub" "a + b" -> "a - b"
-    2: 10:21 "not" "a < b" -> "not (a < b)"
-    3: 11:18 "or" "a && b" -> "a || b"
+    0: 10:43-10:48 "add" "a - b" -> "a + b"
+    1: 10:32-10:37 "sub" "a + b" -> "a - b"
+    2: 10:21-10:26 "not" "a < b" -> "not (a < b)"
+    3: 11:18-11:24 "or" "a && b" -> "a || b"
   let (<=) a b = (compare a b) <= 0
   let not b = b
   let ordered a b =
@@ -627,12 +631,12 @@ after, and the reason of a dismissed site.
 
   $ mut --impl ./fixture_lost_con.ml | ../elide.exe
   mutation sites of "./fixture_lost_con.ml" in Windtrap_mut_________fixture_lost_con___ml, with type 'a operands:
-    0: 11:18 "not" "a && b" -> "not (a && b)"
-    1: 12:20 "not" "a || b" -> "not (a || b)"
-    2: 13:24 "not" "(a < b) && c" -> "not ((a < b) && c)"
-    3: 14:43 "add" "a - b" -> "a + b"
-    4: 14:32 "sub" "a + b" -> "a - b"
-    5: 14:21 "le" "a < b" -> "a <= b"
+    0: 11:18-11:24 "not" "a && b" -> "not (a && b)"
+    1: 12:20-12:26 "not" "a || b" -> "not (a || b)"
+    2: 13:24-13:34 "not" "(a < b) && c" -> "not ((a < b) && c)"
+    3: 14:43-14:48 "add" "a - b" -> "a + b"
+    4: 14:32-14:37 "sub" "a + b" -> "a - b"
+    5: 14:21-14:26 "le" "a < b" -> "a <= b"
   external (&&) : bool -> bool -> bool = "%sequand"
   let both a b =
     if
@@ -678,12 +682,12 @@ after, and the reason of a dismissed site.
 
   $ mut --impl ./fixture_neg.ml | ../elide.exe
   mutation sites of "./fixture_neg.ml" in Windtrap_mut_________fixture_neg___ml:
-    0: 8:23 "not" "flag" -> "not flag"
-    1: 9:23 "not" "flag" -> "not flag"
-    2: 12:8 "not" "ready ()" -> "not (ready ())"
-    3: 16:39 "not" "p y" -> "not (p y)"
-    4: 20:20 "not" "if a then b else false" -> "not (if a then b else false)"
-    5: 20:23 "not" "a" -> "not a"
+    0: 8:23-8:27 "not" "flag" -> "not flag"
+    1: 9:23-9:27 "not" "flag" -> "not flag"
+    2: 12:8-12:16 "not" "ready ()" -> "not (ready ())"
+    3: 16:39-16:42 "not" "p y" -> "not (p y)"
+    4: 20:20-20:42 "not" "if a then b else false" -> "not (if a then b else false)"
+    5: 20:23-20:24 "not" "a" -> "not a"
   let pick flag x y =
     if
       let __windtrap_mut_0_p = flag in
@@ -731,12 +735,12 @@ after, and the reason of a dismissed site.
 
   $ mut --impl ./fixture_nesting.ml | ../elide.exe
   mutation sites of "./fixture_nesting.ml" in Windtrap_mut_________fixture_nesting___ml, with type 'a operands:
-    0: 6:23 "or" "b && c" -> "b || c"
-    1: 7:18 "or" "a && b" -> "a || b"
-    2: 8:30 "and" "c || d" -> "c && d"
-    3: 11:20 "le" "a < b" -> "a <= b"
-    4: 12:20 "or" "a && b" -> "a || b"
-    5: 13:18 "not" "a" -> "not a"
+    0: 6:23-6:29 "or" "b && c" -> "b || c"
+    1: 7:18-7:26 "or" "a && b" -> "a || b"
+    2: 8:30-8:38 "and" "c || d" -> "c && d"
+    3: 11:20-11:25 "le" "a < b" -> "a <= b"
+    4: 12:20-12:26 "or" "a && b" -> "a || b"
+    5: 13:18-13:19 "not" "a" -> "not a"
   let chain a b c =
     a &&
       (let __windtrap_mut_0_p = b in
@@ -791,9 +795,9 @@ after, and the reason of a dismissed site.
 
   $ mut --impl ./fixture_off.ml | ../elide.exe
   mutation sites of "./fixture_off.ml" in Windtrap_mut_________fixture_off___ml:
-    0: 9:5 "ge" "want > 16" -> "want >= 16", dismissed "both arms yield 16 at the boundary"
-    1: 12:19 "or" "a && b" -> "a || b", dismissed ""
-    2: 26:18 "sub" "a + b" -> "a - b"
+    0: 9:5-9:16 "ge" "want > 16" -> "want >= 16", dismissed "both arms yield 16 at the boundary"
+    1: 12:19-12:27 "or" "a && b" -> "a || b", dismissed ""
+    2: 26:18-26:23 "sub" "a + b" -> "a - b"
   let cap want =
     if ((want > 16)[@mutate off "both arms yield 16 at the boundary"])
     then want
@@ -812,9 +816,9 @@ after, and the reason of a dismissed site.
 
   $ mut --impl ./fixture_off_edges.ml | ../elide.exe
   mutation sites of "./fixture_off_edges.ml" in Windtrap_mut_________fixture_off_edges___ml:
-    0: 15:4 "ge" "want > 16" -> "want >= 16", dismissed "a \"quoted\" reason,\nspanning lines \\ containing a backslash"
-    1: 30:10 "sub" "a + b" -> "a - b"
-    2: 39:16 "sub" "a + b" -> "a - b"
+    0: 15:4-15:15 "ge" "want > 16" -> "want >= 16", dismissed "a \"quoted\" reason,\nspanning lines \\ containing a backslash"
+    1: 30:10-30:15 "sub" "a + b" -> "a - b"
+    2: 39:16-39:21 "sub" "a + b" -> "a - b"
   let quoted want =
     if ((want > 16)
       [@mutate
@@ -839,9 +843,9 @@ after, and the reason of a dismissed site.
 
   $ mut --impl ./fixture_off_structure.ml | ../elide.exe
   mutation sites of "./fixture_off_structure.ml" in Windtrap_mut_________fixture_off_structure___ml:
-    0: 16:12 "add" "x - 1" -> "x + 1"
-    1: 41:23 "sub" "a + b" -> "a - b"
-    2: 48:14 "sub" "a + b" -> "a - b"
+    0: 16:12-16:17 "add" "x - 1" -> "x + 1"
+    1: 41:23-41:28 "sub" "a + b" -> "a - b"
+    2: 48:14-48:19 "sub" "a + b" -> "a - b"
   module rec Dark:sig val f : int -> int end = struct let f n = n + 1 end
   [@@mutate off]
   
@@ -880,7 +884,7 @@ after, and the reason of a dismissed site.
 
   $ mut --impl ./fixture_off_unclosed.ml | ../elide.exe
   mutation sites of "./fixture_off_unclosed.ml" in Windtrap_mut_________fixture_off_unclosed___ml:
-    0: 17:18 "sub" "a + b" -> "a - b"
+    0: 17:18-17:23 "sub" "a + b" -> "a - b"
   module Quiet = struct [@@@mutate off]
                         let hidden a b = a + b end
   let visible a b =
@@ -894,7 +898,7 @@ after, and the reason of a dismissed site.
 
   $ mut --impl ./fixture_payloads.ml | ../elide.exe
   mutation sites of "./fixture_payloads.ml" in Windtrap_mut_________fixture_payloads___ml:
-    0: 6:18 "sub" "a + b" -> "a - b"
+    0: 6:18-6:23 "sub" "a + b" -> "a - b"
   let extended = [%ext a + b]
   let attributed = ((0)[@attr a + b])
   let written a b =
@@ -905,8 +909,8 @@ after, and the reason of a dismissed site.
 
   $ mut --impl ./fixture_shadow.ml | ../elide.exe
   mutation sites of "./fixture_shadow.ml" in Windtrap_mut_________fixture_shadow___ml, with type 'a operands:
-    0: 16:21 "le" "a < b" -> "a <= b"
-    1: 17:15 "or" "a && b" -> "a || b"
+    0: 16:21-16:26 "le" "a < b" -> "a <= b"
+    1: 17:15-17:21 "or" "a && b" -> "a || b"
   module Vec =
     struct
       type t = {
@@ -935,9 +939,9 @@ after, and the reason of a dismissed site.
 
   $ mut --impl ./fixture_texts.ml | ../elide.exe
   mutation sites of "./fixture_texts.ml" in Windtrap_mut_________fixture_texts___ml, with type 'a operands:
-    0: 6:18 "neq" "s = \"a b\"" -> "s <> \"a b\""
-    1: 10:15 "sub" "a + b" -> "a - b"
-    2: 11:22 "le" "a < b" -> "a <= b"
+    0: 6:18-6:29 "neq" "s = \"a b\"" -> "s <> \"a b\""
+    1: 10:15-10:22 "sub" "a + b" -> "a - b"
+    2: 11:22-11:29 "le" "a < b" -> "a <= b"
   let spaced s =
     if
       let __windtrap_mut_0_p = s = "a   b" in
@@ -965,8 +969,8 @@ Over code a deriver generated, for which generated.ml stands in:
 
   $ ../pp.exe -apply windtrap_test_generated,windtrap_mutate --impl ./fixture_generated.ml | ../elide.exe
   mutation sites of "./fixture_generated.ml" in Windtrap_mut_________fixture_generated___ml:
-    0: 6:18 "add" "a - b" -> "a + b"
-    1: 11:21 "sub" "a + b" -> "a - b"
+    0: 6:18-6:23 "add" "a - b" -> "a + b"
+    1: 11:21-11:28 "sub" "a + b" -> "a - b"
   let generated a b = ((a + b)[@generated ])
   let written a b =
     let (__windtrap_mut_0_l, __windtrap_mut_0_r) = (a, b) in
@@ -983,7 +987,7 @@ Over code a deriver generated, for which generated.ml stands in:
 
   $ ../pp.exe -apply windtrap_test_generated,windtrap_mutate --impl ./fixture_generated_chain.ml | ../elide.exe
   mutation sites of "./fixture_generated_chain.ml" in Windtrap_mut_________fixture_generated_chain___ml:
-    0: 6:23 "sub" "(a + b) + c" -> "(a + b) - c"
+    0: 6:23-6:34 "sub" "(a + b) + c" -> "(a + b) - c"
   let generated a b c = (((a + b) + c)[@generated ])
   let copied f a b c =
     f
@@ -1001,9 +1005,9 @@ driver, coverage_first.exe:
 
   $ ../coverage_first.exe -apply windtrap_coverage,windtrap_mutate --impl ./fixture_visits.ml | ../elide.exe
   mutation sites of "./fixture_visits.ml" in Windtrap_mut_________fixture_visits___ml, with type 'a operands:
-    0: 7:22 "not" "b" -> "not b"
-    1: 7:17 "not" "a" -> "not a"
-    2: 10:18 "le" "(___windtrap_post_visit___ 2 (f x)) < (___windtrap_post_visit___ 3 (g x))" -> "(___windtrap_post_visit___ 2 (f x)) <= (___windtrap_post_visit___ 3 (g x))"
+    0: 7:22-7:23 "not" "b" -> "not b"
+    1: 7:17-7:18 "not" "a" -> "not a"
+    2: 10:18-10:27 "le" "(___windtrap_post_visit___ 2 (f x)) < (___windtrap_post_visit___ 3 (g x))" -> "(___windtrap_post_visit___ 2 (f x)) <= (___windtrap_post_visit___ 3 (g x))"
   coverage points of "./fixture_visits.ml" in Windtrap_cov_________fixture_visits___ml, with ___windtrap_post_visit___:
     0: 262-263
     1: 267-268

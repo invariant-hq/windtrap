@@ -16,7 +16,16 @@ let strf = Printf.sprintf
 let id file line col rewrite = { Mutate.file; line; col; rewrite }
 
 let site ?dismissed ?(before = "b") ?(after = "a") line col rewrite =
-  { Mutate.line; col; rewrite; before; after; dismissed }
+  {
+    Mutate.line;
+    col;
+    end_line = line;
+    end_col = col + String.length before;
+    rewrite;
+    before;
+    after;
+    dismissed;
+  }
 
 let register_only ~file ~sites =
   let _guard : int -> bool = Mutate.register ~file ~sites in
@@ -260,6 +269,8 @@ let bad_tables =
   [
     ("line 0", site 0 0 "lt");
     ("a negative column", site 1 (-2) "lt");
+    ("an end before the start", { (site 2 4 "lt") with end_col = 3 });
+    ("an end on an earlier line", { (site 2 4 "lt") with end_line = 1 });
     ("an unknown rewrite", site 1 0 "plus");
     ("drop, which no instrumenter emits", site 1 0 "drop");
     ("an operator's name", site 1 0 "LT");
@@ -282,6 +293,8 @@ let refusal_messages () =
        {|
     Windtrap_runtime.Mutate: t/bad.ml: site 1: line 0 is not 1-based
     Windtrap_runtime.Mutate: t/bad.ml: site 1: negative column -2
+    Windtrap_runtime.Mutate: t/bad.ml: site 1: end 2:3 before start 2:4
+    Windtrap_runtime.Mutate: t/bad.ml: site 1: end 1:5 before start 2:4
     Windtrap_runtime.Mutate: t/bad.ml: site 1: unknown rewrite "plus"
     Windtrap_runtime.Mutate: t/bad.ml: site 1: unknown rewrite "drop"
     Windtrap_runtime.Mutate: t/bad.ml: site 1: unknown rewrite "LT"

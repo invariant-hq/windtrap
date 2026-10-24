@@ -182,6 +182,14 @@
   of `git diff -U0`, report the points that start on those lines alone,
   as `windtrap mutants` reports the mutants on them.
 
+### Mutation testing
+
+- A surviving or unknown mutant's block opens on its location in the
+  compiler's format, `File "lib/calc.ml", line 9, characters 12-17:`,
+  which editors and dune jump to. The verdict file records where each
+  mutant ends and its version is now `windtrap-mutants-v5`; a file of
+  an earlier version is refused, as before.
+
 ## v0.2.0 2026-09-26
 
 Windtrap 0.2.0 is a complete rewrite of Windtrap. It keeps the shape of

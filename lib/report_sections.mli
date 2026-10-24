@@ -380,13 +380,25 @@ type mutant = {
       (** The identifier of the mutant, spelled by the producer with the
           runtime's own function. The report prints it and hands it to [--arm]
           through {!shell_word}, without spelling it again. *)
+  file : string;  (** The mutated file, as its identifier names it. *)
   line : int;  (** The one-based line of the mutated expression. *)
+  col : int;  (** The zero-based column of its first byte. *)
+  end_line : int;  (** The one-based line of the byte after its last one. *)
+  end_col : int;  (** The zero-based column of that byte. *)
   before : string;  (** The source text of the original expression. *)
   after : string;  (** The source text of the expression that replaces it. *)
   source : string option;
       (** The text of the mutated file, when the producer could read it. *)
 }
 (** The type for a mutant as a block shows it. *)
+
+val diagnostic : mutant -> string
+(** [diagnostic m] is the location of [m] in the compiler's format, which
+    editors and build tools jump to:
+    [File "lib/calc.ml", line 9, characters 12-17:], or [lines 9-11] for an
+    expression that spans several lines, whose characters are then the start
+    column on the first line and the end column on the last, as the compiler
+    gives them. *)
 
 type survivor = {
   mutant : mutant;  (** The mutant that survived. *)
@@ -467,6 +479,7 @@ type mutation = {
 
 val survivor_block : exe_width:int option -> survivor -> section list
 (** [survivor_block ~exe_width s] is the block of [s]. It holds, in this order:
+    - the {!diagnostic} of the mutant, at the start of its line.
     - the title.
     - the mutated source line, as {!pp_failure} prints a source line, when
       [source] is known and holds the line.
@@ -488,7 +501,8 @@ val mutation_closing : config:Run.config -> mutation -> section list
       runs its [invocation] with [--arm] and the selection of [config], as the
       [reproduce:] command below does.
     - when [m.unknown] is not empty, the unknown section, laid out as the
-      not-evaluated one with the reason of each mutant on a line under it.
+      not-evaluated one with the {!diagnostic} of each mutant above it and its
+      reason on a line under it.
     - when [m.unreached] is not empty, the never-reached section, between an
       opening rule that carries the number of mutants and a closing rule.
     - when [m.outside_tests] is not empty, the section of the mutants evaluated

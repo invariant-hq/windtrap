@@ -1858,10 +1858,28 @@ let calc_source =
   source_of
     [ (13, "  | Sub -> a - b"); (21, "let sign n = if n > 0 then 1 else 0") ]
 
+(* The mutant [id] names, spanning [before] on its line. *)
+let shown_mutant ?source id line before after =
+  let file, col =
+    match String.split_on_char ':' id with
+    | [ file; _; col; _ ] -> (file, int_of_string col)
+    | _ -> invalid_arg id
+  in
+  {
+    Sections.id;
+    file;
+    line;
+    col;
+    end_line = line;
+    end_col = col + String.length before;
+    before;
+    after;
+    source;
+  }
+
 let survivor id line before after witnesses =
   {
-    Sections.mutant =
-      { Sections.id; line; before; after; source = Some calc_source };
+    Sections.mutant = shown_mutant ~source:calc_source id line before after;
     witnesses =
       List.map
         (fun (test, line) ->

@@ -50,13 +50,22 @@ let merge_verdict a b =
 
 type record = {
   id : Mutate.id;
+  end_line : int;
+  end_col : int;
   before : string;
   after : string;
   verdict : verdict;
 }
 
 let record_of_mutant (m : Mutate.mutant) verdict =
-  { id = m.id; before = m.before; after = m.after; verdict }
+  {
+    id = m.id;
+    end_line = m.end_line;
+    end_col = m.end_col;
+    before = m.before;
+    after = m.after;
+    verdict;
+  }
 
 module Id_map = Map.Make (struct
   type t = Mutate.id
@@ -69,13 +78,13 @@ type t = record Id_map.t
 
 let empty = Id_map.empty
 
-(* Two records of one mutant disagree on its rendering only across builds of
-   one source, and nothing says which build the reader has open. The smaller
-   pair wins, which keeps [add] and [merge] commutative and associative. *)
+(* Two records of one mutant disagree on its rendering or its end only
+   across builds of one source, and nothing says which build the reader has
+   open. The smaller rendering wins, then the smaller end, which keeps [add]
+   and [merge] commutative and associative. *)
 let combine a b =
-  let kept =
-    if compare (a.before, a.after) (b.before, b.after) <= 0 then a else b
-  in
+  let key r = (r.before, r.after, r.end_line, r.end_col) in
+  let kept = if compare (key a) (key b) <= 0 then a else b in
   { kept with verdict = merge_verdict a.verdict b.verdict }
 
 let add t r =
@@ -95,7 +104,7 @@ let merge a b = Id_map.union (fun _ a b -> Some (combine a b)) a b
 
 let format =
   {
-    Instr.magic = "windtrap-mutants-v4";
+    Instr.magic = "windtrap-mutants-v5";
     kind = "verdict";
     dir = "mutants";
     ext = "mutants";
@@ -133,7 +142,7 @@ type file = {
 
      tested | refused <reason>
      <record count>
-     <file> <line> <col> <rewrite> <before> <after> <verdict>
+     <file> <line> <col> <end line> <end col> <rewrite> <before> <after> <verdict>
 
    with one such line for each record, in [Mutate.compare_id] order.
    [<verdict>] is [unreached], [outside_tests], [killed], [not_evaluated],
@@ -160,27 +169,32 @@ let load path =
         survived (List.init n (fun _ -> read_test c))
     | word -> Instr.parse_fail "unknown verdict %S" word
   in
-  let read_id c =
+  let read_record c =
     let file = Instr.read_name c "file name" in
     if file = "" then Instr.parse_fail "empty file name";
     let line = Instr.read_nat c "line" in
     if line < 1 then Instr.parse_fail "line %d is not 1-based" line;
     let col = Instr.read_nat c "column" in
+    let end_line = Instr.read_nat c "end line" in
+    let end_col = Instr.read_nat c "end column" in
+    if end_line < line || (end_line = line && end_col < col) then
+      Instr.parse_fail "end %d:%d before start %d:%d" end_line end_col line col;
     let rewrite = Instr.read_name c "rewrite" in
     if not (List.mem rewrite Mutate.rewrites) then
       Instr.parse_fail "unknown rewrite %S" rewrite;
-    { Mutate.file; line; col; rewrite }
+    let id = { Mutate.file; line; col; rewrite } in
+    let before = Instr.read_name c "before" in
+    let after = Instr.read_name c "after" in
+    let verdict = read_verdict c in
+    { id; end_line; end_col; before; after; verdict }
   in
   let rec read_records c t n =
     if n = 0 then t
     else
-      let id = read_id c in
-      if Id_map.mem id t then
-        Instr.parse_fail "duplicate record for %s" (Mutate.id_to_string id);
-      let before = Instr.read_name c "before" in
-      let after = Instr.read_name c "after" in
-      let verdict = read_verdict c in
-      read_records c (add t { id; before; after; verdict }) (n - 1)
+      let r = read_record c in
+      if Id_map.mem r.id t then
+        Instr.parse_fail "duplicate record for %s" (Mutate.id_to_string r.id);
+      read_records c (add t r) (n - 1)
   in
   match Result.bind (Instr.read_file path) (Instr.start format ~path) with
   | Error e -> Error e
@@ -225,8 +239,8 @@ let save ?identity ?refused path t =
   Printf.bprintf b "%d\n" (Id_map.cardinal t);
   Id_map.iter
     (fun (id : Mutate.id) r ->
-      Printf.bprintf b "%a %d %d %a %a %a %a\n" add_name id.file id.line id.col
-        add_name id.rewrite add_name r.before add_name r.after add_verdict
-        r.verdict)
+      Printf.bprintf b "%a %d %d %d %d %a %a %a %a\n" add_name id.file id.line
+        id.col r.end_line r.end_col add_name id.rewrite add_name r.before
+        add_name r.after add_verdict r.verdict)
     t;
   Instr.write_file path (Buffer.contents b)

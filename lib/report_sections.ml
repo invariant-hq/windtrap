@@ -1451,13 +1451,25 @@ type witness = { test : string; loc : Loc.t option; exe : string option }
 
 type mutant = {
   id : string;
+  file : string;
   line : int;
+  col : int;
+  end_line : int;
+  end_col : int;
   before : string;
   after : string;
   source : string option;
 }
 
 type survivor = { mutant : mutant; witnesses : witness list }
+
+(* The compiler's spelling of a location, which editors and dune parse. *)
+let diagnostic (m : mutant) =
+  strf "File \"%s\", %s, characters %d-%d:" m.file
+    (if m.end_line = m.line then strf "line %d" m.line
+     else strf "lines %d-%d" m.line m.end_line)
+    m.col m.end_col
+
 type not_evaluated = { mutant : mutant; invocation : Run.invocation }
 type unknown = { mutant : mutant; reason : string; invocation : Run.invocation }
 type refused = { executable : string; reason : string; mutants : int }
@@ -1548,7 +1560,7 @@ let survivor_block ~exe_width (s : survivor) =
             { margin = indent ^ "  "; columns; rows = List.map cells witnesses };
         ]
   in
-  (title :: source) @ reaching
+  (Line [ plain (diagnostic m) ] :: title :: source) @ reaching
 
 (* The reached count is the sum of the other terms, so the line cannot
    disagree with the blocks above it. A zero term is omitted. *)
@@ -1629,6 +1641,7 @@ let unknown_section ~selection = function
   | unknown ->
       let mutant (u : unknown) =
         [
+          Line [ plain (diagnostic u.mutant) ];
           Line
             [
               plain "  ";

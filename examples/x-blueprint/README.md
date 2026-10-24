@@ -180,12 +180,14 @@ $ dune exec --instrument-with ppx_windtrap.mutate test/unit/test_stats.exe -- --
 stats: 1 passed in 91ms (seed s1:f57d4071ad6eed49).
 
 ─────────────────────── survivors ────────────────────────
+File "lib/stats.ml", line 14, characters 18-47:
   SURVIVED  lib/stats.ml:14:18:add  width - (String.length label) → width + (String.length label)
       14 │ ^ String.make (width - String.length label) ' '
 
     1 test ran this line and did not fail:
       render › prints one line per row plus the total  test/unit/test_stats.ml:29
 
+File "lib/stats.ml", line 18, characters 48-61:
   SURVIVED  lib/stats.ml:18:48:sub  acc + (clamp n) → acc - (clamp n)
       18 │ let total = List.fold_left (fun acc (_, n) -> acc + clamp n) 0 rows in
 

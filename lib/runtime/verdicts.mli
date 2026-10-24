@@ -58,13 +58,16 @@ val survived : reaching_test list -> verdict
 
 type record = {
   id : Mutate.id;  (** The identifier of the mutant. *)
+  end_line : int;  (** The [end_line] of its site ({!Mutate.type-site}). *)
+  end_col : int;  (** The [end_col] of its site. *)
   before : string;  (** The source text of the original expression. *)
   after : string;  (** The source text of the armed expression. *)
   verdict : verdict;  (** What the run made of the mutant. *)
 }
 (** The type for the record of one mutant. A record is self-describing: it
-    carries the two renderings that a report draws the mutant with, so a report
-    needs no catalogue and outlives the executable that produced it. *)
+    carries the two renderings and the extent that a report draws the mutant
+    with, so a report needs no catalogue and outlives the executable that
+    produced it. *)
 
 val record_of_mutant : Mutate.mutant -> verdict -> record
 (** [record_of_mutant m v] is the record of [m] with the verdict [v].
@@ -80,17 +83,18 @@ val empty : t
 val add : t -> record -> t
 (** [add t r] is [t] with [r] recorded. A {!Survived} verdict is sorted on its
     way in. When [t] already holds a record under [r.id], the smaller
-    [(before, after)] pair in lexicographic order is kept, and the two verdicts
-    combine into the verdict of a mutant that one executable saw one way and
-    another the other way. It is {!Killed} if either is. Otherwise it is
-    {!Unknown} if either is, with the smaller reason in [String.compare] order
-    when both are, then {!Not_evaluated} if either is, then {!Survived} with the
-    reaching tests of both if either is, then {!Outside_tests} if either is, and
-    {!Unreached} if both are.
+    [(before, after, end_line, end_col)] in lexicographic order is kept, and the
+    two verdicts combine into the verdict of a mutant that one executable saw
+    one way and another the other way. It is {!Killed} if either is. Otherwise
+    it is {!Unknown} if either is, with the smaller reason in [String.compare]
+    order when both are, then {!Not_evaluated} if either is, then {!Survived}
+    with the reaching tests of both if either is, then {!Outside_tests} if
+    either is, and {!Unreached} if both are.
 
-    [add] checks nothing of [r.id]. It accepts an empty [file], a [line] below
-    [1], a negative [col] and a [rewrite] outside {!Mutate.rewrites}, and
-    {!load} then refuses the file that {!save} writes for the collection. *)
+    [add] checks nothing of [r.id] or of the end. It accepts an empty [file], a
+    [line] below [1], a negative [col], an end before the start and a [rewrite]
+    outside {!Mutate.rewrites}, and {!load} then refuses the file that {!save}
+    writes for the collection. *)
 
 val records : t -> record list
 (** [records t] is the records of [t], ordered by {!Mutate.compare_id}. *)
@@ -106,7 +110,7 @@ val merge : t -> t -> t
 
     An executable has one verdict file, at {!output_file}.
 
-    The first line of a file is the magic line [windtrap-mutants-v4], which
+    The first line of a file is the magic line [windtrap-mutants-v5], which
     carries the version of the format. A file with another first line is
     refused, never converted, and nothing is promised from one version to the
     next. *)

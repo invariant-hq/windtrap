@@ -54,6 +54,7 @@ file:
 
   $ run windtrap mutants
   ───────────────────── survivors (1) ──────────────────────
+  File "lib/calc.ml", line 2, characters 14-19:
     SURVIVED  lib/calc.ml:2:14:sub  a - b → a + b
         2 │ let sub a b = a - b
   
@@ -92,6 +93,7 @@ the counts as a suite's summary does; the command to reproduce stays plain:
   [1]
   $ esc < coloured
   \e[2m───────────────────── survivors (1) ──────────────────────\e[0m
+  File "lib/calc.ml", line 2, characters 14-19:
     \e[31mSURVIVED\e[0m  \e[1mlib/calc.ml:2:14:sub\e[0m  a - b → a + b
         \e[2m2 │\e[0m let sub a b = a - b
   
@@ -112,12 +114,14 @@ reached are in identifier order:
 
   $ run windtrap mutants _build/_mutants/windtrap-b.mutants
   ───────────────────── survivors (2) ──────────────────────
+  File "lib/calc.ml", line 1, characters 14-19:
     SURVIVED  lib/calc.ml:1:14:add  a + b → a - b
         1 │ let add a b = a + b
   
       1 test ran this line and did not fail:
         windtrap-b.mutants  cli › runs
   
+  File "lib/calc.ml", line 2, characters 14-19:
     SURVIVED  lib/calc.ml:2:14:sub  a - b → a + b
         2 │ let sub a b = a - b
   
@@ -197,6 +201,7 @@ read as the others' survivors; the merge then exits 1:
   $ mkdata mutants _build/_mutants/b.mutants "$add=killed" "$sub=unknown:its run was killed by SIGSEGV"
   $ run windtrap mutants
   ───────────────────── survivors (1) ──────────────────────
+  File "lib/calc.ml", line 3, characters 14-19:
     SURVIVED  lib/calc.ml:3:14:lt  a < b → a <= b
         3 │ let cmp a b = a < b
   
@@ -205,6 +210,7 @@ read as the others' survivors; the merge then exits 1:
   ──────────────────────────────────────────────────────────
   
   ────────────────────── unknown (1) ───────────────────────
+  File "lib/calc.ml", line 2, characters 14-19:
     lib/calc.ml:2:14:sub  a - b → a + b
       b.mutants: its run was killed by SIGSEGV
       arm: WINDTRAP_MUTATE_ARM=lib/calc.ml:2:14:sub dune runtest --force --instrument-with ppx_windtrap.mutate
@@ -217,6 +223,7 @@ read as the others' survivors; the merge then exits 1:
   $ mkdata mutants _build/_mutants/b.mutants "$add=killed" "$sub=unknown:its run was killed by SIGSEGV"
   $ run windtrap mutants
   ────────────────────── unknown (1) ───────────────────────
+  File "lib/calc.ml", line 2, characters 14-19:
     lib/calc.ml:2:14:sub  a - b → a + b
       b.mutants: its run was killed by SIGSEGV
       arm: WINDTRAP_MUTATE_ARM=lib/calc.ml:2:14:sub dune runtest --force --instrument-with ppx_windtrap.mutate
@@ -251,6 +258,7 @@ git diff -U0, and only they can fail the merge:
   $ printf -- '--- a/lib/calc.ml\n+++ b/lib/calc.ml\n@@ -2 +2 @@\n-let sub a b = b - a\n+let sub a b = a - b\n' > change.diff
   $ run windtrap mutants --diff change.diff
   ───────────────────── survivors (1) ──────────────────────
+  File "lib/calc.ml", line 2, characters 14-19:
     SURVIVED  lib/calc.ml:2:14:sub  a - b → a + b
         2 │ let sub a b = a - b
   
@@ -275,6 +283,7 @@ Survivors are ordered by how many tests reached them, then by identifier:
   $ mkdata mutants _build/_mutants/two.mutants "$sub=survived:u/d"
   $ run windtrap mutants
   ───────────────────── survivors (2) ──────────────────────
+  File "lib/calc.ml", line 2, characters 14-19:
     SURVIVED  lib/calc.ml:2:14:sub  a - b → a + b
         2 │ let sub a b = a - b
   
@@ -283,6 +292,7 @@ Survivors are ordered by how many tests reached them, then by identifier:
         one.mutants  t › c
         two.mutants  u › d
   
+  File "lib/calc.ml", line 1, characters 14-19:
     SURVIVED  lib/calc.ml:1:14:add  a + b → a - b
         1 │ let add a b = a + b
   
@@ -301,6 +311,7 @@ separator:
   $ mkdata mutants _build/_mutants/s.mutants "$add=survived:a/b;a b"
   $ run windtrap mutants
   ───────────────────── survivors (1) ──────────────────────
+  File "lib/calc.ml", line 1, characters 14-19:
     SURVIVED  lib/calc.ml:1:14:add  a + b → a - b
         1 │ let add a b = a + b
   
@@ -320,6 +331,7 @@ rewrite, with no source line:
   $ mkdata mutants _build/_mutants/b.mutants "$sub=survived:t/b"
   $ run windtrap mutants
   ───────────────────── survivors (1) ──────────────────────
+  File "lib/calc.ml", line 2, characters 14-19:
     SURVIVED  lib/calc.ml:2:14:sub  a - b → a + b
   
       1 test ran this line and did not fail:
@@ -342,6 +354,7 @@ executable through dune:
   >   "$add=killed" "$sub=unreached" "$lt=survived:calc/compares" "$or=unreached" "$and=unreached"
   $ run windtrap mutants
   ───────────────────── survivors (1) ──────────────────────
+  File "lib/calc.ml", line 3, characters 14-19:
     SURVIVED  lib/calc.ml:3:14:lt  a < b → a <= b
         3 │ let cmp a b = a < b
   
@@ -370,6 +383,7 @@ once:
   $ echo 'rebuilt since' > _build/default/test/c.exe
   $ run windtrap mutants
   ───────────────────── survivors (1) ──────────────────────
+  File "lib/calc.ml", line 3, characters 14-19:
     SURVIVED  lib/calc.ml:3:14:lt  a < b → a <= b
         3 │ let cmp a b = a < b
   
@@ -442,6 +456,7 @@ comes first:
   $ mkdata mutants _build/_mutants/plain.mutants "$add=survived:hand/written"
   $ run windtrap mutants
   ───────────────────── survivors (1) ──────────────────────
+  File "lib/calc.ml", line 1, characters 14-19:
     SURVIVED  lib/calc.ml:1:14:add  a + b → a - b
         1 │ let add a b = a + b
   
@@ -546,13 +561,13 @@ is to delete it, which a coverage dump in the directory shares:
   $ printf 'windtrap-mutants-v0\n1\nsome older payload\n' > _build/_mutants/old.mutants
   $ run windtrap mutants
   --- stderr
-  windtrap: .../old.mutants: not a windtrap verdict file (expected header "windtrap-mutants-v4", found "windtrap-mutants-v0"); files written by other windtrap versions are not readable - delete the stale verdict files, then re-run the mutation tests
+  windtrap: .../old.mutants: not a windtrap verdict file (expected header "windtrap-mutants-v5", found "windtrap-mutants-v0"); files written by other windtrap versions are not readable - delete the stale verdict files, then re-run the mutation tests
   [1]
   $ rm _build/_mutants/old.mutants
   $ printf 'windtrap-coverage-v3\n0\n' > _build/_mutants/cov.mutants
   $ run windtrap mutants
   --- stderr
-  windtrap: .../cov.mutants: not a windtrap verdict file (expected header "windtrap-mutants-v4", found "windtrap-coverage-v3"); files written by other windtrap versions are not readable - delete the stale verdict files, then re-run the mutation tests
+  windtrap: .../cov.mutants: not a windtrap verdict file (expected header "windtrap-mutants-v5", found "windtrap-coverage-v3"); files written by other windtrap versions are not readable - delete the stale verdict files, then re-run the mutation tests
   [1]
 
 A PATH that cannot be used fails the command, and the files named beside

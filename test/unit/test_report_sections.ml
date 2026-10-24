@@ -2175,8 +2175,27 @@ let witness ?exe ?file test line =
     exe;
   }
 
+(* The mutant [id] names, spanning [before] on its line. *)
+let shown_mutant ?source id line before after =
+  let file, col =
+    match String.split_on_char ':' id with
+    | [ file; _; col; _ ] -> (file, int_of_string col)
+    | _ -> invalid_arg id
+  in
+  {
+    Sections.id;
+    file;
+    line;
+    col;
+    end_line = line;
+    end_col = col + String.length before;
+    before;
+    after;
+    source;
+  }
+
 let mutant ?(source = calc_source) id line before after =
-  { Sections.id; line; before; after; source = Some source }
+  shown_mutant ~source id line before after
 
 let add_survivor =
   {
@@ -2531,7 +2550,7 @@ let sentence_rows =
   ]
 
 let sentence (_, (witnesses, expected)) =
-  equal string expected (List.nth (lines (block witnesses)) 3)
+  equal string expected (List.nth (lines (block witnesses)) 4)
 
 let padded_names () =
   equal (list string)
@@ -2540,7 +2559,7 @@ let padded_names () =
       "      eval \u{203a} Sub node     test/test_eval.ml:31";
     ]
     (List.filteri
-       (fun i _ -> i >= 4 && i < 6)
+       (fun i _ -> i >= 5 && i < 7)
        (lines (block [ calc_one; eval_one ])))
 
 let exe_column () =
@@ -2671,9 +2690,18 @@ let arm_mirror () =
                  [ { memo_missed with Sections.invocation = `Mirrors } ];
              })))
 
+let diagnostics () =
+  let one = mutant "lib/calc.ml:13:11:add" 13 "a - b" "a + b" in
+  equal string {|File "lib/calc.ml", line 13, characters 11-16:|}
+    (Sections.diagnostic one);
+  equal string {|File "lib/calc.ml", lines 13-15, characters 11-3:|}
+    (Sections.diagnostic { one with end_line = 15; end_col = 3 })
+
 let mutation_group =
   group "Mutation"
     [
+      test "a mutant's location is the compiler's, over the lines it spans"
+        diagnostics;
       test "survivor blocks and reports print as their gallery" (fun () ->
           gallery "mutation" (mutation_entries ()));
       cases "the reproduce command arms the first survivor" ~name:fst

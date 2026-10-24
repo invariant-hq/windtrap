@@ -157,7 +157,9 @@
     site, and [<col>] is the zero-based column of that byte, counted in bytes. A
     site in brackets starts at its bracket, so bracketing a site, as
     [[@mutate off]] on an infix expression requires, moves its column by one.
-    Two sites may share a line and a column under two rewrites.
+    Two sites may share a line and a column under two rewrites. The site also
+    records where it ends, as the line and the column of the byte after its last
+    one, which a report prints in the compiler's format and no identifier holds.
 
     A site is numbered by the order of its allocation, from [0], and the numbers
     are local to the file. That order is the traversal's and not the source's. A
@@ -184,7 +186,7 @@
 
     The module holds, in this order:
     - [type site = Windtrap_runtime.Mutate.site = { … }], the record of the
-      runtime with its six fields spelled out. A runtime whose record differs
+      runtime with its eight fields spelled out. A runtime whose record differs
       thus fails to compile against the generated code.
     - [type 'a operands = 'a * 'a], only in a file that holds the guard of an
       ordering rewrite, which annotates its pair of operands with it.

@@ -1049,6 +1049,8 @@ let elsewhere =
   {
     Verdicts.id =
       { Mutate.file = "elsewhere/other.ml"; line = 1; col = 0; rewrite = "add" };
+    end_line = 1;
+    end_col = 5;
     before = "a - b";
     after = "a + b";
     verdict = Verdicts.Killed;

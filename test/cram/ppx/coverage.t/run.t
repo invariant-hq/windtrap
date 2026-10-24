@@ -879,16 +879,16 @@ dune builds for a stanza naming both backends:
     18: 993-1012
     19: 1143-1144
   mutation sites of "./fixture_guards.ml" in Windtrap_mut_________fixture_guards___ml, with type 'a operands:
-    0: 9:16 "le" "a < b" -> "a <= b"
-    1: 10:14 "sub" "a + b" -> "a - b"
-    2: 16:11 "not" "p x" -> "not (p x)"
-    3: 17:11 "neq" "a = b" -> "a <> b"
-    4: 18:11 "or" "a && b" -> "a || b"
-    5: 21:27 "or" "a && b" -> "a || b"
-    6: 21:20 "not" "c" -> "not c"
-    7: 26:8 "not" "f x" -> "not (f x)"
-    8: 30:24 "or" "(f x) && (g x)" -> "(f x) || (g x)"
-    9: 34:17 "and" "a || b" -> "a && b"
+    0: 9:16-9:21 "le" "a < b" -> "a <= b"
+    1: 10:14-10:19 "sub" "a + b" -> "a - b"
+    2: 16:11-16:14 "not" "p x" -> "not (p x)"
+    3: 17:11-17:16 "neq" "a = b" -> "a <> b"
+    4: 18:11-18:17 "or" "a && b" -> "a || b"
+    5: 21:27-21:33 "or" "a && b" -> "a || b"
+    6: 21:20-21:21 "not" "c" -> "not c"
+    7: 26:8-26:11 "not" "f x" -> "not (f x)"
+    8: 30:24-30:36 "or" "(f x) && (g x)" -> "(f x) || (g x)"
+    9: 34:17-34:23 "and" "a || b" -> "a && b"
   let lt a b =
     ___windtrap_visit___ 3;
     if

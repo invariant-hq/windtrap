@@ -117,6 +117,7 @@ scoped to the file, with --mutate:
   calc: 4 passed in TIME.
   
   ─────────────────────── survivors ────────────────────────
+  File "calc.ml", line 2, characters 16-21:
     SURVIVED  calc.ml:2:16:ge  n > 0 → n >= 0
         2 │ let sign n = if n > 0 then 1 else 0
   
@@ -124,6 +125,7 @@ scoped to the file, with --mutate:
         sign of a negative  test_calc.ml:9
         sign of a positive  test_calc.ml:8
   
+  File "calc.ml", line 3, characters 20-25:
     SURVIVED  calc.ml:3:20:ge  n > 0 → n >= 0
         3 │ let describe n = if n > 0 then "positive" else "non-positive"
   
@@ -150,6 +152,7 @@ suite that reached it is the one mutation exit code a build gates on:
   _windtrap/mutants/windtrap-HASH.mutants
   $ run windtrap mutants
   ───────────────────── survivors (2) ──────────────────────
+  File "calc.ml", line 2, characters 16-21:
     SURVIVED  calc.ml:2:16:ge  n > 0 → n >= 0
         2 │ let sign n = if n > 0 then 1 else 0
   
@@ -157,6 +160,7 @@ suite that reached it is the one mutation exit code a build gates on:
         test_calc.exe  sign of a negative
         test_calc.exe  sign of a positive
   
+  File "calc.ml", line 3, characters 20-25:
     SURVIVED  calc.ml:3:20:ge  n > 0 → n >= 0
         3 │ let describe n = if n > 0 then "positive" else "non-positive"
   

@@ -3,6 +3,7 @@
 --- mutation_survivor
 
 ─────────────────────── survivors ────────────────────────
+File "lib/calc.ml", line 13, characters 11-16:
   SURVIVED  lib/calc.ml:13:11:add  a - b → a + b
       13 │ | Sub -> a - b
 
@@ -11,6 +12,7 @@
 --- mutation_testing 2
 --- mutation_survivor
 
+File "lib/calc.ml", line 21, characters 16-21:
   SURVIVED  lib/calc.ml:21:16:ge  n > 0 → n >= 0
       21 │ let sign n = if n > 0 then 1 else 0
 
@@ -32,6 +34,7 @@ mutants: 2 survived of 5 reached by this suite, 3 killed, 2 never reached
 --- mutation_survivor
 
 «d|─────────────────────── survivors ────────────────────────»
+File "lib/calc.ml", line 13, characters 11-16:
   «r|SURVIVED»  «b|lib/calc.ml:13:11:add»  a - b → a + b
       «d|13 │» | Sub -> a - b
 
@@ -40,6 +43,7 @@ mutants: 2 survived of 5 reached by this suite, 3 killed, 2 never reached
 --- mutation_testing 2
 --- mutation_survivor
 
+File "lib/calc.ml", line 21, characters 16-21:
   «r|SURVIVED»  «b|lib/calc.ml:21:16:ge»  n > 0 → n >= 0
       «d|21 │» let sign n = if n > 0 then 1 else 0
 
@@ -62,6 +66,7 @@ mutants: «r|2 survived» of 5 reached by this suite, «g|3 killed», «y|2 neve
 --- mutation_survivor
 «erase»
 «d|─────────────────────── survivors ────────────────────────»
+File "lib/calc.ml", line 13, characters 11-16:
   «r|SURVIVED»  «b|lib/calc.ml:13:11:add»  a - b → a + b
       «d|13 │» | Sub -> a - b
 

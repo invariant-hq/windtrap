@@ -89,7 +89,15 @@ let record spec =
           rewrite;
         }
       in
-      { Verdicts.id; before; after; verdict = verdict v }
+      (* The expression spans [before] on its line. *)
+      {
+        Verdicts.id;
+        end_line = id.line;
+        end_col = id.col + String.length before;
+        before;
+        after;
+        verdict = verdict v;
+      }
   | _ -> die "%S: not FILE:LINE:COL:REWRITE:BEFORE:AFTER" mutant
 
 let mutants ~identity ?refused out specs =

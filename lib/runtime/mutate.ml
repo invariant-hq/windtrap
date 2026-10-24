@@ -48,6 +48,8 @@ let compare_id a b =
 type site = {
   line : int;
   col : int;
+  end_line : int;
+  end_col : int;
   rewrite : string;
   before : string;
   after : string;
@@ -56,6 +58,8 @@ type site = {
 
 type mutant = {
   id : id;
+  end_line : int;
+  end_col : int;
   before : string;
   after : string;
   dismissed : string option;
@@ -96,6 +100,8 @@ let site_mutant entry i =
   let s = entry.sites.(i) in
   {
     id = { file = entry.file; line = s.line; col = s.col; rewrite = s.rewrite };
+    end_line = s.end_line;
+    end_col = s.end_col;
     before = s.before;
     after = s.after;
     dismissed = s.dismissed;
@@ -112,13 +118,20 @@ let validate ~file sites =
     (fun i s ->
       if s.line < 1 then err_site ~file i "line %d is not 1-based" s.line;
       if s.col < 0 then err_site ~file i "negative column %d" s.col;
+      if
+        s.end_col < 0 || s.end_line < s.line
+        || (s.end_line = s.line && s.end_col < s.col)
+      then
+        err_site ~file i "end %d:%d before start %d:%d" s.end_line s.end_col
+          s.line s.col;
       if not (is_rewrite s.rewrite) then
         err_site ~file i "unknown rewrite %S" s.rewrite)
     sites
 
 let sites_equal a b =
   let site_equal a b =
-    a.line = b.line && a.col = b.col
+    a.line = b.line && a.col = b.col && a.end_line = b.end_line
+    && a.end_col = b.end_col
     && String.equal a.rewrite b.rewrite
     && String.equal a.before b.before
     && String.equal a.after b.after

@@ -1,5 +1,6 @@
 === a merge with an unknown mutant and a suite not mutation-tested
 ───────────────────── survivors (1) ──────────────────────
+File "lib/calc.ml", line 21, characters 16-21:
   SURVIVED  lib/calc.ml:21:16:ge  n > 0 → n >= 0
       21 │ let sign n = if n > 0 then 1 else 0
 
@@ -9,6 +10,7 @@
 ──────────────────────────────────────────────────────────
 
 ────────────────────── unknown (1) ───────────────────────
+File "lib/spin.ml", line 9, characters 8-13:
   lib/spin.ml:9:8:le  i < n → i <= n
     test_spin.exe: its run passed its deadline of 1.5s
     arm: ./test_spin.exe --arm lib/spin.ml:9:8:le
@@ -26,6 +28,7 @@ reproduce: WINDTRAP_MUTATE_ARM=lib/calc.ml:21:16:ge dune runtest --force --instr
 mutants: 1 survived of 32 reached, 3 killed, 28 unknown, 2 never reached, 3 executables, 1 not mutation-tested
 
 === a survivor's block: its rewrite, its source line, the tests that ran it
+File "lib/calc.ml", line 21, characters 16-21:
   «r|SURVIVED»  «b|lib/calc.ml:21:16:ge»  n > 0 → n >= 0
       «d|21 │» let sign n = if n > 0 then 1 else 0
 
@@ -34,6 +37,7 @@ mutants: 1 survived of 32 reached, 3 killed, 28 unknown, 2 never reached, 3 exec
       sign of a positive  «d|test/test_calc.ml:30»
 
 === a survivor on line 1
+File "a.ml", line 1, characters 8-9:
   SURVIVED  a.ml:1:8:add  1 → 2
       1 │ let x = 1
 
@@ -41,6 +45,7 @@ mutants: 1 survived of 32 reached, 3 killed, 28 unknown, 2 never reached, 3 exec
       t
 
 === an executable column at least exe_width wide, empty for a test that names none
+File "lib/calc.ml", line 13, characters 11-16:
   SURVIVED  lib/calc.ml:13:11:add  a - b → a + b
       13 │ | Sub -> a - b
 
@@ -49,6 +54,7 @@ mutants: 1 survived of 32 reached, 3 killed, 28 unknown, 2 never reached, 3 exec
                     without one
 
 === a source line's control bytes print as text
+File "lib/calc.ml", line 13, characters 11-16:
   «r|SURVIVED»  «b|lib/calc.ml:13:11:add»  a - b → a + b
       «d|13 │» | Sub -> \x1b[31ma\x0d - b
 
@@ -56,12 +62,14 @@ mutants: 1 survived of 32 reached, 3 killed, 28 unknown, 2 never reached, 3 exec
       subtraction › stays positive  «d|test/test_calc.ml:19»
 
 === an unreadable source drops the source line and nothing else
+File "lib/parser.ml", line 102, characters 9-17:
   SURVIVED  lib/parser.ml:102:9:not  at_end p → not (at_end p)
 
     1 test ran this line and did not fail:
       errors › unexpected end of input
 
 === a line past the end of the source prints no source line
+File "lib/parser.ml", line 102, characters 9-17:
   SURVIVED  lib/parser.ml:102:9:not  at_end p → not (at_end p)
 
     1 test ran this line and did not fail:
@@ -69,6 +77,7 @@ mutants: 1 survived of 32 reached, 3 killed, 28 unknown, 2 never reached, 3 exec
 
 === a merge's report: survivors counted, the executables one column
 «d|───────────────────── survivors (2) ──────────────────────»
+File "lib/eval.ml", line 60, characters 24-42:
   «r|SURVIVED»  «b|lib/eval.ml:60:24:eq»  eval env b = Int 0 → eval env b <> Int 0
       «d|60 │» if eval env b = Int 0 then raise Division_by_zero
 
@@ -77,6 +86,7 @@ mutants: 1 survived of 32 reached, 3 killed, 28 unknown, 2 never reached, 3 exec
       test_eval.exe     division › rounds toward zero
       test_printer.exe  round trip › arithmetic
 
+File "lib/parser.ml", line 102, characters 9-17:
   «r|SURVIVED»  «b|lib/parser.ml:102:9:not»  at_end p → not (at_end p)
       «d|102 │» if at_end p then Error (Unexpected_eof p.pos)
 
@@ -95,6 +105,7 @@ mutants: «r|2 survived» of 18 reached, «g|16 killed», «y|7 never reached»,
 
 === and without colour
 ───────────────────── survivors (2) ──────────────────────
+File "lib/eval.ml", line 60, characters 24-42:
   SURVIVED  lib/eval.ml:60:24:eq  eval env b = Int 0 → eval env b <> Int 0
       60 │ if eval env b = Int 0 then raise Division_by_zero
 
@@ -103,6 +114,7 @@ mutants: «r|2 survived» of 18 reached, «g|16 killed», «y|7 never reached»,
       test_eval.exe     division › rounds toward zero
       test_printer.exe  round trip › arithmetic
 
+File "lib/parser.ml", line 102, characters 9-17:
   SURVIVED  lib/parser.ml:102:9:not  at_end p → not (at_end p)
       102 │ if at_end p then Error (Unexpected_eof p.pos)
 
@@ -130,6 +142,7 @@ mutants: 16 reached, 16 killed, 7 never reached, 3 executables
 
 === survivors alone
 ───────────────────── survivors (2) ──────────────────────
+File "lib/eval.ml", line 60, characters 24-42:
   SURVIVED  lib/eval.ml:60:24:eq  eval env b = Int 0 → eval env b <> Int 0
       60 │ if eval env b = Int 0 then raise Division_by_zero
 
@@ -138,6 +151,7 @@ mutants: 16 reached, 16 killed, 7 never reached, 3 executables
       test_eval.exe     division › rounds toward zero
       test_printer.exe  round trip › arithmetic
 
+File "lib/parser.ml", line 102, characters 9-17:
   SURVIVED  lib/parser.ml:102:9:not  at_end p → not (at_end p)
       102 │ if at_end p then Error (Unexpected_eof p.pos)
 

@@ -111,14 +111,16 @@ To test the mutants a suite reaches, run the suite built with the
 backend and pass `--mutate`. The run executes the suite once, recording
 which tests reach each mutant, then runs each reached mutant in a
 process of its own with those tests alone. A mutant that no test fails on prints
-as a `SURVIVED` block: its identifier, the rewrite, the source line and
-the tests that ran it. No test calls `sign 0`:
+as a `SURVIVED` block: its location in the compiler's format, which
+editors and dune jump to, its identifier, the rewrite, the source line
+and the tests that ran it. No test calls `sign 0`:
 
 ```
 $ dune exec --instrument-with ppx_windtrap.mutate ./test_calc.exe -- --mutate
 calc: 10 passed in 1.3ms.
 
 ─────────────────────── survivors ────────────────────────
+File "calc.ml", line 10, characters 16-21:
   SURVIVED  calc.ml:10:16:ge  n > 0 → n >= 0
       10 │ let sign n = if n > 0 then 1 else if n < 0 then -1 else 0
 
@@ -126,6 +128,7 @@ calc: 10 passed in 1.3ms.
       sign › is -1 for a negative  test_calc.ml:32
       sign › is 1 for a positive   test_calc.ml:31
 
+File "calc.ml", line 10, characters 37-42:
   SURVIVED  calc.ml:10:37:le  n < 0 → n <= 0
       10 │ let sign n = if n > 0 then 1 else if n < 0 then -1 else 0
 
@@ -182,6 +185,7 @@ $ dune exec --instrument-with ppx_windtrap.mutate ./test_calc.exe -- --mutate=ca
 calc: 1 passed in 0.5ms.
 
 ─────────────────────── survivors ────────────────────────
+File "calc.ml", line 6, characters 11-16:
   SURVIVED  calc.ml:6:11:add  a - b → a + b
       6 │ | Sub -> a - b
 
@@ -305,6 +309,7 @@ $ WINDTRAP_MUTATE=1 dune runtest --force --instrument-with ppx_windtrap.mutate
 calc: 10 passed in 1.0ms.
 
 ─────────────────────── survivors ────────────────────────
+File "calc.ml", line 10, characters 16-21:
   SURVIVED  calc.ml:10:16:ge  n > 0 → n >= 0
       10 │ let sign n = if n > 0 then 1 else if n < 0 then -1 else 0
 
@@ -312,6 +317,7 @@ calc: 10 passed in 1.0ms.
       sign › is -1 for a negative  test_calc.ml:32
       sign › is 1 for a positive   test_calc.ml:31
 
+File "calc.ml", line 10, characters 37-42:
   SURVIVED  calc.ml:10:37:le  n < 0 → n <= 0
       10 │ let sign n = if n > 0 then 1 else if n < 0 then -1 else 0
 
@@ -323,6 +329,7 @@ reproduce: dune exec --instrument-with ppx_windtrap.mutate ./test_calc.exe -- --
 mutants: 2 survived of 5 reached by this suite, 3 killed
 $ dune exec windtrap -- mutants
 ───────────────────── survivors (2) ──────────────────────
+File "calc.ml", line 10, characters 16-21:
   SURVIVED  calc.ml:10:16:ge  n > 0 → n >= 0
       10 │ let sign n = if n > 0 then 1 else if n < 0 then -1 else 0
 
@@ -330,6 +337,7 @@ $ dune exec windtrap -- mutants
       test_calc.exe  sign › is -1 for a negative
       test_calc.exe  sign › is 1 for a positive
 
+File "calc.ml", line 10, characters 37-42:
   SURVIVED  calc.ml:10:37:le  n < 0 → n <= 0
       10 │ let sign n = if n > 0 then 1 else if n < 0 then -1 else 0
 

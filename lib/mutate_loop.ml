@@ -331,7 +331,11 @@ let read_source =
 let shown (mutant : Mutate.mutant) : Report_sections.mutant =
   {
     id = Mutate.id_to_string mutant.id;
+    file = mutant.id.file;
     line = mutant.id.line;
+    col = mutant.id.col;
+    end_line = mutant.end_line;
+    end_col = mutant.end_col;
     before = mutant.before;
     after = mutant.after;
     source = read_source mutant.id.file;

@@ -48,13 +48,16 @@ val compare_id : id -> id -> int
 (** {1:catalogue Sites and the catalogue}
 
     Generated code is the only caller of {!register}. Generated code names the
-    labels of {!register} and the six fields of {!type-site}, in their order, so
-    a record that drifts is a compile error in every instrumented file. *)
+    labels of {!register} and the eight fields of {!type-site}, in their order,
+    so a record that drifts is a compile error in every instrumented file. *)
 
 type site = {
   line : int;
       (** The 1-based line of the first byte of the mutated expression. *)
   col : int;  (** The 0-based column of that byte. *)
+  end_line : int;
+      (** The 1-based line of the byte that follows the mutated expression. *)
+  end_col : int;  (** The 0-based column of that byte. *)
   rewrite : string;  (** The name of the replacement, from {!rewrites}. *)
   before : string;  (** The original expression, printed from the parsetree. *)
   after : string;  (** The armed expression, printed from the parsetree. *)
@@ -88,19 +91,21 @@ val register : file:string -> sites:site array -> int -> bool
     When [file] is registered again with an equal table, as when one source is
     compiled into two modules, the two registrations arm together, and
     {!val-catalogue} and {!drain} report each mutant once. Two tables are equal
-    when their sites agree on the six fields. A table that differs from an
+    when their sites agree on the eight fields. A table that differs from an
     earlier one for [file] is dropped. One line then goes to standard error,
     behind [windtrap: warning:], when the module loads and whatever the flags of
     a run. The guard that is returned answers [false] at every index, counts
     nothing and never raises.
 
-    Raises [Invalid_argument] if a site has [line < 1], [col < 0] or a [rewrite]
-    outside {!rewrites}. Only a broken instrumenter produces such a table, and
-    the exception is raised when the module loads. [file] is not checked, and
-    [""] is accepted. *)
+    Raises [Invalid_argument] if a site has [line < 1], [col < 0], an end before
+    its start or a [rewrite] outside {!rewrites}. Only a broken instrumenter
+    produces such a table, and the exception is raised when the module loads.
+    [file] is not checked, and [""] is accepted. *)
 
 type mutant = {
   id : id;  (** The identifier of the mutant. *)
+  end_line : int;  (** The [end_line] of its site. *)
+  end_col : int;  (** The [end_col] of its site. *)
   before : string;  (** The original expression, printed from the parsetree. *)
   after : string;  (** The armed expression, printed from the parsetree. *)
   dismissed : string option;  (** The reason of [[@mutate off]], if any. *)

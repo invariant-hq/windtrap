@@ -17,6 +17,8 @@ let guard =
         {
           Mutate.line = 3;
           col = 10;
+          end_line = 3;
+          end_col = 15;
           rewrite = "lt";
           before = "a < b";
           after = "not (b < a)";
@@ -25,6 +27,8 @@ let guard =
         {
           Mutate.line = 7;
           col = 4;
+          end_line = 7;
+          end_col = 9;
           rewrite = "add";
           before = "a + b";
           after = "a - b";
