@@ -93,8 +93,9 @@ let spread () =
 (* A table whose rows check baselines, each settling alone and in order: a
    row that also fails outside its expectations keeps no correction, so a
    later row that checks its file is compared with the file as it was, and
-   one more test checks the file the last row corrected. Under
-   WORKERS_SUITE=table the table runs alone. *)
+   one more test checks the file the last row corrected, and a property's
+   law checks a literal, which is never corrected. Under WORKERS_SUITE=table
+   the table runs alone. *)
 let rows () =
   let file = "test/cram/run/t.expected" in
   cases "rows"
@@ -116,6 +117,8 @@ let table () =
         nap 0.05;
         expect "s5 new" @@ __POS_OF__ {| s5 old |});
     rows ();
+    prop "a law checks s6" (Gen.int_range 0 1000) (fun n ->
+        if n >= 10 then expect (string_of_int n) @@ __POS_OF__ {| s6 old |});
     test "agrees on the file" (fun () ->
         between ();
         expect_file "t c" "test/cram/run/t.expected");

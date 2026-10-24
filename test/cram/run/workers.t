@@ -235,13 +235,16 @@ the parent's process, leaves the same, at -j 1 as at -j 8:
   same
 
 and beside the tests that other workers run meanwhile, one of which
-checks the file the table corrected:
+checks the file the table corrected, and a property whose law checks a
+literal: its mismatch refutes a case and is never a correction, so -u
+leaves that literal as it was:
 
-  $ show WORKERS_SUITE=tables -- --corrected
+  $ show WORKERS_SUITE=tables -- --corrected --seed s1:0000000000000001
   exit 1
     FAIL  slow, corrects s5
     FAIL  rows
-  1 passed, 2 failed (5 subtest failures), 2 corrections written in DURATION.
+    FAIL  a law checks s6
+  1 passed, 3 failed (5 subtest failures), 2 corrections written in DURATION.
   windtrap: warning: dune registers a correction for promotion only when the run that wrote it exits 0, so the failures above withhold the corrections written here. Fix the failures, rerun, then 'dune promote'.
   h.expected: h old
   k.expected: k old
@@ -253,14 +256,15 @@ checks the file the table corrected:
   +      ("c", __POS_OF__ {| c new |}, false);
   -        expect "s5 new" @@ __POS_OF__ {| s5 old |});
   +        expect "s5 new" @@ __POS_OF__ {| s5 new |});
-  $ same WORKERS_SUITE=tables -- --corrected -j 8
+  $ same WORKERS_SUITE=tables -- --corrected --seed s1:0000000000000001 -j 8
   same
-  $ same WORKERS_SUITE=tables REPLACE=domain -- --corrected -j 8
+  $ same WORKERS_SUITE=tables REPLACE=domain -- --corrected --seed s1:0000000000000001 -j 8
   same
-  $ show WORKERS_SUITE=tables -- -u
+  $ show WORKERS_SUITE=tables -- -u --seed s1:0000000000000001
   exit 1
     FAIL  rows
-  2 passed, 1 failed, 2 corrections accepted in DURATION.
+    FAIL  a law checks s6
+  2 passed, 2 failed, 2 corrections accepted in DURATION.
   h.expected: h old
   k.expected: k old
   t.expected: t c
@@ -270,9 +274,9 @@ checks the file the table corrected:
   +      ("c", __POS_OF__ {| c new |}, false);
   -        expect "s5 new" @@ __POS_OF__ {| s5 old |});
   +        expect "s5 new" @@ __POS_OF__ {| s5 new |});
-  $ same WORKERS_SUITE=tables -- -u -j 8
+  $ same WORKERS_SUITE=tables -- -u --seed s1:0000000000000001 -j 8
   same
-  $ same WORKERS_SUITE=tables REPLACE=domain -- -u -j 8
+  $ same WORKERS_SUITE=tables REPLACE=domain -- -u --seed s1:0000000000000001 -j 8
   same
 
 Under -x the run stops at the first failure, and keeps nothing from the

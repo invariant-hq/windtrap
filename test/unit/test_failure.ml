@@ -770,6 +770,7 @@ let withheld (f : Failure.t) =
   | Baseline { withheld = Some (Refused { line; reason }); _ } ->
       strf "refused %d: %s" line reason
   | Baseline { withheld = Some Conflict; _ } -> "conflict"
+  | Baseline { withheld = Some In_law; _ } -> "in a law"
   | Equality _ | Containment _ | Raise _ | Property _ | Law _ | Timeout _
   | Message _ ->
       "no baseline"

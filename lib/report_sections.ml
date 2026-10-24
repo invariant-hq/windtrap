@@ -402,7 +402,8 @@ let withheld_fact (f : Failure.t) =
       | Failure.Skipped ->
           kept_none
             "the test also skipped; skip before the expectation or not at all, \
-             and rerun")
+             and rerun"
+      | Failure.In_law -> None)
   | Failure.Baseline _ | Failure.Equality _ | Failure.Containment _
   | Failure.Raise _ | Failure.Property _ | Failure.Law _ | Failure.Timeout _
   | Failure.Message _ ->
@@ -997,8 +998,22 @@ and facts ~seen ~excerpt = function
               ~more:(more "frames")
       in
       raised @ frames
-  | Failure.Baseline { baseline; state; withheld = _ } -> (
+  | Failure.Baseline { baseline; state; withheld } -> (
       let subject = baseline_subject baseline in
+      (* A law's mismatch is a counterexample's inner failure, which no
+         hint follows, so it says itself why it is no correction. *)
+      let in_law =
+        match withheld with
+        | Some Failure.In_law ->
+            [
+              line
+                "no correction: a property's law claims this for every value, \
+                 and one text cannot hold for them all";
+            ]
+        | Some _ | None -> []
+      in
+      (fun facts -> facts @ in_law)
+      @@
       match state with
       | Failure.Missing { proposed } ->
           let proposed = Text.split_lines (shown_text proposed) in

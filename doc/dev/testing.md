@@ -86,7 +86,8 @@ what is non-obvious.
   (`nodune.t`, below), and baselines that tests share across worker
   processes (`workers.t`, over `workers_main.exe`: every `-j`, a worker
   retired or killed between two checks, `-x` and retries, a table whose
-  rows each settle their corrections, each byte for byte the outcome of `-j 1`, which is
+  rows each settle their corrections, a property's law whose literal is
+  never corrected, each byte for byte the outcome of `-j 1`, which is
   that of a run in one process).
   What a message says is pinned by the unit suite
   of its module; a session shows its line beside the exit code and the
@@ -124,7 +125,7 @@ what is non-obvious.
   refused selections, `record.t` the last-failed record (what
   `--failed` reruns of a table and a property, an old record, stale
   entries, a duplicate row), `baselines.t` baselines under CI with each
-  stanza laid out by hand, `refusals.t` the
+  stanza laid out by hand and an `expect` in a property's law, `refusals.t` the
   refused runs, the JUnit warning and SIGINT, and `crashes.t` a write
   at address 0 and a loop in C (`verdict_stubs.c`). A situation the
   code gets wrong today is a held defect, left for the change that

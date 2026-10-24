@@ -282,6 +282,13 @@ val check_baseline : ?loc:Loc.t -> Baseline.subject -> string -> unit
     {{!section-attempts}attempts}). Under {!Baseline.Update} a baseline that
     differs records its correction and nothing fails.
 
+    Inside a law, where the frame has a property context, the check is made at
+    once with [~correct:false], in every mode and in a worker too, and a failure
+    is refused, withheld as {!Failure.In_law}: the law claims the check for
+    every value, so a mismatch refutes the case, which the engine shrinks, and
+    no correction is recorded. A table's row runs outside the law's context (see
+    {!row}), so its checks are a test's.
+
     Raises [Sys_error] as {!Baseline.check} does, and [Invalid_argument] if no
     test is running. *)
 

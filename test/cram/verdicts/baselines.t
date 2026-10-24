@@ -134,3 +134,39 @@ rewrites the source:
   CI=0: [0] 1 literal accepted
   CI=false: [0] 1 literal accepted
   CI=off: [0] 1 literal accepted
+
+An expectation in a property's law is claimed for every value, so its
+mismatch refutes the case like any failing verb: the case shrinks, the
+report shows the one counterexample with its mismatch, and nothing is
+written for the literal, under --corrected as under -u:
+
+  $ run VERDICT_SUITE=baseline_in_law ./verdict_main.exe --seed s1:0000000000000001 --corrected
+  baseline_in_law: 1 test (seed SEED)
+  ──────────────────────── failures ────────────────────────
+    FAIL  checks one literal for every value
+      test/cram/verdicts/verdict_main.ml:N
+        N │ prop "checks one literal for every value" (Gen.int_range 0 1000)
+  
+      counterexample (case 0, shrunk 5 steps): 10
+      keep it: ~examples:[ 10 ]
+      which failed at:
+        test/cram/verdicts/verdict_main.ml:N
+          N │ if n >= 10 then expect (string_of_int n) @@ __POS_OF__ {|x|});
+        expect: mismatch
+        @@ -1,1 +1,1 @@
+        - x
+        + 10
+        no correction: a property's law claims this for every value, and one text cannot hold for them all
+  ──────────────────────────────────────────────────────────
+  
+  replay: WINDTRAP_SEED=SEED dune runtest
+  1 failed in DURATION.
+  [1]
+  $ test -e "$source.corrected" || echo nothing written
+  nothing written
+  $ brief VERDICT_SUITE=baseline_in_law ./verdict_main.exe --seed s1:0000000000000001 -u
+    FAIL  checks one literal for every value
+  1 failed in DURATION.
+  [1]
+  $ grep -c '@@ __POS_OF__ {|x|}' "$source"
+  1

@@ -379,8 +379,26 @@ let subtest name fn =
 (* A worker under a correcting mode checks in a [Check] registry, for the
    path's proof and the read's [Sys_error], and leaves the verdict to its
    parent, since what an earlier test accepted decides it. *)
-let check_baseline ?loc subject actual =
+let rec check_baseline ?loc subject actual =
   let frame = current_frame () in
+  match frame.prop with
+  | Some _ -> in_law frame ?loc subject actual
+  | None -> check_in_test frame ?loc subject actual
+
+(* A law claims its check for every value, so a mismatch refutes the case,
+   as any verb's failure does, and is never a correction: no one text holds
+   for every value. It is judged where the law runs, in the registry of
+   that process. *)
+and in_law frame ?loc subject actual =
+  match
+    Baseline.check frame.run.baselines ?loc ~correct:false subject actual
+  with
+  | () -> ()
+  | exception Failure.Check_failure failure ->
+      Failure.refuse
+        (labelled frame (Failure.with_withheld Failure.In_law failure))
+
+and check_in_test frame ?loc subject actual =
   let defer () =
     let check =
       {

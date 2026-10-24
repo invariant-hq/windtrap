@@ -1724,6 +1724,12 @@ val stateful :
     past an attempt whose corrections were kept, whatever its [retries]. Each
     row of a {!cases} table keeps or withholds its own, as a test would.
 
+    {b In a law.} The law of a {!prop} or a {!stateful} test claims what it
+    checks for every value, so there a mismatch fails the case as any failing
+    verb does: the case is shrunk, and the report shows the one counterexample
+    with its mismatch. It is never a correction, in any mode, since no one text
+    can hold for every value, and the failure says so.
+
     A correction that the source cannot take fails its test. The kept
     corrections are written once, after the last test. One that cannot be
     written fails the run. The project root is [WINDTRAP_PROJECT_ROOT] when set,
@@ -1744,10 +1750,11 @@ val expect : string -> pos * string -> unit
     ]}
 
     A mismatch records a failure located at the line of [__POS_OF__] and
-    returns. The position is the compiler's, so a call that moves keeps its
-    baseline. Every test that checks one literal, as a {!cases} body does for
-    each row, must produce one text. A literal each row carries, as in
-    [(input, __POS_OF__ {|…|})], is checked and corrected for its row alone.
+    returns, except in a law (see {{!section-baselines}Baselines}). The position
+    is the compiler's, so a call that moves keeps its baseline. Every test that
+    checks one literal, as a {!cases} body does for each row, must produce one
+    text. A literal each row carries, as in [(input, __POS_OF__ {|…|})], is
+    checked and corrected for its row alone.
 
     When the source changed since the build, or cannot be read, a correcting run
     keeps no correction for the literal: the expectation fails, under [-u] too.

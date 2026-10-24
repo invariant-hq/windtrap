@@ -226,6 +226,12 @@ let suite = function
         test "reads a missing file" (fun () ->
             expect_file "hello\n" "test/cram/verdicts/never.expected");
       ]
+  | "baseline_in_law" ->
+      [
+        prop "checks one literal for every value" (Gen.int_range 0 1000)
+          (fun n ->
+            if n >= 10 then expect (string_of_int n) @@ __POS_OF__ {|x|});
+      ]
   | "baseline_plain" ->
       [
         test "mismatches" (fun () -> expect "actual" @@ __POS_OF__ {|expected|});

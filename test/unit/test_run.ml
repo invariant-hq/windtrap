@@ -45,6 +45,7 @@ let withheld = function
   | Some Failure.Skipped -> ", withheld: skipped"
   | Some (Failure.Refused _) -> ", withheld: refused"
   | Some Failure.Conflict -> ", withheld: conflict"
+  | Some Failure.In_law -> ", withheld: in a law"
 
 (* A failure as the runner's claims read it: its phase, the kind of failure
    the runner made of it, and its subtest label. The words of a message are

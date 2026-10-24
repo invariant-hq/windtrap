@@ -71,6 +71,7 @@ let withheld = function
   | Some Conflict -> ", conflict"
   | Some Failed_outside -> ", failed outside"
   | Some Skipped -> ", skipped"
+  | Some In_law -> ", in a law"
 
 (* The steps of a run. Each gives the rows of what it did. *)
 

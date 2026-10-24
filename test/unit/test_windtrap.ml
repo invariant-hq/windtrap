@@ -571,6 +571,40 @@ let each_row_is_corrected_alone () =
     [ strf "wrote %s, 2" (Windtrap_test_support.slashed row_copy) ]
     (written accepted_rows)
 
+(* A law that checks one literal for every value from 10 on: each mode
+   refutes the case, shrinks it to 10, and writes nothing. *)
+let in_law baseline =
+  let root = Scratch.dir "windtrap-law-" in
+  let copy = Filename.concat root __FILE__ in
+  Os.mkdir_p (Filename.dirname copy);
+  write copy
+    (read (Filename.concat (Filename.dirname Sys.executable_name) this_file));
+  Recorded.execute ~env:(project [] root)
+    ~config:(fun c -> { c with baseline; seed = 1L })
+    [
+      prop "law" (Gen.int_range 0 1000) (fun n ->
+          if n >= 10 then expect (string_of_int n) @@ __POS_OF__ {|x|});
+    ]
+
+let in_law_runs =
+  List.map (fun m -> (m, in_law m)) Baseline.[ Check; Corrected; Update ]
+
+let a_law's_mismatch_refutes_its_case (_, r) =
+  let shown (f : Failure.t) =
+    match f.kind with
+    | Property
+        { rendered; inner = Some { kind = Baseline { withheld; _ }; _ }; _ } ->
+        strf "%s, %s" rendered.kept
+          (match withheld with
+          | Some Failure.In_law -> "in a law"
+          | Some _ -> "withheld otherwise"
+          | None -> "a correction")
+    | _ -> "not a property's mismatch"
+  in
+  equal (list string) [ "10, in a law" ]
+    (List.map shown (Recorded.failures r [ "law" ]));
+  equal (list string) [] (written r)
+
 (* An expect_file failure at a given position. *)
 let placed_file =
   let root = Scratch.dir "windtrap-placed-" in
@@ -605,6 +639,17 @@ let baselines =
       test "each row of a cases table is checked against the literal it carries"
         each_row_checks_its_literal;
       test "-u corrects each row's literal alone" each_row_is_corrected_alone;
+      cases
+        "in a law, a mismatch refutes the case, which shrinks, and is never a \
+         correction"
+        (Testable.contramap
+           (fun (mode, _) ->
+             match mode with
+             | Baseline.Check -> "check"
+             | Corrected -> "--corrected"
+             | Update -> "-u")
+           Testable.text)
+        in_law_runs a_law's_mismatch_refutes_its_case;
       test "expect_file locates its failure at the __POS__ given" (fun () ->
           let loc = require_some (failure placed_file [ "placed" ]).loc in
           equal (pair string int) ("elsewhere.ml", 7) (loc.Loc.file, loc.line));

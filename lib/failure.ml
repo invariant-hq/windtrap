@@ -35,6 +35,7 @@ type withheld =
   | Skipped
   | Refused of { line : int; reason : string }
   | Conflict
+  | In_law
 
 type message_diff = {
   constructor : string;
@@ -427,7 +428,7 @@ let with_output_tail tail t = { t with output_tail = Some tail }
 
 let with_withheld withheld t =
   match t.kind with
-  | Baseline { withheld = Some (Refused _ | Conflict); _ } -> t
+  | Baseline { withheld = Some (Refused _ | Conflict | In_law); _ } -> t
   | Baseline b -> { t with kind = Baseline { b with withheld = Some withheld } }
   | Equality _ | Containment _ | Raise _ | Property _ | Law _ | Timeout _
   | Message _ ->

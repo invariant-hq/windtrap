@@ -103,6 +103,15 @@
   otherwise `replay it: --replay TOKEN`
   (doc/manual/property-testing.md#keeping-a-counterexample-as-a-regression).
 
+- (breaking) An `expect`, `expect_exact` or `expect_file` in the law of
+  a property or a stateful test fails its case as any failing verb does:
+  the case shrinks, the report shows the one counterexample with its
+  mismatch, and no correction is written for the baseline, under
+  `--corrected` and `-u` alike, since no one text holds for every value;
+  the mismatch says so in one line. In 0.2.0 each failing case recorded
+  its mismatch on the test and passed, so a run reported every case's
+  mismatch, never shrank, and could offer a correction.
+
 ### Stateful testing
 
 - (breaking) `judges w` replaces `chooses w`: the reference receives the

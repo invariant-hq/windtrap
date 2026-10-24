@@ -125,6 +125,17 @@ and the rows after it are compared with the baselines it left as they
 were. A literal written in the body of `cases` is shared, and every row
 must produce its one text.
 
+## Expectations in a property
+
+A property's law claims what it checks for every value it draws, and no
+one literal can hold for all of them. An `expect` in a `prop` or
+`stateful` law therefore fails its case as `equal` would: the case
+shrinks, the report shows the one counterexample with its mismatch, and
+no correction is written for the literal, under `--corrected` and `-u`
+alike. The mismatch says so in one line, `no correction: a property's
+law claims this for every value, and one text cannot hold for them all`.
+A table is the place for a literal per input.
+
 ## Running expectations under dune
 
 The suite's last line runs the group.

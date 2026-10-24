@@ -96,6 +96,9 @@ type withheld =
   | Conflict
       (** An earlier check of the same baseline in the run recorded a correction
           to a different text. *)
+  | In_law
+      (** The check ran in the law of a property, which claims it for every
+          value, so no one text can be its correction. *)
 
 type message_diff = {
   constructor : string;
