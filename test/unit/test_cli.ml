@@ -64,6 +64,8 @@ let flags (p : Cli.parsed) =
         switch "list_only" p.list_only;
         switch "bail" p.bail;
         switch "stream" p.stream;
+        some "jobs" string_of_int p.jobs;
+        switch "in_process" p.in_process;
         switch "update" p.update;
         switch "corrected" p.corrected;
         some "seed" Seed.to_string p.seed;
@@ -126,6 +128,8 @@ let changes (c : Run.config) =
         field "failed_only" bool (fun c -> c.Run.failed_only);
         field "bail" bool (fun c -> c.Run.bail);
         field "stream" bool (fun c -> c.Run.stream);
+        field "jobs" string_of_int (fun c -> c.Run.jobs);
+        field "in_process" bool (fun c -> c.Run.in_process);
         field "baseline" baseline_name (fun c -> c.Run.baseline);
         field "timeout" (opt (strf "%g")) (fun c -> c.Run.timeout);
         field "prop_count" (opt string_of_int) (fun c -> c.Run.prop_count);
@@ -217,6 +221,7 @@ let mirrors =
           ("WINDTRAP_SLOW_THRESHOLD", "3", "slow_threshold 3");
           ("WINDTRAP_PROP_COUNT", "7", "prop_count 7");
           ("WINDTRAP_STREAM", "1", "stream");
+          ("WINDTRAP_JOBS", "4", "jobs 4");
           ("WINDTRAP_VERBOSE", "1", "verbose");
           ("WINDTRAP_JUNIT", "/reports/junit.xml", "junit /reports/junit.xml");
           ("WINDTRAP_COLOR", "never", "color never");
@@ -240,6 +245,7 @@ let mirrors =
           ("WINDTRAP_SEED", "--seed", "not-a-seed");
           ("WINDTRAP_PROP_COUNT", "--prop-count", "0");
           ("WINDTRAP_PROP_COUNT", "--prop-count", "1O0");
+          ("WINDTRAP_JOBS", "--jobs", "0");
           ("WINDTRAP_COLOR", "--color", "sometimes");
         ]
         refused_alike;
@@ -516,6 +522,9 @@ let parsing =
           ([ "--corrected" ], "corrected");
           ([ "-s" ], "stream");
           ([ "--stream" ], "stream");
+          ([ "-j"; "4" ], "jobs 4");
+          ([ "--jobs=2" ], "jobs 2");
+          ([ "--in-process" ], "in_process");
           ([ "-v" ], "verbose");
           ([ "--verbose" ], "verbose");
           ([ "--junit"; "out.xml" ], "junit out.xml");
@@ -619,6 +628,8 @@ let parsing =
           ("--prop-count", "0");
           ("--prop-count", "-3");
           ("--prop-count", "many");
+          ("-j", "0");
+          ("--jobs", "two");
           ("--seed", "42");
           ("--color", "sometimes");
         ]

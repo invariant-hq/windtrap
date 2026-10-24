@@ -228,6 +228,8 @@ let parent : Run.config =
     failed_only = true;
     bail = false;
     stream = true;
+    jobs = 3;
+    in_process = true;
     baseline = Baseline.Update;
     timeout = Some 3.;
     prop_count = Some 7;
@@ -2361,6 +2363,7 @@ let refusal = function
       "focused in CI: " ^ String.concat ", " (List.map site sites)
   | Run.Update_refused_in_ci -> "update refused in CI"
   | Run.No_recorded_failures -> "no recorded failures"
+  | Run.In_process_selects n -> strf "%d selected in-process" n
 
 let refused r = refusal (require_error (Recorded.returned r))
 let in_ci = [ ("CI", "true") ]
@@ -2409,6 +2412,11 @@ let refusals =
       Recorded.execute ~env:in_ci
         ~config:(fun c -> { (update c) with failed_only = true })
         [ test "t" ignore ] );
+    ( "--in-process over a selection of more than one test",
+      "2 selected in-process",
+      Recorded.execute
+        ~config:(fun c -> { c with in_process = true; exclude = [ "c" ] })
+        [ test "a" ignore; test "b" ignore; test "c" ignore ] );
   ]
 
 let lifted =
@@ -2421,6 +2429,10 @@ let lifted =
       Recorded.execute ~env:in_ci
         ~config:(fun c -> { c with baseline = Baseline.Corrected })
         [ test "ok" ignore ] );
+    ( "--in-process over a selection of one test",
+      Recorded.execute
+        ~config:(fun c -> { c with in_process = true; filter = [ "b" ] })
+        [ test "a" ignore; test "b" ignore ] );
   ]
 
 let exit_codes_of_refusals =
@@ -2429,6 +2441,7 @@ let exit_codes_of_refusals =
     ("a focus under CI", Run.Focused_in_ci [], 1);
     ("-u under CI", Run.Update_refused_in_ci, 1);
     ("an empty store", Run.No_recorded_failures, 2);
+    ("--in-process over two tests", Run.In_process_selects 2, 2);
   ]
 
 let the_message_of_duplicates () =
@@ -2460,7 +2473,7 @@ let startup_errors =
       cases "the exit code of a refusal of"
         ~name:(fun (n, _, _) -> n)
         exit_codes_of_refusals
-        (fun (_, error, code) -> equal int code (Run.startup_exit_code error));
+        (fun (_, error, code) -> equal int code (Run.exit_code (Error error)));
       test "the message of duplicates lists a path per line, then the rule"
         the_message_of_duplicates;
       test "the message of a focus under CI names each site and the remedy"
@@ -3792,7 +3805,8 @@ let release =
 let ran r =
   match Recorded.returned r with
   | Ok (outcome : Run.outcome) ->
-      strf "exit %d: %s" outcome.exit_code
+      strf "exit %d: %s"
+        (Run.exit_code (Ok outcome))
         (String.concat ", " (Recorded.executed r))
   | Error error -> "refused: " ^ refusal error
 

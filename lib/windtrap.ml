@@ -177,7 +177,7 @@ let list_selection ~suite config tests =
   match Run.list_selection config ~suite tests with
   | Error error ->
       Os.say (Run.startup_message error);
-      Run.startup_exit_code error
+      Run.exit_code (Error error)
   | Ok [] ->
       (* The [list:] hint of an empty run leads here, so an empty listing says
          why it is empty. *)
@@ -196,8 +196,8 @@ let execute ~suite (config : Run.config) tests =
   match Mutate_loop.execute_and_report ~suite config tests with
   | Mutate_loop.Reported code -> code
   (* [Report.run] said why. *)
-  | Ran (Error error) -> Run.startup_exit_code error
-  | Ran (Ok outcome) ->
+  | Ran (Error _ as refused) -> Run.exit_code refused
+  | Ran (Ok outcome as ran) ->
       if outcome.focus_active && not (Os.in_ci ()) then
         Os.warn
           (Pp.str
@@ -212,9 +212,8 @@ let execute ~suite (config : Run.config) tests =
       in
       (* dune registers a [.corrected] file only after an action that exits 0,
          and the blocks' [accept:] lines were printed before the code was. *)
-      if
-        config.baseline = Baseline.Corrected
-        && written <> [] && outcome.exit_code = 1
+      let exit_code = Run.exit_code ran in
+      if config.baseline = Baseline.Corrected && written <> [] && exit_code = 1
       then
         Os.warn
           (Pp.str
@@ -223,17 +222,9 @@ let execute ~suite (config : Run.config) tests =
               correction%s written here. Fix the failures, rerun, then 'dune \
               promote'."
              (if List.length written = 1 then "" else "s"));
-      (* The mirrors reach every stanza of a project, and a stanza whose tests
-         their selection leaves out holds no mistyped filter. *)
-      if
-        outcome.exit_code = 2 && outcome.total > 0 && config.broadcast.selection
-      then 0
-      else outcome.exit_code
+      exit_code
 
-let run ?(argv = Sys.argv) suite tests =
-  (* [--help], [--version] and a usage error return before [Run.execute]
-     would refuse a nested run. *)
-  if Run.active () then invalid_arg Run.active_run_error;
+let run_parent ~argv suite tests =
   let argv0 = if Array.length argv > 0 then argv.(0) else "" in
   let prog = if argv0 = "" then suite else argv0 in
   let usage_error error =
@@ -260,6 +251,12 @@ let run ?(argv = Sys.argv) suite tests =
           let corrected = config.baseline = Baseline.Corrected in
           let invocation = invocation ~corrected argv0 in
           execute ~suite { config with invocation } tests)
+
+let run ?(argv = Sys.argv) suite tests =
+  (* [--help], [--version] and a usage error return before [Run.execute]
+     would refuse a nested run. *)
+  if Run.active () then invalid_arg Run.active_run_error;
+  run_parent ~argv suite tests
 
 (* Private *)
 

@@ -744,9 +744,9 @@ let loop renderer ~scope ~suite (config : Run.config) tests =
   | Ok outcome -> (
       (* The last test's teardown and the fixture releases. *)
       evaluated_outside reach;
-      if outcome.exit_code = 2 then
+      if Run.results outcome.run = [] then
         refuse "no test ran, so there is nothing to mutate"
-      else if outcome.exit_code <> 0 then
+      else if Run.exit_code (Ok outcome) <> 0 then
         refuse
           "the dry run is red. Mutation scores a passing suite; a score over a \
            failing one is not a score"
@@ -836,7 +836,7 @@ let armed renderer ~spec ~suite (config : Run.config) tests =
       in
       (match result with
       | Ok outcome when killed_by outcome -> Report.mutation_killed renderer
-      | Ok outcome when outcome.exit_code <> 2 -> (
+      | Ok outcome when Run.results outcome.run <> [] -> (
           let hits = Mutate.armed_hits () in
           match (hits - xfail.hits, xfail.hits) with
           | 0, 0 -> Report.mutation_not_evaluated renderer

@@ -437,7 +437,7 @@ val run :
 
     [Error error] is a refused startup. [run] then closes the envelope and says
     [Run.startup_message error] on standard error, in place of a transcript. The
-    exit code ({!Run.startup_exit_code}) is the caller's to apply.
+    exit code ({!Run.exit_code}) is the caller's to apply.
 
     An interrupted run does not return. On [Interrupted], [run] ends the
     transcript with {!interrupted}, whose [before_summary] is the close of the

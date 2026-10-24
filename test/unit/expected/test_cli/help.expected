@@ -51,6 +51,12 @@ OPTIONS:
   -s, --stream (env WINDTRAP_STREAM)
       Stream test output instead of capturing it.
 
+  -j N, --jobs=N (env WINDTRAP_JOBS)
+      Run the tests in N worker processes at once (default 1).
+
+  --in-process
+      Run the one selected test in this process, for a debugger.
+
   -v, --verbose (env WINDTRAP_VERBOSE)
       One status line per test.
 

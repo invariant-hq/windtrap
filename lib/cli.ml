@@ -15,6 +15,8 @@ type parsed = {
   list_only : bool option;
   bail : bool option;
   stream : bool option;
+  jobs : int option;
+  in_process : bool option;
   update : bool option;
   corrected : bool option;
   seed : Seed.seed option;
@@ -42,6 +44,8 @@ let empty =
     list_only = None;
     bail = None;
     stream = None;
+    jobs = None;
+    in_process = None;
     update = None;
     corrected = None;
     seed = None;
@@ -229,6 +233,15 @@ let entries =
       (Flag (fun p -> { p with stream = Some true }))
       ~mirror:(mirrored "WINDTRAP_STREAM" (fun p -> p.stream = None))
       "Stream test output instead of capturing it.";
+    row ~short:"-j" "--jobs"
+      (value "N" positive_int (fun p n -> { p with jobs = Some n }))
+      ~mirror:(mirrored "WINDTRAP_JOBS" (fun p -> p.jobs = None))
+      "Run the tests in N worker processes at once (default 1).";
+    (* A debugger's gesture at one test, never a mode of a stanza, so no
+       mirror. *)
+    row "--in-process"
+      (Flag (fun p -> { p with in_process = Some true }))
+      ~mirror:None "Run the one selected test in this process, for a debugger.";
     row ~short:"-v" "--verbose"
       (Flag (fun p -> { p with verbose = Some true }))
       ~mirror:(mirrored "WINDTRAP_VERBOSE" (fun p -> p.verbose = None))
@@ -472,6 +485,8 @@ let settings cli =
       failed_only = layered.failed_only = Some true;
       bail = layered.bail = Some true;
       stream = layered.stream = Some true;
+      jobs = Option.value layered.jobs ~default:defaults.Run.jobs;
+      in_process = layered.in_process = Some true;
       baseline =
         (match (layered.update, layered.corrected) with
         | Some true, _ -> Baseline.Update

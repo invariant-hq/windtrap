@@ -66,6 +66,8 @@ type parsed = {
           selection (see {!Run.list_selection}). *)
   bail : bool option;  (** [-x], [--fail-fast]. *)
   stream : bool option;  (** [-s], [--stream]. *)
+  jobs : int option;  (** [-j], [--jobs]. *)
+  in_process : bool option;  (** [--in-process]. *)
   update : bool option;  (** [-u], [--update], for {!Baseline.Update}. *)
   corrected : bool option;  (** [--corrected], for {!Baseline.Corrected}. *)
   seed : Seed.seed option;

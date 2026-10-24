@@ -124,7 +124,7 @@ val execute_and_report : suite:string -> Run.config -> Test_tree.t list -> run
     no one place in it:
     - The platform is Windows, which has no [Unix.fork].
     - The dry run is refused at startup. {!Report.run} has said why, and the
-      code is [1] whatever {!Run.startup_exit_code} is.
+      code is [1] whatever {!Run.exit_code} says of the refusal.
     - The exit code of the dry run is not [0], because no test ran ([2]) or
       because the run is red.
     - The population is empty.

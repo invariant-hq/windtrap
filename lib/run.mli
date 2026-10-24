@@ -77,6 +77,13 @@ type config = {
   stream : bool;
       (** [--stream]: the tests write to the real descriptors, and the capture
           state of the run is {!Capture.disabled}. *)
+  jobs : int;
+      (** [-j]: the number of worker processes of a supervised run, at least [1].
+          {!execute} does not read it. *)
+  in_process : bool;
+      (** [--in-process]: the run is {!execute}'s, in the calling process, and
+          its selection must hold one test at most (see {!In_process_selects}).
+      *)
   baseline : Baseline.mode;
       (** [-u] is {!Baseline.Update}, [--corrected] is {!Baseline.Corrected},
           and neither is {!Baseline.Check}. {!execute} refuses [Update] under
@@ -363,8 +370,8 @@ type result = {
       (** [true] iff the row counts as failed. An attempt that fails counts iff
           the test has no {!Test_tree.val-xfail} annotation, one that passes iff
           it has one, and one that skips never. Retries, [config.bail] and the
-          last-failed store follow this field, and {!outcome.exit_code} follows
-          it with one exception. A [Fail] row that does not count is an expected
+          last-failed store follow this field, and {!exit_code} follows it with
+          one exception. A [Fail] row that does not count is an expected
           failure, and a renderer classifies a failing row from this field and
           [xfail] alone. *)
   xfail : Test_tree.xfail option;
@@ -555,10 +562,9 @@ type startup_error =
           declared test that [allowlist] admits. The store is read against the
           declared paths, so a filter that keeps none of the recorded tests
           gives an empty selection and not this error. *)
-
-val startup_exit_code : startup_error -> int
-(** [startup_exit_code error] is the exit code of a run that [error] refused:
-    [2] for {!No_recorded_failures}, since nothing ran, and [1] otherwise. *)
+  | In_process_selects of int
+      (** [config.in_process] is set and the selection holds this many tests,
+          more than one. *)
 
 val startup_message : startup_error -> string
 (** [startup_message error] explains [error] to a user in plain text. It is not
@@ -591,18 +597,12 @@ type outcome = {
   duration : float;
       (** The seconds the run took, from its startup checks to the writing of
           its corrections. *)
-  exit_code : int;
-      (** [1] when a row counts as failed, when a release failed, or when a
-          correction could not be written (a {!Baseline.Refused} entry). A test
-          whose failures are all kept corrections does not count here, because
-          under [--corrected] the [diff?] that follows the run decides.
-          Otherwise [2] when no test executed, in an empty suite and in an empty
-          selection, and else [0]. A selection whose tests all skipped gives
-          [0], and so does a run whose only failures were expected. A caller may
-          return another code. *)
+  uncorrected : bool;
+      (** [true] iff a row counts as failed and some failure of its last attempt
+          carries no kept correction. *)
 }
 (** The type for finished runs: what a report renders, and what the caller needs
-    to exit. *)
+    to exit ({!exit_code}). *)
 
 val execute :
   ?on_event:(event -> unit) ->
@@ -659,6 +659,21 @@ val list_selection :
     [CI] and, under [config.failed_only], of the store. It makes no log
     directory and rewrites no store. Raises [Invalid_argument] as {!execute}
     does. *)
+
+val exit_code : (outcome, startup_error) Stdlib.result -> int
+(** [exit_code result] is the exit code of a run that ended with [result], the
+    one rule every runner applies:
+    - [1] when a row counts as failed, when a release failed, or when a
+      correction could not be written (a {!Baseline.Refused} entry). A test
+      whose failures are all kept corrections does not count here, because under
+      [--corrected] the [diff?] that follows the run decides.
+    - Otherwise [2] when no test executed, in an empty suite and in an empty
+      selection, and else [0]. A selection whose tests all skipped gives [0],
+      and so does a run whose only failures were expected. A selection that
+      [config.broadcast] says the environment alone gave, and that keeps none of
+      the tests of a suite that declares some, gives [0] too.
+    - For a refused startup, [2] for {!No_recorded_failures} and
+      {!In_process_selects}, since nothing ran, and [1] otherwise. *)
 
 (** {2:selection Selection}
 
@@ -832,3 +847,151 @@ val list_selection :
     that acts earlier updates no store and writes no correction. A process that
     a test forked inherits the handlers and not the run, and a signal kills it
     as the default disposition would. *)
+
+(** {1:supervision Serving a supervisor}
+
+    A supervised run splits {!execute} across processes. Its
+    parent selects, reports, keeps the store, writes the corrections and decides
+    the exit code, with the functions below. Each worker process runs {!serve}:
+    the attempts, frames, fixtures and signals above, unchanged, one case per
+    {!request}, and tells its parent what happened with {!report}s. Every value
+    that crosses holds no closure. *)
+
+type selection = {
+  cases : Test_tree.case list;  (** The selected tests, in declaration order. *)
+  total : int;  (** The tests that the suite declares. *)
+  focus_active : bool;  (** [true] iff the suite holds a focused node. *)
+}
+(** The type for what a run selected. *)
+
+val select :
+  ?allowlist:string list ->
+  config ->
+  suite:string ->
+  Test_tree.t list ->
+  (selection, startup_error) Stdlib.result
+(** [select config ~suite tests] makes the startup checks and the
+    {{!section-selection}selection} of {!execute}, and turns the recording of
+    backtraces on. It registers no exit guard. Raises as {!execute} does. *)
+
+val run_started : suite:string -> selection -> event
+(** [run_started ~suite selection] is the {!Run_started} event of a run over
+    [selection]. *)
+
+type attempt
+(** The type for an attempt as data: its failures, the baseline checks it left
+    to the parent, and its skip. *)
+
+type verdict
+(** The type for the settlement of an attempt: its outcome, whether its failures
+    all carry kept corrections, and whether it must be the last. *)
+
+type served = {
+  result : result;  (** The row of the case. *)
+  corrected : bool;
+      (** Whether every failure of its last attempt carries a kept correction.
+      *)
+  deferred : (attempt * Failure.tail option) option;
+      (** The last attempt and its output tail, when its checks are still the
+          parent's to make: [result] is then the parent's to rebuild. *)
+}
+(** The type for what a case left once its attempts ended. *)
+
+(** The type for what a parent asks of its worker. *)
+type request =
+  | Case of string  (** Run the case of this path string. *)
+  | Verdict of verdict  (** The verdict that a {!Judge} waited for. *)
+  | Ack  (** The event just sent is shown, under [config.stream]. *)
+  | Finish  (** Run no more cases: release the fixtures, and end the process. *)
+
+(** The type for what a worker tells its parent. *)
+type report =
+  | Event of event
+      (** An event of the run. Under [config.stream] the worker waits for an
+          {!Ack} after each, but {!Interrupted}. *)
+  | Judge of attempt
+      (** An attempt that a retry may follow, whose checks the parent must make
+          first; the worker waits for its {!Verdict}. *)
+  | Done of { served : served; stopped : bool; retire : bool }
+      (** The case ended. [stopped] is {!stop}'s, and [retire] says that the
+          worker must not run another case: the case spawned a domain, which may
+          still run, or raised what ends a process. *)
+  | Released of Failure.t list
+      (** The fixtures are released, with these release failures. *)
+  | Exited  (** Code under test called [exit] in the case that runs. *)
+  | Outside of Failure.t
+      (** A failure that belongs to no case: an [at_exit] function that a test
+          registered raised, located at the test, or code under test called
+          [exit] outside a case. It is a {!Failure.Release} failure. *)
+
+val exit_text : string
+(** [exit_text] is what every failure for a call to [exit] tells the user to do
+    instead. *)
+
+val serve :
+  config ->
+  suite:string ->
+  Test_tree.t list ->
+  temp_dir:string ->
+  send:(report -> unit) ->
+  receive:(interrupted:(unit -> unit) -> request) ->
+  last:(unit -> unit) ->
+  'a
+(** [serve config ~suite tests ~temp_dir ~send ~receive ~last] is the life of a
+    worker process: it runs each case that [receive] asks for, of the flattened
+    [tests], with the attempts of {!execute}, and sends what happens. [receive]
+    calls [interrupted] when a signal interrupts its wait. On {!Finish} it
+    releases the fixtures, then runs the [at_exit] functions that its tests
+    registered and none that the process held before. It ends the process with
+    [Unix._exit], after [last ()], and never returns.
+    - Temporary directories are made under [temp_dir].
+    - Under {!Baseline.Check} the worker judges its checks. Under a correcting
+      mode it checks in a {!Baseline.Check} registry only to prove the path and
+      read the file, and leaves each check to the parent: in the {!attempt} of
+      {!Judge} when a retry may follow, else in {!served.deferred}.
+    - A call to [exit] in code under test ends the process: the worker sends
+      {!Exited}, or {!Outside} when no case runs, then [last ()].
+    - A case that raises [Out_of_memory] or [Sys.Break] fails on it, and its
+      worker retires.
+    - A signal acts as in {!execute}: the worker sends its {!Interrupted} event,
+      releases what it can and dies by the signal. *)
+
+val supervising : config -> suite:string -> t
+(** [supervising config ~suite] is the record of a supervised run's parent: an
+    empty registry under [config.baseline], and the capture state that reads the
+    log a worker left. *)
+
+val in_run : t -> (unit -> 'a) -> 'a
+(** [in_run t fn] is [fn ()] with [t] in the ambient slot, so that {!active}
+    holds while the parent runs. *)
+
+val add_result : t -> result -> unit
+(** [add_result t result] records [result] as the next row of [t]. *)
+
+val verdict : t -> Test_tree.case -> attempt -> verdict
+(** [verdict t case attempt] makes the checks of [attempt] in the registry of
+    [t], each where it fell among the attempt's other failures, and settles the
+    attempt as {!execute} would. A registry that sees the attempts in the order
+    of the selection holds what an in-process run's would. *)
+
+val adjudicate : t -> Test_tree.case -> served -> result * bool
+(** [adjudicate t case served] is the row of [case] and whether its failures all
+    carry kept corrections: [served]'s, or rebuilt from its {!served.deferred}
+    attempt by {!verdict}. *)
+
+val lost : t -> Test_tree.case -> Failure.t -> duration:float -> result
+(** [lost t case failure ~duration] is the row of a case whose worker died: it
+    failed with [failure] alone, carrying the tail of the log the worker left.
+*)
+
+val conclude :
+  t ->
+  selection ->
+  suite:string ->
+  started:Os.counter ->
+  uncorrected:bool ->
+  release_failures:Failure.t list ->
+  outcome
+(** [conclude t selection ~suite ~started ~uncorrected ~release_failures]
+    updates the store and writes the corrections of [t], as {!execute} does
+    after the release, and is the outcome. *)

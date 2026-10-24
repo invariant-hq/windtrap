@@ -153,4 +153,4 @@ let executed t =
     (fun (r : Run.result) -> Test_tree.path_to_string r.path)
     (Run.results (outcome t).run)
 
-let exit_code t = (outcome t).exit_code
+let exit_code t = Run.exit_code (Ok (outcome t))
