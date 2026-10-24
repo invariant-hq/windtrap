@@ -340,16 +340,6 @@ let headline (f : Failure.t) =
 
 (* Command hints *)
 
-let filter_flag = function Some f -> " -f " ^ shell_quote f | None -> ""
-
-(* An armed run's failures are the mutant's: a command that runs the test
-   without it passes. *)
-let arm_flag = function Some id -> " --arm " ^ shell_word id | None -> ""
-
-let arm_mirror = function
-  | Some id -> strf "WINDTRAP_MUTATE_ARM=%s " (shell_word id)
-  | None -> ""
-
 (* A baseline failure whose correction a command accepts, with whether its
    baseline is missing. A withheld correction accepts nothing. *)
 let acceptable (f : Failure.t) =
@@ -430,21 +420,32 @@ let hints ?armed ?(invocation = `Mirrors) failures =
    [--failed] reads the last-failed store under the run's [-o]. It has no
    mirror, and a pattern's mirror holds one pattern: under the mirrors those
    are left out, and the command runs more tests, never fewer. *)
-let selection_words invocation (c : Run.config) =
+let selection_words invocation tests =
   let flag name var = function [] -> [] | values -> [ (name, var, values) ] in
   let patterns name var values =
     match invocation with
     | `Mirrors when List.compare_length_with values 1 > 0 -> []
     | `Mirrors | `Exe _ -> flag name var (List.map shell_quote values)
   in
-  let flags =
-    patterns "-f" "WINDTRAP_FILTER" c.filter
-    @ patterns "-e" "WINDTRAP_EXCLUDE" c.exclude
-    @ flag "--tag" "WINDTRAP_TAG" (List.map shell_word c.tags)
-    @ flag "--exclude-tag" "WINDTRAP_EXCLUDE_TAG"
-        (List.map shell_word c.exclude_tags)
-    @ flag "--shard" "WINDTRAP_SHARD"
-        (Option.to_list (Option.map (fun (k, n) -> strf "%d/%d" k n) c.shard))
+  let flags, failed =
+    match tests with
+    | `Filter filter ->
+        (patterns "-f" "WINDTRAP_FILTER" (Option.to_list filter), "")
+    | `Run (c : Run.config) ->
+        ( patterns "-f" "WINDTRAP_FILTER" c.filter
+          @ patterns "-e" "WINDTRAP_EXCLUDE" c.exclude
+          @ flag "--tag" "WINDTRAP_TAG" (List.map shell_word c.tags)
+          @ flag "--exclude-tag" "WINDTRAP_EXCLUDE_TAG"
+              (List.map shell_word c.exclude_tags)
+          @ flag "--shard" "WINDTRAP_SHARD"
+              (Option.to_list
+                 (Option.map (fun (k, n) -> strf "%d/%d" k n) c.shard)),
+          if not c.failed_only then ""
+          else if String.equal c.log_dir (Os.default_log_dir ()) then
+            " --failed"
+          else
+            strf " -o %s --failed" (shell_word (Os.display_artifact c.log_dir))
+        )
   in
   match invocation with
   | `Exe _ ->
@@ -452,10 +453,7 @@ let selection_words invocation (c : Run.config) =
         (List.concat_map
            (fun (name, _, values) -> List.map (strf " %s %s" name) values)
            flags)
-      ^
-      if not c.failed_only then ""
-      else if String.equal c.log_dir (Os.default_log_dir ()) then " --failed"
-      else strf " -o %s --failed" (shell_word (Os.display_artifact c.log_dir))
+      ^ failed
   | `Mirrors ->
       String.concat ""
         (List.map
@@ -463,19 +461,41 @@ let selection_words invocation (c : Run.config) =
              strf "%s=%s " var (String.concat "," values))
            flags)
 
-(* A build action's corrections are dune's to promote, file by file. *)
+(* Every command that runs tests again: the launcher, then [flags], then the
+   selection; under the mirrors, the mirror of each before [dune runtest]. A
+   flag pairs its spelling with its mirror's. An armed run's failures are the
+   mutant's, so the command arms it, and under dune names the backend, since
+   the armed action exists only in that build; [force] reruns an action that
+   dune would replay from its cache, as it replays a passing one. *)
+let command ?armed ?(force = false) ~invocation ~flags tests =
+  let arm, arm_mirror =
+    match armed with
+    | Some id ->
+        ( [ ("--arm " ^ shell_word id, "WINDTRAP_MUTATE_ARM=" ^ shell_word id) ],
+          " --instrument-with ppx_windtrap.mutate" )
+    | None -> ([], "")
+  in
+  let flags = arm @ flags and selection = selection_words invocation tests in
+  match invocation with
+  | `Exe cmd ->
+      cmd
+      ^ String.concat "" (List.map (fun (f, _) -> " " ^ f) flags)
+      ^ selection
+  | `Mirrors ->
+      String.concat "" (List.map (fun (_, m) -> m ^ " ") flags)
+      ^ selection ^ "dune runtest"
+      ^ (if force then " --force" else "")
+      ^ arm_mirror
+
+(* A build action's corrections are dune's to promote, file by file, and [-u]
+   has no mirror. *)
 let accept ?armed ?(invocation = `Mirrors) ~tests failures =
   match (armed, invocation) with
   | Some _, _ | None, `Mirrors -> None
-  | None, `Exe cmd ->
+  | None, `Exe _ ->
       if not (List.exists (fun f -> Option.is_some (acceptable f)) failures)
       then None
-      else
-        Some
-          (strf "accept: %s -u%s" cmd
-             (match tests with
-             | `Run config -> selection_words invocation config
-             | `Filter filter -> filter_flag filter))
+      else Some ("accept: " ^ command ~invocation ~flags:[ ("-u", "") ] tests)
 
 (* The seed and the case count of a failure whose case was generated. A
    domain checked whole fails again under any seed. *)
@@ -493,8 +513,7 @@ let drawn (f : Failure.t) =
       None
 
 (* A late case replays only under at least as many cases as the failing run
-   generated, so the largest count is restated. An armed action exists only
-   in the instrumented build. *)
+   generated, so the largest count is restated. *)
 let replay ?armed ?(invocation = `Mirrors) ~tests failures =
   match List.filter_map drawn failures with
   | [] -> None
@@ -508,29 +527,14 @@ let replay ?armed ?(invocation = `Mirrors) ~tests failures =
           None cases
       in
       let seed = Seed.to_string root in
-      Some
-        (match invocation with
-        | `Exe cmd ->
-            strf "replay: %s%s --seed %s%s%s" cmd (arm_flag armed) seed
-              (match count with
-              | Some n -> strf " --prop-count %d" n
-              | None -> "")
-              (match tests with
-              | `Run config -> selection_words invocation config
-              | `Filter filter -> filter_flag filter)
-        | `Mirrors ->
-            strf "replay: %sWINDTRAP_SEED=%s %s%sdune runtest%s"
-              (arm_mirror armed) seed
-              (match count with
-              | Some n -> strf "WINDTRAP_PROP_COUNT=%d " n
-              | None -> "")
-              (match tests with
-              | `Run config -> selection_words invocation config
-              | `Filter (Some f) -> strf "WINDTRAP_FILTER=%s " (shell_quote f)
-              | `Filter None -> "")
-              (match armed with
-              | Some _ -> " --instrument-with ppx_windtrap.mutate"
-              | None -> ""))
+      let flags =
+        ("--seed " ^ seed, "WINDTRAP_SEED=" ^ seed)
+        :: List.map
+             (fun n ->
+               (strf "--prop-count %d" n, strf "WINDTRAP_PROP_COUNT=%d" n))
+             (Option.to_list count)
+      in
+      Some ("replay: " ^ command ?armed ~invocation ~flags tests)
 
 (* Entries *)
 
@@ -1525,15 +1529,8 @@ type mutation = {
 (* A build action's suite is reached through dune alone: [--force] because
    dune replays a cached test action, which arms nothing, and the backend
    because a plain build carries no mutant. *)
-let arm_command ~invocation ~selection id =
-  match invocation with
-  | `Exe cmd -> strf "%s%s%s" cmd (arm_flag (Some id)) selection
-  | `Mirrors ->
-      strf "%s%sdune runtest --force --instrument-with ppx_windtrap.mutate"
-        (arm_mirror (Some id)) selection
-
-let reproduce_line ~invocation ~selection id =
-  "reproduce: " ^ arm_command ~invocation ~selection id
+let arm_command ~invocation ~tests id =
+  command ~armed:id ~force:true ~invocation ~flags:[] tests
 
 (* A survivor is drawn as a failure block is: it is a defect report about the
    tests it names. *)
@@ -1644,7 +1641,7 @@ let mutation_summary (m : mutation) =
 
 (* Each mutant with the command that tests it in a new process, which starts
    from no state that a dry run left. *)
-let not_evaluated_section ~selection = function
+let not_evaluated_section ~tests = function
   | [] -> []
   | not_evaluated ->
       let mutant (n : not_evaluated) =
@@ -1657,7 +1654,7 @@ let not_evaluated_section ~selection = function
             ];
           Hint
             ("    arm: "
-            ^ arm_command ~invocation:n.invocation ~selection n.mutant.id);
+            ^ arm_command ~invocation:n.invocation ~tests n.mutant.id);
         ]
       in
       Rule (Some (strf "not evaluated (%d)" (List.length not_evaluated)))
@@ -1671,7 +1668,7 @@ let not_evaluated_section ~selection = function
 
 (* Each mutant with why no run judged it, and the command that runs it
    again. *)
-let unknown_section ~selection = function
+let unknown_section ~tests = function
   | [] -> []
   | unknown ->
       let mutant (u : unknown) =
@@ -1686,7 +1683,7 @@ let unknown_section ~selection = function
           Line [ plain ("    " ^ u.reason) ];
           Hint
             ("    arm: "
-            ^ arm_command ~invocation:u.invocation ~selection u.mutant.id);
+            ^ arm_command ~invocation:u.invocation ~tests u.mutant.id);
         ]
       in
       Rule (Some (strf "unknown (%d)" (List.length unknown)))
@@ -1764,26 +1761,27 @@ let outside_tests_section =
       ]
 
 (* The command arms the first survivor printed. *)
-let outcome ~invocation ~selection (m : mutation) =
+let outcome ~invocation ~tests (m : mutation) =
   (match m.survivors with
     | [] -> []
     | first :: _ ->
-        [ Hint (reproduce_line ~invocation ~selection first.mutant.id) ])
+        [
+          Hint ("reproduce: " ^ arm_command ~invocation ~tests first.mutant.id);
+        ])
   @ [ Line (mutation_summary m) ]
 
 (* The caller hands over the survivors whose blocks it printed. *)
 let mutation_closing ~(config : Run.config) (m : mutation) =
-  let invocation = config.invocation in
-  let selection = selection_words invocation config in
+  let invocation = config.invocation and tests = `Run config in
   let sections =
     [
-      not_evaluated_section ~selection m.not_evaluated;
-      unknown_section ~selection m.unknown;
+      not_evaluated_section ~tests m.not_evaluated;
+      unknown_section ~tests m.unknown;
       unreached_section m.unreached;
       outside_tests_section m.outside_tests;
     ]
   in
-  let rest = join (sections @ [ outcome ~invocation ~selection m ]) in
+  let rest = join (sections @ [ outcome ~invocation ~tests m ]) in
   match m.survivors with
   | [] when List.for_all (function [] -> true | _ :: _ -> false) sections ->
       rest
@@ -1813,10 +1811,10 @@ let mutation_report ~invocation (m : mutation) =
   join
     [
       survivors;
-      not_evaluated_section ~selection:"" m.not_evaluated;
-      unknown_section ~selection:"" m.unknown;
+      not_evaluated_section ~tests:(`Filter None) m.not_evaluated;
+      unknown_section ~tests:(`Filter None) m.unknown;
       refused_section m.refused;
       unreached_section m.unreached;
       outside_tests_section m.outside_tests;
-      outcome ~invocation ~selection:"" m;
+      outcome ~invocation ~tests:(`Filter None) m;
     ]
