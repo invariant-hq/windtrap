@@ -1623,6 +1623,23 @@ let reference_before () =
  7  0                 bump c4
  8                    let c5 = new ()|}
 
+(* The record is laid out on its escaped text, as the report prints it, so
+   a control byte's four columns keep the call column straight. *)
+let control_cell () =
+  let pp ppf _ = Format.pp_print_string ppf "\001" in
+  let gen = Stateful.program ~steps:8 (counter ~pp ()) in
+  expect_exact (printed gen (value (find gen bumps_twice)))
+  @@ __POS_OF__
+       {| #  reference before  call
+ 1                    let c1 = new ()
+ 2  \x01              bump c1
+ 3  \x01              bump c1
+ 4                    let c2 = new ()
+ 5                    let c3 = new ()
+ 6                    let c4 = new ()
+ 7  \x01              bump c4
+ 8                    let c5 = new ()|}
+
 let occurs sub s =
   let n = String.length sub in
   let rec at i =
@@ -1708,6 +1725,35 @@ let result_column () =
  4  pop q1              exception Stdlib.Queue.Empty
  5  pop q1              exception Stdlib.Queue.Empty|}
 
+(* A row ends where its last cell's text ends, as a report's table does, so
+   a result printed with a trailing blank ends without it. *)
+let trailing_blank () =
+  let spaced =
+    Testable.make ~pp:(fun ppf n -> Format.fprintf ppf "%d  " n) ~equal:( = )
+  in
+  let q = abstract "q" in
+  let gen =
+    Stateful.program ~steps:3
+      [
+        command "create" (Gen.unit @-> makes q) ignore Queue.create;
+        command "push"
+          (q ^-> Gen.int_range 0 9 @-> returns unit)
+          (fun () _ -> ())
+          (fun q x -> Queue.push x q);
+        command "pop" (q ^-> judges spaced) (fun () _ -> ()) Queue.pop;
+      ]
+  in
+  let popped line = occurs "pop q1" line && not (occurs "exception" line) in
+  let record =
+    printed gen
+      (value
+         (find gen (fun r -> List.exists popped (String.split_on_char '\n' r))))
+  in
+  equal (list string) []
+    (List.filter
+       (fun line -> String.ends_with ~suffix:" " line)
+       (String.split_on_char '\n' record))
+
 (* The words of a record's header row. *)
 let header record =
   let line = List.hd (String.split_on_char '\n' record) in
@@ -1771,10 +1817,13 @@ let the_record =
       test "a cell joins the reference sides of two arguments" joined_cell;
       test "a reference before cell is cut at 60 code points" long_cell;
       test "a printer that raises costs its own cell" raising_pp;
+      test "a cell's control byte prints escaped and keeps its column"
+        control_cell;
       test
         "a judging call adds a result column, each call's outcome as its \
          witness prints it"
         result_column;
+      test "a row ends on its last cell's text, blanks stripped" trailing_blank;
       cases "only a judging call adds a result column"
         (Testable.contramap (fun (n, _, _) -> n) Testable.text)
         result_headers

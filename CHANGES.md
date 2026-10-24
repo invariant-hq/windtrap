@@ -137,6 +137,11 @@
 
 ### Stateful testing
 
+- A counterexample's table of calls is laid out by the report's table,
+  on the text as it prints: a cell that holds a control byte prints it
+  escaped and keeps the columns after it straight, and no row ends in
+  blanks, where 0.2.0 padded a cell by its raw bytes and kept a last
+  cell's trailing blanks.
 - (breaking) `judges w` replaces `chooses w`: the reference receives the
   system's outcome, `Ok v` or `Error e`, and rules on it. Returning
   accepts it; a verb's failure, `Assert_failure`, `Match_failure` or the

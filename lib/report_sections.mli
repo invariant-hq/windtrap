@@ -280,6 +280,13 @@ type column = { gap : string; align : [ `Left | `Right ]; width : int option }
     [align] the side on which its cells are aligned, and [width] a floor in code
     points. A column is as wide as its widest cell and at least [width]. *)
 
+val table :
+  margin:string -> columns:column list -> span list list -> span list list
+(** [table ~margin ~columns rows] is [rows] laid out as {!Rows} prints them, one
+    line per row, before its trailing spaces are stripped. A column's width is
+    measured as {!width} measures a span, so a cell that holds a control byte
+    keeps its column. *)
+
 type excerpt = {
   source : string;  (** The text of the file. *)
   marked_lines : int list;

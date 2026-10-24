@@ -369,7 +369,8 @@ let columns ~parallel ~judging rows =
 
 (* Hard newlines and padding only: the engine renders through
    [Format.asprintf] at its default margin, which would re-wrap break
-   hints. *)
+   hints. The table is the report's, laid out unstyled and its trailing
+   spaces stripped as a report strips a table's. *)
 let record_text = function
   (* A reachable counterexample: an empty text would print a bare colon. *)
   | [] -> "(no calls)"
@@ -386,44 +387,43 @@ let record_text = function
             [ Pp.str "\u{2026} (%s omitted)" (call_count omitted) ],
             List.filteri (fun i _ -> i >= total - context_calls) numbered )
       in
-      let shown = List.map snd (head @ tail) in
       let columns =
         columns
           ~parallel:(List.exists is_parallel rows)
           ~judging:(List.exists (fun row -> row.judging) rows)
-          shown
+          (List.map snd (head @ tail))
       in
-      let widths =
+      let line number cells =
+        List.map Report_sections.plain (number :: cells)
+      in
+      let lines =
         List.map
-          (fun (header, cell) ->
-            List.fold_left
-              (fun width row -> max width (Text.length_utf8 (cell row)))
-              (String.length header) shown)
-          columns
+          (fun spans ->
+            let text = Report_sections.render ~ansi:false spans in
+            let rec stop i =
+              if i > 0 && text.[i - 1] = ' ' then stop (i - 1) else i
+            in
+            String.sub text 0 (stop (String.length text)))
+          (Report_sections.table ~margin:""
+             ~columns:
+               ({ Report_sections.gap = ""; align = `Right; width = Some 2 }
+               :: List.map
+                    (fun _ ->
+                      {
+                        Report_sections.gap = "  ";
+                        align = `Left;
+                        width = None;
+                      })
+                    columns)
+             (line "#" (List.map fst columns)
+             :: List.map
+                  (fun (number, row) ->
+                    line number (List.map (fun (_, cell) -> cell row) columns))
+                  (head @ tail)))
       in
-      let number_width = max 2 (String.length (string_of_int total)) in
-      (* Every cell but a line's last is padded, and the blank cells that
-         end a line are dropped, so no line ends on a blank. *)
-      let rec cells = function
-        | [] -> ""
-        | (width, cell) :: rest ->
-            if List.for_all (fun (_, cell) -> cell = "") rest then "  " ^ cell
-            else
-              "  " ^ cell
-              ^ String.make (width - Text.length_utf8 cell) ' '
-              ^ cells rest
-      in
-      let line number texts =
-        String.make (number_width - String.length number) ' '
-        ^ number
-        ^ cells (List.combine widths texts)
-      in
-      let row (number, row) =
-        line number (List.map (fun (_, cell) -> cell row) columns)
-      in
-      String.concat "\n"
-        ((line "#" (List.map fst columns) :: List.map row head)
-        @ omission @ List.map row tail)
+      let above = List.filteri (fun i _ -> i <= List.length head) lines in
+      let below = List.filteri (fun i _ -> i > List.length head) lines in
+      String.concat "\n" (above @ omission @ below)
 
 let pp_record ppf record = Pp.string ppf (record_text record)
 
