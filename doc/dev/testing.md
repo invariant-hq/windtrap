@@ -96,6 +96,21 @@ what is non-obvious.
   trailing output), the failures that withhold one (an unreadable
   source, an uncaught exception, a test that also failed outside its
   expectations, a raising release), and a node never reached.
+  `verdicts/` holds the verdict sessions: one block per situation that
+  could end a run with a code or a stream its contract does not promise,
+  over `verdict_main.exe`, whose suite `VERDICT_SUITE` selects and names.
+  `exits.t` is code under test that tries to end the process,
+  `outcomes.t` the outcomes of catching, skipping, expected failures,
+  vacuous properties and empty tables, `selection.t` the empty and
+  refused selections, `record.t` the last-failed record, `baselines.t`
+  baselines under CI with each stanza laid out by hand, `refusals.t` the
+  refused runs, the JUnit warning and SIGINT, and `crashes.t` a write
+  at address 0 and a loop in C (`verdict_stubs.c`). A situation the
+  code gets wrong today is a held defect, left for the change that
+  redesigns its area: its block pins today's output under a one-line
+  note that begins "Held for the redesign" and names the promise it
+  breaks, so the change that fixes it flips that block in its own
+  diff, and nothing else promotes it.
   `bin/` pins the `windtrap` command: its dispatch (`windtrap.t`), where
   the two merges find their files and which they merge (`data.t`), the
   coverage and mutants reports (`coverage.t`, `mutants.t`), what they

@@ -1,0 +1,9 @@
+; The runner of baselines.t's inline expectation, as the inline_tests
+; backend generates it, over a fixture that belongs to no library.
+
+(executable
+ (name runner)
+ (modules runner hello)
+ (libraries windtrap ppx_windtrap.runtime)
+ (preprocess
+  (pps ppx_windtrap)))

@@ -1,0 +1,121 @@
+What a test's outcome is when its body catches, skips, is expected to
+fail, is a property that judges nothing, or is a table with no row.
+Each block is one situation and the verdict the run gives it; a block
+whose line begins "Held for the redesign" pins a defect as it stands
+today (see doc/dev/testing.md).
+
+`run` states the child's whole environment and keeps its logs and its
+baselines in this sandbox. It prints standard output, then standard
+error under a `--- stderr` line, with durations, seeds and the
+fixture's line numbers masked, and returns the child's code. `brief`
+prints only the FAIL lines, the last line of standard output and the
+first of standard error. A block whose point is a code of 0 echoes it.
+
+  $ scrub() {
+  >   sed -E 's/ in [0-9.]+m?s([. ])/ in DURATION\1/; s/s1:[0-9a-f]{16}/SEED/g; s/(verdict_main\.ml):[0-9]+/\1:N/g; s/^( *)[0-9]+ │/\1N │/'
+  > }
+  $ run() {
+  >   env -i PATH="$PATH" TMPDIR="${TMPDIR:-/tmp}" WINDTRAP_COLOR=never WINDTRAP_SLOW_THRESHOLD=0 \
+  >       WINDTRAP_PROJECT_ROOT="$PWD" WINDTRAP_OUTPUT="$PWD/_logs" "$@" > out 2> err
+  >   code=$?
+  >   scrub < out
+  >   if [ -s err ]; then echo '--- stderr'; scrub < err; fi
+  >   return $code
+  > }
+  $ brief() {
+  >   run "$@" > /dev/null
+  >   code=$?
+  >   grep '^  FAIL  ' out
+  >   tail -1 out | scrub
+  >   if [ -s err ]; then echo '--- stderr'; head -1 err | scrub; fi
+  >   return $code
+  > }
+
+Held for the redesign (doc/dev/testing.md): a catch-all around a failing verb swallows its failure, so the test passes.
+
+  $ run VERDICT_SUITE=try_with_assert_only ./verdict_main.exe; echo "exit $?"
+  try_with_assert_only: 1 passed in DURATION.
+  exit 0
+
+An expectation records its mismatch before it returns, so a catch-all
+around it changes nothing:
+
+  $ brief VERDICT_SUITE=try_with_expect ./verdict_main.exe
+    FAIL  catches around expect
+  1 failed in DURATION.
+  [1]
+  $ grep 'expect: mismatch' out
+      expect: mismatch
+
+A skip is no failure: a run of a pass, two skipped tests and a property
+that skips every case exits 0:
+
+  $ run VERDICT_SUITE=skip ./verdict_main.exe; echo "exit $?"
+  skip: 1 passed, 3 skipped in DURATION (seed SEED).
+  exit 0
+
+A selection whose every test skips exits 0, typed on the command line or
+given by a mirror:
+
+  $ run VERDICT_SUITE=skip_all ./verdict_main.exe -f skips; echo "exit $?"
+  skip_all: 2 skipped in DURATION.
+  exit 0
+  $ run VERDICT_SUITE=skip_all WINDTRAP_FILTER=skips ./verdict_main.exe; echo "exit $?"
+  skip_all: 2 skipped in DURATION.
+  exit 0
+
+An expected failure leaves the code alone, an exit included, and an
+expected failure that passes fails:
+
+  $ run VERDICT_SUITE=xfail ./verdict_main.exe; echo "exit $?"
+  xfail: 1 passed, 2 expected failures in DURATION.
+  exit 0
+  $ brief VERDICT_SUITE=xpass ./verdict_main.exe
+    FAIL  passes unexpectedly
+  1 failed in DURATION.
+  [1]
+  $ grep 'expected to fail' out
+      expected to fail, but the test passed
+
+A property whose every case is discarded gives up and fails, whether it
+assumes, filters or rejects:
+
+  $ brief VERDICT_SUITE=prop_discard ./verdict_main.exe
+    FAIL  assumes
+    FAIL  filters
+    FAIL  rejects
+  3 failed in DURATION.
+  [1]
+  $ grep -c 'property gave up: 201 discards exhausted the generation budget (0 cases passed)' out
+  3
+
+Held for the redesign (doc/dev/testing.md): a property of count 0 with no example passes having judged nothing.
+
+  $ run VERDICT_SUITE=prop_count_zero ./verdict_main.exe -f 'never runs'; echo "exit $?"
+  prop_count_zero: 1 passed in DURATION (seed SEED).
+  exit 0
+
+The count cannot be broadcast as 0: the mirror refuses it.
+
+  $ run VERDICT_SUITE=prop_count_zero WINDTRAP_PROP_COUNT=0 ./verdict_main.exe
+  --- stderr
+  windtrap: invalid value '0' for WINDTRAP_PROP_COUNT: expected a positive integer
+  usage: verdict_main.exe [OPTIONS] [PATTERN...]
+  [2]
+
+A suite whose only table has no row declares no test, and exits 2, even
+under a mirror's empty selection:
+
+  $ run VERDICT_SUITE=table_zero ./verdict_main.exe
+  table_zero: no tests ran: the suite declares none.
+  [2]
+  $ run VERDICT_SUITE=table_zero WINDTRAP_FILTER=nomatch ./verdict_main.exe
+  table_zero: no tests ran: the suite declares none.
+  [2]
+
+A table with no row beside a passing test is no test, and the run exits
+0:
+
+  $ run VERDICT_SUITE=table_zero_plus ./verdict_main.exe; echo "exit $?"
+  table_zero_plus: 1 passed in DURATION.
+  exit 0

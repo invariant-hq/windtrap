@@ -1,0 +1,23 @@
+; The verdict sessions run verdict_main.exe, one suite per situation; they
+; fork, signal and crash a process, so they are POSIX only.
+
+(executable
+ (name verdict_main)
+ (modules verdict_main)
+ (foreign_stubs
+  (language c)
+  (names verdict_stubs))
+ (libraries windtrap unix))
+
+(cram
+ (applies_to :whole_subtree)
+ (enabled_if
+  (<> %{os_type} Win32))
+ (deps verdict_main.exe))
+
+; baselines.t corrects literals in a copy of the fixture's source.
+
+(cram
+ (package ppx_windtrap)
+ (applies_to baselines)
+ (deps verdict_main.ml inline/runner.exe inline/hello.ml))
