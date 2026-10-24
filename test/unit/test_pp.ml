@@ -5,6 +5,7 @@
 
 open Windtrap
 module Pp = Windtrap.Private.Pp
+module Gen_engine = Windtrap.Private.Gen_engine
 
 type printing = Prints : string * 'a Pp.t * 'a * string -> printing
 
@@ -160,6 +161,106 @@ let printers =
         ];
     ]
 
+(* Exact floats *)
+
+(* A printed float read back as the OCaml expression it is. *)
+let of_ocaml = function
+  | "infinity" -> Float.infinity
+  | "neg_infinity" -> Float.neg_infinity
+  | text -> float_of_string text
+
+let same_float a b =
+  (Float.is_nan a && Float.is_nan b)
+  || Int64.equal (Int64.bits_of_float a) (Int64.bits_of_float b)
+
+(* The rule: the first of [%.15g], [%.16g] and [%.17g] that reads back to
+   the same bits, a whole value keeping its point. *)
+let shortest_of_three f =
+  let rendered digits = Printf.sprintf "%.*g" digits f in
+  let reads digits = same_float f (float_of_string (rendered digits)) in
+  let s = rendered (if reads 15 then 15 else if reads 16 then 16 else 17) in
+  if String.exists (fun c -> c = '.' || c = 'e') s then s else s ^ "."
+
+let any_bits = Gen.map Int64.float_of_bits Gen.int64
+
+(* Floats that [%F], twelve significant digits, prints alike. *)
+let alike_under_F =
+  [
+    ("0.3 and 0.1 +. 0.2", 0.3, 0.1 +. 0.2);
+    ("1. and the next float", 1., Float.succ 1.);
+    ("pi and the next float", Float.pi, Float.succ Float.pi);
+    ("1e-310 and the next subnormal", 1e-310, Float.succ 1e-310);
+    ("1e22 and the float before it", 1e22, Float.pred 1e22);
+  ]
+
+let specials =
+  [
+    0.;
+    -0.;
+    1.;
+    -1.;
+    Float.min_float;
+    Float.max_float;
+    -.Float.max_float;
+    Float.epsilon;
+    5e-324;
+    -5e-324;
+    Float.infinity;
+    Float.neg_infinity;
+    Float.nan;
+    -.Float.nan;
+    Int64.float_of_bits 0x7FF0000000000001L;
+    Float.pi;
+    0.1;
+    1e15;
+    1e16;
+    1e17;
+    123456789012345678.;
+  ]
+
+let exact_floats =
+  group "Exact floats"
+    [
+      cases "two floats that %F prints alike print apart"
+        (Testable.contramap (fun (claim, _, _) -> claim) Testable.text)
+        alike_under_F
+        (fun (_, a, b) ->
+          equal string (Printf.sprintf "%F" a) (Printf.sprintf "%F" b);
+          not_equal string
+            (Pp.to_string Pp.float_exact a)
+            (Pp.to_string Pp.float_exact b));
+      prop "every float reads back as OCaml to itself, specials included"
+        ~examples:specials
+        Gen.(one_of [ any_float; any_bits ])
+        (fun f ->
+          is_true (same_float f (of_ocaml (Pp.to_string Pp.float_exact f))));
+      prop
+        "a finite float prints as the first of %.15g, %.16g and %.17g that \
+         reads back"
+        ~examples:(List.filter Float.is_finite specials)
+        Gen.(one_of [ float; any_bits ])
+        (fun f ->
+          assume (Float.is_finite f);
+          equal string (shortest_of_three f) (Pp.to_string Pp.float_exact f));
+      prop "every built-in float printer prints as float_exact does"
+        ~examples:specials
+        Gen.(one_of [ any_float; any_bits ])
+        (fun f ->
+          let exact = Pp.to_string Pp.float_exact f in
+          List.iter
+            (fun (name, printed) -> equal ~msg:name string exact printed)
+            [
+              ("Testable.float_exact", Pp.to_string (Testable.pp float_exact) f);
+              ("Testable.float", Pp.to_string (Testable.pp (float 0.1)) f);
+              ( "Testable.float_rel",
+                Pp.to_string (Testable.pp (float_rel ~rel:0.1 ~abs:0.)) f );
+              ("Gen.float", Gen_engine.render_value Gen.float f);
+              ("Gen.any_float", Gen_engine.render_value Gen.any_float f);
+              ( "Gen.float_range",
+                Gen_engine.render_value (Gen.float_range (-1.) 1.) f );
+            ]);
+    ]
+
 (* Combinators *)
 
 let bar ppf () = Pp.pf ppf "|"
@@ -206,4 +307,4 @@ let combinators =
             (Pp.to_string (Pp.brackets (Pp.list Pp.int)) [ 1; 2 ]));
     ]
 
-let () = exit (run "pp" [ formatting; printers; combinators ])
+let () = exit (run "pp" [ formatting; printers; exact_floats; combinators ])
