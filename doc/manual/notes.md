@@ -242,7 +242,10 @@ into a pass, and the test would read as a regression test that can
 never fail. The report says `failed, then caught` when the exception
 never reached windtrap. The record belongs to the attempt, so a retry
 starts clean, and to the case inside a property, so a candidate the
-search rejects leaves nothing behind.
+search rejects leaves nothing behind. A deliberate catch, for a claim
+that holds after a while, is `eventually`, which bounds the wait and
+ends on the claim's own failure; nothing hands a failure back to be
+ignored.
 
 ## The report ends on its outcome
 

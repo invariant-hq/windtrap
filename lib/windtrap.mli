@@ -295,6 +295,7 @@ val xfail : ?reason:string -> test -> test
     scope, that spawned the domain returns. Inside the law of a property the
     failure is recorded on the case, which fails and shrinks as when the law
     raises it. Each attempt of a retried test starts with nothing recorded.
+    {!eventually} is the one way to catch a failing verb on purpose.
 
     Outside a run a failure or a skip is an uncaught exception. *)
 
@@ -675,6 +676,35 @@ module Law : sig
       fails the law. The generator of a {!prop} must draw only values that
       satisfy [inv]. *)
 end
+
+(** {2:polling Polling} *)
+
+val eventually : within:float -> (unit -> 'a) -> 'a
+(** [eventually ~within f] calls [f ()] until a call returns, and is its value:
+    for a claim that comes to hold, on what another domain, a process or a timer
+    builds. A call that fails or raises is followed by another after at most ten
+    milliseconds, until [within] seconds have passed since the first began. The
+    last call's failure fails the test, and those of the calls before it are not
+    recorded. A {!skip}, a timeout, a call to [exit] or an {!assume} ends it at
+    once.
+
+    {[
+    test "the worker drains the queue" (fun () ->
+        Worker.start queue;
+        eventually ~within:2. (fun () -> equal int 0 (Queue.length queue)))
+    ]}
+
+    It is the one scoped catch of a failing verb because it is the smallest one
+    that cannot hide a failure. An [attempt : (unit -> 'a) -> ('a, _) result]
+    would hand the failure to the caller, and [ignore (attempt f)] would be the
+    catch-all that recording closes, under a name. A
+    [passes : (unit -> unit) -> bool] would be the same in one word less. A poll
+    ends on its claim, held or failed, and needs one argument, the bound; the
+    pause between calls is fixed, since it changes how long a test takes and not
+    what it checks. A choice between claims is {!mem}, {!satisfies} or a [match]
+    on the value.
+
+    Raises [Invalid_argument] if [within] is not finite and positive. *)
 
 (** {2:ending Failing and skipping} *)
 

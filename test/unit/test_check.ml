@@ -852,6 +852,53 @@ let exceptions =
         (fun (_, accepted, expected) -> equal bool expected accepted);
     ]
 
+(* Polling *)
+
+(* A function that fails its first [n] calls, and the calls it took. *)
+let failing_until n =
+  let calls = ref 0 in
+  let f () =
+    incr calls;
+    if !calls <= n then Check.fail (strf "call %d" !calls);
+    !calls
+  in
+  (f, calls)
+
+let polling =
+  group "Polling"
+    [
+      test "eventually is the value of the first call that returns" (fun () ->
+          let f, calls = failing_until 2 in
+          equal int 3 (Check.eventually ~within:10. f);
+          equal int 3 !calls);
+      test "eventually fails with its last call's failure, which it records"
+        (fun () ->
+          let f, calls = failing_until max_int in
+          let _, caught =
+            Failure.recording (fun () ->
+                try ignore (Check.eventually ~within:0.015 f) with _ -> ())
+          in
+          greater int ~than:1 !calls;
+          equal (list string)
+            [ strf {|message "call %d"|} !calls ]
+            (List.map payload caught));
+      test "eventually raises again a control at once" (fun () ->
+          let calls = ref 0 in
+          equal string "skip"
+            (outcome (fun () ->
+                 Check.eventually ~within:10. (fun () ->
+                     incr calls;
+                     Check.skip ())));
+          equal int 1 !calls);
+      test "eventually refuses a bound that is not finite and positive"
+        (fun () ->
+          List.iter
+            (fun within ->
+              raises_match Exn.invalid_arg (fun () ->
+                  Check.eventually ~within (fun () -> fail "called")))
+            [ 0.; -1.; Float.nan; Float.infinity ]);
+    ]
+
 (* Escape hatches *)
 
 let escape_hatches =
@@ -881,5 +928,6 @@ let () =
          orders;
          containment;
          exceptions;
+         polling;
          escape_hatches;
        ])

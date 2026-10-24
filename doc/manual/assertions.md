@@ -522,7 +522,7 @@ shop: 2 tests
 2 failed in 0.6ms.
 ```
 
-## Checking inside a callback
+## Checking inside a callback, or until a claim holds
 
 A failing verb records its failure in the running test before it
 raises. A library that ignores what its callbacks raise, as a cache
@@ -556,6 +556,21 @@ caught before it reached the runner:
 A verb works on a domain the test spawned: its failure is recorded on
 the test whether or not `Domain.join` raises it again. Inside the law
 of a property the failure is the case's, which shrinks as usual.
+
+`eventually ~within f` is the one way to catch a failing verb on
+purpose, for a claim that holds after a while. It calls `f` again while
+it fails, every 10 ms for at most `within` seconds, and the test fails
+with the last call's failure:
+
+```ocaml
+(* fragment: Worker drains the queue on a domain of its own *)
+test "the worker drains the queue" (fun () ->
+    Worker.start queue;
+    eventually ~within:2. (fun () -> equal int 0 (Queue.length queue)))
+```
+
+A choice between claims is `mem`, `satisfies` or a `match` on the
+value, never one verb caught to try another.
 
 ## Adding context to a failure
 

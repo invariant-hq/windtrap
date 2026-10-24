@@ -137,6 +137,16 @@ let suite = function
             incr attempts;
             if !attempts = 1 then try equal int 1 2 with _ -> ());
       ]
+  | "eventually" ->
+      let calls = ref 0 in
+      [
+        test "holds on its third call" (fun () ->
+            eventually ~within:10. (fun () ->
+                incr calls;
+                equal int 3 !calls));
+        test "never holds" (fun () ->
+            eventually ~within:0.05 (fun () -> equal int 1 2));
+      ]
   | "try_with_expect" ->
       [
         test "catches around expect" (fun () ->

@@ -88,6 +88,17 @@ What an attempt caught stays with it, so a retry that passes passes:
   1 passed (1 flaky) in DURATION.
   exit 0
 
+eventually calls its function again while it fails, and records only the
+failure of its last call, which nothing caught:
+
+  $ brief VERDICT_SUITE=eventually ./verdict_main.exe
+    FAIL  never holds
+  1 passed, 1 failed in DURATION.
+  [1]
+  $ grep -c 'failed, then caught' out
+  0
+  [1]
+
 An expectation records its mismatch before it returns, so a catch-all
 around it changes nothing:
 

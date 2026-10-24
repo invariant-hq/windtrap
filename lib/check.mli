@@ -15,8 +15,8 @@
     A verb's [?msg] is the failure's [msg], and its [?__POS__] is the failure's
     site in place of the one {!Loc.resolve} finds. A verb prints nothing,
     computes no diff and reads no state of the run. A passing verb resolves no
-    location and calls no printer. Only {!raises} and {!raises_match} catch an
-    exception, and only from the function that they run.
+    location and calls no printer. Only {!raises}, {!raises_match} and
+    {!eventually} catch an exception, and only from the function that they run.
     What the equality, the order or the printer of a witness, a [?pp], a
     predicate or an [extract] raises escapes the verb as it is. *)
 
@@ -242,6 +242,21 @@ module Exn : sig
   val sys_error : ?substring:string -> exn -> bool
   (** [sys_error e] is {!invalid_arg} for [Sys_error m]. *)
 end
+
+(** {1:polling Polling} *)
+
+val eventually : within:float -> (unit -> 'a) -> 'a
+(** [eventually ~within f] is the value of the first call of [f ()] that
+    returns. While a call fails, through {!Failure.catch}, and fewer than
+    [within] seconds have passed since the first one began on the monotonic
+    clock, it waits up to 10 ms, never past [within], and calls [f] again. The
+    fault of the last call is raised again with {!Failure.reraise}, so the
+    enclosing scope records an assertion. Every call but the last runs in its
+    own scope, so what it records is not seen outside. A control is raised again
+    at once.
+
+    Raises [Invalid_argument] if [within] is not finite and positive, before any
+    call. *)
 
 (** {1:escapes Escape hatches} *)
 

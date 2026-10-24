@@ -59,6 +59,9 @@ Within a test, pick the verb whose failure shows the data:
 - A `Law` verb, such as `Law.round_trip` or `Law.associative`, for a
   textbook law. Its failure names the law and prints each term.
 - `satisfies ~claim` only when no witness verb states the claim.
+- `eventually ~within f` for a claim that comes to hold, on another
+  domain or process. Never wrap a verb in `try … with`: its failure is
+  recorded before it raises, and the test fails anyway.
 
 Rules for every test:
 

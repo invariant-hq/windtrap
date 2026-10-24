@@ -233,6 +233,30 @@ module Exn = struct
     | _ -> false
 end
 
+(* Polling *)
+
+let poll_pause = 0.01
+
+(* Each call but the last runs in a scope of its own, which owns what it
+   records; the last one's failure is raised again, and so recorded. *)
+let eventually ~within fn =
+  if not (Float.is_finite within && within > 0.) then
+    invalid_arg "eventually: within must be finite and positive";
+  let start = Os.counter () in
+  let rec poll () =
+    match Failure.catch fn with
+    | Ok value -> value
+    | Error (#Failure.control as c) -> Failure.reraise c
+    | Error (#Failure.fault as fault) ->
+        let left = within -. Os.count_s start in
+        if left <= 0. then Failure.reraise fault
+        else begin
+          Unix.sleepf (Float.min poll_pause left);
+          poll ()
+        end
+  in
+  poll ()
+
 (* Escape hatches *)
 
 let fail ?__POS__ msg =
