@@ -26,6 +26,7 @@ let register () =
 let () =
   match List.tl (Array.to_list Sys.argv) with
   | [ "silent" ] -> ()
+  | [ "name" ] -> print_string Sys.executable_name
   | [ "first" ] -> Coverage.visit (register ()) 0
   | [ "second" ] ->
       let counts = register () in

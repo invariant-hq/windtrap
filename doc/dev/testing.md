@@ -149,6 +149,12 @@ the string it returns: a test that spawns a domain spawns it there,
 since a process that has spawned one can never fork again, and the
 mutation loop forks from the test's process.
 
+`preload/` holds C libraries a suite preloads into a child with
+`LD_PRELOAD`, to change what the C library tells it: `no_proc_exe.so`
+hides `/proc/self/exe`, so the runtime takes `Sys.executable_name`
+from `argv[0]` as it does outside Linux and macOS. They are built on
+Linux alone, and the tests that preload one skip elsewhere.
+
 `Recorded` makes a suite's `Run.execute` and `Run.list_selection` calls
 as it initialises, in a stated environment and with a scratch log
 directory, for `test_run`, `test_windtrap` and `test_law` to judge with

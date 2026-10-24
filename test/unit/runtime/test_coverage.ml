@@ -558,6 +558,33 @@ let destination_fixed () =
 
 let posix_only () = if Sys.win32 then skip ~reason:"POSIX only" ()
 
+(* The library that hides /proc/self/exe from the child it is preloaded
+   into, built on Linux alone. *)
+let no_proc_exe =
+  Filename.concat
+    (Filename.dirname Windtrap_runtime.Instr.executable)
+    "../../support/preload/no_proc_exe.so"
+
+(* Started by a relative name with /proc/self/exe hidden, the child's
+   runtime takes its name from argv[0], relative to the directory it started
+   in, as outside Linux and macOS. It then changes directory, and its dump
+   still names and digests the executable. *)
+let identity_from_the_start_directory () =
+  if not (Sys.file_exists "/proc/self/exe") then
+    skip ~reason:"preloading a library is Linux's" ();
+  let started = Filename.dirname child_exe
+  and name = "./" ^ Filename.basename child_exe in
+  let run ~dump args =
+    Child.run ~cwd:started
+      ~env:[ ("WINDTRAP_COVERAGE_FILE", dump); ("LD_PRELOAD", no_proc_exe) ]
+      name args
+  in
+  let dump = Filename.concat (temp_dir ()) "child.coverage" in
+  equal string name (run ~dump [ "name" ]).out;
+  let r = run ~dump [ "moved"; temp_dir () ] in
+  equal int 0 (Child.exit_code r);
+  equal string (child_dump ~exe:child_exe [| 1; 0; 0 |]) (read dump)
+
 let fork_shares_the_path () =
   posix_only ();
   let dump = Filename.concat (temp_dir ()) "fork.coverage" in
@@ -629,6 +656,10 @@ let dumps =
         "the destination is fixed at the first registration, a relative path \
          against the directory of that moment"
         destination_fixed;
+      test
+        "a child named relative to its start directory keeps its identity \
+         after it changes directory"
+        identity_from_the_start_directory;
       test
         "under WINDTRAP_COVERAGE_FILE a forked child and its parent share the \
          path, and the last to exit wins"

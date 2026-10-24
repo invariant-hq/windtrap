@@ -12,7 +12,9 @@
  (name test_coverage)
  (modules test_coverage)
  (libraries windtrap windtrap_runtime windtrap_test_support unix)
- (deps coverage_child.exe)
+ (deps
+  coverage_child.exe
+  (glob_files ../../support/preload/*.so))
  (action
   (setenv
    WINDTRAP_COVERAGE_FILE

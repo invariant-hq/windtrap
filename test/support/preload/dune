@@ -1,0 +1,11 @@
+; Libraries a suite preloads into a child, to change what the C library
+; tells it. LD_PRELOAD is the Linux dynamic linker's, so they are built on
+; Linux alone, and a suite that needs one skips elsewhere.
+
+(rule
+ (enabled_if
+  (= %{system} linux))
+ (targets no_proc_exe.so)
+ (deps no_proc_exe.c)
+ (action
+  (run %{cc} -shared -fPIC -o %{targets} %{deps} -ldl)))
