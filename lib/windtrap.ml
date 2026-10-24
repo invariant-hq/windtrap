@@ -256,7 +256,9 @@ let run ?(argv = Sys.argv) suite tests =
   (* [--help], [--version] and a usage error return before [Run.execute]
      would refuse a nested run. *)
   if Run.active () then invalid_arg Run.active_run_error;
-  run_parent ~argv suite tests
+  match Supervisor.enter ~suite tests with
+  | `Skip -> 0
+  | `Parent -> run_parent ~argv suite tests
 
 (* Private *)
 

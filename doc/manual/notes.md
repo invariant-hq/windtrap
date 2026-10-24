@@ -231,11 +231,29 @@ command line is read from the working directory.
 
 ## A test cannot end the run
 
-A call to `exit` in code under test is intercepted and recorded as the
-failure of its test. Without the interception, a function that exits 0
-on some path would end the run green with tests unrun. Only `Sys.Break`
-and `Out_of_memory` end a run from inside a test; a `Stack_overflow` is
-an ordinary failure, since OCaml 5 recovers from it.
+The process that calls `run` runs no test: it forks worker processes,
+which run them, and decides each verdict from what a worker reports, how
+it ends and how long it takes. Code under test that calls `exit` or
+`Unix._exit`, segfaults, runs out of memory or loops in C past its limit
+ends its worker, never the run, and the test fails saying which. A run
+in one process could only intercept such an end, and every interception
+leaked: a catch-all around `exit` swallowed it, `Unix._exit` bypassed
+it, and an `at_exit` handler set the code of a failed run to 0. The
+parent's exit code is its own, decided once.
+
+A worker forks from the parent before any test runs, so it starts with
+what module initialisation built and nothing a test left. Tests run one
+at a time in one worker by default, as they did in one process, so a
+fixture is acquired once and process state never races; `-j N` is an
+opt-in. A test that spawns a domain retires its worker, since the domain
+could run into the next test and a process with a domain cannot fork.
+One gap is left: a domain that outlives its test dies with that test's
+worker, so an exit it would call later is never made, and no test
+records it.
+
+`--in-process` runs one test in the process that was started, for a
+debugger. It accepts one test and no more, so it cannot become a way to
+run a suite.
 
 ## Coverage is measured by runs and reported by a command
 

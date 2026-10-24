@@ -96,6 +96,30 @@
   run after the prefix reads
   `every command makes a value, has a ~pre or takes an element`.
 
+### Running
+
+- The process that calls `run` runs no test. Worker processes forked
+  from it run the tests, and it decides each verdict from what a worker
+  reports, how it ends and how long it takes. A test that calls `exit`
+  or `Unix._exit`, segfaults, raises `Out_of_memory` or `Sys.Break`, or
+  loops in C past its limit fails, saying which, and the run goes on.
+  In 0.2.0 `Unix._exit` and an `at_exit` handler could end a failed run
+  with 0, a catch-all around `exit` passed the test, and a segfault or
+  `Out_of_memory` ended the run with no summary.
+- A test still running three limits after it started, per attempt, is
+  killed with its worker and times out; the alarm still bounds the body
+  first, so its teardown runs.
+- `-j N` (`WINDTRAP_JOBS`) runs the tests in `N` workers at once. The
+  default is one, as in 0.2.0, and the report, the exit code and the
+  corrections do not depend on it.
+- `--in-process` runs one selected test in the calling process, for a
+  debugger.
+- A worker retires after a test that spawned a domain, so the domain
+  cannot run into the next test, and a worker's process group and
+  temporary directory go with it.
+- An `at_exit` handler that a test registers runs as its worker ends;
+  one that raises fails the run and names the test.
+
 ### Coverage
 
 - The right operand of `||` that is a call of `raise`, `raise_notrace`,

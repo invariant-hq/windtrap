@@ -17,7 +17,8 @@ let fails = test "fails" (fun () -> equal int 1 2)
 let exits = test "exits" (fun () -> exit 0)
 
 (* An exit raised on a domain that no test joins: [late] lets it go and
-   waits until the domain has ended. *)
+   waits until the domain has ended, or for a fifth of a second, since the
+   domain dies with the worker of the test that spawned it. *)
 let unjoined () =
   let go = Atomic.make false and gone = Atomic.make false in
   let spawns =
@@ -33,7 +34,8 @@ let unjoined () =
   let late =
     test "runs while it exits" (fun () ->
         Atomic.set go true;
-        while not (Atomic.get gone) do
+        let start = Unix.gettimeofday () in
+        while (not (Atomic.get gone)) && Unix.gettimeofday () -. start < 0.2 do
           Domain.cpu_relax ()
         done)
   in
@@ -56,7 +58,6 @@ let fails_on_teardown =
   test "acquires" (fun () -> held ())
 
 let rec deep n = 1 + deep (n + 1)
-
 let alpha = test ~tags:[ "fast" ] "alpha" ignore
 
 let skips =
@@ -172,8 +173,7 @@ let suite = function
       ]
   | "baseline_plain" ->
       [
-        test "mismatches" (fun () ->
-            expect "actual" @@ __POS_OF__ {|expected|});
+        test "mismatches" (fun () -> expect "actual" @@ __POS_OF__ {|expected|});
       ]
   | "dup_paths" -> [ passes; passes ]
   | "focus" -> [ focus passes; fails ]
@@ -189,14 +189,15 @@ let suite = function
         test "writes at address 0" (fun () -> poke 0);
         test "comes after" ignore;
       ]
-  | "c_loop" ->
-      [ test ~timeout:0.05 "loops in C" (fun () -> spin 300); passes ]
+  | "c_loop" -> [ test ~timeout:0.05 "loops in C" (fun () -> spin 300); passes ]
   | other -> invalid_arg ("verdict_main: unknown VERDICT_SUITE " ^ other)
 
-let name = function
-  | "shared_a" | "shared_b" -> "shared"
-  | name -> name
+let name = function "shared_a" | "shared_b" -> "shared" | name -> name
 
+(* Under VERDICT_DOMAIN_FIRST the program spawns a domain before [run],
+   after which it cannot fork. *)
 let () =
+  if Sys.getenv_opt "VERDICT_DOMAIN_FIRST" <> None then
+    Domain.join (Domain.spawn ignore);
   let selected = Sys.getenv "VERDICT_SUITE" in
   exit (run (name selected) (suite selected))

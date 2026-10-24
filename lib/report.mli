@@ -413,14 +413,26 @@ val pp_failure :
 
 (** {1:running Running} *)
 
+type executor =
+  ?on_event:(Run.event -> unit) ->
+  Run.config ->
+  suite:string ->
+  Test_tree.t list ->
+  (Run.outcome, Run.startup_error) result
+(** The type for the functions that execute a run: {!Supervisor.execute}, and
+    {!Run.execute} with no allowlist. *)
+
 val run :
+  ?execute:executor ->
   ?on_event:(Run.event -> unit) ->
   suite:string ->
   Run.config ->
   Test_tree.t list ->
   (Run.outcome, Run.startup_error) result
-(** [run ~suite config tests] is [Run.execute config ~suite tests] with the
-    whole report of the run written. It proceeds in this order:
+(** [run ~suite config tests] is [execute config ~suite tests] with the whole
+    report of the run written. [execute] defaults to {!Supervisor.execute}; the
+    mutation loop's dry run and an [--arm] run pass {!Run.execute}, which runs
+    in the calling process. It proceeds in this order:
     + It builds [terminal config] and, when [config.github] is set, opens the
       envelope with [group_start suite].
     + It executes the run with {!observe} as its observer, over [config.seed]

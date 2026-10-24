@@ -31,15 +31,16 @@ first of standard error. A block whose point is a code of 0 echoes it.
   >   return $code
   > }
 
-A call to exit in a test is that test's failure, and the tests after it
-run, whether it comes before or after another failure:
+A call to exit in a test ends the worker process that runs it, and is
+that test's failure; the tests after it run in another worker, whether
+it comes before or after another failure:
 
   $ run VERDICT_SUITE=exit_before_fail ./verdict_main.exe
   exit_before_fail: 3 tests
   ──────────────────────── failures ────────────────────────
     FAIL  exits
       test/cram/verdicts/verdict_main.ml:N
-      the test called exit and was intercepted; a test must return or raise, never exit the process
+      the test called exit, which ended its worker; a test must return or raise, never exit the process
   
     FAIL  fails
       test/cram/verdicts/verdict_main.ml:N
@@ -70,7 +71,7 @@ without an earlier failure:
   ──────────────────────── failures ────────────────────────
     FAIL  fixture release
       [release] test/cram/verdicts/verdict_main.ml:N
-      fixture (test/cram/verdicts/verdict_main.ml:N): release raised Exit_attempt (code under test called exit; intercepted by windtrap)
+      fixture (test/cram/verdicts/verdict_main.ml:N): release called exit, which ended its worker; a test must return or raise, never exit the process
   ──────────────────────────────────────────────────────────
   
   1 passed, 1 failed in DURATION.
@@ -95,7 +96,11 @@ a failure:
   1 passed, 2 failed in DURATION.
   [1]
 
-Held for the redesign (doc/dev/testing.md): exit on a domain no test joins is no test's failure, and the run exits 0.
+The one escape (lib/windtrap.mli, The process): a domain that outlives
+the test that spawned it dies with that test's worker, so an exit it
+would call later is never made, no test records it, and the run exits
+0. The test after it runs in another worker, which the domain never
+reaches:
 
   $ brief VERDICT_SUITE=domain_unjoined_only ./verdict_main.exe; echo "exit $?"
   domain_unjoined_only: 2 passed in DURATION.
@@ -114,33 +119,60 @@ is that test's failure:
   1 passed, 2 failed in DURATION.
   [1]
 
-Held for the redesign (doc/dev/testing.md): an at_exit handler a test registers sets the process's code, so a failed run exits 0.
+An at_exit handler that a test registers runs as its worker ends, and
+the code it exits with is the worker's, not the run's, before or after a
+failure:
 
   $ brief VERDICT_SUITE=atexit_after_fail ./verdict_main.exe; echo "exit $?"
     FAIL  fails
   2 passed, 1 failed in DURATION.
-  exit 0
+  exit 1
   $ brief VERDICT_SUITE=atexit_before_fail ./verdict_main.exe; echo "exit $?"
     FAIL  fails
   2 passed, 1 failed in DURATION.
-  exit 0
+  exit 1
 
-Held for the redesign (doc/dev/testing.md): an at_exit handler a test registers that raises makes a passing run exit 2, "no test ran".
+An at_exit handler that raises fails the run, as no test does, and names
+the test that registered it:
 
-  $ brief VERDICT_SUITE=atexit_raise ./verdict_main.exe
-  atexit_raise: 2 passed in DURATION.
-  --- stderr
-  Fatal error: exception Failure("cleanup")
-  [2]
+  $ run VERDICT_SUITE=atexit_raise ./verdict_main.exe
+  atexit_raise: 2 tests
+  ──────────────────────── failures ────────────────────────
+    FAIL  fixture release
+      [release] test/cram/verdicts/verdict_main.ml:N
+      an at_exit function that the test registers registered raised
+      uncaught exception:
+        Failure("cleanup")
+      Raised at Stdlib.failwith in file "stdlib.ml", line 29, characters 17-33
+      Called from Stdlib.at_exit.new_exit in file "stdlib.ml", line 566, characters 59-63
+  ──────────────────────────────────────────────────────────
+  
+  2 passed, 1 failed in DURATION.
+  [1]
 
-Held for the redesign (doc/dev/testing.md): Unix._exit in a test ends the run green, with the tests after it unrun and no summary.
+Unix._exit in a test ends its worker, and fails the test with the code
+the worker exited with; the tests after it run:
 
-  $ run VERDICT_SUITE=unix_exit_before_fail ./verdict_main.exe; echo "exit $?"
-  exit 0
-  $ brief VERDICT_SUITE=unix_exit_after_fail ./verdict_main.exe; echo "exit $?"
+  $ run VERDICT_SUITE=unix_exit_before_fail ./verdict_main.exe
+  unix_exit_before_fail: 2 tests
+  ──────────────────────── failures ────────────────────────
+    FAIL  exits at once
+      test/cram/verdicts/verdict_main.ml:N
+      the test ended its worker process, which exited with code 0
+  
     FAIL  fails
+      test/cram/verdicts/verdict_main.ml:N
+      expected  1
       actual    2
-  exit 0
+  ──────────────────────────────────────────────────────────
+  
+  2 failed in DURATION.
+  [1]
+  $ brief VERDICT_SUITE=unix_exit_after_fail ./verdict_main.exe
+    FAIL  fails
+    FAIL  exits at once
+  2 failed in DURATION.
+  [1]
 
 A forked child of a test exits as it would without windtrap, and its
 exit is no failure, under --stream too, where nothing prints twice:
@@ -154,11 +186,28 @@ exit is no failure, under --stream too, where nothing prints twice:
   2 passed, 1 failed in DURATION.
   [1]
 
-A handler that catches every exception around exit defeats the
-interception, as documented:
+A program that spawned a domain before run cannot fork: it runs itself
+again for each worker, and the verdicts are the same:
+
+  $ brief VERDICT_DOMAIN_FIRST=1 VERDICT_SUITE=exit_before_fail ./verdict_main.exe
+    FAIL  exits
+    FAIL  fails
+  1 passed, 2 failed in DURATION.
+  [1]
+
+A handler that catches every exception around exit catches nothing,
+since exit raises none, and the test fails:
 
   $ run VERDICT_SUITE=try_with ./verdict_main.exe
-  try_with: 1 passed in DURATION.
+  try_with: 1 test
+  ──────────────────────── failures ────────────────────────
+    FAIL  catches its exit
+      test/cram/verdicts/verdict_main.ml:N
+      the test called exit, which ended its worker; a test must return or raise, never exit the process
+  ──────────────────────────────────────────────────────────
+  
+  1 failed in DURATION.
+  [1]
 
 Unbounded recursion is an ordinary failure. The stack is made small, so
 that it overflows at once:
@@ -169,17 +218,16 @@ that it overflows at once:
         Stack overflow
   1 passed, 1 failed in DURATION.
 
-Held for the redesign (doc/dev/testing.md): Out_of_memory or Sys.Break from a test exits 2, "no test ran", with no summary.
+Out_of_memory or Sys.Break from a test fails it and ends its worker,
+and the run goes on:
 
   $ brief VERDICT_SUITE=fatal_oom ./verdict_main.exe
     FAIL  fails
-      actual    2
-  --- stderr
-  Fatal error: exception Out of memory
-  [2]
+    FAIL  runs out of memory
+  2 failed in DURATION.
+  [1]
   $ brief VERDICT_SUITE=fatal_break ./verdict_main.exe
     FAIL  fails
-      actual    2
-  --- stderr
-  Fatal error: exception Stdlib.Sys.Break
-  [2]
+    FAIL  breaks
+  2 failed in DURATION.
+  [1]

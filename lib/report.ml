@@ -931,8 +931,15 @@ let pp_failure = Sections.pp_failure
 
 (* Running *)
 
-let run ?(on_event = fun (_ : Run.event) -> ()) ~suite (config : Run.config)
-    tests =
+type executor =
+  ?on_event:(Run.event -> unit) ->
+  Run.config ->
+  suite:string ->
+  Test_tree.t list ->
+  (Run.outcome, Run.startup_error) result
+
+let run ?(execute : executor = Supervisor.execute)
+    ?(on_event = fun (_ : Run.event) -> ()) ~suite (config : Run.config) tests =
   let renderer = terminal config in
   let transcript =
     observe renderer ~seed:config.seed
@@ -965,7 +972,7 @@ let run ?(on_event = fun (_ : Run.event) -> ()) ~suite (config : Run.config)
     on_event event
   in
   if config.github then print_string (group_start suite);
-  match Run.execute ~on_event config ~suite tests with
+  match execute ~on_event config ~suite tests with
   | Error error ->
       if config.github then print_string group_end;
       Os.say (Run.startup_message error);

@@ -20,6 +20,10 @@ let refuse message =
   Os.say message;
   Reported 1
 
+(* The dry run and an armed run count the hits of a site in this process,
+   so they run its tests here. *)
+let in_process : Report.executor = Run.execute ?allowlist:None
+
 let ordinary ~suite (config : Run.config) tests =
   Ran (Report.run ~suite { config with mutation = Run.No_mutation } tests)
 
@@ -736,7 +740,7 @@ let loop renderer ~scope ~suite (config : Run.config) tests =
   in
   let started = Os.counter () in
   match
-    Report.run ~on_event:(observe reach) ~suite
+    Report.run ~execute:in_process ~on_event:(observe reach) ~suite
       { config with junit = None }
       tests
   with
@@ -832,7 +836,8 @@ let armed renderer ~spec ~suite (config : Run.config) tests =
       Mutate.reset_reach ();
       let xfail = { at_start = 0; hits = 0 } in
       let result =
-        Report.run ~on_event:(count_xfail_hits xfail) ~suite config tests
+        Report.run ~execute:in_process ~on_event:(count_xfail_hits xfail) ~suite
+          config tests
       in
       (match result with
       | Ok outcome when killed_by outcome -> Report.mutation_killed renderer

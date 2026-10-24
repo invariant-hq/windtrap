@@ -106,11 +106,14 @@ type 'a testable = 'a Testable.t
     share the window, and a teardown gets what is left of it. When they spent it
     all, the teardown gets a fresh window.
 
-    The limit is a [SIGALRM] interval timer, so it has no effect on Windows and
-    cannot interrupt a blocked C call. The runner owns [SIGALRM] while a test
-    with a limit runs. A domain that the test spawned may take the signal: the
-    timeout is then raised on that domain, and ends the test only when it
-    reaches the test's domain, as through [Domain.join].
+    The limit is a [SIGALRM] interval timer, so the teardown runs after a body
+    that timed out. The runner owns [SIGALRM] while a test with a limit runs. A
+    domain that the test spawned may take the signal: the timeout is then raised
+    on that domain, and ends the test only when it reaches the test's domain, as
+    through [Domain.join]. The alarm cannot interrupt a C call that does not
+    return to OCaml: a test still running three limits after it started, for
+    each of its attempts, is killed with its worker process (see {!run}), and
+    times out. On Windows the limit has no effect.
 
     {b Retries.} Each attempt is a fresh setup, body, teardown and capture. A
     skip is never retried. An {!xfail} test is retried on an unexpected pass,
@@ -242,6 +245,11 @@ val fixture : ?teardown:('a -> unit) -> (unit -> 'a) -> unit -> 'a
     [-x] included. A [teardown] that raises fails the run with a [[release]]
     failure, and the other releases still run. Without [teardown] nothing is
     released.
+
+    The fixture belongs to the worker process that runs the test (see
+    {{!section-process}the process}). Under [-j N] each worker acquires its own,
+    and a worker that retires after a test, or that a test ended, is replaced by
+    one that acquires again. A worker that a test ended releases nothing.
 
     {b Warning.} No timeout covers a release.
 
@@ -1776,10 +1784,11 @@ val chdir : string -> unit
 val run : ?argv:string array -> string -> test list -> int
 (** [run ?argv suite tests] parses the {{!section-command_line}command line}
     [argv] and executes the selected tests of [tests], one at a time, in
-    declaration order. It writes the report to standard output, returns the
-    {{!section-exit_codes}exit code} and never exits the
-    {{!section-process}process}. Usage errors, refusals, warnings and the line
-    of an interrupted run go to standard error behind [windtrap:].
+    declaration order, in a worker process (see
+    {{!section-process}the process}). It writes the report to standard output,
+    returns the {{!section-exit_codes}exit code} and never exits the process.
+    Usage errors, refusals, warnings and the line of an interrupted run go to
+    standard error behind [windtrap:].
 
     [suite] names the run in its report, and names the directory of the capture
     logs and of the last failed tests. [argv] defaults to [Sys.argv]. [argv.(0)]
@@ -1797,11 +1806,12 @@ val run : ?argv:string array -> string -> test list -> int
     - [1] when a test failed, or when a fixture's release or the writing of a
       correction failed. It is also the code of a run refused before anything
       executed, under [-l] too. The refusals are two tests with one path, a
-      {!focus} under [CI] and [-u] under [CI].
+      {!focus} under [CI] and [-u] under [CI]. A test that ended its worker
+      process is a failed test.
     - [2] when no test ran, as with a mistyped filter, or when the command line
       does not parse. An empty [--shard] bucket and a [--failed] with nothing
       recorded are cases of the first, and the second returns [2] under [-l]
-      too.
+      too. So does [--in-process] over a selection of more than one test.
 
     Under [--corrected] a test whose failures are all kept corrections leaves
     the code alone. It still stops a run under [-x], and it still enters the
@@ -1813,6 +1823,18 @@ val run : ?argv:string array -> string -> test list -> int
     a [WINDTRAP_*] variable that sets the flag under [dune runtest]. [-l],
     [--failed], [-x], [-u], [--corrected], [-h] and [-V] have none. The command
     line wins over the environment.
+
+    [-j N] ([WINDTRAP_JOBS]) runs the tests in [N] worker processes at once, one
+    test at a time in each, and defaults to [1]. The report, the exit code and
+    the corrections are those of [-j 1], but tests in two workers share no
+    {!fixture} and race on the process state that {!setenv} and {!chdir} change,
+    and on the files they write. Under [--stream] the tests run one at a time
+    whatever [-j] says.
+
+    [--in-process] runs the one selected test in the process that called {!run},
+    for a debugger, and refuses a selection of more than one. It has no mirror.
+    There the test can end the process, as the next section says no other run
+    lets it.
 
     [--tag] and [--exclude-tag] add up, across repeated flags, across the
     comma-separated list of their mirrors, and across both. [WINDTRAP_FILTER]
@@ -1853,15 +1875,46 @@ val run : ?argv:string array -> string -> test list -> int
 
 (** {2:process The process}
 
-    A call to [exit] in code under test does not end the run. It is recorded as
-    the failure of its test. A handler that catches every exception around the
-    call defeats this. {!run} turns the recording of backtraces on and leaves it
-    on.
+    The process that calls {!run} runs no test. It forks a worker process,
+    before any test runs, and the worker runs the tests and reports on each;
+    {!run} decides every verdict from what the worker reports, how it ends and
+    how long it takes, and returns its own code. A worker is a session of its
+    own, with its own directory for {!temp_dir}. A process that spawned a domain
+    before {!run} cannot fork: it runs its program again for each worker, and
+    the [run] call of the same rank serves, the earlier ones returning [0] at
+    once.
 
-    While it executes, and not on Windows, {!run} handles [SIGINT], [SIGTERM]
-    and [SIGHUP]. It removes the attempt's temporary files and releases the
-    fixtures still held. It does not run the teardown of the interrupted test,
-    writes no correction and dies by the same signal. *)
+    Code under test cannot end the run. A test whose worker ends, by a call to
+    [exit] or [Unix._exit], by a signal such as [SIGSEGV], by [Out_of_memory] or
+    [Sys.Break], or by the kill of its {{!section-declaring}limit}, fails,
+    saying how, and the tests after it run in a new worker. The worker's process
+    group is killed and its temporary directory removed, so the children it
+    started and the files it left go with it; its {!fixture}s are not released.
+    A test that spawns a domain retires its worker after it, which releases the
+    fixtures: the domain cannot run into the next test.
+
+    An [at_exit] function that a test registers runs as its worker ends, and the
+    code it exits with is the worker's. One that raises fails the run as a
+    release does, naming the test that registered it. The [at_exit] functions
+    the program registered before {!run} run in the process that called it, and
+    in no worker.
+
+    One escape is left: a domain that outlives the test that spawned it dies
+    with that test's worker, so an [exit] it would call later is never made and
+    no test records it.
+
+    {!run} turns the recording of backtraces on and leaves it on. While it
+    executes, and not on Windows, {!run} handles [SIGINT], [SIGTERM] and
+    [SIGHUP], and sends each worker the signal. A worker removes the attempt's
+    temporary files and releases the fixtures still held, without the teardown
+    of the interrupted test; then {!run} writes no correction and dies by the
+    same signal. A worker that receives one of these signals itself ends the run
+    so too.
+
+    On Windows, which has no [fork], and under [--in-process], the tests run in
+    the process that called {!run}. There a call to [exit] in code under test is
+    recorded as the failure of its test, unless a handler that catches every
+    exception surrounds the call, and the rest of this section does not hold. *)
 
 (** {1:private Private} *)
 

@@ -220,7 +220,11 @@ cannot select one (see `Windtrap.subtest`).
 
 `fixture create` is an accessor: the first test that calls it acquires
 the resource with `create ()`, and later calls return the same value.
-The runner releases the acquired fixtures after the last test. `scoped`
+The runner releases the acquired fixtures after the last test. A
+fixture belongs to the worker process that runs the tests, so under
+`-j N` each worker acquires its own, and a worker that a test crashed
+releases nothing: its process group is killed, which ends a server it
+started, and its temporary directory is removed. `scoped`
 makes a test from a function that hands a resource to a callback, such
 as a session that exists only inside `Server.with_session`.
 

@@ -1,7 +1,7 @@
 Code under test that takes the process down or out of reach: a write
 at address 0, and a loop in C that never returns to OCaml while its
-test's limit passes. Each block pins a defect as it stands today (see
-doc/dev/testing.md).
+test's limit passes. Each block is one situation and the verdict the
+run gives it.
 
 `run` states the child's whole environment and keeps its logs and its
 baselines in this sandbox. It prints standard output, then standard
@@ -42,19 +42,32 @@ that waits for it says nothing of the signal, whichever shell it is:
   >       WINDTRAP_OUTPUT="$PWD/_logs" "$@" sh -c 'exec ./verdict_main.exe > out 2> err'; } 2> /dev/null
   > }
 
-Held for the redesign (doc/dev/testing.md): a test that crashes the process ends the run with the signal's 139 and no output at all, not even the tests before it.
+A test that crashes its worker fails, saying by which signal, and the
+run goes on:
 
   $ crash VERDICT_SUITE=segfault
-  [139]
-  $ cat out err
+  [1]
+  $ scrub < out; cat err
+  segfault: 3 tests
+  ──────────────────────── failures ────────────────────────
+    FAIL  writes at address 0
+      test/cram/verdicts/verdict_main.ml:N
+        N │ test "writes at address 0" (fun () -> poke 0);
+  
+      the test ended its worker process, which was killed by SIGSEGV
+  ──────────────────────────────────────────────────────────
+  
+  2 passed, 1 failed in DURATION.
 
-Held for the redesign (doc/dev/testing.md): a C loop holds its test past its limit, so the test times out only once the loop has run to its end.
+A C loop that holds its test past its limit, where the alarm cannot
+reach it, is killed with its worker, and the test times out before the
+loop has run to its end:
 
   $ brief VERDICT_SUITE=c_loop ./verdict_main.exe
     FAIL  loops in C
   1 passed, 1 failed in DURATION.
   [1]
-  $ grep -A2 'timed out' out | scrub
+  $ grep 'the C loop ran to its end' out || echo 'not reached'
+  not reached
+  $ grep 'timed out' out | scrub
       timed out after 0.05s
-      captured output (1 line):
-        the C loop ran to its end

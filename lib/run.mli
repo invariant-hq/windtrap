@@ -78,8 +78,8 @@ type config = {
       (** [--stream]: the tests write to the real descriptors, and the capture
           state of the run is {!Capture.disabled}. *)
   jobs : int;
-      (** [-j]: the number of worker processes of a supervised run, at least [1].
-          {!execute} does not read it. *)
+      (** [-j]: the number of worker processes of a supervised run, at least [1]
+          (see {!Supervisor}). {!execute} does not read it. *)
   in_process : bool;
       (** [--in-process]: the run is {!execute}'s, in the calling process, and
           its selection must hold one test at most (see {!In_process_selects}).
@@ -808,7 +808,10 @@ val exit_code : (outcome, startup_error) Stdlib.result -> int
 
     {!execute} and {!list_selection} turn the recording of backtraces on
     ([Printexc.record_backtrace]) and leave it on. They register an [at_exit]
-    function, the exit guard.
+    function, the exit guard. A supervised run ({!Supervisor}) registers none: a
+    worker that code under test exits ends, and its parent records it. The guard
+    serves the runs that stay in one process, [--in-process], Windows, and the
+    mutation loop's dry run, children and [--arm] run.
 
     While a run is {!active}, a call to [exit] raises [Failure.Control `Exit]
     from the guard and the process does not end. The exception is classified
@@ -850,7 +853,7 @@ val exit_code : (outcome, startup_error) Stdlib.result -> int
 
 (** {1:supervision Serving a supervisor}
 
-    A supervised run splits {!execute} across processes. Its
+    A supervised run ({!Supervisor}) splits {!execute} across processes. Its
     parent selects, reports, keeps the store, writes the corrections and decides
     the exit code, with the functions below. Each worker process runs {!serve}:
     the attempts, frames, fixtures and signals above, unchanged, one case per

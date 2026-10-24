@@ -34,6 +34,16 @@ line.
   through a subprocess
   fixture: 3 passed in DURATION.
 
+Under -j N the streamed tests still run one at a time, so the bytes keep
+that order:
+
+  $ run env FACADE_FIXTURE=stream ./suite_main.exe -s -e fails -j 3 > out 2>&1
+  $ scrub < out
+  through the stdout channel
+  through descriptor 1
+  through a subprocess
+  fixture: 3 passed in DURATION.
+
 Under GitHub Actions the transcript folds, the annotations follow the
 fold's close so that they are never folded away, and the summary is still
 the last line (the envelope's lines are the report suite's):

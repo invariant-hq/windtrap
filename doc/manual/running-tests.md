@@ -252,6 +252,34 @@ to `exit`. The exit codes section of `Windtrap.run` says which runs
 return which. Code under test that calls `exit` does not end the run;
 the call fails its test.
 
+## Running tests in worker processes
+
+The process that calls `run` runs no test. It forks a worker process,
+which runs the tests one at a time, and reads each verdict from what the
+worker reports, how it ends and how long it takes. A test that calls
+`exit` or `Unix._exit`, crashes, raises `Out_of_memory` or outlives its
+limit in C code fails, saying which, and the run goes on in a new
+worker. A test that spawns a domain retires its worker after it, so the
+domain cannot run into the next test.
+
+`-j N` runs the tests in `N` workers at once, each one test at a time.
+The default is one: tests in two workers share no fixture, and they race
+on the environment, the working directory and the files they write.
+Under `-s` the tests run one at a time whatever `-j` says, so their
+output reaches the terminal in order. The report, its order, the exit
+code and the corrections are those of `-j 1`.
+
+To step through one test in a debugger, run it in the process you
+started, with `--in-process` and a filter that selects it alone:
+
+```
+$ dune exec examples/06-resources-and-structure/test_storage.exe -- --in-process -f 'a config is written'
+storage: 1 passed in 0.6ms.
+```
+
+A selection of more than one test is refused, since the flag is a
+gesture at one test, not a way to run a suite.
+
 ## Listing the flags
 
 `--help` lists every flag with its mirror, and the variables that no
@@ -311,6 +339,12 @@ OPTIONS:
 
   -s, --stream (env WINDTRAP_STREAM)
       Stream test output instead of capturing it.
+
+  -j N, --jobs=N (env WINDTRAP_JOBS)
+      Run the tests in N worker processes at once (default 1).
+
+  --in-process
+      Run the one selected test in this process, for a debugger.
 
   -v, --verbose (env WINDTRAP_VERBOSE)
       One status line per test.
