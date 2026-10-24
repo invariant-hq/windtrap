@@ -47,6 +47,9 @@
   it, and so does a refused `expect`, `output` or `temp_dir` there. In
   the law of a property the failure is the case's, which shrinks; a
   retried test's next attempt starts with nothing recorded.
+- `output ()` called on a domain the test spawned reads what that domain
+  printed through `Format`: it flushed the main domain's formatters,
+  which the spawned domain must not touch, and missed its own.
 - `eventually ~within f` calls `f` until a call returns, at most
   `within` seconds, and fails with the last call's failure: the one way
   to catch a failing verb on purpose, for a claim that comes to hold.

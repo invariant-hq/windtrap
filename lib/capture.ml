@@ -30,9 +30,12 @@ let disabled = Disabled
    prints without [fflush] reaches no descriptor until they are flushed. *)
 external flush_c_stdio : unit -> unit = "ocaml_windtrap_capture_flush_c_stdio"
 
+(* [Format.std_formatter] is the main domain's, and each domain prints
+   through its own: a drain forces the calling domain's, whose buffers alone
+   it may touch. *)
 let drain () =
-  Format.pp_print_flush Format.std_formatter ();
-  Format.pp_print_flush Format.err_formatter ();
+  Format.pp_print_flush (Format.get_std_formatter ()) ();
+  Format.pp_print_flush (Format.get_err_formatter ()) ();
   flush stdout;
   flush stderr;
   flush_c_stdio ()

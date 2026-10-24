@@ -220,6 +220,18 @@ let buffers =
     ("the error formatter", fun () -> Format.eprintf "x");
   ]
 
+(* A domain's [Format] buffers are its own: a drain on a spawned domain, as
+   [output ()] there makes, forces that domain's through, and the test reads
+   what the domain printed. *)
+let on_a_domain read =
+  let cap, log = state () in
+  attempt cap (fun () ->
+      Domain.join
+        (Domain.spawn (fun () ->
+             Format.printf "out, ";
+             Format.eprintf "err";
+             read cap log)))
+
 let own_formatter () =
   let ppf = Format.formatter_of_out_channel stdout in
   let seen = drained (fun () -> Format.fprintf ppf "x") in
@@ -485,6 +497,16 @@ let capturing =
         (Testable.contramap fst Testable.text) buffers (fun (_, write) ->
           equal string "x" (drained write));
       test "drain reaches no formatter of the user's" own_formatter;
+      test "a drain on a spawned domain forces that domain's formatters"
+        (fun () ->
+          equal string "out, err"
+            (on_a_domain (fun _ log ->
+                 Capture.drain ();
+                 read log)));
+      test "output () on a spawned domain reads what that domain printed"
+        (fun () ->
+          equal string "out, err"
+            (on_a_domain (fun cap _ -> Capture.output cap)));
       test "drain raises Sys_error when a flush fails" (fun () ->
           posix_only ();
           raises_match Exn.sys_error (fun () -> unwritable_stderr Capture.drain));
