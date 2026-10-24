@@ -60,7 +60,9 @@ what is non-obvious.
   counted. The mutation twin compiles the same sources a second time with
   no rewriter (`mutate/baseline/`), so "identical" is measured against
   a real twin rather than an expectation someone could edit to match a
-  defect. Each has a link-only executable listing the fixture library
+  defect. The coverage suite's claims read one dump, its
+  `WINDTRAP_COVERAGE_FILE`, so its stanza runs `-j 1`, whatever
+  `WINDTRAP_JOBS` the environment holds. Each has a link-only executable listing the fixture library
   alone: the rewriter's `ppx_runtime_libraries` inject the runtime, and
   nothing may pull the core in. `integration/` asks whether an
   instrumented build compiles and registers, one library per question:

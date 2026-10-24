@@ -9,6 +9,9 @@
   (pps ppx_windtrap.coverage)))
 
 ; Each claim reads the dump of a forked child, and Windows has no fork.
+; Every claim reads the one WINDTRAP_COVERAGE_FILE dump, so two tests at
+; once overwrite each other's: -j 1 outranks a WINDTRAP_JOBS in the
+; environment.
 
 (test
  (package ppx_windtrap)
@@ -24,7 +27,7 @@
    (setenv
     OCAMLRUNPARAM
     l=1M
-    (run %{test})))))
+    (run %{test} -j 1)))))
 
 ; Links the fixtures alone: the rewriter's ppx_runtime_libraries inject the
 ; runtime, and nothing pulls the core in.
