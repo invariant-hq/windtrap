@@ -1900,6 +1900,28 @@ let a_failing_law_adds_the_engine_failure () =
     (seed_and_count props [ "never holds" ]);
   is_some (cases_run props [ "never holds" ])
 
+(* Each property's law demands a label it never meets, then stops the run
+   on a case or discards it. *)
+let stopped_early =
+  Recorded.execute
+    [
+      Run.prop "fails on a case" gen (fun _ ->
+          cover "never" false;
+          fail "no");
+      Run.prop "gives up" gen (fun _ ->
+          cover "never" false;
+          assume false);
+    ]
+
+let a_stopped_property_judges_no_coverage () =
+  equal
+    (list (list (pair string bool)))
+    [ []; [] ]
+    [
+      snd (labels_counted stopped_early [ "fails on a case" ]);
+      snd (labels_counted stopped_early [ "gives up" ]);
+    ]
+
 let gave_up_and_missed_at_the_declaration () =
   equal
     (list (list (option string)))
@@ -2034,6 +2056,10 @@ let properties =
         a_summary_rides_the_failure;
       test "a property that gave up or missed a label fails at its declaration"
         gave_up_and_missed_at_the_declaration;
+      test
+        "a property that failed on a case or gave up reports no coverage, \
+         which only a full run judges"
+        a_stopped_property_judges_no_coverage;
       test "a property that gave up says how many cases it discarded" (fun () ->
           expect (message (failure props [ "gives up" ]))
           @@ __POS_OF__
