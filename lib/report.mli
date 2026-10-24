@@ -220,9 +220,9 @@ val finish :
       run, the line
       [run stopped after <path>: a call on another domain outlived the test's
        limit]. The summary counts the tests it kept from running as not run.
-    - the summary. It is the last line of the transcript, save the one hint of
-      an empty run. The verdict of an armed run and the report of a loop follow
-      it (see {{!section-mutation}mutation lines}).
+    - the summary. It is the last line of the transcript. The verdict of an
+      armed run and the report of a loop follow it (see
+      {{!section-mutation}mutation lines}).
 
     {b Slow tests.} One row per result whose duration is at least
     [config.slow_threshold], slowest first. A skip and a test tagged [slow]
@@ -247,7 +247,7 @@ val finish :
 
     A run with no result at all says instead that no tests ran, with the reason
     of {!empty_selection_reason} when there is one. When a selection emptied a
-    suite that declares tests, one line that says how to list them follows the
+    suite that declares tests, one line that says how to list them precedes the
     summary, unless the environment gave the selection
     ([config.broadcast.selection]). *)
 

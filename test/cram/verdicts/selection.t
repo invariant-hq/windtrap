@@ -100,14 +100,15 @@ before anything runs, under -l too:
   [2] WINDTRAP_SHARD=3/2: windtrap: invalid value '3/2' for WINDTRAP_SHARD: expected K/N with 1 <= K <= N (e.g. 2/4)
   [2] WINDTRAP_SHARD=bogus: windtrap: invalid value 'bogus' for WINDTRAP_SHARD: expected K/N with 1 <= K <= N (e.g. 2/4)
 
-Held for the redesign (doc/dev/testing.md): a selection flag that keeps nothing prints two lines, the list: hint after the summary, so the summary is not the last.
+A selection flag that keeps nothing prints two lines, the list: hint
+above the summary, so the summary is the last:
 
   $ run VERDICT_SUITE=selection ./verdict_main.exe -f nomatch
-  selection: no tests ran: filter "nomatch" matched none of 1 test.
   list: ./verdict_main.exe -l
+  selection: no tests ran: filter "nomatch" matched none of 1 test.
   [2]
-  $ grep -c '' out
-  2
+  $ tail -1 out
+  selection: no tests ran: filter "nomatch" matched none of 1 test.
 
 A passing run, a run whose every test skips and a suite that declares
 no test each print one line:

@@ -82,8 +82,8 @@ A selection typed on the command line that keeps no test exits 2. The way
 out restates the program as it was typed:
 
   $ run ./suite_main.exe -f zzznope
-  fixture: no tests ran: filter "zzznope" matched none of 5 tests.
   list: ./suite_main.exe -l
+  fixture: no tests ran: filter "zzznope" matched none of 5 tests.
   [2]
 
 The selection is named back escaped for a reader rather than for OCaml:
@@ -120,8 +120,8 @@ from the report, whatever the code:
   --- stderr
   windtrap: warning: focus is active: 1 of 2 tests ran; remove the focus before committing
   $ run env FACADE_FIXTURE=focus ./suite_main.exe -f unfocused
-  fixture: no tests ran: focus and filter "unfocused" matched none of 2 tests.
   list: ./suite_main.exe -l
+  fixture: no tests ran: focus and filter "unfocused" matched none of 2 tests.
   --- stderr
   windtrap: warning: focus is active: 0 of 2 tests ran; remove the focus before committing
   [2]

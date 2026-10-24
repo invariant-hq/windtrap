@@ -781,12 +781,12 @@ let empty_rows =
         "mylib: no tests ran: the suite declares none.\n" ) );
     ( "a selection names itself, the total and how to list",
       ( empty ~invocation:exe ~header:parsr (),
-        "mylib: no tests ran: filter \"parsr\" matched none of 48 tests.\n\
-         list: ./t.exe -l\n" ) );
+        "list: ./t.exe -l\n\
+         mylib: no tests ran: filter \"parsr\" matched none of 48 tests.\n" ) );
     ( "a build action names the flag",
       ( empty ~header:parsr (),
-        "mylib: no tests ran: filter \"parsr\" matched none of 48 tests.\n\
-         (list the suite's tests with -l)\n" ) );
+        "(list the suite's tests with -l)\n\
+         mylib: no tests ran: filter \"parsr\" matched none of 48 tests.\n" ) );
     ( "a selection from the environment has no hint, under a launcher",
       ( empty ~invocation:exe ~broadcast:true ~header:parsr (),
         "mylib: no tests ran: filter \"parsr\" matched none of 48 tests.\n" ) );

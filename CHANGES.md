@@ -269,6 +269,9 @@
   test and names it, rather than pass on what remains. The record's
   format is versioned (`windtrap-last-failed 2`); a record that 0.2.0
   wrote names whole tests and reads so.
+- A selection that keeps no test prints its `list:` line above the
+  summary, so the summary is the last line of every report, as `tail -1`
+  expects; 0.2.0 printed the hint after it.
 - (breaking) `--prop-count N` (`WINDTRAP_PROP_COUNT`) raises the count of
   every property below `N`, a declared `~count` included, and lowers
   none, so a long run scales every property and a short one no longer

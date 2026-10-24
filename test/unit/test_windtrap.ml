@@ -982,12 +982,12 @@ let running =
           @@ __POS_OF__
                {|windtrap: no tests selected: filter "zzznope" matched none of 2 tests.
 |});
-      test "an empty selection says why, then how to list the suite" (fun () ->
+      test "an empty selection says how to list the suite, then why" (fun () ->
           equal (pair int string) (2, "") (emptied_pair.code, emptied_pair.err);
           expect_exact emptied_pair.out
           @@ __POS_OF__
-               {|emptysuite: no tests ran: filter "zzznope" matched none of 2 tests.
-list: emptysuite -l
+               {|list: emptysuite -l
+emptysuite: no tests ran: filter "zzznope" matched none of 2 tests.
 |});
       cases "the code of a selection that keeps no test"
         (Testable.contramap (fun (name, _, _) -> name) Testable.text)
@@ -1003,8 +1003,8 @@ list: emptysuite -l
       test "under --corrected the way out names the flag" (fun () ->
           expect_exact typed_corrected.out
           @@ __POS_OF__
-               {|emptied: no tests ran: filter "zzznope" matched none of 1 test.
-(list the suite's tests with -l)
+               {|(list the suite's tests with -l)
+emptied: no tests ran: filter "zzznope" matched none of 1 test.
 |});
       test "without argv.(0) a run prints what it prints with it" (fun () ->
           equal text typed_corrected.out blank_typed.out;

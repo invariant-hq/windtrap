@@ -72,13 +72,13 @@ server › reindexing keeps it running
 ## Reading a selection that matches nothing
 
 A selection given on the command line that keeps no test runs nothing,
-says why, and exits `2`. The last line is the command that lists the
-suite's tests:
+says why, and exits `2`. The line above that is the command that lists
+the suite's tests:
 
 ```
 $ dune exec examples/06-resources-and-structure/test_storage.exe -- -f servr
-storage: no tests ran: filter "servr" matched none of 13 tests.
 list: dune exec examples/06-resources-and-structure/test_storage.exe -- -l
+storage: no tests ran: filter "servr" matched none of 13 tests.
 ```
 
 ## Passing flags to dune runtest
