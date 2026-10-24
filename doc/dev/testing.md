@@ -152,7 +152,9 @@ mutation loop forks from the test's process.
 `preload/` holds C libraries a suite preloads into a child with
 `LD_PRELOAD`, to change what the C library tells it: `no_proc_exe.so`
 hides `/proc/self/exe`, so the runtime takes `Sys.executable_name`
-from `argv[0]` as it does outside Linux and macOS. They are built on
+from `argv[0]` as it does outside Linux and macOS, and
+`stepped_clock.so` sets the system clock further ahead at every
+reading while the monotonic clocks run true. They are built on
 Linux alone, and the tests that preload one skip elsewhere.
 
 `Recorded` makes a suite's `Run.execute` and `Run.list_selection` calls

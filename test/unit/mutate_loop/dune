@@ -32,4 +32,5 @@
   plain_main.exe
   inline/runner_main.exe
   inline/inline_armed.ml
-  runaway/runaway_main.exe))
+  runaway/runaway_main.exe
+  (glob_files ../../support/preload/*.so)))

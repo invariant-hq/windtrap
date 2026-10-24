@@ -9,3 +9,11 @@
  (deps no_proc_exe.c)
  (action
   (run %{cc} -shared -fPIC -o %{targets} %{deps} -ldl)))
+
+(rule
+ (enabled_if
+  (= %{system} linux))
+ (targets stepped_clock.so)
+ (deps stepped_clock.c)
+ (action
+  (run %{cc} -shared -fPIC -o %{targets} %{deps} -ldl)))

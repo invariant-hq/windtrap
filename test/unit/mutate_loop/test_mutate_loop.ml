@@ -873,6 +873,23 @@ let slow () =
        ])
     (rows r)
 
+(* The library that steps the system clock forward at every reading, built
+   on Linux alone. *)
+let stepped_clock =
+  Filename.concat exe_dir "../../support/preload/stepped_clock.so"
+
+(* With the system clock set further ahead at every reading, each reading
+   lies past any deadline timed on it from the one before: a loop timed on
+   that clock would kill every child it starts. *)
+let clock_stepped () =
+  if not (Sys.file_exists "/proc/self/exe") then
+    skip ~reason:"preloading a library is Linux's" ();
+  let r = spawn ~env:[ ("LD_PRELOAD", stepped_clock) ] [ mutate ] in
+  equal string "exited 0" r.status;
+  equal text "" r.err;
+  equal (option (list string)) (Some green_rows) (rows r);
+  equal string green_outcome (outcome r.out)
+
 (* The fixture blocks only on its second run, on the marker the dry run
    leaves, so only the probe's own deadline can end it. *)
 let probe_deadline () =
@@ -909,6 +926,10 @@ let limits =
       test "a slow but finite test is never killed by the clock" slow;
       test "a probe past its deadline is refused as non-determinism"
         probe_deadline;
+      test
+        "a deadline is timed on the monotonic clock, so a system clock set \
+         ahead kills no child"
+        clock_stepped;
     ]
 
 (* The verdict file *)
