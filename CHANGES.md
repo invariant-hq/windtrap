@@ -55,6 +55,10 @@
 - `Gen.result`, `Gen.either` and `Gen.frequency` shrink toward `Ok`,
   `Left` and the first generator of positive weight, where 0.2.0 kept
   the drawn constructor or generator.
+- A failing property prints the line that keeps its counterexample:
+  `keep it: ~examples:[ … ]` where its generators print OCaml, and
+  otherwise `replay it: --replay TOKEN`
+  (doc/manual/property-testing.md#keeping-a-counterexample-as-a-regression).
 
 ### Stateful testing
 

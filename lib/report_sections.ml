@@ -116,8 +116,10 @@ let elided s = String.length s > max_value_bytes
 let shown s = Text.elide_middle max_value_bytes ~show:Fun.id s
 
 (* An example is never shrunk. *)
-let case_name ~examples ~case_index ~shrink_steps =
-  if examples then strf "example %d" (case_index + 1)
+(* A replayed case is reported as an example is, and keeps its token. *)
+let case_name ?(replayed = false) ~examples ~case_index ~shrink_steps () =
+  if replayed then "replayed case"
+  else if examples then strf "example %d" (case_index + 1)
   else if shrink_steps = 0 then strf "case %d" case_index
   else strf "case %d, shrunk %s" case_index (counted shrink_steps "step")
 
@@ -126,7 +128,7 @@ let timeout_fact ~limit (case : Failure.timed_case option) =
   | None -> strf "timed out after %gs" limit
   | Some { case_index; examples; passed; _ } ->
       strf "timed out after %gs in %s (%d passed)" limit
-        (case_name ~examples ~case_index ~shrink_steps:0)
+        (case_name ~examples ~case_index ~shrink_steps:0 ())
         passed
 
 let law_head ~law ~clause =
@@ -272,11 +274,14 @@ let headline (f : Failure.t) =
           shrink_end;
           examples;
           rendering;
+          token;
           _;
         } ->
         (* [shrunk 100 steps] alone reads as a converged search. *)
         strf "property failed (%s%s):%s%s"
-          (case_name ~examples ~case_index ~shrink_steps)
+          (case_name
+             ~replayed:(examples && Option.is_some token)
+             ~examples ~case_index ~shrink_steps ())
           (if examples then ""
            else
              match shrink_end with
@@ -1004,7 +1009,7 @@ and facts ~seen ~excerpt = function
         rendering;
         inner;
         failed_again;
-        token = _;
+        token;
         root = _;
         count = _;
       } ->
@@ -1013,7 +1018,9 @@ and facts ~seen ~excerpt = function
          there does not take it for the value the body received. *)
       let head =
         strf "counterexample (%s):%s"
-          (case_name ~examples ~case_index ~shrink_steps)
+          (case_name
+             ~replayed:(examples && Option.is_some token)
+             ~examples ~case_index ~shrink_steps ())
           (match rendering with
           | Failure.Ocaml | Failure.Value -> ""
           | Failure.Pre_image -> " computed from")
@@ -1098,7 +1105,19 @@ and facts ~seen ~excerpt = function
                else "which failed with:")
             :: List.map (indented "  ") (entry ~seen ~excerpt ~inner:true i)
       in
-      counterexample @ pre_image @ stop @ again @ inner
+      (* The line that keeps the case: an example to paste where its value
+         prints as OCaml, else the token that replays it. *)
+      let keep =
+        match (rendering, token) with
+        | Failure.Ocaml, _ ->
+            let value = List.map String.trim (Text.split_lines rendered) in
+            let value = String.concat " " value in
+            [ line (strf "keep it: ~examples:[ %s ]" value) ]
+        | (Failure.Value | Failure.Pre_image), Some token ->
+            [ line ("replay it: --replay " ^ token) ]
+        | (Failure.Value | Failure.Pre_image), None -> []
+      in
+      counterexample @ pre_image @ stop @ again @ keep @ inner
   | Failure.Law { law; clause; equation; terms } ->
       line (strf "%s: %s" (law_head ~law ~clause) equation)
       :: law_terms ~seen ~excerpt terms

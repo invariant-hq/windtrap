@@ -842,7 +842,20 @@ val pass : 'a testable
     smaller. Shrinking runs the law at most [10_000] times, and a search stopped
     there reports that the counterexample may not be minimal. A candidate on
     which a function of the generator raises is skipped, and a function of the
-    generator that raises while a case is drawn fails the case. *)
+    generator that raises while a case is drawn fails the case.
+
+    {b Keeping a counterexample.} Under its counterexample, a failure prints
+    the line that keeps it. Where the generators print OCaml, it is an entry to
+    paste into [~examples], [keep it: ~examples:[ (3, "a") ]]. Otherwise it is
+    a token, [replay it: --replay r1:...], and [--replay TOKEN] with [-f] on
+    the test checks that one case again: the token is the case's choices and a
+    digest of its printing, so it replays on any machine and survives a
+    renamed test, while its generator reads its choices as it did. A token
+    whose generator now parses another value is reported stale, and never
+    checks another value. Its digest is of the printing, so where a value
+    prints as its pre-image, a change to the function of a {!Gen.map} goes
+    unseen; a printer from {!Gen.with_pp} makes the token check the value.
+    Nothing writes the source. *)
 
 (**/**)
 

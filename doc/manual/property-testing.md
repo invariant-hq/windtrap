@@ -120,7 +120,7 @@ geo: 17 passed in 6.0ms (seed s1:296aaf2e3762014b).
 
 When the law fails, the property shrinks the value to a counterexample
 and prints it with the case that found it, the number of shrink steps,
-and the assertion that failed. A generator
+the line that keeps it, and the assertion that failed. A generator
 parses its value from a sequence of bounded choices, and shrinking
 edits the choices of the failing case and parses them again: it deletes
 what one generator call read, such as a list element, deletes runs of
@@ -171,6 +171,7 @@ geo: 1 test (seed s1:5b58964be30f69a8)
       27 │ prop "is read back by of_string" gen_shape (fun s ->
 
     counterexample (case 0, shrunk 1 step): Rect (1, 0)
+    replay it: --replay r1:AQEA:3e9ef408
     which failed at:
       examples/03-property-testing/test_geo.ml:28
         28 │ equal ~__POS__ (option shape) (Some s)
@@ -190,6 +191,17 @@ replay: dune exec examples/03-property-testing/test_geo.exe -- --seed s1:5b58964
 whatever the seed. A counterexample pasted there stays tested. A failing
 example is reported as `example N`, unshrunk, and fails again under any
 seed.
+
+The line under a counterexample says how to keep it. Where its
+generators print OCaml values, as the generators of base types and
+their containers do, it is an entry to paste, `keep it: ~examples:[ 0 ]`.
+Where a printer of the test's own prints it, as `Gen.with_pp` gives one,
+windtrap cannot know the text is OCaml, and the line is a token,
+`replay it: --replay r1:AQEA:3e9ef408`. Passed with `-f` on the test,
+`--replay` checks that one case: the token holds the case's choices and
+a digest of its printing, so it replays on any machine and under a
+renamed test, and a token whose generator now parses another value is
+reported stale rather than checking it. Nothing writes the source.
 
 `test/test_geo.ml`:
 
@@ -212,7 +224,7 @@ before any generated case:
 
 ```
 $ dune exec examples/03-property-testing/test_geo.exe -- -f 'k squared'
-geo: 1 test (seed s1:23117273368ad709)
+geo: 1 test (seed s1:331b97cef172ecb7)
 ──────────────────────── failures ────────────────────────
   FAIL  scale › multiplies the area by k squared
     examples/03-property-testing/test_geo.ml:37
@@ -264,11 +276,11 @@ label:
 ```
 $ dune exec examples/03-property-testing/test_geo.exe -- -v --seed s1:5b58964be30f69a8 --prop-count 1000 -f 'undoes scale'
 geo: 1 test (seed s1:5b58964be30f69a8)
-  PASS  inverse › undoes scale by k                1.2ms
+  PASS  inverse › undoes scale by k                1.5ms
     labels (1000 passing cases):
        51.0%  circle
        49.0%  rect
-1 passed in 1.3ms.
+1 passed in 11ms.
 ```
 
 A `cover` belongs where its scenario is observed. In a stateful test,
@@ -349,6 +361,7 @@ geo: 1 test (seed s1:5b58964be30f69a8)
       72 │ prop "is never negative"
 
     counterexample (case 6, shrunk 2 steps): Group [Circle 1]
+    replay it: --replay r1:AQEBAAE:a9de575d
     which failed at:
       examples/03-property-testing/test_geo.ml:77
         77 │ (fun d -> at_least ~__POS__ float_exact ~than:0. (Geo.total_area d));
@@ -357,7 +370,7 @@ geo: 1 test (seed s1:5b58964be30f69a8)
 ──────────────────────────────────────────────────────────
 
 replay: dune exec examples/03-property-testing/test_geo.exe -- --seed s1:5b58964be30f69a8 -f 'total_area'
-1 failed in 0.5ms.
+1 failed in 5.7ms.
 ```
 
 ## Drawing from a list of generators
@@ -435,6 +448,7 @@ geo: 4 tests (seed s1:5b58964be30f69a8)
       85 │ prop "reads back what it prints" gen_shape
 
     counterexample (case 0, shrunk 1 step): Rect (1, 0)
+    replay it: --replay r1:AQEA:3e9ef408
     which failed with:
       round trip: g (f x) = x
       f x      "rect 1 1"
@@ -456,7 +470,7 @@ geo: 4 tests (seed s1:5b58964be30f69a8)
 ──────────────────────────────────────────────────────────
 
 replay: dune exec examples/03-property-testing/test_geo.exe -- --seed s1:5b58964be30f69a8 -f 'codec'
-2 passed, 2 failed in 0.4ms.
+2 passed, 2 failed in 1.7ms.
 ```
 
 ### Checking a witness's equality and order
@@ -538,6 +552,7 @@ geo: 3 tests (seed s1:5b58964be30f69a8)
       113 │ prop "compare_drawing is a total order"
 
     counterexample (case 0, shrunk 4 steps): (Rect (0, 0), Circle 0, Circle 0)
+    replay it: --replay r1:AAEAAAAAAAAAAA:aafd5fae
     which failed with:
       order (agrees with equal): cmp a b = 0 iff a = b
       a        Rect (0, 0)
@@ -547,7 +562,7 @@ geo: 3 tests (seed s1:5b58964be30f69a8)
 ──────────────────────────────────────────────────────────
 
 replay: dune exec examples/03-property-testing/test_geo.exe -- --seed s1:5b58964be30f69a8 -f 'witness'
-1 passed, 2 failed in 7.9ms.
+1 passed, 2 failed in 1.9ms.
 ```
 
 ### Choosing a law for what you wrote
@@ -638,6 +653,7 @@ geo: 3 tests (seed s1:5b58964be30f69a8)
       143 │ prop "has undo as its inverse" turns
 
     counterexample (case 0, shrunk 1 step): 0
+    keep it: ~examples:[ 0 ]
     which failed with:
       invertible: op x (inv x) = e
       x             0
@@ -756,7 +772,7 @@ geo: 1 test (seed s1:5b58964be30f69a8)
     never covered: "partial order: a strict chain" (over 100 passing cases)
 ──────────────────────────────────────────────────────────
 
-1 failed in 1.0ms.
+1 failed in 2.0ms.
 ```
 
 A demand that no passing case met fails the property with

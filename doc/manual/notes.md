@@ -97,6 +97,19 @@ do, and a value computed by a function with no printer prints the input
 it was computed from. `Gen.with_pp` attaches a printer where none
 derives.
 
+## A counterexample is kept by hand
+
+A failing property prints the line that keeps its counterexample: an
+entry to paste into `~examples` where the generators print OCaml, and
+otherwise a replay token that `--replay` checks. Nothing writes the
+source, so a regression is kept by a gesture the test's author makes
+and reviews. The token is the case's choices with a digest of its
+printing, so it survives a renamed test and another machine, and a
+token whose generator now parses another value is refused as stale
+rather than checking that value. Tokens stay out of the source: a
+change to a generator stales a token, and measured over raven's test
+commits one in seven would have staled one silently.
+
 ## Seeds replay from the path
 
 Every generated value derives from the run's root seed, the test's path

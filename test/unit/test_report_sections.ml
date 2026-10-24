@@ -668,6 +668,19 @@ let property_entries () =
            ~inner:(Failure.raised ~actual:"Dune__exe__V.Boom(50)" ())
            ~rendered:"50" ~case_index:3 ~shrink_steps:2 ~root ~examples:false ())
     );
+    ( "a counterexample that prints as OCaml is kept as an example to paste",
+      entry
+        (Failure.property ~rendering:Failure.Ocaml ~rendered:"(3, \"a\")"
+           ~token:"r1:AwE:5f2b0a91" ~case_index:0 ~shrink_steps:4 ~root
+           ~examples:false ()) );
+    ( "any other is kept as its replay token",
+      entry
+        (Failure.property ~rendered:"Rect (1, 0)" ~token:"r1:AQEA:3e9ef408"
+           ~case_index:0 ~shrink_steps:1 ~root ~examples:false ()) );
+    ( "a replayed case is named so, and keeps its token",
+      entry
+        (Failure.property ~rendered:"Rect (1, 0)" ~token:"r1:AQEA:3e9ef408"
+           ~case_index:0 ~shrink_steps:0 ~root ~examples:true ()) );
   ]
 
 let law_term name value = Failure.Term { name; value = Failure.text value }

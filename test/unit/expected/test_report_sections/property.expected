@@ -103,3 +103,17 @@
       uncaught exception:
         Dune__exe__V.Boom(50)
     replay: WINDTRAP_SEED=s1:7be1d2c904aa31f5 dune runtest
+
+=== a counterexample that prints as OCaml is kept as an example to paste
+    counterexample (case 0, shrunk 4 steps): (3, "a")
+    keep it: ~examples:[ (3, "a") ]
+    replay: WINDTRAP_SEED=s1:7be1d2c904aa31f5 dune runtest
+
+=== any other is kept as its replay token
+    counterexample (case 0, shrunk 1 step): Rect (1, 0)
+    replay it: --replay r1:AQEA:3e9ef408
+    replay: WINDTRAP_SEED=s1:7be1d2c904aa31f5 dune runtest
+
+=== a replayed case is named so, and keeps its token
+    counterexample (replayed case): Rect (1, 0)
+    replay it: --replay r1:AQEA:3e9ef408
