@@ -61,7 +61,12 @@
       label;
     - [cover], one [{"label": ..., "cases": ..., "met": ...}] per demand of a
       {!Property.cover}, sorted by label, when the demands were judged, and [[]]
-      when a case failed or the property gave up before they were.
+      when a case failed or the property gave up before they were. A share
+      demand adds
+      [{"share": {"demand": ..., "hits": ..., "cases": ..., "low": ..., "high":
+       ...}}]: the cases it was judged over, those that marked it, and the
+      bounds that the last look established ({!Property.type-share}), [low] and
+      [high] equal where the share is exact.
 
     {b Encoding.} A string escapes its quotes, its backslashes and its control
     bytes, and each malformed UTF-8 sequence becomes U+FFFD, so the document is

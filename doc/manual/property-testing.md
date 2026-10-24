@@ -250,7 +250,7 @@ before any generated case:
 
 ```
 $ dune exec examples/03-property-testing/test_geo.exe -- -f 'k squared'
-geo: 1 test (seed s1:24a5d4724889f425)
+geo: 1 test (seed s1:45eca17b9ee514e1)
 ──────────────────────── failures ────────────────────────
   FAIL  scale › multiplies the area by k squared
     examples/03-property-testing/test_geo.ml:37
@@ -264,7 +264,7 @@ geo: 1 test (seed s1:24a5d4724889f425)
       actual    6.
 ──────────────────────────────────────────────────────────
 
-1 failed in 1.5ms.
+1 failed in 1.6ms.
 ```
 
 ## Discarding and labelling cases
@@ -276,6 +276,20 @@ precondition on the value's structure belongs in the generator, built in
 or with `Gen.such_that`. `classify` and `collect` label a case, and
 `cover` makes the property vacuous when no passing case carries its
 label (see `Windtrap.cover`).
+
+`cover ~share:p` demands a share instead of a presence: `p` of the
+cases must carry the label, as a decoder must accept a fifth of its
+inputs for a property over them to say much. The property does not
+judge the share at its count alone, where a hundred cases could not
+tell 5% from 20%: it runs QuickCheck's sequential test, doubling its
+cases while the Wilson interval of the share at 1 − 10⁻⁹ neither puts
+it at `0.9 *. p` or above (met) nor below `p` (unmet), up to 1024
+times its count, and a share still undecided then is unmet. The report
+states the bound it established, as
+`cover "accepted" ~share:0.2: 27.9% of 800 cases, at least 19.3%`, and
+an unmet share makes the property vacuous with
+`cover "accepted" ~share:0.2: 9.0% of 800 cases, at most 17.1%`. A
+domain checked whole is judged exactly (see `Windtrap.cover`).
 
 A vacuous test refuted nothing and checked less than it claims. Its
 block is tagged `VACUOUS` above one line that says why, the summary

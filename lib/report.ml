@@ -260,10 +260,21 @@ let label_table t (s : Property.stats) =
           [
             plain
               (strf "%s  %s  %d%s" indent c.label c.hits
-                 (if c.satisfied then "" else "  never covered"));
+                 (match (c.satisfied, c.share) with
+                 | true, _ -> ""
+                 | false, None -> "  never covered"
+                 | false, Some _ -> "  share unmet"));
           ])
       s.coverage
-  end
+  end;
+  (* A share met says what it established; an unmet one is the failure's. *)
+  List.iter
+    (fun (c : Property.cover_status) ->
+      match c.share with
+      | Some share when c.satisfied ->
+          faint (Property.share_fact ~label:c.label share)
+      | Some _ | None -> ())
+    s.coverage
 
 (* What a property ran, each count that is not zero: the generated cases,
    or the values of a domain checked whole, then the examples and the

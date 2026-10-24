@@ -109,12 +109,29 @@ let property (r : Run.result) (s : Property.stats) =
     Object [ ("label", String label); ("cases", Int cases) ]
   in
   let cover (c : Property.cover_status) =
+    let share =
+      match c.share with
+      | None -> []
+      | Some s ->
+          [
+            ( "share",
+              Object
+                [
+                  ("demand", Float s.demand);
+                  ("hits", Int s.hits);
+                  ("cases", Int s.cases);
+                  ("low", Float s.low);
+                  ("high", Float s.high);
+                ] );
+          ]
+    in
     Object
-      [
-        ("label", String c.label);
-        ("cases", Int c.hits);
-        ("met", Bool c.satisfied);
-      ]
+      ([
+         ("label", String c.label);
+         ("cases", Int c.hits);
+         ("met", Bool c.satisfied);
+       ]
+      @ share)
   in
   [
     ("cases", Int (s.cases - s.examples));

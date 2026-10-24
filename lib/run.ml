@@ -669,12 +669,31 @@ let vacuity_failure ?loc (why : Property.vacuity) (stats : Property.stats) =
         "no case and no example ran: ~count:0 runs the examples alone, and \
          there are none"
     | Uncovered ->
-        let unsatisfied (c : Property.cover_status) =
-          if c.satisfied then None else Some (Pp.str "%S" c.label)
+        let unmet =
+          List.filter (fun c -> not c.Property.satisfied) stats.coverage
         in
-        Pp.str "never covered: %s (over %d passing cases)"
-          (String.concat ", " (List.filter_map unsatisfied stats.coverage))
-          stats.cases)
+        let absent =
+          List.filter_map
+            (fun (c : Property.cover_status) ->
+              if c.share = None then Some (Pp.str "%S" c.label) else None)
+            unmet
+        in
+        let shares =
+          List.filter_map
+            (fun (c : Property.cover_status) ->
+              Option.map (Property.share_fact ~label:c.label) c.share)
+            unmet
+        in
+        String.concat "; "
+          ((match absent with
+             | [] -> []
+             | labels ->
+                 [
+                   Pp.str "never covered: %s (over %d passing cases)"
+                     (String.concat ", " labels)
+                     stats.cases;
+                 ])
+          @ shares))
 
 (* The signals that end a run (see [with_interrupts]). *)
 let interrupting = [ Sys.sigint; Sys.sigterm; Sys.sighup ]

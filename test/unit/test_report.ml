@@ -1122,8 +1122,14 @@ let endings_entries () =
                       Property.label = "collision";
                       hits = 0;
                       satisfied = false;
+                      share = None;
                     };
-                    { Property.label = "singleton"; hits = 9; satisfied = true };
+                    {
+                      Property.label = "singleton";
+                      hits = 9;
+                      satisfied = true;
+                      share = None;
+                    };
                   ];
               }
             [ "p" ]
@@ -1147,6 +1153,7 @@ let endings_entries () =
                       Property.label = "collision";
                       hits = 0;
                       satisfied = false;
+                      share = None;
                     };
                   ];
               }

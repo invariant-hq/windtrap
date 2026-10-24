@@ -94,26 +94,74 @@ val scratch : unit -> context
     it counts nowhere. A law gives it to code whose labels must not count, as
     the orders of a stateful test that its judge rejects. *)
 
-val cover : context -> string -> bool -> unit
+val cover : ?share:float -> context -> string -> bool -> unit
 (** [cover ctx label cond] is [classify ctx label cond] with the demand that at
-    least one passing case marks [label].
+    least one passing case marks [label]. [cover ~share:p ctx label cond]
+    demands instead that a share [p] of the cases mark it, judged as below.
+    Raises [Invalid_argument] unless [0. < p <= 1.].
 
     The demand registers when [cover] is first called, whether or not [cond]
     holds. It belongs to the run and is never rolled back, so a [cover] reached
     in a case that is then discarded or fails stays registered, and only its
     mark is dropped. A [cover] that no case reaches registers nothing, and an
-    empty table of demands is a satisfied one.
+    empty table of demands is a satisfied one. A label demanded with several
+    shares, or with a share and without, is demanded its largest share, which
+    meets them all.
 
-    The demands are judged once, when the run has passed its full case count,
-    and an unmarked label then makes the outcome {!Vacuous} with {!Uncovered}.
+    The demands are judged once the run has passed its full case count, and an
+    unmet one then makes the outcome {!Vacuous} with {!Uncovered}.
+
+    {b A share.} Where the cases are no sample, a domain checked whole or
+    examples alone under a [count] of [0], the share is exact: the demand is met
+    when at least [p] of the passing cases mark the label. Where they are
+    generated, the share is judged over the generated cases that passed, the
+    examples left out since no one drew them, by QuickCheck's sequential test
+    ([checkCoverage]). At each look, the Wilson score interval of the share at a
+    confidence of 1 − 10{^ -9} gives a low and a high bound:
+    - the demand is met once the low bound is at least [0.9 *. p];
+    - it is unmet once the high bound is below [p];
+    - otherwise it is undecided, and the run extends its cases.
+
+    The looks come at [count] cases, then at each doubling of the cases, up to
+    [1024 * count]: at most 11 looks. The run ends at the first look where a
+    share is unmet, or where none is undecided, and it extends while one is
+    undecided; a share still undecided at the last look is unmet. The budget of
+    discards doubles with the cases. Each look errs on one side with probability
+    at most 5·10{^ -10}, so over the 11 looks a share whose true value is at
+    least [p] is unmet, and one whose true value is below [0.9 *. p] is met,
+    with probability below 6·10{^ -9} per label, the Wilson interval being an
+    approximation. A true share between [0.9 *. p] and [p] may go either way.
+    The {!share} of each status states the bounds the deciding look established.
 *)
 
 (** {1:outcomes Outcomes} *)
 
+type share = {
+  demand : float;  (** The share demanded, [p]. *)
+  hits : int;  (** The cases among [cases] that marked the label. *)
+  cases : int;
+      (** The cases it was judged over: the generated cases that passed, or
+          every passing case where the share is exact. *)
+  low : float;
+  high : float;
+      (** The bounds of the share that the last look established, equal where
+          the share is exact. *)
+}
+(** The type for the judgement of a share demand. *)
+
+val share_fact : label:string -> share -> string
+(** [share_fact ~label s] says in one line what [s] established of [label]:
+    [cover "x" ~share:0.2: 31.0% of 400 cases], followed, where the share is
+    sampled, by [, at least 24.6%] when met, [, at most 9.1%] when unmet, and
+    [, undecided between 18.4% and 19.6%] otherwise. *)
+
 type cover_status = {
   label : string;  (** The demanded label. *)
   hits : int;  (** The passing cases that marked it. *)
-  satisfied : bool;  (** Whether [hits] is above zero. *)
+  satisfied : bool;
+      (** Whether the demand is met: [hits] above zero for presence, and for a
+          share as {!cover} says. *)
+  share : share option;  (** The share demanded and its bounds, if any. *)
 }
 (** The type for the state of one {!cover} label when the outcome was decided.
 *)
@@ -130,7 +178,9 @@ type stats = {
       (** [Some n] when the domain was checked whole, its [n] values (see
           {!run}). *)
   count : int;
-      (** The generated cases that the run demands pass: [count] of {!run}. *)
+      (** The generated cases that the run demands pass: [count] of {!run},
+          doubled for each extension of the cases that a {!cover} share asked
+          for. *)
   collected : (string * int) list;
       (** The distribution of the labels over the passing cases, sorted by
           label. A {!cover} label counts here too. *)

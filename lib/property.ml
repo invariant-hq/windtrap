@@ -24,11 +24,16 @@ exception
 (* Labelling *)
 
 (* The bookkeeping of one run. A case runs on fresh [marks], which commit into
-   [counts] when it passes; the [demands] belong to the run. *)
+   [counts] when it passes, and into [drawn] too when it was generated; the
+   [demands] belong to the run. *)
 type context = {
   marks : (string, unit) Hashtbl.t;
   counts : (string, int) Hashtbl.t; (* passing cases per label *)
-  demands : (string, unit) Hashtbl.t; (* the [cover] labels reached *)
+  drawn : (string, int) Hashtbl.t; (* passing generated cases per label *)
+  demands : (string, float) Hashtbl.t;
+      (* the [cover] labels reached, each with the largest share demanded,
+         [0.] for presence *)
+  mutable drawing : bool; (* the cases are generated, and sampled *)
   mutable cases : int; (* the passing cases *)
   mutable examples : int; (* the passing examples, among [cases] *)
   mutable discards : int;
@@ -40,7 +45,9 @@ let make_context () =
   {
     marks = Hashtbl.create 8;
     counts = Hashtbl.create 32;
+    drawn = Hashtbl.create 32;
     demands = Hashtbl.create 16;
+    drawing = false;
     cases = 0;
     examples = 0;
     discards = 0;
@@ -52,8 +59,15 @@ let scratch = make_context
 let collect ctx label = Hashtbl.replace ctx.marks label ()
 let classify ctx label condition = if condition then collect ctx label
 
-let cover ctx label condition =
-  Hashtbl.replace ctx.demands label ();
+let cover ?share ctx label condition =
+  let share =
+    match share with
+    | None -> 0.
+    | Some p when p > 0. && p <= 1. -> p
+    | Some _ -> invalid_arg "cover: share must be in (0;1]"
+  in
+  let prior = Option.value ~default:0. (Hashtbl.find_opt ctx.demands label) in
+  Hashtbl.replace ctx.demands label (Float.max prior share);
   classify ctx label condition
 
 (* What a run that failed printed of its case, from a [Run_failure]. *)
@@ -73,18 +87,59 @@ let run_case ~runs ctx law value =
   in
   from 1
 
-let hits ctx label = Option.value ~default:0 (Hashtbl.find_opt ctx.counts label)
+let count_of table label =
+  Option.value ~default:0 (Hashtbl.find_opt table label)
+
+let hits ctx label = count_of ctx.counts label
 
 let commit ctx =
-  let add label () = Hashtbl.replace ctx.counts label (hits ctx label + 1) in
-  Hashtbl.iter add ctx.marks;
+  let add table label () =
+    Hashtbl.replace table label (count_of table label + 1)
+  in
+  Hashtbl.iter (add ctx.counts) ctx.marks;
+  if ctx.drawing then Hashtbl.iter (add ctx.drawn) ctx.marks;
   ctx.cases <- ctx.cases + 1
 
 let discard ctx = ctx.discards <- ctx.discards + 1
 
 (* Outcomes *)
 
-type cover_status = { label : string; hits : int; satisfied : bool }
+type share = {
+  demand : float;
+  hits : int;
+  cases : int;
+  low : float;
+  high : float;
+}
+
+type cover_status = {
+  label : string;
+  hits : int;
+  satisfied : bool;
+  share : share option;
+}
+
+(* QuickCheck's [checkCoverage]: a share is met once the Wilson interval at
+   10⁻⁹ puts it at least [tolerance] times the demand, and unmet once it
+   puts it below the demand. [z] is Φ⁻¹(1 − 5·10⁻¹⁰), each side's half of
+   10⁻⁹. *)
+let z = 6.1094102048693975
+let tolerance = 0.9
+
+let wilson ~hits ~cases z =
+  let n = float_of_int cases and p = float_of_int hits /. float_of_int cases in
+  let z2 = z *. z in
+  (p
+  +. (z2 /. (2. *. n))
+  +. (z *. Float.sqrt ((p *. (1. -. p) /. n) +. (z2 /. (4. *. n *. n)))))
+  /. (1. +. (z2 /. n))
+
+type decision = Met | Unmet | Undecided
+
+let decision (s : share) =
+  if s.low >= tolerance *. s.demand then Met
+  else if s.high < s.demand then Unmet
+  else Undecided
 
 type stats = {
   cases : int;
@@ -108,10 +163,57 @@ let sorted_bindings table =
     (fun (a, _) (b, _) -> String.compare a b)
     (List.of_seq (Hashtbl.to_seq table))
 
+(* A share is judged over the generated cases, a sample, and exactly over
+   every passing case when they are no sample: a domain checked whole, or
+   examples alone. *)
+let judge_share ctx label demand =
+  if ctx.drawing then
+    let hits = count_of ctx.drawn label and cases = ctx.cases - ctx.examples in
+    let share =
+      if cases = 0 then { demand; hits; cases; low = 0.; high = 1. }
+      else
+        {
+          demand;
+          hits;
+          cases;
+          low = wilson ~hits ~cases (-.z);
+          high = wilson ~hits ~cases z;
+        }
+    in
+    (decision share = Met, share)
+  else
+    let hits = hits ctx label and cases = ctx.cases in
+    let exact = if cases = 0 then 0. else float hits /. float cases in
+    ( cases > 0 && float hits >= demand *. float cases,
+      { demand; hits; cases; low = exact; high = exact } )
+
+(* What a share's judgement established, in one line. *)
+let share_fact ~label (s : share) =
+  let percent x = Pp.str "%.1f%%" (100. *. x) in
+  let observed =
+    if s.cases = 0 then 0. else float_of_int s.hits /. float_of_int s.cases
+  in
+  let head =
+    Pp.str "cover %S ~share:%g: %s of %d case%s" label s.demand
+      (percent observed) s.cases
+      (if s.cases = 1 then "" else "s")
+  in
+  if s.low = s.high then head
+  else
+    match decision s with
+    | Met -> Pp.str "%s, at least %s" head (percent s.low)
+    | Unmet -> Pp.str "%s, at most %s" head (percent s.high)
+    | Undecided ->
+        Pp.str "%s, undecided between %s and %s" head (percent s.low)
+          (percent s.high)
+
 let stats ctx =
-  let status (label, ()) =
+  let status (label, demand) =
     let hits = hits ctx label in
-    { label; hits; satisfied = hits > 0 }
+    if demand = 0. then { label; hits; satisfied = hits > 0; share = None }
+    else
+      let satisfied, share = judge_share ctx label demand in
+      { label; hits; satisfied; share = Some share }
   in
   {
     cases = ctx.cases;
@@ -314,6 +416,9 @@ let enumerate gen limit =
 
 let default_count = 100
 
+(* The looks at a share: the count, then each doubling of it, ten times. *)
+let extensions = 10
+
 (* What the law raised, as a failure: an [Oracle_failure]'s payload as it
    is. *)
 let inner_failure : Failure.fault -> Failure.t = function
@@ -405,7 +510,7 @@ let run ?loc ?count ?max_discard ?(examples = []) ?(summary = Fun.const None)
   in
   let vacuous why = Vacuous { why; stats = stats ctx } in
   (* A run that passed no case checked nothing, whatever its count. *)
-  let judged () =
+  let judged ?(max_discard = max_discard) () =
     if ctx.discards > max_discard then vacuous Gave_up
     else if ctx.cases = 0 then
       vacuous
@@ -416,15 +521,42 @@ let run ?loc ?count ?max_discard ?(examples = []) ?(summary = Fun.const None)
         Pass stats
       else Vacuous { why = Uncovered; stats }
   in
-  let rec generate ~passed index =
+  (* A share that the cases have not decided extends them, doubling the
+     count, and the budget of discards with it, up to [extended] times. *)
+  let undecided () =
+    List.exists
+      (fun (c : cover_status) ->
+        match c.share with Some s -> decision s = Undecided | None -> false)
+      (stats ctx).coverage
+  and decided () =
+    List.exists
+      (fun (c : cover_status) ->
+        match c.share with Some s -> decision s = Unmet | None -> false)
+      (stats ctx).coverage
+  in
+  let rec generate ~target ~max_discard ~passed index =
     if ctx.discards > max_discard then vacuous Gave_up
-    else if passed >= count then judged ()
+    else if passed >= target then
+      if
+        target > 0
+        && target <= count lsl (extensions - 1)
+        && target <= max_int / 2
+        && undecided ()
+        && not (decided ())
+      then begin
+        ctx.count <- 2 * target;
+        generate ~target:(2 * target)
+          ~max_discard:
+            (if max_discard > max_int / 2 then max_int else 2 * max_discard)
+          ~passed index
+      end
+      else judged ~max_discard ()
     else
       let state = Seed.make (Seed.derive ~root ~path ~index) in
       match Failure.catch (fun () -> draw state) with
       | Error `Discard ->
           discard ctx;
-          generate ~passed (index + 1)
+          generate ~target ~max_discard ~passed (index + 1)
       | Error (#Failure.fault as fault) ->
           fail ~case_index:index ~examples:false
             ~rendered:"<generator raised before producing a value>" fault
@@ -433,8 +565,9 @@ let run ?loc ?count ?max_discard ?(examples = []) ?(summary = Fun.const None)
       | Error (#Failure.control as control) -> Failure.reraise control
       | Ok (node, shrink) -> (
           match check law (Gen.Engine.value node) with
-          | `Passed -> generate ~passed:(passed + 1) (index + 1)
-          | `Discarded -> generate ~passed (index + 1)
+          | `Passed ->
+              generate ~target ~max_discard ~passed:(passed + 1) (index + 1)
+          | `Discarded -> generate ~target ~max_discard ~passed (index + 1)
           | `Timed_out limit ->
               timed_out ~case_index:index ~examples:false limit
           | `Failed failed ->
@@ -506,7 +639,9 @@ let run ?loc ?count ?max_discard ?(examples = []) ?(summary = Fun.const None)
     let finite () = if count = 0 then None else enumerate gen count in
     match Failure.catch finite with
     | Ok (Some values) -> whole values
-    | Ok None -> generate ~passed:0 0
+    | Ok None ->
+        ctx.drawing <- count > 0;
+        generate ~target:count ~max_discard ~passed:0 0
     | Error (`Timeout limit) -> timed_out ~case_index:0 ~examples:false limit
     | Error c -> Failure.reraise c
   in

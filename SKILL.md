@@ -318,7 +318,9 @@ In `windtrap.mli`: Baselines, Captured output.
   `Gen.of_list ~pp:Format.pp_print_int [ 0; max_int ]`, and so do
   `Gen.permutation` and `Gen.subsequence`. `cover "label" cond` fails
   the property when no passing case carries the label; use it for a
-  case the law depends on.
+  case the law depends on. `cover ~share:0.2 "label" cond` demands a
+  fifth of the cases, as for inputs a decoder must accept; the property
+  draws more cases until it can tell.
 - A stateful test pairs, per operation, the reference's function with
   the system's: `command name signature reference system`. The
   reference is a model written for the test, with the API's functions

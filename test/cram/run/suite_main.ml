@@ -129,6 +129,8 @@ let scope =
     cases "rows" int [ 1; 2; 3 ] (fun n -> is_true (n > 0));
     stateful ~count:20 "counter"
       [ command "incr" (Gen.unit @-> returns unit) ignore ignore ];
+    prop "shares" (Gen.int_range 0 9999) (fun n ->
+        cover ~share:0.2 "a quarter" (n < 2500));
     test "plain" ignore;
     prop ~count:0 "nothing" Gen.int ignore;
     test "skips" (fun () -> skip ~reason:"later" ());

@@ -224,6 +224,11 @@ let suite = function
         prop "never covers" (Gen.int_range 0 1000) (fun n ->
             cover "above a million" (n > 1_000_000));
       ]
+  | "cover_share" ->
+      [
+        prop "rarely accepts" (Gen.int_range 0 9999) (fun n ->
+            cover ~share:0.2 "accepted" (n < 500));
+      ]
   | "never_called" ->
       [
         stateful ~count:5 "never calls"

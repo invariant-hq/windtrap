@@ -440,6 +440,68 @@ let covers =
     );
   ]
 
+(* A share demand over [gen], at [count], and how its run ended: the
+   verdict, the cases demanded at the end, and what each share
+   established. *)
+let shared ?(count = 100) ?(demands = [ 0.2 ]) gen marks =
+  let o =
+    Property.run ~root ~path:"share" ~count:(`Declared count) gen (fun ctx x ->
+        List.iter
+          (fun share -> Property.cover ~share ctx "marked" (marks x))
+          demands)
+  in
+  let facts =
+    List.filter_map
+      (fun (c : Property.cover_status) ->
+        Option.map (Property.share_fact ~label:c.label) c.share)
+      (stats o).coverage
+  in
+  strf "%s; count %d; %s"
+    (match o with
+    | Property.Pass _ -> "pass"
+    | Vacuous { why = Uncovered; _ } -> "unmet"
+    | _ -> "other")
+    (stats o).count (String.concat "; " facts)
+
+let wide = Gen.int_range 0 9999
+
+let shares =
+  [
+    ( "a share that holds but is not yet shown extends the cases until it is",
+      ( (fun () -> shared wide (fun x -> x < 2500)),
+        "pass; count 800; cover \"marked\" ~share:0.2: 29.0% of 800 cases, at \
+         least 20.3%" ) );
+    ( "a share clearly unmet extends the cases until it is shown unmet",
+      ( (fun () -> shared wide (fun x -> x < 500)),
+        "unmet; count 800; cover \"marked\" ~share:0.2: 10.9% of 800 cases, at \
+         most 19.4%" ) );
+    ( "a share shown at the count draws no more case",
+      ( (fun () -> shared wide (fun x -> x < 5000)),
+        "pass; count 100; cover \"marked\" ~share:0.2: 50.0% of 100 cases, at \
+         least 23.9%" ) );
+    ( "a share still undecided after the last doubling is unmet",
+      ( (fun () -> shared ~count:1 wide (fun x -> x < 1900)),
+        "unmet; count 1024; cover \"marked\" ~share:0.2: 25.3% of 1024 cases, \
+         undecided between 18.0% and 34.4%" ) );
+    ( "a domain checked whole is judged exactly",
+      ( (fun () -> shared (Gen.int_range 0 3) (fun x -> x < 1)),
+        "pass; count 100; cover \"marked\" ~share:0.2: 25.0% of 4 cases" ) );
+    ( "a domain checked whole under its share is unmet, exactly",
+      ( (fun () -> shared ~demands:[ 0.3 ] (Gen.int_range 0 3) (fun x -> x < 1)),
+        "unmet; count 100; cover \"marked\" ~share:0.3: 25.0% of 4 cases" ) );
+    ( "a label demanded twice is demanded its larger share",
+      ( (fun () ->
+          shared ~demands:[ 0.1; 0.3 ] (Gen.int_range 0 3) (fun x -> x < 1)),
+        "unmet; count 100; cover \"marked\" ~share:0.3: 25.0% of 4 cases" ) );
+  ]
+
+let refused_shares =
+  [ ("zero", 0.); ("a negative share", -0.5); ("above one", 1.5); ("nan", nan) ]
+
+let refused_share (_, share) =
+  raises (Invalid_argument "cover: share must be in (0;1]") (fun () ->
+      Property.cover ~share (Property.scratch ()) "x" true)
+
 let labelling =
   group "Labelling"
     [
@@ -458,6 +520,12 @@ let labelling =
       test "a failing case and the shrink search commit no label"
         failing_cases_commit_nothing;
       test "a context used after its run changes no other run" late_context;
+      cases "a share demand decides by a sequential test, or exactly"
+        (Testable.contramap fst Testable.text) shares (fun (_, (run, row)) ->
+          equal string row (run ()));
+      cases "a share outside (0;1] is refused"
+        (Testable.contramap fst Testable.text)
+        refused_shares refused_share;
       cases "a cover demand registers when reached and is judged at the end"
         (Testable.contramap fst Testable.text) covers (fun (_, (run, row)) ->
           let o = run () in

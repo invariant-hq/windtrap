@@ -96,7 +96,9 @@ let prop_context op =
 
 let collect label = Property.collect (prop_context "collect") label
 let classify label cond = Property.classify (prop_context "classify") label cond
-let cover label cond = Property.cover (prop_context "cover") label cond
+
+let cover ?share label cond =
+  Property.cover ?share (prop_context "cover") label cond
 
 (* Stateful tests *)
 

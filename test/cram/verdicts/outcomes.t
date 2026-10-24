@@ -181,6 +181,24 @@ label:
   1 vacuous in DURATION.
   [1]
 
+A share that cover demands and the cases show unmet is vacuous too,
+saying the share the cases had and the bound they established, after
+the property drew more cases than its count to decide:
+
+  $ run VERDICT_SUITE=cover_share ./verdict_main.exe --seed s1:0000000000000001
+  cover_share: 1 test (seed SEED)
+  ──────────────────────── failures ────────────────────────
+    VACUOUS  rarely accepts
+      test/cram/verdicts/verdict_main.ml:N
+      cover "accepted" ~share:0.2: 9.0% of 800 cases, at most 17.1%
+      scope: 800 cases passed
+      labels (800 passing cases):
+          9.0%  accepted
+  ──────────────────────────────────────────────────────────
+  
+  1 vacuous in DURATION.
+  [1]
+
 A stateful command that a passing case could call and none called is
 vacuous, naming the command:
 

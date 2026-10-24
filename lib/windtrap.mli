@@ -1320,14 +1320,34 @@ val classify : string -> bool -> unit
 (** [classify label cond] is [collect label] if [cond] and [()] otherwise.
     Raises as {!collect} does, whatever [cond]. *)
 
-val cover : string -> bool -> unit
+val cover : ?share:float -> string -> bool -> unit
 (** [cover label cond] is [classify label cond] with a demand. The property is
-    {{!section-vacuity}vacuous} unless a passing case marked [label]. The demand
-    is on presence, never on a proportion.
+    {{!section-vacuity}vacuous} unless a passing case marked [label].
+
+    [cover ~share:p label cond] demands instead that a share [p] of the cases
+    mark [label], with [0. < p <= 1.]. Where the cases are drawn, the share is
+    judged over the generated cases by a sequential test, QuickCheck's
+    [checkCoverage]: at [count] cases, then at each doubling of them up to
+    [1024 * count], the Wilson interval of the share at 1 − 10{^ -9} is
+    computed. The demand is met once it puts the share at [0.9 *. p] or above,
+    and unmet once it puts it below [p]; while neither holds the property draws
+    more cases, and a share still undecided after the last doubling is unmet. So
+    the test decides rather than looks once: at [count] [100] a one-look test of
+    [~share:0.1] could never fail. A share whose true value is at least [p] is
+    reported unmet, and one below [0.9 *. p] met, with a probability below
+    6·10{^ -9}. A domain checked whole and examples alone are no sample, and
+    their share is exact: at least [p] of the passing cases.
+
+    The report states the bound established, as
+    [cover "accepted" ~share:0.2: 31.0% of 400 cases, at least 24.6%], under
+    [-v], on failure and in [--json]; an unmet share is vacuous with
+    [cover "accepted" ~share:0.2: 4.0% of 400 cases, at most 9.1%]. Extending
+    the cases costs their time, and a share near its demand takes the most.
 
     The demand registers when [cover] is called, whatever [cond], so a [cover]
     the law does not always reach may register nothing. It is judged when the
-    property has run all its cases. Raises as {!collect} does. *)
+    property has run all its cases. Raises [Invalid_argument] unless
+    [0. < p <= 1.], and raises as {!collect} does. *)
 
 (** {1:stateful_tests Stateful tests}
 
