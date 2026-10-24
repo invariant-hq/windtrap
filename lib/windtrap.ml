@@ -255,8 +255,7 @@ let run_parent ~argv suite tests =
       match Cli.settings parsed with
       | Error error -> usage_error error
       (* [-l] has no mirror, so the command line alone resolves it. *)
-      | Ok config when parsed.list_only = Some true ->
-          list_selection ~suite config tests
+      | Ok config when parsed.list_only -> list_selection ~suite config tests
       | Ok config ->
           let corrected = config.baseline = Baseline.Corrected in
           let invocation = invocation ~corrected argv0 in

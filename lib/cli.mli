@@ -47,68 +47,34 @@
 (** {1:parsed Parsed flags} *)
 
 type parsed = {
-  filter : string list;
-      (** [-f PATTERN], [--filter PATTERN] and the positional arguments,
-          repeatable: the patterns in the order given. *)
-  exclude : string list;
-      (** [-e PATTERN], [--exclude PATTERN], repeatable: the patterns in the
-          order given. *)
-  tags : string list;
-      (** [--tag TAG], repeatable: the tags in the order given. *)
-  exclude_tags : string list;
-      (** [--exclude-tag TAG], repeatable: the tags in the order given. *)
-  shard : (int * int) option;
-      (** [--shard K/N], with [1 <= K <= N]. [K] and [N] are plain decimal
-          numerals, so a sign, [0x] and [_] are refused. *)
-  failed_only : bool option;  (** [--failed]. *)
-  list_only : bool option;
-      (** [-l], [--list]. {!settings} ignores it, and the caller lists the
-          selection (see {!Run.list_selection}). *)
-  bail : bool option;  (** [-x], [--fail-fast]. *)
-  stream : bool option;  (** [-s], [--stream]. *)
-  jobs : int option;  (** [-j], [--jobs]. *)
-  in_process : bool option;  (** [--in-process]. *)
-  update : bool option;  (** [-u], [--update], for {!Baseline.Update}. *)
-  corrected : bool option;  (** [--corrected], for {!Baseline.Corrected}. *)
-  seed : Seed.seed option;
-      (** [--seed TOKEN]: an [s1:] token, read by {!Seed.of_string}. *)
-  timeout : float option;
-      (** [--timeout SECONDS]: a finite and positive number. *)
-  slow_threshold : float option;
-      (** [--slow-threshold SECONDS]: a finite and non-negative number. *)
-  prop_count : int option;  (** [--prop-count N]: a positive integer. *)
-  replay : string option;  (** [--replay TOKEN]: a replay token. *)
-  case : string option;
-      (** [--case PATH]: a path, read by {!settings}. It has no mirror. *)
-  verbose : bool option;  (** [-v], [--verbose]. *)
-  junit : string option;  (** [--junit PATH]. *)
-  json : string option;  (** [--json PATH]. *)
-  color : Os.color_mode option;
-      (** [--color MODE]: [always], [never] or [auto], in any case. *)
-  log_dir : string option;  (** [-o DIR], [--output DIR]. *)
-  mutate : string list option;
-      (** [--mutate[=PREFIX,…]]: [Some []] for the bare flag, and else the
-          comma-separated prefixes. *)
+  config : Run.config;
+      (** The configuration that the flags give over {!Run.default_config}: each
+          flag sets the field that {!Run.type-config} documents for it, a
+          repeatable one appends to it, and [--mutate] and [--arm] set
+          [mutation]. Positional arguments are patterns of [filter]. *)
+  given : string list;
+      (** The long name of each flag given, once, in the order first given; a
+          positional pattern counts as [--filter]. A field whose flag is not
+          here has {!Run.default_config}'s value. *)
   lines : Lines.t option;
       (** [--lines FILE:A-B,…]: the line set that {!Lines.of_spec} reads. *)
   diff : string option;
       (** [--diff FILE]: the path of a [git diff -U0] output, as typed. It is
           read by {!settings}. *)
-  arm : string option;
-      (** [--arm ID]: the identifier as typed. It is not parsed here, so a
-          malformed one is no {!type-error}, and
-          [Windtrap_runtime.Mutate.id_of_string] reports it. *)
+  case : string option;
+      (** [--case PATH]: a path, read by {!settings}. It has no mirror. *)
+  list_only : bool;
+      (** [-l], [--list]. {!settings} ignores it, and the caller lists the
+          selection (see {!Run.list_selection}). *)
   help : bool;  (** [-h], [--help]. *)
   version : bool;  (** [-V], [--version]. *)
 }
-(** The type for the flags of one command line, one field per flag, before the
-    environment and the defaults. An absent flag is [None], [[]] for a
-    repeatable one, and [false] for [help] and [version]. A [bool option] field
-    is [None] or [Some true] and never [Some false]. {!Run.type-config} says
-    what a run does with each. *)
-
-val empty : parsed
-(** [empty] is the record with every flag absent. *)
+(** The type for the flags of one command line, before the environment. A field
+    of the configuration holds a flag's value, and [given] says which flags set
+    one, so a field is never copied out of a record of its own. The other fields
+    hold what no field of the configuration holds. [--arm]'s identifier is not
+    parsed here, so a malformed one is no {!type-error}, and
+    [Windtrap_runtime.Mutate.id_of_string] reports it. *)
 
 (** {1:errors Errors} *)
 
@@ -149,8 +115,9 @@ val error_message : error -> string
 
 val parse : string array -> (parsed, error) result
 (** [parse argv] is the flags of [argv], or the first error from the left.
-    [argv.(0)] is not read, and an empty [argv] is [Ok empty]. It reads no
-    environment and never raises.
+    [argv.(0)] is not read, and an empty [argv] gives no flag. It reads no
+    mirror and never raises. Its configuration is {!Run.default_config}'s before
+    the flags, so every call draws a seed and reads the default log directory.
     - A repeated flag keeps its last value, and [-f], [-e], [--tag] and
       [--exclude-tag] accumulate.
     - A long flag also takes its value as [--flag=value]. A short flag does not,
@@ -169,7 +136,8 @@ val parse : string array -> (parsed, error) result
 
 val settings : parsed -> (Run.config, error) result
 (** [settings cli] is the configuration that one invocation resolves to. Each
-    field is [cli]'s, else its mirror's, else that of {!Run.default_config}.
+    field is [cli]'s, else its mirror's, else that of {!Run.default_config}: the
+    mirrors set [cli.config] through their flags' parsers.
     - [tags] and [exclude_tags] add up, the command line's first and then the
       mirror's. [filter] and [exclude] are the command line's patterns when it
       gives one, and else the mirror's.
@@ -178,9 +146,7 @@ val settings : parsed -> (Run.config, error) result
       its flag would refuse is [Error (Invalid_value _)] naming the variable,
       and is never ignored. The mirrors are read in the order of {!val-help},
       and the first error ends the resolution.
-    - [baseline] is {!Baseline.Update} under [update], else
-      {!Baseline.Corrected} under [corrected], else {!Baseline.Check}.
-    - [mutation] is {!Run.Loop} of [mutate], {!Run.Armed} of [arm], or
+    - [mutation] is {!Run.Loop} of [--mutate], {!Run.Armed} of [--arm], or
       {!Run.No_mutation}. The lines of the loop's scope are the union of [lines]
       and of what {!Lines.of_diff} reads in the file of [diff], whose relative
       path is made absolute as [-o]'s is. A file that cannot be read is
@@ -203,9 +169,9 @@ val settings : parsed -> (Run.config, error) result
     - [github] is {!Os.in_github_actions}[ ()] and [invocation] is [`Mirrors].
       [list_only], [help] and [version] are ignored.
 
-    It never raises. It reads the environment and the working directory, and on
-    every call it draws a seed from {!Seed.random}, which the result carries
-    when no layer gives one and no mutation is asked for. *)
+    It never raises. It reads the environment and the working directory. The
+    seed that {!parse} drew is the result's when no layer gives one and no
+    mutation is asked for. *)
 
 val mutation_seed : Seed.seed
 (** [mutation_seed] is the root seed of a mutation run that no layer gives one,

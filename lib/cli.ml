@@ -5,72 +5,37 @@
 
 (* Parsed flags *)
 
+(* Each flag sets the configuration's field directly, over the defaults, and
+   the scan keeps the long name of every flag it met, so that resolution
+   knows which mirrors the command line hides and which layer gave a value.
+   The other fields hold what no field of the configuration does. *)
 type parsed = {
-  filter : string list;
-  exclude : string list;
-  tags : string list;
-  exclude_tags : string list;
-  shard : (int * int) option;
-  failed_only : bool option;
-  list_only : bool option;
-  bail : bool option;
-  stream : bool option;
-  jobs : int option;
-  in_process : bool option;
-  update : bool option;
-  corrected : bool option;
-  seed : Seed.seed option;
-  timeout : float option;
-  slow_threshold : float option;
-  prop_count : int option;
-  replay : string option;
-  case : string option;
-  verbose : bool option;
-  junit : string option;
-  json : string option;
-  color : Os.color_mode option;
-  log_dir : string option;
-  mutate : string list option;
+  config : Run.config;
+  given : string list;
   lines : Lines.t option;
   diff : string option;
-  arm : string option;
+  case : string option;
+  list_only : bool;
   help : bool;
   version : bool;
 }
 
-let empty =
+let start () =
   {
-    filter = [];
-    exclude = [];
-    tags = [];
-    exclude_tags = [];
-    shard = None;
-    failed_only = None;
-    list_only = None;
-    bail = None;
-    stream = None;
-    jobs = None;
-    in_process = None;
-    update = None;
-    corrected = None;
-    seed = None;
-    timeout = None;
-    slow_threshold = None;
-    prop_count = None;
-    replay = None;
-    case = None;
-    verbose = None;
-    junit = None;
-    json = None;
-    color = None;
-    log_dir = None;
-    mutate = None;
+    config = Run.default_config ();
+    given = [];
     lines = None;
     diff = None;
-    arm = None;
+    case = None;
+    list_only = false;
     help = false;
     version = false;
   }
+
+let gave p long = List.mem long p.given
+
+let mark long p =
+  if gave p long then p else { p with given = p.given @ [ long ] }
 
 (* Errors *)
 
@@ -102,11 +67,10 @@ type arg =
       set : source:string -> parsed -> string option -> (parsed, error) result;
     }
 
-(* How a mirror layers under the command line. A [Single absent] mirror is
-   read only while [absent] holds of the record, so a flag given on the
-   command line hides its mirror unread. A [Repeatable] mirror adds its items
-   to the command line's. *)
-type layering = Single of (parsed -> bool) | Repeatable
+(* How a mirror layers under the command line. A [Single] mirror is read
+   only when the command line did not give its flag, which hides it unread. A
+   [Repeatable] mirror adds its items to the command line's. *)
+type layering = Single | Repeatable
 type mirror = { var : string; layering : layering }
 
 type entry = {
@@ -118,7 +82,7 @@ type entry = {
 }
 
 let row ?short long arg ~mirror doc = { short; long; arg; doc; mirror }
-let mirrored var absent = Some { var; layering = Single absent }
+let mirrored var = Some { var; layering = Single }
 let repeatable var = Some { var; layering = Repeatable }
 
 (* [read] gives the value to [store], or the [expected] clause of the error
@@ -163,7 +127,13 @@ let seed value =
     (Seed.of_string value)
 
 let replay_token value = Result.map (fun _ -> value) (Choice.of_token value)
-let add_filter p pattern = { p with filter = p.filter @ [ pattern ] }
+
+(* Most flags set a field of the configuration. *)
+let field set p v = { p with config = set p.config v }
+
+let add_filter =
+  field (fun (c : Run.config) pattern ->
+      { c with filter = c.filter @ [ pattern ] })
 
 (* [color_mode] reads this row alone, so WINDTRAP_COLOR means one thing for
    every command. *)
@@ -173,72 +143,77 @@ let color_entry =
        (fun mode ->
          Option.to_result ~none:"always, never or auto"
            (Os.color_mode_of_string mode))
-       (fun p mode -> { p with color = Some mode }))
-    ~mirror:(mirrored "WINDTRAP_COLOR" (fun p -> p.color = None))
+       (field (fun c color -> { c with color })))
+    ~mirror:(mirrored "WINDTRAP_COLOR")
     "Color output: always, never or auto."
+
+let switch set = Flag (fun p -> field (fun c () -> set c) p ())
 
 (* The order is [--help]'s and the order the mirrors are read in. *)
 let entries =
   [
     row ~short:"-f" "--filter"
       (value "PATTERN" any add_filter)
-      ~mirror:(mirrored "WINDTRAP_FILTER" (fun p -> p.filter = []))
+      ~mirror:(mirrored "WINDTRAP_FILTER")
       "Run only tests whose path contains PATTERN (repeatable: any of them).";
     row ~short:"-e" "--exclude"
-      (value "PATTERN" any (fun p pattern ->
-           { p with exclude = p.exclude @ [ pattern ] }))
-      ~mirror:(mirrored "WINDTRAP_EXCLUDE" (fun p -> p.exclude = []))
+      (value "PATTERN" any
+         (field (fun c pattern -> { c with exclude = c.exclude @ [ pattern ] })))
+      ~mirror:(mirrored "WINDTRAP_EXCLUDE")
       "Skip tests whose path contains PATTERN (repeatable).";
     row "--tag"
-      (value "TAG" any (fun p tag -> { p with tags = p.tags @ [ tag ] }))
+      (value "TAG" any
+         (field (fun c tag -> { c with tags = c.tags @ [ tag ] })))
       ~mirror:(repeatable "WINDTRAP_TAG")
       "Run only tests tagged TAG (repeatable: all of them).";
     row "--exclude-tag"
-      (value "TAG" any (fun p tag ->
-           { p with exclude_tags = p.exclude_tags @ [ tag ] }))
+      (value "TAG" any
+         (field (fun c tag ->
+              { c with exclude_tags = c.exclude_tags @ [ tag ] })))
       ~mirror:(repeatable "WINDTRAP_EXCLUDE_TAG")
       "Skip tests tagged TAG (repeatable).";
     row "--shard"
-      (value "K/N" shard (fun p kn -> { p with shard = Some kn }))
-      ~mirror:(mirrored "WINDTRAP_SHARD" (fun p -> p.shard = None))
+      (value "K/N" shard (field (fun c kn -> { c with shard = Some kn })))
+      ~mirror:(mirrored "WINDTRAP_SHARD")
       "Run only the Kth of N deterministic path-hash buckets.";
     (* Under dune a mirror of the loop flags would change nothing: dune
        reruns a failed action on every invocation and keeps a passed one
        cached whatever variable is set. *)
     row "--failed"
-      (Flag (fun p -> { p with failed_only = Some true }))
+      (switch (fun c -> { c with failed_only = true }))
       ~mirror:None "Run only the last failed tests.";
     row ~short:"-l" "--list"
-      (Flag (fun p -> { p with list_only = Some true }))
+      (Flag (fun p -> { p with list_only = true }))
       ~mirror:None "List selected tests without running them.";
     row ~short:"-x" "--fail-fast"
-      (Flag (fun p -> { p with bail = Some true }))
+      (switch (fun c -> { c with bail = true }))
       ~mirror:None "Stop after the first failure.";
     row "--timeout"
       (value "SECONDS"
          (seconds ~expected:"a positive number" (fun s -> s > 0.))
-         (fun p limit -> { p with timeout = Some limit }))
-      ~mirror:(mirrored "WINDTRAP_TIMEOUT" (fun p -> p.timeout = None))
+         (field (fun c limit -> { c with timeout = Some limit })))
+      ~mirror:(mirrored "WINDTRAP_TIMEOUT")
       "Limit each attempt of a test that declares no timeout to SECONDS \
        (default 600; none under --in-process).";
     row "--slow-threshold"
       (value "SECONDS"
          (seconds ~expected:"a non-negative number" (fun s -> s >= 0.))
-         (fun p limit -> { p with slow_threshold = Some limit }))
-      ~mirror:
-        (mirrored "WINDTRAP_SLOW_THRESHOLD" (fun p -> p.slow_threshold = None))
+         (field (fun c slow_threshold -> { c with slow_threshold })))
+      ~mirror:(mirrored "WINDTRAP_SLOW_THRESHOLD")
       "Warn when an untagged test runs longer than SECONDS (0 disables).";
     row "--seed"
-      (value "TOKEN" seed (fun p s -> { p with seed = Some s }))
-      ~mirror:(mirrored "WINDTRAP_SEED" (fun p -> p.seed = None))
+      (value "TOKEN" seed (field (fun c seed -> { c with seed })))
+      ~mirror:(mirrored "WINDTRAP_SEED")
       "Root seed for property tests (s1:<16 hex>).";
     row "--prop-count"
-      (value "N" positive_int (fun p n -> { p with prop_count = Some n }))
-      ~mirror:(mirrored "WINDTRAP_PROP_COUNT" (fun p -> p.prop_count = None))
+      (value "N" positive_int
+         (field (fun c n -> { c with prop_count = Some n })))
+      ~mirror:(mirrored "WINDTRAP_PROP_COUNT")
       "Raise every property's generated cases to at least N.";
     row "--replay"
-      (value "TOKEN" replay_token (fun p t -> { p with replay = Some t }))
-      ~mirror:(mirrored "WINDTRAP_REPLAY" (fun p -> p.replay = None))
+      (value "TOKEN" replay_token
+         (field (fun c t -> { c with replay = Some t })))
+      ~mirror:(mirrored "WINDTRAP_REPLAY")
       "Check each selected property on the one case of TOKEN alone.";
     (* One case of one test: a mirror would reach every stanza, and refuse
        each that selects more than one test. *)
@@ -247,42 +222,42 @@ let entries =
       ~mirror:None
       "Check the one selected property on the one case of the bytes of PATH.";
     row ~short:"-u" "--update"
-      (Flag (fun p -> { p with update = Some true }))
+      (switch (fun c -> { c with baseline = Baseline.Update }))
       ~mirror:None "Accept baseline changes in place (refused under CI).";
     row "--corrected"
-      (Flag (fun p -> { p with corrected = Some true }))
+      (switch (fun c -> { c with baseline = Baseline.Corrected }))
       ~mirror:None "Write corrections as <file>.corrected, for dune promote.";
     row ~short:"-s" "--stream"
-      (Flag (fun p -> { p with stream = Some true }))
-      ~mirror:(mirrored "WINDTRAP_STREAM" (fun p -> p.stream = None))
+      (switch (fun c -> { c with stream = true }))
+      ~mirror:(mirrored "WINDTRAP_STREAM")
       "Stream test output instead of capturing it.";
     row ~short:"-j" "--jobs"
-      (value "N" positive_int (fun p n -> { p with jobs = Some n }))
-      ~mirror:(mirrored "WINDTRAP_JOBS" (fun p -> p.jobs = None))
+      (value "N" positive_int (field (fun c jobs -> { c with jobs })))
+      ~mirror:(mirrored "WINDTRAP_JOBS")
       "Run the tests in N worker processes at once (default 1).";
     (* A debugger's gesture at one test, never a mode of a stanza, so no
        mirror. *)
     row "--in-process"
-      (Flag (fun p -> { p with in_process = Some true }))
+      (switch (fun c -> { c with in_process = true }))
       ~mirror:None "Run the one selected test in this process, for a debugger.";
     row ~short:"-v" "--verbose"
-      (Flag (fun p -> { p with verbose = Some true }))
-      ~mirror:(mirrored "WINDTRAP_VERBOSE" (fun p -> p.verbose = None))
+      (switch (fun c -> { c with verbose = true }))
+      ~mirror:(mirrored "WINDTRAP_VERBOSE")
       "One status line per test.";
     row "--junit"
-      (value "PATH" any (fun p path -> { p with junit = Some path }))
-      ~mirror:(mirrored "WINDTRAP_JUNIT" (fun p -> p.junit = None))
+      (value "PATH" any (field (fun c path -> { c with junit = Some path })))
+      ~mirror:(mirrored "WINDTRAP_JUNIT")
       "Also write a JUnit XML report to PATH, or to PATH/<suite>.xml when PATH \
        does not end in .xml.";
     row "--json"
-      (value "PATH" any (fun p path -> { p with json = Some path }))
-      ~mirror:(mirrored "WINDTRAP_JSON" (fun p -> p.json = None))
+      (value "PATH" any (field (fun c path -> { c with json = Some path })))
+      ~mirror:(mirrored "WINDTRAP_JSON")
       "Also write a JSON report of the results and their scope to PATH, or to \
        PATH/<suite>.json when PATH does not end in .json.";
     color_entry;
     row ~short:"-o" "--output"
-      (value "DIR" any (fun p dir -> { p with log_dir = Some dir }))
-      ~mirror:(mirrored "WINDTRAP_OUTPUT" (fun p -> p.log_dir = None))
+      (value "DIR" any (field (fun c log_dir -> { c with log_dir })))
+      ~mirror:(mirrored "WINDTRAP_OUTPUT")
       "Root directory for capture logs.";
     row "--mutate"
       (Optional_value
@@ -293,23 +268,27 @@ let entries =
                let prefixes =
                  Option.fold ~none:[] ~some:Os.split_comma prefixes
                in
-               Ok { p with mutate = Some prefixes });
+               Ok
+                 (field
+                    (fun c () ->
+                      { c with mutation = Run.Loop { prefixes; lines = None } })
+                    p ()));
          })
-      ~mirror:(mirrored "WINDTRAP_MUTATE" (fun p -> p.mutate = None))
+      ~mirror:(mirrored "WINDTRAP_MUTATE")
       "Test this executable's mutants, all or those under PREFIX.";
     row "--lines"
       (value "FILE:A-B,..." Lines.of_spec (fun p lines ->
            { p with lines = Some lines }))
-      ~mirror:(mirrored "WINDTRAP_LINES" (fun p -> p.lines = None))
+      ~mirror:(mirrored "WINDTRAP_LINES")
       "Test only the mutants on these lines of these files (with --mutate).";
     row "--diff"
       (value "FILE" any (fun p file -> { p with diff = Some file }))
-      ~mirror:(mirrored "WINDTRAP_DIFF" (fun p -> p.diff = None))
+      ~mirror:(mirrored "WINDTRAP_DIFF")
       "Test only the mutants on the lines that FILE, the output of git diff \
        -U0, adds or changes (with --mutate).";
     row "--arm"
-      (value "ID" any (fun p id -> { p with arm = Some id }))
-      ~mirror:(mirrored "WINDTRAP_MUTATE_ARM" (fun p -> p.arm = None))
+      (value "ID" any (field (fun c id -> { c with mutation = Run.Armed id })))
+      ~mirror:(mirrored "WINDTRAP_MUTATE_ARM")
       "Run once with mutant ID armed.";
     row ~short:"-V" "--version"
       (Flag (fun p -> { p with version = true }))
@@ -405,6 +384,7 @@ let split_inline arg =
 (* [apply entry ~source ~inline p rest] is [p] with the flag of [entry] set,
    and the arguments after it. *)
 let apply entry ~source ~inline p rest =
+  let p = mark entry.long p in
   match (entry.arg, inline, rest) with
   | Flag _, Some value, _ -> invalid ~source ~value ~expected:"no argument"
   | Flag set, None, rest -> Ok (set p, rest)
@@ -417,9 +397,12 @@ let apply entry ~source ~inline p rest =
       let* p = set ~source p inline in
       Ok (p, rest)
 
+(* A bare pattern is given as [-f] gives one. *)
+let positional p pattern = mark "--filter" (add_filter p pattern)
+
 let rec parse_args entries p = function
   | [] -> Ok p
-  | "--" :: patterns -> Ok (List.fold_left add_filter p patterns)
+  | "--" :: patterns -> Ok (List.fold_left positional p patterns)
   | arg :: rest when String.length arg > 1 && arg.[0] = '-' -> (
       let name, inline =
         if String.starts_with ~prefix:"--" arg then split_inline arg
@@ -430,12 +413,12 @@ let rec parse_args entries p = function
       | Some entry ->
           let* p, rest = apply entry ~source:name ~inline p rest in
           if p.help || p.version then Ok p else parse_args entries p rest)
-  | pattern :: rest -> parse_args entries (add_filter p pattern) rest
+  | pattern :: rest -> parse_args entries (positional p pattern) rest
 
 let parse_entries entries argv =
   let args = match Array.to_list argv with [] -> [] | _prog :: args -> args in
-  let* p = parse_args entries empty args in
-  if p.update = Some true && p.corrected = Some true then
+  let* p = parse_args entries (start ()) args in
+  if gave p "--update" && gave p "--corrected" then
     Error (Incompatible_flags ("-u", "--corrected"))
   else Ok p
 
@@ -450,29 +433,35 @@ let rec fold_ok f acc = function
       fold_ok f acc xs
 
 (* A mirror reaches the record through its flag's own [set], with the
-   variable as the source, so it cannot drift from its flag. A valueless
-   flag's mirror refuses any word but a boolean: a typo must not read as
-   off. *)
+   variable as the source, so it cannot drift from its flag, and a mirror
+   that set something counts as given. A valueless flag's mirror refuses any
+   word but a boolean: a typo must not read as off. *)
 let contribute p entry { var = source; layering } raw =
+  let given p = Ok (mark entry.long p) in
   match (entry.arg, layering) with
   | Flag set, _ -> (
       match Os.bool_of_string raw with
-      | Some true -> Ok (set p)
+      | Some true -> given (set p)
       | Some false -> Ok p
       | None -> invalid ~source ~value:raw ~expected:Os.bool_expected)
-  | Value { set; _ }, Single _ -> set ~source p (String.trim raw)
-  | Value { set; _ }, Repeatable -> fold_ok (set ~source) p (Os.split_comma raw)
+  | Value { set; _ }, Single ->
+      Result.bind (set ~source p (String.trim raw)) given
+  | Value { set; _ }, Repeatable -> (
+      match Os.split_comma raw with
+      | [] -> Ok p
+      | items -> Result.bind (fold_ok (set ~source) p items) given)
   | Optional_value { set; _ }, _ -> (
       match Os.bool_of_string raw with
-      | Some true -> set ~source p None
+      | Some true -> Result.bind (set ~source p None) given
       | Some false -> Ok p
-      | None -> set ~source p (Some (String.trim raw)))
+      | None -> Result.bind (set ~source p (Some (String.trim raw))) given)
 
+(* A flag the command line gave hides its single mirror. *)
 let layer_entries entries cli =
   let layer p entry =
     match entry.mirror with
     | None -> Ok p
-    | Some { layering = Single absent; _ } when not (absent p) -> Ok p
+    | Some { layering = Single; _ } when gave cli entry.long -> Ok p
     | Some mirror -> (
         match Os.getenv mirror.var with
         | None -> Ok p
@@ -480,30 +469,26 @@ let layer_entries entries cli =
   in
   fold_ok layer cli entries
 
-let selects p =
-  p.filter <> [] || p.exclude <> [] || p.tags <> [] || p.exclude_tags <> []
-  || p.shard <> None || p.failed_only = Some true
+let selection =
+  [ "--filter"; "--exclude"; "--tag"; "--exclude-tag"; "--shard"; "--failed" ]
+
+let selects p = List.exists (gave p) selection
 
 (* A relative path is made absolute before a test can chdir: the command
    line's against the working directory, and a mirror's against the project
    root, since each stanza runs in its own build directory. *)
-let absolute_path ~cli ~layered field =
-  let against base path =
-    if not (Filename.is_relative path) then path
-    else
-      match base () with
-      | base -> Filename.concat base path
-      | exception Sys_error _ -> path
-  in
-  match (field cli, field layered) with
-  | Some path, _ -> Some (against Sys.getcwd path)
-  | None, Some path -> Some (against Os.project_root path)
-  | None, None -> None
+let absolute_path ~cli long path =
+  let base = if gave cli long then Sys.getcwd else Os.project_root in
+  if not (Filename.is_relative path) then path
+  else
+    match base () with
+    | base -> Filename.concat base path
+    | exception Sys_error _ -> path
 
 (* The file is read before any test runs, which could change the directory
    or the file, and read whole: its bytes are the case. *)
-let case_file ~cli ~layered =
-  match (cli.case, layered.replay) with
+let case_file ~cli ~(layered : parsed) =
+  match (cli.case, layered.config.replay) with
   | None, _ -> Ok None
   | Some _, Some _ -> Error (Incompatible_flags ("--replay", "--case"))
   | Some file, None -> (
@@ -515,10 +500,6 @@ let case_file ~cli ~layered =
                { source = "--case"; value = file; expected = "a readable file" })
       )
 
-(* Every value arrived through its flag's parser, so nothing is range-checked
-   here. [broadcast] keeps what the mirrors alone asked for: a mirror reaches
-   every stanza of a project, and a stanza that cannot honour it is not in
-   error. *)
 (* The root under [--mutate] and [--arm], so that the dry run, the probe,
    every mutant and every later run of the binary draw the same cases: a
    random root made a mutant that some cases kill flip from run to run. *)
@@ -529,11 +510,11 @@ let mutation_seed = 0x6d7574616e747321L (* "mutants!" *)
    not mutate ignore it. *)
 let line_scope ~cli ~layered =
   let given = Option.value layered.lines ~default:Lines.empty in
-  match (cli.lines, cli.diff, layered.mutate) with
-  | Some _, _, None -> Error (Requires ("--lines", "--mutate"))
-  | None, Some _, None -> Error (Requires ("--diff", "--mutate"))
+  match (gave cli "--lines", gave cli "--diff", gave layered "--mutate") with
+  | true, _, false -> Error (Requires ("--lines", "--mutate"))
+  | false, true, false -> Error (Requires ("--diff", "--mutate"))
   | _ -> (
-      match absolute_path ~cli ~layered (fun p -> p.diff) with
+      match Option.map (absolute_path ~cli "--diff") layered.diff with
       | None -> Ok layered.lines
       | Some path -> (
           match In_channel.with_open_bin path In_channel.input_all with
@@ -543,84 +524,59 @@ let line_scope ~cli ~layered =
                 (Invalid_value
                    {
                      source =
-                       (if Option.is_some cli.diff then "--diff"
-                        else "WINDTRAP_DIFF");
+                       (if gave cli "--diff" then "--diff" else "WINDTRAP_DIFF");
                      value = Option.value layered.diff ~default:path;
                      expected = "a readable file, the output of git diff -U0";
                    })))
 
+(* Every value arrived through its flag's parser, so nothing is range-checked
+   here. [broadcast] keeps what the mirrors alone asked for: a mirror reaches
+   every stanza of a project, and a stanza that cannot honour it is not in
+   error. *)
 let settings cli =
   let* layered = layer_entries entries cli in
   let* lines = line_scope ~cli ~layered in
-  let* mutation =
-    match (layered.mutate, layered.arm) with
-    | None, None -> Ok Run.No_mutation
-    | Some prefixes, None -> Ok (Run.Loop { prefixes; lines })
-    | None, Some id -> Ok (Run.Armed id)
-    | Some _, Some _ -> Error (Incompatible_flags ("--mutate", "--arm"))
+  let* () =
+    if gave layered "--mutate" && gave layered "--arm" then
+      Error (Incompatible_flags ("--mutate", "--arm"))
+    else Ok ()
   in
   let* case_file = case_file ~cli ~layered in
-  let defaults = Run.default_config () in
+  let c = layered.config in
+  let path long = absolute_path ~cli long in
   Ok
     {
-      Run.seed =
-        (match (layered.seed, mutation) with
-        | Some seed, _ -> seed
-        | None, (Run.Loop _ | Run.Armed _) -> mutation_seed
-        | None, Run.No_mutation -> defaults.Run.seed);
-      filter = layered.filter;
-      exclude = layered.exclude;
-      tags = layered.tags;
-      exclude_tags = layered.exclude_tags;
-      shard = layered.shard;
-      failed_only = layered.failed_only = Some true;
-      bail = layered.bail = Some true;
-      stream = layered.stream = Some true;
-      jobs = Option.value layered.jobs ~default:defaults.Run.jobs;
-      in_process = layered.in_process = Some true;
-      baseline =
-        (match (layered.update, layered.corrected) with
-        | Some true, _ -> Baseline.Update
-        | _, Some true -> Baseline.Corrected
-        | _ -> Baseline.Check);
-      timeout = layered.timeout;
-      default_timeout = defaults.Run.default_timeout;
-      prop_count = layered.prop_count;
-      replay = layered.replay;
+      c with
+      seed =
+        (match c.mutation with
+        | (Run.Loop _ | Run.Armed _) when not (gave layered "--seed") ->
+            mutation_seed
+        | Run.Loop _ | Run.Armed _ | Run.No_mutation -> c.seed);
+      mutation =
+        (match c.mutation with
+        | Run.Loop { prefixes; _ } -> Run.Loop { prefixes; lines }
+        | (Run.Armed _ | Run.No_mutation) as m -> m);
       case_file;
-      log_dir =
-        Option.value
-          (absolute_path ~cli ~layered (fun p -> p.log_dir))
-          ~default:defaults.Run.log_dir;
-      color = Option.value layered.color ~default:defaults.Run.color;
-      slow_threshold =
-        Option.value layered.slow_threshold ~default:defaults.Run.slow_threshold;
-      verbose = layered.verbose = Some true;
-      junit = absolute_path ~cli ~layered (fun p -> p.junit);
-      json = absolute_path ~cli ~layered (fun p -> p.json);
-      mutation;
+      log_dir = path "--output" c.log_dir;
+      junit = Option.map (path "--junit") c.junit;
+      json = Option.map (path "--json") c.json;
       github = Os.in_github_actions ();
-      (* The facade, which alone holds argv, computes it. *)
-      invocation = `Mirrors;
       broadcast =
         {
           Run.selection = selects layered && not (selects cli);
-          mutate = cli.mutate = None && layered.mutate <> None;
+          mutate = gave layered "--mutate" && not (gave cli "--mutate");
         };
     }
 
 let color_mode () =
-  let* p = layer_entries [ color_entry ] empty in
-  Ok (Option.value p.color ~default:Os.Auto)
+  let* p = layer_entries [ color_entry ] (start ()) in
+  Ok p.config.color
 
 let parse_color value =
   let* p, _ =
-    apply color_entry ~source:"--color" ~inline:(Some value) empty []
+    apply color_entry ~source:"--color" ~inline:(Some value) (start ()) []
   in
-  (* [apply] of [color_entry] sets [color] whenever it succeeds. *)
-  match p.color with
-  | Some mode -> Ok mode
-  | None -> assert false
+  Ok p.config.color
 
 (* Help *)
 

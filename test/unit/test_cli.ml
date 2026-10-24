@@ -41,46 +41,49 @@ let expected_of = function
   | Error (Cli.Invalid_value { expected; _ }) -> Some expected
   | _ -> None
 
-(* A [bool option] prints [false] beside its name, so a [Some false] shows. *)
+(* The fields of the flags a record says it was given, by the name of their
+   flag's field. *)
 let flags (p : Cli.parsed) =
+  let c = p.config in
+  let gave flag = List.mem flag p.given in
   let list name = function [] -> [] | l -> [ name ^ " " ^ words l ] in
-  let some name show = function
+  let some flag name show v =
+    if gave flag then [ name ^ " " ^ show v ] else []
+  in
+  let opt name show = function
     | None -> []
     | Some v -> [ name ^ " " ^ show v ]
-  in
-  let switch name = function
-    | None -> []
-    | Some true -> [ name ]
-    | Some false -> [ name ^ " false" ]
   in
   let bool name b = if b then [ name ] else [] in
   match
     List.concat
       [
-        list "filter" p.filter;
-        list "exclude" p.exclude;
-        list "tags" p.tags;
-        list "exclude_tags" p.exclude_tags;
-        some "shard" (fun (k, n) -> strf "%d/%d" k n) p.shard;
-        switch "failed_only" p.failed_only;
-        switch "list_only" p.list_only;
-        switch "bail" p.bail;
-        switch "stream" p.stream;
-        some "jobs" string_of_int p.jobs;
-        switch "in_process" p.in_process;
-        switch "update" p.update;
-        switch "corrected" p.corrected;
-        some "seed" Seed.to_string p.seed;
-        some "timeout" (strf "%g") p.timeout;
-        some "slow_threshold" (strf "%g") p.slow_threshold;
-        some "prop_count" string_of_int p.prop_count;
-        switch "verbose" p.verbose;
-        some "junit" Fun.id p.junit;
-        some "json" Fun.id p.json;
-        some "color" color_name p.color;
-        some "log_dir" Fun.id p.log_dir;
-        some "mutate" words p.mutate;
-        some "arm" Fun.id p.arm;
+        list "filter" c.filter;
+        list "exclude" c.exclude;
+        list "tags" c.tags;
+        list "exclude_tags" c.exclude_tags;
+        opt "shard" (fun (k, n) -> strf "%d/%d" k n) c.shard;
+        bool "failed_only" c.failed_only;
+        bool "list_only" p.list_only;
+        bool "bail" c.bail;
+        bool "stream" c.stream;
+        some "--jobs" "jobs" string_of_int c.jobs;
+        bool "in_process" c.in_process;
+        bool "update" (c.baseline = Baseline.Update);
+        bool "corrected" (c.baseline = Baseline.Corrected);
+        some "--seed" "seed" Seed.to_string c.seed;
+        opt "timeout" (strf "%g") c.timeout;
+        some "--slow-threshold" "slow_threshold" (strf "%g") c.slow_threshold;
+        opt "prop_count" string_of_int c.prop_count;
+        bool "verbose" c.verbose;
+        opt "junit" Fun.id c.junit;
+        opt "json" Fun.id c.json;
+        some "--color" "color" color_name c.color;
+        some "--output" "log_dir" Fun.id c.log_dir;
+        (match c.mutation with
+        | Run.Loop { prefixes; _ } -> [ "mutate " ^ words prefixes ]
+        | Run.Armed id -> [ "arm " ^ id ]
+        | Run.No_mutation -> []);
         bool "help" p.help;
         bool "version" p.version;
       ]
@@ -92,6 +95,7 @@ let parsed_argv argv =
   match Cli.parse argv with Ok p -> flags p | Error e -> error_row e
 
 let parse args = Cli.parse (Array.of_list ("windtrap-test" :: args))
+let unflagged () = require_ok (parse [])
 let parsed args = parsed_argv (Array.of_list ("windtrap-test" :: args))
 
 let mutation_name = function
@@ -200,14 +204,14 @@ let mirror_rows name rows =
 (* A mirror's value is trimmed and a flag's is not, so no row holds a space. *)
 let refused_alike (var, flag, value) =
   let expected = require_match expected_of (parse [ flag; value ]) in
-  let refusal = settings ~env:[ (var, value) ] Cli.empty in
+  let refusal = settings ~env:[ (var, value) ] (unflagged ()) in
   equal (pair string string)
     (strf "invalid %s %S" var value, expected)
     ( Result.fold ~ok:changes ~error:error_row refusal,
       require_match expected_of refusal )
 
 let boolean_wording () =
-  let refusal = settings ~env:[ ("WINDTRAP_STREAM", "maybe") ] Cli.empty in
+  let refusal = settings ~env:[ ("WINDTRAP_STREAM", "maybe") ] (unflagged ()) in
   equal string Os.bool_expected (require_match expected_of refusal)
 
 let mirrors =
@@ -331,8 +335,18 @@ let mirrors =
 let parsed_flags =
   group "Parsed flags"
     [
-      test "empty is the record with every flag absent" (fun () ->
-          equal string "empty" (flags Cli.empty));
+      test "a command line with no flag gives none" (fun () ->
+          equal
+            (pair (list string) string)
+            ([], "empty")
+            ((unflagged ()).given, flags (unflagged ())));
+      test "given names each flag once, by its long name, in the order given"
+        (fun () ->
+          equal (list string)
+            [ "--filter"; "--verbose"; "--tag" ]
+            (require_ok
+               (parse [ "p"; "-v"; "--tag=a"; "-f"; "q"; "--tag"; "b" ]))
+              .given);
     ]
 
 (* Errors *)
@@ -364,7 +378,8 @@ let messages () =
       ]
   in
   let mirror =
-    require_error (settings ~env:[ ("WINDTRAP_PROP_COUNT", "0") ] Cli.empty)
+    require_error
+      (settings ~env:[ ("WINDTRAP_PROP_COUNT", "0") ] (unflagged ()))
   in
   expect
     (String.concat "\n"
@@ -441,8 +456,7 @@ let every_flag () =
     "filter [pat], exclude [ex], tags [a; b], exclude_tags [c], shard 2/4, \
      failed_only, list_only, bail, stream, update, seed s1:00000000000000ff, \
      timeout 2.5, slow_threshold 3, prop_count 50, verbose, junit out.xml, \
-     color never, log_dir logs, mutate [lib/a.ml; lib/b.ml], arm \
-     lib/a.ml:1:0:add"
+     color never, log_dir logs, arm lib/a.ml:1:0:add"
     (parsed
        (String.split_on_char ' '
           "-f pat -e ex --tag a --tag b --exclude-tag c --shard 2/4 --failed \
@@ -475,24 +489,13 @@ let argv_chunks =
       [ "" ];
     ]
 
-let never_some_false args =
+let names_once args =
   match parse args with
   | Error _ -> ()
   | Ok p ->
-      equal
-        (list (option bool))
-        []
-        (List.filter
-           (Option.equal Bool.equal (Some false))
-           [
-             p.Cli.failed_only;
-             p.list_only;
-             p.bail;
-             p.stream;
-             p.update;
-             p.corrected;
-             p.verbose;
-           ])
+      equal (list string)
+        (List.sort_uniq String.compare p.Cli.given)
+        (List.sort String.compare p.given)
 
 let refused_value (flag, value) =
   equal string (strf "invalid %s %S" flag value) (parsed [ flag; value ])
@@ -677,9 +680,9 @@ let parsing =
           ([ "-u"; "--corrected" ], "incompatible -u --corrected");
           ([ "--corrected"; "--update" ], "incompatible -u --corrected");
         ];
-      prop "parse never raises and never gives Some false"
+      prop "parse never raises and names each flag it gave once"
         Gen.(map List.concat (list (of_list argv_chunks)))
-        never_some_false;
+        names_once;
     ]
 
 (* Resolution *)
@@ -743,8 +746,8 @@ let resolution =
           equal string "defaults"
             (settled
                {
-                 Cli.empty with
-                 list_only = Some true;
+                 (unflagged ()) with
+                 list_only = true;
                  help = true;
                  version = true;
                }));
@@ -834,14 +837,11 @@ let resolution =
          Check"
         (Testable.contramap fst Testable.text)
         [
-          ("update", ({ Cli.empty with update = Some true }, "baseline update"));
-          ( "corrected",
-            ({ Cli.empty with corrected = Some true }, "baseline corrected") );
-          ( "both",
-            ( { Cli.empty with update = Some true; corrected = Some true },
-              "baseline update" ) );
+          ("update", ([ "-u" ], "baseline update"));
+          ("corrected", ([ "--corrected" ], "baseline corrected"));
+          ("neither", ([], "defaults"));
         ]
-        (fun (_, (p, row)) -> equal string row (settled p));
+        (fun (_, (args, row)) -> equal string row (resolved args));
       resolve_rows "mutation is Loop of --mutate and Armed of --arm"
         [
           ([], [ "--mutate" ], "mutation loop []");
