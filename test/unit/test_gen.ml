@@ -499,6 +499,311 @@ let replayed_choices () =
     Left: 1026
     |}
 
+(* Distribution parity. Each row draws 2,000 values from the states that
+   [sample] reads and summarises them: a numeric projection's mean, standard
+   deviation, extremes and an eight-bin histogram between them, the number
+   of distinct printings and a digest of the printings in draw order. The
+   table was recorded on 0.2's rose-tree generators. The samplers consume
+   the frozen stream as they did then, so every row stays exact and the
+   tolerance is zero: a changed bin is a changed distribution. *)
+type summary = Summary : string * (unit -> 'a Gen.t) * ('a -> float) -> summary
+
+let summarise (Summary (name, gen, project)) =
+  let gen = gen () in
+  let trees = List.init 2_000 (sample gen) in
+  let xs = List.map (fun tree -> project (value tree)) trees in
+  let texts = List.map shown trees in
+  let n = float_of_int (List.length xs) in
+  let mean = List.fold_left ( +. ) 0. xs /. n in
+  let variance =
+    List.fold_left (fun acc x -> acc +. ((x -. mean) ** 2.)) 0. xs /. n
+  in
+  let low = List.fold_left Float.min Float.infinity xs in
+  let high = List.fold_left Float.max Float.neg_infinity xs in
+  let bins = Array.make 8 0 in
+  List.iter
+    (fun x ->
+      let bin =
+        if high = low then 0
+        else Float.to_int (8. *. (x -. low) /. (high -. low))
+      in
+      bins.(Int.min 7 bin) <- bins.(Int.min 7 bin) + 1)
+    xs;
+  let distinct = List.length (List.sort_uniq String.compare texts) in
+  strf "%s\n  mean %.4g, sd %.4g, in [%.4g;%.4g]\n  bins %s, %d distinct, %s"
+    name mean (Float.sqrt variance) low high
+    (String.concat " " (Array.to_list (Array.map string_of_int bins)))
+    distinct
+    (String.sub (Digest.to_hex (Digest.string (String.concat "\n" texts))) 0 8)
+
+let int_summary name gen = Summary (name, gen, float_of_int)
+let size_of length v = float_of_int (length v)
+
+let summaries =
+  Gen.
+    [
+      int_summary "int" (fun () -> int);
+      int_summary "nat" (fun () -> nat);
+      int_summary "small_int" (fun () -> small_int);
+      int_summary "int_range -5 5" (fun () -> int_range (-5) 5);
+      int_summary "int_range 3 1000" (fun () -> int_range 3 1000);
+      Summary ("int32", (fun () -> int32), Int32.to_float);
+      Summary
+        ( "int32_range -7l 9l",
+          (fun () -> int32_range (-7l) 9l),
+          Int32.to_float );
+      Summary ("int64", (fun () -> int64), Int64.to_float);
+      Summary
+        ( "int64_range min_int max_int",
+          (fun () -> int64_range Int64.min_int Int64.max_int),
+          Int64.to_float );
+      Summary
+        ("int64_range 0L 99L", (fun () -> int64_range 0L 99L), Int64.to_float);
+      Summary ("nativeint", (fun () -> nativeint), Nativeint.to_float);
+      Summary
+        ( "nativeint_range -3n 3n",
+          (fun () -> nativeint_range (-3n) 3n),
+          Nativeint.to_float );
+      Summary
+        ( "float, by binary exponent",
+          (fun () -> float),
+          fun x -> float_of_int (snd (Float.frexp x)) );
+      Summary
+        ( "any_float, by class",
+          (fun () -> any_float),
+          fun x ->
+            if Float.is_finite x then 0. else if Float.is_nan x then 2. else 1.
+        );
+      Summary ("float_range -1. 2.", (fun () -> float_range (-1.) 2.), Fun.id);
+      Summary
+        ("float_range -3. -0.", (fun () -> float_range (-3.) (-0.)), Fun.id);
+      Summary
+        ( "float_range 1e300 max_float",
+          (fun () -> float_range 1e300 Float.max_float),
+          Fun.id );
+      Summary ("unit", (fun () -> unit), fun () -> 0.);
+      Summary ("bool", (fun () -> bool), fun b -> if b then 1. else 0.);
+      Summary ("char", (fun () -> char), size_of Char.code);
+      Summary
+        ( "char_range 'a' 'f'",
+          (fun () -> char_range 'a' 'f'),
+          size_of Char.code );
+      Summary ("uchar", (fun () -> uchar), size_of Uchar.to_int);
+      Summary ("string", (fun () -> string), size_of String.length);
+      Summary
+        ( "string_of ~size:(int_range 0 6) (char_range 'a' 'c')",
+          (fun () -> string_of ~size:(int_range 0 6) (char_range 'a' 'c')),
+          size_of String.length );
+      Summary ("bytes", (fun () -> bytes), size_of Bytes.length);
+      Summary
+        ( "bytes_of ~size:(int_range 0 3) char",
+          (fun () -> bytes_of ~size:(int_range 0 3) char),
+          size_of Bytes.length );
+      Summary ("list bool", (fun () -> list bool), size_of List.length);
+      Summary
+        ("list (list nat)", (fun () -> list (list nat)), size_of List.length);
+      Summary
+        ( "list ~size:(int_range 2 4) small_int, by sum",
+          (fun () -> list ~size:(int_range 2 4) small_int),
+          size_of (List.fold_left ( + ) 0) );
+      Summary ("array nat", (fun () -> array nat), size_of Array.length);
+      Summary
+        ( "option nat",
+          (fun () -> option nat),
+          function None -> -1. | Some n -> float_of_int n );
+      Summary
+        ( "result nat bool",
+          (fun () -> result nat bool),
+          function Ok n -> float_of_int n | Error _ -> -1. );
+      Summary
+        ( "either nat bool",
+          (fun () -> either nat bool),
+          function Either.Left n -> float_of_int n | Right _ -> -1. );
+      Summary
+        ( "pair nat small_int, by difference",
+          (fun () -> pair nat small_int),
+          fun (a, b) -> float_of_int (a - b) );
+      Summary
+        ( "triple bool nat char, by sum",
+          (fun () -> triple bool nat char),
+          fun (_, n, c) -> float_of_int (n + Char.code c) );
+      Summary
+        ( "quad bool bool bool bool, by trues",
+          (fun () -> quad bool bool bool bool),
+          fun (a, b, c, d) ->
+            size_of List.length (List.filter Fun.id [ a; b; c; d ]) );
+      int_summary "constant 7" (fun () -> constant ~pp:Pp.int 7);
+      int_summary "of_list [3; 1; 4; 1; 5]" (fun () ->
+          of_list ~pp:Pp.int [ 3; 1; 4; 1; 5 ]);
+      Summary
+        ( "subsequence 0..9, by sum",
+          (fun () -> subsequence ~pp:Pp.int (List.init 10 Fun.id)),
+          size_of (List.fold_left ( + ) 0) );
+      Summary
+        ( "permutation 0..5, by head",
+          (fun () -> permutation ~pp:Pp.int (List.init 6 Fun.id)),
+          size_of List.hd );
+      int_summary "one_of [int_range 0 9; int_range 100 109]" (fun () ->
+          one_of [ int_range 0 9; int_range 100 109 ]);
+      int_summary "frequency [1, 0..9; 3, 100..109; 0, 1000]" (fun () ->
+          frequency
+            [ (1, int_range 0 9); (3, int_range 100 109); (0, constant 1000) ]);
+      int_summary "such_that even nat" (fun () -> such_that even nat);
+      int_summary "map succ nat" (fun () -> map succ nat);
+      int_summary "bind (int_range 0 20) (fun n -> int_range 0 n)" (fun () ->
+          bind (int_range 0 20) (fun n -> int_range 0 n));
+      int_summary "bind (list ~size:(int_range 1 4) nat) of_list" (fun () ->
+          bind (list ~size:(int_range 1 4) nat) (of_list ~pp:Pp.int));
+      int_summary "with_pp nat" (fun () -> with_pp Pp.int nat);
+    ]
+
+let distributions () =
+  expect (String.concat "\n" (List.map summarise summaries))
+  @@ __POS_OF__
+       {|
+    int
+      mean -9.927e+15, sd 2.698e+18, in [-4.612e+18;4.612e+18]
+      bins 264 227 239 215 346 210 230 269, 1813 distinct, cb04683a
+    nat
+      mean 367.4, sd 1272, in [0;9978]
+      bins 1911 7 15 19 12 13 10 13, 486 distinct, a76cc67c
+    small_int
+      mean -21.85, sd 1361, in [-9904;9967]
+      bins 16 10 14 1553 372 10 12 13, 627 distinct, 07ca8332
+    int_range -5 5
+      mean -0.0855, sd 3.182, in [-5;5]
+      bins 386 164 161 213 397 176 149 354, 11 distinct, 07f3ad10
+    int_range 3 1000
+      mean 488, sd 314.3, in [3;1000]
+      bins 354 225 241 209 207 250 227 287, 812 distinct, d173cf9c
+    int32
+      mean -3.43e+07, sd 1.258e+09, in [-2.147e+09;2.147e+09]
+      bins 281 247 208 258 308 229 207 262, 1813 distinct, 543edd80
+    int32_range -7l 9l
+      mean 0.8395, sd 4.982, in [-7;9]
+      bins 258 239 206 301 223 213 185 375, 17 distinct, 2285489d
+    int64
+      mean 1.544e+16, sd 5.379e+18, in [-9.223e+18;9.223e+18]
+      bins 260 227 229 221 340 233 218 272, 1813 distinct, 51bd3418
+    int64_range min_int max_int
+      mean 1.544e+16, sd 5.379e+18, in [-9.223e+18;9.223e+18]
+      bins 260 227 229 221 340 233 218 272, 1813 distinct, 51bd3418
+    int64_range 0L 99L
+      mean 48.84, sd 31.48, in [0;99]
+      bins 369 174 254 209 198 257 226 313, 100 distinct, 63f5c1cf
+    nativeint
+      mean 1.544e+16, sd 5.379e+18, in [-9.223e+18;9.223e+18]
+      bins 260 227 229 221 340 233 218 272, 1813 distinct, bdc4a337
+    nativeint_range -3n 3n
+      mean 0.031, sd 2.05, in [-3;3]
+      bins 309 270 267 0 281 270 283 320, 7 distinct, de860e77
+    float, by binary exponent
+      mean -18.29, sd 614.6, in [-1073;1024]
+      bins 278 211 227 235 310 239 234 266, 1818 distinct, 272e5780
+    any_float, by class
+      mean 0.123, sd 0.4023, in [0;2]
+      bins 1808 0 0 0 138 0 0 54, 1617 distinct, 0cd1de10
+    float_range -1. 2.
+      mean 0.4578, sd 0.8785, in [-1;2]
+      bins 263 233 346 233 216 227 229 253, 1814 distinct, 419865bc
+    float_range -3. -0.
+      mean -1.462, sd 0.9488, in [-3;-0]
+      bins 295 233 218 233 216 227 229 349, 1811 distinct, c445286b
+    float_range 1e300 max_float
+      mean inf, sd inf, in [1e+300;1.798e+308]
+      bins 2000 0 0 0 0 0 0 0, 1811 distinct, 5eec09c2
+    unit
+      mean 0, sd 0, in [0;0]
+      bins 2000 0 0 0 0 0 0 0, 1 distinct, eab2fc4d
+    bool
+      mean 0.487, sd 0.4998, in [0;1]
+      bins 1026 0 0 0 0 0 0 974, 2 distinct, 32f22f55
+    char
+      mean 127.8, sd 73.5, in [0;255]
+      bins 242 257 238 253 271 238 254 247, 256 distinct, 575f596d
+    char_range 'a' 'f'
+      mean 99.49, sd 1.718, in [97;102]
+      bins 353 310 0 335 333 0 338 331, 6 distinct, b8ea10cd
+    uchar
+      mean 1.468e+05, sd 2.865e+05, in [0;1.114e+06]
+      bins 1571 66 68 47 65 55 57 71, 1421 distinct, cb3a7ad8
+    string
+      mean 4.569, sd 7.892, in [0;62]
+      bins 1729 192 12 20 13 11 13 10, 1495 distinct, 7fca6efb
+    string_of ~size:(int_range 0 6) (char_range 'a' 'c')
+      mean 2.982, sd 2.115, in [0;6]
+      bins 319 344 229 0 243 237 283 345, 555 distinct, 8190ea47
+    bytes
+      mean 4.569, sd 7.892, in [0;62]
+      bins 1729 192 12 20 13 11 13 10, 1495 distinct, 8a59aeb4
+    bytes_of ~size:(int_range 0 3) char
+      mean 1.473, sd 1.138, in [0;3]
+      bins 527 0 518 0 0 437 0 518, 1179 distinct, 30cd36fa
+    list bool
+      mean 4.569, sd 7.892, in [0;62]
+      bins 1729 192 12 20 13 11 13 10, 438 distinct, ffe2ba3e
+    list (list nat)
+      mean 4.569, sd 7.892, in [0;62]
+      bins 1729 192 12 20 13 11 13 10, 1543 distinct, 222c5dfc
+    list ~size:(int_range 2 4) small_int, by sum
+      mean -79.68, sd 2261, in [-1.712e+04;1.267e+04]
+      bins 2 11 47 57 1778 45 46 14, 1951 distinct, bbe17d72
+    array nat
+      mean 4.569, sd 7.892, in [0;62]
+      bins 1729 192 12 20 13 11 13 10, 1414 distinct, 10df722e
+    option nat
+      mean 341.7, sd 1278, in [-1;9967]
+      bins 1921 10 8 13 10 11 12 15, 461 distinct, 7fbb0318
+    result nat bool
+      mean 297.1, sd 1189, in [-1;9904]
+      bins 1932 7 8 11 10 7 11 14, 420 distinct, 2e506b9e
+    either nat bool
+      mean 177.2, sd 915, in [-1;9967]
+      bins 1958 7 4 6 6 6 6 7, 305 distinct, edd3a6d0
+    pair nat small_int, by difference
+      mean 368.7, sd 1771, in [-9776;9976]
+      bins 13 5 16 1315 537 43 37 34, 1611 distinct, c16849cb
+    triple bool nat char, by sum
+      mean 505.6, sd 1310, in [1;1.021e+04]
+      bins 1912 13 11 13 12 12 13 14, 1903 distinct, bf76dc1c
+    quad bool bool bool bool, by trues
+      mean 1.968, sd 1.019, in [0;4]
+      bins 139 0 523 0 733 0 473 132, 16 distinct, 26f7e486
+    constant 7
+      mean 7, sd 0, in [7;7]
+      bins 2000 0 0 0 0 0 0 0, 1 distinct, c576b848
+    of_list [3; 1; 4; 1; 5]
+      mean 2.792, sd 1.614, in [1;5]
+      bins 816 0 0 0 375 0 402 407, 4 distinct, ca99eb1c
+    subsequence 0..9, by sum
+      mean 21.51, sd 15.35, in [0;45]
+      bins 418 251 163 210 241 179 191 347, 651 distinct, a1472574
+    permutation 0..5, by head
+      mean 2.493, sd 1.718, in [0;5]
+      bins 353 310 0 335 333 0 338 331, 681 distinct, 7f93fcda
+    one_of [int_range 0 9; int_range 100 109]
+      mean 53.07, sd 50.1, in [0;109]
+      bins 1026 0 0 0 0 0 0 974, 20 distinct, 6305e483
+    frequency [1, 0..9; 3, 100..109; 0, 1000]
+      mean 78.02, sd 44.12, in [0;109]
+      bins 527 0 0 0 0 0 0 1473, 20 distinct, 7bab34ee
+    such_that even nat
+      mean 387.6, sd 1342, in [0;9842]
+      bins 1904 11 18 9 13 13 18 14, 400 distinct, ef35c917
+    map succ nat
+      mean 368.4, sd 1272, in [1;9979]
+      bins 1911 7 15 19 12 13 10 13, 486 distinct, 0907295b
+    bind (int_range 0 20) (fun n -> int_range 0 n)
+      mean 4.644, sd 4.911, in [0;20]
+      bins 928 277 306 131 168 81 71 38, 21 distinct, e00b1e25
+    bind (list ~size:(int_range 1 4) nat) of_list
+      mean 388, sd 1314, in [0;9933]
+      bins 1902 15 14 13 16 14 10 16, 496 distinct, de6d64ca
+    with_pp nat
+      mean 367.4, sd 1272, in [0;9978]
+      bins 1911 7 15 19 12 13 10 13, 486 distinct, a76cc67c
+    |}
+
 let generators =
   group "Generators"
     [
@@ -516,6 +821,7 @@ let generators =
         pure forced_in_any_order;
       test "a recorded seed replays these values" replayed_values;
       test "a recorded seed replays these choices" replayed_choices;
+      test "every generator draws 0.2's distribution" distributions;
     ]
 
 (* Numbers *)
