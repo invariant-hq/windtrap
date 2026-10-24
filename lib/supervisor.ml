@@ -124,9 +124,17 @@ let serve (config : Run.config) ~suite tests ~temp_dir ~input ~output =
         send (Report report)
     | report -> send (Report report)
   in
-  Run.serve config ~suite tests ~temp_dir ~send:report
-    ~receive:(fun ~interrupted -> (receive ~interrupted input : Run.request))
-    ~last
+  (* A signal handled just before a read leaves the read blocked, and the
+     parent then hangs up: the signal still ends the worker, its fixtures
+     released. *)
+  let receive ~interrupted =
+    match (receive ~interrupted input : Run.request) with
+    | request -> request
+    | exception Closed ->
+        interrupted ();
+        raise Closed
+  in
+  Run.serve config ~suite tests ~temp_dir ~send:report ~receive ~last
 
 type worker = {
   pid : int;
@@ -137,6 +145,7 @@ type worker = {
   mutable releasing : string option; (* the fixture it announced last *)
   mutable exited : bool; (* it said that code under test called exit *)
   mutable signalled : bool; (* the parent sent it the run's signal *)
+  mutable hung_up : bool; (* [requests] is closed *)
   mutable status : Unix.process_status option; (* once it is reaped *)
 }
 
@@ -185,6 +194,7 @@ let worker pid ~temp_dir (requests, reports) =
     releasing = None;
     exited = false;
     signalled = false;
+    hung_up = false;
     status = None;
   }
 
@@ -284,7 +294,15 @@ let request w (request : Run.request) =
   Fun.protect
     ~finally:(fun () -> Sys.set_signal Sys.sigpipe previous)
     (fun () ->
-      try write_all w.requests frame 0 (Bytes.length frame) with Closed -> ())
+      if not w.hung_up then
+        try write_all w.requests frame 0 (Bytes.length frame) with Closed -> ())
+
+(* Closed once, so a later descriptor with its number is never closed. *)
+let hang_up w =
+  if not w.hung_up then begin
+    w.hung_up <- true;
+    try Unix.close w.requests with Unix.Unix_error _ -> ()
+  end
 
 (* The worker is killed with its process group: it may not have made the
    group yet. *)
@@ -296,7 +314,7 @@ let kill w =
    there, and what it left in the temporary root. *)
 let bury w =
   (try Unix.kill (-w.pid) Sys.sigkill with Unix.Unix_error _ -> ());
-  (try Unix.close w.requests with Unix.Unix_error _ -> ());
+  hang_up w;
   (try Unix.close w.reports with Unix.Unix_error _ -> ());
   Run.remove_tree w.temp_dir
 
@@ -675,7 +693,9 @@ let supervise ?(on_event = ignore) ~on_reach (config : Run.config) ~suite tests
     (try Capture.drain () with _ -> ());
     Os.die_by s
   in
-  (* Once a signal came, the workers end by it, and the parent then does. *)
+  (* Once a signal came, the workers end by it, and the parent then does. A
+     worker that handled it just before a read waits there for a request,
+     so the parent hangs up first. *)
   let end_by_signal () =
     match !signal with
     | None -> ()
@@ -683,6 +703,7 @@ let supervise ?(on_event = ignore) ~on_reach (config : Run.config) ~suite tests
         forward ();
         List.iter
           (fun w ->
+            hang_up w;
             drain w;
             ignore (reap w);
             bury w)
