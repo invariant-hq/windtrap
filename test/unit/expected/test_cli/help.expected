@@ -42,6 +42,9 @@ OPTIONS:
   --prop-count=N (env WINDTRAP_PROP_COUNT)
       Generated cases per property.
 
+  --replay=TOKEN (env WINDTRAP_REPLAY)
+      Check each selected property on the one case of TOKEN alone.
+
   -u, --update
       Accept baseline changes in place (refused under CI).
 

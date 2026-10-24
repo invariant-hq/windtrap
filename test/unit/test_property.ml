@@ -1448,6 +1448,85 @@ let running_again =
         past_discards;
     ]
 
+(* Replaying *)
+
+let token_of o =
+  match (failed o).kind with
+  | Property { token = Some token; _ } -> token
+  | _ -> fail "no token"
+
+let message_of o =
+  match (failed o).kind with
+  | Message t -> t.kept
+  | _ -> fail "no message"
+
+let big x = if x >= 10 then Check.fail "big"
+let shrunk_run gen law = Property.run ~root ~path:"replay" gen law
+
+let replaying =
+  group "Replaying"
+    [
+      test "a token replays its counterexample alone, as a replayed case"
+        (fun () ->
+          let gen = Gen.(list (int_range 0 100)) in
+          let all_small _ l = List.iter big l in
+          let token = token_of (shrunk_run gen all_small) in
+          let law, seen = traced all_small in
+          let o = Property.run ~replay:token ~root ~path:"replay" gen law in
+          equal (list string)
+            [ "[10]"; "true"; token ]
+            [
+              (counterexample o).rendered;
+              string_of_bool (counterexample o).examples;
+              token_of o;
+            ];
+          equal (list (list int)) [ [ 10 ] ] (seen ()));
+      test "a token whose case now passes passes, after one run" (fun () ->
+          let gen = Gen.int_range 0 100 in
+          let token = token_of (shrunk_run gen (fun _ -> big)) in
+          equal string "pass, 1 cases, 0 discards"
+            (verdict (Property.run ~replay:token ~root ~path:"p" gen (fun _ _ -> ()))));
+      test "a token is stale where its generator parses another value"
+        (fun () ->
+          let token =
+            token_of (shrunk_run (Gen.int_range 0 100) (fun _ -> big))
+          in
+          let stale gen =
+            message_of (Property.run ~replay:token ~root ~path:"p" gen (fun _ _ -> ()))
+          in
+          List.iter
+            (fun text -> starts_with ~affix:("--replay " ^ token ^ ": stale") text)
+            [
+              stale (Gen.int_range 0 5);
+              stale (Gen.pair (Gen.int_range 0 100) Gen.bool);
+              stale (Gen.int_range 5 100);
+              stale (Gen.with_pp (fun ppf n -> Format.fprintf ppf "n=%d" n)
+                       (Gen.int_range 0 100));
+            ]);
+      test "a token replays a value that another generator parses alike"
+        (fun () ->
+          let token =
+            token_of (shrunk_run (Gen.int_range 0 100) (fun _ -> big))
+          in
+          equal string "fail, 0 cases, 0 discards"
+            (verdict
+               (Property.run ~replay:token ~root ~path:"p"
+                  (Gen.int_range 0 50) (fun _ -> big))));
+      test "a token that does not parse, or that a tree reads, is refused"
+        (fun () ->
+          let refused ?(gen = Gen.int) token =
+            message_of (Property.run ~replay:token ~root ~path:"p" gen (fun _ _ -> ()))
+          in
+          equal (list string)
+            [
+              "--replay r2:AA:00: a replay token is r1:, base64url choices, : \
+               and a digest";
+              "--replay r1:AA:00: no choice sequence describes this test's \
+               cases";
+            ]
+            [ refused "r2:AA:00"; refused ~gen:(drawn (chain 3)) "r1:AA:00" ]);
+    ]
+
 let () =
   exit
     (run "property"
@@ -1464,4 +1543,5 @@ let () =
          progress;
          printing;
          running_again;
+         replaying;
        ])

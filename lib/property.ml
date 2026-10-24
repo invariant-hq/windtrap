@@ -287,7 +287,8 @@ let inner_failure : Failure.fault -> Failure.t = function
 
 let run ?loc ?count ?max_discard ?(examples = []) ?(summary = Fun.const None)
     ?(prints_run = false) ?(cost = 1) ?(deterministic = true)
-    ?(output = Fun.const None) ?(shrinking = ignore) ~root ~path gen law =
+    ?(output = Fun.const None) ?(shrinking = ignore) ?replay ~root ~path gen
+    law =
   let count, config_count =
     match count with
     | None -> (default_count, None)
@@ -445,4 +446,42 @@ let run ?loc ?count ?max_discard ?(examples = []) ?(summary = Fun.const None)
                   ~rendered fault
             | None -> assert false))
   in
-  run_examples 0 examples
+  (* A replayed case is neither seeded nor shrunk, as an example, and keeps
+     its token. A token that its generator no longer parses to the value it
+     recorded is refused as stale: it never checks another value. *)
+  let replayed token =
+    let refused why =
+      let message = Pp.str "--replay %s: %s" token why in
+      Fail { failure = Failure.message ?loc message; stats = stats ctx }
+    in
+    match (Choice.of_token token, Gen.Engine.tree gen) with
+    | Error why, _ -> refused why
+    | Ok _, Some _ -> refused "no choice sequence describes this test's cases"
+    | Ok (choices, digested), None -> (
+        let src = Choice.replaying choices in
+        match Failure.catch (fun () -> Gen.Engine.parse gen src) with
+        | Error (`Timeout limit) -> timed_out ~case_index:0 ~examples:true limit
+        | Error (`Discard | #Failure.fault) ->
+            refused "stale: its generator no longer parses a value from it"
+        | Error (#Failure.control as control) -> Failure.reraise control
+        | Ok node -> (
+            let text, rendering = rendered node in
+            if choices <> Choice.choices src || digested <> digest text then
+              refused
+                (Pp.str "stale: its generator now parses %s, not the value it \
+                   recorded" text)
+            else
+              match check law (Gen.Engine.value node) with
+              | `Passed -> Pass (stats ctx)
+              | `Discarded -> refused "the law discarded its case"
+              | `Timed_out limit ->
+                  timed_out ~case_index:0 ~examples:true limit
+              | `Failed fault ->
+                  let tail = output_after_failure () in
+                  let summary = summary (Gen.Engine.value node) in
+                  fail ~case_index:0 ~examples:true ?summary ~rendering ?tail
+                    ~token ~rendered:text fault))
+  in
+  match replay with
+  | Some token -> replayed token
+  | None -> run_examples 0 examples

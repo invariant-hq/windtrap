@@ -23,6 +23,7 @@ type parsed = {
   timeout : float option;
   slow_threshold : float option;
   prop_count : int option;
+  replay : string option;
   verbose : bool option;
   junit : string option;
   color : Os.color_mode option;
@@ -52,6 +53,7 @@ let empty =
     timeout = None;
     slow_threshold = None;
     prop_count = None;
+    replay = None;
     verbose = None;
     junit = None;
     color = None;
@@ -151,6 +153,9 @@ let seed value =
     (fun _ -> "an s1: token with 16 lowercase hexadecimal digits")
     (Seed.of_string value)
 
+let replay_token value =
+  Result.map (fun _ -> value) (Choice.of_token value)
+
 let add_filter p pattern = { p with filter = p.filter @ [ pattern ] }
 
 (* [color_mode] reads this row alone, so WINDTRAP_COLOR means one thing for
@@ -223,6 +228,10 @@ let entries =
       (value "N" positive_int (fun p n -> { p with prop_count = Some n }))
       ~mirror:(mirrored "WINDTRAP_PROP_COUNT" (fun p -> p.prop_count = None))
       "Generated cases per property.";
+    row "--replay"
+      (value "TOKEN" replay_token (fun p t -> { p with replay = Some t }))
+      ~mirror:(mirrored "WINDTRAP_REPLAY" (fun p -> p.replay = None))
+      "Check each selected property on the one case of TOKEN alone.";
     row ~short:"-u" "--update"
       (Flag (fun p -> { p with update = Some true }))
       ~mirror:None "Accept baseline changes in place (refused under CI).";
@@ -494,6 +503,7 @@ let settings cli =
         | _ -> Baseline.Check);
       timeout = layered.timeout;
       prop_count = layered.prop_count;
+      replay = layered.replay;
       log_dir =
         Option.value
           (absolute_path ~cli ~layered (fun p -> p.log_dir))

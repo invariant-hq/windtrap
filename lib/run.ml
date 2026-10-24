@@ -30,6 +30,7 @@ type config = {
   baseline : Baseline.mode;
   timeout : float option;
   prop_count : int option;
+  replay : string option;
   log_dir : string;
   allow_focus : bool;
   color : Os.color_mode;
@@ -60,6 +61,7 @@ let default_config () =
     baseline = Baseline.Check;
     timeout = None;
     prop_count = None;
+    replay = None;
     log_dir = Os.default_log_dir ();
     allow_focus = false;
     color = Os.Auto;
@@ -692,7 +694,7 @@ let property ?loc ?count ?max_discard ?examples ?summary ?prints_run ?cost
   let outcome =
     match
       Property.run ?loc ?count ?max_discard ?examples ?summary ?prints_run ?cost
-        ?deterministic ~output ~shrinking ~root:config.seed
+        ?deterministic ?replay:config.replay ~output ~shrinking ~root:config.seed
         ~path:(Test_tree.path_to_string frame.path)
         gen run_law
     with

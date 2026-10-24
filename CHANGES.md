@@ -128,6 +128,9 @@
   temporary directory go with it.
 - An `at_exit` handler that a test registers runs as its worker ends;
   one that raises fails the run and names the test.
+- `--replay TOKEN` (`WINDTRAP_REPLAY`) checks each selected property on
+  the one case of a token that a failure printed; a token whose
+  generator now parses another value fails as stale and checks nothing.
 
 ### Coverage
 

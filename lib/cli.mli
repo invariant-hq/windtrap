@@ -77,6 +77,7 @@ type parsed = {
   slow_threshold : float option;
       (** [--slow-threshold SECONDS]: a finite and non-negative number. *)
   prop_count : int option;  (** [--prop-count N]: a positive integer. *)
+  replay : string option;  (** [--replay TOKEN]: a replay token. *)
   verbose : bool option;  (** [-v], [--verbose]. *)
   junit : string option;  (** [--junit PATH]. *)
   color : Os.color_mode option;

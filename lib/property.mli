@@ -185,6 +185,7 @@ val run :
   ?deterministic:bool ->
   ?output:(unit -> Failure.tail option) ->
   ?shrinking:(int -> unit) ->
+  ?replay:string ->
   root:Seed.seed ->
   path:string ->
   'a Gen.t ->
@@ -228,6 +229,17 @@ val run :
       that the search has accepted. It is first called with [0], and never for
       an example or for a case whose sample has no candidate. It must not raise,
       though the test's limit can expire while it runs. Defaults to [ignore].
+
+    - [replay] is a replay token (see {!Choice.token}). When given, the run
+      checks its one case alone, in place of the examples and the generated
+      cases: it parses the token's choices, and the law runs on the value when
+      the parse read exactly those choices and the value prints with the
+      token's digest. A failure is then reported as an example is, with
+      [case_index] [0], [examples] [true] and the token. A token that does not
+      parse, a token whose parse reads other choices, prints another value,
+      discards or raises, a case the law discards, and a generator of
+      [Gen.Engine.make] each fail the run with a message that names the token,
+      a stale token as stale.
 
     {b Examples.} The examples run first, in order, unshrunk and without a seed.
     A passing example commits its labels and counts in [cases], a discarding one

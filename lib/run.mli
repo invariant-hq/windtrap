@@ -95,6 +95,10 @@ type config = {
   prop_count : int option;
       (** [--prop-count]: the generated cases of a property that declares no
           [count] (see {!prop}). *)
+  replay : string option;
+      (** [--replay]: the replay token that every property of the run checks
+          alone, in place of its examples and generated cases (see
+          {!Property.run}). *)
   log_dir : string;
       (** [-o]: the root directory of the capture logs and of the last-failed
           store. {!execute} uses it as given, so a relative one follows a test

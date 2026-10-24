@@ -233,6 +233,7 @@ let parent : Run.config =
     baseline = Baseline.Update;
     timeout = Some 3.;
     prop_count = Some 7;
+    replay = None;
     log_dir = "parent";
     allow_focus = false;
     color = Os.Never;
