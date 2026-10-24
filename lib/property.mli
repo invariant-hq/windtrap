@@ -248,13 +248,12 @@ val run :
     - [replay] is a replay token (see {!Choice.token}). When given, the run
       checks its one case alone, in place of the examples and the generated
       cases: it parses the token's choices, and the law runs on the value when
-      the parse read exactly those choices and the value prints with the
-      token's digest. A failure is then reported as an example is, with
-      [case_index] [0], [examples] [true] and the token. A token that does not
-      parse, a token whose parse reads other choices, prints another value,
-      discards or raises, a case the law discards, and a generator of
-      [Gen.Engine.make] each fail the run with a message that names the token,
-      a stale token as stale.
+      the parse read exactly those choices and the value prints with the token's
+      digest. A failure is then reported as an example is, with [case_index]
+      [0], [examples] [true] and the token. A token that does not parse, a token
+      whose parse reads other choices, prints another value, discards or raises,
+      and a case the law discards each fail the run with a message that names
+      the token, a stale token as stale.
 
     {b Examples.} The examples run first, in order, unshrunk and without a seed.
     A passing example commits its labels and counts in [cases], a discarding one
@@ -267,17 +266,17 @@ val run :
     given, unless its run raised a {!Run_failure}. A control that the printer
     raises acts as one that [law] raises.
 
-    {b Finite domains.} After the examples, unless [count] is [0] or [gen] is
-    a tree of [Gen.Engine.make], the run parses [gen]'s sequences in
-    lexicographic order, each reading zeros past its prefix, to find whether
-    its domain has at most [count] values; a sequence that discards or that
-    {!Choice.respelled} is no value. It stops as soon as the domain proves
-    larger, endless or raising (see the bounds in [property.ml]). A domain of
-    at most [count] values is checked whole, in place of the generated cases:
-    the law runs on every value in that order, [stats.whole] is [Some n], and
-    when values fail the [Fail]'s failure is the first, with [domain]
-    [Some n], [case_index] its position, no shrink step, and the others in
-    [also]. Discards and demands are judged as after generated cases.
+    {b Finite domains.} After the examples, unless [count] is [0], the run
+    parses [gen]'s sequences in lexicographic order, each reading zeros past its
+    prefix, to find whether its domain has at most [count] values; a sequence
+    that discards or that {!Choice.respelled} is no value. It stops as soon as
+    the domain proves larger, endless or raising (see the bounds in
+    [property.ml]). A domain of at most [count] values is checked whole, in
+    place of the generated cases: the law runs on every value in that order,
+    [stats.whole] is [Some n], and when values fail the [Fail]'s failure is the
+    first, with [domain] [Some n], [case_index] its position, no shrink step,
+    and the others in [also]. Discards and demands are judged as after generated
+    cases.
 
     {b Generated cases.} [index] counts from zero and counts the discarded
     cases, so a discarded seed is never drawn again. The run ends when [count]
@@ -304,13 +303,6 @@ val run :
     each costing [runs], or [1] when it discards, have spent {!shrink_budget},
     [Failure.Budget_spent].
 
-    The program of a stateful test is drawn as a tree ([Gen.Engine.make]),
-    which no choice describes: its search descends the tree, moving at each
-    node to the first candidate that fails in the class of the first failure,
-    with the same budget, and also ends when the forcing of a candidate raises
-    anything but a [`Timeout], [Failure.Candidate_raised] with that exception
-    as [Failure.exn_to_string] prints it.
-
     A [`Timeout] raised anywhere in the search ends it as well,
     [Failure.Timed_out] with the limit. The failure then describes the last
     accepted case, a case being accepted once [output] has returned on it, and
@@ -320,14 +312,13 @@ val run :
     same steps, and a timeout changes only where among them the search stops.
 
     {b Printing.} The runs of the search can change the value of the final case,
-    so the counterexample prints parsed again from its choices, or for a tree
-    drawn again along the search's route. A pure [gen] builds the counterexample
-    as it was first generated, whatever a run of [law] did to the value it was
-    given, and nothing runs on the value before it is printed. The final case
-    prints as the search left it when the parse fails, which an impure [gen] or
-    the test's limit can cause. A case whose run raised a {!Run_failure} prints
-    as its [record], with its [summary], in place of the value and of [summary];
-    its token's digest is still of the value's printing.
+    so the counterexample prints parsed again from its choices. A pure [gen]
+    builds the counterexample as it was first generated, whatever a run of [law]
+    did to the value it was given, and nothing runs on the value before it is
+    printed. The final case prints as the search left it when the parse fails,
+    which an impure [gen] or the test's limit can cause. A case whose run raised
+    a {!Run_failure} prints as its [record], with its [summary], in place of the
+    value and of [summary]; its token's digest is still of the value's printing.
 
     {b Running again.} After the search, a law of one run per case runs once
     more on the counterexample parsed again as for printing. One draw serves

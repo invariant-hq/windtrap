@@ -108,12 +108,7 @@ and timed_case = {
   count : int option;
 }
 
-and shrink_end =
-  | Converged
-  | Budget_spent
-  | Candidate_raised of text
-  | Timed_out of float
-
+and shrink_end = Converged | Budget_spent | Timed_out of float
 and rendering = Ocaml | Value | Pre_image
 
 and t = {

@@ -10,7 +10,7 @@ module Gen_engine = Windtrap.Private.Gen_engine
 module Loc = Windtrap.Private.Loc
 module Property = Windtrap.Private.Property
 module Seed = Windtrap.Private.Seed
-module Shrink_tree = Gen_engine.Shrink_tree
+module Choice = Windtrap.Private.Choice
 
 let strf = Printf.sprintf
 let root = 0x00c0ffee1234abcdL
@@ -65,7 +65,6 @@ let stats = function
 let ending = function
   | Failure.Converged -> "converged"
   | Budget_spent -> "budget spent"
-  | Candidate_raised t -> "candidate raised " ^ t.kept
   | Timed_out limit -> strf "timed out after %gs" limit
 
 let case ~examples index =
@@ -138,9 +137,8 @@ let escaped f =
 (* The value that case [index] of [path] draws under [root], by the derivation
    that [Property.run] states. *)
 let value_at ?(root = root) gen ~path ~index =
-  Gen_engine.value
-    (Shrink_tree.root
-       (Gen_engine.sample gen (Seed.make (Seed.derive ~root ~path ~index))))
+  let state = Seed.make (Seed.derive ~root ~path ~index) in
+  Gen_engine.value (Gen_engine.parse gen (Choice.generating state))
 
 (* The discarded cases before [n] cases of [gen] under [path] satisfy [keep]. *)
 let discarded gen ~path ~keep n =
@@ -161,17 +159,20 @@ let traced law =
   in
   (run, fun () -> List.rev !seen)
 
-(* Hand-built shrink trees *)
+(* Hand-built generators *)
 
-let node root children = Shrink_tree.make ~root ~children:(List.to_seq children)
+(* [counter n] draws [n] as one choice, which the reducer deletes, lowers to
+   [0], then lowers by binary search. Its bound is [max_int], so its domain is
+   never checked whole. *)
+let counter n =
+  let n = Int64.of_int n in
+  Gen_engine.make ~pp:Format.pp_print_int (fun src ->
+      Int64.to_int
+        (Choice.choice src ~bound:Int64.max_int
+           (Choice.sample src (fun s -> (n, s)))))
 
-let drawn tree =
-  Gen_engine.make_tree ~pp:Format.pp_print_int (fun s -> (tree, s))
-
-(* [n] down to [0], one candidate per node. *)
-let rec chain n =
-  Shrink_tree.make ~root:n ~children:(fun () ->
-      if n = 0 then Seq.Nil else Seq.Cons (chain (n - 1), Seq.empty))
+(* [fixed v] draws [v] and reads no choice, so it has no candidate. *)
+let fixed ?pp v = Gen_engine.make ?pp (fun _ -> v)
 
 let timeout limit = Failure.Control (`Timeout limit)
 
@@ -697,7 +698,7 @@ let spenders =
   ]
 
 let raising_generators =
-  let raising e = Gen_engine.make_tree (fun _ -> raise e) in
+  let raising e = Gen_engine.make (fun _ -> raise e) in
   [
     ("Not_found", (raising Not_found, "raise Not_found"));
     ( "an assertion",
@@ -777,19 +778,17 @@ let minimal () =
   at_least int ~than:1 p.steps;
   equal string ("expected 0, actual " ^ p.rendered) (inner_row p.inner)
 
-(* The root is [3], its candidates [1] then [2], and [2] has none. The law
-   fails on [3] and on [2] in the class of [first], and does [candidate] on
-   [1]. *)
+(* The case is [3], whose candidates are [0], which passes, then [1], then
+   [2] when [1] is rejected. The law fails on [3] and on [2] in the class of
+   [first], and does [candidate] on [1]. *)
 let search first candidate =
   let law _ = function
     | 3 -> first "first"
     | 1 -> candidate ()
+    | 0 -> ()
     | _ -> first "at 2"
   in
-  outcome_row
-    (Property.run ~root ~path:"search"
-       (drawn (node 3 [ node 1 []; node 2 [] ]))
-       law)
+  outcome_row (Property.run ~root ~path:"search" (counter 3) law)
 
 let assertion what = Check.fail what
 let exception_ what = if what = "first" then raise Exit else raise Not_found
@@ -839,25 +838,28 @@ let candidates =
          Not_found" ) );
   ]
 
-let budget_runs () =
-  let wide = 999 and depth = 50 in
-  let rec tree k =
-    let passing = Seq.init wide (fun i -> Shrink_tree.leaf (-i - 1)) in
-    let failing = if k = 0 then Seq.empty else Seq.return (tree (k - 1)) in
-    Shrink_tree.make ~root:k ~children:(Seq.append passing failing)
+(* [ones] draws 250 choices of [1]. Each candidate lowers one of them to [0],
+   so a law that fails only on all ones rejects them all, and their 250 runs
+   of 50 spend more than the budget. *)
+let ones =
+  let pp ppf ones = Format.fprintf ppf "%d ones" (List.length ones) in
+  Gen_engine.make ~pp (fun src ->
+      List.init 250 (fun _ ->
+          Choice.choice src ~bound:1L (Choice.sample src (fun s -> (1L, s)))))
+
+let all_ones = List.for_all (Int64.equal 1L)
+
+(* The cases that [law] ran on and its runs, over [ones] with [runs]. *)
+let probed ?runs law =
+  let cases = ref 0 and calls = ref 0 and last = ref [] in
+  let law ctx values =
+    incr calls;
+    if values != !last then incr cases;
+    last := values;
+    law ctx values
   in
-  let runs = ref 0 in
-  let law _ n =
-    incr runs;
-    if n >= 0 then raise Not_found
-  in
-  let o = Property.run ~root ~path:"wide" (drawn (tree depth)) law in
-  equal string
-    "fail, 0 cases, 0 discards; case 0, 10 steps, budget spent: 40; raise \
-     Not_found"
-    (outcome_row o);
-  (* The case's first run, the budget, and the run again. *)
-  equal int (Property.shrink_budget + 2) !runs
+  let o = Property.run ?runs ~root ~path:"budget" ones law in
+  (outcome_row o, !cases, !calls)
 
 let quad () =
   let gen = Gen.quad Gen.int64 Gen.int64 Gen.int64 Gen.int64 in
@@ -869,56 +871,35 @@ let quad () =
   equal string "converged" (ending p.ending);
   at_most int ~than:256 p.steps
 
-let raising_candidate () =
-  let tree =
-    Shrink_tree.make ~root:20 ~children:(fun () -> failwith "forcing raised")
-  in
-  let o =
-    Property.run ~root ~path:"raising" (drawn tree) (fun _ _ ->
-        Check.fail "always")
-  in
-  equal string
-    {|fail, 0 cases, 0 discards; case 0, 0 steps, candidate raised Failure("forcing raised"): 20; message always|}
-    (outcome_row o)
-
 let timed_out_searches =
   let first_candidate calls _ =
     if calls = 1 then Check.fail "original" else raise (timeout 0.25)
   in
-  let fourth_run calls x =
-    if calls >= 4 then raise (timeout 0.1) else if x >= 10 then Check.fail "big"
+  (* [40] fails, [0] passes twice, then [20] and [10] fail. *)
+  let sixth_run calls x =
+    if calls >= 6 then raise (timeout 0.1) else if x >= 10 then Check.fail "big"
   in
-  let run tree law () =
+  let run gen law () =
     let calls = ref 0 in
     let counted _ x =
       incr calls;
       law !calls x
     in
-    Property.run ~root ~path:"timeout" (drawn tree) counted
+    Property.run ~root ~path:"timeout" gen counted
   in
   [
     ( "on the first candidate",
-      ( run (node 3 [ node 1 [] ]) first_candidate,
+      ( run (counter 3) first_candidate,
         "fail, 0 cases, 0 discards; case 0, 0 steps, timed out after 0.25s: 3; \
          message original" ) );
-    ( "while a candidate is forced",
-      ( run
-          (Shrink_tree.make ~root:3 ~children:(fun () -> raise (timeout 0.3)))
-          (fun _ _ -> Check.fail "original"),
-        "fail, 0 cases, 0 discards; case 0, 0 steps, timed out after 0.3s: 3; \
-         message original" ) );
     ( "after accepted steps",
-      ( run (node 40 [ node 20 [ node 10 [ node 5 [] ] ] ]) fourth_run,
+      ( run (counter 40) sixth_run,
         "fail, 0 cases, 0 discards; case 0, 2 steps, timed out after 0.1s: 10; \
          message big" ) );
   ]
 
 let formatting_timeout () =
-  let gen =
-    Gen_engine.make_tree
-      ~pp:(fun _ _ -> raise (timeout 0.25))
-      (fun s -> (node 3 [], s))
-  in
+  let gen = fixed ~pp:(fun _ _ -> raise (timeout 0.25)) 3 in
   let o =
     Property.run ~root ~path:"formatting" gen (fun _ _ -> Check.fail "always")
   in
@@ -949,64 +930,32 @@ let shrinking =
         "a candidate is accepted iff it fails in the class of the first failure"
         ~name:fst candidates (fun (_, (first, candidate, row)) ->
           equal string row (search first candidate));
-      cases "a search that spends the budget ends at the next candidate"
-        ~name:fst
-        [
-          ("a candidate left", (Property.shrink_budget + 1, "budget spent: 1"));
-          ("no candidate left", (Property.shrink_budget, "converged: 0"));
-        ]
-        (fun (_, (n, row)) ->
-          let o =
-            Property.run ~root ~path:"budget"
-              (drawn (chain n))
-              (fun _ _ -> raise Not_found)
-          in
-          equal string
-            (strf
-               "fail, 0 cases, 0 discards; case 0, 10000 steps, %s; raise \
-                Not_found"
-               row)
-            (outcome_row o));
-      cases "a law that runs each case 50 times spends the budget in 200 cases"
-        ~name:fst
-        [
-          ("a candidate left", (201, "200 steps, budget spent: 1"));
-          ("no candidate left", (200, "200 steps, converged: 0"));
-        ]
-        (fun (_, (n, row)) ->
-          let o =
-            Property.run ~runs:50 ~root ~path:"budget"
-              (drawn (chain n))
-              (fun _ _ -> raise Not_found)
-          in
-          equal string
-            (strf "fail, 0 cases, 0 discards; case 0, %s; raise Not_found" row)
-            (outcome_row o));
+      test "a law that runs each case 50 times probes 200 cases with the budget"
+        (fun () ->
+          equal (triple string int int)
+            ( "fail, 0 cases, 0 discards; case 0, 0 steps, budget spent: 250 \
+               ones; raise Not_found",
+              (* The case, then 200 candidates. *)
+              201,
+              1 + (200 * 50) )
+            (probed ~runs:50 (fun _ values ->
+                 if all_ones values then raise Not_found)));
       test "runs below 1 raise" (fun () ->
           raises_match Exn.invalid_arg (fun () ->
-              Property.run ~runs:0 ~root ~path:"budget"
-                (drawn (chain 1))
-                (fun _ _ -> ())));
+              Property.run ~runs:0 ~root ~path:"budget" (counter 1) (fun _ _ ->
+                  ())));
       test "a candidate that discards costs one run, whatever its runs"
         (fun () ->
-          let discarding = Seq.init 300 (fun _ -> Shrink_tree.leaf (-1)) in
-          let tree =
-            Shrink_tree.make ~root:0
-              ~children:
-                (Seq.append discarding (Seq.return (Shrink_tree.leaf 1)))
-          in
-          let o =
-            Property.run ~runs:50 ~root ~path:"budget" (drawn tree) (fun _ n ->
-                if n < 0 then Property.reject ();
-                raise Not_found)
-          in
-          equal string
-            "fail, 0 cases, 0 discards; case 0, 1 steps, converged: 1; raise \
-             Not_found"
-            (outcome_row o));
-      test "the budget counts every candidate probed" budget_runs;
+          equal (triple string int int)
+            ( "fail, 0 cases, 0 discards; case 0, 0 steps, converged: 250 \
+               ones; raise Not_found",
+              (* The case, then every candidate. *)
+              256,
+              256 )
+            (probed ~runs:50 (fun _ values ->
+                 if not (all_ones values) then Property.reject ();
+                 raise Not_found)));
       test "a quad of int64 converges within 256 steps" quad;
-      test "a candidate whose forcing raises ends the search" raising_candidate;
       cases "a timeout in the search ends it at the last accepted node"
         ~name:fst timed_out_searches (fun (_, (run, row)) ->
           equal string row (outcome_row (run ())));
@@ -1046,9 +995,9 @@ let echoed ?examples ?interrupt gen law =
 
 let at_least_10 _ x = if x >= 10 then Check.fail "big"
 
-(* [40] fails, its candidate [5] passes and [20] fails, and [20]'s candidate
-   [10] fails and has none. *)
-let descent = drawn (node 40 [ node 5 []; node 20 [ node 10 []; node 15 [] ] ])
+(* Under [at_least_10], [40] fails, [0] passes, [20] and [10] fail, and the
+   search then finds that [5] to [9] pass. *)
+let descent = counter 40
 let outcome_asked = triple string (option string) (list int)
 
 (* Runs *)
@@ -1173,18 +1122,29 @@ let progress =
               [
                 "run 40";
                 "shrinking 0";
-                "run 5";
+                "run 0";
+                "shrinking 0";
+                "run 0";
                 "shrinking 0";
                 "run 20";
                 "shrinking 1";
                 "run 10";
+                "shrinking 2";
+                "run 5";
+                "shrinking 2";
+                "run 7";
+                "shrinking 2";
+                "run 8";
+                "shrinking 2";
+                "run 9";
                 "run 10";
               ] )
             (told descent));
       cases "shrinking is not told of a failure that has no candidate" ~name:fst
         [
           ("a failing example", fun () -> told ~examples:[ 42 ] descent);
-          ("a case whose sample has none", fun () -> told (drawn (node 40 [])));
+          ( "a case whose sample has none",
+            fun () -> told (fixed ~pp:Format.pp_print_int 40) );
         ]
         (fun (_, run) ->
           is_false
@@ -1197,7 +1157,7 @@ let progress =
           equal string
             "fail, 0 cases, 0 discards; case 0, 1 steps, timed out after \
              0.25s: 20; message big"
-            (fst (told ~interrupt:(3, timeout 0.25) descent)));
+            (fst (told ~interrupt:(4, timeout 0.25) descent)));
     ]
 
 (* Printing *)
@@ -1232,32 +1192,24 @@ let emptied ?(recorded = false) ?examples gen =
 
 let emptied_row = pair string (option string)
 
-(* A generator whose first sample is [tree], and whose later samples are
-   [later ()]: an impure one, whose draw again reaches no counterexample. *)
-let once tree later =
-  let sampled = ref false in
-  Gen_engine.make_tree ~pp:pp_cell (fun s ->
-      if !sampled then (later (), s)
-      else begin
-        sampled := true;
-        (tree, s)
-      end)
+(* A generator of cells that draws [ref 40] and raises on every replay: an
+   impure one, whose parse again reaches no counterexample. *)
+let once () =
+  Gen_engine.make ~pp:pp_cell (fun src ->
+      let drawn = Choice.sample src (fun s -> (40L, s)) in
+      ignore (Choice.choice src ~bound:Int64.max_int drawn);
+      if Option.is_none drawn then failwith "impure" else ref 40)
 
-let unreached =
-  [
-    ("a later draw with no candidate", fun () -> node (ref 7) []);
-    ("a later draw that raises", fun () -> failwith "impure");
-  ]
-
-(* How many times a failing case of [descent]'s tree is sampled. *)
+(* How many times [descent]'s counterexample, [10], is parsed. *)
 let samples ?runs () =
   let count = ref 0 in
-  let gen =
-    Gen_engine.make_tree ~pp:Format.pp_print_int (fun s ->
-        incr count;
-        (node 40 [ node 5 []; node 20 [ node 10 []; node 15 [] ] ], s))
+  let counted x =
+    if x = 10 then incr count;
+    x
   in
-  ignore (Property.run ?runs ~root ~path:"samples" gen at_least_10);
+  ignore
+    (Property.run ?runs ~root ~path:"samples" (Gen.map counted descent)
+       at_least_10);
   !count
 
 (* A law that sorts its array in place and fails when the array was not
@@ -1316,16 +1268,15 @@ let printing =
             "fail, 1 cases, 0 discards; case 1, 0 steps, timed out after \
              0.25s: 91; message big"
             (outcome_row (Property.run ~root ~path:"cells" cells law)));
-      cases
-        "a counterexample that the draw again does not reach prints as the \
-         search left it"
-        ~name:fst unreached (fun (_, later) ->
+      test
+        "a counterexample that the parse again does not reach prints as the \
+         search left it" (fun () ->
           equal emptied_row
-            ( "fail, 0 cases, 0 discards; case 0, 1 steps, converged: 0; \
+            ( "fail, 0 cases, 0 discards; case 0, 0 steps, converged: 0; \
                message big",
               Some "held 0" )
-            (emptied (once (node (ref 40) [ node (ref 20) [] ]) later)));
-      cases "one draw again serves the printing and the run again"
+            (emptied (once ())));
+      cases "one parse again serves the printing and the run again"
         ~name:(fun (n, _) -> n)
         [ ("printed and run", None); ("printed, not run", Some 2) ]
         (fun (_, runs) -> equal int 2 (samples ?runs ()));
@@ -1380,11 +1331,11 @@ let printing =
 (* Running again *)
 
 (* A law that fails on the first run on each value of at least 10, and does
-   [later] on any later run on a value. *)
+   [later] on any later run on such a value. *)
 let first_sight later =
   let seen = Hashtbl.create 8 in
   fun _ x ->
-    if Hashtbl.mem seen x then later ()
+    if x >= 10 && Hashtbl.mem seen x then later ()
     else begin
       Hashtbl.replace seen x ();
       if x >= 10 then Check.fail "big"
@@ -1431,7 +1382,7 @@ let timed_out_search () =
     ( "fail, 0 cases, 0 discards; case 0, 0 steps, timed out after 0.25s: 40; \
        message big",
       None,
-      [ 40; 5; 20 ] )
+      [ 40; 0; 0 ] )
     (ran_again descent law)
 
 let changed_in_place () =
@@ -1445,16 +1396,13 @@ let changed_in_place () =
       Some true )
     (outcome_row o, failed_again o)
 
-(* [40] fails, its candidate [3] discards and [20] fails, and [20]'s
-   candidate [1] discards and [10] fails. The run again follows the accepted
-   candidates, the second of their siblings, and not the discarding ones. *)
+(* Below [5] the law discards, so the search reaches [10] past discarding
+   candidates, and the run again parses its choices, not theirs. *)
 let past_discards () =
   let law _ x = if x < 5 then Property.reject () else at_least_10 () x in
   equal ran_again_row
-    (converged_at_10, Some true, [ 40; 3; 20; 1; 10; 10 ])
-    (ran_again
-       (drawn (node 40 [ node 3 []; node 20 [ node 1 []; node 10 [] ] ]))
-       law)
+    (converged_at_10, Some true, [ 40; 0; 0; 20; 10; 5; 7; 8; 9; 10 ])
+    (ran_again descent law)
 
 let running_again =
   group "Running again"
@@ -1462,7 +1410,7 @@ let running_again =
       cases "the counterexample runs once more after the search" ~name:fst
         reruns (fun (_, (law, again)) ->
           equal ran_again_row
-            (converged_at_10, again, [ 40; 5; 20; 10; 10 ])
+            (converged_at_10, again, [ 40; 0; 0; 20; 10; 5; 7; 8; 9; 10 ])
             (ran_again descent law));
       test "a failing example does not run again" (fun () ->
           equal ran_again_row
@@ -1473,7 +1421,9 @@ let running_again =
             (ran_again ~examples:[ 3; 42 ] descent (first_sight ignore)));
       test "a law that runs each case twice does not run again" (fun () ->
           equal ran_again_row
-            (converged_at_10, None, [ 40; 5; 5; 20; 10 ])
+            ( converged_at_10,
+              None,
+              [ 40; 0; 0; 0; 0; 20; 10; 5; 5; 7; 7; 8; 8; 9; 9 ] )
             (ran_again ~runs:2 descent (first_sight ignore)));
       test "a search that a timeout ended does not run again" timed_out_search;
       test "a generator that raised runs nothing again" (fun () ->
@@ -1630,19 +1580,13 @@ let replaying =
             (verdict
                (Property.run ~replay:token ~root ~path:"p"
                   (Gen.int_range 0 50) (fun _ -> big))));
-      test "a token that does not parse, or that a tree reads, is refused"
-        (fun () ->
-          let refused ?(gen = Gen.int) token =
-            message_of (Property.run ~replay:token ~root ~path:"p" gen (fun _ _ -> ()))
-          in
-          equal (list string)
-            [
-              "--replay r2:AA:00: a replay token is r1:, base64url choices, : \
-               and a digest";
-              "--replay r1:AA:00: no choice sequence describes this test's \
-               cases";
-            ]
-            [ refused "r2:AA:00"; refused ~gen:(drawn (chain 3)) "r1:AA:00" ]);
+      test "a token that does not parse is refused" (fun () ->
+          equal string
+            "--replay r2:AA:00: a replay token is r1:, base64url choices, : \
+             and a digest"
+            (message_of
+               (Property.run ~replay:"r2:AA:00" ~root ~path:"p" Gen.int
+                  (fun _ _ -> ()))));
     ]
 
 let () =

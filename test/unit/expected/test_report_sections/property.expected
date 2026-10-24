@@ -66,12 +66,6 @@
     shrinking stopped after 50 steps; counterexample may not be minimal
     replay: WINDTRAP_SEED=s1:7be1d2c904aa31f5 dune runtest
 
-=== a candidate that raised is named, then the search's stop
-    counterexample (case 4, shrunk 3 steps): 9
-    shrinking stopped after 3 steps: a candidate raised Failure("no small values")
-    counterexample may not be minimal
-    replay: WINDTRAP_SEED=s1:7be1d2c904aa31f5 dune runtest
-
 === an inner failure without a location is which failed with
     counterexample (case 0): 7
     which failed with:

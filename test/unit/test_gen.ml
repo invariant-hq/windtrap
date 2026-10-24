@@ -14,7 +14,8 @@
 open Windtrap
 module Seed = Windtrap.Private.Seed
 module Gen_engine = Windtrap.Private.Gen_engine
-module Shrink_tree = Gen_engine.Shrink_tree
+module Choice = Windtrap.Private.Choice
+module Shrink = Windtrap.Private.Shrink
 module Property = Windtrap.Private.Property
 module Failure = Windtrap.Private.Failure
 module Pp = Windtrap.Private.Pp
@@ -23,15 +24,54 @@ let strf = Printf.sprintf
 let root = 0x00c0ffee1234abcdL
 let path = "test_gen"
 let state index = Seed.make (Seed.derive ~root ~path ~index)
-let sample gen index = Gen_engine.sample gen (state index)
-let at_seed gen seed = Gen_engine.sample gen (Seed.make seed)
-let value tree = Gen_engine.value (Shrink_tree.root tree)
+
+(* A sample with its candidates as a search reads them: the edits of one step
+   of the reducer whose parse reads a shortlex smaller sequence, each
+   sequence once, parsed when first asked for. An edit whose parse discards
+   or raises a fault is none. *)
+type 'a tree = { node : 'a Gen_engine.sample; children : 'a tree Seq.t }
+
+let case_of src : Shrink.case =
+  {
+    choices = Choice.choices src;
+    spans = Choice.spans src;
+    dependents = Choice.dependents src;
+  }
+
+let rec tree_of gen (case : Shrink.case) node =
+  let seen = Hashtbl.create 16 in
+  let candidate choices =
+    let src = Choice.replaying choices in
+    match Failure.catch (fun () -> Gen_engine.parse gen src) with
+    | Ok node
+      when Shrink.shortlex (Choice.choices src) case.choices < 0
+           && not (Hashtbl.mem seen (Choice.choices src)) ->
+        Hashtbl.add seen (Choice.choices src) ();
+        Some (tree_of gen (case_of src) node)
+    | Ok _ | Error (`Discard | #Failure.fault) -> None
+    | Error c -> Failure.reraise c
+  in
+  {
+    node;
+    children = Seq.memoize (Seq.filter_map candidate (Shrink.candidates case));
+  }
+
+(* The tree of the value that [gen] draws from [state], and the state after
+   it. *)
+let drawn gen state =
+  let src = Choice.generating state in
+  let node = Gen_engine.parse gen src in
+  (tree_of gen (case_of src) node, Option.get (Choice.state src))
+
+let sample gen index = fst (drawn gen (state index))
+let at_seed gen seed = fst (drawn gen (Seed.make seed))
+let value tree = Gen_engine.value tree.node
 let samples gen count = List.init count (fun index -> value (sample gen index))
-let candidates tree = List.of_seq (Shrink_tree.children tree)
+let candidates tree = List.of_seq tree.children
 let candidate_values tree = List.map value (candidates tree)
 
 let first_candidate tree =
-  fst (require_some ~msg:"a candidate" (Seq.uncons (Shrink_tree.children tree)))
+  fst (require_some ~msg:"a candidate" (Seq.uncons tree.children))
 
 let least values = List.fold_left min (List.hd values) values
 let greatest values = List.fold_left max (List.hd values) values
@@ -46,7 +86,7 @@ let rec words n state =
     let w, state = Seed.bits64 state in
     w :: words (n - 1) state
 
-let successor gen state = snd (Gen_engine.run gen state)
+let successor gen state = snd (drawn gen state)
 let placeholder = "<no printer: attach one with Gen.with_pp>"
 let pp_n ppf n = Format.fprintf ppf "N=%d" n
 let ints values = String.concat "; " (List.map string_of_int values)
@@ -54,7 +94,7 @@ let ints values = String.concat "; " (List.map string_of_int values)
 (* A pre-image is marked as the report marks it, so an assertion on a value
    cannot pass on one. *)
 let shown tree =
-  match Gen_engine.render (Shrink_tree.root tree) with
+  match Gen_engine.render tree.node with
   | Value text -> text
   | Pre_image text -> "from " ^ text
 
@@ -73,7 +113,7 @@ let visit ?(limit = 200) project tree =
     if !count = limit then raise_notrace Exit;
     incr count;
     seen := project tree :: !seen;
-    Seq.iter visit (Shrink_tree.children tree)
+    Seq.iter visit tree.children
   in
   (try visit tree with Exit -> ());
   List.rev !seen
@@ -90,7 +130,7 @@ let edges ?(limit = 200) tree =
         incr count;
         seen := (value tree, value child) :: !seen;
         visit child)
-      (Shrink_tree.children tree)
+      tree.children
   in
   (try visit tree with Exit -> ());
   List.rev !seen
@@ -105,8 +145,7 @@ let counterexample = function
       let text =
         match p.shrink_end with
         | Converged -> text
-        | Budget_spent | Candidate_raised _ | Timed_out _ ->
-            text ^ " (not minimal)"
+        | Budget_spent | Timed_out _ -> text ^ " (not minimal)"
       in
       Some (text, p.shrink_steps)
   | _ -> None
@@ -416,7 +455,7 @@ let malformed =
 
 let raises_when_sampled (Malformed (_, make, message)) =
   let gen = make () in
-  let draw () = Gen_engine.sample gen (state 0) in
+  let draw () = sample gen 0 in
   match message with
   | Some message -> raises (Invalid_argument message) draw
   | None -> raises_match (fun e -> Exn.invalid_arg e) draw
@@ -444,8 +483,7 @@ let pure =
    4 candidates a node. [reversed] forces the subtrees of a node last first. *)
 let rec layout ~reversed depth tree =
   let subtrees =
-    if depth = 0 then []
-    else List.of_seq (Seq.take 4 (Shrink_tree.children tree))
+    if depth = 0 then [] else List.of_seq (Seq.take 4 tree.children)
   in
   let order = if reversed then List.rev else Fun.id in
   let laid = order (List.map (layout ~reversed (depth - 1)) (order subtrees)) in
@@ -453,9 +491,7 @@ let rec layout ~reversed depth tree =
 
 let forced_in_any_order (Any (_, gen)) =
   let gen = gen () in
-  let index =
-    find_index gen (fun tree -> not (Seq.is_empty (Shrink_tree.children tree)))
-  in
+  let index = find_index gen (fun tree -> not (Seq.is_empty tree.children)) in
   equal string
     (layout ~reversed:false 3 (sample gen index))
     (layout ~reversed:true 3 (sample gen index))
@@ -1570,13 +1606,10 @@ let constructor_shares () =
 let first_then_second () =
   let draws index =
     let s = state index in
-    let a, after_a = Gen_engine.run Gen.int s in
-    let b, after_b = Gen_engine.run Gen.int after_a in
-    let ab, after_ab = Gen_engine.run Gen.(pair int int) s in
-    ( (Shrink_tree.root a, Shrink_tree.root b),
-      Shrink_tree.root ab,
-      words 2 after_b,
-      words 2 after_ab )
+    let a, after_a = drawn Gen.int s in
+    let b, after_b = drawn Gen.int after_a in
+    let ab, after_ab = drawn Gen.(pair int int) s in
+    ((value a, value b), value ab, words 2 after_b, words 2 after_ab)
   in
   let rows = List.init 10 draws in
   equal
@@ -1660,7 +1693,7 @@ let weights () =
 
 let as_it_stands () =
   let direct index =
-    value (Gen_engine.sample Gen.int (snd (Seed.below ~bound:1L (state index))))
+    value (fst (drawn Gen.int (snd (Seed.below ~bound:1L (state index)))))
   in
   equal (list int) (List.init 10 direct)
     (samples Gen.(frequency [ (1, int) ]) 10)
@@ -1668,9 +1701,9 @@ let as_it_stands () =
 let such_that_draws () =
   let draws = ref 0 in
   let counted =
-    Gen_engine.make_tree ~pp:Format.pp_print_int (fun state ->
+    Gen_engine.make ~pp:Format.pp_print_int (fun src ->
         incr draws;
-        Gen_engine.run Gen.int state)
+        Gen_engine.value (Gen_engine.parse Gen.int src))
   in
   equal string "discarded"
     (ended (fun () -> sample (Gen.such_that (fun _ -> false) counted) 0));
@@ -2084,9 +2117,9 @@ let map_forcing () =
   in
   let tree = sample (Gen.map counting Gen.int) 3 in
   let at_sampling = !calls in
-  ignore (Seq.length (Shrink_tree.children tree));
+  ignore (Seq.length tree.children);
   let forced = !calls in
-  ignore (Seq.length (Shrink_tree.children tree));
+  ignore (Seq.length tree.children);
   equal (list int) [ 1; forced ] [ at_sampling; !calls ]
 
 let map_raises () =
@@ -2299,431 +2332,6 @@ let composition =
         composition_renderings;
     ]
 
-(* Shrink trees *)
-
-let node root children = Shrink_tree.make ~root ~children:(List.to_seq children)
-let leaves values = List.map Shrink_tree.leaf values
-let same pp = Testable.make ~pp ~equal:( == )
-
-let pp_tree ppf tree =
-  Format.fprintf ppf "the tree of %d" (Shrink_tree.root tree)
-
-let head_of cell =
-  require_match
-    (function Seq.Cons (head, _) -> Some head | Seq.Nil -> None)
-    cell
-
-let tail_of cell =
-  require_match
-    (function Seq.Cons (_, tail) -> Some tail | Seq.Nil -> None)
-    cell
-
-(* [dump show depth tree] is [tree] to [depth] levels, each node its root then
-   its candidates in parentheses. *)
-let rec dump show depth tree =
-  let subtrees = if depth = 0 then [] else candidates tree in
-  show (Shrink_tree.root tree)
-  ^ "("
-  ^ String.concat " " (List.map (dump show (depth - 1)) subtrees)
-  ^ ")"
-
-let int_tree seed = fst (Gen_engine.run (Gen.int_range 0 20) (Seed.make seed))
-let show_pair (a, b) = strf "%d,%d" a b
-
-let unforced () =
-  let log = ref [] in
-  let tree =
-    Shrink_tree.make ~root:42 ~children:(fun () ->
-        log := "children" :: !log;
-        Seq.Nil)
-  in
-  equal int 42 (Shrink_tree.root tree);
-  equal (list string) [] !log
-
-let tail_unforced () =
-  let log = ref [] in
-  let tail () =
-    log := "tail" :: !log;
-    Seq.Nil
-  in
-  let tree =
-    Shrink_tree.make ~root:0 ~children:(fun () ->
-        log := "head" :: !log;
-        Seq.Cons (Shrink_tree.leaf 1, tail))
-  in
-  ignore (Shrink_tree.children tree ());
-  equal (list string) [ "head" ] !log
-
-let forced_once () =
-  let log = ref [] in
-  let note name = log := name :: !log in
-  let first = Shrink_tree.leaf 1 and second = Shrink_tree.leaf 2 in
-  let tree =
-    Shrink_tree.make ~root:0 ~children:(fun () ->
-        note "head";
-        Seq.Cons
-          ( first,
-            fun () ->
-              note "tail";
-              Seq.Cons
-                ( second,
-                  fun () ->
-                    note "end";
-                    Seq.Nil ) ))
-  in
-  let cells = Shrink_tree.children tree in
-  let heads = [ cells (); cells () ] in
-  let tails = List.map tail_of heads in
-  let seconds = List.concat_map (fun tail -> [ tail (); tail () ]) tails in
-  List.iter
-    (fun cell ->
-      ignore ((tail_of cell) ());
-      ignore ((tail_of cell) ()))
-    seconds;
-  equal (list string) [ "head"; "tail"; "end" ] (List.rev !log);
-  equal (list (same pp_tree)) [ first; first ] (List.map head_of heads);
-  equal
-    (list (same pp_tree))
-    [ second; second; second; second ]
-    (List.map head_of seconds);
-  equal
-    (same (fun ppf _ -> Format.pp_print_string ppf "<tail>"))
-    (List.hd tails) (List.nth tails 1)
-
-let raised_once () =
-  let log = ref [] in
-  let note name = log := name :: !log in
-  let error = Stdlib.Failure "forced" in
-  let raising =
-    Shrink_tree.make ~root:0 ~children:(fun () ->
-        note "head";
-        raise error)
-  in
-  let raising_tail =
-    Shrink_tree.make ~root:0 ~children:(fun () ->
-        note "second head";
-        Seq.Cons
-          ( Shrink_tree.leaf 1,
-            fun () ->
-              note "second tail";
-              raise error ))
-  in
-  let caught f = match f () with _ -> None | exception e -> Some e in
-  let cells = Shrink_tree.children raising_tail in
-  let tails = [ tail_of (cells ()); tail_of (cells ()) ] in
-  let raised =
-    List.map
-      (fun f -> require_some (caught f))
-      [
-        Shrink_tree.children raising;
-        Shrink_tree.children raising;
-        List.hd tails;
-        List.nth tails 1;
-      ]
-  in
-  equal
-    (list
-       (same (fun ppf e -> Format.pp_print_string ppf (Printexc.to_string e))))
-    [ error; error; error; error ]
-    raised;
-  equal
-    (same (fun ppf _ -> Format.pp_print_string ppf "<tail>"))
-    (List.hd tails) (List.nth tails 1);
-  equal (list string) [ "second head"; "head"; "second tail" ] (List.rev !log)
-
-let map_once () =
-  let log = ref [] in
-  let note name = log := name :: !log in
-  let source =
-    Shrink_tree.make ~root:10 ~children:(fun () ->
-        note "source";
-        Seq.Cons (Shrink_tree.leaf 5, Seq.empty))
-  in
-  let mapped =
-    Shrink_tree.map
-      (fun v ->
-        note (strf "f %d" v);
-        v + 1)
-      source
-  in
-  let at_map = List.rev !log in
-  let children = Shrink_tree.children mapped in
-  let child = head_of (children ()) in
-  ignore (children ());
-  equal (list string) [ "f 10" ] at_map;
-  equal (list string) [ "f 10"; "source"; "f 5" ] (List.rev !log);
-  equal int 6 (Shrink_tree.root child)
-
-let map_raised_once () =
-  let log = ref [] in
-  let note name = log := name :: !log in
-  let source =
-    Shrink_tree.make ~root:1 ~children:(fun () ->
-        note "source";
-        Seq.Cons (Shrink_tree.leaf 2, Seq.empty))
-  in
-  let mapped =
-    Shrink_tree.map
-      (fun v ->
-        note (strf "f %d" v);
-        if v = 2 then raise Exit else v)
-      source
-  in
-  let children = Shrink_tree.children mapped in
-  raises Exit children;
-  raises Exit children;
-  equal (list string) [ "f 1"; "source"; "f 2" ] (List.rev !log)
-
-let map_laws seed =
-  let tree = int_tree seed in
-  let f v = v + 3 and g v = v * 2 in
-  equal string
-    (dump string_of_int 3 tree)
-    (dump string_of_int 3 (Shrink_tree.map Fun.id tree));
-  equal string
-    (dump string_of_int 3 (Shrink_tree.map (fun v -> f (g v)) tree))
-    (dump string_of_int 3 (Shrink_tree.map f (Shrink_tree.map g tree)))
-
-let pair_lazily () =
-  let log = ref [] in
-  let note name = log := name :: !log in
-  let left =
-    Shrink_tree.make ~root:1 ~children:(fun () ->
-        note "left head";
-        Seq.Cons
-          ( Shrink_tree.leaf 0,
-            fun () ->
-              note "left tail";
-              Seq.Nil ))
-  in
-  let right =
-    Shrink_tree.make ~root:2 ~children:(fun () ->
-        note "right";
-        Seq.Cons (Shrink_tree.leaf 0, Seq.empty))
-  in
-  let cell = Shrink_tree.children (Shrink_tree.pair left right) () in
-  let at_first = List.rev !log in
-  ignore (tail_of cell ());
-  equal (pair int int) (0, 2) (Shrink_tree.root (head_of cell));
-  equal (list string) [ "left head" ] at_first;
-  equal (list string) [ "left head"; "left tail"; "right" ] (List.rev !log)
-
-let pair_natural (l, r) =
-  let f v = v + 1 and g v = v * 2 in
-  let left = int_tree l and right = int_tree r in
-  equal string
-    (dump show_pair 2
-       (Shrink_tree.map
-          (fun (a, b) -> (f a, g b))
-          (Shrink_tree.pair left right)))
-    (dump show_pair 2
-       (Shrink_tree.pair (Shrink_tree.map f left) (Shrink_tree.map g right)))
-
-let list_orders =
-  [
-    ( "two elements with candidates",
-      (fun () -> [ node 10 (leaves [ 0; 5 ]); node 20 (leaves [ 2 ]) ]),
-      ([ 10; 20 ], [ []; [ 20 ]; [ 10 ]; [ 0; 20 ]; [ 5; 20 ]; [ 10; 2 ] ]) );
-    ( "five leaves: chunks of 4, 2 and 1",
-      (fun () -> leaves [ 1; 2; 3; 4; 5 ]),
-      ( [ 1; 2; 3; 4; 5 ],
-        [
-          [];
-          [ 5 ];
-          [ 3; 4; 5 ];
-          [ 1; 2; 5 ];
-          [ 2; 3; 4; 5 ];
-          [ 1; 3; 4; 5 ];
-          [ 1; 2; 4; 5 ];
-          [ 1; 2; 3; 5 ];
-          [ 1; 2; 3; 4 ];
-        ] ) );
-    ( "three leaves: chunks of 2 and 1",
-      (fun () -> leaves [ 1; 2; 3 ]),
-      ([ 1; 2; 3 ], [ []; [ 3 ]; [ 2; 3 ]; [ 1; 3 ]; [ 1; 2 ] ]) );
-    ( "one element: no chunk",
-      (fun () -> [ node 7 (leaves [ 3 ]) ]),
-      ([ 7 ], [ []; [ 3 ] ]) );
-    ("no element", (fun () -> []), ([], []));
-  ]
-
-let list_order (_, trees, expected) =
-  let tree = Shrink_tree.list (trees ()) in
-  equal
-    (pair (list int) (list (list int)))
-    expected
-    (Shrink_tree.root tree, List.map Shrink_tree.root (candidates tree))
-
-let list_defers () =
-  let log = ref [] in
-  let element name root =
-    Shrink_tree.make ~root ~children:(fun () ->
-        log := name :: !log;
-        Seq.Cons (Shrink_tree.leaf 0, Seq.empty))
-  in
-  let cells =
-    Shrink_tree.children
-      (Shrink_tree.list [ element "first" 1; element "second" 2 ])
-  in
-  ignore (List.of_seq (Seq.take 3 cells));
-  let at_structure = !log in
-  let reduced = head_of (Seq.drop 3 cells ()) in
-  equal (list string) [] at_structure;
-  equal (list int) [ 0; 2 ] (Shrink_tree.root reduced);
-  equal (list string) [ "first" ] !log
-
-let list_scans_once () =
-  let log = ref [] in
-  let note name = log := name :: !log in
-  let first =
-    Shrink_tree.make ~root:1 ~children:(fun () ->
-        note "first";
-        Seq.Nil)
-  in
-  let second =
-    Shrink_tree.make ~root:2 ~children:(fun () ->
-        note "second";
-        Seq.Cons (Shrink_tree.leaf 0, Seq.empty))
-  in
-  let elements =
-    Seq.drop 3 (Shrink_tree.children (Shrink_tree.list [ first; second ]))
-  in
-  let a = head_of (elements ()) and b = head_of (elements ()) in
-  equal (list string) [ "first"; "second" ] (List.rev !log);
-  equal
-    (same (fun ppf t ->
-         Format.fprintf ppf "the tree of [%s]" (ints (Shrink_tree.root t))))
-    a b;
-  equal (list int) [ 1; 0 ] (Shrink_tree.root a)
-
-let long_list () =
-  let tree = Shrink_tree.list (List.init 100_000 Shrink_tree.leaf) in
-  equal int 100_000 (List.length (Shrink_tree.root tree));
-  equal (list int) [] (Shrink_tree.root (first_candidate tree))
-
-let infinite_depth () =
-  let forced = ref 0 in
-  let rec ascending v =
-    Shrink_tree.make ~root:v ~children:(fun () ->
-        incr forced;
-        Seq.Cons (ascending (v + 1), Seq.empty))
-  in
-  let rec roots depth tree acc =
-    let acc = Shrink_tree.root tree :: acc in
-    if depth = 1 then List.rev acc
-    else roots (depth - 1) (first_candidate tree) acc
-  in
-  let depth = 50_000 in
-  equal (list int) (List.init depth succ)
-    (roots depth (Shrink_tree.map succ (ascending 0)) []);
-  equal int (depth - 1) !forced
-
-(* [n]'s candidates are [0] then [n - 1]. *)
-let local_minimum () =
-  let rec count_down v =
-    Shrink_tree.make ~root:v ~children:(fun () ->
-        if v = 0 then Seq.Nil
-        else
-          Seq.Cons
-            ( Shrink_tree.leaf 0,
-              fun () -> Seq.Cons (count_down (v - 1), Seq.empty) ))
-  in
-  let start = Shrink_tree.list (List.map count_down [ 9; 7; 5; 9 ]) in
-  let pp ppf values = Format.fprintf ppf "[%s]" (ints values) in
-  let gen = Gen_engine.make_tree ~pp (fun state -> (start, state)) in
-  let minimum, steps = shrink ~failing:(List.exists (fun v -> v >= 5)) gen in
-  equal string "[5]" minimum;
-  at_most int ~than:20 steps
-
-let list_root_unforced () =
-  let forced = ref 0 in
-  let element root =
-    Shrink_tree.make ~root ~children:(fun () ->
-        incr forced;
-        Seq.Nil)
-  in
-  let tree = Shrink_tree.list [ element 1; element 2; element 3 ] in
-  equal (list int) [ 1; 2; 3 ] (Shrink_tree.root tree);
-  equal int 0 !forced
-
-(* Every operation of the module, then one draw of the global state against a
-   copy taken before them: a random operation would have moved it. *)
-let no_random () =
-  let before = Random.get_state () in
-  let rec count_down n =
-    Shrink_tree.make ~root:n ~children:(fun () ->
-        if n = 0 then Seq.Nil else Seq.Cons (count_down (n - 1), Seq.empty))
-  in
-  let tree =
-    Shrink_tree.pair
-      (Shrink_tree.map succ (count_down 4))
-      (Shrink_tree.list [ count_down 2; Shrink_tree.leaf 9 ])
-  in
-  let rec visit tree = Seq.iter visit (Shrink_tree.children tree) in
-  visit tree;
-  equal int (Random.State.bits before) (Random.bits ())
-
-let shrink_trees =
-  group "Shrink trees"
-    [
-      test "make and root force no cell" unforced;
-      test "a leaf has its root and no candidates" (fun () ->
-          let leaf = Shrink_tree.leaf 7 in
-          equal
-            (pair int (list int))
-            (7, [])
-            (Shrink_tree.root leaf, List.map Shrink_tree.root (candidates leaf)));
-      test "forcing a cell forces none of its tail" tail_unforced;
-      test
-        "every cell is forced at most once, and yields the same child each time"
-        forced_once;
-      test
-        "a cell whose forcing raised raises the same exception again, without \
-         forcing again"
-        raised_once;
-      test "map keeps the shape and the order" (fun () ->
-          let tree = node 10 [ node 4 (leaves [ 0; 2 ]); node 8 [] ] in
-          equal string "30(12(0() 6()) 24())"
-            (dump string_of_int 3 (Shrink_tree.map (fun v -> v * 3) tree)));
-      prop "map obeys identity and composition" ~count:20 Gen.int64 map_laws;
-      test
-        "map applies f to the root at once, and to a candidate once, when \
-         forced"
-        map_once;
-      test "what map's f raises on a candidate is cached with its cell"
-        map_raised_once;
-      test "pair reduces the left tree, then the right" (fun () ->
-          let tree =
-            Shrink_tree.pair
-              (node 10 (leaves [ 0; 5 ]))
-              (node 20 (leaves [ 2; 4 ]))
-          in
-          equal
-            (pair (pair int int) (list (pair int int)))
-            ((10, 20), [ (0, 20); (5, 20); (10, 2); (10, 4) ])
-            (Shrink_tree.root tree, List.map Shrink_tree.root (candidates tree)));
-      test "pair forces the right tree only once the left one is exhausted"
-        pair_lazily;
-      prop "pair of mapped trees is the map of their pair" ~count:20
-        Gen.(pair int64 int64)
-        pair_natural;
-      cases
-        "list's candidates are the empty list, the chunks removed, then the \
-         elements reduced"
-        ~name:(fun (n, _, _) -> n)
-        list_orders list_order;
-      test "list's root forces no cell" list_root_unforced;
-      test "list forces no element before its chunks are exhausted" list_defers;
-      test "list forces each element's cells once across its candidates"
-        list_scans_once;
-      test "list's root over 100_000 trees builds without overflowing the stack"
-        long_list;
-      test "a tree of any depth forces one cell a level" infinite_depth;
-      test "the search over a list tree stops at a local minimum, in few steps"
-        local_minimum;
-      test "no operation reads or writes the global Random state" no_random;
-    ]
-
 (* Rendering *)
 
 let printers_rows =
@@ -2896,7 +2504,7 @@ let prints_iff_rendered (Any (_, gen)) =
   let tree = sample (gen ()) 0 in
   equal bool
     (not (String.equal placeholder (shown tree)))
-    (Gen_engine.prints (Shrink_tree.root tree))
+    (Gen_engine.prints tree.node)
 
 let prints_formats_nothing () =
   let calls = ref 0 in
@@ -2906,7 +2514,7 @@ let prints_formats_nothing () =
   in
   let tree = sample (Gen.with_pp counting Gen.int) 0 in
   let before = !calls in
-  is_true (Gen_engine.prints (Shrink_tree.root tree));
+  is_true (Gen_engine.prints tree.node);
   equal int before !calls
 
 let rendering =
@@ -2959,44 +2567,6 @@ let rendering =
       test "prints formats nothing" prints_formats_nothing;
     ]
 
-(* Building generators *)
-
-let unprinted () =
-  let gen =
-    Gen_engine.make_tree (fun state ->
-        ( Shrink_tree.make ~root:1 ~children:(Seq.return (Shrink_tree.leaf 0)),
-          state ))
-  in
-  let tree = sample gen 0 in
-  equal (list string)
-    [ placeholder; placeholder ]
-    [ shown tree; shown (first_candidate tree) ]
-
-let building =
-  group "Building generators"
-    [
-      test "make without pp gives every node nothing to print" unprinted;
-      test
-        "draw returns the tree that sample draws and the state that run returns"
-        (fun () ->
-          let gen = Gen.(list ~size:(int_range 0 4) small_int) in
-          let drawn i = Gen_engine.draw gen (state i) in
-          equal
-            (list (pair (list int) (list int64)))
-            (List.init 10 (fun i ->
-                 (value (sample gen i), words 3 (successor gen (state i)))))
-            (List.init 10 (fun i ->
-                 let tree, next = drawn i in
-                 (value tree, words 3 next))));
-      test "run returns the values that sample draws" (fun () ->
-          let gen = Gen.(list ~size:(int_range 0 4) small_int) in
-          equal
-            (list (list int))
-            (samples gen 10)
-            (List.init 10 (fun i ->
-                 Shrink_tree.root (fst (Gen_engine.run gen (state i))))));
-    ]
-
 let () =
   exit
     (run "gen"
@@ -3008,7 +2578,5 @@ let () =
          choices;
          selections;
          composition;
-         shrink_trees;
          rendering;
-         building;
        ])

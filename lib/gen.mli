@@ -336,125 +336,24 @@ val ( let* ) : 'a t -> ('a -> 'b t) -> 'b t
 module Engine : sig
   (** The engine's side of a generator. Nothing here belongs to the vocabulary
       that tests compose, and nothing here is stable beyond the frozen stream of
-      {!Seed}.
+      {!Seed}. *)
 
-      Shrink trees remain for a reader that searches a tree: [Stateful], whose
-      programs are drawn as trees through {!make} until they parse choices,
-      and the arguments it draws through {!draw}, whose tree is a view of the
-      reducer's edits. *)
-
-  (** {1:trees Shrink trees} *)
-
-  module Shrink_tree : sig
-    (** Memoized lazy rose trees of shrink candidates.
-
-        A tree is a strict root and a lazy, ordered sequence of candidate
-        subtrees. Every cell of a sequence is forced at most once, a raised
-        exception included, so a search that visits a branch again never runs
-        caller code again. A cell whose forcing raised caches the exception and
-        never yields its tail, so every sibling behind it is unreachable.
-
-        The sequences given to {!make} and the functions given to {!map} are
-        caller code, and they run at the forcing points. They must be
-        deterministic and free of effects, and they must not read a random state
-        whose value depends on the order of forcing. *)
-
-    type 'a t
-    (** The type for a value and its ordered shrink candidates. A tree may be
-        infinite, since nothing here bounds its depth or its breadth. *)
-
-    val make : root:'a -> children:'a t Seq.t -> 'a t
-    (** [make ~root ~children] is the tree rooted at [root] whose immediate
-        candidates are [children]. It forces nothing, and it is what memoizes.
-        Every cell of [children] is forced at most once through the resulting
-        tree, so a combinator that builds its children with [Seq.map] or
-        [Seq.filter_map] must wrap them in [make]. *)
-
-    val leaf : 'a -> 'a t
-    (** [leaf root] is [make ~root ~children:Seq.empty]. *)
-
-    val root : 'a t -> 'a
-    (** [root tree] is [tree]'s root value. It forces no cell. *)
-
-    val children : 'a t -> 'a t Seq.t
-    (** [children tree] is [tree]'s immediate candidates, in the order given to
-        {!make}. The sequence is persistent. A forced cell yields the same
-        child, or raises its cached exception, without evaluating anything
-        again. Forcing a cell does not force its tail. *)
-
-    val map : ('a -> 'b) -> 'a t -> 'b t
-    (** [map f tree] is [tree] with [f] applied to every value, shape and order
-        kept, except that a descendant on which [f] raises a
-        [Failure.Control `Discard] is skipped with its subtree. [f] runs on the
-        root at once, and on a descendant when its cell is forced, at most once.
-        What [f] raises on the root escapes [map]. What it raises on a
-        descendant, a discard excepted, escapes the forcing of that cell, which
-        caches it. *)
-
-    val pair : 'a t -> 'b t -> ('a * 'b) t
-    (** [pair left right] is rooted at [(root left, root right)]. Its candidates
-        reduce [left] in order with [right] kept, then [right] in order with
-        [left] kept. Every candidate follows the same rule, so a candidate that
-        reduced [left] offers the reductions of [right] again. [right]'s
-        sequence stays unforced until [left]'s is exhausted. *)
-
-    val list : 'a t list -> 'a list t
-    (** [list trees] is rooted at the roots of [trees], in order. The immediate
-        candidates of a non-empty list are, in order:
-        + The empty list.
-        + The list less one contiguous chunk. The chunk lengths are the powers
-          of two from the largest strictly below the length down to [1]. For
-          each length the chunks start at [0] and advance by that length, and a
-          chunk is removed only where it fits whole.
-        + The list with one element replaced by one of its candidates, elements
-          from the left, each in its own candidate order.
-
-        Every candidate follows the same rules. It shares the untouched element
-        trees, so an element's cells are still forced at most once across
-        candidates. The empty list has no candidates. A candidate is a strictly
-        shorter list, or the same list with one element reduced, so the tree is
-        finite in depth when the element trees are. Building the root is
-        stack-safe and forces no cell. *)
-  end
-
-  (** {1:sampling Sampling} *)
+  (** {1:parsing Parsing} *)
 
   type 'a sample
-  (** The type for a parsed value with its rendering. Every node of a sampled
-      tree is one, candidates included. *)
-
-  val sample : 'a t -> Seed.state -> 'a sample Shrink_tree.t
-  (** [sample gen state] draws one value from [state], as the root of a tree.
-      The successor state is dropped, and {!draw} returns it.
-
-      Raises [Failure.Control `Discard] on a discard at generation time,
-      [Invalid_argument] on a malformed generator argument, and whatever a
-      function of [gen] raises.
-
-      The candidates of a node are the edits of one step of the reducer
-      ({!Shrink.candidates}) that parse to a smaller sequence, each sequence
-      once, parsed when their cell is forced, so the tree is finite. A candidate
-      whose parse discards or raises a fault is skipped, and a
-      [Failure.Control] other than a discard escapes the forcing. A generator
-      of {!make} has the tree that its [draw] builds. *)
-
-  val draw : 'a t -> Seed.state -> 'a sample Shrink_tree.t * Seed.state
-  (** [draw gen state] is {!val-sample} of [gen] and [state], and the successor
-      state. Raises as {!val-sample} does. *)
+  (** The type for a parsed value with its rendering. *)
 
   val value : 'a sample -> 'a
   (** [value sample] is the drawn value. *)
 
   val parse : 'a t -> Choice.t -> 'a sample
   (** [parse gen src] is the value that [gen] parses from [src], with its
-      rendering. It raises as {!val-sample} does at sampling. A generator made
-      by {!make} reads one choice, the seed it draws its tree from: it replays
-      and never shrinks inside another generator. *)
+      rendering, the choices it read marked as one span of [src]. A generating
+      [src] draws the value from its stream ({!Choice.generating}), and a
+      replaying one parses its choices again.
 
-  val tree :
-    'a t -> (Seed.state -> 'a sample Shrink_tree.t * Seed.state) option
-  (** [tree gen] is the draw of a generator made by {!make}, whose value no
-      choice sequence describes, and [None] for every other generator. *)
+      Raises [Failure.Control `Discard] on a discard, [Invalid_argument] on a
+      malformed generator argument, and whatever a function of [gen] raises. *)
 
   (** {1:renderings Rendering} *)
 
@@ -506,11 +405,6 @@ module Engine : sig
 
   (** {1:building Building generators} *)
 
-  val run : 'a t -> Seed.state -> 'a Shrink_tree.t * Seed.state
-  (** [run gen state] is the tree of the values that {!val-sample} draws from
-      [state], without their renderings, and the successor state. Raises as
-      {!val-sample} does. *)
-
   val make : ?pp:(Format.formatter -> 'a -> unit) -> (Choice.t -> 'a) -> 'a t
   (** [make ?pp parse] is the generator whose value [parse] parses from a
       source: it reads its choices with {!Choice.choice}, drawing each from the
@@ -522,13 +416,4 @@ module Engine : sig
       under {!Gen.constant}. [make] checks nothing. [parse] must itself keep the
       rules of validation and determinism that the module's preamble states, and
       parse every sequence, reading [0] past its end. *)
-
-  val make_tree :
-    ?pp:(Format.formatter -> 'a -> unit) ->
-    (Seed.state -> 'a Shrink_tree.t * Seed.state) ->
-    'a t
-  (** [make_tree ?pp draw] is the generator that draws with [draw] and prints
-      with [pp]. [draw] returns a tree of values and the successor state, as
-      {!run} does. With [pp], every node renders as a [Value] through [pp].
-      Without it, every node has nothing to print. *)
 end

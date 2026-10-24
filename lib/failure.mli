@@ -277,9 +277,6 @@ and shrink_end =
   | Budget_spent
       (** The search ran the law as many times as its budget allows, and a
           candidate was left. *)
-  | Candidate_raised of text
-      (** Forcing a candidate raised the exception printed here, and the
-          siblings behind it were unreachable. *)
   | Timed_out of float
       (** The test's limit, in seconds, expired while shrinking, and the test
           did not time out. *)

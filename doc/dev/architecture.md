@@ -73,7 +73,7 @@ report and the aggregate cannot drift apart.
 | `Windtrap` | the contract and the flat re-exports; the ambient-reading wrappers |
 | `Test_tree` (with `Test_tree.Tag`) | the tree, tags, focus, xfail, flatten, paths |
 | `Testable`, `Check`, `Failure`, `Diff` | witnesses; the verbs, pure, with no run-state dependency; failure data (typed kinds, phase, location, output tail, the `Check_failure` and `Control` exceptions); diff data (Myers hunks and character-refinement spans, no styling) |
-| `Choice`, `Shrink`, `Gen` (with `Gen.Engine.Shrink_tree`), `Property`, `Stateful`, `Workers` | choice sequences (the source a generator parses, spans, dependents, replay tokens); the reducer of a failing sequence; generators; the case loop (examples first, per-case seeds, the discard budget, the shrink search, replay, label tables); commands and programs, compiled into properties, and the judge of a program on several domains; the worker domains that run its branches |
+| `Choice`, `Shrink`, `Gen`, `Property`, `Stateful`, `Workers` | choice sequences (the source a generator parses, spans, dependents, replay tokens); the reducer of a failing sequence; generators; the case loop (examples first, per-case seeds, the discard budget, the shrink search, replay, label tables); commands and programs, compiled into properties, and the judge of a program on several domains; the worker domains that run its branches |
 | `Baseline`, `Source_patch`, `Capture` | the correction registry keyed by site or path, read-only checking, corrections gated per test and written once as `.corrected` files or in place; literal rewriting inside a source file; fd-level capture into per-test log files |
 | `Cli`, `Run`, `Report`, `Report_sections`, `Report_junit` | one declarative item table (flags and flagless settings) resolved once into the one `Run.config`, each mirror declared beside its flag and read through the flag's parser; the run record and the ambient slot, the sequential executor (startup checks, selection, the per-test boundary, SIGALRM timeouts, retries, fixture release, the last-failed store, the exit guard, the one exit-code function), which prints nothing and emits typed events, and the worker's loop that serves a supervisor; the transcript, the GitHub envelope and `Report.run`, execute reported; the failure projection every transport shares and the section vocabulary the coverage and mutation reports project into; the JUnit document and its file |
 | `Supervisor` | the process boundary: the parent that forks workers (or executes itself again after a domain), hands each a case, gives the events in the order of the selection, judges a correcting mode's checks in its one registry, fails a case whose worker died or outlived its kill, retires a worker after a domain, forwards signals and merges the workers' coverage |
@@ -277,10 +277,9 @@ place (the key-value benchmark goes from 45% to 100% at the minimum).
   as their inversion table, so lowering one entry moves one element
   and leaves the others in order; lowering a Lehmer digit reorders
   everything after it, which the reducer cannot undo.
-- **Stateful** draws its programs as trees through `Gen.Engine.make`
-  until step 6 parses them: `Property.run` searches such a tree with
-  0.2's descent, and a program's arguments are drawn through
-  `Gen.Engine.draw`, whose tree is a view of the reducer's edits.
+- **Stateful** parses its programs as any generator does, through
+  `Gen.Engine.make`: a call is a span, and a value reference records
+  the makers it counts past, so a deletion lowers it with them.
 
 **Stateful.** A call runs its system, then its reference judges the
 outcome, one order for every result form. A value is made when its

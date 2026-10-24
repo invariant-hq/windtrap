@@ -184,13 +184,6 @@ let headline_rows =
       ( prop ~shrink_end:Failure.Budget_spent ~case:4 ~steps:50 "9",
         "property failed (case 4, shrunk 50 steps, shrink limit reached): 9" )
     );
-    ( "a candidate that raised",
-      ( prop
-          ~shrink_end:
-            (Failure.Candidate_raised
-               (Failure.text {|Failure("no small values")|}))
-          ~case:4 ~steps:3 "9",
-        "property failed (case 4, shrunk 3 steps, shrinking stopped): 9" ) );
     ( "an example carries no shrink clause",
       ( prop ~shrink_end:Failure.Budget_spent ~examples:true ~case:0 ~steps:0 "9",
         "property failed (example 1): 9" ) );
@@ -636,13 +629,6 @@ let property_entries () =
       entry (prop ~shrink_end:(Failure.Timed_out 0.3) ~case:4 ~steps:2 "9") );
     ( "a spent budget says so under the counterexample",
       entry (prop ~shrink_end:Failure.Budget_spent ~case:4 ~steps:50 "9") );
-    ( "a candidate that raised is named, then the search's stop",
-      entry
-        (prop
-           ~shrink_end:
-             (Failure.Candidate_raised
-                (Failure.text {|Failure("no small values")|}))
-           ~case:4 ~steps:3 "9") );
     ( "an inner failure without a location is which failed with",
       entry
         (Failure.property ~inner:(unequal "true" "false") ~rendered:"7"

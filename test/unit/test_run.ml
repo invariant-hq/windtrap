@@ -1803,8 +1803,6 @@ let shrink_end r path =
           Some "converged"
       | Failure.Property { shrink_end = Failure.Budget_spent; _ } ->
           Some "budget spent"
-      | Failure.Property { shrink_end = Failure.Candidate_raised _; _ } ->
-          Some "candidate raised"
       | _ -> None)
     (failure r path)
 

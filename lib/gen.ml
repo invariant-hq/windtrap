@@ -7,91 +7,6 @@
    tuning (https://github.com/c-cube/qcheck); the float encoding is
    Hypothesis's (MacIver and Donaldson, ECOOP 2020). *)
 
-(* Shrink trees *)
-
-(* A strict root and a memoized sequence of candidate subtrees. A cell is
-   forced at most once, an exception included, so a search that visits a
-   branch again never runs user code again. Stateful's programs are trees
-   until they parse choices. *)
-module Shrink_tree = struct
-  type 'a t = { root : 'a; children : 'a t Seq.t }
-
-  let rec memoize cells =
-    let cell =
-      lazy
-        (match cells () with
-        | Seq.Nil -> Seq.Nil
-        | Seq.Cons (child, rest) -> Seq.Cons (child, memoize rest))
-    in
-    fun () -> Lazy.force cell
-
-  let make ~root ~children = { root; children = memoize children }
-  let leaf root = make ~root ~children:Seq.empty
-  let root tree = tree.root
-  let children tree = tree.children
-
-  (* A candidate that discards is skipped: its cell would cache the discard
-     and hide every later sibling. A discard of the root propagates, as a
-     discard at generation time. *)
-  let unless_discarded f x =
-    match Failure.catch (fun () -> f x) with
-    | Ok y -> Some y
-    | Error `Discard -> None
-    | Error c -> Failure.reraise c
-
-  let rec map f tree =
-    make ~root:(f tree.root)
-      ~children:(Seq.filter_map (unless_discarded (map f)) tree.children)
-
-  let rec pair left right =
-    make ~root:(left.root, right.root)
-      ~children:
-        (Seq.append
-           (Seq.map (fun child -> pair child right) left.children)
-           (Seq.map (fun child -> pair left child) right.children))
-
-  (* A candidate is a fresh array; [trees] is never written, and the
-     untouched element trees are shared. *)
-  let rec of_array trees =
-    let length = Array.length trees in
-    if length = 0 then leaf []
-    else
-      let without ~first ~chunk =
-        Array.init (length - chunk) (fun i ->
-            if i < first then trees.(i) else trees.(i + chunk))
-      in
-      let rec chunks chunk first () =
-        if chunk = 0 then Seq.Nil
-        else if first + chunk <= length then
-          Seq.Cons
-            (of_array (without ~first ~chunk), chunks chunk (first + chunk))
-        else chunks (chunk / 2) 0 ()
-      in
-      let rec reductions index candidates () =
-        match candidates () with
-        | Seq.Cons (candidate, rest) ->
-            let trees = Array.copy trees in
-            trees.(index) <- candidate;
-            Seq.Cons (of_array trees, reductions index rest)
-        | Seq.Nil ->
-            let next = index + 1 in
-            if next = length then Seq.Nil
-            else reductions next trees.(next).children ()
-      in
-      let rec largest_power_below power =
-        if 2 * power >= length then power else largest_power_below (2 * power)
-      in
-      let first_chunk = if length > 1 then largest_power_below 1 else 0 in
-      make
-        ~root:(Array.fold_right (fun tree roots -> tree.root :: roots) trees [])
-        ~children:
-          (Seq.cons (leaf [])
-             (Seq.append (chunks first_chunk 0)
-                (reductions 0 trees.(0).children)))
-
-  let list trees = of_array (Array.of_list trees)
-end
-
 (* Renderings *)
 
 (* A node carries its value and how the value prints as a counterexample:
@@ -113,9 +28,7 @@ type 'a t = {
   draw : 'a draw;
 }
 
-and 'a draw =
-  | Parse of (Choice.t -> 'a node)
-  | Tree of (Seed.state -> 'a node Shrink_tree.t * Seed.state)
+and 'a draw = Parse of (Choice.t -> 'a node)
 
 let atom pp v = Atom (fun ppf -> pp ppf v)
 
@@ -244,17 +157,9 @@ let bound outer inner =
 
 (* Parsing *)
 
-(* Every call of a generator is a span. A tree, which no choice describes,
-   parses from a seed it reads as one choice: it replays and never shrinks
-   there. *)
+(* Every call of a generator is a span. *)
 let parse gen src =
-  match gen.draw with
-  | Parse parse -> Choice.span src (fun () -> parse src)
-  | Tree draw ->
-      let seed =
-        Choice.choice src ~bound:(-1L) (Choice.sample src Seed.bits64)
-      in
-      Shrink_tree.root (fst (draw (Seed.make seed)))
+  match gen.draw with Parse parse -> Choice.span src (fun () -> parse src)
 
 (* The choice that encodes what [sample] draws, through [encode]. *)
 let read src ~bound encode sample =
@@ -1216,56 +1121,10 @@ let ( let* ) = bind
 (* Engine *)
 
 module Engine = struct
-  module Shrink_tree = Shrink_tree
-
   type 'a sample = 'a node
 
-  (* A generator's value as a tree, for a reader that searches trees: a
-     node's candidates are the edits of one step of the reducer that parse
-     to a shortlex smaller sequence, each sequence once, and a candidate
-     whose parse discards or raises a fault is skipped. *)
-  let rec tree_of gen (case : Shrink.case) node =
-    let seen = Hashtbl.create 16 in
-    let candidate choices =
-      let src = Choice.replaying choices in
-      match Failure.catch (fun () -> parse gen src) with
-      | Ok node
-        when Shrink.shortlex (Choice.choices src) case.choices < 0
-             && not (Hashtbl.mem seen (Choice.choices src)) ->
-          Hashtbl.add seen (Choice.choices src) ();
-          Some
-            (tree_of gen
-               {
-                 choices = Choice.choices src;
-                 spans = Choice.spans src;
-                 dependents = Choice.dependents src;
-               }
-               node)
-      | Ok _ | Error (`Discard | #Failure.fault) -> None
-      | Error c -> Failure.reraise c
-    in
-    Shrink_tree.make ~root:node
-      ~children:(Seq.filter_map candidate (Shrink.candidates case))
-
-  let draw gen state =
-    match gen.draw with
-    | Tree draw -> draw state
-    | Parse _ ->
-        let src = Choice.generating state in
-        let node = parse gen src in
-        let case : Shrink.case =
-          {
-            choices = Choice.choices src;
-            spans = Choice.spans src;
-            dependents = Choice.dependents src;
-          }
-        in
-        (tree_of gen case node, Option.get (Choice.state src))
-
-  let sample gen state = fst (draw gen state)
   let value = value
   let parse = parse
-  let tree gen = match gen.draw with Tree draw -> Some draw | Parse _ -> None
 
   type nonrec 'a rendering = 'a rendering = Value of 'a | Pre_image of 'a
 
@@ -1304,22 +1163,7 @@ module Engine = struct
         | Error (#Failure.fault as fault) -> printer_raised fault
         | Error (#Failure.control as control) -> Failure.reraise control)
 
-  let run gen state =
-    let tree, state = draw gen state in
-    (Shrink_tree.map value tree, state)
-
   let make ?pp parse =
     let node = match pp with Some pp -> printed pp | None -> unprintable in
     { pp; draw = Parse (fun src -> node (parse src)) }
-
-  let make_tree ?pp draw =
-    let node = match pp with Some pp -> printed pp | None -> unprintable in
-    {
-      pp;
-      draw =
-        Tree
-          (fun state ->
-            let tree, state = draw state in
-            (Shrink_tree.map node tree, state));
-    }
 end

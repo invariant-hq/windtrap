@@ -296,7 +296,6 @@ let headline (f : Failure.t) =
              match shrink_end with
              | Failure.Converged -> ""
              | Failure.Budget_spent -> ", shrink limit reached"
-             | Failure.Candidate_raised _ -> ", shrinking stopped"
              | Failure.Timed_out _ -> ", shrinking timed out")
           (match rendering with
           | Failure.Pre_image -> " computed from "
@@ -1089,13 +1088,6 @@ and facts ~seen ~excerpt = function
                    "shrinking stopped after %d steps; counterexample may not \
                     be minimal"
                    shrink_steps);
-            ]
-        | Failure.Candidate_raised text ->
-            [
-              line
-                (strf "shrinking stopped after %d steps: a candidate raised %s"
-                   shrink_steps (shown_text text));
-              line "counterexample may not be minimal";
             ]
       in
       let again =

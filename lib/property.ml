@@ -250,78 +250,6 @@ let shrink_choices ~runs ~output ~shrinking gen law case node (fault, record) =
     token = Some token;
   }
 
-(* Rose trees, until stateful programs parse choices: the search descends
-   the tree of a sample, greedily, to the first candidate that fails in the
-   class of the first failure. A route holds the index of each accepted
-   candidate among its siblings, the last first. *)
-let shrink_tree ~runs ~output ~shrinking gen law state tree (fault, record) =
-  let scratch = make_context () in
-  let root_value tree = Gen.Engine.value (Gen.Engine.Shrink_tree.root tree) in
-  let best = ref (tree, [], fault, record, None) in
-  let rec descend ~spent ~steps route tree =
-    let rec first_accepted ~spent index candidates =
-      match Failure.catch candidates with
-      | Error (`Timeout _ as timeout) -> Failure.reraise timeout
-      | Error c ->
-          (* A memoized cell keeps what its forcing raised, so the siblings
-             behind it are unreachable. *)
-          Failure.Candidate_raised (Failure.text (Failure.caught_to_string c))
-      | Ok Seq.Nil -> Failure.Converged
-      | Ok (Seq.Cons _) when spent >= shrink_budget -> Failure.Budget_spent
-      | Ok (Seq.Cons (candidate, rest)) -> (
-          shrinking steps;
-          match run_case ~runs scratch law (root_value candidate) with
-          | Error ((`Timeout _ as timeout), _) -> Failure.reraise timeout
-          | Error ((#Failure.fault as accepted), record)
-            when same_class fault accepted ->
-              let route = index :: route in
-              best := (candidate, route, accepted, record, output ());
-              descend ~spent:(spent + runs) ~steps:(steps + 1) route candidate
-          | Error (`Discard, _) ->
-              first_accepted ~spent:(spent + 1) (index + 1) rest
-          | Ok () | Error ((#Failure.fault | #Failure.control), _) ->
-              first_accepted ~spent:(spent + runs) (index + 1) rest)
-    in
-    first_accepted ~spent 0 (Gen.Engine.Shrink_tree.children tree)
-  in
-  let search () =
-    best := (tree, [], fault, record, output ());
-    descend ~spent:0 ~steps:0 [] tree
-  in
-  let ending = searched search in
-  let tree, route, fault, record, tail = !best in
-  let node = Gen.Engine.Shrink_tree.root tree in
-  (* The counterexample drawn again from the case's [state] along the
-     search's [route], as a replay draws it: a pure [gen] draws it as it was
-     first drawn, whatever a run did to the value it was given. *)
-  let rec follow tree = function
-    | [] -> Some tree
-    | index :: route -> (
-        match Seq.drop index (Gen.Engine.Shrink_tree.children tree) () with
-        | Seq.Cons (child, _) -> follow child route
-        | Seq.Nil -> None)
-  in
-  let again =
-    lazy
-      (match
-         Failure.catch (fun () ->
-             follow (Gen.Engine.sample gen state) (List.rev route))
-       with
-      | Ok tree -> Option.map Gen.Engine.Shrink_tree.root tree
-      | Error _ -> None)
-  in
-  let shown = Option.value ~default:node (Lazy.force again) in
-  {
-    shown;
-    again;
-    fault;
-    record;
-    tail;
-    steps = List.length route;
-    ending;
-    token = None;
-  }
-
 (* Finite domains *)
 
 (* The values of [gen], every sequence it reads, in lexicographic order:
@@ -460,16 +388,9 @@ let run ?loc ?count ?max_discard ?(examples = []) ?(summary = Fun.const None)
   in
   (* A case drawn from [state]: its node, and the search from it. *)
   let draw state =
-    match Gen.Engine.tree gen with
-    | Some _ ->
-        let tree = Gen.Engine.sample gen state in
-        ( Gen.Engine.Shrink_tree.root tree,
-          shrink_tree ~runs ~output ~shrinking gen law state tree )
-    | None ->
-        let src = Choice.generating state in
-        let node = Gen.Engine.parse gen src in
-        ( node,
-          shrink_choices ~runs ~output ~shrinking gen law (case_of src) node )
+    let src = Choice.generating state in
+    let node = Gen.Engine.parse gen src in
+    (node, shrink_choices ~runs ~output ~shrinking gen law (case_of src) node)
   in
   let judged () =
     if ctx.discards > max_discard then Gave_up (stats ctx)
@@ -509,8 +430,7 @@ let run ?loc ?count ?max_discard ?(examples = []) ?(summary = Fun.const None)
               let failed_again =
                 match found.ending with
                 | Failure.Timed_out _ -> None
-                | Converged | Budget_spent | Candidate_raised _ ->
-                    run_again found.again
+                | Converged | Budget_spent -> run_again found.again
               in
               fail ~case_index:index ~examples:false ?record ?summary ~rendering
                 ~shrink_steps:found.steps ~shrink_end:found.ending
@@ -563,10 +483,7 @@ let run ?loc ?count ?max_discard ?(examples = []) ?(summary = Fun.const None)
     check_all 0 [] values
   in
   let generated () =
-    let finite () =
-      if count = 0 || Option.is_some (Gen.Engine.tree gen) then None
-      else enumerate gen count
-    in
+    let finite () = if count = 0 then None else enumerate gen count in
     match Failure.catch finite with
     | Ok (Some values) -> whole values
     | Ok None -> generate ~passed:0 0
@@ -610,10 +527,9 @@ let run ?loc ?count ?max_discard ?(examples = []) ?(summary = Fun.const None)
       let message = Pp.str "--replay %s: %s" token why in
       Fail { failure = Failure.message ?loc message; stats = stats ctx }
     in
-    match (Choice.of_token token, Gen.Engine.tree gen) with
-    | Error why, _ -> refused why
-    | Ok _, Some _ -> refused "no choice sequence describes this test's cases"
-    | Ok (choices, digested), None -> (
+    match Choice.of_token token with
+    | Error why -> refused why
+    | Ok (choices, digested) -> (
         let src = Choice.replaying choices in
         match Failure.catch (fun () -> Gen.Engine.parse gen src) with
         | Error (`Timeout limit) -> timed_out ~case_index:0 ~examples:true limit
