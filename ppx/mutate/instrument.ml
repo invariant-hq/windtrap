@@ -465,19 +465,7 @@ type site = {
   dismissed : string option;
 }
 
-(* The coverage rewriter's visits, their indices and the booleans of its
-   [||] take the locations of the source, so in a file it ran on first [del],
-   [int] and [bool] cannot tell its code from the user's, and have no site. *)
-let covered structure =
-  List.exists
-    (function
-      | { pstr_desc = Pstr_module { pmb_name = { txt = Some name; _ }; _ }; _ }
-        ->
-          String.starts_with ~prefix:"Windtrap_cov___" name
-      | _ -> false)
-    structure
-
-class instrumenter ~keeps ~covered ~module_name =
+class instrumenter ~keeps ~module_name =
   object (self)
     inherit Ast_traverse.map as super
 
@@ -532,75 +520,68 @@ class instrumenter ~keeps ~covered ~module_name =
        [create] argument. [bool] flips a literal outside a boolean context,
        where [neg] already acts, and skips an OS flag. *)
     method private literal context e =
-      if covered then None
-      else
-        let is_child arg = arg == e in
-        let applied =
-          Option.bind parent (fun (p, c) ->
-              Option.map (fun a -> (p, c, a)) (application p))
-        in
-        let loc = e.pexp_loc in
-        match e.pexp_desc with
-        | Pexp_constant (Pconst_integer (text, suffix)) -> (
-            match nudge text suffix with
-            | None -> None
-            | Some (direction, nudged) ->
-                let arid =
-                  at_load
-                  || (match applied with
-                    | Some (_, _, app) when app.name = "+" || app.name = "-" ->
-                        true
-                    | Some (_, c, app) when keeps Cmp && c <> Ordinary ->
-                        boundary_move ~constant_right:(is_child app.right)
-                          app.name
-                        = Some direction
-                    | Some _ | None -> false)
-                  ||
-                  match parent with
-                  | Some ({ pexp_desc = Pexp_apply (fn, args); _ }, _) ->
-                      is_create fn
-                      && List.exists (fun (_, a) -> is_child a) args
-                  | Some _ | None -> false
-                in
-                if arid then None
-                else
-                  let replacement =
-                    pexp_constant ~loc (Pconst_integer (nudged, suffix))
-                  in
-                  Some
-                    {
-                      guard = Literal replacement;
-                      rewrite = "int";
-                      after = render replacement;
-                    })
-        | Pexp_construct ({ txt = Lident (("true" | "false") as b); _ }, None)
-          when context = Ordinary ->
-            let os_flag =
-              match parent with
-              | Some ({ pexp_desc = Pexp_apply (_, args); _ }, _) ->
-                  List.exists
-                    (fun (label, a) ->
-                      is_child a
-                      &&
-                      match label with
-                      | Labelled l | Optional l -> List.mem l os_flags
-                      | Nolabel -> false)
-                    args
-              | Some _ | None -> false
-            in
-            if at_load || os_flag then None
-            else
-              let flipped = if String.equal b "true" then "false" else "true" in
-              let replacement =
-                pexp_construct ~loc { txt = Lident flipped; loc } None
+      let is_child arg = arg == e in
+      let applied =
+        Option.bind parent (fun (p, c) ->
+            Option.map (fun a -> (p, c, a)) (application p))
+      in
+      let loc = e.pexp_loc in
+      match e.pexp_desc with
+      | Pexp_constant (Pconst_integer (text, suffix)) -> (
+          match nudge text suffix with
+          | None -> None
+          | Some (direction, nudged) ->
+              let arid =
+                at_load
+                || (match applied with
+                  | Some (_, _, app) when app.name = "+" || app.name = "-" ->
+                      true
+                  | Some (_, c, app) when keeps Cmp && c <> Ordinary ->
+                      boundary_move ~constant_right:(is_child app.right)
+                        app.name
+                      = Some direction
+                  | Some _ | None -> false)
+                ||
+                match parent with
+                | Some ({ pexp_desc = Pexp_apply (fn, args); _ }, _) ->
+                    is_create fn && List.exists (fun (_, a) -> is_child a) args
+                | Some _ | None -> false
               in
-              Some
-                {
-                  guard = Literal replacement;
-                  rewrite = "bool";
-                  after = flipped;
-                }
-        | _ -> None
+              if arid then None
+              else
+                let replacement =
+                  pexp_constant ~loc (Pconst_integer (nudged, suffix))
+                in
+                Some
+                  {
+                    guard = Literal replacement;
+                    rewrite = "int";
+                    after = render replacement;
+                  })
+      | Pexp_construct ({ txt = Lident (("true" | "false") as b); _ }, None)
+        when context = Ordinary ->
+          let os_flag =
+            match parent with
+            | Some ({ pexp_desc = Pexp_apply (_, args); _ }, _) ->
+                List.exists
+                  (fun (label, a) ->
+                    is_child a
+                    &&
+                    match label with
+                    | Labelled l | Optional l -> List.mem l os_flags
+                    | Nolabel -> false)
+                  args
+            | Some _ | None -> false
+          in
+          if at_load || os_flag then None
+          else
+            let flipped = if String.equal b "true" then "false" else "true" in
+            let replacement =
+              pexp_construct ~loc { txt = Lident flipped; loc } None
+            in
+            Some
+              { guard = Literal replacement; rewrite = "bool"; after = flipped }
+      | _ -> None
 
     (* [chained] marks the left operand of a site that applies the same
        operator: a chain of one operator carries one mutant, and reading it
@@ -718,7 +699,7 @@ class instrumenter ~keeps ~covered ~module_name =
           (* [del] drops a statement: [(if armed then () else (e1; ())); e2],
              where [e1; ()] types [e1] as the statement it was. *)
           let deletable =
-            (not covered) && (not at_load)
+            (not at_load)
             && (not (is_opaque first))
             && (not (is_release first))
             &&
@@ -919,8 +900,7 @@ let transform_impl_file ctxt ast =
   else
     let module_name = generated_module_name file in
     let instrumenter =
-      new instrumenter
-        ~keeps:(kept_families ast) ~covered:(covered ast) ~module_name
+      new instrumenter ~keeps:(kept_families ast) ~module_name
     in
     let instrumented = instrumenter#structure ast in
     match instrumenter#sites with

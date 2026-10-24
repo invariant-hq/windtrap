@@ -200,7 +200,15 @@
     table of extents in index order. [___windtrap_visit___ i] is then
     [Windtrap_runtime.Coverage.visit counts i]. The module also binds
     [___windtrap_post_visit___] when the file has an out-edge point, and only
-    then. *)
+    then.
+
+    Every node the rewriter creates has a ghost location, so another rewriter
+    that skips generated code leaves it alone: the module, each visit call with
+    its function and its index, and the [true], the [false] and the inner [if]
+    that encode [||]. Two nodes keep the location of the expression they stand
+    for, so that a later mark of that expression keys and paints the source: the
+    wrapper of a visit, [(___windtrap_visit___ i; e)] or
+    [___windtrap_post_visit___ i e], and the outer [if] of [||]. *)
 
 (** {1:rewriting Rewriting} *)
 

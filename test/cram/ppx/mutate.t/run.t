@@ -1603,7 +1603,9 @@ driver, coverage_first.exe:
   mutation sites of "./fixture_visits.ml" in Windtrap_mut_________fixture_visits___ml, with type 'a operands:
     0: 7:22-7:23 "not" "b" -> "not b"
     1: 7:17-7:18 "not" "a" -> "not a"
-    2: 10:18-10:27 "le" "(___windtrap_post_visit___ 2 (f x)) < (___windtrap_post_visit___ 3 (g x))" -> "(___windtrap_post_visit___ 2 (f x)) <= (___windtrap_post_visit___ 3 (g x))"
+    2: 10:40-10:41 "int" "0" -> "1"
+    3: 10:33-10:34 "int" "1" -> "0"
+    4: 10:18-10:27 "le" "(___windtrap_post_visit___ 2 (f x)) < (___windtrap_post_visit___ 3 (g x))" -> "(___windtrap_post_visit___ 2 (f x)) <= (___windtrap_post_visit___ 3 (g x))"
   coverage points of "./fixture_visits.ml" in Windtrap_cov_________fixture_visits___ml, with ___windtrap_post_visit___:
     0: 262-263
     1: 267-268
@@ -1631,15 +1633,23 @@ driver, coverage_first.exe:
   let lt f g x =
     ___windtrap_visit___ 6;
     if
-      (let (__windtrap_mut_2_l, __windtrap_mut_2_r) =
+      (let (__windtrap_mut_4_l, __windtrap_mut_4_r) =
          (((___windtrap_post_visit___ 2 (f x)),
             (___windtrap_post_visit___ 3 (g x))) : _
                                                      Windtrap_mut_________fixture_visits___ml.operands) in
+       if Windtrap_mut_________fixture_visits___ml.___windtrap_armed___ 4
+       then Stdlib.not (__windtrap_mut_4_r < __windtrap_mut_4_l)
+       else __windtrap_mut_4_l < __windtrap_mut_4_r)
+    then
+      (___windtrap_visit___ 5;
+       if Windtrap_mut_________fixture_visits___ml.___windtrap_armed___ 3
+       then 0
+       else 1)
+    else
+      (___windtrap_visit___ 4;
        if Windtrap_mut_________fixture_visits___ml.___windtrap_armed___ 2
-       then Stdlib.not (__windtrap_mut_2_r < __windtrap_mut_2_l)
-       else __windtrap_mut_2_l < __windtrap_mut_2_r)
-    then (___windtrap_visit___ 5; 1)
-    else (___windtrap_visit___ 4; 0)
+       then 1
+       else 0)
 
 A file under an input name that is not a source file's is returned as
 parsed:

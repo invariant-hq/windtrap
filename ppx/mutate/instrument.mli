@@ -251,10 +251,8 @@
       [con] mutant, and an operand that became a condition is mutated as one.
     - the [before] and [after] texts of a site hold the visits inside it, as
       [___windtrap_post_visit___ 0 (f x)] for [f x].
-    - [del], [int] and [bool] have no site. The visits, their indices and the
-      booleans of the [if] of [||] take the locations of the source, so these
-      rewrites could not tell that code from the user's. A file holds the visits
-      when one of its top-level modules is named [Windtrap_cov___…].
+    - the visits, their indices and the booleans of the [if] of [||] are that
+      rewriter's generated code, at ghost locations, and carry no site.
 
     The mutants of such a file are not those of the file under this rewriter
     alone. *)

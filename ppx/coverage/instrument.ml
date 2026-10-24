@@ -106,7 +106,9 @@ let point st ~key (extent : location) =
 (* A mark is attributed to [anchor]: its point is keyed at the anchor's
    start, or at its last byte under [at_end], and a generated (ghost) or
    switched-off anchor takes no mark. The wrapper takes the location of [e],
-   so a later mark of the same node keys and paints the source. *)
+   so a later mark of the same node keys and paints the source; the visit,
+   its function and its index are generated, so their locations are ghost,
+   and another rewriter that skips generated code leaves them alone. *)
 let mark st ~anchor ~at_end ~extent ~post e =
   let at = anchor.pexp_loc in
   if at.loc_ghost || is_off anchor.pexp_attributes then e
@@ -115,15 +117,20 @@ let mark st ~anchor ~at_end ~extent ~post e =
       if at_end then at.loc_end.pos_cnum - 1 else at.loc_start.pos_cnum
     in
     let loc = e.pexp_loc in
-    let index = eint ~loc (point st ~key extent) in
+    let ghost = { loc with loc_ghost = true } in
+    let index = eint ~loc:ghost (point st ~key extent) in
     if post then begin
       st.uses_post <- true;
-      [%expr ___windtrap_post_visit___ [%e index] [%e e]]
+      pexp_apply ~loc
+        (evar ~loc:ghost "___windtrap_post_visit___")
+        [ (Nolabel, index); (Nolabel, e) ]
     end
     else
-      [%expr
-        ___windtrap_visit___ [%e index];
-        [%e e]]
+      pexp_sequence ~loc
+        (pexp_apply ~loc:ghost
+           (evar ~loc:ghost "___windtrap_visit___")
+           [ (Nolabel, index) ])
+        e
 
 let entry st ?extent e =
   let extent = Option.value extent ~default:e.pexp_loc in
@@ -292,10 +299,13 @@ class instrumenter st =
                 (([%expr ( || )] | [%expr ( or )]), [ (_, left); (_, right) ])
               ->
                 (* [(v; true)], where the visit [v] counts the times
-                   [operand] was true. *)
+                   [operand] was true. The constants and the inner [if] are
+                   generated, and ghost; the outer [if] stands for [e], whose
+                   location it keeps for a later mark. *)
+                let ghost = { loc with loc_ghost = true } in
                 let was_true operand =
                   mark st ~anchor:operand ~at_end:true ~extent:operand.pexp_loc
-                    ~post:false [%expr true]
+                    ~post:false (ebool ~loc:ghost true)
                 in
                 let left_true = was_true left in
                 let right' =
@@ -309,7 +319,8 @@ class instrumenter st =
                   | _ ->
                       let right' = traverse Nontail right in
                       let right_true = was_true right in
-                      [%expr if [%e right'] then [%e right_true] else false]
+                      pexp_ifthenelse ~loc:ghost right' right_true
+                        (Some (ebool ~loc:ghost false))
                 in
                 let left' = traverse Nontail left in
                 [%expr if [%e left'] then [%e left_true] else [%e right']]
