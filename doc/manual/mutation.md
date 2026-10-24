@@ -198,6 +198,25 @@ windtrap: verdicts not saved: this run's selection narrows the suite, and a part
 mutants: 1 survived of 1 reached by the 1 selected test, 4 never reached
 ```
 
+## Testing a change's mutants
+
+A change is judged by the mutants on its own lines. `--lines` keeps the
+mutants on the lines it names, as `--lines=calc.ml:10` or
+`--lines=lib/a.ml:3-7,12,lib/b.ml:40`, each file as its mutants'
+identifiers spell it, relative to the project root. `--diff FILE`
+reads the lines that a `git diff -U0` output adds or changes; with the
+default `a/` and `b/` prefixes it names the files as the identifiers do
+when the repository's root is the project's. Both narrow `--mutate`,
+whose prefixes they combine with, and the run still saves its verdicts,
+replacing those on its lines. Their mirrors are `WINDTRAP_LINES` and
+`WINDTRAP_DIFF`; a relative path in `WINDTRAP_DIFF` is read from the
+project root.
+
+```
+$ git diff -U0 > change.diff
+$ dune exec --instrument-with ppx_windtrap.mutate ./test_calc.exe -- --mutate --diff change.diff
+```
+
 ## What a mutation run runs
 
 A mutation run runs in passes, and prints neither the focus warning nor

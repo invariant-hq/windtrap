@@ -86,6 +86,11 @@ type parsed = {
   mutate : string list option;
       (** [--mutate[=PREFIX,…]]: [Some []] for the bare flag, and else the
           comma-separated prefixes. *)
+  lines : Lines.t option;
+      (** [--lines FILE:A-B,…]: the line set that {!Lines.of_spec} reads. *)
+  diff : string option;
+      (** [--diff FILE]: the path of a [git diff -U0] output, as typed. It is
+          read by {!settings}. *)
   arm : string option;
       (** [--arm ID]: the identifier as typed. It is not parsed here, so a
           malformed one is no {!type-error}, and
@@ -124,6 +129,10 @@ type error =
       (** Both flags were given, and they contradict each other. The payload is
           [("-u", "--corrected")] or [("--mutate", "--arm")], whatever spelling
           or mirror carried them. *)
+  | Requires of string * string
+      (** The command line gave the first flag, which scopes the second, and no
+          layer gave the second: [("--lines", "--mutate")] or
+          [("--diff", "--mutate")]. *)
 
 val error_message : error -> string
 (** [error_message error] is one sentence on [error] for a user, which names the
@@ -169,9 +178,14 @@ val settings : parsed -> (Run.config, error) result
     - [baseline] is {!Baseline.Update} under [update], else
       {!Baseline.Corrected} under [corrected], else {!Baseline.Check}.
     - [mutation] is {!Run.Loop} of [mutate], {!Run.Armed} of [arm], or
-      {!Run.No_mutation}. Both at once is [Error (Incompatible_flags _)],
-      whichever layer gave each, and it is checked after every mirror. A prefix
-      that spells a boolean cannot go through the variable.
+      {!Run.No_mutation}. The lines of the loop's scope are the union of [lines]
+      and of what {!Lines.of_diff} reads in the file of [diff], whose relative
+      path is made absolute as [-o]'s is. A file that cannot be read is
+      [Error (Invalid_value _)], and [lines] or [diff] from the command line
+      without [mutate] is [Error (Requires _)]; from their mirrors alone they
+      are ignored. Both at once is [Error (Incompatible_flags _)], whichever
+      layer gave each, and it is checked after every mirror. A prefix that
+      spells a boolean cannot go through the variable.
     - A relative path of [--junit] or [-o] is made absolute, against the working
       directory when the command line gives it and against {!Os.project_root}
       when its mirror does. It is kept as given when that directory cannot be

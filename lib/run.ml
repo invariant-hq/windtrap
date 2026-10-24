@@ -12,7 +12,11 @@ let ( let* ) = Result.bind
 (* Configuration *)
 
 type invocation = [ `Exe of string | `Mirrors ]
-type mutation = No_mutation | Loop of string list | Armed of string
+type scope = { prefixes : string list; lines : Lines.t option }
+type mutation = No_mutation | Loop of scope | Armed of string
+
+let every_mutant = { prefixes = []; lines = None }
+
 type broadcast = { selection : bool; mutate : bool }
 
 type config = {

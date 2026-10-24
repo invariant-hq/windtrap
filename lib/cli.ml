@@ -29,6 +29,8 @@ type parsed = {
   color : Os.color_mode option;
   log_dir : string option;
   mutate : string list option;
+  lines : Lines.t option;
+  diff : string option;
   arm : string option;
   help : bool;
   version : bool;
@@ -59,6 +61,8 @@ let empty =
     color = None;
     log_dir = None;
     mutate = None;
+    lines = None;
+    diff = None;
     arm = None;
     help = false;
     version = false;
@@ -71,6 +75,7 @@ type error =
   | Missing_value of string
   | Invalid_value of { source : string; value : string; expected : string }
   | Incompatible_flags of string * string
+  | Requires of string * string
 
 let ( let* ) = Result.bind
 
@@ -276,6 +281,16 @@ let entries =
          })
       ~mirror:(mirrored "WINDTRAP_MUTATE" (fun p -> p.mutate = None))
       "Test this executable's mutants, all or those under PREFIX.";
+    row "--lines"
+      (value "FILE:A-B,..." Lines.of_spec (fun p lines ->
+           { p with lines = Some lines }))
+      ~mirror:(mirrored "WINDTRAP_LINES" (fun p -> p.lines = None))
+      "Test only the mutants on these lines of these files (with --mutate).";
+    row "--diff"
+      (value "FILE" any (fun p file -> { p with diff = Some file }))
+      ~mirror:(mirrored "WINDTRAP_DIFF" (fun p -> p.diff = None))
+      "Test only the mutants on the lines that FILE, the output of git diff \
+       -U0, adds or changes (with --mutate).";
     row "--arm"
       (value "ID" any (fun p id -> { p with arm = Some id }))
       ~mirror:(mirrored "WINDTRAP_MUTATE_ARM" (fun p -> p.arm = None))
@@ -356,6 +371,8 @@ let error_message = function
       Pp.str "invalid value '%s' for %s: expected %s" value source expected
   | Incompatible_flags (first, second) ->
       Pp.str "options '%s' and '%s' cannot be combined" first second
+  | Requires (flag, needed) ->
+      Pp.str "option '%s' scopes '%s', which is not given" flag needed
 
 (* Parsing *)
 
@@ -476,12 +493,38 @@ let absolute_path ~cli ~layered field =
    random root made a mutant that some cases kill flip from run to run. *)
 let mutation_seed = 0x6d7574616e747321L (* "mutants!" *)
 
+(* A line scope from the command line without [--mutate] would scope
+   nothing; one from a mirror reaches every stanza, and the stanzas that do
+   not mutate ignore it. *)
+let line_scope ~cli ~layered =
+  let given = Option.value layered.lines ~default:Lines.empty in
+  match (cli.lines, cli.diff, layered.mutate) with
+  | Some _, _, None -> Error (Requires ("--lines", "--mutate"))
+  | None, Some _, None -> Error (Requires ("--diff", "--mutate"))
+  | _ -> (
+      match absolute_path ~cli ~layered (fun p -> p.diff) with
+      | None -> Ok layered.lines
+      | Some path -> (
+          match In_channel.with_open_bin path In_channel.input_all with
+          | text -> Ok (Some (Lines.union given (Lines.of_diff text)))
+          | exception Sys_error _ ->
+              Error
+                (Invalid_value
+                   {
+                     source =
+                       (if Option.is_some cli.diff then "--diff"
+                        else "WINDTRAP_DIFF");
+                     value = Option.value layered.diff ~default:path;
+                     expected = "a readable file, the output of git diff -U0";
+                   })))
+
 let settings cli =
   let* layered = layer_entries entries cli in
+  let* lines = line_scope ~cli ~layered in
   let* mutation =
     match (layered.mutate, layered.arm) with
     | None, None -> Ok Run.No_mutation
-    | Some prefixes, None -> Ok (Run.Loop prefixes)
+    | Some prefixes, None -> Ok (Run.Loop { prefixes; lines })
     | None, Some id -> Ok (Run.Armed id)
     | Some _, Some _ -> Error (Incompatible_flags ("--mutate", "--arm"))
   in

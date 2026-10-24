@@ -76,6 +76,13 @@ OPTIONS:
   --mutate[=PREFIX,...] (env WINDTRAP_MUTATE)
       Test this executable's mutants, all or those under PREFIX.
 
+  --lines=FILE:A-B,... (env WINDTRAP_LINES)
+      Test only the mutants on these lines of these files (with --mutate).
+
+  --diff=FILE (env WINDTRAP_DIFF)
+      Test only the mutants on the lines that FILE, the output of git diff -U0,
+      adds or changes (with --mutate).
+
   --arm=ID (env WINDTRAP_MUTATE_ARM)
       Run once with mutant ID armed.
 

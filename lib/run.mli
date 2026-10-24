@@ -31,14 +31,27 @@ type invocation = [ `Exe of string | `Mirrors ]
       [--corrected] run, the inline runner's included, and of a run without
       [argv.(0)]. *)
 
+type scope = {
+  prefixes : string list;
+      (** [--mutate=PREFIX,…]: a mutant is in scope when its recorded source
+          path starts with one of the prefixes. The bare flag gives the empty
+          list, which keeps every file. *)
+  lines : Lines.t option;
+      (** [--lines] and [--diff]: a mutant is in scope when it lies on one of
+          these lines, by its recorded file and line. [None] keeps every line.
+      *)
+}
+(** The type for the mutants that a mutation loop tests: those that both fields
+    keep. *)
+
+val every_mutant : scope
+(** [every_mutant] keeps every mutant: no prefix and no line set. *)
+
 (** The type for what a run does with the mutants of an executable built for
     mutation testing. *)
 type mutation =
   | No_mutation  (** An ordinary run. The mutants are inert. *)
-  | Loop of string list
-      (** [--mutate[=PREFIX,…]]: the mutation loop, over the mutants whose
-          recorded source path starts with one of the prefixes. The bare flag
-          gives the empty list, which keeps every mutant. *)
+  | Loop of scope  (** [--mutate]: the mutation loop, over this scope. *)
   | Armed of string
       (** [--arm ID]: one ordinary run with the mutant [ID] armed. The
           identifier is kept as typed, and its grammar is that of

@@ -1111,6 +1111,46 @@ let unwritable () =
   starts_with ~affix:"windtrap: could not write the verdict file: " r.err;
   equal int 1 (List.length (lines (String.trim r.err)))
 
+(* A change to [widen]'s line, as [git diff -U0] prints it. *)
+let widen_diff =
+  "diff --git a/test/unit/mutate_loop/subject.ml \
+   b/test/unit/mutate_loop/subject.ml\n\
+   --- a/test/unit/mutate_loop/subject.ml\n\
+   +++ b/test/unit/mutate_loop/subject.ml\n\
+   @@ -18 +18 @@\n\
+   -let widen a b = b + a\n\
+   +let widen a b = a + b\n"
+
+let line_scoped args =
+  remove (Verdicts.output_file ~exe:suite_exe);
+  let r = spawn (mutate :: args) in
+  equal string "exited 0" r.status;
+  (outcome r.out, rows r)
+
+let line_scope () =
+  let diff = Filename.concat (temp_dir ()) "change.diff" in
+  write diff widen_diff;
+  equal
+    (list (pair string (option (list string))))
+    [
+      ( "mutants: 1 survived of 1 reached by this suite",
+        Some
+          [
+            "subject.ml:18 survived by widen \u{203a} widen is nonzero, widen \
+             \u{203a} widen is not 99";
+          ] );
+      ( "mutants: 1 reached by this suite, 1 killed",
+        Some [ "subject.ml:15 killed" ] );
+      ( "mutants: 1 survived of 2 reached by this suite, 1 killed",
+        Some (List.filteri (fun i _ -> i < 2) green_rows) );
+    ]
+    [
+      line_scoped [ "--diff"; diff ];
+      line_scoped [ "--lines=test/unit/mutate_loop/subject.ml:15" ];
+      line_scoped
+        [ "--diff"; diff; "--lines=test/unit/mutate_loop/subject.ml:14-15" ];
+    ]
+
 let verdict_file =
   group "The verdict file"
     [
@@ -1141,6 +1181,10 @@ let verdict_file =
                (fun line -> strf "subject.ml:%d unknown: %s" line narrowing)
                [ 15; 18; 21; 27 ])
             f.rows);
+      test
+        "a line scope tests the mutants of its lines alone, from --lines or a \
+         git diff"
+        line_scope;
       test "a --failed run writes no verdict file" failed_run;
       test "a run with an active focus writes no verdict file" (fun () ->
           let r = spawn ~env:[ suite "focused" ] [ mutate ] in

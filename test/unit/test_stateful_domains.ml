@@ -1573,7 +1573,7 @@ let executor =
 let under_mutation, seen_under_mutation =
   let r =
     Recorded.execute
-      ~config:(fun c -> { c with mutation = Run.Loop [] })
+      ~config:(fun c -> { c with mutation = Run.Loop Run.every_mutant })
       [ Stateful.stateful ~count:5 ~domains:2 "sequential" [ where () ] ]
   in
   (r, List.sort_uniq Int.compare (Log.take ()))

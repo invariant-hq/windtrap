@@ -15,6 +15,7 @@ module Cli = Windtrap.Private.Cli
 module Os = Windtrap.Private.Os
 module Run = Windtrap.Private.Run
 module Seed = Windtrap.Private.Seed
+module Lines = Windtrap.Private.Lines
 
 let strf = Printf.sprintf
 let words items = "[" ^ String.concat "; " items ^ "]"
@@ -32,6 +33,7 @@ let error_row = function
       strf "invalid %s %S" source value
   | Cli.Incompatible_flags (first, second) ->
       strf "incompatible %s %s" first second
+  | Cli.Requires (flag, needed) -> strf "%s requires %s" flag needed
 
 let pp_error ppf e = Format.pp_print_string ppf (error_row e)
 
@@ -93,7 +95,9 @@ let parsed args = parsed_argv (Array.of_list ("windtrap-test" :: args))
 
 let mutation_name = function
   | Run.No_mutation -> "none"
-  | Run.Loop prefixes -> "loop " ^ words prefixes
+  | Run.Loop { prefixes; lines = None } -> "loop " ^ words prefixes
+  | Run.Loop { prefixes; lines = Some lines } ->
+      strf "loop %s lines %s" (words prefixes) (Lines.to_string lines)
   | Run.Armed id -> "armed " ^ id
 
 let baseline_name = function
@@ -835,6 +839,21 @@ let resolution =
           ( [],
             [ "--arm"; "lib/a.ml:9:12:add" ],
             "mutation armed lib/a.ml:9:12:add" );
+        ];
+      resolve_rows "--lines scopes --mutate, and needs it on the command line"
+        [
+          ( [],
+            [ "--mutate"; "--lines=lib/a.ml:3-4,9" ],
+            "mutation loop [] lines lib/a.ml:3-4,9" );
+          ( [ ("WINDTRAP_LINES", "lib/a.ml:3") ],
+            [ "--mutate=lib/" ],
+            "mutation loop [lib/] lines lib/a.ml:3" );
+          ([], [ "--lines=lib/a.ml:3" ], "--lines requires --mutate");
+          ([], [ "--diff=x.diff" ], "--diff requires --mutate");
+          ([ ("WINDTRAP_LINES", "lib/a.ml:3") ], [], "defaults");
+          ( [],
+            [ "--mutate"; "--lines=lib/a.ml:0" ],
+            "invalid --lines \"lib/a.ml:0\"" );
         ];
       resolve_rows "--mutate with --arm is refused, whichever layer gave each"
         [

@@ -147,7 +147,7 @@ let color_name = function
 
 let mutation_name = function
   | Run.No_mutation -> "none"
-  | Run.Loop prefixes -> "loop " ^ String.concat "," prefixes
+  | Run.Loop { prefixes; _ } -> "loop " ^ String.concat "," prefixes
   | Run.Armed id -> "armed " ^ id
 
 let broadcast_name (b : Run.broadcast) =

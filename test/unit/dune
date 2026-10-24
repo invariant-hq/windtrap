@@ -75,6 +75,11 @@
  (libraries windtrap))
 
 (test
+ (name test_lines)
+ (modules test_lines)
+ (libraries windtrap))
+
+(test
  (name test_loc)
  (modules test_loc)
  (libraries windtrap unix))

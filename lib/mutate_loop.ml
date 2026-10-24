@@ -19,9 +19,24 @@ let ordinary ~suite (config : Run.config) tests =
 
 (* Population *)
 
-let in_scope ~scope (id : Mutate.id) =
-  scope = []
-  || List.exists (fun prefix -> String.starts_with ~prefix id.file) scope
+let in_scope ~(scope : Run.scope) (id : Mutate.id) =
+  (scope.prefixes = []
+  || List.exists
+       (fun prefix -> String.starts_with ~prefix id.file)
+       scope.prefixes)
+  &&
+  match scope.lines with
+  | None -> true
+  | Some lines -> Lines.mem lines ~file:id.file ~line:id.line
+
+(* The scope as the reader gave it: the prefixes, then the lines. *)
+let spelled ~prefixes ~lines (scope : Run.scope) =
+  String.concat " "
+    ((match scope.prefixes with [] -> [] | ps -> [ prefixes ps ])
+    @
+    match scope.lines with
+    | None -> []
+    | Some l -> [ lines (Lines.to_string l) ])
 
 type no_mutant = Uninstrumented | Out_of_scope | All_dismissed
 
@@ -34,7 +49,7 @@ let population ~scope =
     List.filter (fun (m : Mutate.mutant) -> Option.is_none m.dismissed) scoped
   in
   match (catalogue, scoped, undismissed) with
-  | [], _, _ when scope = [] -> Error Uninstrumented
+  | [], _, _ when scope = Run.every_mutant -> Error Uninstrumented
   | _, [], _ -> Error Out_of_scope
   | _, _, [] -> Error All_dismissed
   | _, _, population -> Ok population
@@ -49,11 +64,14 @@ let refusal ~scope = function
        re-run"
   | Out_of_scope ->
       strf
-        "--mutate=%s leaves no mutant in this executable's catalogue: no \
-         instrumented file matches the prefix (is the library under test \
-         instrumented with ppx_windtrap.mutate?), or the matched files have no \
-         mutation sites"
-        (String.concat "," scope)
+        "%s leaves no mutant in this executable's catalogue: no instrumented \
+         file matches the %s (is the library under test instrumented with \
+         ppx_windtrap.mutate?), or the matched %s no mutation sites"
+        (spelled scope
+           ~prefixes:(fun ps -> "--mutate=" ^ String.concat "," ps)
+           ~lines:(fun l -> "--lines=" ^ l))
+        (if scope.lines = None then "prefix" else "scope")
+        (if scope.lines = None then "files have" else "lines hold")
   | All_dismissed ->
       "every mutant this run could test is dismissed by [@mutate off]; there \
        is nothing to test"
@@ -63,8 +81,10 @@ let unmutated ~scope reason =
     match reason with
     | Uninstrumented -> "this executable links no instrumented module"
     | Out_of_scope ->
-        strf "no mutant of this executable's catalogue is under %s"
-          (String.concat "," scope)
+        strf "no mutant of this executable's catalogue is %s"
+          (spelled scope
+             ~prefixes:(fun ps -> "under " ^ String.concat "," ps)
+             ~lines:(fun l -> "on " ^ l))
     | All_dismissed ->
         "every mutant of this executable is dismissed by [@mutate off]"
   in

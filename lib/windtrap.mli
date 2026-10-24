@@ -1967,6 +1967,7 @@ module Private : sig
   module Diff = Diff
   module Failure = Failure
   module Gen_engine = Gen_engine
+  module Lines = Lines
   module Loc = Loc
   module Mutate_loop = Mutate_loop
   module Os = Os
