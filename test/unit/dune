@@ -260,3 +260,13 @@
   (progn
    (run %{test} --corrected)
    (diff? test_stateful_domains.ml test_stateful_domains.ml.corrected))))
+
+(test
+ (name test_shrink)
+ (modules test_shrink)
+ (libraries windtrap))
+
+(test
+ (name test_choice)
+ (modules test_choice)
+ (libraries windtrap))

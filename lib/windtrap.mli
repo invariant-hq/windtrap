@@ -1926,6 +1926,7 @@ module Private : sig
   module Baseline = Baseline
   module Capture = Capture
   module Check = Check
+  module Choice = Choice
   module Cli = Cli
   module Diff = Diff
   module Failure = Failure
@@ -1940,6 +1941,7 @@ module Private : sig
   module Report_sections = Report_sections
   module Run = Run
   module Seed = Seed
+  module Shrink = Shrink
   module Source_patch = Source_patch
   module Stateful = Stateful
   module Test_tree = Test_tree
