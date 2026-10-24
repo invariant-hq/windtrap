@@ -382,6 +382,23 @@ let collections =
         mismatch_message;
       test "a data error is Instr's message, which says to delete the files"
         data_message;
+      test
+        "keep keeps the points a predicate holds of, with their counts, and \
+         drops a file it leaves with none" (fun () ->
+          let t =
+            collection
+              [
+                ("lib/a.ml", [ (line 1, 3); (line 2, 0); (line 3, 5) ]);
+                ("lib/b.ml", [ (line 1, 1) ]);
+              ]
+          in
+          let odd ~file (p : Coverage.point) =
+            String.equal file "lib/a.ml" && p.start_ofs <> (line 2).start_ofs
+          in
+          equal hits_t
+            [ ("lib/a.ml", [ (1, 3); (3, 5) ]) ]
+            (hits (Coverage.keep odd t));
+          equal hits_t (hits t) (hits (Coverage.keep (fun ~file:_ _ -> true) t)));
     ]
 
 (* Dumps *)

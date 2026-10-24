@@ -209,7 +209,9 @@ default `a/` and `b/` prefixes it names the files as the identifiers do
 when the repository's root is the project's. Both narrow `--mutate`,
 whose prefixes they combine with, and the run still saves its verdicts,
 replacing those on its lines. `windtrap mutants` takes the same two
-flags, and reports, and fails on, the mutants of those lines alone. Their mirrors are `WINDTRAP_LINES` and
+flags, and reports, and fails on, the mutants of those lines alone, and
+`windtrap coverage` the points of those lines (see
+[coverage.md](coverage.md)). Their mirrors are `WINDTRAP_LINES` and
 `WINDTRAP_DIFF`; a relative path in `WINDTRAP_DIFF` is read from the
 project root.
 

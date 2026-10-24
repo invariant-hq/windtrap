@@ -178,6 +178,9 @@
   point for its return, as a direct call has none:
   `if n < 1 then failwith @@ msg;` read uncovered even when a test ran
   it.
+- `windtrap coverage --lines FILE:A-B,...` and `--diff FILE`, the output
+  of `git diff -U0`, report the points that start on those lines alone,
+  as `windtrap mutants` reports the mutants on them.
 
 ## v0.2.0 2026-09-26
 

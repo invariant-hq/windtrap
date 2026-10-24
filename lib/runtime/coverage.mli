@@ -92,6 +92,12 @@ val merge : t -> t -> (t, error) result
 val files : t -> string list
 (** [files t] is the file names of [t], in the order of [String.compare]. *)
 
+val keep : (file:string -> point -> bool) -> t -> t
+(** [keep f t] is [t] with only the points [p] of each file for which
+    [f ~file p] holds, each with its count, in the order of the point table. A
+    file left with no point is dropped. The point tables of the result differ
+    from those of [t], so {!merge} refuses to combine the two. *)
+
 (** {1:ondisk Dumps}
 
     When an instrumented process that registered a file exits, it writes the

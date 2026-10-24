@@ -181,6 +181,23 @@ coverage: 93.1% (27/29 points)
 windtrap: stats.ml: expected source has no coverage data (not instrumented, or linked into no test executable that ran)
 ```
 
+## Measuring a change's coverage
+
+A change is judged by the points on its own lines. `--lines` keeps the
+points that start on the lines it names, as `--lines=calc.ml:6-7`, each
+file as the report names it, and `--diff FILE` the points that start on
+the lines a `git diff -U0` output adds or changes. The report, the
+documents and `--min` are those of the kept points; `--expect` still
+reads the whole merge. A point is placed on its line through its source,
+so a file whose source is missing or stale is left out, and named on
+standard error. The flags are those of `windtrap mutants` (see
+[mutation.md](mutation.md)):
+
+```
+$ git diff -U0 > change.diff
+$ dune exec windtrap -- coverage --diff change.diff --min 100
+```
+
 ## Excluding code from coverage
 
 To leave code out of the count, mark it with an attribute:
@@ -355,6 +372,13 @@ OPTIONS:
 
   --do-not-expect=PATH
       Exempt PATH, a file or a directory, from --expect.
+
+  --lines=FILE:A-B,...
+      Report only the points that start on these lines of these files.
+
+  --diff=FILE
+      Report only the points that start on the lines that FILE, the output of
+      git diff -U0, adds or changes.
 
   -u, --show-uncovered
       Also render uncovered source excerpts.

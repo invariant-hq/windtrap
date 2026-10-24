@@ -65,6 +65,21 @@ let merge a b =
 
 let files t = List.map fst (File_map.bindings t)
 
+let keep f t =
+  File_map.filter_map
+    (fun file entry ->
+      let kept =
+        List.filter
+          (fun (p, _) -> f ~file p)
+          (Array.to_list (Array.combine entry.points entry.counts))
+      in
+      match kept with
+      | [] -> None
+      | kept ->
+          let points, counts = List.split kept in
+          Some { points = Array.of_list points; counts = Array.of_list counts })
+    t
+
 (* Dumps *)
 
 type identity = Instr.identity = { exe : string; digest : string }

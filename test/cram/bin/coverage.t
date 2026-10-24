@@ -375,6 +375,62 @@ Under --json both gates run, and standard output stays the document:
   [1]
   $ diff json "$bin/out"
 
+--lines and --diff
+
+A line scope reports the points that start on its lines alone, from
+--lines or a git diff -U0, and --min gates them alone. The flags repeat
+and add up, and --expect still asks of the whole merge:
+
+  $ run windtrap coverage --lines=lib/foo.ml:2-3,lib/bar.ml:2
+     cover    points   file         uncovered lines (-u shows the source)
+      0.0%    0/1      lib/bar.ml   2
+     50.0%    1/2      lib/foo.ml   3
+  coverage: 33.3% (1/3 points)
+  $ printf -- '--- a/lib/foo.ml\n+++ b/lib/foo.ml\n@@ -2 +2 @@\n-let b = 0\n+let b = 2\n' > change.diff
+  $ run windtrap coverage --diff change.diff --min 100
+     cover    points   file         uncovered lines (-u shows the source)
+    100.0%    1/1      lib/foo.ml
+  coverage: 100.0% (1/1 points), minimum 100%: ok
+  $ run windtrap coverage --lines lib/foo.ml:3 --diff=change.diff --expect lib
+     cover    points   file         uncovered lines (-u shows the source)
+     50.0%    1/2      lib/foo.ml   3
+  coverage: 50.0% (1/2 points)
+  --- stderr
+  windtrap: lib/baz.ml: expected source has no coverage data (not instrumented, or linked into no test executable that ran)
+  [1]
+  $ run windtrap coverage --json --lines=lib/bar.ml:1-2
+  { "summary": { "visited": 1, "total": 2, "percentage": 50.00 },
+    "files": [
+      { "path": "lib/bar.ml", "visited": 1, "total": 2,
+        "percentage": 50.00,
+        "uncovered_lines": [2] } ] }
+  $ run windtrap coverage --lines=lib/none.ml:1
+  coverage: 100.0% (0/0 points)
+
+A file of the scope whose source is missing or stale cannot place its
+points on lines, and is left out and named:
+
+  $ cd "$scratch/edges"
+  $ run windtrap coverage --lines=lib/a.ml:1,lib/s.ml:1,lib/Z.ml:1
+  coverage: 100.0% (0/0 points)
+  --- stderr
+  windtrap: lib/a.ml: source not found; left out of the line scope
+  windtrap: lib/s.ml: the source changed since the run; left out of the line scope
+  $ cd "$scratch/proj"
+
+A malformed scope or an unreadable diff is a usage error:
+
+  $ run windtrap coverage --lines=lib/foo.ml:0
+  --- stderr
+  windtrap: invalid value 'lib/foo.ml:0' for --lines: expected FILE:A-B,... with 1 <= A <= B (e.g. lib/a.ml:3-7,12)
+  usage: windtrap coverage [OPTIONS] [PATH...]
+  [2]
+  $ run windtrap coverage --diff=nope.diff
+  --- stderr
+  windtrap: cannot read --diff nope.diff: nope.diff: No such file or directory
+  usage: windtrap coverage [OPTIONS] [PATH...]
+  [2]
+
 No data
 
 Without dumps the command exits 1, with a hint that names the backend:
@@ -422,6 +478,13 @@ variable that has no flag:
     --do-not-expect=PATH
         Exempt PATH, a file or a directory, from --expect.
   
+    --lines=FILE:A-B,...
+        Report only the points that start on these lines of these files.
+  
+    --diff=FILE
+        Report only the points that start on the lines that FILE, the output of
+        git diff -U0, adds or changes.
+  
     -u, --show-uncovered
         Also render uncovered source excerpts.
   
@@ -448,7 +511,7 @@ before any flag is read:
   windtrap: unknown option '--frobnicate'
   usage: windtrap coverage [OPTIONS] [PATH...]
   [2]
-  $ for flag in --min --expect --do-not-expect --color; do run windtrap coverage -u $flag; echo "[$?]"; done
+  $ for flag in --min --expect --do-not-expect --lines --diff --color; do run windtrap coverage -u $flag; echo "[$?]"; done
   --- stderr
   windtrap: option '--min' requires an argument
   usage: windtrap coverage [OPTIONS] [PATH...]
@@ -459,6 +522,14 @@ before any flag is read:
   [2]
   --- stderr
   windtrap: option '--do-not-expect' requires an argument
+  usage: windtrap coverage [OPTIONS] [PATH...]
+  [2]
+  --- stderr
+  windtrap: option '--lines' requires an argument
+  usage: windtrap coverage [OPTIONS] [PATH...]
+  [2]
+  --- stderr
+  windtrap: option '--diff' requires an argument
   usage: windtrap coverage [OPTIONS] [PATH...]
   [2]
   --- stderr

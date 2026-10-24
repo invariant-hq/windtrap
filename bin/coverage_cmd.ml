@@ -9,6 +9,7 @@ module Sections = Windtrap.Private.Report_sections
 module Os = Windtrap.Private.Os
 module Cli = Windtrap.Private.Cli
 module Pp = Windtrap.Private.Pp
+module Lines = Windtrap.Private.Lines
 
 let strf = Printf.sprintf
 let ( let* ) = Result.bind
@@ -23,6 +24,7 @@ type options = {
   color : Os.color_mode option; (* [--color], which hides [WINDTRAP_COLOR] *)
   expect : string list;
   do_not_expect : string list;
+  lines : Lines.t option; (* [--lines] and [--diff], added up *)
   paths : string list;
 }
 
@@ -90,6 +92,50 @@ let merged files =
           | Error error ->
               Os.say (Pp.to_string Coverage.pp_error error);
               Error 1))
+
+(* A line scope *)
+
+(* The line of each byte of [source], by the offsets at which its lines
+   start. *)
+let line_of source =
+  let starts = ref [ 0 ] in
+  String.iteri (fun i c -> if c = '\n' then starts := (i + 1) :: !starts) source;
+  let starts = Array.of_list (List.rev !starts) in
+  fun ofs ->
+    let rec search lo hi =
+      if lo >= hi then lo + 1
+      else
+        let mid = (lo + hi + 1) / 2 in
+        if starts.(mid) <= ofs then search mid hi else search lo (mid - 1)
+    in
+    search 0 (Array.length starts - 1)
+
+(* A line scope keeps the points whose first byte is on its lines, as a
+   mutant is on a line when its first byte is. A point is placed on a line
+   through its source, so a file of the scope whose source is not found, or
+   changed since the run, is left out and named. *)
+let on_lines ~source_roots lines collection =
+  let named = Lines.files lines in
+  let scoped = Coverage.keep (fun ~file _ -> List.mem file named) collection in
+  let placed =
+    List.filter_map
+      (fun (r : Coverage.file_report) ->
+        match r.source with
+        | Some source -> Some (r.file, line_of source)
+        | None ->
+            Os.say
+              (strf "%s: %s; left out of the line scope" r.file
+                 (if r.stale then "the source changed since the run"
+                  else "source not found"));
+            None)
+      (Coverage.file_reports ~source_roots scoped)
+  in
+  Coverage.keep
+    (fun ~file (p : Coverage.point) ->
+      match List.assoc_opt file placed with
+      | Some line -> Lines.mem lines ~file ~line:(line p.start_ofs)
+      | None -> false)
+    scoped
 
 (* Gates *)
 
@@ -307,6 +353,13 @@ OPTIONS:
   --do-not-expect=PATH
       Exempt PATH, a file or a directory, from --expect.
 
+  --lines=FILE:A-B,...
+      Report only the points that start on these lines of these files.
+
+  --diff=FILE
+      Report only the points that start on the lines that FILE, the output of
+      git diff -U0, adds or changes.
+
   -u, --show-uncovered
       Also render uncovered source excerpts.
 
@@ -325,7 +378,14 @@ let split_inline arg =
   match String.index_opt arg '=' with
   | Some i
     when List.mem (String.sub arg 0 i)
-           [ "--min"; "--expect"; "--do-not-expect"; "--color" ] ->
+           [
+             "--min";
+             "--expect";
+             "--do-not-expect";
+             "--lines";
+             "--diff";
+             "--color";
+           ] ->
       [ String.sub arg 0 i; String.sub arg (i + 1) (String.length arg - i - 1) ]
   | Some _ | None -> [ arg ]
 
@@ -334,6 +394,13 @@ let options args =
     Os.say message;
     prerr_endline usage;
     Error 2
+  in
+  let add_lines o more =
+    {
+      o with
+      lines =
+        Some (Lines.union (Option.value o.lines ~default:Lines.empty) more);
+    }
   in
   let rec parse o = function
     | [] ->
@@ -360,11 +427,26 @@ let options args =
         parse { o with expect = path :: o.expect } args
     | "--do-not-expect" :: path :: args ->
         parse { o with do_not_expect = path :: o.do_not_expect } args
+    | "--lines" :: value :: args -> (
+        match Lines.of_spec value with
+        | Ok more -> parse (add_lines o more) args
+        | Error expected ->
+            usage_error
+              (strf "invalid value '%s' for --lines: expected %s" value expected)
+        )
+    | "--diff" :: file :: args -> (
+        match In_channel.with_open_bin file In_channel.input_all with
+        | text -> parse (add_lines o (Lines.of_diff text)) args
+        | exception Sys_error reason ->
+            usage_error (strf "cannot read --diff %s: %s" file reason))
     | "--color" :: value :: args -> (
         match Cli.parse_color value with
         | Ok color -> parse { o with color = Some color } args
         | Error error -> usage_error (Cli.error_message error))
-    | [ (("--min" | "--expect" | "--do-not-expect" | "--color") as flag) ] ->
+    | [
+        (( "--min" | "--expect" | "--do-not-expect" | "--lines" | "--diff"
+         | "--color" ) as flag);
+      ] ->
         usage_error (strf "option '%s' requires an argument" flag)
     | (("--json" | "--lcov") as flag) :: args ->
         let output = if flag = "--json" then Json else Lcov in
@@ -384,6 +466,7 @@ let options args =
       color = None;
       expect = [];
       do_not_expect = [];
+      lines = None;
       paths = [];
     }
     (List.concat_map split_inline args)
@@ -417,8 +500,13 @@ let run args =
           Error 1
     in
     let* collection = merged files in
-    let summary = Coverage.summary collection in
-    print o ~ansi summary (Coverage.file_reports ~source_roots collection);
+    let scoped =
+      match o.lines with
+      | None -> collection
+      | Some lines -> on_lines ~source_roots lines collection
+    in
+    let summary = Coverage.summary scoped in
+    print o ~ansi summary (Coverage.file_reports ~source_roots scoped);
     let expected = expect_gate o collection in
     let met = min_gate o summary in
     Ok (max expected met)

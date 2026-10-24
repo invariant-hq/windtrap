@@ -39,7 +39,18 @@
     under the roots of {!Data_files.discover}: the root of the project after a
     search, and the current directory under [PATH] arguments. The rows of the
     report come in the order of file names that
-    {!Windtrap_runtime.Coverage.file_reports} gives. *)
+    {!Windtrap_runtime.Coverage.file_reports} gives.
+
+    [--lines SPEC] and [--diff FILE], also spelled with [=], repeat and add up
+    into a {!Windtrap.Private.Lines.t}, read by
+    {!Windtrap.Private.Lines.of_spec} and {!Windtrap.Private.Lines.of_diff}, as
+    under [windtrap mutants]. The merge then keeps the points whose first byte
+    is on one of those lines, through {!Windtrap_runtime.Coverage.keep}, and the
+    report, the documents and [--min] are those of the kept points. A point is
+    placed on its line through its source, so a file that the lines name and
+    whose source is not found or is stale is left out, and named on standard
+    error with the reason. [--expect] reads the whole merge. A malformed [SPEC]
+    or an unreadable [FILE] is a usage error. *)
 
 (** {1:gates Gates}
 
@@ -141,7 +152,7 @@ val run : string list -> int
       or the coverage is below [--min].
     - [2] for a usage error. The usage errors are an unknown option, a [--min]
       that is not a number of the interval \[[0];[100]\], a [--color] value that
-      the flag refuses, a flag that lacks its value, and [--json] given with
-      [--lcov]. It is also [2] for a [WINDTRAP_COLOR] that the flag would
-      refuse, when [--color] is absent and the report is printed. A machine
-      format reads no [WINDTRAP_COLOR]. *)
+      the flag refuses, a malformed [--lines], an unreadable [--diff], a flag
+      that lacks its value, and [--json] given with [--lcov]. It is also [2] for
+      a [WINDTRAP_COLOR] that the flag would refuse, when [--color] is absent
+      and the report is printed. A machine format reads no [WINDTRAP_COLOR]. *)
