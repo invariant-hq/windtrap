@@ -47,9 +47,14 @@
       {!Report_sections.headline} and the failure's location, [file] and [line]
       being absent without one. It is [[]] for a pass and a skip.
 
-    {b The scope} states what the test exercised. It holds only what the test
-    has, so a plain test's is [{}]. The scope of a property, a table or a
-    stateful test holds:
+    {b The scope} states what the test exercised. Every test's ends on
+    [tolerances], one
+    [{"file": ..., "line": ..., "comparisons": ..., "error": ..., "tolerance":
+     ...}] per site of [equal] that compared under a tolerance, ordered by site,
+    with the error of the comparison that came closest to its bound and that
+    bound ({!Check.tolerances}); [file] and [line] are absent where the site has
+    no location. A plain test's scope is so [{"tolerances": []}]. The scope of a
+    property, a table or a stateful test holds before it:
     - [cases], the generated cases that passed, or the values of a domain
       checked whole, and [examples], the examples that passed;
     - [count], the cases that the property demanded, after [--prop-count];

@@ -31,6 +31,13 @@
 
 ### Assertions
 
+- `equal` under `float eps` or `float_rel`, alone or inside a container
+  witness, records at its call site the largest error it saw against
+  the bound it allowed, and the report states it, as
+  `tolerance at test/t.ml:12: largest error 3e-12 of 1e-06 allowed, over 40 comparisons`,
+  in a failure's block, under `-v` and in `--json`'s scope, so a
+  tolerance far looser than the errors shows. A worker's record reaches
+  the parent with its test's row.
 - (breaking) A failing verb records its failure in the running test
   before it raises, so the test fails even when code catches the
   exception, as a library that ignores what its callbacks raise does,

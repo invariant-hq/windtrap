@@ -197,21 +197,24 @@ scope for a test that ran no case. The durations are masked:
   [1]
   $ sed -E 's/"duration": [0-9.e-]+/"duration": D/g' scope.json
   {"version": 1, "suite": "fixture", "seed": "s1:0000000000000001", "tests": [
-    {"path": ["labels"], "verdict": "pass", "attempts": 1, "duration": D, "failures": [], "scope": {"cases": 200, "examples": 1, "count": 200, "discards": 26, "labels": [{"label": "even", "cases": 77}, {"label": "small", "cases": 26}], "cover": [{"label": "small", "cases": 26, "met": true}]}},
-    {"path": ["rows"], "verdict": "pass", "attempts": 1, "duration": D, "failures": [], "scope": {"cases": 3, "examples": 0, "count": 3, "discards": 0, "rows": 3, "labels": [], "cover": []}},
-    {"path": ["counter"], "verdict": "pass", "attempts": 1, "duration": D, "failures": [], "scope": {"cases": 20, "examples": 0, "count": 20, "discards": 0, "labels": [], "cover": []}},
-    {"path": ["shares"], "verdict": "pass", "attempts": 1, "duration": D, "failures": [], "scope": {"cases": 800, "examples": 0, "count": 800, "discards": 0, "labels": [{"label": "a quarter", "cases": 223}], "cover": [{"label": "a quarter", "cases": 223, "met": true, "share": {"demand": 0.2, "hits": 223, "cases": 800, "low": 0.19343228918344313, "high": 0.3837927486271963}}]}},
-    {"path": ["plain"], "verdict": "pass", "attempts": 1, "duration": D, "failures": [], "scope": {}},
-    {"path": ["nothing"], "verdict": "vacuous", "reason": "no case and no example ran: ~count:0 runs the examples alone, and there are none", "attempts": 1, "duration": D, "failures": [{"headline": "vacuous: no case and no example ran: ~count:0 runs the examples alone, and there…", "file": "test/cram/run/suite_main.ml", "line": 135}], "scope": {"cases": 0, "examples": 0, "count": 0, "discards": 0, "labels": [], "cover": []}},
-    {"path": ["skips"], "verdict": "skip", "reason": "later", "attempts": 1, "duration": D, "failures": [], "scope": {}}
-  ], "counts": {"tests": 7, "passed": 5, "failed": 0, "vacuous": 1, "skipped": 1, "expected_failures": 0, "flaky": 0, "not_run": 0, "release_failures": 0, "duration": D}}
+    {"path": ["labels"], "verdict": "pass", "attempts": 1, "duration": D, "failures": [], "scope": {"cases": 200, "examples": 1, "count": 200, "discards": 26, "labels": [{"label": "even", "cases": 77}, {"label": "small", "cases": 26}], "cover": [{"label": "small", "cases": 26, "met": true}], "tolerances": []}},
+    {"path": ["rows"], "verdict": "pass", "attempts": 1, "duration": D, "failures": [], "scope": {"cases": 3, "examples": 0, "count": 3, "discards": 0, "rows": 3, "labels": [], "cover": [], "tolerances": []}},
+    {"path": ["counter"], "verdict": "pass", "attempts": 1, "duration": D, "failures": [], "scope": {"cases": 20, "examples": 0, "count": 20, "discards": 0, "labels": [], "cover": [], "tolerances": []}},
+    {"path": ["shares"], "verdict": "pass", "attempts": 1, "duration": D, "failures": [], "scope": {"cases": 800, "examples": 0, "count": 800, "discards": 0, "labels": [{"label": "a quarter", "cases": 223}], "cover": [{"label": "a quarter", "cases": 223, "met": true, "share": {"demand": 0.2, "hits": 223, "cases": 800, "low": 0.19343228918344313, "high": 0.3837927486271963}}], "tolerances": []}},
+    {"path": ["plain"], "verdict": "pass", "attempts": 1, "duration": D, "failures": [], "scope": {"tolerances": []}},
+    {"path": ["close"], "verdict": "pass", "attempts": 1, "duration": D, "failures": [], "scope": {"tolerances": [{"file": "test/cram/run/suite_main.ml", "line": 135, "comparisons": 1, "error": 0.04999999999999716, "tolerance": 0.10005}, {"file": "test/cram/run/suite_main.ml", "line": 136, "comparisons": 1, "error": 3.000000026176508e-09, "tolerance": 1e-06}]}},
+    {"path": ["far"], "verdict": "fail", "attempts": 1, "duration": D, "failures": [{"headline": "expected 1., got 1.5", "file": "test/cram/run/suite_main.ml", "line": 138}], "scope": {"tolerances": [{"file": "test/cram/run/suite_main.ml", "line": 138, "comparisons": 1, "error": 0.5, "tolerance": 1e-06}, {"file": "test/cram/run/suite_main.ml", "line": 139, "comparisons": 1, "error": 1.000000082740371e-09, "tolerance": 1e-06}]}},
+    {"path": ["near"], "verdict": "pass", "attempts": 1, "duration": D, "failures": [], "scope": {"cases": 100, "examples": 0, "count": 100, "discards": 0, "labels": [], "cover": [], "tolerances": [{"file": "test/cram/run/suite_main.ml", "line": 141, "comparisons": 100, "error": 2.000177801164682e-12, "tolerance": 1e-09}]}},
+    {"path": ["nothing"], "verdict": "vacuous", "reason": "no case and no example ran: ~count:0 runs the examples alone, and there are none", "attempts": 1, "duration": D, "failures": [{"headline": "vacuous: no case and no example ran: ~count:0 runs the examples alone, and there…", "file": "test/cram/run/suite_main.ml", "line": 143}], "scope": {"cases": 0, "examples": 0, "count": 0, "discards": 0, "labels": [], "cover": [], "tolerances": []}},
+    {"path": ["skips"], "verdict": "skip", "reason": "later", "attempts": 1, "duration": D, "failures": [], "scope": {"tolerances": []}}
+  ], "counts": {"tests": 10, "passed": 7, "failed": 1, "vacuous": 1, "skipped": 1, "expected_failures": 0, "flaky": 0, "not_run": 0, "release_failures": 0, "duration": D}}
   $ tail -1 out | scrub
-  5 passed, 1 skipped, 1 vacuous in DURATION.
+  7 passed, 1 skipped, 1 failed, 1 vacuous in DURATION.
 
 Under -v the terminal says the same of each passing test, on its row:
 
-  $ run env FACADE_FIXTURE=scope ./suite_main.exe --seed s1:0000000000000001 -v -f labels -f rows -f counter -f shares | sed -E 's/  [0-9.]+m?s/  DURATION/' | scrub
-  fixture: 4 tests (seed SEED)
+  $ run env FACADE_FIXTURE=scope ./suite_main.exe --seed s1:0000000000000001 -v -f labels -f rows -f counter -f shares -f close -f near | sed -E 's/  [0-9.]+m?s/  DURATION/' | scrub
+  fixture: 6 tests (seed SEED)
     PASS  labels                                     DURATION (200 cases, 1 example, 26 discards)
       labels (201 passing cases):
          38.3%  even
@@ -222,7 +225,42 @@ Under -v the terminal says the same of each passing test, on its row:
       labels (800 passing cases):
          27.9%  a quarter
       cover "a quarter" ~share:0.2: 27.9% of 800 cases, at least 19.3%
-  4 passed in DURATION.
+    PASS  close                                      DURATION
+      tolerance at test/cram/run/suite_main.ml:135: largest error 0.05 of 0.1 allowed, over 1 comparison
+      tolerance at test/cram/run/suite_main.ml:136: largest error 3e-09 of 1e-06 allowed, over 1 comparison
+    PASS  near                                       DURATION (100 cases)
+      tolerance at test/cram/run/suite_main.ml:141: largest error 2e-12 of 1e-09 allowed, over 100 comparisons
+  6 passed in DURATION.
+
+A worker reads the scope, tolerances included, and its row carries it to
+the parent, which writes the document: a run of the test in the calling
+process with --in-process gives the same, and so does one under -j 3:
+
+  $ mask() { sed -E 's/"duration": [0-9.e-]+/"duration": D/g' "$1"; }
+  $ run env FACADE_FIXTURE=scope ./suite_main.exe -f near --seed s1:0000000000000001 --json worker.json > /dev/null
+  $ run env FACADE_FIXTURE=scope ./suite_main.exe -f near --seed s1:0000000000000001 --in-process --json here.json > /dev/null
+  $ run env FACADE_FIXTURE=scope ./suite_main.exe -f labels -f near -f close --seed s1:0000000000000001 -j 3 --json jobs.json > /dev/null
+  $ mask worker.json > a; mask here.json > b; cmp a b && echo same scope
+  same scope
+  $ grep -c '"tolerances": \[{' jobs.json
+  2
+
+A failure states the same, in its block, as the largest error that each
+comparison under a tolerance saw against the bound it allowed:
+
+  $ run env FACADE_FIXTURE=scope ./suite_main.exe -f far | scrub
+  fixture: 1 test
+  ──────────────────────── failures ────────────────────────
+    FAIL  far
+      test/cram/run/suite_main.ml:138
+      expected  1.
+      actual    1.5
+                  ~
+      tolerance at test/cram/run/suite_main.ml:138: largest error 0.5 of 1e-06 allowed, over 1 comparison
+      tolerance at test/cram/run/suite_main.ml:139: largest error 1e-09 of 1e-06 allowed, over 1 comparison
+  ──────────────────────────────────────────────────────────
+  
+  1 failed in DURATION.
 
 A target that does not end in .json is a directory, which gets one file
 per suite, and the mirror's relative path is read from the project root:

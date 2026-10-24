@@ -22,10 +22,97 @@ let fail_predicate ?__POS__ ?msg ~claim value =
 let rendering pp v =
   match pp with Some pp -> Pp.to_string pp v | None -> Pp.abstract
 
+(* Tolerances *)
+
+type tolerance = {
+  site : Loc.t option;
+  comparisons : int;
+  error : float;
+  tolerance : float;
+}
+
+(* Process-wide, as one test at a time runs in a process, and locked, as a
+   domain the test spawned compares too. *)
+let sites : (Loc.t option, tolerance) Hashtbl.t = Hashtbl.create 8
+let sites_lock = Mutex.create ()
+
+let locked fn =
+  Mutex.lock sites_lock;
+  Fun.protect ~finally:(fun () -> Mutex.unlock sites_lock) fn
+
+let share e t = if e = 0. then 0. else e /. t
+
+(* Two records of one site: their calls added, and the comparison that came
+   closer to its bound, the larger error between two equal shares. *)
+let merge a b =
+  let wider =
+    share b.error b.tolerance > share a.error a.tolerance
+    || share b.error b.tolerance = share a.error a.tolerance
+       && b.error > a.error
+  in
+  let worst = if wider then b else a in
+  { worst with site = a.site; comparisons = a.comparisons + b.comparisons }
+
+let add table (t : tolerance) =
+  match Hashtbl.find_opt table t.site with
+  | None -> Hashtbl.replace table t.site t
+  | Some s -> Hashtbl.replace table t.site (merge s t)
+
+(* A walk of the stack that reads debug information costs a microsecond or
+   two, so a site is resolved once per return addresses of the verb's
+   innermost frames, which locate it: the walk reads them, and the same
+   addresses read the same slots. *)
+let resolved : (int array, Loc.t option) Hashtbl.t = Hashtbl.create 8
+
+(* Located within the verb's call, as [Loc.capture] requires. *)
+let note ?__POS__ (e : Testable.error) =
+  let site =
+    match __POS__ with
+    | Some _ -> Loc.resolve ?__POS__ ()
+    | None -> (
+        let key =
+          Array.map
+            (fun (slot : Printexc.raw_backtrace_entry) -> (slot :> int))
+            (Printexc.raw_backtrace_entries (Printexc.get_callstack 8))
+        in
+        match locked (fun () -> Hashtbl.find_opt resolved key) with
+        | Some site -> site
+        | None ->
+            let site = Loc.capture () in
+            locked (fun () -> Hashtbl.replace resolved key site);
+            site)
+  in
+  locked (fun () ->
+      add sites
+        { site; comparisons = 1; error = e.error; tolerance = e.tolerance })
+
+let tolerances ?at () =
+  let all =
+    locked (fun () ->
+        let all = List.of_seq (Hashtbl.to_seq_values sites) in
+        Hashtbl.reset sites;
+        all)
+  in
+  let located = Hashtbl.create 8 in
+  List.iter
+    (fun (t : tolerance) ->
+      add located
+        (match t.site with None -> { t with site = at } | Some _ -> t))
+    all;
+  List.sort
+    (fun a b -> compare a.site b.site)
+    (List.of_seq (Hashtbl.to_seq_values located))
+
+let reset_tolerances () = locked (fun () -> Hashtbl.reset sites)
+
 (* Equalities *)
 
 let equal ?__POS__ ?msg t expected actual =
-  if not (Testable.equal t expected actual) then
+  let holds, error =
+    Testable.observed (fun () -> Testable.equal t expected actual)
+  in
+  Option.iter (note ?__POS__) error;
+  if not holds then
     fail_equality ?__POS__ ?msg
       ~expected:(Testable.to_string t expected)
       (Testable.to_string t actual)

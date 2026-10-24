@@ -343,7 +343,12 @@ val xfail : ?reason:string -> test -> test
 
 val equal : ?__POS__:pos -> ?msg:string -> 'a testable -> 'a -> 'a -> unit
 (** [equal t expected actual] asserts that [expected] and [actual] are equal
-    under [t]. *)
+    under [t]. Under a witness with a tolerance, {!float} or {!float_rel} alone
+    or in a container, the call also records at its site the largest error it
+    saw against the bound it allowed; the report states it on failure, under
+    [-v] and in [--json], so a tolerance far looser than the errors shows. A
+    call with no location, as in tail position without [~__POS__], is recorded
+    at the test's declaration. *)
 
 val not_equal : ?__POS__:pos -> ?msg:string -> 'a testable -> 'a -> 'a -> unit
 (** [not_equal t a b] asserts that [a] and [b] are not equal under [t]. *)

@@ -44,6 +44,7 @@ let result ?(attempts = 1) ?(duration = 0.0002) ?prop_stats
     attempts;
     prop_stats;
     table = false;
+    tolerances = [];
     refuted = [];
   }
 

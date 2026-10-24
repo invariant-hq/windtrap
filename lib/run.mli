@@ -426,6 +426,11 @@ type result = {
   table : bool;
       (** [true] iff the test is a table: its property was given [table] (see
           {!property}), so its cases are rows. *)
+  tolerances : Check.tolerance list;
+      (** What each site of [equal] under a tolerance saw in the last attempt
+          ({!Check.tolerances}), read in the process that ran it, so a worker's
+          reach its parent with the row. [[]] for a test that compared under no
+          tolerance, and for a row the parent made of a lost worker. *)
   refuted : case_id list;
       (** For a row that counts as failed, the cases that its last attempt
           refuted, when each of its failures belongs to one: the rows of a table

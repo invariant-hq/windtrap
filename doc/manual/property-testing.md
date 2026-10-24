@@ -250,7 +250,7 @@ before any generated case:
 
 ```
 $ dune exec examples/03-property-testing/test_geo.exe -- -f 'k squared'
-geo: 1 test (seed s1:45eca17b9ee514e1)
+geo: 1 test (seed s1:a9be2bc2df0c8b58)
 ──────────────────────── failures ────────────────────────
   FAIL  scale › multiplies the area by k squared
     examples/03-property-testing/test_geo.ml:37
@@ -262,6 +262,7 @@ geo: 1 test (seed s1:45eca17b9ee514e1)
         41 │ equal ~__POS__ close (k *. k *. Geo.area s) (Geo.area (Geo.scale k s)));
       expected  12.
       actual    6.
+    tolerance at examples/03-property-testing/test_geo.ml:41: largest error 6 of 1.2e-08 allowed, over 1 comparison
 ──────────────────────────────────────────────────────────
 
 1 failed in 1.6ms.
@@ -319,16 +320,19 @@ let inverse =
 ```
 
 Under `-v` the passing property says what it ran, its cases and its
-discards, and prints the share of its cases under each label:
+discards, prints the share of its cases under each label, and says how
+close the comparisons of each `equal` under a tolerance came to it:
+here `close`'s `1e-9` allows far more than the errors it saw.
 
 ```
 $ dune exec examples/03-property-testing/test_geo.exe -- -v --seed s1:5b58964be30f69a8 --prop-count 1000 -f 'undoes scale'
 geo: 1 test (seed s1:5b58964be30f69a8)
-  PASS  inverse › undoes scale by k                2.2ms (1000 cases, 77 discards)
+  PASS  inverse › undoes scale by k                3.9ms (1000 cases, 77 discards)
     labels (1000 passing cases):
        51.0%  circle
        49.0%  rect
-1 passed in 2.9ms.
+    tolerance at examples/03-property-testing/test_geo.ml:54: largest error 7.28e-12 of 1.33e-05 allowed, over 1000 comparisons
+1 passed in 5.2ms.
 ```
 
 A `cover` belongs where its scenario is observed. In a stateful test,

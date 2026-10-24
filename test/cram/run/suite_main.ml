@@ -132,6 +132,14 @@ let scope =
     prop "shares" (Gen.int_range 0 9999) (fun n ->
         cover ~share:0.2 "a quarter" (n < 2500));
     test "plain" ignore;
+    test "close" (fun () ->
+        equal (float 1e-6) 1. (1. +. 3e-9);
+        equal (list (float_rel ~rel:1e-3 ~abs:0.)) [ 100.; 2. ] [ 100.05; 2. ]);
+    test "far" (fun () ->
+        equal (float 1e-6) 1. (1. +. 1e-9);
+        equal (float 1e-6) 1. 1.5);
+    prop "near" (Gen.float_range 1. 2.) (fun x ->
+        equal (float 1e-9) x (x +. (x *. 1e-12)));
     prop ~count:0 "nothing" Gen.int ignore;
     test "skips" (fun () -> skip ~reason:"later" ());
   ]

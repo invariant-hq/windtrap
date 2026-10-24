@@ -39,26 +39,26 @@ let verdicts =
   [
     ( "a pass",
       ( result [ "p" ] Failure.Pass,
-        {|{"path": ["p"], "verdict": "pass", "attempts": 1, "duration": 0.25, "failures": [], "scope": {}},|}
+        {|{"path": ["p"], "verdict": "pass", "attempts": 1, "duration": 0.25, "failures": [], "scope": {"tolerances": []}},|}
       ) );
     ( "a failure, located",
       ( result [ "g"; "f" ] (Failure.Fail [ Fixtures.eq_failure ]),
-        {|{"path": ["g", "f"], "verdict": "fail", "attempts": 1, "duration": 0.25, "failures": [{"headline": "expected [(\"alice\", [1; 2; 3]); (\"bob\", [4])], got [(\"alice\", [1; 2; 3]); (\"bob\"…", "file": "test/test_users.ml", "line": 31}], "scope": {}},|}
+        {|{"path": ["g", "f"], "verdict": "fail", "attempts": 1, "duration": 0.25, "failures": [{"headline": "expected [(\"alice\", [1; 2; 3]); (\"bob\", [4])], got [(\"alice\", [1; 2; 3]); (\"bob\"…", "file": "test/test_users.ml", "line": 31}], "scope": {"tolerances": []}},|}
       ) );
     ( "a vacuous test, with its reason",
       ( result [ "v" ] (Failure.Fail [ Failure.vacuous "no row" ]),
-        {|{"path": ["v"], "verdict": "vacuous", "reason": "no row", "attempts": 1, "duration": 0.25, "failures": [{"headline": "vacuous: no row"}], "scope": {}},|}
+        {|{"path": ["v"], "verdict": "vacuous", "reason": "no row", "attempts": 1, "duration": 0.25, "failures": [{"headline": "vacuous: no row"}], "scope": {"tolerances": []}},|}
       ) );
     ( "a skip, with its reason",
       ( result [ "s" ] (Failure.Skip (Some "later")),
-        {|{"path": ["s"], "verdict": "skip", "reason": "later", "attempts": 1, "duration": 0.25, "failures": [], "scope": {}},|}
+        {|{"path": ["s"], "verdict": "skip", "reason": "later", "attempts": 1, "duration": 0.25, "failures": [], "scope": {"tolerances": []}},|}
       ) );
     ( "an expected failure, vacuous or not",
       ( result
           ~xfail:{ Test_tree.reason = None }
           [ "x" ]
           (Failure.Fail [ Failure.vacuous "no row" ]),
-        {|{"path": ["x"], "verdict": "xfail", "attempts": 1, "duration": 0.25, "failures": [{"headline": "vacuous: no row"}], "scope": {}},|}
+        {|{"path": ["x"], "verdict": "xfail", "attempts": 1, "duration": 0.25, "failures": [{"headline": "vacuous: no row"}], "scope": {"tolerances": []}},|}
       ) );
   ]
 
@@ -70,13 +70,13 @@ let first_line result =
 
 let encoding () =
   equal string
-    {|{"path": ["q\"b\\s\n\t\r\u0001\u007fé �"], "verdict": "pass", "attempts": 1, "duration": null, "failures": [], "scope": {}}|}
+    {|{"path": ["q\"b\\s\n\t\r\u0001\u007fé �"], "verdict": "pass", "attempts": 1, "duration": null, "failures": [], "scope": {"tolerances": []}}|}
     (line
        (result ~duration:Float.nan
           [ "q\"b\\s\n\t\r\001\127\u{e9} \xff" ]
           Failure.Pass));
   equal string
-    {|{"path": ["p"], "verdict": "pass", "attempts": 1, "duration": 0.1, "failures": [], "scope": {}}|}
+    {|{"path": ["p"], "verdict": "pass", "attempts": 1, "duration": 0.1, "failures": [], "scope": {"tolerances": []}}|}
     (line (result ~duration:0.1 [ "p" ] Failure.Pass))
 
 let closing_counts () =

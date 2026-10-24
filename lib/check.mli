@@ -45,7 +45,9 @@ type 'a testable = 'a Testable.t
     {!require_some}, {!require_ok} and {!require_error} build the same one. *)
 
 val equal : ?__POS__:pos -> ?msg:string -> 'a testable -> 'a -> 'a -> unit
-(** [equal t expected actual] is [()] iff [Testable.equal t expected actual]. *)
+(** [equal t expected actual] is [()] iff [Testable.equal t expected actual]. A
+    comparison under a tolerance is recorded at its site (see
+    {{!section-tolerances}tolerances}). *)
 
 val not_equal : ?__POS__:pos -> ?msg:string -> 'a testable -> 'a -> 'a -> unit
 (** [not_equal t a b] is [()] iff [Testable.equal t a b] is [false]. The payload
@@ -270,3 +272,36 @@ val failf : ?__POS__:pos -> ('a, Format.formatter, unit, 'b) format4 -> 'a
 
 val skip : ?reason:string -> unit -> 'a
 (** [skip ?reason ()] raises [Failure.Control (`Skip reason)]. *)
+
+(** {1:tolerances Tolerances}
+
+    Each call of {!equal} whose witness compared under a tolerance
+    ({{!Testable.observed}observed}) records, at its call site, the comparison
+    whose error was the largest share of the bound it allowed: a test reads, for
+    each site, how close its values came to its tolerance, and a tolerance far
+    looser than the errors it saw says the test is weaker than it reads. The
+    calls of every domain count, and a site is the location of the call, [None]
+    where none resolves (see {!tolerances}). *)
+
+type tolerance = {
+  site : Loc.t option;  (** The call site of {!equal}. *)
+  comparisons : int;
+      (** The calls at [site] that compared under a tolerance. *)
+  error : float;
+      (** The error of the comparison that came closest to its bound, as a share
+          of it. *)
+  tolerance : float;  (** The bound that comparison allowed. *)
+}
+(** The type for what one site of {!equal} saw under a tolerance. *)
+
+val tolerances : ?at:Loc.t -> unit -> tolerance list
+(** [tolerances ?at ()] is every site recorded since the last [tolerances] or
+    {!reset_tolerances}, ordered by site, and forgets them. A call with no
+    location, as one in tail position without [~__POS__] has, is recorded at
+    [at], as a failure without one takes the declaration of its test, and merged
+    with what [at] recorded. The runner reads them as an attempt ends, with [at]
+    the test's declaration. *)
+
+val reset_tolerances : unit -> unit
+(** [reset_tolerances ()] forgets every site recorded. The runner calls it as an
+    attempt starts. *)

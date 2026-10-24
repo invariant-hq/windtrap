@@ -147,8 +147,21 @@ let property (r : Run.result) (s : Property.stats) =
       ("cover", List (List.map cover s.coverage));
     ]
 
+let tolerance (s : Check.tolerance) =
+  Object
+    ((match s.site with
+       | Some loc -> [ ("file", String loc.file); ("line", Int loc.line) ]
+       | None -> [])
+    @ [
+        ("comparisons", Int s.comparisons);
+        ("error", Float s.error);
+        ("tolerance", Float s.tolerance);
+      ])
+
 let scope (r : Run.result) =
-  Object (match r.prop_stats with Some s -> property r s | None -> [])
+  Object
+    ((match r.prop_stats with Some s -> property r s | None -> [])
+    @ [ ("tolerances", List (List.map tolerance r.tolerances)) ])
 
 let test (r : Run.result) =
   Object

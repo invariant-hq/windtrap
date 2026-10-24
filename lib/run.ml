@@ -107,6 +107,7 @@ type result = {
   attempts : int;
   prop_stats : Property.stats option;
   table : bool;
+  tolerances : Check.tolerance list;
   refuted : case_id list;
 }
 
@@ -1591,7 +1592,7 @@ let attach_tail tail (outcome : Failure.outcome) =
 
 (* The row of [case] from the outcome of its last attempt. *)
 let result_of (case : Test_tree.case) ~tail ~duration ~attempts ~prop_stats
-    ?(table = false) ?(refuted = []) outcome =
+    ?(table = false) ?(tolerances = []) ?(refuted = []) outcome =
   let counted = counts_failed ~xfail:case.xfail outcome in
   let outcome =
     match (outcome, case.xfail) with
@@ -1608,6 +1609,7 @@ let result_of (case : Test_tree.case) ~tail ~duration ~attempts ~prop_stats
     attempts;
     prop_stats;
     table;
+    tolerances;
     refuted = (if counted then refuted else []);
   }
 
@@ -1630,7 +1632,9 @@ let run_case ~on_event run (case : Test_tree.case) =
   let rec attempt number spent =
     let frame = frame ~on_event run case in
     let start = Os.counter () in
+    Check.reset_tolerances ();
     run_attempt frame case ~limit ~groups ~test_name;
+    let tolerances = Check.tolerances ?at:case.loc () in
     (* A test that checked no property under [--case] would pass on a case
        it never read. *)
     if
@@ -1664,7 +1668,8 @@ let run_case ~on_event run (case : Test_tree.case) =
       let tail () = Capture.output_tail run.capture in
       let result =
         result_of case ~tail ~duration ~attempts:number
-          ~prop_stats:frame.prop_stats ~table:frame.table ~refuted outcome
+          ~prop_stats:frame.prop_stats ~table:frame.table ~tolerances ~refuted
+          outcome
       in
       run.rev_results <- result :: run.rev_results;
       on_event (Test_finished result);
@@ -2040,11 +2045,13 @@ let adjudicate run case served =
   match served.deferred with
   | None -> (served.result, served.corrected)
   | Some (attempt, tail) ->
-      let { duration; attempts; prop_stats; table; _ } = served.result in
+      let { duration; attempts; prop_stats; table; tolerances; _ } =
+        served.result
+      in
       let outcome, corrected, _, refuted = judge run.baselines case attempt in
       ( result_of case
           ~tail:(fun () -> tail)
-          ~duration ~attempts ~prop_stats ~table ~refuted outcome,
+          ~duration ~attempts ~prop_stats ~table ~tolerances ~refuted outcome,
         corrected )
 
 let lost run (case : Test_tree.case) failure ~duration =

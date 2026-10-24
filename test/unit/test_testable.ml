@@ -556,4 +556,63 @@ let containers =
         container_orders;
     ]
 
-let () = exit (run "testable" [ witnesses; instances; floats; containers ])
+(* Observed errors *)
+
+let observation (w, a, b) =
+  match snd (Testable.observed (fun () -> Testable.equal w a b)) with
+  | None -> "none"
+  | Some { Testable.error; tolerance } ->
+      Printf.sprintf "%g of %g" error tolerance
+
+let observed_rows =
+  let open Testable in
+  [
+    ("an absolute tolerance", ((float 0.5, 1., 1.25), "0.25 of 0.5"));
+    ( "a relative tolerance, widened by the larger side",
+      ((float_rel ~rel:0.1 ~abs:0., 10., 10.5), "0.5 of 1.05") );
+    ( "the larger of the two bounds",
+      ((float_rel ~rel:0.1 ~abs:2., 10., 10.5), "0.5 of 2") );
+    ("a comparison that fails", ((float 0.5, 1., 3.), "2 of 0.5"));
+    ("equal sides", ((float 0.5, infinity, infinity), "0 of 0.5"));
+    ("an error not finite", ((float 0.5, 1., nan), "none"));
+    ("no tolerance", ((float_exact, 1., 1.), "none"));
+  ]
+
+let observed_in_containers () =
+  let w = Testable.list (Testable.float 1.) in
+  let _, worst =
+    Testable.observed (fun () ->
+        Testable.equal w [ 1.; 2.; 3. ] [ 1.5; 2.; 3.25 ])
+  in
+  equal (option string) (Some "0.5 of 1")
+    (Option.map
+       (fun { Testable.error; tolerance } ->
+         Printf.sprintf "%g of %g" error tolerance)
+       worst)
+
+let observed_nested () =
+  let w = Testable.float 1. in
+  let error = Option.map (fun (e : Testable.error) -> e.error) in
+  let (_, inner), outer =
+    Testable.observed (fun () ->
+        ignore (Testable.equal w 0. 0.25);
+        Testable.observed (fun () -> Testable.equal w 0. 0.75))
+  in
+  equal
+    (pair (option float_exact) (option float_exact))
+    (Some 0.75, Some 0.25)
+    (error inner, error outer)
+
+let observed =
+  group "Observed errors"
+    [
+      cases "a comparison under a tolerance measures its error and its bound"
+        (Testable.contramap fst Testable.text) observed_rows
+        (fun (_, (c, row)) -> equal string row (observation c));
+      test "a container's comparisons keep the closest to its bound"
+        observed_in_containers;
+      test "an observation within another keeps its comparisons" observed_nested;
+    ]
+
+let () =
+  exit (run "testable" [ witnesses; instances; floats; containers; observed ])

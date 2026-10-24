@@ -276,6 +276,24 @@ let label_table t (s : Property.stats) =
       | Some _ | None -> ())
     s.coverage
 
+(* How close each site of [equal] under a tolerance came to it. *)
+let tolerance_lines t (r : Run.result) =
+  List.iter
+    (fun (s : Check.tolerance) ->
+      let site =
+        match s.site with Some loc -> " at " ^ Loc.to_string loc | None -> ""
+      in
+      put t
+        [
+          plain indent;
+          styled `Faint
+            (strf
+               "tolerance%s: largest error %.3g of %.3g allowed, over %d \
+                comparison%s"
+               site s.error s.tolerance s.comparisons (plural s.comparisons));
+        ])
+    r.tolerances
+
 (* What a property ran, each count that is not zero: the generated cases,
    or the values of a domain checked whole, then the examples and the
    discards. A verdict says what held, and a failure what passed before
@@ -340,6 +358,7 @@ let block_body t ~hints (r : Run.result) failures =
             ]);
       label_table t s)
     r.prop_stats;
+  tolerance_lines t r;
   Option.iter (captured_output t)
     (List.find_map (fun (f : Failure.t) -> f.output_tail) failures);
   if hints then
@@ -435,14 +454,13 @@ let row t (r : Run.result) =
   let name = Test_tree.path_to_string r.path in
   let timing = duration_to_string r.duration in
   match r.outcome with
-  | Failure.Pass -> (
+  | Failure.Pass ->
       put t
         (test_line ~tag:"PASS" ~style:`Green ~name
            ~qualifiers:(attempts r @ scope_qualifiers r)
            ~timing ());
-      match r.prop_stats with
-      | Some s when s.collected <> [] -> label_table t s
-      | Some _ | None -> ())
+      (match r.prop_stats with Some s -> label_table t s | None -> ());
+      tolerance_lines t r
   | Failure.Skip reason ->
       put t
         (test_line ~tag:"SKIP" ~style:`Yellow ~name

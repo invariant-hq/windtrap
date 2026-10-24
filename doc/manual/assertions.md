@@ -294,10 +294,28 @@ shop: 1 test
 
     expected  744.
     actual    124.
+    tolerance at examples/02-assertions/test_assertions.ml:47: largest error 620 of 1e-09 allowed, over 1 comparison
 ──────────────────────────────────────────────────────────
 
-1 failed in 0.6ms.
+1 failed in 0.9ms.
 ```
+
+Each `equal` under a tolerance records, at its call site, the largest
+error it saw against the bound it allowed, and the report states it in
+a failure's block, under `-v` and in `--json`. A tolerance far above
+every error it saw checks less than it reads, and the line says so:
+
+```
+$ dune exec examples/02-assertions/test_assertions.exe -- -v -f with_tax
+shop: 1 test
+  PASS  with_tax › adds the rate to the price      0.1ms
+    tolerance at examples/02-assertions/test_assertions.ml:47: largest error 0 of 1e-09 allowed, over 1 comparison
+1 passed in 1.0ms.
+```
+
+A comparison inside a container witness, as `list (float 1e-9)`,
+counts too. A call in tail position without `~__POS__` is recorded at
+the test's declaration.
 
 ## Comparing multi-line text
 

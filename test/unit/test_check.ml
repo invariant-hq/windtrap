@@ -923,10 +923,71 @@ let escape_hatches =
         ];
     ]
 
+(* Tolerances *)
+
+module Loc = Windtrap.Private.Loc
+
+let row (t : Check.tolerance) =
+  strf "%s: %d, %g of %g"
+    (match t.site with
+    | Some l -> strf "line %d" l.Loc.line
+    | None -> "no site")
+    t.comparisons t.error t.tolerance
+
+let a = ("t.ml", 10, 0, 1)
+and b = ("t.ml", 20, 0, 1)
+
+let recorded ?at fn =
+  Check.reset_tolerances ();
+  ignore (Failure.catch fn);
+  List.map row (Check.tolerances ?at ())
+
+let at = { Loc.file = "t.ml"; line = 5; column = 0 }
+
+let tolerance_rows =
+  let close = Windtrap.float 1. in
+  [
+    ( "each site keeps its comparison closest to its bound, and counts its calls",
+      ( (fun () ->
+          Check.equal ~__POS__:a close 0. 0.25;
+          Check.equal ~__POS__:a close 0. 0.75;
+          Check.equal ~__POS__:a close 0. 0.5;
+          Check.equal ~__POS__:b close 0. 0.),
+        [ "line 10: 3, 0.75 of 1"; "line 20: 1, 0 of 1" ] ) );
+    ( "a failing comparison is recorded before the verb raises",
+      ((fun () -> Check.equal ~__POS__:a close 0. 3.), [ "line 10: 1, 3 of 1" ])
+    );
+    ( "a witness without a tolerance records nothing",
+      ((fun () -> Check.equal ~__POS__:a float_exact 0. 0.), []) );
+    ( "not_equal and mem record nothing",
+      ( (fun () ->
+          Check.not_equal ~__POS__:a close 0. 3.;
+          Check.mem ~__POS__:a close 0. [ 0.5 ]),
+        [] ) );
+  ]
+
+let unlocated () =
+  equal (list string) [ "line 5: 2, 0.5 of 1" ]
+    (recorded ~at (fun () ->
+         Check.equal ~__POS__:("t.ml", 5, 0, 1) (Windtrap.float 1.) 0. 0.25;
+         (* Under a delimiter, as in tail position in a test's body, the
+            call has no site. *)
+         Loc.delimit (fun () -> Check.equal (Windtrap.float 1.) 0. 0.5)))
+
+let tolerances_group =
+  group "Tolerances"
+    [
+      cases "equal records, by site, the largest error against its tolerance"
+        (Testable.contramap fst Testable.text) tolerance_rows
+        (fun (_, (fn, rows)) -> equal (list string) rows (recorded fn));
+      test "a call with no site is recorded at the declaration given" unlocated;
+    ]
+
 let () =
   exit
     (run "check"
        [
+         tolerances_group;
          every_verb;
          equalities;
          unwrapping;

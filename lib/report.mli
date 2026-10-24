@@ -113,7 +113,12 @@ val result : t -> Run.result -> unit
     finished test and in the order of the tests, because {!finish} relies on the
     order of the blocks.
 
-    Under [config.verbose] every result commits a row. A failing [r] with
+    Under [config.verbose] every result commits a row. A passing property's row
+    says what it ran, as [(100 cases, 2 examples, 14 discards)] or
+    [(holds on all 3 rows)], a count of zero left out, and its label table, the
+    shares its {!Property.cover} demands established and the tolerance lines of
+    its block, below, follow it; so do a plain test's tolerance lines. No line
+    holds what every run of every test would print. A failing [r] with
     [r.counted = false] is an excused expected failure. A compact run prints
     nothing of an excused failure.
 
@@ -124,7 +129,10 @@ val result : t -> Run.result -> unit
       {!Failure.Vacuous} one, and [FAIL] otherwise.
     - one {!Report_sections.pp_failure} entry per failure of [r], with its
       source line.
-    - the label table of a property.
+    - what a property ran ([scope: 37 cases passed, 3 discards]), its label
+      table and the share each met {!Property.cover} share established.
+    - one line per site of [equal] under a tolerance ({!Check.tolerances}), its
+      largest error against the bound it allowed.
     - the captured output of the first failure of [r] that carries a
       {!type:Failure.tail}.
     - {!Report_sections.hints} for the whole test. The {!Report_sections.accept}
