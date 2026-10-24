@@ -97,6 +97,22 @@ val state : t -> Seed.state option
 (** [state src] is the stream that a generating [src] goes on from, and [None]
     when it replays. *)
 
+(** {1:bytes Case files} *)
+
+val of_bytes : string -> int64 array
+(** [of_bytes bytes] is the choices of the case file [bytes]: unsigned LEB128,
+    as a token spells them, read totally. A choice is the low seven bits of each
+    byte, least significant first, up to a byte below [0x80] or the end of
+    [bytes], whichever comes first, and the bits past the 64th are dropped. So
+    every string is the choices of some case, and [""] is none: a replay reads
+    [0] past their end and a choice above its bound as the bound (see
+    {!replaying}). *)
+
+val to_bytes : int64 array -> string
+(** [to_bytes choices] is the case file of [choices], which {!of_bytes} reads
+    back as [choices]: the bytes that the choices of {!token} spell in
+    base64url. *)
+
 (** {1:tokens Replay tokens} *)
 
 val token : int64 array -> digest:string -> string

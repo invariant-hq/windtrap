@@ -69,6 +69,13 @@ type broadcast = {
 (** The type for the parts of a configuration that the environment gave and the
     command line did not. *)
 
+type case_file = {
+  file : string;  (** The path that [--case] gave, as it was given. *)
+  choices : int64 array;
+      (** The choices its bytes decode to (see {!Choice.of_bytes}). *)
+}
+(** The type for a case file, read once, before any test runs. *)
+
 type config = {
   seed : Seed.seed;  (** [--seed]: the root seed of the run. *)
   filter : string list;
@@ -117,6 +124,12 @@ type config = {
       (** [--replay]: the replay token that every property of the run checks
           alone, in place of its examples and generated cases (see
           {!Property.run}). *)
+  case_file : case_file option;
+      (** [--case]: the case that the one selected test, a property, checks
+          alone, in place of [replay], the last-failed store's cases, its
+          examples and its generated cases (see {!Property.run}). The selection
+          must hold one test (see {!Case_selects}), and a test that checks no
+          property under it fails. *)
   log_dir : string;
       (** [-o]: the root directory of the capture logs and of the last-failed
           store. {!execute} uses it as given, so a relative one follows a test
@@ -153,11 +166,11 @@ type config = {
 
 val default_config : unit -> config
 (** [default_config ()] is the configuration of a run given no flag: no
-    selection, every boolean [false], {!Baseline.Check}, no [timeout], a
-    [default_timeout] of [600.] seconds, ten minutes, no count,
-    [color = Os.Auto], [slow_threshold = 1.], {!No_mutation}, [`Mirrors] and
-    nothing broadcast. Every call draws [seed] from {!Seed.random} and takes
-    [log_dir] from {!Os.default_log_dir}. *)
+    selection, every boolean [false], no replay and no case file,
+    {!Baseline.Check}, no [timeout], a [default_timeout] of [600.] seconds, ten
+    minutes, no count, [color = Os.Auto], [slow_threshold = 1.], {!No_mutation},
+    [`Mirrors] and nothing broadcast. Every call draws [seed] from
+    {!Seed.random} and takes [log_dir] from {!Os.default_log_dir}. *)
 
 (** {1:runs Run records} *)
 
@@ -614,6 +627,9 @@ type startup_error =
   | In_process_selects of int
       (** [config.in_process] is set and the selection holds this many tests,
           more than one. *)
+  | Case_selects of int
+      (** [config.case_file] is set and the selection holds this many tests,
+          other than one. *)
   | Mutation_refused of string
       (** A mutation run ({!Loop} or {!Armed}) could not score the suite, for
           this reason, which it has said. It is no check of {!select}: the
@@ -721,9 +737,9 @@ val exit_code : (outcome, startup_error) Stdlib.result -> int
       and so does a run whose only failures were expected. A selection that
       [config.broadcast] says the environment alone gave, and that keeps none of
       the tests of a suite that declares some, gives [0] too.
-    - For a refused startup, [2] for {!No_recorded_failures} and
-      {!In_process_selects}, since nothing ran, and [1] otherwise, a refused
-      mutation run included. *)
+    - For a refused startup, [2] for {!No_recorded_failures},
+      {!In_process_selects} and {!Case_selects}, since nothing ran, and [1]
+      otherwise, a refused mutation run included. *)
 
 (** {2:selection Selection}
 

@@ -1633,6 +1633,107 @@ let replaying =
                   (fun _ _ -> ()))));
     ]
 
+(* Cases from bytes *)
+
+let from_bytes ?(name = "--case f") gen law bytes =
+  Property.run ~case:(name, Choice.of_bytes bytes) ~root ~path:"bytes" gen law
+
+(* A generator that reads every kind of choice there is: lists, which read a
+   continue choice per element, integers, floats, strings, options and a
+   choice among branches. *)
+let everything =
+  Gen.(
+    list
+      (pair
+         (one_of [ map string_of_int int; string; map string_of_float float ])
+         (option (triple bool (int_range (-5) 5) char))))
+
+let skipped f =
+  match f () with
+  | (_ : Property.outcome) -> "an outcome"
+  | exception Failure.Control (`Skip (Some reason)) -> "skip: " ^ reason
+  | exception e -> Printexc.to_string e
+
+let from_case_files =
+  group "Cases from bytes"
+    [
+      test "a counterexample's choices, written as a file, check it again"
+        (fun () ->
+          let gen = Gen.(list (int_range 0 100)) in
+          let all_small _ l = List.iter big l in
+          let token = token_of (shrunk_run gen all_small) in
+          let choices, _ = Result.get_ok (Choice.of_token token) in
+          let law, seen = traced all_small in
+          let o = from_bytes gen law (Choice.to_bytes choices) in
+          equal (list string) [ "[10]"; "true"; token ]
+            [
+              (counterexample o).rendered;
+              string_of_bool (counterexample o).examples;
+              token_of o;
+            ];
+          equal (list (list int)) [ [ 10 ] ] (seen ()));
+      test "a case runs alone: no example, no generated case, no shrink"
+        (fun () ->
+          let law, seen = traced (fun _ n -> big n) in
+          let o =
+            Property.run ~examples:[ 50 ] ~count:(`Declared 1000)
+              ~case:("--case f", [| 60L |]) ~root ~path:"bytes"
+              (Gen.int_range 0 100) law
+          in
+          equal string "fail, 0 cases, 0 discards" (verdict o);
+          equal string "example 0, 0 steps, converged: 60"
+            (payload_row (counterexample o));
+          equal (list int) [ 60 ] (seen ()));
+      test "an empty file is the case of zeros" (fun () ->
+          let law, seen = traced (fun _ _ -> ()) in
+          equal string "pass, 1 cases, 0 discards"
+            (verdict (from_bytes Gen.(pair (int_range 0 9) (list bool)) law ""));
+          equal (list (pair int (list bool))) [ (0, []) ] (seen ()));
+      prop "any bytes are some case, which the law then judges"
+        Gen.(string_of char)
+        (fun bytes ->
+          let law, seen = traced (fun _ _ -> ()) in
+          equal string "pass, 1 cases, 0 discards"
+            (verdict (from_bytes everything law bytes));
+          equal int 1 (List.length (seen ())));
+      test "a generator that raises fails, as a generated case does" (fun () ->
+          let gen = Gen.map (fun _ -> failwith "no value") Gen.int in
+          equal string unproduced
+            (counterexample (from_bytes gen (fun _ _ -> ()) "\001")).rendered);
+      test "a discarded case skips, by the generator or the law" (fun () ->
+          let reason =
+            "skip: --case f: the case was discarded, so nothing was checked"
+          in
+          equal (pair string string) (reason, reason)
+            ( skipped (fun () ->
+                  from_bytes
+                    (Gen.such_that (fun n -> n > 50) (Gen.int_range 0 100))
+                    (fun _ _ -> ())
+                    "\003"),
+              skipped (fun () ->
+                  from_bytes (Gen.int_range 0 100)
+                    (fun _ n -> Property.assume (n > 50))
+                    "\003") ));
+      test "a case that times out fails with a timeout of no drawn case"
+        (fun () ->
+          let o =
+            from_bytes (Gen.int_range 0 100)
+              (fun _ _ -> raise (timeout 0.25))
+              "\003"
+          in
+          match (failed o).kind with
+          | Timeout { limit; case } ->
+              equal (pair float_exact bool) (0.25, true)
+                (limit, Option.is_none case)
+          | _ -> fail "not a timeout");
+      test "a case wins over a token" (fun () ->
+          let law, seen = traced (fun _ _ -> ()) in
+          ignore
+            (Property.run ~replay:"r1:AA:00" ~case:("--case f", [| 7L |]) ~root
+               ~path:"bytes" (Gen.int_range 0 100) law);
+          equal (list int) [ 7 ] (seen ()));
+    ]
+
 let () =
   exit
     (run "property"
@@ -1652,4 +1753,5 @@ let () =
          running_again;
          domains;
          replaying;
+         from_case_files;
        ])

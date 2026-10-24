@@ -262,6 +262,53 @@ let handlers () =
     ("handlers: " ^ String.concat " " (List.map2 kept signals before));
   code
 
+(* What case.t checks one case of: a property that fails on an element
+   from 10 on, one that hangs on 7, one that discards odd values, one that
+   holds over a generator reading every kind of choice, a counter that loses
+   its fourth increment, and a test that checks no property. *)
+let cased =
+  let counter = abstract "c" ~pp:(fun ppf r -> Format.pp_print_int ppf !r) in
+  let everything =
+    Gen.(
+      list
+        (pair
+           (one_of [ map string_of_int int; string; map string_of_float float ])
+           (option (triple bool (int_range (-5) 5) char))))
+  in
+  [
+    prop "small"
+      Gen.(list (int_range 0 100))
+      (fun l -> List.iter (less int ~than:10) l);
+    prop "hangs on 7" (Gen.int_range 0 100) (fun n ->
+        if n = 7 then Unix.sleepf 60.);
+    prop "even" (Gen.int_range 0 100) (fun n -> assume (n mod 2 = 0));
+    prop "anything" everything ignore;
+    stateful "counts"
+      [
+        command "create"
+          (Gen.int_range 0 0 @-> makes counter)
+          (fun _ -> ref 0)
+          (fun _ -> ref 0);
+        command "incr"
+          (counter ^-> returns unit)
+          incr
+          (fun r -> if !r <> 3 then incr r);
+        command "get" (counter ^-> returns int) ( ! ) ( ! );
+      ];
+    test "plain" ignore;
+  ]
+
+(* The case file of a replay token, the bytes of its choices, written to
+   standard output: the file a user decodes from the token. *)
+let case_of token =
+  match Windtrap.Private.Choice.of_token token with
+  | Ok (choices, _) ->
+      print_string (Windtrap.Private.Choice.to_bytes choices);
+      0
+  | Error why ->
+      prerr_endline why;
+      2
+
 let declared = function
   | Some "focus" -> focused
   | Some "duplicate" -> duplicate
@@ -277,6 +324,7 @@ let declared = function
   | Some "leaving" -> leaving
   | Some "lingering" -> lingering
   | Some "forking" -> forking
+  | Some "cased" -> cased
   | Some ("" | "default") | None -> default
   | Some other -> invalid_arg ("suite_main: unknown FACADE_FIXTURE " ^ other)
 
@@ -285,4 +333,5 @@ let () =
     (match Sys.getenv_opt "FACADE_FIXTURE" with
     | Some "between" -> between ()
     | Some "handlers" -> handlers ()
+    | Some "case_of" -> case_of Sys.argv.(1)
     | name -> run "fixture" (declared name))

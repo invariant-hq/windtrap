@@ -171,6 +171,31 @@ let of_leb128 bytes =
   in
   all 0 []
 
+(* A case file is read totally, so that every byte string is a case: a
+   varint ends at its first byte below [0x80] or at the end of the file, and
+   the bits past the 64th are dropped. *)
+let of_bytes bytes =
+  let n = String.length bytes in
+  let rec varint i shift acc =
+    if i = n then (acc, i)
+    else
+      let b = Char.code bytes.[i] in
+      let acc =
+        if shift > 63 then acc
+        else
+          Int64.logor acc (Int64.shift_left (Int64.of_int (b land 0x7f)) shift)
+      in
+      if b < 0x80 then (acc, i + 1) else varint (i + 1) (shift + 7) acc
+  in
+  let rec all i choices =
+    if i = n then Array.of_list (List.rev choices)
+    else
+      let v, i = varint i 0 0L in
+      all i (v :: choices)
+  in
+  all 0 []
+
+let to_bytes = leb128
 let token choices ~digest = "r1:" ^ base64 (leb128 choices) ^ ":" ^ digest
 
 let of_token text =

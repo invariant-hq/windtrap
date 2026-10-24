@@ -937,7 +937,26 @@ val pass : 'a testable
     another value. Its digest is of the printing, so where a value prints as its
     pre-image, a change to the function of a {!Gen.map} goes unseen; a printer
     from {!Gen.with_pp} makes the token check the value. Nothing writes the
-    source. *)
+    source.
+
+    {b A case from bytes.} [--case PATH] with [-f] selecting one property or
+    stateful test checks the one case that the bytes of [PATH] decode to, in
+    place of its examples and generated cases: the statement that the law holds
+    for every string of bytes. The bytes are the case's choices in unsigned
+    LEB128, least significant group first, read totally: a choice ends at a byte
+    below [0x80] or at the end of the file, bits past the 64th are dropped, a
+    choice past the end of the file reads [0] and one above its bound reads as
+    the bound. So every file is some case, and an empty one is the case of
+    zeros. They are the bytes that a replay token's choices spell in base64url,
+    between [r1:] and the digest: decoding that field gives the file of a
+    counterexample, though [--replay] with the token itself checks that case and
+    also refuses it once stale. A failure is reported as a replayed case's, with
+    the token of the choices read, and exits [1]. A case that times out fails
+    after the test's limit. A case that the generator or the law discards is
+    outside the law's domain and checks nothing, so the test skips, saying why.
+    A test that checks no property fails. A selection of another number of tests
+    than one, a file that cannot be read and a [--replay] beside it are refused,
+    and exit [2]. *)
 
 (**/**)
 
@@ -1930,7 +1949,8 @@ val run : ?argv:string array -> string -> test list -> int
     - [2] when no test ran, as with a mistyped filter, or when the command line
       does not parse. An empty [--shard] bucket and a [--failed] with nothing
       recorded are cases of the first, and the second returns [2] under [-l]
-      too. So does [--in-process] over a selection of more than one test.
+      too. So does [--in-process] over a selection of more than one test, and
+      [--case] over a selection of other than one.
 
     Under [--corrected] a test whose failures are all kept corrections leaves
     the code alone. It still stops a run under [-x], and it still enters the
@@ -1940,8 +1960,8 @@ val run : ?argv:string array -> string -> test list -> int
 
     [--help] lists the flags, each with its mirror when it has one. A mirror is
     a [WINDTRAP_*] variable that sets the flag under [dune runtest]. [-l],
-    [--failed], [-x], [-u], [--corrected], [-h] and [-V] have none. The command
-    line wins over the environment.
+    [--failed], [-x], [-u], [--corrected], [--in-process], [--case], [-h] and
+    [-V] have none. The command line wins over the environment.
 
     [-j N] ([WINDTRAP_JOBS]) runs the tests in [N] worker processes at once, one
     test at a time in each, and defaults to [1]. The report, the exit code and

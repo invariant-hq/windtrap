@@ -83,4 +83,32 @@ let token_group =
             ]);
     ]
 
-let () = exit (run "choice" [ sources; token_group ])
+let any_bytes = Gen.(string_of char)
+
+let case_files =
+  group "Case files"
+    [
+      prop "a case file reads back as its choices" any_choices (fun c ->
+          equal choices c (Choice.of_bytes (Choice.to_bytes c)));
+      test "a case file is the bytes of a token's choices" (fun () ->
+          equal string "r1:AH-AAf___________wE:d1"
+            (Choice.token
+               (Choice.of_bytes
+                  "\x00\x7f\x80\x01\xff\xff\xff\xff\xff\xff\xff\xff\xff\x01")
+               ~digest:"d1"));
+      test "an empty file is no choice" (fun () ->
+          equal choices [||] (Choice.of_bytes ""));
+      test "a varint cut by the end of the file ends there" (fun () ->
+          equal choices [| 1L; 0x7fL |] (Choice.of_bytes "\x01\xff"));
+      test "the bits past the 64th are dropped" (fun () ->
+          equal choices [| -1L; 2L |]
+            (Choice.of_bytes
+               ("\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\x7f" ^ "\x02")));
+      prop "every string is the choices of some case, read again alike"
+        any_bytes (fun bytes ->
+          let c = Choice.of_bytes bytes in
+          at_most int ~than:(String.length bytes) (Array.length c);
+          equal choices c (Choice.of_bytes (Choice.to_bytes c)));
+    ]
+
+let () = exit (run "choice" [ sources; token_group; case_files ])

@@ -352,6 +352,9 @@ OPTIONS:
   --replay=TOKEN (env WINDTRAP_REPLAY)
       Check each selected property on the one case of TOKEN alone.
 
+  --case=PATH
+      Check the one selected property on the one case of the bytes of PATH.
+
   -u, --update
       Accept baseline changes in place (refused under CI).
 

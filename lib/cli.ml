@@ -24,6 +24,7 @@ type parsed = {
   slow_threshold : float option;
   prop_count : int option;
   replay : string option;
+  case : string option;
   verbose : bool option;
   junit : string option;
   color : Os.color_mode option;
@@ -56,6 +57,7 @@ let empty =
     slow_threshold = None;
     prop_count = None;
     replay = None;
+    case = None;
     verbose = None;
     junit = None;
     color = None;
@@ -236,6 +238,12 @@ let entries =
       (value "TOKEN" replay_token (fun p t -> { p with replay = Some t }))
       ~mirror:(mirrored "WINDTRAP_REPLAY" (fun p -> p.replay = None))
       "Check each selected property on the one case of TOKEN alone.";
+    (* One case of one test: a mirror would reach every stanza, and refuse
+       each that selects more than one test. *)
+    row "--case"
+      (value "PATH" any (fun p path -> { p with case = Some path }))
+      ~mirror:None
+      "Check the one selected property on the one case of the bytes of PATH.";
     row ~short:"-u" "--update"
       (Flag (fun p -> { p with update = Some true }))
       ~mirror:None "Accept baseline changes in place (refused under CI).";
@@ -485,6 +493,21 @@ let absolute_path ~cli ~layered field =
   | None, Some path -> Some (against Os.project_root path)
   | None, None -> None
 
+(* The file is read before any test runs, which could change the directory
+   or the file, and read whole: its bytes are the case. *)
+let case_file ~cli ~layered =
+  match (cli.case, layered.replay) with
+  | None, _ -> Ok None
+  | Some _, Some _ -> Error (Incompatible_flags ("--replay", "--case"))
+  | Some file, None -> (
+      match In_channel.with_open_bin file In_channel.input_all with
+      | bytes -> Ok (Some { Run.file; choices = Choice.of_bytes bytes })
+      | exception Sys_error _ ->
+          Error
+            (Invalid_value
+               { source = "--case"; value = file; expected = "a readable file" })
+      )
+
 (* Every value arrived through its flag's parser, so nothing is range-checked
    here. [broadcast] keeps what the mirrors alone asked for: a mirror reaches
    every stanza of a project, and a stanza that cannot honour it is not in
@@ -529,6 +552,7 @@ let settings cli =
     | None, Some id -> Ok (Run.Armed id)
     | Some _, Some _ -> Error (Incompatible_flags ("--mutate", "--arm"))
   in
+  let* case_file = case_file ~cli ~layered in
   let defaults = Run.default_config () in
   Ok
     {
@@ -556,6 +580,7 @@ let settings cli =
       default_timeout = defaults.Run.default_timeout;
       prop_count = layered.prop_count;
       replay = layered.replay;
+      case_file;
       log_dir =
         Option.value
           (absolute_path ~cli ~layered (fun p -> p.log_dir))

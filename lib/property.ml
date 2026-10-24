@@ -313,7 +313,7 @@ let inner_failure : Failure.fault -> Failure.t = function
 
 let run ?loc ?count ?max_discard ?(examples = []) ?(summary = Fun.const None)
     ?(runs = 1) ?(output = Fun.const None) ?(shrinking = ignore) ?replay
-    ?(replayed_by = "--replay") ?only ~root ~path gen law =
+    ?(replayed_by = "--replay") ?case ?only ~root ~path gen law =
   let count, config_count =
     match count with
     | None -> (default_count, None)
@@ -561,6 +561,44 @@ let run ?loc ?count ?max_discard ?(examples = []) ?(summary = Fun.const None)
                   fail ~case_index:0 ~examples:true ?record ?summary ~rendering
                     ?tail ~token ~rendered fault))
   in
-  match replay with
-  | Some token -> replayed token
-  | None -> run_examples 0 examples
+  (* A case from bytes is any value the generator parses: no token to go
+     stale, no seed and no search. Its timeout belongs to no drawn case, and
+     a case outside the law's domain, discarded, checks nothing, so it skips
+     rather than pass or fail. *)
+  let from_bytes (name, choices) =
+    let timed_out limit =
+      Fail { failure = Failure.timeout ?loc limit; stats = stats ctx }
+    in
+    let discarded () =
+      Failure.reraise
+        (`Skip
+           (Some (name ^ ": the case was discarded, so nothing was checked")))
+    in
+    let src = Choice.replaying choices in
+    match Failure.catch (fun () -> Gen.Engine.parse gen src) with
+    | Error (`Timeout limit) -> timed_out limit
+    | Error `Discard -> discarded ()
+    | Error (#Failure.fault as fault) ->
+        fail ~case_index:0 ~examples:true
+          ~rendered:"<generator raised before producing a value>" fault
+    | Error (#Failure.control as control) -> Failure.reraise control
+    | Ok node -> (
+        match check law (Gen.Engine.value node) with
+        | `Passed -> Pass (stats ctx)
+        | `Discarded -> discarded ()
+        | `Timed_out limit -> timed_out limit
+        | `Failed (fault, record) ->
+            let tail = output_after_failure () in
+            let summary = summary (Gen.Engine.value node) in
+            let rendered, rendering = rendered ?record node in
+            let token =
+              Choice.token (Choice.choices src)
+                ~digest:(digest (rendered_text node))
+            in
+            fail ~case_index:0 ~examples:true ?record ?summary ~rendering ?tail
+              ~token ~rendered fault)
+  in
+  match (case, replay) with
+  | Some case, _ -> from_bytes case
+  | None, Some token -> replayed token
+  | None, None -> run_examples 0 examples

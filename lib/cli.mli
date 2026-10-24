@@ -78,6 +78,8 @@ type parsed = {
       (** [--slow-threshold SECONDS]: a finite and non-negative number. *)
   prop_count : int option;  (** [--prop-count N]: a positive integer. *)
   replay : string option;  (** [--replay TOKEN]: a replay token. *)
+  case : string option;
+      (** [--case PATH]: a path, read by {!settings}. It has no mirror. *)
   verbose : bool option;  (** [-v], [--verbose]. *)
   junit : string option;  (** [--junit PATH]. *)
   color : Os.color_mode option;
@@ -190,6 +192,10 @@ val settings : parsed -> (Run.config, error) result
       directory when the command line gives it and against {!Os.project_root}
       when its mirror does. It is kept as given when that directory cannot be
       read.
+    - [case_file] is the bytes of the file of [case], read whole through
+      {!Choice.of_bytes}, its path relative to the working directory. A file
+      that cannot be read is [Error (Invalid_value _)], and a replay token from
+      either layer beside it is [Error (Incompatible_flags _)].
     - [seed] is the layers', and else {!mutation_seed} under [--mutate] and
       [--arm], so that a mutation run judges every mutant on the same cases, run
       after run of one binary.

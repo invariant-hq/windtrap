@@ -113,6 +113,18 @@ rather than checking that value. Tokens stay out of the source: a
 change to a generator stales a token, and measured over raven's test
 commits one in seven would have staled one silently.
 
+## A case is also bytes
+
+`--case PATH` checks one case of one property, read from a file's bytes
+so that every file is a case: the statement "for every byte string,
+this law holds" is then a command, over the executable, for whatever
+produces bytes. The bytes are the token's choices, in the token's LEB128,
+read totally, so a case file and a token are two spellings of one case,
+the token adding the digest that refuses a stale one. Windtrap depends
+on no fuzzer: a long random run is `--prop-count`, and a mode guided by
+windtrap's own coverage would be built only once measured to find bugs
+that a random run of the same length misses.
+
 ## Seeds replay from the path
 
 Every generated value derives from the run's root seed, the test's path

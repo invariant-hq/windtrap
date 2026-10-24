@@ -207,6 +207,7 @@ val run :
   ?shrinking:(int -> unit) ->
   ?replay:string ->
   ?replayed_by:string ->
+  ?case:string * int64 array ->
   ?only:(int -> bool) ->
   root:Seed.seed ->
   path:string ->
@@ -258,6 +259,19 @@ val run :
       the token, a stale token as stale.
     - [replayed_by] opens that message, as what gave the token. Defaults to
       ["--replay"].
+    - [case] is [(name, choices)], the choices of a case file (see
+      {!Choice.of_bytes}) and what gave them, as ["--case crash"]. When given,
+      the run checks the one case that [choices] replay, in place of [replay],
+      the examples and the generated cases: whatever value the parse reads,
+      unseeded and unshrunk. Every sequence is a case, so nothing is stale. A
+      failure is reported as a replayed one is, with [case_index] [0],
+      [examples] [true] and the token of the choices the parse read, which
+      [replay] then checks alone. A generator that raises fails as a generated
+      case's does. A timeout is a [Failure.Timeout] with no case, since the file
+      holds the case. A case that the generator or the law discards is outside
+      the law's domain and checks nothing: [run] raises
+      [Failure.Control (`Skip (Some reason))], the reason opening with [name].
+      [only] does not apply.
     - [only i] says whether the value at position [i] of a domain checked whole
       runs (see below), as a table rerunning its failed rows asks. A value it
       leaves out runs no law and counts nowhere, and its position still numbers

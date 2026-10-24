@@ -214,6 +214,16 @@
 - `--replay TOKEN` (`WINDTRAP_REPLAY`) checks each selected property on
   the one case of a token that a failure printed; a token whose
   generator now parses another value fails as stale and checks nothing.
+- `--case PATH` checks the one property or stateful test that `-f`
+  selects on the one case that the bytes of `PATH` decode to, the
+  token's choices in unsigned LEB128, read so that every file is a case:
+  a short file reads 0 past its end, an empty one is the case of zeros.
+  A failure is reported as a replayed case's and exits 1, a hang times
+  out at the test's limit, and a case that the law or its generator
+  discards skips the test, since it checks nothing. A selection of
+  another number of tests than one, an unreadable file and `--replay`
+  beside it exit 2. The field of a replay token between `r1:` and its
+  digest is the file's bytes in base64url.
 - `--failed` reruns the cases that failed, not only the tests: a table
   its rows that failed, by their printed value, and a property or a
   stateful test each counterexample it recorded, by its token, as

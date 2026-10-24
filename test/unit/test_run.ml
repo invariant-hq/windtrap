@@ -133,6 +133,8 @@ let spin seconds =
   done
 
 let gen = Gen.int_range 0 100
+let case_of_choices choices = { Run.file = "case"; choices }
+let empty_case = case_of_choices [||]
 
 (* Configuration *)
 
@@ -1913,6 +1915,86 @@ let run_prop_adds_no_tag () =
   in
   is_false (Test_tree.Tag.mem Test_tree.Tag.prop case.tags)
 
+(* Under [--case] the one selected test checks the case of its choices
+   alone; [seen] is what each law ran on, in order. *)
+let under_case ?(config = Fun.id) choices tests =
+  Recorded.execute
+    ~config:(fun c ->
+      config { c with case_file = Some (case_of_choices choices) })
+    tests
+
+let case_runs =
+  let seen = ref [] in
+  let law n =
+    seen := n :: !seen;
+    less int ~than:10 n
+  in
+  let prop name = Run.prop ~examples:[ 50 ] ~count:1000 name gen law in
+  let refuted = under_case [| 42L |] [ prop "refuted" ] in
+  let holds = under_case [| 3L |] [ prop "holds" ] in
+  let short = under_case [||] [ prop "short" ] in
+  let seen_once = List.rev !seen in
+  let discarded =
+    under_case [| 3L |] [ Run.prop "discards" gen (fun n -> assume (n > 50)) ]
+  in
+  let filtered =
+    under_case [| 3L |]
+      [ Run.prop "filters" (Gen.such_that (fun n -> n > 50) gen) ignore ]
+  in
+  let plain = under_case [| 3L |] [ test "plain" ignore ] in
+  let table choices =
+    under_case choices
+      [
+        cases "rows" Testable.text [ "a"; "b"; "c" ] (fun row ->
+            if row = "b" then fail "row b");
+      ]
+  in
+  let token =
+    match (failure refuted [ "refuted" ]).kind with
+    | Failure.Property { token; _ } -> token
+    | _ -> None
+  in
+  seen := [];
+  let replayed =
+    Recorded.execute
+      ~config:(fun c -> { c with replay = token })
+      [ prop "refuted" ]
+  in
+  ( (refuted, holds, short, seen_once),
+    (discarded, filtered, plain, table [| 0L |], table [| 1L |]),
+    (token, replayed, List.rev !seen) )
+
+let a_case_refuted_by_its_law () =
+  let (refuted, _, _, seen), _, _ = case_runs in
+  equal string "fail body" (Recorded.row refuted [ "refuted" ]);
+  equal (list int) [ 42; 3; 0 ] seen;
+  match (failure refuted [ "refuted" ]).kind with
+  | Failure.Property { rendered; case_index; examples; shrink_steps; _ } ->
+      equal (triple string int bool) ("42", 0, true)
+        (rendered.kept, case_index, examples);
+      equal int 0 shrink_steps
+  | _ -> fail "not a property failure"
+
+let a_case_that_holds () =
+  let (_, holds, short, _), _, _ = case_runs in
+  equal (pair string string) ("pass", "pass")
+    (Recorded.row holds [ "holds" ], Recorded.row short [ "short" ]);
+  equal (option int) (Some 1) (cases_run holds [ "holds" ])
+
+let a_discarded_case_skips () =
+  let _, (discarded, filtered, _, _, _), _ = case_runs in
+  let reason =
+    "skip --case case: the case was discarded, so nothing was checked"
+  in
+  equal (pair string string) (reason, reason)
+    (Recorded.row discarded [ "discards" ], Recorded.row filtered [ "filters" ])
+
+let a_case_token_replays () =
+  let _, _, (token, replayed, seen) = case_runs in
+  is_some token;
+  equal string "fail body" (Recorded.row replayed [ "refuted" ]);
+  equal (list int) [ 42 ] seen
+
 let a_holding_law_runs_the_default_count () =
   equal
     (pair string (option int))
@@ -2006,6 +2088,24 @@ let properties =
     [
       test "a law that holds passes over the engine's default count"
         a_holding_law_runs_the_default_count;
+      test "--case checks its case alone, and a failure there is reported"
+        a_case_refuted_by_its_law;
+      test "--case passes on a case the law holds of, an empty file's included"
+        a_case_that_holds;
+      test "--case skips a case that the law or the generator discards"
+        a_discarded_case_skips;
+      test "the token of a case that failed under --case replays it"
+        a_case_token_replays;
+      test "--case fails a test that checks no property" (fun () ->
+          let _, (_, _, plain, _, _), _ = case_runs in
+          equal (list string) [ "body message" ] (lines plain [ "plain" ]);
+          expect (message (failure plain [ "plain" ]))
+          @@ __POS_OF__
+               {| --case: this test checks no property, so it checked no case |});
+      test "--case checks one row of a table" (fun () ->
+          let _, (_, _, _, first, second), _ = case_runs in
+          equal (pair string string) ("pass", "fail body")
+            (Recorded.row first [ "rows" ], Recorded.row second [ "rows" ]));
       test "a declared count is the number of cases" (fun () ->
           equal (option int) (Some 3) (cases_run props [ "declares a count" ]));
       test "the configuration's count raises a smaller count, declared or not"
@@ -2348,6 +2448,7 @@ let refusal = function
   | Run.Update_refused_in_ci -> "update refused in CI"
   | Run.No_recorded_failures -> "no recorded failures"
   | Run.In_process_selects n -> strf "%d selected in-process" n
+  | Run.Case_selects n -> strf "%d selected under --case" n
   | Run.Mutation_refused reason -> "mutation refused: " ^ reason
 
 let refused r = refusal (require_error (Recorded.returned r))
@@ -2402,6 +2503,17 @@ let refusals =
       Recorded.execute
         ~config:(fun c -> { c with in_process = true; exclude = [ "c" ] })
         [ test "a" ignore; test "b" ignore; test "c" ignore ] );
+    ( "--case over a selection of more than one test",
+      "2 selected under --case",
+      Recorded.execute
+        ~config:(fun c -> { c with case_file = Some empty_case })
+        [ Run.prop "a" gen ignore; Run.prop "b" gen ignore ] );
+    ( "--case over an empty selection",
+      "0 selected under --case",
+      Recorded.execute
+        ~config:(fun c ->
+          { c with case_file = Some empty_case; filter = [ "none" ] })
+        [ Run.prop "a" gen ignore ] );
   ]
 
 let lifted =
@@ -2414,6 +2526,11 @@ let lifted =
       Recorded.execute
         ~config:(fun c -> { c with in_process = true; filter = [ "b" ] })
         [ test "a" ignore; test "b" ignore ] );
+    ( "--case over a selection of one test",
+      Recorded.execute
+        ~config:(fun c ->
+          { c with case_file = Some empty_case; filter = [ "b" ] })
+        [ Run.prop "a" gen ignore; Run.prop "b" gen ignore ] );
   ]
 
 let exit_codes_of_refusals =
@@ -2423,6 +2540,7 @@ let exit_codes_of_refusals =
     ("-u under CI", Run.Update_refused_in_ci, 1);
     ("an empty store", Run.No_recorded_failures, 2);
     ("--in-process over two tests", Run.In_process_selects 2, 2);
+    ("--case over two tests", Run.Case_selects 2, 2);
   ]
 
 let the_message_of_duplicates () =
@@ -2467,6 +2585,10 @@ let startup_errors =
       test "the message of an empty store" (fun () ->
           expect (Run.startup_message Run.No_recorded_failures)
           @@ __POS_OF__ {| no recorded failures match the current suite |});
+      test "the message of --case over two tests" (fun () ->
+          expect (Run.startup_message (Run.Case_selects 2))
+          @@ __POS_OF__
+               {| --case checks one case of one property, and the selection holds 2 tests; narrow it with -f to the property to check |});
     ]
 
 (* Selection *)

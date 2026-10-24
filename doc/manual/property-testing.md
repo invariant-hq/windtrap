@@ -208,6 +208,21 @@ a digest of its printing, so it replays on any machine and under a
 renamed test, and a token whose generator now parses another value is
 reported stale rather than checking it. Nothing writes the source.
 
+`--case PATH` checks the case that a file's bytes decode to, for a
+property or a stateful test that `-f` selects alone: the statement that
+the law holds whatever bytes it is given. The bytes are the choices that
+a token holds, each in unsigned LEB128, read so that every file is some
+case: a file shorter than the case reads 0 past its end, so an empty
+file is the case of zeros, and a choice above its bound reads as the
+bound. A failure is reported as `replayed case`, with the line that
+keeps it, and exits 1; a case that hangs times out at the test's limit;
+a case that the law or its generator discards checks nothing, so the
+test skips. The token's field between `r1:` and the digest is the file's
+bytes in base64url, but for a counterexample of windtrap's own the
+token is the better record: it also refuses the case once its generator
+parses another value. Windtrap ships no fuzzer, and a long random run is
+`--prop-count` with `--timeout`.
+
 `--failed` keeps the token for you: a run records each failed
 property with its counterexample's token, and `--failed` checks that
 counterexample again as `--replay` would, drawing nothing, until it

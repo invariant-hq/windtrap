@@ -82,7 +82,10 @@ what is non-obvious.
   `suite_main.exe`: the exit code and the stream of each way a run ends
   (`run.t`), what a report leaves outside the process (`report.t`: the
   bytes under `--stream`, the logs, the replay line run as pasted), `-u`
-  and `--corrected` (`baselines.t`) and the session without dune
+  and `--corrected` (`baselines.t`), one case read from a file
+  (`case.t`: random files of every length, and the file of a
+  counterexample, which `FACADE_FIXTURE=case_of` decodes from its
+  token) and the session without dune
   (`nodune.t`, below), and baselines that tests share across worker
   processes (`workers.t`, over `workers_main.exe`: every `-j`, a worker
   retired or killed between two checks, `-x` and retries, a table whose

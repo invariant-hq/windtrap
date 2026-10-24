@@ -18,6 +18,7 @@ type mutation = No_mutation | Loop of scope | Armed of string
 let every_mutant = { prefixes = []; lines = None }
 
 type broadcast = { selection : bool; mutate : bool }
+type case_file = { file : string; choices : int64 array }
 
 type config = {
   seed : Seed.seed;
@@ -36,6 +37,7 @@ type config = {
   default_timeout : float;
   prop_count : int option;
   replay : string option;
+  case_file : case_file option;
   log_dir : string;
   color : Os.color_mode;
   slow_threshold : float;
@@ -67,6 +69,7 @@ let default_config () =
     default_timeout = 600.;
     prop_count = None;
     replay = None;
+    case_file = None;
     log_dir = Os.default_log_dir ();
     color = Os.Auto;
     slow_threshold = 1.0;
@@ -734,6 +737,13 @@ let property ?loc ?count ?max_discard ?examples ?summary ?runs ?only gen law =
     frame.prop_stats <- Some stats;
     raise (Failure.Check_failure failure)
   in
+  (* [--case] checks its file's case alone: [Property.run] puts it before
+     any token, and nothing is recorded for it. *)
+  let case =
+    Option.map
+      (fun { file; choices } -> ("--case " ^ file, choices))
+      config.case_file
+  in
   let engine ?replay () =
     let replayed_by =
       if Option.is_some config.replay then None
@@ -741,7 +751,7 @@ let property ?loc ?count ?max_discard ?examples ?summary ?runs ?only gen law =
     in
     match
       Property.run ?loc ?count ?max_discard ?examples ?summary ?runs ?replay
-        ?replayed_by ?only ~output ~shrinking ~root:config.seed
+        ?replayed_by ?case ?only ~output ~shrinking ~root:config.seed
         ~path:(Test_tree.path_to_string frame.path)
         gen run_law
     with
@@ -766,7 +776,9 @@ let property ?loc ?count ?max_discard ?examples ?summary ?runs ?only gen law =
   (* [--replay] checks its token. Under [--failed] a property checks again
      each counterexample it recorded, by its token, and a table its rows,
      which it selects itself through [only]. *)
-  let recorded = if Option.is_some only then [] else recorded () in
+  let recorded =
+    if Option.is_some only || Option.is_some case then [] else recorded ()
+  in
   let replays =
     match config.replay with
     | Some token -> [ token ]
@@ -819,6 +831,7 @@ type startup_error =
   | Update_refused_in_ci
   | No_recorded_failures
   | In_process_selects of int
+  | Case_selects of int
   | Mutation_refused of string
 
 let startup_message = function
@@ -841,6 +854,11 @@ let startup_message = function
       Pp.str
         "--in-process runs one test, and the selection holds %d; narrow it \
          with -f to the test to debug"
+        n
+  | Case_selects n ->
+      Pp.str
+        "--case checks one case of one property, and the selection holds %d \
+         tests; narrow it with -f to the property to check"
         n
   | Mutation_refused reason -> reason
 
@@ -1103,6 +1121,7 @@ let select (config : config) ~suite tests =
   in
   match List.length selected with
   | n when config.in_process && n > 1 -> Error (In_process_selects n)
+  | n when Option.is_some config.case_file && n <> 1 -> Error (Case_selects n)
   | _ ->
       let recorded =
         List.filter
@@ -1574,6 +1593,16 @@ let run_case ~on_event run (case : Test_tree.case) =
     let frame = frame ~on_event run case in
     let start = Os.counter () in
     run_attempt frame case ~limit ~groups ~test_name;
+    (* A test that checked no property under [--case] would pass on a case
+       it never read. *)
+    if
+      Option.is_some run.config.case_file
+      && Option.is_none frame.prop_stats
+      && Option.is_none frame.skip && frame.rev_failures = []
+    then
+      add_failure frame
+        (Failure.message ?loc:frame.loc
+           "--case: this test checks no property, so it checked no case");
     let made =
       {
         failures = List.rev frame.rev_failures;
@@ -1758,7 +1787,7 @@ let list_selection config ~suite tests =
 (* Exit codes *)
 
 let exit_code = function
-  | Error (No_recorded_failures | In_process_selects _) -> 2
+  | Error (No_recorded_failures | In_process_selects _ | Case_selects _) -> 2
   | Error
       ( Duplicate_paths _ | Focused_in_ci _ | Update_refused_in_ci
       | Mutation_refused _ ) ->
