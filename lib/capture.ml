@@ -162,6 +162,14 @@ let outside t fn =
 
 let abandon = function Disabled -> () | Capturing c -> ignore (release c)
 
+let adopt_log t ~groups ~test_name =
+  match t with
+  | Disabled -> ()
+  | Capturing c ->
+      let path = log_path c ~groups ~test_name in
+      c.cursor <- 0;
+      c.log <- (if Sys.file_exists path then Some path else None)
+
 (* Reading captured output *)
 
 let read_log path read =

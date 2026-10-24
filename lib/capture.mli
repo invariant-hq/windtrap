@@ -96,6 +96,12 @@ val outside : t -> (unit -> 'a) -> 'a
     last one fails. What [fn] raised wins over a failed last drain. Raises
     [Unix.Unix_error] if a descriptor cannot be duplicated. *)
 
+val adopt_log : t -> groups:string list -> test_name:string -> unit
+(** [adopt_log t ~groups ~test_name] makes the log of that test the current log
+    of [t], from its first byte, or leaves [t] with no current log when the file
+    does not exist. It is for a process that reads the log another process
+    wrote, the parent of a worker that died in the test. *)
+
 val abandon : t -> unit
 (** [abandon t] ends the redirection of an attempt that is still running, from
     outside {!with_capture}, for a run that stops inside a test and never
