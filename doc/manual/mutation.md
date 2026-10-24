@@ -208,7 +208,8 @@ reads the lines that a `git diff -U0` output adds or changes; with the
 default `a/` and `b/` prefixes it names the files as the identifiers do
 when the repository's root is the project's. Both narrow `--mutate`,
 whose prefixes they combine with, and the run still saves its verdicts,
-replacing those on its lines. Their mirrors are `WINDTRAP_LINES` and
+replacing those on its lines. `windtrap mutants` takes the same two
+flags, and reports, and fails on, the mutants of those lines alone. Their mirrors are `WINDTRAP_LINES` and
 `WINDTRAP_DIFF`; a relative path in `WINDTRAP_DIFF` is read from the
 project root.
 
@@ -455,6 +456,13 @@ Exits 1 when any mutant survived every executable that reached it, or when an
 executable could not mutation-test its suite.
 
 OPTIONS:
+  --lines=FILE:A-B,...
+      Report only the mutants on these lines of these files.
+
+  --diff=FILE
+      Report only the mutants on the lines that FILE, the output of git diff
+      -U0, adds or changes.
+
   --color=MODE (env WINDTRAP_COLOR)
       Color output: always, never or auto.
 

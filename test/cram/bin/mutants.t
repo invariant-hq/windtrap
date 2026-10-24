@@ -238,6 +238,36 @@ read as the others' survivors; the merge then exits 1:
   mutants: 2 reached, 1 killed, 1 unknown, 1 never reached, 2 executables, 1 not mutation-tested
   [1]
 
+A line scope reports the mutants on its lines alone, from --lines or a
+git diff -U0, and only they can fail the merge:
+
+  $ cd "$scratch/three"
+  $ run windtrap mutants --lines=lib/calc.ml:1,lib/util.ml:1-3
+  ─────────────────── never reached (2) ────────────────────
+    2  lib/util.ml   lines 1, 3
+  ──────────────────────────────────────────────────────────
+  
+  mutants: 1 reached, 1 killed, 2 never reached, 3 executables
+  $ printf -- '--- a/lib/calc.ml\n+++ b/lib/calc.ml\n@@ -2 +2 @@\n-let sub a b = b - a\n+let sub a b = a - b\n' > change.diff
+  $ run windtrap mutants --diff change.diff
+  ───────────────────── survivors (1) ──────────────────────
+    SURVIVED  lib/calc.ml:2:14:sub  a - b → a + b
+        2 │ let sub a b = a - b
+  
+      2 tests in 2 executables ran this line and none failed:
+        windtrap-b.mutants  cli › subtracts
+        windtrap-c.mutants  prop › sub law
+  ──────────────────────────────────────────────────────────
+  
+  reproduce: WINDTRAP_MUTATE_ARM=lib/calc.ml:2:14:sub dune runtest --force --instrument-with ppx_windtrap.mutate
+  mutants: 1 survived of 1 reached, 3 executables
+  [1]
+  $ run windtrap mutants --lines=lib/calc.ml:0
+  --- stderr
+  windtrap: invalid value 'lib/calc.ml:0' for --lines: expected FILE:A-B,... with 1 <= A <= B (e.g. lib/a.ml:3-7,12)
+  usage: windtrap mutants [OPTIONS] [PATH...]
+  [2]
+
 Survivors are ordered by how many tests reached them, then by identifier:
 
   $ plant "$scratch/order" && cd "$scratch/order"
@@ -557,6 +587,13 @@ The command line
   executable could not mutation-test its suite.
   
   OPTIONS:
+    --lines=FILE:A-B,...
+        Report only the mutants on these lines of these files.
+  
+    --diff=FILE
+        Report only the mutants on the lines that FILE, the output of git diff
+        -U0, adds or changes.
+  
     --color=MODE (env WINDTRAP_COLOR)
         Color output: always, never or auto.
   

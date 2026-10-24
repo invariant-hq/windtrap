@@ -12,6 +12,7 @@ module Cli = Windtrap.Private.Cli
 module Pp = Windtrap.Private.Pp
 module Run = Windtrap.Private.Run
 module Test_tree = Windtrap.Private.Test_tree
+module Lines = Windtrap.Private.Lines
 
 let strf = Printf.sprintf
 let ( let* ) = Result.bind
@@ -322,6 +323,22 @@ let merge ~source files =
     },
     invocation )
 
+(* A line scope keeps the records on its lines, in every file, before the
+   merge: what it reports is what a run under the same scope would. *)
+let on_lines files lines =
+  let keep (r : Verdicts.record) =
+    Lines.mem lines ~file:r.id.file ~line:r.id.line
+  in
+  List.map
+    (fun f ->
+      {
+        f with
+        verdicts =
+          List.fold_left Verdicts.add Verdicts.empty
+            (List.filter keep (Verdicts.records f.verdicts));
+      })
+    files
+
 (* Running *)
 
 let usage = "usage: windtrap mutants [OPTIONS] [PATH...]"
@@ -343,6 +360,13 @@ Exits 1 when any mutant survived every executable that reached it, or when an
 executable could not mutation-test its suite.
 
 OPTIONS:
+  --lines=FILE:A-B,...
+      Report only the mutants on these lines of these files.
+
+  --diff=FILE
+      Report only the mutants on the lines that FILE, the output of git diff
+      -U0, adds or changes.
+
   --color=MODE (env WINDTRAP_COLOR)
       Color output: always, never or auto.
 
@@ -361,28 +385,48 @@ let options args =
     prerr_endline usage;
     Error 2
   in
-  let rec parse color paths = function
-    | [] -> Ok (color, List.rev paths)
+  let add_lines lines more =
+    Some (Lines.union (Option.value lines ~default:Lines.empty) more)
+  in
+  let rec parse color lines paths = function
+    | [] -> Ok (color, lines, List.rev paths)
+    | "--lines" :: value :: args -> (
+        match Lines.of_spec value with
+        | Ok more -> parse color (add_lines lines more) paths args
+        | Error expected ->
+            usage_error
+              (strf "invalid value '%s' for --lines: expected %s" value expected)
+        )
+    | "--diff" :: file :: args -> (
+        match In_channel.with_open_bin file In_channel.input_all with
+        | text -> parse color (add_lines lines (Lines.of_diff text)) paths args
+        | exception Sys_error reason ->
+            usage_error (strf "cannot read --diff %s: %s" file reason))
+    | [ (("--lines" | "--diff") as flag) ] ->
+        usage_error (strf "option '%s' requires an argument" flag)
     | ("-h" | "--help" | "-help") :: _ ->
         print_endline help;
         Error 0
     | "--color" :: value :: args -> (
         match Cli.parse_color value with
-        | Ok color -> parse (Some color) paths args
+        | Ok color -> parse (Some color) lines paths args
         | Error error -> usage_error (Cli.error_message error))
     | [ "--color" ] -> usage_error "option '--color' requires an argument"
     | arg :: _ when String.starts_with ~prefix:"-" arg ->
         usage_error (strf "unknown option '%s'" arg)
-    | path :: args -> parse color (path :: paths) args
+    | path :: args -> parse color lines (path :: paths) args
   in
-  (* [--color=MODE] is [--color MODE]. *)
+  (* [--flag=VALUE] is [--flag VALUE]. *)
   let split arg =
     match String.index_opt arg '=' with
-    | Some i when String.equal (String.sub arg 0 i) "--color" ->
-        [ "--color"; String.sub arg (i + 1) (String.length arg - i - 1) ]
+    | Some i
+      when List.mem (String.sub arg 0 i) [ "--color"; "--lines"; "--diff" ] ->
+        [
+          String.sub arg 0 i; String.sub arg (i + 1) (String.length arg - i - 1);
+        ]
     | Some _ | None -> [ arg ]
   in
-  parse None [] (List.concat_map split args)
+  parse None None [] (List.concat_map split args)
 
 (* [WINDTRAP_COLOR] is read when [--color] is absent, refused on the runner's
    terms and never read as [auto] out of a typo. *)
@@ -399,7 +443,7 @@ let ansi color =
 
 let run args =
   let code =
-    let* color, paths = options args in
+    let* color, lines, paths = options args in
     let* ansi = ansi color in
     let* files, roots =
       match Data_files.discover Verdicts.format paths with
@@ -407,6 +451,7 @@ let run args =
       | Error message -> fail ~code:1 message
     in
     let* files = fresh files in
+    let files = Option.fold ~none:files ~some:(on_lines files) lines in
     let mutation, invocation = merge ~source:(source ~roots) files in
     Sections.print ~out:Format.std_formatter ~ansi
       (Sections.mutation_report ~invocation mutation);

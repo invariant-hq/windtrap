@@ -102,7 +102,13 @@ val run : string list -> int
     calls [exit].
 
     The command line is [windtrap mutants [OPTIONS] [PATH...]]. [-h], [--help]
-    and [-help] print the help page on standard output. [--color MODE], also
+    and [-help] print the help page on standard output. [--lines SPEC] and
+    [--diff FILE], also spelled with [=], repeat and add up into a
+    {!Windtrap.Private.Lines.t}, read by {!Windtrap.Private.Lines.of_spec} and
+    {!Windtrap.Private.Lines.of_diff}: each file's records off those lines are
+    dropped before the {{!section-merge}merge}, so the report and the exit code
+    are those of the mutants on the lines. A malformed [SPEC] or an unreadable
+    [FILE] is a usage error. [--color MODE], also
     spelled [--color=MODE], is the runner's flag, read by
     {!Windtrap.Private.Cli.parse_color}; without it the colour mode is its
     mirror [WINDTRAP_COLOR], read by {!Windtrap.Private.Cli.color_mode}. The
