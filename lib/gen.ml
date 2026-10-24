@@ -1308,7 +1308,11 @@ module Engine = struct
     let tree, state = draw gen state in
     (Shrink_tree.map value tree, state)
 
-  let make ?pp draw =
+  let make ?pp parse =
+    let node = match pp with Some pp -> printed pp | None -> unprintable in
+    { pp; draw = Parse (fun src -> node (parse src)) }
+
+  let make_tree ?pp draw =
     let node = match pp with Some pp -> printed pp | None -> unprintable in
     {
       pp;

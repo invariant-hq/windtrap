@@ -412,10 +412,12 @@ let an_unmet_demand_fails () =
     [ ("reached", false) ]
     (snd (labels_counted stateful_labels [ "unreachable" ]))
 
+(* The four programs of [open] are checked whole, and the empty one labels
+   nothing. *)
 let every_place_labels_its_case () =
   equal
     (list (pair string int))
-    [ ("invariant", 10); ("pre", 10); ("release", 10); ("system", 10) ]
+    [ ("invariant", 3); ("pre", 3); ("release", 3); ("system", 3) ]
     (fst (labels_counted stateful_places [ "places" ]))
 
 let frames =

@@ -3,8 +3,6 @@
    SPDX-License-Identifier: ISC
   ---------------------------------------------------------------------------*)
 
-module Shrink_tree = Gen.Engine.Shrink_tree
-
 let one_line text =
   String.concat " " (Text.split_lines (Text.normalize_newlines text))
 
@@ -259,21 +257,12 @@ let check ~steps ~domains commands =
 
 (* Programs *)
 
-(* An element's place in the list that its value lists, of [n] candidates.
-   A drawn place is a position [k] below [2^position_bits], which takes the
-   candidate at [k * n / 2^position_bits], so a shrink that deletes an
-   earlier call, which changes [n], keeps its relative place. [Below (place,
-   slot)] takes an index below the one [place] takes in the same run: the
-   [slot]th of the first eight candidates that the index shrinks through and
-   the index before it, each once. It takes none past them, and none when
-   [place] takes index [0], so no two candidates of a place take the same
-   index, and none takes the place's own. *)
-type place = Drawn of int | Below of place * int
-
-(* A drawn call's signature with every argument filled: a sample, the
-   choice of a value of an abstract type as the step of the drawn call that
-   makes it, or an element's place. The call names the value while it makes
-   one, so deleting other calls does not move the choice. *)
+(* A parsed call's signature with every argument filled: a sample, the step
+   of the call that makes the value it takes, [-1] when its type has no
+   maker, or an element's place. A place is a position [k] below
+   [2^position_bits], which takes the candidate at [k * n / 2^position_bits]
+   of the [n] its value lists, so a deletion of an earlier call, which
+   changes [n], keeps its relative place. *)
 type ('r, 's, 'p) args =
   | Last : ('r, 's) form -> ('r, 's, bool) args
   | Sample :
@@ -283,12 +272,12 @@ type ('r, 's, 'p) args =
       ('ra, 'sa) values * int * ('r, 's, 'p) args
       -> ('ra -> 'r, 'sa -> 's, 'ra -> 'p) args
   | Element :
-      'a among * place * ('r, 's, 'p) args
+      'a among * int * ('r, 's, 'p) args
       -> ('a -> 'r, 'a -> 's, 'a -> 'p) args
 
 type call =
   | Call : {
-      step : int; (* the call's position in the drawn program *)
+      step : int; (* the call's position in the parse *)
       command : int; (* the command's first position in the list *)
       name : string;
       loc : Loc.t option;
@@ -448,10 +437,6 @@ let summary = function
           Some (Pp.str "%s, last: %s" total last.name)
       | parallel -> Some (Pp.str "%s, %d in parallel" total parallel))
 
-let rec place_text = function
-  | Drawn k -> Pp.str "(place %d)" k
-  | Below (place, slot) -> Pp.str "(below %s %d)" (place_text place) slot
-
 (* A program prints as it was drawn, one call a line, a parallel call after
    its branch: what a replay token's digest is of. A value is named as its
    maker would name it if every call ran. *)
@@ -469,7 +454,7 @@ let pp_program ppf program =
     | Sample (sample, args) -> argument_text sample :: words args
     | Index (_, maker, args) ->
         Option.value ~default:"_" (Hashtbl.find_opt names maker) :: words args
-    | Element (_, place, args) -> place_text place :: words args
+    | Element (_, place, args) -> Pp.str "(at %d)" place :: words args
   in
   let rec made : type r s p. (r, s, p) args -> string option = function
     | Last (Makes (Values t)) -> Some t.prefix
@@ -500,110 +485,83 @@ let pp_program ppf program =
 
 (* Drawing *)
 
-(* An index shrinks toward [0], the newest maker, as [Gen]'s integers do:
-   [0] first, then candidates that each close half the gap to [k]. *)
-let index_candidates k =
-  let rec candidates current () =
-    if current = k then Seq.Nil
-    else
-      let gap = (k / 2) - (current / 2) in
-      let rest = if gap = 0 then Seq.empty else candidates (current + gap) in
-      Seq.Cons (current, rest)
-  in
-  candidates 0
+(* A program parses a choice sequence (see [Choice]), which a generating
+   source draws as 0.2 drew a program, from the same stream. *)
 
-let rec index_tree k =
-  Shrink_tree.make ~root:k ~children:(Seq.map index_tree (index_candidates k))
+(* What a generating [src] draws: [v]. *)
+let drawn src v = Choice.sample src (fun state -> (v, state))
 
 (* The newest value with probability 1/2, else any of the [count]. *)
 let draw_index count state =
   let newest, state = Seed.below ~bound:2L state in
-  if Int64.equal newest 0L then (0, state)
-  else
-    let k, state = Seed.below ~bound:(Int64.of_int count) state in
-    (Int64.to_int k, state)
+  if Int64.equal newest 0L then (0L, state)
+  else Seed.below ~bound:(Int64.of_int count) state
 
 let position_bits = 30
 
-(* A place's candidates are the places below it, one per slot, which take
-   every candidate of an index up to [256]. *)
-let below_slots = 9
-
-let rec place_tree place =
-  Shrink_tree.make ~root:place
-    ~children:
-      (Seq.map
-         (fun slot -> place_tree (Below (place, slot)))
-         (Seq.init below_slots Fun.id))
-
-let draw_place state =
-  let k, state = Seed.below ~bound:(Int64.shift_left 1L position_bits) state in
-  (Drawn (Int64.to_int k), state)
-
-(* The indices that the slots below index [i] take: its first eight
-   candidates, then [i - 1] unless they end with it. *)
-let below_indices i =
-  let firsts = List.of_seq (Seq.take (below_slots - 1) (index_candidates i)) in
-  if List.mem (i - 1) firsts then firsts else firsts @ [ i - 1 ]
-
-(* [place_index place n] is the index that [place] takes among [n]
-   candidates, and [None] when it takes none. *)
-let rec place_index place n =
-  match place with
-  | Drawn k -> Some ((k * n) lsr position_bits)
-  | Below (above, slot) -> (
-      match place_index above n with
-      | None | Some 0 -> None
-      | Some i -> List.nth_opt (below_indices i) slot)
-
-(* Arguments are counted from one, abstract ones included. *)
-let rec draw_args : type r s p.
+(* Arguments are counted from one, abstract ones included. A value is the
+   [k]th newest of the makers of its type, [makers] holding the step and the
+   mark of each, newest first: the choice counts past the marks of the [k]
+   newer makers, so a deletion of some of them lowers it with them, and it
+   keeps its value. An element is one position. *)
+let rec parse_args : type r s p.
     name:string ->
-    makers:(int -> int list) ->
+    makers:(int -> (int * int) list) ->
     int ->
     (r, s, p) fn ->
-    Seed.state ->
-    (r, s, p) args Shrink_tree.t * Seed.state =
- fun ~name ~makers position fn state ->
+    Choice.t ->
+    (r, s, p) args =
+ fun ~name ~makers position fn src ->
   match fn with
-  | Result form -> (Shrink_tree.leaf (Last form), state)
+  | Result form -> Last form
   | Drawn (gen, fn) ->
-      let sample, state = Gen.Engine.draw gen state in
-      if not (Gen.Engine.prints (Shrink_tree.root sample)) then
+      let sample = Gen.Engine.parse gen src in
+      if not (Gen.Engine.prints sample) then
         invalid_arg
           (Pp.str "%s: argument %d has no printer; attach one with Gen.with_pp"
              name position);
-      let args, state = draw_args ~name ~makers (position + 1) fn state in
-      let tree = Shrink_tree.pair sample args in
-      (Shrink_tree.map (fun (sample, args) -> Sample (sample, args)) tree, state)
+      Sample (sample, parse_args ~name ~makers (position + 1) fn src)
   | Chosen (Values t, fn) ->
-      let steps = makers t.id in
-      let k, state = draw_index (List.length steps) state in
-      let args, state = draw_args ~name ~makers (position + 1) fn state in
-      let maker k = List.nth steps k in
-      let tree = Shrink_tree.pair (Shrink_tree.map maker (index_tree k)) args in
-      (Shrink_tree.map (fun (maker, args) -> Index (t, maker, args)) tree, state)
+      let made = makers t.id in
+      let count = List.length made in
+      let at = Choice.position src in
+      let bound = Int64.of_int (Int.max 0 (count - 1)) in
+      let k =
+        Int64.to_int
+          (Choice.choice src ~bound (Choice.sample src (draw_index count)))
+      in
+      Choice.counts_past src ~at
+        (List.filteri (fun i _ -> i < k) (List.map snd made));
+      let maker =
+        match List.nth_opt made k with Some (s, _) -> s | None -> -1
+      in
+      Index (t, maker, parse_args ~name ~makers (position + 1) fn src)
   | Chosen (Among l, fn) ->
-      let place, state = draw_place state in
-      let args, state = draw_args ~name ~makers (position + 1) fn state in
-      let tree = Shrink_tree.pair (place_tree place) args in
-      ( Shrink_tree.map (fun (place, args) -> Element (l, place, args)) tree,
-        state )
+      let places = Int64.shift_left 1L position_bits in
+      let place =
+        Int64.to_int
+          (Choice.choice src ~bound:(Int64.pred places)
+             (Choice.sample src (Seed.below ~bound:places)))
+      in
+      Element (l, place, parse_args ~name ~makers (position + 1) fn src)
 
 (* Each command joins the subset with probability 3/4, every command when
    none does, and a command in the subset brings the makers of the types it
-   takes. *)
-let draw_subset firsts shapes state =
+   takes. The subset only steers drawing, so it is drawn unrecorded: a replay
+   holds every command, and a command appended to the list moves no
+   choice. *)
+let draw_subset firsts shapes src =
   let n = Array.length firsts in
-  let joins = Array.make n false in
-  let state = ref state in
-  for i = 0 to n - 1 do
-    if firsts.(i) = i then begin
-      let quarter, next = Seed.below ~bound:4L !state in
-      joins.(i) <- not (Int64.equal quarter 0L);
-      state := next
-    end
-  done;
+  let joins =
+    Array.mapi
+      (fun i first ->
+        first = i
+        &&
+        match Choice.sample src (Seed.below ~bound:4L) with
+        | Some quarter -> not (Int64.equal quarter 0L)
+        | None -> true)
+      firsts
+  in
   if not (Array.exists Fun.id joins) then Array.fill joins 0 n true;
   let held = Array.make n false in
   let is_maker t shape = Option.map type_id shape.makes = Some (type_id t) in
@@ -619,149 +577,145 @@ let draw_subset firsts shapes state =
   in
   Array.iteri (fun i joined -> if joined then hold i) joins;
   Array.iteri (fun i first -> held.(i) <- held.(first)) firsts;
-  (held, !state)
-
-(* Where a call of a program on several domains runs. *)
-type slot = Prefix | Branch of int | Suffix
+  held
 
 (* The calls of each branch: the most, at most ten in all, whose orders stay
    within 7! = 5040, and never fewer than one. Two domains take five calls
    each (252 orders), three take three (1680), four take two (2520), five to
    seven take one; from eight domains one call each gives n! orders. *)
 let branch_calls = function 2 -> 5 | 3 -> 3 | 4 -> 2 | _ -> 1
-
-(* A parallel call's first candidates move it to the end of the prefix,
-   then to the start of the suffix, where it runs alone. A moved call has no
-   such candidate, so the tree stays finite in depth. *)
-let rec slotted slot tree =
-  let moved slot = Shrink_tree.map (fun call -> (slot, call)) tree in
-  match slot with
-  | Prefix | Suffix -> moved slot
-  | Branch _ ->
-      let rec argument_moves children () =
-        match children () with
-        | Seq.Nil -> Seq.Nil
-        | Seq.Cons (child, rest) ->
-            Seq.Cons (slotted slot child, argument_moves rest)
-      in
-      let moves () =
-        Seq.Cons
-          ( moved Prefix,
-            fun () ->
-              Seq.Cons (moved Suffix, argument_moves (Shrink_tree.children tree))
-          )
-      in
-      Shrink_tree.make ~root:(slot, Shrink_tree.root tree) ~children:moves
-
-(* The calls in program order: the prefix, each branch, the suffix, each in
-   the order the list holds it, so a call moved to the prefix ends it and one
-   moved to the suffix starts it. *)
-let parallel_program ~domains held calls =
-  let in_slot slot =
-    List.filter_map
-      (fun (s, call) -> if s = slot then Some call else None)
-      calls
-  in
-  {
-    prefix = in_slot Prefix;
-    branches = Array.init domains (fun i -> in_slot (Branch i));
-    suffix = in_slot Suffix;
-    held;
-  }
+let discard () = raise (Failure.Control `Discard)
 
 (* No reference runs here: a command is drawn when every type it takes has a
-   value that an earlier call makes, if both of its sides return. Nothing
-   repairs a candidate; [execute] skips what does not resolve. [makers]
-   holds, per type, the steps of the calls that make it, newest first. After
-   the prefix only a command that [runs_anywhere] is drawn, so a branch and
-   the suffix choose among the prefix's values. *)
+   value that an earlier call makes. Nothing repairs a parse; [execute] skips
+   what does not resolve.
+
+   Each call is a span of a continue bit, the command's position in the list
+   and its arguments, so deleting the span deletes the call, and lowering the
+   position turns the command into an earlier one. A maker's mark is its
+   position's choice. On several domains a call after the prefix reads its
+   segment first: [0] ends the prefix, [1] starts the suffix and [i + 2] is
+   branch [i], so moving a call out of its branch lowers a choice. A command
+   that cannot run after the prefix, or one more call than its branch holds,
+   discards the parse. *)
 let program ?(steps = 20) ?(domains = 1) commands =
   let commands = Array.of_list commands in
   let firsts = first_positions commands in
   let shapes = Array.map command_shape commands in
   let anywhere = Array.map runs_anywhere commands in
-  let draw state =
+  let positions = List.init (Array.length commands) Fun.id in
+  let last = Int64.of_int (Array.length commands - 1) in
+  let parse src =
     check ~steps ~domains commands;
-    let held, state = draw_subset firsts shapes state in
+    let held = draw_subset firsts shapes src in
     let made = Hashtbl.create 8 in
     let makers t = Option.value ~default:[] (Hashtbl.find_opt made t) in
-    let drawable ~prefix i =
-      held.(i)
-      && (prefix || anywhere.(i))
-      && List.for_all (fun t -> makers (type_id t) <> []) shapes.(i).takes
+    let drawable ~prefix =
+      List.filter
+        (fun i ->
+          held.(i)
+          && (prefix || anywhere.(i))
+          && List.for_all (fun t -> makers (type_id t) <> []) shapes.(i).takes)
+        positions
     in
-    let draw_call step i state =
+    let pick drawable state =
+      let k, state =
+        Seed.below ~bound:(Int64.of_int (List.length drawable)) state
+      in
+      (Int64.of_int (List.nth drawable (Int64.to_int k)), state)
+    in
+    let next_step = ref 0 in
+    let parse_call ~prefix =
+      let i =
+        Int64.to_int
+          (Choice.choice src ~bound:last
+             (Choice.sample src (pick (drawable ~prefix))))
+      in
+      let mark = Choice.position src - 1 in
       match commands.(i) with
       | Command { name; loc; fn; pre; reference; system } ->
-          let args, state = draw_args ~name ~makers 1 fn state in
-          let call args =
-            Call
-              {
-                step;
-                command = firsts.(i);
-                name;
-                loc;
-                args;
-                pre;
-                reference;
-                system;
-              }
-          in
-          (Shrink_tree.map call args, state)
-    in
-    let positions = List.init (Array.length commands) Fun.id in
-    let next_step = ref 0 in
-    let rec draw_calls ~prefix n trees state =
-      match if n = 0 then [] else List.filter (drawable ~prefix) positions with
-      | [] -> (List.rev trees, state)
-      | drawable ->
-          let bound = Int64.of_int (List.length drawable) in
-          let pick, state = Seed.below ~bound state in
-          let i = List.nth drawable (Int64.to_int pick) in
+          let args = parse_args ~name ~makers 1 fn src in
           let step = !next_step in
           incr next_step;
-          let tree, state = draw_call step i state in
           let make t =
-            Hashtbl.replace made (type_id t) (step :: makers (type_id t))
+            Hashtbl.replace made (type_id t) ((step, mark) :: makers (type_id t))
           in
           Option.iter make shapes.(i).makes;
-          draw_calls ~prefix (n - 1) (tree :: trees) state
+          let command = firsts.(i) in
+          (i, Call { step; command; name; loc; args; pre; reference; system })
     in
-    if domains = 1 then
-      let trees, state = draw_calls ~prefix:true steps [] state in
-      let program calls =
-        { prefix = calls; branches = [||]; suffix = []; held }
-      in
-      (Shrink_tree.map program (Shrink_tree.list trees), state)
-    else
-      let below n state =
-        let k, state = Seed.below ~bound:(Int64.of_int (n + 1)) state in
-        (Int64.to_int k, state)
-      in
-      let prefix_calls, state = below steps state in
-      let suffix_calls, state = below (steps - prefix_calls) state in
-      let prefix, state = draw_calls ~prefix:true prefix_calls [] state in
-      let rec draw_branches i trees state =
-        if i = domains then (List.concat (List.rev trees), state)
+    (* At most [cap] calls, a generating source drawing one more while
+       [wanted] holds of the count so far. *)
+    let rec calls ~cap ~wanted parse_call count acc =
+      let next =
+        if count = cap then None
         else
-          let branch, state =
-            draw_calls ~prefix:false (branch_calls domains) [] state
-          in
-          draw_branches (i + 1)
-            (List.map (slotted (Branch i)) branch :: trees)
-            state
+          Choice.span src (fun () ->
+              let more = drawn src (if wanted count then 1L else 0L) in
+              if Int64.equal (Choice.choice src ~bound:1L more) 0L then None
+              else Some (parse_call count))
       in
-      let branches, state = draw_branches 0 [] state in
-      let suffix, state = draw_calls ~prefix:false suffix_calls [] state in
-      let calls =
-        List.map (slotted Prefix) prefix
-        @ branches
-        @ List.map (slotted Suffix) suffix
+      match next with
+      | None -> List.rev acc
+      | Some call -> calls ~cap ~wanted parse_call (count + 1) (call :: acc)
+    in
+    let in_prefix _ = snd (parse_call ~prefix:true) in
+    let any ~prefix _ = drawable ~prefix <> [] in
+    if domains = 1 then
+      let prefix = calls ~cap:steps ~wanted:(any ~prefix:true) in_prefix 0 [] in
+      { prefix; branches = [||]; suffix = []; held }
+    else
+      let below n =
+        let draw state =
+          let k, state = Seed.below ~bound:(Int64.of_int (n + 1)) state in
+          (Int64.to_int k, state)
+        in
+        Option.value ~default:0 (Choice.sample src draw)
       in
-      ( Shrink_tree.map (parallel_program ~domains held) (Shrink_tree.list calls),
-        state )
+      let prefix_calls = below steps in
+      let suffix_calls = below (steps - prefix_calls) in
+      let prefix =
+        calls ~cap:steps
+          ~wanted:(fun count -> count < prefix_calls && any ~prefix:true count)
+          in_prefix 0 []
+      in
+      let per = branch_calls domains in
+      let ended = ref [] and suffix = ref [] in
+      let branches = Array.make domains [] in
+      (* A generating source fills each branch in turn, then the suffix. *)
+      let after_prefix count =
+        let drawn_segment =
+          if count < domains * per then 2 + (count / per) else 1
+        in
+        let segment =
+          Choice.choice src
+            ~bound:(Int64.of_int (domains + 1))
+            (drawn src (Int64.of_int drawn_segment))
+        in
+        let i, call = parse_call ~prefix:false in
+        if not anywhere.(i) then discard ();
+        match Int64.to_int segment with
+        | 0 -> ended := call :: !ended
+        | 1 -> suffix := call :: !suffix
+        | segment ->
+            let b = segment - 2 in
+            if List.length branches.(b) = per then discard ();
+            branches.(b) <- call :: branches.(b)
+      in
+      let wanted count =
+        count < (domains * per) + suffix_calls && any ~prefix:false count
+      in
+      ignore
+        (calls ~cap:((domains * per) + steps) ~wanted after_prefix 0 []
+          : unit list);
+      {
+        prefix = prefix @ List.rev !ended;
+        branches = Array.map List.rev branches;
+        suffix = List.rev !suffix;
+        held;
+      }
   in
-  Gen.Engine.make ~pp:pp_program draw
+  Gen.Engine.make ~pp:pp_program parse
 
 (* Running *)
 
@@ -833,8 +787,8 @@ let resolve pool (t : (_, _) values) maker =
   | None -> List.find_map of_type pool
 
 (* How a call's elements fared: every one taken, or not, since a value
-   listed no element or a place took none. *)
-type taking = Taken | Unlisted | Unplaced
+   listed no element. *)
+type taking = Taken | Unlisted
 
 (* A call whose values resolved. Its functions apply their arguments when
    called, so that no code of the user runs before [pre] holds, and they
@@ -949,10 +903,10 @@ let bind run (Call c) =
                     in
                     match l.candidates r with
                     | [] -> Error Unlisted
-                    | candidates -> (
-                        match place_index place (List.length candidates) with
-                        | Some i -> Ok (List.nth candidates i)
-                        | None -> Error Unplaced))
+                    | candidates ->
+                        let n = List.length candidates in
+                        Ok (List.nth candidates ((place * n) lsr position_bits))
+                    )
               in
               element := Some taken;
               taken
@@ -1274,9 +1228,6 @@ let run_call run (Call c as call) =
       let legal =
         match guard r.take with
         | Ok Unlisted -> Ok false
-        (* Only a shrink candidate has a place below another, and one that
-           takes no element is no candidate. *)
-        | Ok Unplaced -> raise (Failure.Control `Discard)
         | Error f -> Error ("reference of ", f)
         | Ok Taken -> (
             match r.pre with

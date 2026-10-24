@@ -511,15 +511,24 @@ module Engine : sig
       [state], without their renderings, and the successor state. Raises as
       {!val-sample} does. *)
 
-  val make :
+  val make : ?pp:(Format.formatter -> 'a -> unit) -> (Choice.t -> 'a) -> 'a t
+  (** [make ?pp parse] is the generator whose value [parse] parses from a
+      source: it reads its choices with {!Choice.choice}, drawing each from the
+      source's stream when the source generates ({!Choice.sample}), marks its
+      spans and dependents, and parses other generators with {!parse}. A
+      generator parses its source as {!parse} does, inside one span, and so
+      shrinks as the reducer edits what [parse] read. With [pp], the value
+      renders as a [Value] through [pp]. Without it, it has nothing to print, as
+      under {!Gen.constant}. [make] checks nothing. [parse] must itself keep the
+      rules of validation and determinism that the module's preamble states, and
+      parse every sequence, reading [0] past its end. *)
+
+  val make_tree :
     ?pp:(Format.formatter -> 'a -> unit) ->
     (Seed.state -> 'a Shrink_tree.t * Seed.state) ->
     'a t
-  (** [make ?pp draw] is the generator that draws with [draw] and prints with
-      [pp]. [draw] returns a tree of values and the successor state, as {!run}
-      does. With [pp], every node renders as a [Value] through [pp], whatever
-      the generators that [draw] ran rendered as. Without it, every node has
-      nothing to print, as under {!Gen.constant}. [make] checks nothing. [draw]
-      must itself keep the rules of validation and determinism that the module's
-      preamble states. *)
+  (** [make_tree ?pp draw] is the generator that draws with [draw] and prints
+      with [pp]. [draw] returns a tree of values and the successor state, as
+      {!run} does. With [pp], every node renders as a [Value] through [pp].
+      Without it, every node has nothing to print. *)
 end

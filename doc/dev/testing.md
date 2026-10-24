@@ -24,6 +24,11 @@ what is non-obvious.
   `dune exec test/unit/test_gen.exe -- -f shrink`. The report's
   transcripts, the help and the JUnit documents are `expect_file`
   baselines under `unit/expected/`.
+  `test_shrink` pins the reducer's benchmarks as baselines, every seed
+  fixed: the eight of `shrinking.md` and the stateful programs of the
+  choice-sequence spikes, one domain at a cost of 1, whose tokens each
+  replay alone to their counterexample. A change to the reducer or to a
+  generator's parse shows there as a changed row.
   `test_stateful_domains` holds the stateful tests on several domains,
   in an executable of its own because a process that has spawned a
   domain can never fork again. Its systems give results that depend on

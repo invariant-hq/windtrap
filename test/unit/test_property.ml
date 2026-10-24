@@ -164,7 +164,9 @@ let traced law =
 (* Hand-built shrink trees *)
 
 let node root children = Shrink_tree.make ~root ~children:(List.to_seq children)
-let drawn tree = Gen_engine.make ~pp:Format.pp_print_int (fun s -> (tree, s))
+
+let drawn tree =
+  Gen_engine.make_tree ~pp:Format.pp_print_int (fun s -> (tree, s))
 
 (* [n] down to [0], one candidate per node. *)
 let rec chain n =
@@ -695,7 +697,7 @@ let spenders =
   ]
 
 let raising_generators =
-  let raising e = Gen_engine.make (fun _ -> raise e) in
+  let raising e = Gen_engine.make_tree (fun _ -> raise e) in
   [
     ("Not_found", (raising Not_found, "raise Not_found"));
     ( "an assertion",
@@ -913,7 +915,7 @@ let timed_out_searches =
 
 let formatting_timeout () =
   let gen =
-    Gen_engine.make
+    Gen_engine.make_tree
       ~pp:(fun _ _ -> raise (timeout 0.25))
       (fun s -> (node 3 [], s))
   in
@@ -1234,7 +1236,7 @@ let emptied_row = pair string (option string)
    [later ()]: an impure one, whose draw again reaches no counterexample. *)
 let once tree later =
   let sampled = ref false in
-  Gen_engine.make ~pp:pp_cell (fun s ->
+  Gen_engine.make_tree ~pp:pp_cell (fun s ->
       if !sampled then (later (), s)
       else begin
         sampled := true;
@@ -1251,7 +1253,7 @@ let unreached =
 let samples ?runs () =
   let count = ref 0 in
   let gen =
-    Gen_engine.make ~pp:Format.pp_print_int (fun s ->
+    Gen_engine.make_tree ~pp:Format.pp_print_int (fun s ->
         incr count;
         (node 40 [ node 5 []; node 20 [ node 10 []; node 15 [] ] ], s))
   in

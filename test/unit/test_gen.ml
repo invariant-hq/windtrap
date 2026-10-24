@@ -1668,7 +1668,7 @@ let as_it_stands () =
 let such_that_draws () =
   let draws = ref 0 in
   let counted =
-    Gen_engine.make ~pp:Format.pp_print_int (fun state ->
+    Gen_engine.make_tree ~pp:Format.pp_print_int (fun state ->
         incr draws;
         Gen_engine.run Gen.int state)
   in
@@ -2630,7 +2630,7 @@ let local_minimum () =
   in
   let start = Shrink_tree.list (List.map count_down [ 9; 7; 5; 9 ]) in
   let pp ppf values = Format.fprintf ppf "[%s]" (ints values) in
-  let gen = Gen_engine.make ~pp (fun state -> (start, state)) in
+  let gen = Gen_engine.make_tree ~pp (fun state -> (start, state)) in
   let minimum, steps = shrink ~failing:(List.exists (fun v -> v >= 5)) gen in
   equal string "[5]" minimum;
   at_most int ~than:20 steps
@@ -2963,7 +2963,7 @@ let rendering =
 
 let unprinted () =
   let gen =
-    Gen_engine.make (fun state ->
+    Gen_engine.make_tree (fun state ->
         ( Shrink_tree.make ~root:1 ~children:(Seq.return (Shrink_tree.leaf 0)),
           state ))
   in

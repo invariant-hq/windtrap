@@ -14,7 +14,8 @@ module Loc = Windtrap.Private.Loc
 module Property = Windtrap.Private.Property
 module Sections = Windtrap.Private.Report_sections
 module Seed = Windtrap.Private.Seed
-module Shrink_tree = Windtrap.Private.Gen_engine.Shrink_tree
+module Shrink = Windtrap.Private.Shrink
+module Choice = Windtrap.Private.Choice
 module Stateful = Windtrap.Private.Stateful
 module Test_tree = Windtrap.Private.Test_tree
 
@@ -38,8 +39,38 @@ let root = 0x00c0ffee1234abcdL
 let state ?(path = "test_stateful") index =
   Seed.make (Seed.derive ~root ~path ~index)
 
-let drawn ?path gen index = Gen_engine.sample gen (state ?path index)
-let value node = Gen_engine.value (Shrink_tree.root node)
+(* A parsed program, with what its parse read. *)
+type 'a drawn = { node : 'a Gen_engine.sample; case : Shrink.case }
+
+let parsed gen src =
+  let node = Gen_engine.parse gen src in
+  let case : Shrink.case =
+    {
+      choices = Choice.choices src;
+      spans = Choice.spans src;
+      dependents = Choice.dependents src;
+    }
+  in
+  { node; case }
+
+let drawn ?path gen index = parsed gen (Choice.generating (state ?path index))
+let value drawn = Gen_engine.value drawn.node
+
+(* The candidates of [drawn], in order: the edits of one step of the reducer
+   whose parse reads a shortlex smaller sequence, each sequence once. An edit
+   whose parse discards is none. *)
+let candidates gen drawn =
+  let seen = Hashtbl.create 16 in
+  let candidate choices =
+    match parsed gen (Choice.replaying choices) with
+    | child
+      when Shrink.shortlex child.case.choices drawn.case.choices < 0
+           && not (Hashtbl.mem seen child.case.choices) ->
+        Hashtbl.add seen child.case.choices ();
+        Some child
+    | _ | (exception Failure.Control `Discard) -> None
+  in
+  List.of_seq (Seq.filter_map candidate (Shrink.candidates drawn.case))
 
 (* The record of each program's last run and its summary, as [execute] gave
    or raised them, the newest first. *)
@@ -550,7 +581,7 @@ let differing a b =
 let number call = int_of_string (String.sub call 5 (String.length call - 5))
 
 (* Every argument is [()] or a value, so a candidate that runs as many calls
-   as its parent moved one index. *)
+   as its parent, and changes one [use] alone, moved its index. *)
 let index_moves index =
   let s = abstract "s" in
   let gen =
@@ -564,10 +595,13 @@ let index_moves index =
     if List.length child <> List.length parent then None
     else
       match differing parent child with
-      | [ moved ] -> Some moved
-      | changes -> failf "a candidate moved %d calls" (List.length changes)
+      | [ ((_, before, after) as moved) ]
+        when String.starts_with ~prefix:"use" before
+             && String.starts_with ~prefix:"use" after ->
+          Some moved
+      | _ -> None
   in
-  let moves = List.filter_map moved (List.of_seq (Shrink_tree.children tree)) in
+  let moves = List.filter_map moved (candidates gen tree) in
   let newest i =
     List.length
       (List.filter
@@ -734,15 +768,20 @@ let orphaned () =
   let tree =
     find gen (String.equal " #  call\n 1  let s1 = make ()\n 2  use s1")
   in
-  equal (list string)
-    [ "(no calls)"; "(no calls)"; " #  call\n 1  let s1 = make ()" ]
-    (List.map
-       (fun child -> recorded gen (value child))
-       (List.of_seq (Shrink_tree.children tree)))
+  let unmade =
+    List.filter
+      (fun record -> not (List.mem "let s1 = make ()" (calls record)))
+      (List.map (fun child -> recorded gen (value child)) (candidates gen tree))
+  in
+  is_true ~msg:"a candidate deletes the maker" (unmade <> []);
+  List.iter (equal string "(no calls)") unmade
 
-(* The candidates of [make; make; make; use s2], in order. Deleting another
-   [make] leaves [use] on the value of the second, whatever its name, and
-   deleting the second leaves it on the newest value. *)
+(* The candidates of [make; make; make; use s2] that delete a call, which come
+   first, in order. Deleting the third [make] lowers [use]'s choice with it,
+   so [use] stays on the value of the second, as it does when the first is
+   deleted, whatever its name; deleting the second leaves it on the next
+   older value, the first, and gives the same sequence as deleting the
+   first. *)
 let kept_choice () =
   let s = abstract "s" in
   let gen =
@@ -760,19 +799,12 @@ let kept_choice () =
   in
   let tree = find gen (String.equal (record 3 ~use:"s2")) in
   equal (list string)
-    [
-      "(no calls)";
-      record 1 ~use:"s1";
-      record 2;
-      record 2 ~use:"s1";
-      record 2 ~use:"s2";
-      record 2 ~use:"s2";
-      record 3;
-      record 3 ~use:"s3";
-    ]
-    (List.map
-       (fun child -> recorded gen (value child))
-       (List.of_seq (Shrink_tree.children tree)))
+    [ "(no calls)"; record 2 ~use:"s1"; record 2 ~use:"s2"; record 3 ]
+    (List.filteri
+       (fun i _ -> i < 4)
+       (List.map
+          (fun child -> recorded gen (value child))
+          (candidates gen tree)))
 
 let legality =
   group "Legality"
@@ -794,7 +826,7 @@ let legality =
         orphaned;
       test
         "a candidate that deletes another call keeps a choice on the value its \
-         maker made, and one that deletes the maker takes the newest"
+         maker made, and one that deletes the maker takes the next older"
         kept_choice;
     ]
 
@@ -1698,7 +1730,7 @@ let rendering () =
       [ command "set" (Gen.map succ Gen.nat @-> returns unit) ignore ignore ]
   in
   let rendering =
-    match Gen_engine.render (Shrink_tree.root (drawn gen 0)) with
+    match Gen_engine.render (drawn gen 0).node with
     | Value s -> "value " ^ s
     | Pre_image s -> "pre-image " ^ s
   in
@@ -2077,13 +2109,14 @@ let screens =
                (fast_set_commands ()))
           @@ __POS_OF__
                {|    test/test_fast_set.ml:17
-    counterexample (case 27, shrunk 12 steps): 5 calls, last: elements
+    counterexample (case 27, shrunk 19 steps): 5 calls, last: elements
        #  call
        1  let s1 = empty ()
        2  let s2 = add 0 s1
        3  let s3 = add 1 s2
        4  let s4 = union s3 s2
        5  elements s4
+    replay it: --replay r1:AQABAQAAAQEBAAECAAEBBAAA:bde48f8a
     which failed at:
       test/test_fast_set.ml:15
       call 5 of 5: elements s4
@@ -2098,11 +2131,12 @@ let screens =
                (queue_commands ()))
           @@ __POS_OF__
                {|    test/test_bounded_queue.ml:32
-    counterexample (case 1, shrunk 7 steps): 3 calls, last: push
+    counterexample (case 1, shrunk 16 steps): 3 calls, last: push
        #  reference before  call
        1                    let q1 = create 1
        2  []                push q1 0
        3  [0]               push q1 0
+    replay it: --replay r1:AQAAAQEAAAEBAAAA:37cd7300
     which failed at:
       test/test_bounded_queue.ml:24
       call 3 of 3: push q1 0
@@ -2116,13 +2150,14 @@ let screens =
                (monitor_commands ()))
           @@ __POS_OF__
                {|    test/test_queue_monitor.ml:31
-    counterexample (case 10, shrunk 7 steps): 5 calls, last: pop
+    counterexample (case 10, shrunk 18 steps): 5 calls, last: pop
        #  reference before  call                result
        1                    let q1 = create ()
        2  []                push q1 0           ()
        3  [0]               push q1 0           ()
        4  [0; 0]            push q1 0           ()
        5  [0; 0; 0]         pop q1              42
+    replay it: --replay r1:AQABAQAAAQEAAAEBAAABAgAA:eecbe7ea
     which failed at:
       test/test_queue_monitor.ml:16
       call 5 of 5: pop q1; pop returns a value pushed and not yet taken
@@ -2134,12 +2169,13 @@ let screens =
             (screen ~loc:("test/test_darr.ml", 14, 0, 10) (darr_commands ()))
           @@ __POS_OF__
                {|    test/test_darr.ml:14
-    counterexample (case 18, shrunk 11 steps): 4 calls, last: get
+    counterexample (case 18, shrunk 34 steps): 4 calls, last: get
        #  reference before  call
        1                    let d1 = create ()
        2  []                add_last d1 0
        3  [0]               add_last d1 1
        4  [0; 1]            get d1 1
+    replay it: --replay r1:AQABAQAAAQEAAQECAICAgIACAA:cb2cda71
     which failed at:
       test/test_darr.ml:11
       call 4 of 4: get d1 1
@@ -2184,41 +2220,6 @@ let rendered (f : Failure.t) =
 
 let inner (f : Failure.t) =
   match f.kind with Property { inner; _ } -> inner | _ -> None
-
-let names = [ "alpha"; "bravo"; "charlie"; "delta"; "echo" ]
-
-let rec is_subsequence sub whole =
-  match (sub, whole) with
-  | [], _ -> true
-  | _, [] -> false
-  | x :: sub', y :: whole' ->
-      if String.equal x y then is_subsequence sub' whole'
-      else is_subsequence sub whole'
-
-(* Every argument is [()], so a candidate that put one command in place of
-   another would show as calls that are not a subsequence of its root's. *)
-let subsequences () =
-  let gen =
-    Stateful.program ~steps:14
-      (List.map (fun name -> unit_call name ignore ignore) names)
-  in
-  let nodes = ref 0 and strays = ref [] in
-  for index = 0 to 4 do
-    let tree = drawn gen index in
-    let whole = calls (recorded gen (value tree)) in
-    let budget = !nodes + 400 in
-    let rec visit node =
-      if !nodes < budget then begin
-        incr nodes;
-        let calls = calls (recorded gen (value node)) in
-        if not (is_subsequence calls whole) then strays := calls :: !strays;
-        Seq.iter visit (Shrink_tree.children node)
-      end
-    in
-    visit tree
-  done;
-  equal int 2_000 !nodes;
-  equal (list (list string)) [] !strays
 
 let search (f : Failure.t) =
   match f.kind with
@@ -2270,15 +2271,15 @@ let broken_reference broken =
   let _, f = run_property ~path:"broken" (commands ()) in
   strf "%s\n%s" (require_match rendered f) (row (require_some (inner f)))
 
-(* Draws from 3 to 20 and offers 0 first, which it never draws. *)
+(* Draws from 3 to 20 and parses every choice up to 20, so that the reducer
+   tries 0 first, which it never draws. *)
 let beyond_its_draws =
-  let rec tree x =
-    let smaller = List.filter (fun c -> c < x) [ 0; x / 2; x - 1 ] in
-    Shrink_tree.make ~root:x ~children:(Seq.map tree (List.to_seq smaller))
+  let draw state =
+    let x, state = Seed.below ~bound:18L state in
+    (Int64.add 3L x, state)
   in
-  Gen_engine.make ~pp:Format.pp_print_int (fun state ->
-      let x, state = Seed.below ~bound:18L state in
-      (tree (3 + Int64.to_int x), state))
+  Gen_engine.make ~pp:Format.pp_print_int (fun src ->
+      Int64.to_int (Choice.choice src ~bound:20L (Choice.sample src draw)))
 
 let rejected () =
   let commands =
@@ -2321,10 +2322,6 @@ let replay () =
 let shrinking =
   group "Shrinking"
     [
-      test
-        "a candidate deletes calls or moves an argument, and never changes a \
-         call's command"
-        subsequences;
       test "a buggy queue shrinks to the shortest program that shows its bug"
         shrunk_queue;
       test "a broken reference shrinks to the smallest program that breaks it"
@@ -2457,7 +2454,7 @@ let kept_place () =
   let gets =
     List.filter_map
       (fun child -> without_push (recorded gen (value child)))
-      (List.of_seq (Shrink_tree.children tree))
+      (candidates gen tree)
   in
   equal (list string) [ "get d1 2" ] gets
 
@@ -2487,42 +2484,6 @@ let shrunk_element least =
   strf "%s\n%s\nshrunk %d steps" (require_match rendered f)
     (row (require_some (inner f)))
     steps
-
-(* How each candidate that reduces the element of [get d1 k], over a value
-   that lists ten, ends: the element it takes, or [unplaced] when it takes
-   none. *)
-let unplaced = "raised windtrap discard (assume or reject outside a property)"
-
-let element_candidates k =
-  let d = abstract "d" in
-  let index = among int d Fun.id in
-  let gen =
-    Stateful.program ~steps:2
-      [
-        command "create"
-          (Gen.unit @-> makes d)
-          (fun () -> List.init 10 Fun.id)
-          ignore;
-        command "get"
-          (d ^-> index ^-> returns unit)
-          (fun _ _ -> ())
-          (fun () _ -> ());
-      ]
-  in
-  let tree =
-    find gen
-      (String.equal (strf " #  call\n 1  let d1 = create ()\n 2  get d1 %d" k))
-  in
-  let ending child =
-    let p = value child in
-    match ended (execute p) with
-    | "returned" -> (
-        match calls (printed gen p) with
-        | [ _; get ] when String.starts_with ~prefix:"get" get -> Some get
-        | _ -> None)
-    | ending -> Some ending
-  in
-  List.filter_map ending (List.of_seq (Shrink_tree.children tree))
 
 (* [create] makes a value that lists [0], whose candidates raise what
    [raising] holds once it is set. *)
@@ -2795,17 +2756,6 @@ let elements =
         "a candidate that deletes an earlier call keeps the element's relative \
          place"
         kept_place;
-      test
-        "an element's candidates take the earlier elements an index shrinks \
-         through, each once" (fun () ->
-          equal (list string)
-            ([ "get d1 0"; "get d1 3"; "get d1 5"; "get d1 6" ]
-            @ List.init 5 (fun _ -> unplaced))
-            (element_candidates 7));
-      test "no candidate of the head's element runs" (fun () ->
-          equal (list string)
-            (List.init 9 (fun _ -> unplaced))
-            (element_candidates 0));
       cases "an element shrinks toward the head, to the least failing index"
         ~name:(fun (n, _, _) -> n)
         [
@@ -2815,14 +2765,14 @@ let elements =
             \ 1  let d1 = create ()\n\
             \ 2  get d1 1\n\
              [call 2 of 2: get d1 1] equality 1, 2\n\
-             shrunk 8 steps" );
+             shrunk 19 steps" );
           ( "wrong from the middle",
             500,
             " #  call\n\
             \ 1  let d1 = create ()\n\
             \ 2  get d1 500\n\
              [call 2 of 2: get d1 500] equality 500, 501\n\
-             shrunk 5 steps" );
+             shrunk 13 steps" );
         ]
         (fun (_, least, expected) ->
           equal string expected (shrunk_element least));
@@ -2885,14 +2835,16 @@ let wiring () =
   equal string "9 calls, 18 invariant checks, 9 releases"
     (strf "%d calls, %d invariant checks, %d releases" !calls !checks !closes)
 
-let never_called ?(elements = false) names =
+let never_called ?(elements = false) ?(cases = 20) names =
   strf
-    "never called: %s (over 20 passing cases); a call runs only where its \
+    "never called: %s (over %d passing cases); a call runs only where its \
      arguments resolve%s and its ~pre holds"
-    names
+    names cases
     (if elements then ", its value lists an element" else "")
 
-(* Seeds are the running test's, so every row holds over any seed. *)
+(* Seeds are the running test's, so every row holds over any seed. Two
+   command positions over three steps give 15 programs, a domain that is
+   checked whole. *)
 let judged =
   [
     ( "a command listed twice",
@@ -2900,11 +2852,11 @@ let judged =
       (fun () ->
         let never = dead "never" in
         [ never; never ]),
-      never_called {|"never"|} );
+      never_called ~cases:15 {|"never"|} );
     ( "beside a command called",
       20,
       (fun () -> [ tick (); dead "never" ]),
-      never_called {|"never"|} );
+      never_called ~cases:15 {|"never"|} );
     ( "two commands, in the order of the list",
       20,
       (fun () -> [ dead "b"; tick (); dead "a\nz" ]),
@@ -2912,7 +2864,7 @@ let judged =
     ( "two commands of one name",
       20,
       (fun () -> [ dead "x"; dead "x" ]),
-      never_called {|"x", "x"|} );
+      never_called ~cases:15 {|"x", "x"|} );
     ( "a command whose type no command makes",
       20,
       (fun () ->
@@ -2920,7 +2872,7 @@ let judged =
           tick ();
           command "orphan" (abstract "t" ^-> returns unit) ignore ignore;
         ]),
-      never_called {|"orphan"|} );
+      never_called ~cases:15 {|"orphan"|} );
     ( "a command whose value lists no element",
       20,
       (fun () ->

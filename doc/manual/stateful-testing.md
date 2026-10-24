@@ -201,8 +201,10 @@ A failure prints the program that its failing run executed, as a table
 of the calls that ran, then the call that failed and its two outcomes,
 the reference's as `expected`. `let q1 = create 1` made the value `q1`,
 and `reference before` shows the reference side of each argument before
-the call, as the type's `~pp` prints it. The report's `replay:` line and
-`--seed` work as for a [property](property-testing.md).
+the call, as the type's `~pp` prints it. The report's `replay:` line,
+`--seed` and the `replay it:` line work as for a
+[property](property-testing.md): `--replay` with the token checks that
+one program again.
 
 If `push` let one element too many in, comparing the size with `>`
 where it compares with `=`, shrinking would reduce the program to three
@@ -216,11 +218,12 @@ bounded_queue: 1 test (seed s1:c26eddaeb764a645)
     examples/04-stateful-testing/test_bounded_queue.ml:39
       39 │ let queues = group "queue" [ stateful "behaves like a list" commands ]
 
-    counterexample (case 0, shrunk 7 steps): 3 calls, last: push
+    counterexample (case 0, shrunk 19 steps): 3 calls, last: push
        #  reference before  call
        1                    let q1 = create 1
        2  []                push q1 0
        3  [0]               push q1 0
+    replay it: --replay r1:AQAAAQEAAAEBAAAA:37cd7300
     which failed at:
       examples/04-stateful-testing/test_bounded_queue.ml:31
         31 │ command "push"
@@ -244,7 +247,9 @@ stands for a failure of the system, nor the other way round.
 
 If `Model.peek` asserted that the queue is never empty, writing
 `[] -> assert false` where it raises `Bounded_queue.Empty`, the first
-`peek` of an empty queue would break the model:
+`peek` or `pop` of an empty queue would break the model. Shrinking turns
+a `peek` into the `pop` listed before it, since `Model.pop` reads
+`Model.peek`:
 
 ```
 $ dune exec examples/04-stateful-testing/test_bounded_queue.exe -- --seed s1:c26eddaeb764a645 -f behaves
@@ -254,17 +259,19 @@ bounded_queue: 1 test (seed s1:c26eddaeb764a645)
     examples/04-stateful-testing/test_bounded_queue.ml:39
       39 │ let queues = group "queue" [ stateful "behaves like a list" commands ]
 
-    counterexample (case 0, shrunk 7 steps): 2 calls, last: peek
+    counterexample (case 0, shrunk 22 steps): 2 calls, last: pop
        #  reference before  call
        1                    let q1 = create 1
-       2  []                peek q1
+       2  []                pop q1
+    replay it: --replay r1:AQAAAQIAAA:550b9a30
     which failed at:
-      examples/04-stateful-testing/test_bounded_queue.ml:35
-        35 │ command "peek" (queue ^-> returns int) Model.peek Bounded_queue.peek;
-      reference of call 2 of 2: peek q1
+      examples/04-stateful-testing/test_bounded_queue.ml:34
+        34 │ command "pop" (queue ^-> returns int) Model.pop Bounded_queue.pop;
+      reference of call 2 of 2: pop q1
       uncaught exception:
         File "examples/04-stateful-testing/test_bounded_queue.ml", line 10, characters 29-35: Assertion failed
       Raised at Test_bounded_queue.Model.peek in file "examples/04-stateful-testing/test_bounded_queue.ml", line 10, characters 29-41
+      Called from Test_bounded_queue.Model.pop in file "examples/04-stateful-testing/test_bounded_queue.ml", line 13, characters 12-18
 ──────────────────────────────────────────────────────────
 
 replay: dune exec examples/04-stateful-testing/test_bounded_queue.exe -- --seed s1:c26eddaeb764a645 -f 'behaves'
@@ -273,8 +280,10 @@ replay: dune exec examples/04-stateful-testing/test_bounded_queue.exe -- --seed 
 
 ## Keeping a failing program as a regression
 
-A stateful test takes no fixed program, so a program that failed is
-kept by copying its calls into a `test`.
+The `replay it:` token checks the program that failed again, alone, on
+any machine, as long as the command list and the generators parse it
+the same way. A test holds no token, so a program that failed is kept
+in the suite by copying its calls into a `test`.
 
 `test/test_bounded_queue.ml`:
 

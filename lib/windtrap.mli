@@ -1415,10 +1415,8 @@ val among :
       [~pre] fails.
     - The element is drawn with the program as a place in the list relative to
       its length, so deleting an earlier call, which changes the list, keeps the
-      element's place in it. It shrinks as a drawn index does, toward the head
-      of the list: each candidate takes an element from an earlier place in the
-      list that its run lists, never from its parent's place, so a failure from
-      index [1] on shrinks to index [1] however long the list.
+      element's place in it. It shrinks toward the head of the list, so a
+      failure from index [1] on shrinks to index [1] however long the list.
     - The same element goes to the reference, the [~pre] and the system, so
       neither side may mutate it. The report prints it as [w] prints it, in
       parentheses as a drawn argument is, and [w]'s equality is not used.
@@ -1462,9 +1460,10 @@ val ( ^-> ) :
 (** [t ^-> fn] takes a value of [t] that an earlier call made: its reference
     side for the reference and [~pre], its system side for the system. It is
     drawn as one of the earlier calls that make a value of [t], and takes the
-    value that call made. When that call made none, as when shrinking deleted
-    it, it takes the newest value of [t]. It shrinks toward the newest value,
-    and deleting other calls never moves it off the value its call made.
+    value that call made. When that call made none, it takes the newest value of
+    [t]. It shrinks toward the newest value. Shrinking that deletes other calls
+    keeps it on the value its call made, and shrinking that deletes that call
+    moves it to the next older maker's.
 
     When [t] is an {!among} type, [t ^-> fn] takes an element that a value of
     the call lists instead, read, drawn and shrunk as {!among} says. *)
@@ -1556,8 +1555,10 @@ val stateful :
     - [count] and [timeout] are {!prop}'s. So are [--prop-count], the seed, the
       bound on shrinking and the [replay:] line.
 
-    Shrinking removes calls, shrinks arguments and, on several domains, moves a
-    parallel call out of its branch. It runs every candidate again.
+    Shrinking removes calls, shrinks arguments, turns a command into one earlier
+    in [commands] and, on several domains, moves a parallel call out of its
+    branch. It runs every candidate again. A failing program prints the token
+    that checks it alone, [replay it: --replay TOKEN], as a {!prop} does.
 
     {b Commands never called.} When every case has passed, a command that a
     passing case could draw and that no passing case ran fails the test with a

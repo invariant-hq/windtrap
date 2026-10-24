@@ -112,6 +112,18 @@
   the parallel calls, and the refusal of a command list with no call to
   run after the prefix reads
   `every command makes a value, has a ~pre or takes an element`.
+- A program is parsed from a sequence of choices, as every generator
+  is, and shrinks as a property's value does: a counterexample can turn
+  one command into an earlier one of the list, and a deletion keeps
+  each later call on the value it took, so a program with several
+  values of one type shrinks to its minimum more often (the guide's set:
+  88% of seeds, where 0.2.0 reached 66%). A failing program prints
+  `replay it: --replay TOKEN`, which checks that program alone.
+- A command list whose programs are no more than the count, over few
+  steps, has every program checked once, as a finite domain is.
+- On several domains the labels of the calls after the prefix count
+  along the order the judge accepted in each run of a case, where
+  0.2.0 counted the first run's.
 
 ### Running
 

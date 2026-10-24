@@ -21,7 +21,8 @@ module Property = Windtrap.Private.Property
 module Run = Windtrap.Private.Run
 module Sections = Windtrap.Private.Report_sections
 module Seed = Windtrap.Private.Seed
-module Shrink_tree = Windtrap.Private.Gen_engine.Shrink_tree
+module Shrink = Windtrap.Private.Shrink
+module Choice = Windtrap.Private.Choice
 module Stateful = Windtrap.Private.Stateful
 module Test_tree = Windtrap.Private.Test_tree
 module Workers = Windtrap.Private.Workers
@@ -45,8 +46,38 @@ let root = 0x00c0ffee1234abcdL
 let state ?(path = "test_stateful_domains") index =
   Seed.make (Seed.derive ~root ~path ~index)
 
-let drawn ?path gen index = Gen_engine.sample gen (state ?path index)
-let value node = Gen_engine.value (Shrink_tree.root node)
+(* A parsed program, with what its parse read. *)
+type 'a drawn = { node : 'a Gen_engine.sample; case : Shrink.case }
+
+let parsed gen src =
+  let node = Gen_engine.parse gen src in
+  let case : Shrink.case =
+    {
+      choices = Choice.choices src;
+      spans = Choice.spans src;
+      dependents = Choice.dependents src;
+    }
+  in
+  { node; case }
+
+let drawn ?path gen index = parsed gen (Choice.generating (state ?path index))
+let value drawn = Gen_engine.value drawn.node
+
+(* The candidates of [drawn], in order: the edits of one step of the reducer
+   whose parse reads a shortlex smaller sequence, each sequence once. An edit
+   whose parse discards is none. *)
+let children gen drawn =
+  let seen = Hashtbl.create 16 in
+  let candidate choices =
+    match parsed gen (Choice.replaying choices) with
+    | child
+      when Shrink.shortlex child.case.choices drawn.case.choices < 0
+           && not (Hashtbl.mem seen child.case.choices) ->
+        Hashtbl.add seen child.case.choices ();
+        Some child
+    | _ | (exception Failure.Control `Discard) -> None
+  in
+  List.of_seq (Seq.filter_map candidate (Shrink.candidates drawn.case))
 
 (* The record of each program's last run and its summary, as [execute] gave
    or raised them, the newest first. *)
@@ -469,10 +500,7 @@ let drawing =
 
 (* The records of [program]'s candidates, each run on the calling domain. *)
 let candidates gen tree =
-  List.of_seq
-    (Seq.map
-       (fun child -> recorded gen (value child))
-       (Shrink_tree.children tree))
+  List.map (fun child -> recorded gen (value child)) (children gen tree)
 
 let moved () =
   let gen = Stateful.program ~steps:3 ~domains:2 (counter_commands ()) in
@@ -668,20 +696,25 @@ let screen ?workers ~loc commands =
     (fun ppf f -> Sections.pp_failure ~ansi:false ~hints:false ppf f)
     f
 
-(* The case that first loses an update, and the shrink steps that follow it,
-   depend on how the domains are scheduled; the counterexample they end on
-   does not. [unscheduled s] is [s] with the two counts replaced by [_]. *)
+(* The case that first loses an update, the shrink steps that follow it and
+   the order of the calls in the choices they end on depend on how the
+   domains are scheduled; the counterexample they print does not.
+   [unscheduled s] is [s] with the two counts and the token replaced by
+   [_]. *)
 let unscheduled s =
-  let open_ = "(case " in
-  let rec find i =
-    if i + String.length open_ > String.length s then s
-    else if String.sub s i (String.length open_) = open_ then
-      let close = String.index_from s i ')' in
-      String.sub s 0 i ^ "(case _, shrunk _ steps"
-      ^ String.sub s close (String.length s - close)
-    else find (i + 1)
+  let replace ~after ~until by s =
+    let rec find i =
+      if i + String.length after > String.length s then s
+      else if String.sub s i (String.length after) = after then
+        let close = String.index_from s i until in
+        String.sub s 0 i ^ by ^ String.sub s close (String.length s - close)
+      else find (i + 1)
+    in
+    find 0
   in
-  find 0
+  s
+  |> replace ~after:"(case " ~until:')' "(case _, shrunk _ steps"
+  |> replace ~after:"--replay " ~until:'\n' "--replay _"
 
 let lossy_screen () =
   with_pool 2 @@ fun workers ->
@@ -698,6 +731,7 @@ let lossy_screen () =
        2  1       push q1 0           ()
        3  2       push q1 0           ()
        4          length q1           1
+    replay it: --replay _
     which failed with:
       no order of the calls gives these results
       the closest order, 2 then 3, differs at call 4: length q1
@@ -1092,9 +1126,9 @@ let careless q = function
    [accept] holds reaches, run on the calling domain. *)
 let rec smallest gen tree accept =
   match
-    Seq.find
+    List.find_opt
       (fun child -> accept (recorded gen (value child)))
-      (Shrink_tree.children tree)
+      (children gen tree)
   with
   | None -> tree
   | Some child -> smallest gen child accept
@@ -1469,7 +1503,7 @@ let meeting_commands ~cover_when =
    the search of a failing case descends. *)
 let rec shrunk gen keep tree =
   let kept child = keep (recorded gen (value child)) in
-  match Seq.find kept (Shrink_tree.children tree) with
+  match List.find_opt kept (children gen tree) with
   | Some child -> shrunk gen keep child
   | None -> tree
 
@@ -1525,7 +1559,13 @@ let failing_run_output () =
       ]
   in
   with_pool 2 @@ fun workers ->
+  (* The runs of a case are the law's calls on one value. *)
+  let case = ref None in
   let law program =
+    if not (Option.fold ~none:false ~some:(( == ) program) !case) then begin
+      case := Some program;
+      Atomic.set runs 0
+    end;
     ignore (Stateful.execute ~workers program : Stateful.record)
   in
   match Run.property ~runs:50 gen law with

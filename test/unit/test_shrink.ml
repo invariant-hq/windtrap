@@ -397,10 +397,334 @@ let table () =
     key-value, minimum 4: 100% there, worst 4, 86 runs (max 238)
     |}
 
+(* Stateful programs *)
+
+(* The cases of _autoresearch/audits/spike-choice-stateful.md and
+   gap-stateful-refs.md, each system made by a [create] call, so the known
+   minima are shrinking.md's plus one. Their calls are cheap, so a law run
+   costs 1. *)
+
+module Stateful = Windtrap.Private.Stateful
+
+let abstract = Stateful.abstract
+let command = Stateful.command
+let ( @-> ) = Stateful.( @-> )
+let ( ^-> ) = Stateful.( ^-> )
+let returns = Stateful.returns
+let makes = Stateful.makes
+
+type program = {
+  name : string;
+  commands : unit -> Stateful.command list;
+  minimum : int;
+  at_minimum : string -> bool; (* of the counterexample's record *)
+}
+
+(* The ring buffer of [queue], against a list, as two abstract values. *)
+let ring capacity () =
+  let q = abstract "q" in
+  let create () = (Array.make capacity 0, ref 0, ref 0) in
+  let push (buffer, head, length) x =
+    if !length = capacity then false
+    else begin
+      buffer.((!head + !length) mod capacity) <- x;
+      incr length;
+      true
+    end
+  in
+  let pop (buffer, head, length) () =
+    if !length = 0 then None
+    else begin
+      let x = buffer.(!head) in
+      head := if !head = capacity - 1 then 1 else !head + 1;
+      decr length;
+      Some x
+    end
+  in
+  let model_push m x =
+    if List.length !m = capacity then false
+    else begin
+      m := !m @ [ x ];
+      true
+    end
+  in
+  let model_pop m () =
+    match !m with
+    | [] -> None
+    | x :: rest ->
+        m := rest;
+        Some x
+  in
+  [
+    command "create" (Gen.unit @-> makes q) (fun () -> ref []) create;
+    command "push" (q ^-> Gen.nat @-> returns bool) model_push push;
+    command "pop" (q ^-> Gen.unit @-> returns (option int)) model_pop pop;
+    command "size"
+      (q ^-> returns int)
+      (fun m -> List.length !m)
+      (fun (_, _, length) -> !length);
+  ]
+
+(* The store of [key_value], whose put takes the number of live entries as
+   its fresh key. *)
+let store () =
+  let s = abstract "s" and k = abstract "k" in
+  let put store v =
+    let key = Hashtbl.length store in
+    Hashtbl.replace store key v;
+    (store, key)
+  in
+  let model_put model v =
+    let key = Hashtbl.length model in
+    Hashtbl.replace model key (Some v);
+    (model, key)
+  in
+  [
+    command "create"
+      (Gen.unit @-> makes s)
+      (fun () -> Hashtbl.create 8)
+      (fun () -> Hashtbl.create 8);
+    command "put" (s ^-> Gen.nat @-> makes k) model_put put;
+    command "get"
+      (k ^-> returns (option int))
+      (fun (m, key) -> Hashtbl.find m key)
+      (fun (s, key) -> Hashtbl.find_opt s key);
+    command "delete"
+      (k ^-> returns unit)
+      (fun (m, key) -> Hashtbl.replace m key None)
+      (fun (s, key) -> Hashtbl.remove s key);
+  ]
+
+(* A value lists [0 … 999], and [get] is wrong from index 500 on. *)
+let element () =
+  let d = abstract "d" in
+  let index = Stateful.among int d Fun.id in
+  [
+    command "create"
+      (Gen.unit @-> makes d)
+      (fun () -> List.init 1000 Fun.id)
+      ignore;
+    command "get"
+      (d ^-> index ^-> returns int)
+      (fun _ i -> i)
+      (fun () i -> if i >= 500 then i + 1 else i);
+    command "size" (d ^-> returns int) List.length (fun () -> 1000);
+  ]
+
+(* The guide's set, whose [union] drops its first argument's elements when
+   the second is not empty. *)
+module Ints = Set.Make (Int)
+
+let set () =
+  let s = abstract "s" in
+  let elt = Gen.int_range 0 15 in
+  let rec add x = function
+    | [] -> [ x ]
+    | y :: rest as l ->
+        if x = y then l else if x < y then x :: l else y :: add x rest
+  in
+  [
+    command "empty" (Gen.unit @-> makes s) (fun () -> Ints.empty) (fun () -> []);
+    command "add" (elt @-> s ^-> makes s) Ints.add add;
+    command "union"
+      (s ^-> s ^-> makes s)
+      Ints.union
+      (fun a b -> if b = [] then a else b);
+    command "mem" (elt @-> s ^-> returns bool) Ints.mem List.mem;
+    command "elements" (s ^-> returns (list int)) Ints.elements Fun.id;
+  ]
+
+(* Accounts in a bank, whose [transfer] moves the whole balance of its first
+   account to its second, and forgets what the second held. *)
+let bank () =
+  let b = abstract "b" and a = abstract "a" in
+  let open_ bank =
+    let id = Hashtbl.length bank in
+    Hashtbl.replace bank id 0;
+    (bank, id)
+  in
+  let deposit (bank, a) n = Hashtbl.replace bank a (Hashtbl.find bank a + n) in
+  let transfer ~forgets (bank, a) (bank', b) =
+    if bank == bank' then begin
+      let x = Hashtbl.find bank a in
+      Hashtbl.replace bank a 0;
+      Hashtbl.replace bank b (if forgets then x else Hashtbl.find bank b + x)
+    end
+  in
+  [
+    command "create"
+      (Gen.unit @-> makes b)
+      (fun () -> Hashtbl.create 8)
+      (fun () -> Hashtbl.create 8);
+    command "open" (b ^-> makes a) open_ open_;
+    command "deposit" (a ^-> Gen.nat @-> returns unit) deposit deposit;
+    command "transfer"
+      (a ^-> a ^-> returns unit)
+      (transfer ~forgets:false) (transfer ~forgets:true);
+    command "balance"
+      (a ^-> returns int)
+      (fun (bank, a) -> Hashtbl.find bank a)
+      (fun (bank, a) -> Hashtbl.find bank a);
+  ]
+
+(* Union-find whose [union] links its first element, not that element's
+   root, under the second's root. *)
+let union_find () =
+  let f = abstract "f" and e = abstract "e" in
+  let make table =
+    let id = Hashtbl.length table in
+    Hashtbl.replace table id id;
+    (table, id)
+  in
+  let rec find table x =
+    let parent = Hashtbl.find table x in
+    if parent = x then x else find table parent
+  in
+  let union (table, a) (table', b) =
+    if table == table' then Hashtbl.replace table a (find table b)
+  in
+  let model_union (classes, a) (classes', b) =
+    if classes == classes' then begin
+      let ca = Hashtbl.find classes a and cb = Hashtbl.find classes b in
+      Hashtbl.filter_map_inplace
+        (fun _ c -> Some (if c = ca then cb else c))
+        classes
+    end
+  in
+  let same lookup (t, a) (t', b) = t == t' && lookup t a = lookup t b in
+  [
+    command "create"
+      (Gen.unit @-> makes f)
+      (fun () -> Hashtbl.create 8)
+      (fun () -> Hashtbl.create 8);
+    command "make" (f ^-> makes e) make make;
+    command "union" (e ^-> e ^-> returns unit) model_union union;
+    command "same" (e ^-> e ^-> returns bool) (same Hashtbl.find) (same find);
+  ]
+
+let calls record = List.length (String.split_on_char '\n' record) - 1
+let sized minimum record = calls record = minimum
+
+let programs =
+  [
+    {
+      name = "queue, capacity 2";
+      commands = ring 2;
+      minimum = 7;
+      at_minimum = sized 7;
+    };
+    {
+      name = "queue, capacity 3";
+      commands = ring 3;
+      minimum = 9;
+      at_minimum = sized 9;
+    };
+    { name = "key-value"; commands = store; minimum = 5; at_minimum = sized 5 };
+    {
+      name = "element 500";
+      commands = element;
+      minimum = 2;
+      at_minimum =
+        (fun record ->
+          sized 2 record && String.ends_with ~suffix:"get d1 500" record);
+    };
+    {
+      name = "the guide's set";
+      commands = set;
+      minimum = 5;
+      at_minimum = sized 5;
+    };
+    { name = "bank"; commands = bank; minimum = 6; at_minimum = sized 6 };
+    {
+      name = "union-find";
+      commands = union_find;
+      minimum = 7;
+      at_minimum = sized 7;
+    };
+  ]
+
+(* The record of the counterexample that seed [seed] finds, the law runs
+   after the first failure, the run again excluded, and whether its token,
+   replayed alone, fails with the same record. *)
+let run_program p seed =
+  let runs = ref 0 and first = ref 0 in
+  let law _ program =
+    incr runs;
+    match Stateful.execute program with
+    | (_ : Stateful.record) -> ()
+    | exception e ->
+        if !first = 0 then first := !runs;
+        raise e
+  in
+  let check ?replay ~root law =
+    Property.run ?replay ~count:(`Declared 10_000) ~root ~path:"bench"
+      (Stateful.program (p.commands ()))
+      law
+  in
+  (* The counterexample's record, its token and whether it failed again. *)
+  let found = function
+    | Property.Fail { failure = { Failure.kind = Property f; _ }; _ } ->
+        Some (f.rendered.kept, f.token, f.failed_again = Some true)
+    | _ -> None
+  in
+  let root = Int64.of_int ((seed * 7919) + 13) in
+  Option.map
+    (fun (record, token, again) ->
+      let runs = !runs - !first - if again then 1 else 0 in
+      let replays =
+        match
+          Option.bind token (fun replay -> found (check ~replay ~root:0L law))
+        with
+        | Some (replayed, _, _) -> replayed = record
+        | None -> false
+      in
+      (record, runs, replays))
+    (found (check ~root law))
+
+let program_row p =
+  let found = List.filter_map (run_program p) (List.init 100 succ) in
+  let sizes = List.map (fun (record, _, _) -> calls record) found in
+  let runs = List.map (fun (_, runs, _) -> runs) found in
+  let at_minimum =
+    List.length (List.filter (fun (record, _, _) -> p.at_minimum record) found)
+  in
+  let replayed = List.length (List.filter (fun (_, _, r) -> r) found) in
+  strf
+    "%s, minimum %d: %d%% there%s, mean %.2f, worst %d, %d runs (max %d), %d \
+     tokens replay"
+    p.name p.minimum
+    (100 * at_minimum / List.length found)
+    (if List.length found = 100 then ""
+     else strf " of %d found" (List.length found))
+    (Float.of_int (List.fold_left ( + ) 0 sizes)
+    /. Float.of_int (List.length found))
+    (List.fold_left max 0 sizes)
+    (median runs)
+    (List.fold_left max 0 runs)
+    replayed
+
+(* gap-stateful-refs.md's reducer reached the same on every case, at most
+   six runs apart, but the guide's set: 88%, mean 5.12. Here every generator
+   call is a span, an argument of one choice included, and deleting such a
+   span leads four more seeds to six calls. *)
+let programs_table () =
+  expect (String.concat "\n" (List.map program_row programs))
+  @@ __POS_OF__
+       {|
+    queue, capacity 2, minimum 7: 100% there, mean 7.00, worst 7, 178 runs (max 186), 100 tokens replay
+    queue, capacity 3, minimum 9: 100% there, mean 9.00, worst 9, 230 runs (max 243), 100 tokens replay
+    key-value, minimum 5: 100% there, mean 5.00, worst 5, 131 runs (max 155), 100 tokens replay
+    element 500, minimum 2: 100% there, mean 2.00, worst 2, 105 runs (max 106), 100 tokens replay
+    the guide's set, minimum 5: 84% there, mean 5.16, worst 6, 125 runs (max 159), 100 tokens replay
+    bank, minimum 6: 92% there, mean 6.08, worst 7, 147 runs (max 188), 100 tokens replay
+    union-find, minimum 7: 100% there, mean 7.00, worst 7, 114 runs (max 327), 100 tokens replay
+    |}
+
 let () =
   exit
     (run "shrink"
        [
          reducer;
          test "the benchmarks of shrinking.md reach the prototype's minima" table;
+         test "stateful programs reach the spikes' minima" programs_table;
        ])

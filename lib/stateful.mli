@@ -16,25 +16,27 @@
     budget, labels, tags and timeouts are those of any property.
 
     {b Drawing is structural.} No reference runs while a program is drawn. A
-    command is drawn only when every abstract type it takes has a value that an
-    earlier drawn call makes, for an {!among} type a value of the type it lists.
-    An abstract argument is drawn as one of the earlier calls that make its
-    type, and an element as a position. The shrink tree is
-    [Gen.Engine.Shrink_tree.list] over the drawn calls, with no repair. A
-    candidate deletes calls, reduces one argument or one choice, or moves a
-    parallel call out of its branch, and never turns one command into another.
+    program is parsed from a sequence of choices (see {!Choice}), as every
+    generator is. Each call is one span: a choice to go on, the command's
+    position in the list, then its arguments. A command is drawn only when every
+    abstract type it takes has a value that an earlier call makes, for an
+    {!among} type a value of the type it lists. An abstract argument is drawn as
+    the [k]th newest of the earlier calls that make its type, and an element as
+    a position. The reducer of {!Shrink} shrinks a program as any value:
+    deleting a span deletes a call, lowering a choice reduces an argument, turns
+    a command into an earlier one of the list, or, on several domains, moves a
+    parallel call out of its branch. A deletion lowers the [k] of each later
+    abstract argument by the makers it deleted among the [k] newer, so the
+    argument keeps its value. Nothing repairs a parse.
 
     {b Legality is decided when the program runs.} {!execute} resolves each
     call's abstract arguments among the values that the calls before it made,
     takes its elements, and asks the call's [pre] of the reference as the run
     left it. A call that does not resolve, whose value lists no element or whose
-    [pre] fails is skipped on both sides and is absent from the record. A
-    candidate can therefore run the calls its parent ran, and {!Property.run},
-    which compares failures and never programs, accepts it as a step. Every
-    accepted step descends one level of a tree that is finite in depth when the
-    argument trees are, except below an element, where every candidate takes an
-    earlier index than its parent or is discarded (see [^->]); the shrink budget
-    ends that search.
+    [pre] fails is skipped on both sides and is absent from the record. Every
+    sequence parses, so every edit of the reducer is a program, and
+    {!Property.run}, which compares failures and never programs, keeps an edit
+    that fails as its parent did.
 
     {b Values.} Only a call whose signature ends in {!makes} makes a value, when
     its system returns. A value holds the reference's side and the system's. It
@@ -109,25 +111,22 @@ val ( @-> ) : 'a Gen.t -> ('r, 's, 'p) fn -> ('a -> 'r, 'a -> 's, 'a -> 'p) fn
 val ( ^-> ) :
   ('ra, 'sa) abstract -> ('r, 's, 'p) fn -> ('ra -> 'r, 'sa -> 's, 'ra -> 'p) fn
 (** [t ^-> fn] takes a value of [t]: its reference side for the reference and
-    for [pre], its system side for the system. It is drawn as one of the earlier
-    calls that make a value of [t]. When the call runs, it resolves to the value
-    that this call made, or, when it made none, to the newest value of [t] that
-    the calls before it made. A choice shrinks toward the newest such call.
-    Deleting other calls never moves it off the value its call made. The record
-    prints the value's name.
+    for [pre], its system side for the system. It is drawn as the [k]th newest
+    of the earlier calls that make a value of [t], newest first, with [k] its
+    choice. When the call runs, it resolves to the value that this call made,
+    or, when it made none, to the newest value of [t] that the calls before it
+    made. Its choice shrinks toward the newest such call. A deletion of other
+    calls lowers [k] by the makers of [t] it deleted among the [k] newer, so the
+    call keeps the value it took; a deletion of the call that made it leaves
+    [k], so it takes the next older value. The record prints the value's name.
 
     When [t] is an {!among} type, [t ^-> fn] takes an element that a value of
     the call lists (see {!among}), the same on both sides. It is drawn as a
-    position [k] below 2{^ 30}. When the call runs it takes the candidate at
-    [(k * n) lsr 30] of the [n] that the value lists, so deleting another call
-    keeps its relative place. A shrink candidate takes, among the [n] of its own
-    run, one of the first eight indices that its parent's index shrinks through
-    as an integer, or the index before it, and no two candidates take the same
-    one; a candidate that changes the element alone runs with its parent's [n].
-    A candidate left without an index, past those or below index [0], takes
-    nothing, and {!execute} raises [Failure.Control `Discard] at its call, so no
-    candidate takes its parent's index or a sibling's. The record prints the
-    element through its witness, as a drawn argument prints. *)
+    position [k] below 2{^ 30}, its choice. When the call runs it takes the
+    candidate at [(k * n) lsr 30] of the [n] that the value lists, so deleting
+    another call keeps its relative place, and lowering [k] takes an earlier
+    one. The record prints the element through its witness, as a drawn argument
+    prints. *)
 
 val returns : 'a Testable.t -> ('a, 'a, bool) fn
 (** [returns w] ends a signature whose two results compare under [w]. *)
@@ -188,14 +187,21 @@ val program : ?steps:int -> ?domains:int -> command list -> program Gen.t
     Each branch holds at most five calls for two domains, three for three, two
     for four and one from five domains. After the prefix a command is drawn only
     when it makes no value, has no [pre] and takes no element, so a branch and
-    the suffix choose among the prefix's values. A branch call's first
-    candidates move it to the end of the prefix, then to the start of the
-    suffix. How the lengths are drawn is not part of the contract.
+    the suffix choose among the prefix's values. A call after the prefix reads
+    its place first: [0] ends the prefix, [1] starts the suffix and [i + 1] is
+    branch [i], so lowering it moves a parallel call to the end of the prefix,
+    to the start of the suffix or to an earlier branch, and never moves a call
+    of the prefix or of the suffix into a branch. A parse that places a command
+    after the prefix that cannot run there, or one call more than a branch
+    holds, raises [Failure.Control `Discard]. How the lengths are drawn is not
+    part of the contract.
 
     Each case draws from a subset of [commands] (swarm testing). When a command
     of the subset takes an abstract type, every command that makes the type is
-    in the subset. A command listed twice is drawn twice as often, and is one
-    command. Which subset, how a choice is drawn and the order of the candidates
+    in the subset. The subset only steers drawing: it is drawn from the stream
+    and recorded in no choice, so a replay holds every command, and a command
+    appended to the list changes no program. A command listed twice is drawn
+    twice as often, and is one command. Which subset and how a choice is drawn
     are not part of the contract.
 
     The generator prints a program as it was drawn, one call a line,
@@ -244,8 +250,7 @@ val execute : ?workers:Workers.t -> program -> record
     + Its abstract arguments resolve. A call that does not resolve is skipped.
     + Its elements are taken, each from the [candidates] of the reference side
       of the value it reads (see {!among}). A call whose value lists no element
-      is skipped. A shrink candidate whose element is left without an index
-      raises [Failure.Control `Discard] here, once the releases ran (see [^->]).
+      is skipped.
     + Its [pre] is asked of the reference's arguments. A call whose [pre] is
       [false] is skipped.
     + The reference side of each abstract argument whose type has a [pp] is
