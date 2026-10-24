@@ -69,7 +69,11 @@ what is non-obvious.
   (`run.t`), what a report leaves outside the process (`report.t`: the
   bytes under `--stream`, the logs, the replay line run as pasted), `-u`
   and `--corrected` (`baselines.t`) and the session without dune
-  (`nodune.t`, below). What a message says is pinned by the unit suite
+  (`nodune.t`, below), and baselines that tests share across worker
+  processes (`workers.t`, over `workers_main.exe`: every `-j`, a worker
+  retired or killed between two checks, `-x` and retries, each byte for
+  byte the outcome of `-j 1`, which is that of a run in one process).
+  What a message says is pinned by the unit suite
   of its module; a session shows its line beside the exit code and the
   streams that only a real process has.
   `broadcast.t` lays out two stanzas in a scratch project, as dune does,
