@@ -13,9 +13,10 @@ the coverage and mutation backends, pinned to `windtrap` with
 - [ ] `dune runtest`: green, which includes the examples (the manual's
       runnable mirror, one per chapter), the PPX expansion pins, and the
       conformance corpus.
-- [ ] The migration page (`doc/manual/migrating-from-0.1.md`) compiles
-      against the tree by hand. Nothing compiles it, so every
-      replacement spelling is checked by reading, or not at all.
+- [ ] The migration pages (`doc/manual/migrating-from-0.1.md` and
+      `doc/manual/migrating-from-0.2.md`) compile against the tree by
+      hand. Nothing compiles them, so every replacement spelling is
+      checked by reading, or not at all.
 - [ ] `dune fmt`: clean.
 - [ ] Conformance bar (`test/conformance/RESULTS.md`): every pass-set
       file passes unchanged and every unsupported construct is refused,

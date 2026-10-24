@@ -125,6 +125,7 @@ The manual, [`doc/manual/`](doc/manual/), has one page per need:
   - [Running tests](doc/manual/running-tests.md): selection, reruns, `dune runtest` and CI.
   - [Coverage](doc/manual/coverage.md): the code no test runs.
   - [Mutation testing](doc/manual/mutation.md): the changes no test notices.
+  - [Migrating from 0.2](doc/manual/migrating-from-0.2.md): each breaking change since 0.2 and what a suite writes now.
   - [Migrating from 0.1](doc/manual/migrating-from-0.1.md): each 0.1 spelling and its replacement.
 - Explanation: [Design notes](doc/manual/notes.md), why windtrap is shaped as it is.
 - Reference: [`lib/windtrap.mli`](lib/windtrap.mli), and

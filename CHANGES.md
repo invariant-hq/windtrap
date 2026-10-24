@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+See
+[`doc/manual/migrating-from-0.2.md`](https://github.com/invariant-hq/windtrap/blob/main/doc/manual/migrating-from-0.2.md)
+for how to migrate from 0.2.0.
+
 ### Declaring tests
 
 - (breaking) `cases name w rows fn` is a table: one test, a property
