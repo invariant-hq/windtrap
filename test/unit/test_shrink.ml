@@ -605,43 +605,53 @@ let union_find () =
 let calls record = List.length (String.split_on_char '\n' record) - 1
 let sized minimum record = calls record = minimum
 
-let programs =
-  [
-    {
-      name = "queue, capacity 2";
-      commands = ring 2;
-      minimum = 7;
-      at_minimum = sized 7;
-    };
-    {
-      name = "queue, capacity 3";
-      commands = ring 3;
-      minimum = 9;
-      at_minimum = sized 9;
-    };
-    { name = "key-value"; commands = store; minimum = 5; at_minimum = sized 5 };
-    {
-      name = "element 500";
-      commands = element;
-      minimum = 2;
-      at_minimum =
-        (fun record ->
-          sized 2 record && String.ends_with ~suffix:"get d1 500" record);
-    };
-    {
-      name = "the guide's set";
-      commands = set;
-      minimum = 5;
-      at_minimum = sized 5;
-    };
-    { name = "bank"; commands = bank; minimum = 6; at_minimum = sized 6 };
-    {
-      name = "union-find";
-      commands = union_find;
-      minimum = 7;
-      at_minimum = sized 7;
-    };
-  ]
+let queue_2 =
+  {
+    name = "queue, capacity 2";
+    commands = ring 2;
+    minimum = 7;
+    at_minimum = sized 7;
+  }
+
+let queue_3 =
+  {
+    name = "queue, capacity 3";
+    commands = ring 3;
+    minimum = 9;
+    at_minimum = sized 9;
+  }
+
+let key_value_store =
+  { name = "key-value"; commands = store; minimum = 5; at_minimum = sized 5 }
+
+let element_500 =
+  {
+    name = "element 500";
+    commands = element;
+    minimum = 2;
+    at_minimum =
+      (fun record ->
+        sized 2 record && String.ends_with ~suffix:"get d1 500" record);
+  }
+
+let guide_set =
+  {
+    name = "the guide's set";
+    commands = set;
+    minimum = 5;
+    at_minimum = sized 5;
+  }
+
+let bank_transfer =
+  { name = "bank"; commands = bank; minimum = 6; at_minimum = sized 6 }
+
+let union_find_program =
+  {
+    name = "union-find";
+    commands = union_find;
+    minimum = 7;
+    at_minimum = sized 7;
+  }
 
 (* The record of the counterexample that seed [seed] finds, the law runs
    after the first failure, the run again excluded, and whether its token,
@@ -703,22 +713,38 @@ let program_row p =
     (List.fold_left max 0 runs)
     replayed
 
-(* gap-stateful-refs.md's reducer reached the same on every case, at most
-   six runs apart, but the guide's set: 88%, mean 5.12. Here every generator
-   call is a span, an argument of one choice included, and deleting such a
-   span leads four more seeds to six calls. *)
-let programs_table () =
-  expect (String.concat "\n" (List.map program_row programs))
-  @@ __POS_OF__
-       {|
-    queue, capacity 2, minimum 7: 100% there, mean 7.00, worst 7, 178 runs (max 186), 100 tokens replay
-    queue, capacity 3, minimum 9: 100% there, mean 9.00, worst 9, 230 runs (max 243), 100 tokens replay
-    key-value, minimum 5: 100% there, mean 5.00, worst 5, 131 runs (max 155), 100 tokens replay
-    element 500, minimum 2: 100% there, mean 2.00, worst 2, 105 runs (max 106), 100 tokens replay
-    the guide's set, minimum 5: 84% there, mean 5.16, worst 6, 125 runs (max 159), 100 tokens replay
-    bank, minimum 6: 92% there, mean 6.08, worst 7, 147 runs (max 188), 100 tokens replay
-    union-find, minimum 7: 100% there, mean 7.00, worst 7, 114 runs (max 327), 100 tokens replay
-    |}
+(* Each program pins its own row, so that the rows run in parallel under
+   the stanza's [-j]. gap-stateful-refs.md's reducer reached the same on
+   every case, at most six runs apart, but the guide's set: 88%, mean 5.12.
+   Here every generator call is a span, an argument of one choice included,
+   and deleting such a span leads four more seeds to six calls. *)
+let pinned p row = test p.name (fun () -> expect (program_row p) row)
+
+let programs =
+  group "stateful programs reach the spikes' minima"
+    [
+      pinned queue_2
+      @@ __POS_OF__
+           {| queue, capacity 2, minimum 7: 100% there, mean 7.00, worst 7, 178 runs (max 186), 100 tokens replay |};
+      pinned queue_3
+      @@ __POS_OF__
+           {| queue, capacity 3, minimum 9: 100% there, mean 9.00, worst 9, 230 runs (max 243), 100 tokens replay |};
+      pinned key_value_store
+      @@ __POS_OF__
+           {| key-value, minimum 5: 100% there, mean 5.00, worst 5, 131 runs (max 155), 100 tokens replay |};
+      pinned element_500
+      @@ __POS_OF__
+           {| element 500, minimum 2: 100% there, mean 2.00, worst 2, 105 runs (max 106), 100 tokens replay |};
+      pinned guide_set
+      @@ __POS_OF__
+           {| the guide's set, minimum 5: 84% there, mean 5.16, worst 6, 125 runs (max 159), 100 tokens replay |};
+      pinned bank_transfer
+      @@ __POS_OF__
+           {| bank, minimum 6: 92% there, mean 6.08, worst 7, 147 runs (max 188), 100 tokens replay |};
+      pinned union_find_program
+      @@ __POS_OF__
+           {| union-find, minimum 7: 100% there, mean 7.00, worst 7, 114 runs (max 327), 100 tokens replay |};
+    ]
 
 let () =
   exit
@@ -726,5 +752,5 @@ let () =
        [
          reducer;
          test "the benchmarks of shrinking.md reach the prototype's minima" table;
-         test "stateful programs reach the spikes' minima" programs_table;
+         programs;
        ])

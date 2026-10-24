@@ -272,7 +272,7 @@
  (libraries windtrap)
  (action
   (progn
-   (run %{test} --corrected)
+   (run %{test} --corrected -j 8)
    (diff? test_shrink.ml test_shrink.ml.corrected))))
 
 (test

@@ -28,7 +28,9 @@ what is non-obvious.
   fixed: the eight of `shrinking.md` and the stateful programs of the
   choice-sequence spikes, one domain at a cost of 1, whose tokens each
   replay alone to their counterexample. A change to the reducer or to a
-  generator's parse shows there as a changed row.
+  generator's parse shows there as a changed row. Each stateful program
+  is a test of its own and the stanza runs `-j 8`, so the slowest row,
+  not their sum, sets the suite's time.
   `test_stateful_domains` holds the stateful tests on several domains,
   in an executable of its own because a process that has spawned a
   domain can never fork again. Its systems give results that depend on
