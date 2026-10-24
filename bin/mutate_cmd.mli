@@ -108,13 +108,12 @@ val run : string list -> int
     {!Windtrap.Private.Lines.of_diff}: each file's records off those lines are
     dropped before the {{!section-merge}merge}, so the report and the exit code
     are those of the mutants on the lines. A malformed [SPEC] or an unreadable
-    [FILE] is a usage error. [--color MODE], also
-    spelled [--color=MODE], is the runner's flag, read by
-    {!Windtrap.Private.Cli.parse_color}; without it the colour mode is its
-    mirror [WINDTRAP_COLOR], read by {!Windtrap.Private.Cli.color_mode}. The
-    mode is resolved for standard output by
-    {!Windtrap.Private.Os.resolve_color}. Every other argument that starts with
-    [-] is refused, and the rest are [PATH]s.
+    [FILE] is a usage error. [--color MODE], also spelled [--color=MODE], is the
+    runner's flag, read by {!Windtrap.Private.Cli.parse_color}; without it the
+    colour mode is its mirror [WINDTRAP_COLOR], read by
+    {!Windtrap.Private.Cli.color_mode}. The mode is resolved for standard output
+    by {!Windtrap.Private.Os.resolve_color}. Every other argument that starts
+    with [-] is refused, and the rest are [PATH]s.
 
     [run] parses the arguments, reads [WINDTRAP_COLOR] when [--color] is absent,
     finds the {{!section-files}files}, judges and loads them, and prints the

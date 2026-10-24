@@ -14,8 +14,8 @@
     {b Shrinking.} Every sequence parses, so every candidate is a value of its
     generator and satisfies its constraints. A choice of [0] is the simplest:
     the value that a generator parses from zeros is its shrink target, which
-    each generator states. A parse marks a span over the choices of each call
-    of a generator. A new generator must keep both rules.
+    each generator states. A parse marks a span over the choices of each call of
+    a generator. A new generator must keep both rules.
 
     {b Printing.} A generator prints through two channels. Its optional printer
     prints a bare value (see {!Engine.render_value}). Each sample carries its
@@ -33,12 +33,12 @@
 
     {b Determinism.} A value is a function of the generator and the choices it
     parses, and generating consumes the stream of a {!Seed.state} as 0.2's
-    rose-tree generators did: {!bind}, {!one_of}, {!such_that} and {!list}
-    under an explicit size draw their inner part from a state split off, so
-    every state draws the value 0.2 drew from it. The functions given to
-    {!map}, {!bind} and {!such_that} must be pure for that to hold. The values
-    that a recorded seed replays depend on the words that each generator draws
-    and on their order. *)
+    rose-tree generators did: {!bind}, {!one_of}, {!such_that} and {!list} under
+    an explicit size draw their inner part from a state split off, so every
+    state draws the value 0.2 drew from it. The functions given to {!map},
+    {!bind} and {!such_that} must be pure for that to hold. The values that a
+    recorded seed replays depend on the words that each generator draws and on
+    their order. *)
 
 (* The facade declares the values below again, under a narrowed signature, with
    the contract that a test's author reads ([module Gen] in windtrap.mli). A
@@ -65,13 +65,13 @@ type 'a t
 
     An integer with origin [o] reads its distance to [o], after a side choice
     ([0] above) when the range extends on both sides of [o], so it shrinks
-    toward [o] by its distance first. A float reads a sign, unless its range
-    has one, and its magnitude in the order of Hypothesis's lexicographic
-    encoding: an integral magnitude below 2{^ 56} first, as itself, then the
-    others by exponent, [0] up, then [-1] down, with the fraction bits
-    reversed. It shrinks toward [0.], an integer before a fraction, and [-0.]
-    toward [0.]. A float of {!float_range} is clamped into the range, so its
-    zeros parse to the origin. *)
+    toward [o] by its distance first. A float reads a sign, unless its range has
+    one, and its magnitude in the order of Hypothesis's lexicographic encoding:
+    an integral magnitude below 2{^ 56} first, as itself, then the others by
+    exponent, [0] up, then [-1] down, with the fraction bits reversed. It
+    shrinks toward [0.], an integer before a fraction, and [-0.] toward [0.]. A
+    float of {!float_range} is clamped into the range, so its zeros parse to the
+    origin. *)
 
 val int : int t
 (** [int] generates an [int] over the whole range. It shrinks toward [0]. *)
@@ -142,8 +142,8 @@ val unit : unit t
     consumes no randomness. *)
 
 val bool : bool t
-(** [bool] generates [true] or [false] with equal probability. It shrinks
-    toward [false]. *)
+(** [bool] generates [true] or [false] with equal probability. It shrinks toward
+    [false]. *)
 
 val char : char t
 (** [char] generates a byte uniformly over the 256 characters. It shrinks toward
@@ -197,11 +197,11 @@ val list : ?size:int t -> 'a t -> 'a list t
     stratum. The mean is about 5, so a [list (list int)] holds about 22 integers
     and a case draws in microseconds. The elements are drawn in order.
 
-    Without [size], a "one more" choice ([1]) comes before each element, the
-    two one span, and a [0] ends the list, so it shrinks toward [[]] and a
-    deleted span deletes an element. With an explicit [size], the length is
-    [size]'s value and the elements follow, so every candidate's length is a
-    value of [size].
+    Without [size], a "one more" choice ([1]) comes before each element, the two
+    one span, and a [0] ends the list, so it shrinks toward [[]] and a deleted
+    span deletes an element. With an explicit [size], the length is [size]'s
+    value and the elements follow, so every candidate's length is a value of
+    [size].
 
     Raises [Invalid_argument] if [size] generates a negative length, when it
     parses. The message names [Gen.list], whichever of {!list}, {!array},
@@ -245,9 +245,8 @@ val constant : ?pp:(Format.formatter -> 'a -> unit) -> 'a -> 'a t
 val of_list : ?pp:(Format.formatter -> 'a -> unit) -> 'a list -> 'a t
 (** [of_list ~pp values] generates an element of [values], each with equal
     probability. It reads an index, which shrinks toward [0]. [pp] prints the
-    element, as {!with_pp} would; without it, as for
-    {!constant}, there is no printer. Sampling raises [Invalid_argument] if
-    [values] is empty. *)
+    element, as {!with_pp} would; without it, as for {!constant}, there is no
+    printer. Sampling raises [Invalid_argument] if [values] is empty. *)
 
 val subsequence : ?pp:(Format.formatter -> 'a -> unit) -> 'a list -> 'a list t
 (** [subsequence ~pp values] generates some elements of [values], not
@@ -282,8 +281,8 @@ val one_of : 'a t list -> 'a t
 val frequency : (int * 'a t) list -> 'a t
 (** [frequency weighted] generates with one generator of [weighted], each with a
     probability proportional to its weight. It reads the weighted point it drew,
-    so it shrinks toward the first generator of positive weight and never
-    parses one of weight [0]. The printer is derived as {!one_of}'s is.
+    so it shrinks toward the first generator of positive weight and never parses
+    one of weight [0]. The printer is derived as {!one_of}'s is.
 
     Sampling raises [Invalid_argument] if [weighted] is empty, if a weight is
     negative, or if the weights sum to less than [1], checked in that order. *)

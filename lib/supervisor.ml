@@ -295,7 +295,8 @@ let request w (request : Run.request) =
     ~finally:(fun () -> Sys.set_signal Sys.sigpipe previous)
     (fun () ->
       if not w.hung_up then
-        try write_all w.requests frame 0 (Bytes.length frame) with Closed -> ())
+        try write_all w.requests frame 0 (Bytes.length frame)
+        with Closed -> ())
 
 (* Closed once, so a later descriptor with its number is never closed. *)
 let hang_up w =

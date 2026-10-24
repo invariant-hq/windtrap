@@ -288,7 +288,8 @@ let enumerate gen limit =
       let rec raised i =
         if i < 0 then None
         else if Int64.unsigned_compare choices.(i) bounds.(i) < 0 then
-          Some (Array.append (Array.sub choices 0 i) [| Int64.succ choices.(i) |])
+          Some
+            (Array.append (Array.sub choices 0 i) [| Int64.succ choices.(i) |])
         else raised (i - 1)
       in
       if count > limit then None
@@ -477,7 +478,8 @@ let run ?loc ?count ?max_discard ?(examples = []) ?(summary = Fun.const None)
       | (choices, node) :: rest -> (
           match check law (Gen.Engine.value node) with
           | `Passed | `Discarded -> check_all (index + 1) found rest
-          | `Timed_out limit -> timed_out ~case_index:index ~examples:false limit
+          | `Timed_out limit ->
+              timed_out ~case_index:index ~examples:false limit
           | `Failed failed ->
               let tail = output_after_failure () in
               let found = (index, choices, node, failed, tail) :: found in
@@ -543,14 +545,15 @@ let run ?loc ?count ?max_discard ?(examples = []) ?(summary = Fun.const None)
             let text = rendered_text node in
             if choices <> Choice.choices src || digested <> digest text then
               refused
-                (Pp.str "stale: its generator now parses %s, not the value it \
-                   recorded" text)
+                (Pp.str
+                   "stale: its generator now parses %s, not the value it \
+                    recorded"
+                   text)
             else
               match check law (Gen.Engine.value node) with
               | `Passed -> Pass (stats ctx)
               | `Discarded -> refused "the law discarded its case"
-              | `Timed_out limit ->
-                  timed_out ~case_index:0 ~examples:true limit
+              | `Timed_out limit -> timed_out ~case_index:0 ~examples:true limit
               | `Failed (fault, record) ->
                   let tail = output_after_failure () in
                   let summary = summary (Gen.Engine.value node) in

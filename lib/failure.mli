@@ -212,12 +212,12 @@ type kind =
               {!Property.run}). *)
       token : string option;
           (** The replay token of the counterexample, which [--replay] checks
-              alone (see {!Choice.token}). [None] for an example and for a
-              case that no choice sequence describes. *)
+              alone (see {!Choice.token}). [None] for an example and for a case
+              that no choice sequence describes. *)
       domain : int option;
           (** [Some n] when the property's domain was checked whole, its [n]
-              values: [case_index] is then the position of the value among
-              them, and nothing is shrunk. *)
+              values: [case_index] is then the position of the value among them,
+              and nothing is shrunk. *)
       also : t list;
           (** The other values that a domain checked whole refuted, in order,
               each a {!constructor-Property} failure of its own, and [[]]
@@ -293,8 +293,8 @@ and shrink_end =
 (** The type for what the [rendered] of a {!constructor-Property} failure is. *)
 and rendering =
   | Ocaml
-      (** The counterexample as an OCaml value, printed by [Gen]'s own
-          printers alone, which a test can paste into its [~examples]. *)
+      (** The counterexample as an OCaml value, printed by [Gen]'s own printers
+          alone, which a test can paste into its [~examples]. *)
   | Value
       (** The text of the counterexample itself: a value through the printer of
           its generator, a failing example, or a placeholder that says why no

@@ -15,8 +15,7 @@ let read reads src =
 
 let any_choices =
   Gen.(
-    with_pp
-      (Testable.pp choices)
+    with_pp (Testable.pp choices)
       (map Array.of_list (list (one_of [ int64; map Int64.of_int nat ]))))
 
 let tokens () =
@@ -46,15 +45,16 @@ let sources =
             (v, Choice.choices src);
           equal (option int64) None
             (Choice.sample (Choice.replaying [||]) (Seed.below ~bound:10L)));
-      test "a span covers the choices its function read, if any"
-        (fun () ->
+      test "a span covers the choices its function read, if any" (fun () ->
           let src = Choice.replaying [||] in
           ignore (Choice.choice src ~bound:1L None);
           Choice.span src (fun () ->
               ignore (Choice.choice src ~bound:1L None);
               ignore (Choice.choice src ~bound:1L None));
           Choice.span src ignore;
-          equal (list (pair int int)) [ (1, 3) ]
+          equal
+            (list (pair int int))
+            [ (1, 3) ]
             (List.map
                (fun (s : Choice.span) -> (s.start, s.stop))
                (Choice.spans src)));
@@ -64,9 +64,9 @@ let token_group =
   group "Tokens"
     [
       test "a token spells its choices as LEB128 in base64url" tokens;
-      prop "a token reads back as its choices and digest" any_choices
-        (fun c ->
-          equal (result (pair choices string) string)
+      prop "a token reads back as its choices and digest" any_choices (fun c ->
+          equal
+            (result (pair choices string) string)
             (Ok (c, "0a1b2c3d"))
             (Choice.of_token (Choice.token c ~digest:"0a1b2c3d")));
       test "of_token refuses any other text" (fun () ->

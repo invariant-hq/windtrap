@@ -144,12 +144,12 @@ type stats = {
     - [rendered] is the final case of the shrink search, parsed again (see
       {!run}), through [Gen.Engine.render], a failing example before its run
       through [Gen.Engine.render_value], or
-      [<generator raised before producing a value>]. [rendering] can be
-      [Ocaml] or a pre-image in the first case only, and is [Ocaml] when
+      [<generator raised before producing a value>]. [rendering] can be [Ocaml]
+      or a pre-image in the first case only, and is [Ocaml] when
       [Gen.Engine.literal] holds of the case.
     - [token] is the final case's replay token, its choices and the digest of
-      [rendered] (see {!Choice.token}), for a generator that parses choices,
-      and [None] otherwise.
+      [rendered] (see {!Choice.token}), for a generator that parses choices, and
+      [None] otherwise.
     - [case_index] counts the discarded cases. For a failing example it is the
       zero-based position in [examples].
     - [shrink_steps] is [0] for an example and for a generator that raised.
@@ -318,8 +318,8 @@ val run :
     accepted case, a case being accepted once [output] has returned on it, and
     the test does not time out. The search starts with [output] on the failing
     case, which a [`Timeout] there reports unshrunk and without output.
-    [case_index] is always that of the first failure, so a replay takes the
-    same steps, and a timeout changes only where among them the search stops.
+    [case_index] is always that of the first failure, so a replay takes the same
+    steps, and a timeout changes only where among them the search stops.
 
     {b Printing.} The runs of the search can change the value of the final case,
     so the counterexample prints parsed again from its choices. A pure [gen]

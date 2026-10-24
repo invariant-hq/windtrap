@@ -173,7 +173,6 @@ let counter n =
 
 (* [fixed v] draws [v] and reads no choice, so it has no candidate. *)
 let fixed ?pp v = Gen_engine.make ?pp (fun _ -> v)
-
 let timeout limit = Failure.Control (`Timeout limit)
 
 (* Determinism *)
@@ -405,8 +404,7 @@ let zeros = Gen.map (fun _ -> 0) Gen.int
 
 let covers =
   let run ?(count = 10) ?(examples = []) law () =
-    Property.run ~root ~path:"cover" ~count:(`Declared count) ~examples ones
-      law
+    Property.run ~root ~path:"cover" ~count:(`Declared count) ~examples ones law
   in
   let zero ctx x = Property.cover ctx "zero" (x = 0) in
   [
@@ -498,7 +496,8 @@ let replayed count max_discard =
   let law _ x = Check.is_true (x < 700_000) in
   let o =
     Property.run ~count ?max_discard ~root ~path:"replay path"
-      (Gen.int_range 0 1_000_000) law
+      (Gen.int_range 0 1_000_000)
+      law
   in
   payload_row (counterexample o)
 
@@ -610,8 +609,7 @@ let examples =
       test "a discarding example counts in discards" (fun () ->
           let o =
             Property.run ~root ~path:"example discard" ~count:(`Declared 2)
-              ~examples:[ 1; 2; 3 ] zeros (fun _ x ->
-                Property.assume (x <> 2))
+              ~examples:[ 1; 2; 3 ] zeros (fun _ x -> Property.assume (x <> 2))
           in
           equal string "pass, 4 cases, 1 discards" (verdict o));
       test "the first generated case is index 0 whatever the examples"
@@ -1491,7 +1489,9 @@ let domains =
           let count gen =
             whole_of (Property.run ~root ~path:"p" gen (fun _ _ -> ()))
           in
-          equal (list (option int)) [ Some 5; Some 2 ]
+          equal
+            (list (option int))
+            [ Some 5; Some 2 ]
             [
               count (Gen.int_range (-2) 2);
               count
@@ -1566,9 +1566,7 @@ let token_of o =
   | _ -> fail "no token"
 
 let message_of o =
-  match (failed o).kind with
-  | Message t -> t.kept
-  | _ -> fail "no message"
+  match (failed o).kind with Message t -> t.kept | _ -> fail "no message"
 
 let big x = if x >= 10 then Check.fail "big"
 let shrunk_run gen law = Property.run ~root ~path:"replay" gen law
@@ -1583,8 +1581,7 @@ let replaying =
           let token = token_of (shrunk_run gen all_small) in
           let law, seen = traced all_small in
           let o = Property.run ~replay:token ~root ~path:"replay" gen law in
-          equal (list string)
-            [ "[10]"; "true"; token ]
+          equal (list string) [ "[10]"; "true"; token ]
             [
               (counterexample o).rendered;
               string_of_bool (counterexample o).examples;
@@ -1595,23 +1592,28 @@ let replaying =
           let gen = Gen.int_range 0 100 in
           let token = token_of (shrunk_run gen (fun _ -> big)) in
           equal string "pass, 1 cases, 0 discards"
-            (verdict (Property.run ~replay:token ~root ~path:"p" gen (fun _ _ -> ()))));
+            (verdict
+               (Property.run ~replay:token ~root ~path:"p" gen (fun _ _ -> ()))));
       test "a token is stale where its generator parses another value"
         (fun () ->
           let token =
             token_of (shrunk_run (Gen.int_range 0 100) (fun _ -> big))
           in
           let stale gen =
-            message_of (Property.run ~replay:token ~root ~path:"p" gen (fun _ _ -> ()))
+            message_of
+              (Property.run ~replay:token ~root ~path:"p" gen (fun _ _ -> ()))
           in
           List.iter
-            (fun text -> starts_with ~affix:("--replay " ^ token ^ ": stale") text)
+            (fun text ->
+              starts_with ~affix:("--replay " ^ token ^ ": stale") text)
             [
               stale (Gen.int_range 0 5);
               stale (Gen.pair (Gen.int_range 0 100) Gen.bool);
               stale (Gen.int_range 5 100);
-              stale (Gen.with_pp (fun ppf n -> Format.fprintf ppf "n=%d" n)
-                       (Gen.int_range 0 100));
+              stale
+                (Gen.with_pp
+                   (fun ppf n -> Format.fprintf ppf "n=%d" n)
+                   (Gen.int_range 0 100));
             ]);
       test "a token replays a value that another generator parses alike"
         (fun () ->
@@ -1620,8 +1622,8 @@ let replaying =
           in
           equal string "fail, 0 cases, 0 discards"
             (verdict
-               (Property.run ~replay:token ~root ~path:"p"
-                  (Gen.int_range 0 50) (fun _ -> big))));
+               (Property.run ~replay:token ~root ~path:"p" (Gen.int_range 0 50)
+                  (fun _ -> big))));
       test "a token that does not parse is refused" (fun () ->
           equal string
             "--replay r2:AA:00: a replay token is r1:, base64url choices, : \

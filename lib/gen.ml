@@ -23,11 +23,7 @@ type 'a rendering = Value of 'a | Pre_image of 'a
 type doc = Atom of (Format.formatter -> unit) | Arrow of doc * doc
 type 'a node = { value : 'a; shown : doc rendering option; literal : bool }
 
-type 'a t = {
-  pp : (Format.formatter -> 'a -> unit) option;
-  draw : 'a draw;
-}
-
+type 'a t = { pp : (Format.formatter -> 'a -> unit) option; draw : 'a draw }
 and 'a draw = Parse of (Choice.t -> 'a node)
 
 let atom pp v = Atom (fun ppf -> pp ppf v)
@@ -245,11 +241,11 @@ let ranked src ~low ~high ~origin encode sample =
       let side x = if Int64.compare x origin < 0 then 1L else 0L in
       Int64.equal (Choice.choice src ~bound:1L (Option.map side x)) 1L
   in
-  if below_side then
+  if below_side then (
     let distance = Option.map (Int64.sub origin) x in
     let d = Choice.choice src ~bound:below distance in
     if Int64.equal d 0L && not (Int64.equal above 0L) then Choice.respelled src;
-    Int64.sub origin d
+    Int64.sub origin d)
   else
     let distance = Option.map (fun x -> Int64.sub x origin) x in
     Int64.add origin (Choice.choice src ~bound:above distance)
@@ -296,8 +292,9 @@ let range_uniform low high state =
     (Int64.to_int (Int64.add low64 offset), state)
 
 let int_range low high =
-  range (module Int_) ~name:"Gen.int_range" Pp.int (range_uniform low high) low
-    high
+  range
+    (module Int_)
+    ~name:"Gen.int_range" Pp.int (range_uniform low high) low high
 
 let int = int_range min_int max_int
 
@@ -335,7 +332,9 @@ let draw_length = draw_strata (4L, 8L, 16L, 64L)
 let nat = integer (module Int_) Pp.int ~low:0 ~high:9_999 ~origin:0 draw_nat
 
 let small_int =
-  integer (module Int_) Pp.int ~low:(-9_999) ~high:9_999 ~origin:0
+  integer
+    (module Int_)
+    Pp.int ~low:(-9_999) ~high:9_999 ~origin:0
     (fun state ->
       let sign, state = Seed.below ~bound:2L state in
       let magnitude, state = draw_nat state in
@@ -344,12 +343,16 @@ let small_int =
 (* A whole type: its corners are [0], [1], [-1] and its extremes. *)
 let whole (type n) (module N : Integer with type t = n) pp ~min_int ~max_int
     ~minus_one ~one of_bits =
-  integer (module N) pp ~low:min_int ~high:max_int ~origin:N.zero
+  integer
+    (module N)
+    pp ~low:min_int ~high:max_int ~origin:N.zero
     (with_corners [ min_int; minus_one; N.zero; one; max_int ] (word of_bits))
 
 let int32 =
-  whole (module Int32_) pp_int32 ~min_int:Int32.min_int ~max_int:Int32.max_int
-    ~minus_one:(-1l) ~one:1l Int64.to_int32
+  whole
+    (module Int32_)
+    pp_int32 ~min_int:Int32.min_int ~max_int:Int32.max_int ~minus_one:(-1l)
+    ~one:1l Int64.to_int32
 
 let int32_range low high =
   let uniform =
@@ -358,8 +361,10 @@ let int32_range low high =
   range (module Int32_) ~name:"Gen.int32_range" pp_int32 uniform low high
 
 let int64 =
-  whole (module Int64_) pp_int64 ~min_int:Int64.min_int ~max_int:Int64.max_int
-    ~minus_one:(-1L) ~one:1L Fun.id
+  whole
+    (module Int64_)
+    pp_int64 ~min_int:Int64.min_int ~max_int:Int64.max_int ~minus_one:(-1L)
+    ~one:1L Fun.id
 
 let int64_range low high =
   let uniform = between Fun.id low high in
@@ -406,7 +411,9 @@ let reverse_bits v count =
   let rec go v count acc =
     if count = 0 then acc
     else
-      go (Int64.shift_right_logical v 1) (count - 1)
+      go
+        (Int64.shift_right_logical v 1)
+        (count - 1)
         (Int64.logor (Int64.shift_left acc 1) (Int64.logand v 1L))
   in
   go v count 0L
@@ -603,8 +610,7 @@ let float_range low high =
 
 (* Unlike [constant ()], [unit] prints, so a composition over it keeps its
    printer. *)
-let unit =
-  { pp = Some pp_unit; draw = Parse (fun _ -> literal pp_unit ()) }
+let unit = { pp = Some pp_unit; draw = Parse (fun _ -> literal pp_unit ()) }
 
 let bool =
   {
@@ -677,8 +683,9 @@ let uchar =
       Parse
         (fun src ->
           let v =
-            ranked src ~low:0L ~high:(Int64.of_int (starts.(4) - 1)) ~origin
-              index
+            ranked src ~low:0L
+              ~high:(Int64.of_int (starts.(4) - 1))
+              ~origin index
               (with_corners corners uniform)
           in
           literal pp_uchar (uchar_of_index (Int64.to_int v)));
@@ -746,8 +753,7 @@ let list ?size gen =
       Parse
         (fun src ->
           let nodes = elements ?size gen src in
-          composed (pp_list pp_doc) (List.map value nodes)
-            (List.map part nodes));
+          composed (pp_list pp_doc) (List.map value nodes) (List.map part nodes));
   }
 
 let array ?size gen =
@@ -866,14 +872,12 @@ let quad a b c d =
 let listed ?pp value =
   match pp with None -> unprintable value | Some pp -> printed pp value
 
-let constant ?pp value =
-  { pp; draw = Parse (fun _ -> listed ?pp value) }
+let constant ?pp value = { pp; draw = Parse (fun _ -> listed ?pp value) }
 
 (* An index below [count], drawn uniformly. *)
 let index src count =
   let bound = Int64.of_int count in
-  Int64.to_int
-    (read src ~bound:(Int64.pred bound) Fun.id (Seed.below ~bound))
+  Int64.to_int (read src ~bound:(Int64.pred bound) Fun.id (Seed.below ~bound))
 
 let of_list ?pp values =
   let values = Array.of_list values in
@@ -950,8 +954,7 @@ let permutation ?pp values =
     Array.init count (fun k ->
         let digit = code.(k) in
         let index = remaining.(digit) in
-        Array.blit remaining (digit + 1) remaining digit
-          (count - k - 1 - digit);
+        Array.blit remaining (digit + 1) remaining digit (count - k - 1 - digit);
         index)
   in
   let draw_order state =
@@ -1109,10 +1112,7 @@ let bind gen f =
   }
 
 let with_pp pp gen =
-  {
-    pp = Some pp;
-    draw = Parse (fun src -> printed pp (parse gen src).value);
-  }
+  { pp = Some pp; draw = Parse (fun src -> printed pp (parse gen src).value) }
 
 let ( let+ ) gen f = map f gen
 let ( and+ ) = pair

@@ -18,6 +18,7 @@ type verdict =
   | Passes
   | Discards
   | Not_smaller
+
 type ending = Converged | Budget_spent
 
 let shortlex a b =

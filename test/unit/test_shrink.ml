@@ -15,13 +15,13 @@ module Failure = Windtrap.Private.Failure
 
 let strf = Printf.sprintf
 let choices = Testable.(array int64)
+
 let case ?(spans = []) ?(dependents = []) choices : Shrink.case =
   { choices; spans; dependents }
 
 (* A test that fails when [fails] holds of the choices, reading them all. *)
 let failing fails choices =
-  if fails choices then
-    Shrink.Fails { parsed = case choices; keep = ignore }
+  if fails choices then Shrink.Fails { parsed = case choices; keep = ignore }
   else Shrink.Passes
 
 let shrunk ?(budget = 10_000) ?(cost = 1) fails start =
@@ -46,9 +46,7 @@ let reducer =
                ]));
       test "a threshold on a sum shrinks to one choice at the threshold"
         (fun () ->
-          equal
-            (pair choices string)
-            ([| 100L |], "converged")
+          equal (pair choices string) ([| 100L |], "converged")
             (let best, ending =
                shrunk
                  (fun c -> Int64.compare (sum c) 100L >= 0)
@@ -87,11 +85,8 @@ let reducer =
           let _, _, ending =
             Shrink.shrink ~budget:7 ~cost:3 test (case [| 1L; 1L |])
           in
-          equal
-            (pair int string)
-            (3, "spent")
-            ( !runs,
-              match ending with Converged -> "converged" | _ -> "spent" ));
+          equal (pair int string) (3, "spent")
+            (!runs, match ending with Converged -> "converged" | _ -> "spent"));
       test "a search that spends the budget ends at the next candidate"
         (fun () ->
           let runs = ref 0 in
@@ -102,9 +97,7 @@ let reducer =
           let best, steps, ending =
             Shrink.shrink ~budget:1 ~cost:1 test (case [| 5L; 5L |])
           in
-          equal
-            (triple int int string)
-            (1, steps, "spent")
+          equal (triple int int string) (1, steps, "spent")
             ( !runs,
               (if best.choices = [| 5L; 5L |] then 0 else 1),
               match ending with Converged -> "converged" | _ -> "spent" ));
@@ -135,9 +128,7 @@ let measure (type v) (b : v bench) seed =
     end
   in
   let root = Int64.of_int ((seed * 7919) + 13) in
-  match
-    Property.run ~count:(`Declared 10_000) ~root ~path:b.name b.gen law
-  with
+  match Property.run ~count:(`Declared 10_000) ~root ~path:b.name b.gen law with
   | Fail { failure = { Failure.kind = Property p; _ }; _ } ->
       let again = if p.failed_again = Some true then 1 else 0 in
       let final = Option.get !last in
@@ -157,7 +148,9 @@ let row (Bench b) =
     (100 * at_minimum / List.length found)
     (if List.length found = 100 then ""
      else strf " of %d found" (List.length found))
-    (List.fold_left max 0 sizes) (median runs) (List.fold_left max 0 runs)
+    (List.fold_left max 0 sizes)
+    (median runs)
+    (List.fold_left max 0 runs)
 
 (* bound5: five lists of 16-bit integers, each summing below 256, whose
    total in 16 bits stays below 5 * 256. Overflow breaks it. *)
@@ -259,10 +252,12 @@ let chain step init =
   let rec calls k state =
     if k = 20 then Gen.constant []
     else
-      Gen.bind (Gen.option (step state)) (function
-        | None -> Gen.constant []
-        | Some (call, state) ->
-            Gen.map (fun rest -> call :: rest) (calls (k + 1) state))
+      Gen.bind
+        (Gen.option (step state))
+        (function
+          | None -> Gen.constant []
+          | Some (call, state) ->
+              Gen.map (fun rest -> call :: rest) (calls (k + 1) state))
   in
   calls 0 init
 
@@ -321,7 +316,7 @@ let queue capacity =
     gen = chain (fun () -> Gen.map (fun c -> (c, ())) call) ();
     holds = (fun p -> not (fails p));
     size = List.length;
-    minimum = 2 * capacity + 2;
+    minimum = (2 * capacity) + 2;
   }
 
 (* A store whose put takes the number of live entries as its fresh key, so
@@ -751,6 +746,7 @@ let () =
     (run "shrink"
        [
          reducer;
-         test "the benchmarks of shrinking.md reach the prototype's minima" table;
+         test "the benchmarks of shrinking.md reach the prototype's minima"
+           table;
          programs;
        ])

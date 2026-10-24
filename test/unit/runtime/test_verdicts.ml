@@ -485,9 +485,11 @@ let corrupt_files =
     ("an unknown rewrite", record_prefix ^ "1 2 1 5 4 plus 1 b 1 a unreached\n");
     ( "drop, which no instrumenter emits",
       record_prefix ^ "1 2 1 5 4 drop 1 b 1 a unreached\n" );
-    ("a before past the input", record_prefix ^ "1 2 1 5 3 add 80 b 1 a unreached\n");
+    ( "a before past the input",
+      record_prefix ^ "1 2 1 5 3 add 80 b 1 a unreached\n" );
     ("no rendering", record_prefix ^ "1 2 1 5 3 add unreached\n");
-    ("an after past the input", record_prefix ^ "1 2 1 5 3 add 1 b 80 a unreached\n");
+    ( "an after past the input",
+      record_prefix ^ "1 2 1 5 3 add 1 b 80 a unreached\n" );
     ("an unknown verdict", record_prefix ^ "1 2 1 5 3 add 1 b 1 a errored\n");
     ("no verdict", record_prefix ^ "1 2 1 5 3 add 1 b 1 a\n");
     ( "a survivor with no reaching test",

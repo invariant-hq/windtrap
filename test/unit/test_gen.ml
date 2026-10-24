@@ -332,8 +332,8 @@ let kept =
       ( "result, whose payload is a value of its side's generator",
         (fun () -> Gen.(result nat (int_range 20_000 20_009))),
         fun _ -> function
-          | Ok n -> within int 0 9_999 n
-          | Error n -> within int 20_000 20_009 n );
+          | Ok n -> within int 0 9_999 n | Error n -> within int 20_000 20_009 n
+      );
     Kept
       ( "either, whose payload is a value of its side's generator",
         (fun () -> Gen.(either nat (int_range 20_000 20_009))),
@@ -552,7 +552,8 @@ let replayed_choices () =
    table was recorded on 0.2's rose-tree generators. The samplers consume
    the frozen stream as they did then, so every row stays exact and the
    tolerance is zero: a changed bin is a changed distribution. *)
-type summary = Summary : string * (unit -> 'a Gen.t) * ('a -> float) -> summary
+type summary =
+  | Summary : string * (unit -> 'a Gen.t) * ('a -> float) -> summary
 
 let summarise (Summary (name, gen, project)) =
   let gen = gen () in
@@ -595,9 +596,7 @@ let summaries =
       int_summary "int_range 3 1000" (fun () -> int_range 3 1000);
       Summary ("int32", (fun () -> int32), Int32.to_float);
       Summary
-        ( "int32_range -7l 9l",
-          (fun () -> int32_range (-7l) 9l),
-          Int32.to_float );
+        ("int32_range -7l 9l", (fun () -> int32_range (-7l) 9l), Int32.to_float);
       Summary ("int64", (fun () -> int64), Int64.to_float);
       Summary
         ( "int64_range min_int max_int",
@@ -631,9 +630,7 @@ let summaries =
       Summary ("bool", (fun () -> bool), fun b -> if b then 1. else 0.);
       Summary ("char", (fun () -> char), size_of Char.code);
       Summary
-        ( "char_range 'a' 'f'",
-          (fun () -> char_range 'a' 'f'),
-          size_of Char.code );
+        ("char_range 'a' 'f'", (fun () -> char_range 'a' 'f'), size_of Char.code);
       Summary ("uchar", (fun () -> uchar), size_of Uchar.to_int);
       Summary ("string", (fun () -> string), size_of String.length);
       Summary
@@ -910,12 +907,18 @@ let numbers_shrink =
         "0n" );
     Shrinks
       ( "int32_range 10l 100l",
-        (fun () -> endless (fun ppf n -> Format.fprintf ppf "%ldl" n) (Gen.int32_range 10l 100l)),
+        (fun () ->
+          endless
+            (fun ppf n -> Format.fprintf ppf "%ldl" n)
+            (Gen.int32_range 10l 100l)),
         (fun v -> v > 10l),
         "10l" );
     Shrinks
       ( "int64_range (-100L) (-10L)",
-        (fun () -> endless (fun ppf n -> Format.fprintf ppf "%LdL" n) (Gen.int64_range (-100L) (-10L))),
+        (fun () ->
+          endless
+            (fun ppf n -> Format.fprintf ppf "%LdL" n)
+            (Gen.int64_range (-100L) (-10L))),
         (fun v -> v < -10L),
         "-10L" );
     Shrinks
@@ -1148,15 +1151,16 @@ let sized_ranges =
    values or more. *)
 let sized_range (Sized (name, range, whole, w, zero)) =
   prop
-    (name
-   ^ " low high draws within [low;high], and so does each candidate")
+    (name ^ " low high draws within [low;high], and so does each candidate")
     ~count:50
     Gen.(triple whole whole int64)
     (fun (a, b, seed) ->
       let low = min a b and high = max a b in
       let tree = at_seed (range low high) seed in
       within w low high (value tree);
-      List.iter (fun (_, child) -> within w low high child) (edges ~limit:100 tree))
+      List.iter
+        (fun (_, child) -> within w low high child)
+        (edges ~limit:100 tree))
 
 (* [-2^62; Int64.max_int] holds a third of its values below 0, and two of its
    five corners. *)
@@ -2303,8 +2307,8 @@ let composition =
   group "Composition"
     [
       test
-        "map runs f on the root at sampling, and a candidate's cell once, \
-         when forced"
+        "map runs f on the root at sampling, and a candidate's cell once, when \
+         forced"
         map_forcing;
       test
         "what map's f raises escapes sampling, and a candidate on which it \
@@ -2327,8 +2331,7 @@ let composition =
             Gen.(map String.length (map String.uppercase_ascii string))
           in
           starts_with ~affix:"from \"" (shown (find gen (fun n -> n > 0))));
-      test "a bind candidate on which the function raises is skipped"
-        (fun () ->
+      test "a bind candidate on which the function raises is skipped" (fun () ->
           let gen =
             Gen.bind (Gen.int_range 0 10) (fun v ->
                 if v = 0 then raise Exit else Gen.constant v)

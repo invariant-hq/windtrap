@@ -899,16 +899,16 @@ val pass : 'a testable
     it was given, whatever the law did to them.
 
     {b Shrinking.} A case is the sequence of bounded choices that its generator
-    read, and shrinking edits the sequence of a failing case and parses the
-    edit again, so every candidate is a value of the generator. Three passes
-    run to a fixed point: delete the choices that one generator call read (a
-    list element and its "one more" choice are one such call), delete runs of
-    8, 4, 2 and 1 choices, and lower each choice by binary search. A step is
-    kept when the case still fails and its choices are fewer, or as many and
-    smaller. Shrinking runs the law at most [10_000] times, and a search stopped
-    there reports that the counterexample may not be minimal. A candidate on
-    which a function of the generator raises is skipped, and a function of the
-    generator that raises while a case is drawn fails the case.
+    read, and shrinking edits the sequence of a failing case and parses the edit
+    again, so every candidate is a value of the generator. Three passes run to a
+    fixed point: delete the choices that one generator call read (a list element
+    and its "one more" choice are one such call), delete runs of 8, 4, 2 and 1
+    choices, and lower each choice by binary search. A step is kept when the
+    case still fails and its choices are fewer, or as many and smaller.
+    Shrinking runs the law at most [10_000] times, and a search stopped there
+    reports that the counterexample may not be minimal. A candidate on which a
+    function of the generator raises is skipped, and a function of the generator
+    that raises while a case is drawn fails the case.
 
     {b Finite domains are checked whole.} A generator whose domain has at most
     [count] values, as [Gen.bool], [Gen.of_list], a small range and their
@@ -919,18 +919,18 @@ val pass : 'a testable
     shrinks. Finding which a domain is parses the generator's first sequences
     once, before any case, and runs no law.
 
-    {b Keeping a counterexample.} Under its counterexample, a failure prints
-    the line that keeps it. Where the generators print OCaml, it is an entry to
-    paste into [~examples], [keep it: ~examples:[ (3, "a") ]]. Otherwise it is
-    a token, [replay it: --replay r1:...], and [--replay TOKEN] with [-f] on
-    the test checks that one case again: the token is the case's choices and a
-    digest of its printing, so it replays on any machine and survives a
-    renamed test, while its generator reads its choices as it did. A token
-    whose generator now parses another value is reported stale, and never
-    checks another value. Its digest is of the printing, so where a value
-    prints as its pre-image, a change to the function of a {!Gen.map} goes
-    unseen; a printer from {!Gen.with_pp} makes the token check the value.
-    Nothing writes the source. *)
+    {b Keeping a counterexample.} Under its counterexample, a failure prints the
+    line that keeps it. Where the generators print OCaml, it is an entry to
+    paste into [~examples], [keep it: ~examples:[ (3, "a") ]]. Otherwise it is a
+    token, [replay it: --replay r1:...], and [--replay TOKEN] with [-f] on the
+    test checks that one case again: the token is the case's choices and a
+    digest of its printing, so it replays on any machine and survives a renamed
+    test, while its generator reads its choices as it did. A token whose
+    generator now parses another value is reported stale, and never checks
+    another value. Its digest is of the printing, so where a value prints as its
+    pre-image, a change to the function of a {!Gen.map} goes unseen; a printer
+    from {!Gen.with_pp} makes the token check the value. Nothing writes the
+    source. *)
 
 (**/**)
 
@@ -944,10 +944,9 @@ module Gen : sig
 
       {b Shrinking.} A generator parses a sequence of choices, and shrinking
       edits the sequence (see {{!section-properties}Properties}), so every
-      generator shrinks, a candidate satisfies the constraints of its
-      generator, and a {!bind} shrinks as any generator does. Each generator
-      states its target, the value it parses from choices that are all
-      zero.
+      generator shrinks, a candidate satisfies the constraints of its generator,
+      and a {!bind} shrinks as any generator does. Each generator states its
+      target, the value it parses from choices that are all zero.
 
       {b Printing.} A counterexample prints with its generator's printer. The
       generators of base types print OCaml expressions: literals, and
@@ -1034,9 +1033,10 @@ module Gen : sig
 
   val any_float : float t
   (** [any_float] generates [nan], [infinity] or [neg_infinity] with probability
-      0.1, each equally likely, and a {!float} otherwise. It shrinks as
-      {!float} does, and a non-finite value toward a finite one. NaN is equal to nothing under a tolerance, so a law over
-      [any_float] compares under {!Windtrap.float_exact}. *)
+      0.1, each equally likely, and a {!float} otherwise. It shrinks as {!float}
+      does, and a non-finite value toward a finite one. NaN is equal to nothing
+      under a tolerance, so a law over [any_float] compares under
+      {!Windtrap.float_exact}. *)
 
   val float_range : float -> float -> float t
   (** [float_range low high] generates a finite float in \[[low];[high]\],
@@ -1097,8 +1097,8 @@ module Gen : sig
 
       A list shrinks toward [[]]: a candidate drops elements, shrinks them or,
       in a list of lists, merges two lists, in an order that is not part of the
-      contract. With an explicit [size] the length shrinks
-      as [size] does, so [~size:(int_range 2 5)] holds for every candidate.
+      contract. With an explicit [size] the length shrinks as [size] does, so
+      [~size:(int_range 2 5)] holds for every candidate.
 
       Sampling raises [Invalid_argument] if [size] generates a negative length.
   *)
@@ -1108,8 +1108,8 @@ module Gen : sig
 
   val option : 'a t -> 'a option t
   (** [option gen] generates [None] with probability 0.15 and [Some v]
-      otherwise, with [v] drawn from [gen]. It shrinks toward [None], and [v]
-      as [gen] does. *)
+      otherwise, with [v] drawn from [gen]. It shrinks toward [None], and [v] as
+      [gen] does. *)
 
   val result : 'a t -> 'e t -> ('a, 'e) result t
   (** [result ok error] generates [Ok] of an [ok] value with probability 0.75
@@ -1122,8 +1122,8 @@ module Gen : sig
       payload with its generator. *)
 
   val pair : 'a t -> 'b t -> ('a * 'b) t
-  (** [pair a b] generates both components, the first first, and shrinks
-      both. *)
+  (** [pair a b] generates both components, the first first, and shrinks both.
+  *)
 
   val triple : 'a t -> 'b t -> 'c t -> ('a * 'b * 'c) t
   (** [triple a b c] is {!pair} for three components. *)
@@ -1153,8 +1153,8 @@ module Gen : sig
 
   val permutation : ?pp:(Format.formatter -> 'a -> unit) -> 'a list -> 'a list t
   (** [permutation ~pp values] generates [values] shuffled, every ordering
-      equally likely. It shrinks toward [values] as given, a candidate moving
-      an element left past elements that come later in [values]. [pp] prints an
+      equally likely. It shrinks toward [values] as given, a candidate moving an
+      element left past elements that come later in [values]. [pp] prints an
       element; without it the permutation has no printer until {!with_pp} gives
       one. *)
 
@@ -1221,9 +1221,9 @@ val prop :
 (** [prop name gen law] is the property [name], whose [law] must hold for every
     value of [gen].
     - [count] is the number of generated cases that must pass. Defaults to
-      [100]. [--prop-count] raises it, and never lowers it, so a long run
-      scales every property. With [0] the examples run alone, whatever
-      [--prop-count] says.
+      [100]. [--prop-count] raises it, and never lowers it, so a long run scales
+      every property. With [0] the examples run alone, whatever [--prop-count]
+      says.
     - [max_discard] is the number of discarded cases (see {!assume}) past which
       the property gives up and fails. Defaults to twice the effective [count].
       No flag sets it.

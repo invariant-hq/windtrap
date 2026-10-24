@@ -6,11 +6,11 @@
 (** Choice sequences.
 
     A generator parses a sequence of choices: each choice is an unsigned 64-bit
-    integer at most a bound that the parse states when it reads it. A
-    {e source} is the cursor of one parse. It either generates, recording the
-    choices that encode what the generator drew from a {!Seed.state}, or
-    replays a given sequence. Parsing the choices a source recorded, by the same
-    generator, builds the same value.
+    integer at most a bound that the parse states when it reads it. A {e source}
+    is the cursor of one parse. It either generates, recording the choices that
+    encode what the generator drew from a {!Seed.state}, or replays a given
+    sequence. Parsing the choices a source recorded, by the same generator,
+    builds the same value.
 
     A source records, beside the choices, the spans of choices that one
     generator call read and the {e dependents}: choices that count past earlier
@@ -62,16 +62,16 @@ val span : t -> (unit -> 'a) -> 'a
     it read any. *)
 
 val respelled : t -> unit
-(** [respelled src] records that what [src] parses has another spelling,
-    smaller or not: the value is a value of another sequence too. Counting the
-    values of a domain skips such a sequence. *)
+(** [respelled src] records that what [src] parses has another spelling, smaller
+    or not: the value is a value of another sequence too. Counting the values of
+    a domain skips such a sequence. *)
 
 val counts_past : t -> at:int -> int list -> unit
 (** [counts_past src ~at over] records that the choice at position [at] counts
-    past the positions [over], as a reference to the k-th newest value of a
-    kind counts past one position inside each of the k newer values. A deletion
-    that removes some of [over] lowers that choice by as many (see {!Shrink}).
-    An empty [over] records nothing. *)
+    past the positions [over], as a reference to the k-th newest value of a kind
+    counts past one position inside each of the k newer values. A deletion that
+    removes some of [over] lowers that choice by as many (see {!Shrink}). An
+    empty [over] records nothing. *)
 
 val position : t -> int
 (** [position src] is the number of choices read so far. *)
@@ -100,8 +100,8 @@ val state : t -> Seed.state option
 (** {1:tokens Replay tokens} *)
 
 val token : int64 array -> digest:string -> string
-(** [token choices ~digest] is the replay token of a case: [r1:], the choices
-    as unsigned LEB128 in unpadded base64url, [:] and [digest], which must be
+(** [token choices ~digest] is the replay token of a case: [r1:], the choices as
+    unsigned LEB128 in unpadded base64url, [:] and [digest], which must be
     non-empty and hold no [:]. *)
 
 val of_token : string -> (int64 array * string, string) result
