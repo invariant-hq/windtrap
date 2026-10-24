@@ -72,7 +72,7 @@ let line (f : Failure.t) =
   let label =
     match f.subtest with [] -> "" | label -> " in " ^ String.concat "/" label
   in
-  phase f.phase ^ " " ^ kind ^ label
+  phase f.phase ^ " " ^ kind ^ label ^ if f.caught then ", caught" else ""
 
 let lines r path = List.map line (Recorded.failures r path)
 let loc (f : Failure.t) = Option.map Loc.to_string f.loc
@@ -475,12 +475,14 @@ let refused_operations =
 
 let swallowing () = try reads () with Failure.Check_failure _ -> ()
 
-(* The site of the refusal that another domain gets. *)
+(* The site of the refusal that another domain gets, caught by windtrap's
+   own catch, which owns what it records. *)
 let refusal_site () =
   let refused () =
-    match reads () with
-    | () -> None
-    | exception Failure.Check_failure f -> Option.map Loc.to_string f.loc
+    match Failure.catch reads with
+    | Ok () -> None
+    | Error (`Assertion f) -> Option.map Loc.to_string f.loc
+    | Error c -> Failure.reraise c
   in
   starts_with ~affix:"test/unit/test_run.ml:"
     (require_some (Domain.join (Domain.spawn refused)))
@@ -493,6 +495,15 @@ let spawning =
   @ [
       ("swallowed", fun () -> Domain.join (Domain.spawn swallowing));
       ("located", refusal_site);
+      ("a verb", fun () -> Domain.join (Domain.spawn (fun () -> equal int 1 2)));
+      ( "a verb the domain catches",
+        fun () ->
+          Domain.join
+            (Domain.spawn (fun () -> try equal int 1 2 with _ -> ())) );
+      ( "a verb whose join is caught",
+        fun () ->
+          try Domain.join (Domain.spawn (fun () -> equal int 1 2))
+          with _ -> () );
       ( "untouched",
         fun () ->
           ignore (Domain.join (Domain.spawn (fun () -> Sys.opaque_identity 1)))
@@ -544,8 +555,25 @@ let refused_callers =
           equal string (name ^ " -> " ^ refused_by_domain) (from_domain name));
       test "the refusal is located at the call" (fun () ->
           equal string "located -> pass" (from_domain "located"));
-      test "a domain that swallows its refusal leaves its test passing"
-        (fun () -> equal string "swallowed -> pass" (from_domain "swallowed"));
+      test "a domain that swallows its refusal fails its test, caught"
+        (fun () ->
+          equal string
+            ("swallowed -> fail body; body message, caught: "
+           ^ other_domain_error)
+            (from_domain "swallowed"));
+      test "a verb that fails on another domain fails the test once" (fun () ->
+          equal string "a verb -> fail body; body equality"
+            (from_domain "a verb"));
+      test "a verb that the other domain catches fails the test, caught"
+        (fun () ->
+          equal string
+            "a verb the domain catches -> fail body; body equality, caught"
+            (from_domain "a verb the domain catches"));
+      test "a verb whose join the test catches fails the test, caught"
+        (fun () ->
+          equal string
+            "a verb whose join is caught -> fail body; body equality, caught"
+            (from_domain "a verb whose join is caught"));
       test "a domain that reads nothing leaves its test passing" (fun () ->
           equal string "untouched -> pass" (from_domain "untouched"));
       test "an operation on the run's domain is not refused" (fun () ->

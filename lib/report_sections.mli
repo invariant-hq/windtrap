@@ -68,6 +68,8 @@ val pp_failure :
     - under [~excerpt:true], the source line at that location and a blank line.
     - the names of the subtests that [f] was recorded in, without the test's own
       name.
+    - [failed, then caught] when [f.caught]: code under test caught what the
+      failure raised.
     - [f.msg], line by line.
     - the facts of [f.kind], as the paragraphs below list them.
     - under [~hints:true], the lines of {!hints} for [f] alone, then its

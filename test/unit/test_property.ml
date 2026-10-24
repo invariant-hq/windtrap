@@ -1176,9 +1176,11 @@ let empties _ r =
 (* [empties], whose failure carries a record of what the run left when
    [recorded]. *)
 let recording _ r =
-  match empties () r with
-  | () -> ()
-  | exception Failure.Check_failure f ->
+  match Failure.catch (fun () -> empties () r) with
+  | Ok () -> ()
+  | Error (#Failure.control as c) -> Failure.reraise c
+  | Error (`Exception (e, bt)) -> Printexc.raise_with_backtrace e bt
+  | Error (`Assertion f) ->
       let record = strf "left %d" !r in
       raise
         (Property.Run_failure

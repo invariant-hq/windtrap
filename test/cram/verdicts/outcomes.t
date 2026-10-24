@@ -31,10 +31,61 @@ first of standard error. A block whose point is a code of 0 echoes it.
   >   return $code
   > }
 
-Held for the redesign (doc/dev/testing.md): a catch-all around a failing verb swallows its failure, so the test passes.
+A failing verb records its failure before it raises, so a catch-all
+around it fails the test, and the block says the failure was caught:
 
-  $ run VERDICT_SUITE=try_with_assert_only ./verdict_main.exe; echo "exit $?"
-  try_with_assert_only: 1 passed in DURATION.
+  $ run VERDICT_SUITE=try_with_assert_only ./verdict_main.exe
+  try_with_assert_only: 1 test
+  ──────────────────────── failures ────────────────────────
+    FAIL  swallows a failing verb
+      test/cram/verdicts/verdict_main.ml:N
+      failed, then caught
+      expected  1
+      actual    2
+  ──────────────────────────────────────────────────────────
+  
+  1 failed in DURATION.
+  [1]
+
+So does a catch-all on a domain the test spawned:
+
+  $ brief VERDICT_SUITE=try_with_domain ./verdict_main.exe
+    FAIL  catches on a domain
+  1 failed in DURATION.
+  [1]
+  $ grep -c 'failed, then caught' out
+  1
+
+A law that catches its verb fails its case, which shrinks as it would
+had the law raised, and the test carries no other failure:
+
+  $ run VERDICT_SUITE=try_with_prop ./verdict_main.exe --seed s1:0000000000000001 > block; echo "exit $?"
+  exit 1
+  $ sed -E 's/shrunk [0-9]+ steps/shrunk N steps/' block
+  try_with_prop: 1 test (seed SEED)
+  ──────────────────────── failures ────────────────────────
+    FAIL  catches in its law
+      test/cram/verdicts/verdict_main.ml:N
+      counterexample (case 0, shrunk N steps): 10
+      keep it: ~examples:[ 10 ]
+      which failed at:
+        test/cram/verdicts/verdict_main.ml:N
+        failed, then caught
+        expected  less than 10
+        actual    10
+  ──────────────────────────────────────────────────────────
+  
+  replay: ./verdict_main.exe --seed SEED
+  1 failed in DURATION.
+
+What an attempt caught stays with it, so a retry that passes passes:
+
+  $ run VERDICT_SUITE=try_with_retry ./verdict_main.exe; echo "exit $?"
+  try_with_retry: 1 test
+  flaky tests (1):
+    passed on attempt 2  catches on its first attempt
+  
+  1 passed (1 flaky) in DURATION.
   exit 0
 
 An expectation records its mismatch before it returns, so a catch-all

@@ -84,17 +84,18 @@ let unwritable_stderr f =
 
 (* The message and location of the failure that [f ()] raises. *)
 let refused f =
-  match f () with
-  | _ -> "no failure"
-  | exception Failure.Check_failure { Failure.kind = Failure.Message m; loc; _ }
-    ->
+  match Failure.catch f with
+  | Ok _ -> "no failure"
+  | Error (#Failure.control as c) -> Failure.reraise c
+  | Error (`Exception (e, bt)) -> Printexc.raise_with_backtrace e bt
+  | Error (`Assertion { Failure.kind = Failure.Message m; loc; _ }) ->
       let at =
         match loc with
         | Some l -> strf "%s:%d" l.Loc.file l.Loc.line
         | None -> "no location"
       in
       strf "%s, at %s" m.Failure.kept at
-  | exception Failure.Check_failure _ -> "a failure that is not a message"
+  | Error (`Assertion _) -> "a failure that is not a message"
 
 (* Capture state *)
 

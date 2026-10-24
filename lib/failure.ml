@@ -118,6 +118,7 @@ and t = {
   msg : text option;
   subtest : string list;
   output_tail : tail option;
+  caught : bool;
 }
 
 (* Control *)
@@ -161,13 +162,59 @@ let rec classify exn backtrace : caught =
   | exn when is_fatal exn -> Printexc.raise_with_backtrace exn backtrace
   | exn -> `Exception (exn, backtrace)
 
+(* Recording scopes *)
+
+(* The innermost scope of each domain, newest failure first. A domain that a
+   test spawns starts in the scope that spawned it, which is shared, so the
+   list is atomic. *)
+let scope : t list Atomic.t option Domain.DLS.key =
+  Domain.DLS.new_key ~split_from_parent:Fun.id (fun () -> None)
+
+let record t =
+  match Domain.DLS.get scope with
+  | None -> ()
+  | Some recorded ->
+      let rec push () =
+        let seen = Atomic.get recorded in
+        if not (List.memq t seen) then
+          if not (Atomic.compare_and_set recorded seen (t :: seen)) then push ()
+      in
+      push ()
+
+let refuse t =
+  record t;
+  raise (Check_failure t)
+
+let recording f =
+  let own = Atomic.make [] in
+  let enclosing = Domain.DLS.get scope in
+  Domain.DLS.set scope (Some own);
+  let ended =
+    match f () with
+    | value ->
+        Domain.DLS.set scope enclosing;
+        Ok value
+    | exception exn ->
+        (* Read first: a raise inside [classify] would replace it. *)
+        let backtrace = Printexc.get_raw_backtrace () in
+        Domain.DLS.set scope enclosing;
+        Error (classify exn backtrace)
+  in
+  let left t = match ended with Error (`Assertion r) -> r == t | _ -> false in
+  let caught =
+    List.rev (Atomic.get own)
+    |> List.filter_map (fun t ->
+        if left t then None else Some { t with caught = true })
+  in
+  (ended, caught)
+
+(* A failure caught inside comes first: it happened before what [f] did
+   next. A timeout and an exit still reach their owner, and fail the test. *)
 let catch f =
-  match f () with
-  | value -> Ok value
-  | exception exn ->
-      (* Read first: a raise inside [classify] would replace it. *)
-      let backtrace = Printexc.get_raw_backtrace () in
-      Error (classify exn backtrace)
+  match recording f with
+  | ended, [] -> ended
+  | (Error (`Timeout _ | `Exit) as ended), _ -> ended
+  | _, first :: _ -> Error (`Assertion first)
 
 let to_exn : [< caught ] -> exn = function
   | `Assertion t -> Check_failure t
@@ -177,6 +224,7 @@ let to_exn : [< caught ] -> exn = function
 let reraise c =
   match (c :> caught) with
   | `Exception (exn, backtrace) -> Printexc.raise_with_backtrace exn backtrace
+  | `Assertion t -> refuse t
   | c -> raise (to_exn c)
 
 (* Dune compiles an executable's modules under [Dune__exe]. The prefix is cut
@@ -261,6 +309,7 @@ let make ?loc ?msg kind =
     msg = Option.map text msg;
     subtest = [];
     output_tail = None;
+    caught = false;
   }
 
 let equality ?loc ?msg ?(not_ = false) ~expected ~actual () =

@@ -6,8 +6,8 @@
 (** The textbook laws.
 
     A law checks its clauses in the order given below, and each clause is one
-    equation over named terms. When a clause does not hold, the law raises a
-    {!Failure.Check_failure} of one {!Failure.constructor-Law} failure, built by
+    equation over named terms. When a clause does not hold, the law refuses
+    ({!Failure.refuse}) one {!Failure.constructor-Law} failure, built by
     {!Failure.law}. Its [law] is the name given below, its [clause] and
     [equation] those of the clause, and its [terms] what the law was given and
     computed for the clause, in the order {!Failure.constructor-Law} states,
@@ -17,11 +17,11 @@
     A term computed by a function the law was given ends the law as a
     {!Failure.Failed} term when the function fails or raises, with the terms
     before it: the function is called through {!Failure.catch}, the failure is
-    {!Failure.of_fault} of what it raised, and a control is raised again. The
-    equality, the order and the printer of a witness are called directly, and
-    what they raise escapes the law, as it escapes a verb. In {!equivalence} and
-    {!order} they are the functions under test, and they are still called
-    directly.
+    {!Failure.of_fault} of what it raised, or the verb's failure it caught, and
+    a control is raised again. The equality, the order and the printer of a
+    witness are called directly, and what they raise escapes the law, as it
+    escapes a verb. In {!equivalence} and {!order} they are the functions under
+    test, and they are still called directly.
 
     {b Demands.} {!equivalence}, {!order}, {!partial_order}, {!idempotent},
     {!involutive}, {!monotone} and {!ignores} register the {!Property.cover}

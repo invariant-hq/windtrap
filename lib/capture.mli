@@ -123,7 +123,7 @@ val output : ?__POS__:Loc.pos -> t -> string
     It is [""] when everything was read already, when the log was truncated
     below the cursor, and when [t] has no current log.
 
-    Raises [Failure.Check_failure] when no bytes can be returned, with a
+    Refuses ({!Failure.refuse}) a failure when no bytes can be returned, with a
     {!Failure.Message} located at [Loc.resolve ?__POS__ ()]:
     - when [t] is {!disabled}, the message reads
       [this test requires capture; rerun without --stream];

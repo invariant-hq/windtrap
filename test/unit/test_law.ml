@@ -169,15 +169,20 @@ let control = function
   | `Exit -> "exit"
   | `Discard -> "discard"
 
+(* Through windtrap's own catch, which owns the failure a law records. *)
 let outcome law =
-  match law () with
-  | () -> "holds"
-  | exception Failure.Check_failure f -> payload f
-  | exception Failure.Control c -> control c
-  | exception e -> "raised " ^ Failure.exn_to_string e
+  match Failure.catch law with
+  | Ok () -> "holds"
+  | Error (`Assertion f) -> payload f
+  | Error (#Failure.control as c) -> control c
+  | Error (`Exception (e, _)) | (exception e) ->
+      "raised " ^ Failure.exn_to_string e
 
 let failure_of law =
-  match law () with () -> None | exception Failure.Check_failure f -> Some f
+  match Failure.catch law with
+  | Ok () -> None
+  | Error (`Assertion f) -> Some f
+  | Error c -> Failure.reraise c
 
 let failed law = require_some ~msg:"the law failed" (failure_of law)
 
@@ -1263,7 +1268,9 @@ let over_ints : (string * (int Testable.t -> unit)) list =
 
 let printer_calls law =
   let w, calls = counting () in
-  (match law w with () -> () | exception Failure.Check_failure _ -> ());
+  (match Failure.catch (fun () -> law w) with
+  | Ok () | Error (`Assertion _) -> ()
+  | Error c -> Failure.reraise c);
   !calls
 
 let escapes =
@@ -1316,9 +1323,11 @@ let pos = ("fake.ml", 42, 3, 9)
 let site = "why at fake.ml:42:3"
 
 let annotation law =
-  match law () with
-  | () -> "returned"
-  | exception Failure.Check_failure f ->
+  match Failure.catch law with
+  | Ok () -> "returned"
+  | Error (#Failure.control as c) -> Failure.reraise c
+  | Error (`Exception (e, bt)) -> Printexc.raise_with_backtrace e bt
+  | Error (`Assertion f) ->
       strf "%s at %s"
         (match f.msg with Some m -> m.kept | None -> "nothing")
         (match f.loc with

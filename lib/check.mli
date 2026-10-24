@@ -8,16 +8,17 @@
     A verb returns when its claim holds. When it does not, the verb builds one
     {!Failure.t} with a {{!Failure.section-constructors}constructor} of
     {!Failure}, which bounds every text that it is given. The failure is located
-    by {!Loc.resolve}, and the verb raises it in a {!Failure.Check_failure}.
-    {!skip} raises a {!Failure.Control} and builds no failure.
+    by {!Loc.resolve}, and the verb raises it with {!Failure.refuse}, which
+    records it before it raises a {!Failure.Check_failure}. {!skip} raises a
+    {!Failure.Control} and builds no failure.
 
     A verb's [?msg] is the failure's [msg], and its [?__POS__] is the failure's
     site in place of the one {!Loc.resolve} finds. A verb prints nothing,
     computes no diff and reads no state of the run. A passing verb resolves no
     location and calls no printer. Only {!raises} and {!raises_match} catch an
-    exception, and only from the function that they run. What the equality, the
-    order or the printer of a witness, a [?pp], a predicate or an [extract]
-    raises escapes the verb as it is. *)
+    exception, and only from the function that they run.
+    What the equality, the order or the printer of a witness, a [?pp], a
+    predicate or an [extract] raises escapes the verb as it is. *)
 
 (* The facade declares every value below again, with the contract that a test's
    author reads ([{1:assertions}] in windtrap.mli). A change to one text is a
@@ -194,8 +195,9 @@ val in_order : ?__POS__:pos -> ?msg:string -> subs:string list -> string -> unit
 (** {1:exceptions Exceptions}
 
     Both verbs call the function through {!Failure.catch} and compare only an
-    [`Exception], before [pred] is applied. They raise again, untouched, a
-    {!Failure.Check_failure} and every {!Failure.Control}.
+    [`Exception], before [pred] is applied. They raise again with
+    {!Failure.reraise} an [`Assertion], a failure the function caught included,
+    and every {!Failure.Control}.
 
     Both build a {!Failure.raised}, and hold an exception as
     {!Failure.exn_to_string} gives it and its backtrace as
@@ -244,9 +246,9 @@ end
 (** {1:escapes Escape hatches} *)
 
 val fail : ?__POS__:pos -> string -> 'a
-(** [fail msg] raises a {!Failure.Check_failure} whose payload is [msg], built
-    by {!Failure.message}. The text is the payload and not an annotation, so the
-    [msg] of the failure is [None]. *)
+(** [fail msg] refuses ({!Failure.refuse}) the failure whose payload is [msg],
+    built by {!Failure.message}. The text is the payload and not an annotation,
+    so the [msg] of the failure is [None]. *)
 
 val failf : ?__POS__:pos -> ('a, Format.formatter, unit, 'b) format4 -> 'a
 (** [failf fmt ...] is {!fail} with a message that [Format] builds. *)

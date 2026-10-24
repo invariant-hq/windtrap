@@ -854,10 +854,13 @@ let rec entry ~seen ~excerpt ~inner (f : Failure.t) =
     | ([ _ ] as names) | _ :: names ->
         [ field "subtest" @ [ plain (Test_tree.path_to_string names) ] ]
   in
+  let caught =
+    if f.caught then [ [ styled `Yellow "failed, then caught" ] ] else []
+  in
   let msg =
     match f.msg with Some msg -> lines ~lead:"" (shown_text msg) | None -> []
   in
-  location @ source @ subtest @ msg @ facts ~seen ~excerpt f.kind
+  location @ source @ subtest @ caught @ msg @ facts ~seen ~excerpt f.kind
 
 and facts ~seen ~excerpt = function
   | Failure.Equality { not_ = true; expected; _ } ->

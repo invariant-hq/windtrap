@@ -283,13 +283,11 @@ let other_domain_error =
 let on_run_domain run = (Domain.self () :> int) = (run.domain :> int)
 
 (* The frame belongs to the run's domain. Another domain gets the refusal
-   raised where it called, like any exception of its own. *)
+   raised where it called, like any exception of its own, and recorded. *)
 let current_frame () =
   match Atomic.get slot with
   | Some (In_test frame) when not (on_run_domain frame.run) ->
-      raise
-        (Failure.Check_failure
-           (Failure.message ?loc:(Loc.capture ()) other_domain_error))
+      Failure.refuse (Failure.message ?loc:(Loc.capture ()) other_domain_error)
   | Some (In_test frame) -> frame
   | Some (In_run _) | None -> invalid_arg outside_run_error
 
@@ -327,26 +325,33 @@ let label ~path ~subtests (failure : Failure.t) =
 let labelled frame = label ~path:frame.path ~subtests:frame.subtests
 
 (* In a law the case is the unit of failure: a recorded failure would leave
-   the engine a passing case, which it never shrinks or reports. *)
+   the engine a passing case, which it never shrinks or reports. The first
+   failure, caught or raised, fails the case. *)
 let subtest name fn =
   let frame = current_frame () in
   let enclosing = frame.subtests in
   frame.subtests <- name :: enclosing;
   let close () = frame.subtests <- enclosing in
-  match Failure.catch fn with
+  match Failure.recording fn with
   | exception fatal ->
       let backtrace = Printexc.get_raw_backtrace () in
       close ();
       Printexc.raise_with_backtrace fatal backtrace
-  | Ok () -> close ()
-  | Error (#Failure.fault as fault) ->
-      let failure = labelled frame (Failure.of_fault fault) in
+  | ended, caught -> (
+      let raised =
+        match ended with
+        | Error (#Failure.fault as fault) -> [ Failure.of_fault fault ]
+        | Ok () | Error #Failure.control -> []
+      in
+      let failures = List.map (labelled frame) (caught @ raised) in
       close ();
-      if Option.is_some frame.prop then raise (Failure.Check_failure failure)
-      else add_failure frame failure
-  | Error (#Failure.control as c) ->
-      close ();
-      Failure.reraise c
+      match failures with
+      | first :: _ when Option.is_some frame.prop -> Failure.refuse first
+      | failures -> (
+          List.iter (add_failure frame) failures;
+          match ended with
+          | Error (#Failure.control as c) -> Failure.reraise c
+          | Ok () | Error #Failure.fault -> ()))
 
 (* A worker under a correcting mode checks in a [Check] registry, for the
    path's proof and the read's [Sys_error], and leaves the verdict to its
@@ -373,10 +378,10 @@ let check_baseline ?loc subject actual =
   with
   | () -> if deferred then defer ()
   | exception
-      (Failure.Check_failure
-         { kind = Baseline { state = Unresolvable _; _ }; _ } as unresolvable)
+      Failure.Check_failure
+        ({ kind = Baseline { state = Unresolvable _; _ }; _ } as unresolvable)
     ->
-      raise unresolvable
+      Failure.refuse unresolvable
   | exception Failure.Check_failure failure ->
       if deferred then defer () else add_failure frame (labelled frame failure)
 
@@ -1024,13 +1029,16 @@ let add_caught frame phase : Failure.caught -> unit =
         (Failure.message ?loc:frame.loc
            "assume or reject was called outside a property")
 
+(* A failure that the phase caught was recorded before what it raised. *)
+let add_recorded frame phase (ended, caught) =
+  List.iter (add_phase_failure frame phase) caught;
+  match ended with Ok () -> () | Error c -> add_caught frame phase c
+
 (* [Loc.delimit] keeps a location capture inside user code: a tail-called
    assertion gets none, not the location of the runner's caller. *)
 let run_phase frame phase fn =
   frame.phase <- phase;
-  match Failure.catch (fun () -> Loc.delimit fn) with
-  | Ok () -> ()
-  | Error c -> add_caught frame phase c
+  add_recorded frame phase (Failure.recording (fun () -> Loc.delimit fn))
 
 (* Whether two raises are one exception: the body's, raised again through a
    scope that let it pass. *)
@@ -1043,7 +1051,8 @@ let same_raise (a : Failure.caught) (b : Failure.caught) =
 
 (* The body's failure is added, then raised again through [scope], so a
    scope that swallows it cannot pass the test. What else leaves [scope] is
-   a failure of the phase that ran. The callback runs the body once: one
+   a failure of the phase that ran, and what [scope] caught is one of the
+   phase that ran when it ended. The callback runs the body once: one
    execution is what corrections, labels and temporary paths are keyed by. *)
 let scoped frame ~renew scope body =
   let calls = ref 0 in
@@ -1052,20 +1061,28 @@ let scoped frame ~renew scope body =
     incr calls;
     if !calls = 1 then begin
       frame.phase <- Failure.Body;
-      match Failure.catch (fun () -> Loc.delimit (fun () -> body resource)) with
-      | Ok () ->
-          frame.phase <- Failure.Teardown;
-          renew ()
-      | Error c ->
+      let ended, caught =
+        Failure.recording (fun () -> Loc.delimit (fun () -> body resource))
+      in
+      add_recorded frame Failure.Body (ended, caught);
+      frame.phase <- Failure.Teardown;
+      renew ();
+      match ended with
+      | Ok () -> ()
+      | Error c -> (
           body_raised := Some c;
-          add_caught frame Failure.Body c;
-          frame.phase <- Failure.Teardown;
-          renew ();
-          Failure.reraise c
+          match c with
+          (* Added already, so a scope that catches it adds nothing. *)
+          | `Assertion t -> raise (Failure.Check_failure t)
+          | c -> Failure.reraise c)
     end
   in
   frame.phase <- Failure.Setup;
-  (match Failure.catch (fun () -> Loc.delimit (fun () -> scope callback)) with
+  let ended, caught =
+    Failure.recording (fun () -> Loc.delimit (fun () -> scope callback))
+  in
+  List.iter (add_phase_failure frame frame.phase) caught;
+  (match ended with
   | Ok () ->
       if !calls = 0 then
         add_phase_failure frame Failure.Setup

@@ -7,8 +7,8 @@
     exception.
 
     A failure site builds one {!t} with a {{!section-constructors}constructor}
-    and raises it in a {!Check_failure}, or records it when the site is the
-    runner's. A renderer reads it and changes nothing.
+    and raises it with {!refuse}, or records it when the site is the runner's. A
+    renderer reads it and changes nothing.
 
     A failure holds no styling and no command. What a failure holds is the text
     that cannot be made again after the failure site: printed values, messages
@@ -317,6 +317,10 @@ and t = {
   output_tail : tail option;
       (** The captured output of the attempt. [None] until {!with_output_tail}.
       *)
+  caught : bool;
+      (** [true] iff the failure was recorded when it was raised and the
+          exception never reached the site that holds it now: code under test
+          caught it (see {!recording}). A renderer says so. *)
 }
 (** The type for failures. The record is concrete, and two clients write fields
     past the constructors. {!Run} writes [loc] and [subtest], and {!Stateful}
@@ -362,7 +366,23 @@ exception Control of control
     [Sys.Break] and [Out_of_memory] never reach a site, since an interrupt or an
     exhausted memory must stop the run and not fail one test. A [Stack_overflow]
     is an exception as any other. A handler of the user's that catches every
-    exception still swallows a control. *)
+    exception still swallows a control.
+
+    {b Recording.} A failure is recorded before it is raised, so a handler of
+    the user's that catches every exception cannot swallow it. Every site of the
+    library that raises a failure the user's code may catch raises it with
+    {!refuse}. {!recording} opens a scope, and a failure is recorded in the
+    innermost scope of the domain that raises it. A domain starts in the scope
+    that was innermost where it was spawned, so a failure raised on a domain
+    that a test spawned is recorded in the test's scope, whether or not the
+    exception reaches the test. A failure recorded after its scope closed, by a
+    domain that outlives it, is recorded nowhere.
+
+    Every site that catches the user's code through {!catch} or {!recording}
+    owns what was recorded inside, and nothing outside sees it: the runner's
+    attempt, a subtest, a case of a property, a term of a law, a call of a
+    stateful test. Outside a scope, as at module top level, nothing is recorded.
+*)
 
 type fault = [ `Assertion of t | `Exception of exn * Printexc.raw_backtrace ]
 (** The type for what the user's code raised about itself: a {!Check_failure},
@@ -371,16 +391,34 @@ type fault = [ `Assertion of t | `Exception of exn * Printexc.raw_backtrace ]
 type caught = [ fault | control ]
 (** The type for what {!catch} returns of a raise. *)
 
+val refuse : t -> 'a
+(** [refuse t] records [t] in the innermost scope of the calling domain, then
+    raises [Check_failure t]. A failure is recorded once, so [t] recorded
+    already in that scope is not recorded again. *)
+
+val recording : (unit -> 'a) -> ('a, caught) result * t list
+(** [recording f] runs [f ()] in a scope of its own and is the outcome of [f ()]
+    as {!catch} classifies a raise, with the failures recorded in the scope that
+    were caught there, oldest first, each with [caught] set. A failure that [f]
+    raises is the outcome and not in the list. The scope that was innermost
+    before is innermost again when [f] ends, however it ends. *)
+
 val catch : (unit -> 'a) -> ('a, caught) result
 (** [catch f] is [Ok (f ())], or [Error c] where [c] classifies what [f ()]
     raised. It raises [Sys.Break] and [Out_of_memory] again with their backtrace
     and never returns them. A [Fun.Finally_raised] that carries a {!Control} or
     one of those two is unwrapped first, so a finally cut by the timeout is a
-    [`Timeout]. *)
+    [`Timeout].
+
+    [f ()] runs in a scope of its own, as under {!recording}. When a failure was
+    caught there, [catch f] is [Error (`Assertion first)], [first] being the
+    oldest caught failure, whatever [f ()] returned or raised, except a
+    [`Timeout] or an [`Exit], which is returned as it is. *)
 
 val reraise : [< caught ] -> 'a
 (** [reraise c] raises again what {!catch} returned: the same exception, with
-    its backtrace for an [`Exception]. *)
+    its backtrace for an [`Exception]. An [`Assertion] is raised with {!refuse},
+    so the enclosing scope records it. *)
 
 val exn_to_string : exn -> string
 (** [exn_to_string e] is [Printexc.to_string e] with the prefix [Dune__exe__]

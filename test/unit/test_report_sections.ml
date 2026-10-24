@@ -48,9 +48,10 @@ let controls s =
     (List.of_seq (String.to_seq s))
 
 let raised_by f =
-  match f () with
-  | () -> None
-  | exception Failure.Check_failure f -> Some { f with Failure.loc = None }
+  match Failure.catch f with
+  | Ok () -> None
+  | Error (`Assertion f) -> Some { f with Failure.loc = None }
+  | Error c -> Failure.reraise c
 
 (* The failure a verb raised, so that an entry is of a real payload. Its
    location is this file's, which a gallery does not pin. *)
@@ -860,6 +861,11 @@ let entry_entries () =
       entry ~excerpt:true (at_source ~file:"does_not_exist.ml" 2) );
     ( "a subtest's name, in the column of the values under it",
       entry (Fixtures.subtest_failure "shape [0]") );
+    ( "a failure that code caught says so before its message",
+      entry { (located (Failure.message "boom")) with Failure.caught = true } );
+    ( "and under colour in yellow",
+      entry ~ansi:true
+        { (located (Failure.message "boom")) with Failure.caught = true } );
     ( "a ?msg keeps its lines, control bytes escaped",
       entry
         (Failure.equality ~msg:"first\nsecond\x07" ~expected:"1" ~actual:"2" ())

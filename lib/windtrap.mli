@@ -286,6 +286,16 @@ val xfail : ?reason:string -> test -> test
     verb but {!fail} and {!failf} takes [?msg], text the report prints above the
     values. A failure keeps at most 64 KiB of a printed value.
 
+    A failing verb records its failure in the running test before it raises, so
+    the test fails even when code catches the exception, as a library that
+    ignores what its callbacks raise does. The report then says
+    [failed, then caught] above the values. A verb also works on a domain that
+    the test spawned: its failure is recorded on the test whether or not the
+    exception reaches the test's domain, if it fails before the body, or the
+    scope, that spawned the domain returns. Inside the law of a property the
+    failure is recorded on the case, which fails and shrinks as when the law
+    raises it. Each attempt of a retried test starts with nothing recorded.
+
     Outside a run a failure or a skip is an uncaught exception. *)
 
 (** {2:comparisons Equality and order}
@@ -1750,9 +1760,9 @@ val output : unit -> string
     functions on domains that it joins before it ends. Nothing here is
     thread-safe. Every function here, {!output}, the
     {{!section-baselines}baseline} checks, {!collect}, {!classify}, {!cover} and
-    a {!fixture}'s accessor raise a failure when called from another domain,
-    which fails the running test when it reaches the test's domain, as through
-    [Domain.join].
+    a {!fixture}'s accessor raise a failure when called from another domain, and
+    record it as a verb does, so it fails the running test even when the
+    exception never reaches the test's domain.
 
     A directory, a binding or a working directory made here lasts until the
     attempt ends. Each attempt of a retried test starts without them, and all
@@ -1766,8 +1776,8 @@ val current_test : unit -> string list
 val subtest : string -> (unit -> unit) -> unit
 (** [subtest name fn] runs [fn ()] as a named part of the running test. A
     failure of [fn], a verb's or any other exception, is recorded and [subtest]
-    returns. The subtests after it still run, and the test fails at the end with
-    every failure recorded.
+    returns, and so is a verb's failure that [fn] caught. The subtests after it
+    still run, and the test fails at the end with every failure recorded.
 
     A {!skip}, a timeout or a call to [exit] ends the whole test, which still
     fails on what was recorded, and inside the law of a property an {!assume}

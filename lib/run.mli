@@ -203,10 +203,10 @@ val current_frame : unit -> frame
 (** [current_frame ()] is the frame of the attempt that is running. Raises
     [Invalid_argument] if no test is running.
 
-    Called from a domain other than the one that called {!execute}, it raises a
-    [Failure.Check_failure], a message failure located by {!Loc.capture}, in
-    that domain, and records nothing. The failure fails the running test when it
-    reaches the test's domain, as through [Domain.join]. *)
+    Called from a domain other than the one that called {!execute}, it refuses
+    ({!Failure.refuse}) a message failure located by {!Loc.capture}, in that
+    domain, and records nothing on the frame. The failure fails the running
+    test, since the domain records it in the scope it was spawned in. *)
 
 val current : unit -> t
 (** [current ()] is the record of the run that the frame of {!current_frame}
@@ -247,18 +247,20 @@ val current_test : unit -> string list
     string that the filters match. *)
 
 val subtest : string -> (unit -> unit) -> unit
-(** [subtest name fn] runs [fn ()] as a named part of the running test. A
-    {!Failure.Check_failure} of [fn] is added to the frame and [subtest]
-    returns. Any other exception is added as a {!Failure.Raise} failure with its
-    backtrace, located at the declaration of the test. Every {!Failure.Control}
-    passes through, so a skip, a timeout or an [exit] ends the whole test, and
-    an [assume] inside a subtest inside a law discards the case.
+(** [subtest name fn] runs [fn ()] as a named part of the running test, in a
+    scope of its own ({!Failure.recording}). A {!Failure.Check_failure} of [fn]
+    is added to the frame and [subtest] returns. Any other exception is added as
+    a {!Failure.Raise} failure with its backtrace, located at the declaration of
+    the test. A failure caught in [fn] is added before them. Every
+    {!Failure.Control} passes through, after the failures are added, so a skip,
+    a timeout or an [exit] ends the whole test, and an [assume] inside a subtest
+    inside a law discards the case.
 
-    Inside a law, where the frame has a property context, the failure is raised
-    as {!Failure.Check_failure} instead of added, so the engine fails the case
-    and shrinks it as an assertion's. The failure of an exception then has no
-    location, as {!Failure.of_fault} makes it. Every function of a stateful test
-    runs inside its law.
+    Inside a law, where the frame has a property context, the first of those
+    failures is refused ({!Failure.refuse}) instead of added, so the engine
+    fails the case and shrinks it as an assertion's. The failure of an exception
+    then has no location, as {!Failure.of_fault} makes it. Every function of a
+    stateful test runs inside its law.
 
     The failure carries its label as data, in its [subtest] field and never in
     its [msg]. The label is the name of the test, then the names of the open
@@ -272,7 +274,7 @@ val check_baseline : ?loc:Loc.t -> Baseline.subject -> string -> unit
     recorded and not raised. A {!Failure.Missing} or {!Failure.Mismatch} failure
     is added to the frame and the call returns. Inside a {!subtest} the failure
     is labelled as {!subtest} labels one. A {!Failure.Unresolvable} failure is
-    raised as {!Failure.Check_failure}.
+    refused ({!Failure.refuse}).
 
     [loc] is the location of the failure: the position of a literal, the end of
     the body for a {!Baseline.Trailing} text, or the site of the call for a
@@ -413,6 +415,11 @@ val property :
     being its declaration site. It returns [()] on a [Pass] and raises the
     failure of any other outcome as a [Failure.Check_failure] (see {!prop}).
     [runs] is {!Property.run}'s. Raises as {!current_frame} does.
+
+    The engine runs [law] through {!Failure.catch}, so each run of it is a scope
+    of its own: a verb's failure that the law caught fails that run, and what a
+    run records reaches neither another run nor the frame. A candidate that the
+    search rejects thus leaves the test nothing.
 
     The [output] of {!Property.run} is what a run of [law] wrote from its start
     to its end, as {!Capture.output_tail} gives it within two {!Capture.mark}s.
@@ -694,8 +701,11 @@ val exit_code : (outcome, startup_error) Stdlib.result -> int
     timer is set, and the limit is not enforced.
 
     The frame keeps every failure that is added to it, so a body failure and a
-    teardown failure are two entries. What a phase raises becomes such a
-    failure, with that phase set:
+    teardown failure are two entries. Each phase runs in a scope of its own
+    ({!Failure.recording}): a failure caught in it is added, with its [caught]
+    set and that phase, when the phase ends and before what it raised. A failure
+    that a domain records after its phase ended is lost. What a phase raises
+    becomes such a failure, with that phase set:
     - a {!Failure.Check_failure} keeps its payload;
     - a [`Timeout] is a failure of the phase it interrupted, and an [`Exit] one
       of the phase that called [exit];
@@ -722,10 +732,12 @@ val exit_code : (outcome, startup_error) Stdlib.result -> int
     The body of a {!Test_tree.Scoped} test runs inside the callback that the
     runner gives to [scope], and a {!Test_tree.bracket} is such a test. The
     runner adds the failure of the body before it raises it again through
-    [scope], and does not add it a second time on its way out. Whatever else
-    leaves [scope] is attributed by how far the callback got: {!Failure.Setup}
-    before it was called, {!Failure.Teardown} after the body left it, and
-    {!Failure.Body} in between.
+    [scope], unrecorded, and does not add it a second time on its way out. A
+    failure caught in [scope] itself is one of {!Failure.Setup} when the
+    callback was never called, and of {!Failure.Teardown} otherwise. Whatever
+    else leaves [scope] is attributed by how far the callback got:
+    {!Failure.Setup} before it was called, {!Failure.Teardown} after the body
+    left it, and {!Failure.Body} in between.
 
     A second call of the callback runs nothing and returns, and the attempt then
     fails with a body message that gives the number of calls. A scope that

@@ -232,6 +232,18 @@ GitHub annotations read the same failures, so they cannot disagree. A
 projection formats and truncates; it never changes a status, a count or
 an exit code.
 
+## A failing verb records before it raises
+
+A verb fails by raising, so that the code after it does not run, but
+the raise alone is not the verdict: the failure is first written into
+the running test. A library that ignores what its callbacks raise, an
+eviction hook or an event handler, would otherwise turn a true failure
+into a pass, and the test would read as a regression test that can
+never fail. The report says `failed, then caught` when the exception
+never reached windtrap. The record belongs to the attempt, so a retry
+starts clean, and to the case inside a property, so a candidate the
+search rejects leaves nothing behind.
+
 ## The report ends on its outcome
 
 A run with nothing to report prints one line. A failure prints as a

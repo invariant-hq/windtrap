@@ -10,15 +10,13 @@ type 'a testable = 'a Testable.t
 (* Each payload has one raising helper, which resolves the location within
    the verb's call, as [Loc.capture] requires. *)
 let fail_equality ?__POS__ ?msg ?not_ ~expected actual =
-  raise
-    (Failure.Check_failure
-       (Failure.equality ?loc:(Loc.resolve ?__POS__ ()) ?msg ?not_ ~expected
-          ~actual ()))
+  Failure.refuse
+    (Failure.equality ?loc:(Loc.resolve ?__POS__ ()) ?msg ?not_ ~expected
+       ~actual ())
 
 let fail_predicate ?__POS__ ?msg ~claim value =
-  raise
-    (Failure.Check_failure
-       (Failure.predicate ?loc:(Loc.resolve ?__POS__ ()) ?msg ~claim value))
+  Failure.refuse
+    (Failure.predicate ?loc:(Loc.resolve ?__POS__ ()) ?msg ~claim value)
 
 (* The rejected side of a shape verb, through its [?pp] when it has one. *)
 let rendering pp v =
@@ -131,11 +129,10 @@ let at_least ?__POS__ ?msg t ~than v =
 (* [found_at] is the needle's first occurrence in the whole haystack under
    every demand: "absent" and "present, but elsewhere" are different bugs. *)
 let fail_containment ?__POS__ ?msg ~demand ~needle haystack =
-  raise
-    (Failure.Check_failure
-       (Failure.containment ?loc:(Loc.resolve ?__POS__ ()) ?msg
-          ?found_at:(Text.first_occurrence ~pattern:needle haystack)
-          ~demand ~needle ~haystack ()))
+  Failure.refuse
+    (Failure.containment ?loc:(Loc.resolve ?__POS__ ()) ?msg
+       ?found_at:(Text.first_occurrence ~pattern:needle haystack)
+       ~demand ~needle ~haystack ())
 
 let contains ?__POS__ ?msg ~sub haystack =
   if not (Text.contains_substring ~pattern:sub haystack) then
@@ -197,17 +194,15 @@ let message_diff expected raised =
   | _ -> None
 
 let fail_raise ?__POS__ ?msg ?expected ~predicate raised =
-  raise
-    (Failure.Check_failure
-       (Failure.raised ?loc:(Loc.resolve ?__POS__ ()) ?msg
-          ?expected:(Option.map Failure.exn_to_string expected)
-          ?actual:
-            (Option.map (fun (exn, _) -> Failure.exn_to_string exn) raised)
-          ~predicate
-          ?backtrace:
-            (Option.map (fun (_, bt) -> Failure.backtrace_to_string bt) raised)
-          ?message_diff:(message_diff expected raised)
-          ()))
+  Failure.refuse
+    (Failure.raised ?loc:(Loc.resolve ?__POS__ ()) ?msg
+       ?expected:(Option.map Failure.exn_to_string expected)
+       ?actual:(Option.map (fun (exn, _) -> Failure.exn_to_string exn) raised)
+       ~predicate
+       ?backtrace:
+         (Option.map (fun (_, bt) -> Failure.backtrace_to_string bt) raised)
+       ?message_diff:(message_diff expected raised)
+       ())
 
 let raises ?__POS__ ?msg expected fn =
   match raised_by fn with
@@ -241,8 +236,7 @@ end
 (* Escape hatches *)
 
 let fail ?__POS__ msg =
-  raise
-    (Failure.Check_failure (Failure.message ?loc:(Loc.resolve ?__POS__ ()) msg))
+  Failure.refuse (Failure.message ?loc:(Loc.resolve ?__POS__ ()) msg)
 
 let failf ?__POS__ fmt = Format.kasprintf (fun msg -> fail ?__POS__ msg) fmt
 let skip ?reason () = raise (Failure.Control (`Skip reason))

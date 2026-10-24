@@ -4,6 +4,15 @@
 
 ### Assertions
 
+- (breaking) A failing verb records its failure in the running test
+  before it raises, so the test fails even when code catches the
+  exception, as a library that ignores what its callbacks raise does,
+  and the block says `failed, then caught`. In 0.2.0 a catch-all around
+  a failing verb passed the test. A verb on a domain the test spawned
+  records on the test too, whether or not the domain's exception reaches
+  it, and so does a refused `expect`, `output` or `temp_dir` there. In
+  the law of a property the failure is the case's, which shrinks; a
+  retried test's next attempt starts with nothing recorded.
 - `uchar` is the witness for `Uchar.t`, printed in the Unicode notation,
   as `U+00E9`.
 - `float_exact`, `float eps`, `float_rel` and the float generators

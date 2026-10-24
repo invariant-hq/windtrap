@@ -167,6 +167,16 @@
     actual    [1; 3]
                   ~
 
+=== a failure that code caught says so before its message
+    test/test_users.ml:88
+    failed, then caught
+    boom
+
+=== and under colour in yellow
+    «d|test/test_users.ml:88»
+    «y|failed, then caught»
+    boom
+
 === a ?msg keeps its lines, control bytes escaped
     first
     second\x07

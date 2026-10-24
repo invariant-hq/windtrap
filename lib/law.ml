@@ -24,12 +24,11 @@ let clause ?clause law equation = { law; clause; equation; terms = [] }
 
 (* Raised within the law's call, as [Loc.capture] requires. *)
 let fail cl terms =
-  raise
-    (Failure.Check_failure
-       (Failure.law
-          ?loc:(Loc.resolve ?__POS__:cl.law.pos ())
-          ?msg:cl.law.msg ?clause:cl.clause ~law:cl.law.name
-          ~equation:cl.equation terms))
+  Failure.refuse
+    (Failure.law
+       ?loc:(Loc.resolve ?__POS__:cl.law.pos ())
+       ?msg:cl.law.msg ?clause:cl.clause ~law:cl.law.name ~equation:cl.equation
+       terms)
 
 let printed ?(except = []) cl =
   List.filter_map

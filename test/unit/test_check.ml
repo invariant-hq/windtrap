@@ -62,12 +62,14 @@ let control = function
   | `Exit -> "exit"
   | `Discard -> "discard"
 
+(* Through windtrap's own catch, which owns the failure a verb records. *)
 let outcome verb =
-  match verb () with
-  | () -> "returned"
-  | exception Failure.Check_failure f -> payload f
-  | exception Failure.Control c -> control c
-  | exception e -> "raised " ^ Failure.exn_to_string e
+  match Failure.catch verb with
+  | Ok () -> "returned"
+  | Error (`Assertion f) -> payload f
+  | Error (#Failure.control as c) -> control c
+  | Error (`Exception (e, _)) | (exception e) ->
+      "raised " ^ Failure.exn_to_string e
 
 let outcomes claim rows =
   cases claim rows
@@ -75,13 +77,14 @@ let outcomes claim rows =
     (fun (_, verb, row) -> equal string row (outcome verb))
 
 let annotation verb =
-  match verb () with
-  | () -> "returned"
-  | exception Failure.Check_failure f ->
+  match Failure.catch verb with
+  | Ok () -> "returned"
+  | Error (`Assertion f) ->
       strf "%s at %s" (kept f.msg)
         (match f.loc with
         | Some l -> strf "%s:%d:%d" l.file l.line l.column
         | None -> "nowhere")
+  | Error c -> Failure.reraise c
 
 let printer_calls use =
   let calls = ref 0 in
@@ -92,7 +95,9 @@ let printer_calls use =
   let w =
     Testable.make ~pp ~equal:Int.equal |> Testable.with_compare Int.compare
   in
-  (match use w pp with () -> () | exception Failure.Check_failure _ -> ());
+  (match Failure.catch (fun () -> use w pp) with
+  | Ok () | Error (`Assertion _) -> ()
+  | Error c -> Failure.reraise c);
   !calls
 
 let count_calls claim rows =
@@ -635,10 +640,11 @@ let containment =
 (* Exceptions *)
 
 let backtrace_of verb =
-  match verb () with
-  | () -> None
-  | exception Failure.Check_failure { kind = Raise { backtrace; _ }; _ } ->
+  match Failure.catch verb with
+  | Ok () -> None
+  | Error (`Assertion { kind = Raise { backtrace; _ }; _ }) ->
       Option.map (fun (t : Failure.text) -> t.kept) backtrace
+  | Error c -> Failure.reraise c
 
 (* The same raise, handled by the same [catch] that [raises] calls. *)
 let trimmed_backtrace () =

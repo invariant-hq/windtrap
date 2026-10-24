@@ -473,9 +473,14 @@ let bracket_trace p =
     p.body ()
   in
   let tree = Test_tree.bracket ~setup ~teardown "b" body in
+  (* Through windtrap's own catch, which owns the failure [bracket] raises
+     again. *)
   let ending =
-    match scope_of tree () with
-    | () -> "returns"
+    match Failure.catch (scope_of tree) with
+    | Ok () -> "returns"
+    | Error (`Assertion f) -> "raises " ^ escaped (Failure.Check_failure f)
+    | Error (`Exception (e, _)) -> "raises " ^ escaped e
+    | Error (#Failure.control as c) -> "raises " ^ escaped (Failure.Control c)
     | exception e -> "raises " ^ escaped e
   in
   String.concat ", " (List.rev (ending :: !calls))

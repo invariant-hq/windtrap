@@ -20,7 +20,10 @@ what is non-obvious.
   `test_law` record their runs as they initialise, before their own run.
   `render_fixtures.ml` is the synthetic run data the report suites
   render, and `gallery.ml` marks the escape sequences of the report
-  galleries by their role. Address one suite by running it:
+  galleries by their role. A suite that checks what a verb raises catches
+  it with `Failure.catch`, which owns the failure the verb recorded: a
+  `try … with` around a failing verb fails the test that holds it, as it
+  would a user's. Address one suite by running it:
   `dune exec test/unit/test_gen.exe -- -f shrink`. The report's
   transcripts, the help and the JUnit documents are `expect_file`
   baselines under `unit/expected/`.

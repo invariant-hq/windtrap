@@ -200,6 +200,82 @@ let catching =
           equal string (Failure.exn_to_string e) (Failure.caught_to_string c));
     ]
 
+(* Recording *)
+
+(* Each failure's message, and whether it is marked caught. *)
+let marked fs =
+  List.map
+    (fun (f : Failure.t) ->
+      match f.kind with
+      | Message m -> (m.kept, f.caught)
+      | _ -> ("not a message", f.caught))
+    fs
+
+let marks = list (pair string bool)
+let swallow f = try f () with _ -> ()
+let refused name () = Failure.refuse (Failure.message name)
+
+(* [caught_row], naming the message of any assertion. *)
+let named_row = function
+  | Error (`Assertion f) -> "assertion " ^ fst (List.hd (marked [ f ]))
+  | r -> caught_row r
+
+let recorded f =
+  let ended, caught = Failure.recording f in
+  (named_row ended, marked caught)
+
+let recorded_row = pair string marks
+
+let recording =
+  group "Recording"
+    [
+      test "recording lists what was caught, oldest first, and not what left"
+        (fun () ->
+          equal recorded_row
+            ("assertion c", [ ("a", true); ("b", true) ])
+            (recorded (fun () ->
+                 swallow (refused "a");
+                 swallow (refused "b");
+                 refused "c" ())));
+      test "a failure caught inside catch is its error, marked caught"
+        (fun () ->
+          match Failure.catch (fun () -> swallow (refused "a")) with
+          | Error (`Assertion f) -> equal marks [ ("a", true) ] (marked [ f ])
+          | r -> fail ("caught " ^ caught_row r));
+      test "catch gives the oldest caught failure over what was raised"
+        (fun () ->
+          equal string "assertion a"
+            (named_row
+               (Failure.catch (fun () ->
+                    swallow (refused "a");
+                    raise Not_found))));
+      test "catch gives a timeout over a caught failure" (fun () ->
+          equal string "timeout 1.5"
+            (catch_row (fun () ->
+                 swallow (refused "a");
+                 raise (Failure.Control (`Timeout 1.5)))));
+      test "a failure refused again in its scope is recorded once" (fun () ->
+          equal recorded_row
+            ("returned", [ ("a", true) ])
+            (recorded (fun () ->
+                 swallow (fun () ->
+                     try refused "a" ()
+                     with Failure.Check_failure f -> Failure.refuse f))));
+      test "what an inner scope owns is not seen outside it" (fun () ->
+          equal recorded_row ("returned", [])
+            (recorded (fun () ->
+                 ignore (Failure.catch (fun () -> swallow (refused "a"))))));
+      test "reraise records an assertion in the enclosing scope" (fun () ->
+          let c = require_error (Failure.catch (refused "a")) in
+          equal recorded_row
+            ("returned", [ ("a", true) ])
+            (recorded (fun () -> swallow (fun () -> Failure.reraise c))));
+      test "a raise that is not a refusal records nothing" (fun () ->
+          equal recorded_row ("returned", [])
+            (recorded (fun () ->
+                 swallow (fun () -> raise (Failure.Check_failure boom)))));
+    ]
+
 (* Backtraces *)
 
 (* This suite is an executable, so dune prefixes the names of its frames. *)
@@ -218,12 +294,13 @@ let unwrapped s =
   copy 0;
   Buffer.contents b
 
-(* [catch] handles the raise, so the trace ends in windtrap's frame. *)
+(* [catch] handles the raise in [recording], so the trace ends in windtrap's
+   frame. *)
 let trailing_run_dropped () =
   let raw = require_match exception_backtrace (Failure.catch raise_not_found) in
   let whole = Printexc.raw_backtrace_to_string raw in
   let trimmed = Failure.backtrace_to_string raw in
-  contains ~sub:"Windtrap__Failure.catch" whole;
+  contains ~sub:"Windtrap__Failure.recording" whole;
   starts_with ~affix:"Raised at Dune__exe__Test_failure.raise_not_found" whole;
   starts_with ~affix:"Raised at Test_failure.raise_not_found" trimmed;
   starts_with ~affix:trimmed (unwrapped whole);
@@ -811,6 +888,7 @@ let () =
          texts;
          control;
          catching;
+         recording;
          backtraces;
          constructors;
          faults;

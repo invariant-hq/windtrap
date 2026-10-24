@@ -522,6 +522,41 @@ shop: 2 tests
 2 failed in 0.6ms.
 ```
 
+## Checking inside a callback
+
+A failing verb records its failure in the running test before it
+raises. A library that ignores what its callbacks raise, as a cache
+that calls `on_evict` and drops its exception does, cannot turn the
+failure into a pass, and neither can a `try … with _ -> ()`:
+
+```ocaml
+(* fragment: Cache.add evicts through on_evict, and ignores what it raises *)
+test "evicts the oldest entry" (fun () ->
+    let cache =
+      Cache.create ~capacity:1 ~on_evict:(fun key _ ->
+          equal ~__POS__ string "a" key)
+    in
+    Cache.add cache "a" 1;
+    Cache.add cache "b" 2)
+```
+
+If the cache evicted the newest entry, the block says the failure was
+caught before it reached the runner:
+
+```
+  FAIL  evicts the oldest entry
+    test/test_cache.ml:5
+      5 │ equal ~__POS__ string "a" key)
+
+    failed, then caught
+    expected  "a"
+    actual    "b"
+```
+
+A verb works on a domain the test spawned: its failure is recorded on
+the test whether or not `Domain.join` raises it again. Inside the law
+of a property the failure is the case's, which shrinks as usual.
+
 ## Adding context to a failure
 
 Every verb but `fail` and `failf` takes `~msg`, a line the failure

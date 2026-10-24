@@ -183,9 +183,7 @@ let read_log path read =
 (* A silent [""] would let an expectation on [output ()] pass against output
    that was never captured, so a call with no bytes to return fails the test. *)
 let no_bytes ?__POS__ message =
-  raise
-    (Failure.Check_failure
-       (Failure.message ?loc:(Loc.resolve ?__POS__ ()) message))
+  Failure.refuse (Failure.message ?loc:(Loc.resolve ?__POS__ ()) message)
 
 let output ?__POS__ t =
   match t with

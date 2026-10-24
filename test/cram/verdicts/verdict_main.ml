@@ -119,6 +119,24 @@ let suite = function
   | "try_with_assert_only" ->
       let tolerant () = try equal int 1 2 with _ -> () in
       [ test "swallows a failing verb" tolerant ]
+  | "try_with_domain" ->
+      [
+        test "catches on a domain" (fun () ->
+            Domain.join
+              (Domain.spawn (fun () -> try equal int 1 2 with _ -> ())));
+      ]
+  | "try_with_prop" ->
+      [
+        prop "catches in its law" (Gen.int_range 0 1000) (fun n ->
+            try less int ~than:10 n with _ -> ());
+      ]
+  | "try_with_retry" ->
+      let attempts = ref 0 in
+      [
+        test ~retries:1 "catches on its first attempt" (fun () ->
+            incr attempts;
+            if !attempts = 1 then try equal int 1 2 with _ -> ());
+      ]
   | "try_with_expect" ->
       [
         test "catches around expect" (fun () ->
