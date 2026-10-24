@@ -102,9 +102,9 @@ row per source file and prints the total last:
 
 ```
 $ dune runtest --instrument-with ppx_windtrap.coverage
-calc: 4 passed in 0.8ms.
-half_b: 8 passed in 1.1ms.
-half_a: 6 passed in 1.3ms.
+calc: 4 passed in 1.0ms.
+half_a: 6 passed in 0.8ms.
+half_b: 8 passed in 1.0ms.
 $ dune exec windtrap -- coverage
    cover    points   file        uncovered lines (-u shows the source)
    77.8%     7/9     calc.ml     6-7
@@ -222,7 +222,7 @@ which each run replaces, and pass the path to `windtrap coverage`:
 
 ```
 $ WINDTRAP_COVERAGE_FILE=half_b.coverage dune exec --instrument-with ppx_windtrap.coverage ./test_b.exe
-half_b: 8 passed in 2.1ms.
+half_b: 8 passed in 2.3ms.
 $ dune exec windtrap -- coverage half_b.coverage
    cover    points   file        uncovered lines (-u shows the source)
    11.1%     1/9     half_a.ml   1-2, 5-7

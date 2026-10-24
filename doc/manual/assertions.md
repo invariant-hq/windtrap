@@ -129,7 +129,7 @@ shop: 2 tests
     actual    370
 ──────────────────────────────────────────────────────────
 
-1 passed, 1 failed in 0.6ms.
+1 passed, 1 failed in 1.4ms.
 ```
 
 ## Locating a failing assertion
@@ -167,7 +167,7 @@ shop: 1 test
     actual    ["milk"; "bread"]
 ──────────────────────────────────────────────────────────
 
-1 failed in 0.6ms.
+1 failed in 1.7ms.
 ```
 
 ## Comparing values of your own types
@@ -223,7 +223,7 @@ shop: 2 tests
     actual    Some bread x2 at 250
 ──────────────────────────────────────────────────────────
 
-2 failed in 0.8ms.
+2 failed in 2.1ms.
 ```
 
 ## Comparing part of a value
@@ -261,7 +261,7 @@ shop: 1 test
     actual    ["bread"]
 ──────────────────────────────────────────────────────────
 
-1 failed in 0.5ms.
+1 failed in 1.4ms.
 ```
 
 ## Comparing floats
@@ -297,7 +297,7 @@ shop: 1 test
     tolerance at examples/02-assertions/test_assertions.ml:47: largest error 620 of 1e-09 allowed, over 1 comparison
 ──────────────────────────────────────────────────────────
 
-1 failed in 0.9ms.
+1 failed in 1.4ms.
 ```
 
 Each `equal` under a tolerance records, at its call site, the largest
@@ -310,7 +310,7 @@ $ dune exec examples/02-assertions/test_assertions.exe -- -v -f with_tax
 shop: 1 test
   PASS  with_tax › adds the rate to the price      0.1ms
     tolerance at examples/02-assertions/test_assertions.ml:47: largest error 0 of 1e-09 allowed, over 1 comparison
-1 passed in 1.0ms.
+1 passed in 1.2ms.
 ```
 
 A comparison inside a container witness, as `list (float 1e-9)`,
@@ -358,7 +358,7 @@ shop: 1 test
     + total              370
 ──────────────────────────────────────────────────────────
 
-1 failed in 0.6ms.
+1 failed in 0.9ms.
 ```
 
 ## Checking a bound or a predicate
@@ -406,7 +406,7 @@ shop: 2 tests
     actual    77
 ──────────────────────────────────────────────────────────
 
-2 failed in 0.6ms.
+2 failed in 1.2ms.
 ```
 
 ## Unwrapping an option or a result
@@ -449,7 +449,7 @@ shop: 2 tests
     actual    Error "not a quantity:  3 "
 ──────────────────────────────────────────────────────────
 
-1 passed, 1 failed in 0.6ms.
+1 passed, 1 failed in 1.6ms.
 ```
 
 ## Searching a string
@@ -489,7 +489,7 @@ shop: 2 tests
                      ~~~
 ──────────────────────────────────────────────────────────
 
-1 passed, 1 failed in 0.8ms.
+1 passed, 1 failed in 1.3ms.
 ```
 
 ## Checking that code raises
@@ -537,7 +537,7 @@ shop: 2 tests
     expected an exception, but none was raised
 ──────────────────────────────────────────────────────────
 
-2 failed in 0.6ms.
+2 failed in 1.3ms.
 ```
 
 ## Checking inside a callback, or until a claim holds
@@ -633,5 +633,5 @@ shop: 1 test
     actual    0.
 ──────────────────────────────────────────────────────────
 
-1 failed in 0.5ms.
+1 failed in 1.4ms.
 ```

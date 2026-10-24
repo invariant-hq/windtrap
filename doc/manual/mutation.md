@@ -166,7 +166,7 @@ arms it in every suite that holds its file, as in
 ```
 $ dune exec --instrument-with ppx_windtrap.mutate ./test_calc.exe -- --arm calc.ml:10:16:ge
 mutant calc.ml:10:16:ge armed: n > 0 → n >= 0
-calc: 10 passed in 0.9ms.
+calc: 10 passed in 2.1ms.
 mutant survived: the armed site was evaluated 2 times and no test failed.
 $ dune exec --instrument-with ppx_windtrap.mutate ./test_calc.exe -- --arm calc.ml:6:11:add
 mutant calc.ml:6:11:add armed: a - b → a + b
@@ -180,7 +180,7 @@ calc: 10 tests
     actual    14
 ──────────────────────────────────────────────────────────
 
-9 passed, 1 failed in 0.9ms.
+9 passed, 1 failed in 1.8ms.
 mutant killed.
 ```
 
@@ -194,7 +194,7 @@ verdict. `stays positive` checks a sign that `a - b → a + b` keeps:
 
 ```
 $ dune exec --instrument-with ppx_windtrap.mutate ./test_calc.exe -- --mutate=calc.ml -f "stays positive"
-calc: 1 passed in 0.5ms.
+calc: 1 passed in 1.1ms.
 
 ─────────────────────── survivors ────────────────────────
 File "calc.ml", line 6, characters 11-16:
@@ -318,7 +318,7 @@ every suite:
 
 ```
 $ WINDTRAP_MUTATE=1 dune runtest --force --instrument-with ppx_windtrap.mutate
-calc: 10 passed in 1.0ms.
+calc: 10 passed in 2.7ms.
 
 ─────────────────────── survivors ────────────────────────
 File "calc.ml", line 10, characters 16-21:
@@ -422,7 +422,7 @@ project's merge passes:
 
 ```
 $ dune exec --instrument-with ppx_windtrap.mutate ./test_calc.exe -- --mutate
-calc: 12 passed in 2.9ms.
+calc: 12 passed in 2.7ms.
 mutants: 10 reached by this suite, 10 killed
 $ dune exec windtrap -- mutants
 mutants: 10 reached, 10 killed, 1 executable

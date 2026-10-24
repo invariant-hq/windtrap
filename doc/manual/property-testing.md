@@ -118,7 +118,7 @@ A run that holds a property prints its seed on the summary line:
 
 ```
 $ dune runtest
-geo: 20 passed in 9.3ms (seed s1:6f4f2c9a9ee00736).
+geo: 20 passed in 8.7ms (seed s1:d430b0f8408b6706).
 ```
 
 ## Reading a counterexample
@@ -187,7 +187,7 @@ geo: 1 test (seed s1:5b58964be30f69a8)
 ──────────────────────────────────────────────────────────
 
 replay: dune exec examples/03-property-testing/test_geo.exe -- --seed s1:5b58964be30f69a8 -f 'to_string'
-1 failed in 0.4ms.
+1 failed in 1.6ms.
 ```
 
 ## Keeping a counterexample as a regression
@@ -250,7 +250,7 @@ before any generated case:
 
 ```
 $ dune exec examples/03-property-testing/test_geo.exe -- -f 'k squared'
-geo: 1 test (seed s1:a9be2bc2df0c8b58)
+geo: 1 test (seed s1:3cc0be06278f6fb2)
 ──────────────────────── failures ────────────────────────
   FAIL  scale › multiplies the area by k squared
     examples/03-property-testing/test_geo.ml:37
@@ -265,7 +265,7 @@ geo: 1 test (seed s1:a9be2bc2df0c8b58)
     tolerance at examples/03-property-testing/test_geo.ml:41: largest error 6 of 1.2e-08 allowed, over 1 comparison
 ──────────────────────────────────────────────────────────
 
-1 failed in 1.6ms.
+1 failed in 1.3ms.
 ```
 
 ## Discarding and labelling cases
@@ -327,7 +327,7 @@ here `close`'s `1e-9` allows far more than the errors it saw.
 ```
 $ dune exec examples/03-property-testing/test_geo.exe -- -v --seed s1:5b58964be30f69a8 --prop-count 1000 -f 'undoes scale'
 geo: 1 test (seed s1:5b58964be30f69a8)
-  PASS  inverse › undoes scale by k                3.9ms (1000 cases, 77 discards)
+  PASS  inverse › undoes scale by k                4.3ms (1000 cases, 77 discards)
     labels (1000 passing cases):
        51.0%  circle
        49.0%  rect
@@ -423,7 +423,7 @@ geo: 1 test (seed s1:5b58964be30f69a8)
 ──────────────────────────────────────────────────────────
 
 replay: dune exec examples/03-property-testing/test_geo.exe -- --seed s1:5b58964be30f69a8 -f 'total_area'
-1 failed in 2.4ms.
+1 failed in 1.5ms.
 ```
 
 ## Drawing from a list of generators
@@ -526,7 +526,7 @@ geo: 3 tests (seed s1:5b58964be30f69a8)
 ──────────────────────────────────────────────────────────
 
 replay: dune exec examples/03-property-testing/test_geo.exe -- --seed s1:5b58964be30f69a8 -f 'codec'
-1 passed, 2 failed in 2.4ms.
+1 passed, 2 failed in 2.2ms.
 ```
 
 ### Checking a witness's equality and order
@@ -619,7 +619,7 @@ geo: 3 tests (seed s1:5b58964be30f69a8)
 ──────────────────────────────────────────────────────────
 
 replay: dune exec examples/03-property-testing/test_geo.exe -- --seed s1:5b58964be30f69a8 -f 'witness'
-1 passed, 1 failed, 1 vacuous in 3.8ms.
+1 passed, 1 failed, 1 vacuous in 5.3ms.
 ```
 
 ### Choosing a law for what you wrote
@@ -744,7 +744,7 @@ geo: 3 tests (seed s1:5b58964be30f69a8)
     scope: 0 of 4 values passed
 ──────────────────────────────────────────────────────────
 
-2 passed, 1 failed in 1.5ms.
+2 passed, 1 failed in 1.7ms.
 ```
 
 ### Stating a law with no name
@@ -854,7 +854,7 @@ geo: 1 test (seed s1:5b58964be30f69a8)
     scope: 100 cases passed
 ──────────────────────────────────────────────────────────
 
-1 vacuous in 3.5ms.
+1 vacuous in 4.8ms.
 ```
 
 A demand that no passing case met makes the property vacuous, with

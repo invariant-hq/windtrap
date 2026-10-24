@@ -173,9 +173,9 @@ one line per file of the library's expect tests (see below):
 
 ```
 $ dune runtest
-mytool: 3 passed in 1.6ms.
 tokenizer/timing.ml: 1 passed in 0.8ms.
-tokenizer/tokens.ml: 2 passed in 1.6ms.
+tokenizer/tokens.ml: 2 passed in 1.3ms.
+mytool: 3 passed in 1.9ms.
 ```
 
 ## Reading a stale expectation
@@ -204,10 +204,10 @@ mytool: 3 tests
 corrections (1):
   wrote examples/05-baselines/test_mytool.ml.corrected (1 expectation)
 
-2 passed, 1 failed, 1 correction written in 2.3ms.
+2 passed, 1 failed, 1 correction written in 2.2ms.
 File "examples/05-baselines/test_mytool.ml", line 1, characters 0-0:
 diff --git a/_build/default/examples/05-baselines/test_mytool.ml b/_build/default/examples/05-baselines/test_mytool.ml.corrected
-index fd329b0..8d0b6e0 100644
+index 015a41c..0339f35 100644
 --- a/_build/default/examples/05-baselines/test_mytool.ml
 +++ b/_build/default/examples/05-baselines/test_mytool.ml.corrected
 @@ -3,7 +3,7 @@ open Windtrap
@@ -261,7 +261,7 @@ mytool: 3 tests
 ──────────────────────────────────────────────────────────
 
 accept: dune exec examples/05-baselines/test_mytool.exe -- -u
-2 passed, 1 failed in 1.2ms.
+2 passed, 1 failed in 1.5ms.
 ```
 
 To accept, run the line. `-u` rewrites every stale literal in place, and
@@ -274,7 +274,7 @@ mytool: 3 tests
 corrections (1):
   accepted examples/05-baselines/test_mytool.ml (1 expectation; rebuild before the tests see it)
 
-3 passed, 1 correction accepted in 1.3ms.
+3 passed, 1 correction accepted in 1.4ms.
 ```
 
 Review the change with `git diff`. `-u` is refused under CI (see

@@ -134,8 +134,8 @@ file:
 
 ```
 $ dune runtest
-storage: 10 passed, 2 skipped, 1 expected failure in 2.1ms.
-keys/keys.ml: 3 passed in 0.8ms.
+storage: 10 passed, 2 skipped, 1 expected failure in 1.8ms.
+keys/keys.ml: 3 passed in 1.0ms.
 ```
 
 ## Giving each test its own resource
@@ -172,8 +172,7 @@ let database =
       with_db "an insert adds one row" (fun db ->
           Db.insert db "alice";
           equal int 1 (Db.count db));
-      cases "a name is stored" string [ "alice"; "bob"; "carol" ]
-        (fun name ->
+      cases "a name is stored" string [ "alice"; "bob"; "carol" ] (fun name ->
           let db = Db.connect () in
           Db.insert db name;
           is_true (Db.mem db name));
@@ -198,8 +197,8 @@ written, and `-v` says how many rows held:
 ```
 $ dune exec examples/06-resources-and-structure/test_storage.exe -- -v -f 'a name is stored'
 storage: 1 test
-  PASS  database › a name is stored                0.1ms (holds on all 3 rows)
-1 passed in 1.2ms.
+  PASS  database › a name is stored                0.2ms (holds on all 3 rows)
+1 passed in 1.3ms.
 ```
 
 A row is identified by how the witness `w` prints it, here `string`'s
@@ -272,11 +271,11 @@ where `fixture` was applied:
 $ dune exec examples/06-resources-and-structure/test_storage.exe -- -v -f server
 storage: 4 tests
   PASS  server › it answers a ping                 0.1ms
-  PASS  server › a first session gets id 1         0.0ms
-  PASS  server › reindexing keeps it running       0.0ms
-  PASS  server › a backup completes                0.0ms
+  PASS  server › a first session gets id 1         0.1ms
+  PASS  server › reindexing keeps it running       0.1ms
+  PASS  server › a backup completes                0.1ms
 releasing fixture (examples/06-resources-and-structure/server_tests.ml:3)
-4 passed in 0.5ms.
+4 passed in 1.8ms.
 ```
 
 ## Bounding a test in time and retrying it
@@ -331,7 +330,7 @@ $ dune exec examples/06-resources-and-structure/test_storage.exe -- -v -f gpu
 storage: 2 tests
   SKIP  gpu › the device has a name (GPU_DEVICE is not set)
   SKIP  gpu › the device is not the CPU (GPU_DEVICE is not set)
-2 skipped in 0.5ms.
+2 skipped in 1.2ms.
 ```
 
 ## Using files, variables and a working directory
@@ -416,12 +415,12 @@ under its `XFAIL` line:
 ```
 $ dune exec examples/06-resources-and-structure/test_storage.exe -- -v -f duplicate
 storage: 1 test
-  XFAIL  database › a duplicate row counts once    0.1ms (expected failure: issue #42)
-    examples/06-resources-and-structure/db_tests.ml:30
-      30 │ (with_db "a duplicate row counts once" a_duplicate_counts_once);
+  XFAIL  database › a duplicate row counts once    0.2ms (expected failure: issue #42)
+    examples/06-resources-and-structure/db_tests.ml:29
+      29 │ (with_db "a duplicate row counts once" a_duplicate_counts_once);
 
     expected  1
     actual    2
 
-1 expected failure in 0.6ms.
+1 expected failure in 1.6ms.
 ```

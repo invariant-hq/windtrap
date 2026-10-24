@@ -18,8 +18,8 @@ suite with nothing to report prints one line:
 
 ```
 $ dune runtest
-storage: 10 passed, 2 skipped, 1 expected failure in 2.1ms.
-keys/keys.ml: 3 passed in 0.8ms.
+storage: 10 passed, 2 skipped, 1 expected failure in 3.3ms.
+keys/keys.ml: 3 passed in 1.4ms.
 ```
 
 Dune runs a stanza again only when something it depends on changed.
@@ -38,10 +38,10 @@ per test:
 ```
 $ dune exec examples/06-resources-and-structure/test_storage.exe -- -v -f 'process state'
 storage: 3 tests
-  PASS  process state › a config is written to a fresh directory  0.6ms
+  PASS  process state › a config is written to a fresh directory  0.3ms
   PASS  process state › the token is read from the environment  0.1ms
-  PASS  process state › a build writes in the working directory  0.5ms
-3 passed in 1.4ms.
+  PASS  process state › a build writes in the working directory  0.1ms
+3 passed in 1.9ms.
 ```
 
 ## Selecting tests by name
@@ -93,7 +93,7 @@ library's tests do here:
 
 ```
 $ WINDTRAP_FILTER=gpu dune runtest --force
-storage: 2 skipped in 0.4ms.
+storage: 2 skipped in 1.4ms.
 keys/keys.ml: no tests ran: filter "gpu" matched none of 3 tests.
 ```
 
@@ -112,8 +112,8 @@ its test ends, and closes on the counts:
 
 ```
 $ dune runtest
-File "examples/06-resources-and-structure/dune", line 2, characters 7-19:
-2 |  (name test_storage)
+File "examples/06-resources-and-structure/dune", line 3, characters 7-19:
+3 |  (name test_storage)
            ^^^^^^^^^^^^
 storage: 13 tests
 ──────────────────────── failures ────────────────────────
@@ -125,8 +125,7 @@ storage: 13 tests
     actual    false
 ──────────────────────────────────────────────────────────
 
-9 passed, 2 skipped, 1 expected failure, 1 failed in 3.5ms.
-keys/keys.ml: 3 passed in 0.5ms.
+9 passed, 2 skipped, 1 expected failure, 1 failed in 2.8ms.
 ```
 
 `-x` stops the run after the first failure.
@@ -150,7 +149,7 @@ storage: 13 tests
     actual    false
 ──────────────────────────────────────────────────────────
 
-9 passed, 2 skipped, 1 expected failure, 1 failed in 3.5ms.
+9 passed, 2 skipped, 1 expected failure, 1 failed in 3.4ms.
 $ dune exec examples/06-resources-and-structure/test_storage.exe -- -o _build/rerun --failed
 storage: 1 test
 ──────────────────────── failures ────────────────────────
@@ -162,7 +161,7 @@ storage: 1 test
     actual    false
 ──────────────────────────────────────────────────────────
 
-1 failed in 1.0ms.
+1 failed in 1.3ms.
 ```
 
 `-l --failed` lists the tests `--failed` would run, and `--failed` with
@@ -191,7 +190,7 @@ test runs, and the run warns on standard error:
 
 ```
 $ dune exec examples/06-resources-and-structure/test_storage.exe
-storage: 1 passed in 1.0ms.
+storage: 1 passed in 1.2ms.
 windtrap: warning: focus is active: 1 of 13 tests ran; remove the focus before committing
 ```
 
@@ -302,7 +301,7 @@ started, with `--in-process` and a filter that selects it alone:
 
 ```
 $ dune exec examples/06-resources-and-structure/test_storage.exe -- --in-process -f 'a config is written'
-storage: 1 passed in 0.6ms.
+storage: 1 passed in 0.2ms.
 ```
 
 A selection of more than one test is refused, since the flag is a
