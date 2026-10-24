@@ -1293,6 +1293,109 @@ let first_raise () =
     (ending, Array.to_list ended);
   Workers.run workers ~grace:(Fun.const 0.) (Array.make 3 ignore)
 
+(* [profiled ~on_worker n fn] is [with_pool n fn] under a memory profile
+   that samples every block, the workers' included, since a domain spawned
+   while a profile samples shares it. [on_worker] is given the call stack of
+   each block a worker allocates, and what it raises is raised in the worker
+   at that allocation, as an asynchronous exception is. *)
+let profiled ~on_worker n fn =
+  let caller = Domain.self () in
+  let sampled (allocation : Gc.Memprof.allocation) =
+    if Domain.self () <> caller then on_worker allocation.callstack;
+    None
+  in
+  let profile =
+    Gc.Memprof.start ~sampling_rate:1.0 ~callstack_size:16
+      {
+        Gc.Memprof.null_tracker with
+        alloc_minor = sampled;
+        alloc_major = sampled;
+      }
+  in
+  Fun.protect
+    ~finally:(fun () ->
+      Gc.Memprof.stop ();
+      Gc.Memprof.discard profile)
+    (fun () -> with_pool n fn)
+
+let mentions ~sub s =
+  let n = String.length s and m = String.length sub in
+  let rec from i = i + m <= n && (String.sub s i m = sub || from (i + 1)) in
+  from 0
+
+let run_all workers jobs = Workers.run workers ~grace:(Fun.const 0.) jobs
+
+(* Each job ends by marking its domain, and allocates nothing, so what that
+   domain allocates from then until the run returns is the pool's own, on
+   the way from the job's end to the mark that ends it: a block allocated
+   there is a point where an asynchronous exception could land. Flushing
+   the formatters allocates, and swallows what lands there. *)
+let allocates_nothing_but_flush () =
+  let lock = Mutex.create () and stacks = ref [] in
+  let finished = Array.init 2 (fun _ -> Atomic.make (-1)) in
+  let on_worker stack =
+    let self = (Domain.self () :> int) in
+    if Array.exists (fun d -> Atomic.get d = self) finished then
+      let s = Printexc.raw_backtrace_to_string stack in
+      Mutex.protect lock (fun () -> stacks := s :: !stacks)
+  in
+  profiled ~on_worker 2 @@ fun workers ->
+  let job i () = Atomic.set finished.(i) (Domain.self () :> int) in
+  for _ = 1 to 3 do
+    run_all workers (Array.init 2 job);
+    Array.iter (fun d -> Atomic.set d (-1)) finished
+  done;
+  equal (list string) []
+    (List.filter (fun s -> not (mentions ~sub:"format.ml" s)) !stacks)
+
+exception Injected
+
+(* [shot] is raised once, at the first block a worker allocates while it
+   is armed. After a run, every worker waits for the next, so the first
+   block one allocates is the job it takes. *)
+let in_the_loop () =
+  let shot = Atomic.make false in
+  let on_worker _ =
+    if Atomic.compare_and_set shot true false then raise Injected
+  in
+  profiled ~on_worker 2 @@ fun workers ->
+  run_all workers (Array.make 2 ignore);
+  Atomic.set shot true;
+  let ending =
+    match run_all workers (Array.make 2 ignore) with
+    | () -> "returned"
+    | exception Injected -> "raised Injected"
+  in
+  equal (pair string bool) ("returned", false) (ending, Atomic.get shot);
+  run_all workers (Array.make 2 ignore)
+
+(* Job 0 raises a constant, and the shot lands on its worker at the first
+   block it allocates after, as the worker records the job's ending. *)
+let in_the_ending () =
+  let shot = Atomic.make true and target = Atomic.make (-1) in
+  let on_worker _ =
+    if
+      Atomic.get target = (Domain.self () :> int)
+      && Atomic.compare_and_set shot true false
+    then raise Injected
+  in
+  profiled ~on_worker 2 @@ fun workers ->
+  let job i () =
+    if i = 0 then begin
+      Atomic.set target (Domain.self () :> int);
+      raise Exit
+    end
+  in
+  let ending =
+    match run_all workers (Array.init 2 job) with
+    | () -> "returned"
+    | exception Injected -> "raised Injected"
+    | exception Exit -> "raised Exit"
+  in
+  Atomic.set target (-1);
+  equal (pair string bool) ("raised Injected", false) (ending, Atomic.get shot);
+  run_all workers (Array.make 2 ignore)
+
 (* [first] waits, on a worker, until [second] has run, so the one order
    that explains its outcome runs [second] first, which the judge tries
    second. *)
@@ -1446,6 +1549,18 @@ let executor =
         "Workers.run raises the first job's exception, by index, once every \
          job has ended"
         first_raise;
+      test
+        "from a job's end to its mark a worker allocates nothing but its \
+         formatters' flush, so no asynchronous exception lands between them"
+        allocates_nothing_but_flush;
+      test ~timeout:10.
+        "an asynchronous exception in a worker's loop ends no job, and the \
+         pool runs on"
+        in_the_loop;
+      test ~timeout:10.
+        "an asynchronous exception as a worker ends its job is the job's \
+         ending, and the pool runs on"
+        in_the_ending;
       cases "labels count along the order the judge accepts"
         ~name:(fun (n, _, _) -> n)
         labels
