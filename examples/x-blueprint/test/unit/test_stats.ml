@@ -34,6 +34,8 @@ let () =
                  equal text "x  ##\ntotal 2" (Stats.render [ ("x", 2) ]));
              test "clamps negative counts to zero" (fun () ->
                  equal text "x  \ntotal 0" (Stats.render [ ("x", -2) ]));
+             test "gives an empty label no padding" (fun () ->
+                 equal text "  #\ntotal 1" (Stats.render [ ("", 1) ]));
              test "renders a small table" (fun () ->
                  expect
                    (Stats.render [ ("reds", 3); ("greens", 5); ("blues", 0) ])

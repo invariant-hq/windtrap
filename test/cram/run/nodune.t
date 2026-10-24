@@ -125,8 +125,23 @@ scoped to the file, with --mutate:
         sign of a negative  test_calc.ml:9
         sign of a positive  test_calc.ml:8
   
+  File "calc.ml", line 2, characters 20-21:
+    SURVIVED  calc.ml:2:20:int  0 → 1
+        2 │ let sign n = if n > 0 then 1 else 0
+  
+      2 tests ran this line and none failed:
+        sign of a negative  test_calc.ml:9
+        sign of a positive  test_calc.ml:8
+  
   File "calc.ml", line 3, characters 20-25:
     SURVIVED  calc.ml:3:20:ge  n > 0 → n >= 0
+        3 │ let describe n = if n > 0 then "positive" else "non-positive"
+  
+      1 test ran this line and did not fail:
+        describe  test_calc.ml:10
+  
+  File "calc.ml", line 3, characters 24-25:
+    SURVIVED  calc.ml:3:24:int  0 → 1
         3 │ let describe n = if n > 0 then "positive" else "non-positive"
   
       1 test ran this line and did not fail:
@@ -134,7 +149,7 @@ scoped to the file, with --mutate:
   ──────────────────────────────────────────────────────────
   
   reproduce: ./test_calc.exe --arm calc.ml:2:16:ge
-  mutants: 2 survived of 3 reached by this suite, 1 killed
+  mutants: 4 survived of 7 reached by this suite, 3 killed
 
 The reproduce: line is a command that runs as pasted. It arms the
 first survivor in an otherwise ordinary run:
@@ -151,9 +166,17 @@ suite that reached it is the one mutation exit code a build gates on:
   $ find _windtrap/mutants -type f | sed -E 's|windtrap-[0-9a-f]+|windtrap-HASH|'
   _windtrap/mutants/windtrap-HASH.mutants
   $ run windtrap mutants
-  ───────────────────── survivors (2) ──────────────────────
+  ───────────────────── survivors (4) ──────────────────────
   File "calc.ml", line 2, characters 16-21:
     SURVIVED  calc.ml:2:16:ge  n > 0 → n >= 0
+        2 │ let sign n = if n > 0 then 1 else 0
+  
+      2 tests ran this line and none failed:
+        test_calc.exe  sign of a negative
+        test_calc.exe  sign of a positive
+  
+  File "calc.ml", line 2, characters 20-21:
+    SURVIVED  calc.ml:2:20:int  0 → 1
         2 │ let sign n = if n > 0 then 1 else 0
   
       2 tests ran this line and none failed:
@@ -166,10 +189,17 @@ suite that reached it is the one mutation exit code a build gates on:
   
       1 test ran this line and did not fail:
         test_calc.exe  describe
+  
+  File "calc.ml", line 3, characters 24-25:
+    SURVIVED  calc.ml:3:24:int  0 → 1
+        3 │ let describe n = if n > 0 then "positive" else "non-positive"
+  
+      1 test ran this line and did not fail:
+        test_calc.exe  describe
   ──────────────────────────────────────────────────────────
   
   reproduce: PROJ/test_calc.exe --arm calc.ml:2:16:ge
-  mutants: 2 survived of 3 reached, 1 killed, 1 executable
+  mutants: 4 survived of 7 reached, 3 killed, 1 executable
   [1]
 
 The scratch project is the session's own and leaves with it:

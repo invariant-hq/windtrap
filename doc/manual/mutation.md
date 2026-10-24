@@ -113,7 +113,7 @@ which tests reach each mutant, then runs each reached mutant in a
 process of its own with those tests alone. A mutant that no test fails on prints
 as a `SURVIVED` block: its location in the compiler's format, which
 editors and dune jump to, its identifier, the rewrite, the source line
-and the tests that ran it. No test calls `sign 0`:
+and the tests that ran it. No test calls `sign 0` or `sign 1`:
 
 ```
 $ dune exec --instrument-with ppx_windtrap.mutate ./test_calc.exe -- --mutate
@@ -128,6 +128,14 @@ File "calc.ml", line 10, characters 16-21:
       sign › is -1 for a negative  test_calc.ml:32
       sign › is 1 for a positive   test_calc.ml:31
 
+File "calc.ml", line 10, characters 20-21:
+  SURVIVED  calc.ml:10:20:int  0 → 1
+      10 │ let sign n = if n > 0 then 1 else if n < 0 then -1 else 0
+
+    2 tests ran this line and none failed:
+      sign › is -1 for a negative  test_calc.ml:32
+      sign › is 1 for a positive   test_calc.ml:31
+
 File "calc.ml", line 10, characters 37-42:
   SURVIVED  calc.ml:10:37:le  n < 0 → n <= 0
       10 │ let sign n = if n > 0 then 1 else if n < 0 then -1 else 0
@@ -136,8 +144,12 @@ File "calc.ml", line 10, characters 37-42:
       sign › is -1 for a negative  test_calc.ml:32
 ──────────────────────────────────────────────────────────
 
+─────────────────── never reached (1) ────────────────────
+  1  calc.ml   line 10
+──────────────────────────────────────────────────────────
+
 reproduce: dune exec --instrument-with ppx_windtrap.mutate ./test_calc.exe -- --arm calc.ml:10:16:ge
-mutants: 2 survived of 5 reached by this suite, 3 killed
+mutants: 3 survived of 9 reached by this suite, 6 killed, 1 never reached
 ```
 
 ## Reproducing a survivor
@@ -193,13 +205,13 @@ File "calc.ml", line 6, characters 11-16:
       subtraction › stays positive  test_calc.ml:11
 ──────────────────────────────────────────────────────────
 
-─────────────────── never reached (4) ────────────────────
-  4  calc.ml   lines 5, 8, 10
+─────────────────── never reached (9) ────────────────────
+  9  calc.ml   lines 5, 8, 10
 ──────────────────────────────────────────────────────────
 
 reproduce: dune exec --instrument-with ppx_windtrap.mutate ./test_calc.exe -- --arm calc.ml:6:11:add -f 'stays positive'
 windtrap: verdicts not saved: this run's selection narrows the suite, and a partial run's verdicts would stand in the project merge as the whole.
-mutants: 1 survived of 1 reached by the 1 selected test, 4 never reached
+mutants: 1 survived of 1 reached by the 1 selected test, 9 never reached
 ```
 
 ## Testing a change's mutants
@@ -317,6 +329,14 @@ File "calc.ml", line 10, characters 16-21:
       sign › is -1 for a negative  test_calc.ml:32
       sign › is 1 for a positive   test_calc.ml:31
 
+File "calc.ml", line 10, characters 20-21:
+  SURVIVED  calc.ml:10:20:int  0 → 1
+      10 │ let sign n = if n > 0 then 1 else if n < 0 then -1 else 0
+
+    2 tests ran this line and none failed:
+      sign › is -1 for a negative  test_calc.ml:32
+      sign › is 1 for a positive   test_calc.ml:31
+
 File "calc.ml", line 10, characters 37-42:
   SURVIVED  calc.ml:10:37:le  n < 0 → n <= 0
       10 │ let sign n = if n > 0 then 1 else if n < 0 then -1 else 0
@@ -325,12 +345,24 @@ File "calc.ml", line 10, characters 37-42:
       sign › is -1 for a negative  test_calc.ml:32
 ──────────────────────────────────────────────────────────
 
+─────────────────── never reached (1) ────────────────────
+  1  calc.ml   line 10
+──────────────────────────────────────────────────────────
+
 reproduce: dune exec --instrument-with ppx_windtrap.mutate ./test_calc.exe -- --arm calc.ml:10:16:ge
-mutants: 2 survived of 5 reached by this suite, 3 killed
+mutants: 3 survived of 9 reached by this suite, 6 killed, 1 never reached
 $ dune exec windtrap -- mutants
-───────────────────── survivors (2) ──────────────────────
+───────────────────── survivors (3) ──────────────────────
 File "calc.ml", line 10, characters 16-21:
   SURVIVED  calc.ml:10:16:ge  n > 0 → n >= 0
+      10 │ let sign n = if n > 0 then 1 else if n < 0 then -1 else 0
+
+    2 tests ran this line and none failed:
+      test_calc.exe  sign › is -1 for a negative
+      test_calc.exe  sign › is 1 for a positive
+
+File "calc.ml", line 10, characters 20-21:
+  SURVIVED  calc.ml:10:20:int  0 → 1
       10 │ let sign n = if n > 0 then 1 else if n < 0 then -1 else 0
 
     2 tests ran this line and none failed:
@@ -345,8 +377,12 @@ File "calc.ml", line 10, characters 37-42:
       test_calc.exe  sign › is -1 for a negative
 ──────────────────────────────────────────────────────────
 
+─────────────────── never reached (1) ────────────────────
+  1  calc.ml   line 10
+──────────────────────────────────────────────────────────
+
 reproduce: dune exec --instrument-with ppx_windtrap.mutate ./test_calc.exe -- --arm calc.ml:10:16:ge
-mutants: 2 survived of 5 reached, 3 killed, 1 executable
+mutants: 3 survived of 9 reached, 6 killed, 1 never reached, 1 executable
 ```
 
 Only code that a suite's own process runs reaches a mutant. A binary
@@ -364,9 +400,9 @@ test, and check what it prints with `expect` or `expect_file`.
 
 ## Killing a survivor
 
-A survivor names a behaviour no test checks. To kill the two survivors
-of [Testing a suite's mutants](#testing-a-suites-mutants), add a test at
-zero to the `sign` group:
+A survivor names a behaviour no test checks. To kill the three survivors
+of [Testing a suite's mutants](#testing-a-suites-mutants), add tests at
+zero and at one to the `sign` group:
 
 `test_calc.ml`:
 
@@ -377,6 +413,7 @@ let sign =
       test "is 1 for a positive" (fun () -> equal int 1 (Calc.sign 5));
       test "is -1 for a negative" (fun () -> equal int (-1) (Calc.sign (-5)));
       test "is 0 for zero" (fun () -> equal int 0 (Calc.sign 0));
+      test "is 1 for one" (fun () -> equal int 1 (Calc.sign 1));
     ]
 ```
 
@@ -385,10 +422,10 @@ project's merge passes:
 
 ```
 $ dune exec --instrument-with ppx_windtrap.mutate ./test_calc.exe -- --mutate
-calc: 11 passed in 2.9ms.
-mutants: 5 reached by this suite, 5 killed
+calc: 12 passed in 2.9ms.
+mutants: 10 reached by this suite, 10 killed
 $ dune exec windtrap -- mutants
-mutants: 5 reached, 5 killed, 1 executable
+mutants: 10 reached, 10 killed, 1 executable
 ```
 
 ## What is mutated
@@ -404,6 +441,23 @@ identifier names the rewrite:
 - `&&` becomes `||` (`or`), and `||` becomes `&&` (`and`).
 - `+` becomes `-` (`sub`) and `-` becomes `+` (`add`); `+.` and `-.`
   swap likewise (`fsub`, `fadd`).
+- `del` drops a statement: `e1` in `e1; e2` does not run. It asks
+  whether a test observes what the statement does.
+- `int` nudges an integer literal by one: `1` becomes `0`, and any other
+  `n` becomes `n + 1`, in the type of its suffix.
+- `bool` flips `true` or `false`, outside a condition and the operands
+  of `&&` and `||`, where `not` already acts.
+
+Some code carries no mutant, because no test should pin it or none can
+run it. `del` leaves a resource release alone: a call of `close`,
+`close_in`, `close_out`, their `_noerr` forms or `closedir`. `int`
+leaves alone an operand of `+` or `-`, which `add` and `sub` move
+already; an argument of a function whose name ends in `create`, as the
+capacity of `Hashtbl.create 16`; the constant of a comparison in a
+condition when the nudge is the comparison's own boundary move, as the
+`0` of `x < 0`, since `x < 1` is `x <= 0`; and a literal that runs when
+the module is initialized, before any test, as in a top-level
+`let limit = 64`. `bool` leaves alone the argument of `~cloexec`.
 
 A comparison outside a condition, as in `let ok = a < b`, carries no
 mutant, and neither does an `assert`. In a chain of one operator, as

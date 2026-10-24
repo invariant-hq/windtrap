@@ -363,6 +363,18 @@ one ill-typed mutant would break the whole build: a comparison is
 mutated only in a condition, where it is a `bool`. The catalogue of
 mutants is a literal in the binary and cannot go stale against the code.
 
+## A survivor asks for a test
+
+A survivor is a request for a test, so a mutant is worth compiling only
+where its survivor would be one worth writing. Dropping a statement asks
+whether a test sees its effect, and a nudged literal whether a test pins
+the decision it encodes; a string literal is mostly message text, and a
+removed match case mostly a fast path, so neither is a rewrite. The same
+reason leaves some code without a mutant: a resource release, whose loss
+no test observes, a capacity, which no test should pin, a nudge that
+repeats a comparison's or an arithmetic operator's own mutant, an OS
+flag, and a literal that runs before any test, which no run can judge.
+
 ## A mutant killed anywhere is killed
 
 A mutation run sees only what its own executable's tests reach, and a

@@ -7,8 +7,8 @@
    emits; it cannot prove that what it emits MEANS the mutant the report
    names. This module is the population that check runs against.
 
-   Every function here has a rendering unique within the file, so a test
-   can name its mutant by (rewrite, before) and arm exactly that one -
+   Every mutant a test arms has a rendering unique within the file, so a
+   test can name it by (rewrite, before) and arm exactly that one -
    and so the [before] and [after] strings in the report are themselves
    under test, since a mutant whose rendering drifts stops being found.
 
@@ -39,6 +39,19 @@ let ari_add a b = a + b
 let ari_sub a b = a - b
 let ari_fadd a b = a +. b
 let ari_fsub a b = a -. b
+
+(* [del], whose armed statement does not run, [int] up and down, and
+   [bool]. *)
+let dropped = ref 0
+
+let del_count () =
+  dropped := 0;
+  incr dropped;
+  !dropped
+
+let int_up () = 41
+let int_down () = 1L
+let bool_flip () = Some true
 
 (* Evaluation order, multiplicity and short-circuiting. [note] records
    that it ran and returns its argument, so a trace says exactly which

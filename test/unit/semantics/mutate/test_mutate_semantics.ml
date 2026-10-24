@@ -103,6 +103,7 @@ let family (m : Mutate.mutant) =
   | "lt" | "le" | "gt" | "ge" | "eq" | "neq" -> "cmp"
   | "and" | "or" -> "con"
   | "add" | "sub" | "fadd" | "fsub" -> "ari"
+  | ("del" | "int" | "bool") as literal -> literal
   | other -> "unknown " ^ other
 
 let families mutants = List.sort_uniq String.compare (List.map family mutants)
@@ -131,8 +132,11 @@ let registration =
           equal (list string)
             (List.map in_this_directory fixture_sources)
             (sources ()));
-      test "no site is evaluated at module load" (fun () ->
-          equal reach [] reached_at_load);
+      (* [int] skips a literal that runs at module initialization, and
+         [bool] has no such rule: the [true] of [Mutsem_order.generalizes]
+         is the one site that runs at load. *)
+      test "no site but a module-level boolean is evaluated at module load"
+        (fun () -> equal reach [ ("bool", 1) ] reached_at_load);
     ]
 
 (* The catalogue *)
@@ -140,9 +144,9 @@ let registration =
 let catalogue =
   group "The catalogue"
     [
-      test "the four operator families are catalogued" (fun () ->
+      test "the seven operator families are catalogued" (fun () ->
           equal (list string)
-            [ "ari"; "cmp"; "con"; "neg" ]
+            [ "ari"; "bool"; "cmp"; "con"; "del"; "int"; "neg" ]
             (families (fixture_catalogue ())));
       test "an identifier names one site" (fun () ->
           let id (m : Mutate.mutant) = Mutate.id_to_string m.id in
@@ -214,7 +218,7 @@ let observable_families () =
       (fixture_catalogue ())
   in
   equal (list string)
-    [ "ari"; "cmp"; "con"; "neg" ]
+    [ "ari"; "bool"; "cmp"; "con"; "del"; "int"; "neg" ]
     (families (List.filter changes mutants));
   equal ~msg:"after disarming"
     (list (pair string string))
@@ -375,7 +379,9 @@ let lazy_reach () =
   is_false ~msg:"forced before the first force" !forced;
   let first = reached (fun () -> Lazy.force thunk) in
   let again = reached (fun () -> Lazy.force thunk) in
-  equal (pair int reach) (42, [ ("sub", 1); ("sub", 1) ]) first;
+  equal (pair int reach)
+    (42, [ ("del", 1); ("bool", 1); ("del", 1); ("sub", 1); ("sub", 1) ])
+    first;
   equal (pair int reach) (42, []) again;
   equal ~msg:"runs of the body" int 1 !runs
 
@@ -399,9 +405,23 @@ let laziness =
 
 (* Reach counts *)
 
-(* [sum_while n] evaluates its loop condition [n + 1] times and its sum [n]
+(* [sum_while n] evaluates its two initial counts and its loop once, its
+   condition [n + 1] times, and its sum and the statement that holds it [n]
    times, so a guarded operand evaluated twice shows in the counts. *)
-let loops = [ (10, (55, [ ("lt", 11); ("sub", 10) ])); (0, (0, [ ("lt", 1) ])) ]
+let loops =
+  [
+    ( 10,
+      ( 55,
+        [
+          ("int", 1);
+          ("int", 1);
+          ("del", 1);
+          ("lt", 11);
+          ("del", 10);
+          ("sub", 10);
+        ] ) );
+    (0, (0, [ ("int", 1); ("int", 1); ("del", 1); ("lt", 1) ]));
+  ]
 
 let reach_counts =
   group "Reach counts"
@@ -415,7 +435,7 @@ let reach_counts =
       test "a skipped right arm adds no evaluation" (fun () ->
           equal
             (pair (pair bool (list string)) reach)
-            ((false, [ "left" ]), [ ("or", 1) ])
+            ((false, [ "left" ]), [ ("del", 1); ("del", 1); ("or", 1) ])
             (reached (fun () ->
                  Mutsem_fixtures.Covsem_fixtures.and_trace false true)));
     ]

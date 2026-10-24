@@ -98,6 +98,13 @@ let originals =
       fun () -> Bool.to_string (Oracle.con_or true false) );
     ("ari_add 5 3", "8", fun () -> Int.to_string (Oracle.ari_add 5 3));
     ("ari_sub 5 3", "2", fun () -> Int.to_string (Oracle.ari_sub 5 3));
+    ("del_count", "1", fun () -> Int.to_string (Oracle.del_count ()));
+    ("int_up", "41", fun () -> Int.to_string (Oracle.int_up ()));
+    ("int_down", "1", fun () -> Int64.to_string (Oracle.int_down ()));
+    ( "bool_flip",
+      "true",
+      fun () ->
+        Option.fold ~none:"none" ~some:Bool.to_string (Oracle.bool_flip ()) );
     ( "the operands of cmp_order",
       "r,l",
       fun () -> traced (fun () -> Oracle.cmp_order 1 2) );
@@ -218,6 +225,15 @@ let armings =
     oracle "add" "a - b" (fun () -> ints [ Oracle.ari_sub 5 3 ]) [ "8" ];
     oracle "fsub" "a +. b" (fun () -> floats [ Oracle.ari_fadd 5. 3. ]) [ "2." ];
     oracle "fadd" "a -. b" (fun () -> floats [ Oracle.ari_fsub 5. 3. ]) [ "8." ];
+    oracle "del" "incr dropped" (fun () -> ints [ Oracle.del_count () ]) [ "0" ];
+    oracle "int" "41" (fun () -> ints [ Oracle.int_up () ]) [ "42" ];
+    oracle "int" "1L"
+      (fun () -> [ Int64.to_string (Oracle.int_down ()) ])
+      [ "0" ];
+    oracle "bool" "true"
+      (fun () ->
+        [ Option.fold ~none:"none" ~some:Bool.to_string (Oracle.bool_flip ()) ])
+      [ "false" ];
     (* Armed, the two encodings that bind their operands still evaluate each
        once, right to left, and the connective runs its right operand when the
        rewrite says so. *)

@@ -188,7 +188,11 @@ let render e =
    partner, so [cmp] negates the operator the source wrote: on a total order
    [a <= b] is [not (b < a)], so an ordering swaps its operands, and [a <> b]
    is [not (a = b)], so an equality does not. *)
-type guard = Neg | Operator of application * operator_guard
+type guard =
+  | Neg
+  | Operator of application * operator_guard
+  | Literal of expression (* [int] and [bool], by this constant *)
+  | Delete (* [del], whose guard [descend] builds *)
 
 and operator_guard =
   | Negate (* [cmp] on an equality *)
@@ -228,6 +232,85 @@ let mutant ~keeps context e =
                 (if app.name = "=" || app.name = "<>" then Negate else Swap)
           | Ari -> mutant (Replace replacement))
       | Some _ | None -> neg ())
+
+(* Literals *)
+
+type direction = Up | Down
+
+(* [int] moves a literal by one in the type of its suffix: 1 to 0, and any
+   other [n] to [n + 1], unless that leaves the type. Each [of_string] reads
+   the literal as the compiler does, so a hexadecimal one may wrap. *)
+let nudge text suffix =
+  let nudge of_string to_string ~zero ~one ~succ ~max =
+    match of_string text with
+    | None -> None
+    | Some n when n = one -> Some (Down, to_string zero)
+    | Some n when n = max -> None
+    | Some n -> Some (Up, to_string (succ n))
+  in
+  match suffix with
+  | None ->
+      nudge int_of_string_opt string_of_int ~zero:0 ~one:1 ~succ ~max:max_int
+  | Some 'l' ->
+      nudge Int32.of_string_opt Int32.to_string ~zero:0l ~one:1l
+        ~succ:Int32.succ ~max:Int32.max_int
+  | Some 'L' ->
+      nudge Int64.of_string_opt Int64.to_string ~zero:0L ~one:1L
+        ~succ:Int64.succ ~max:Int64.max_int
+  | Some 'n' ->
+      nudge Nativeint.of_string_opt Nativeint.to_string ~zero:0n ~one:1n
+        ~succ:Nativeint.succ ~max:Nativeint.max_int
+  | Some _ -> None
+
+(* ROR's move on a comparison's constant, which [int] would repeat: [x < c]
+   armed is [x <= c], which is [x < c + 1]. A constant on the left mirrors the
+   operator. *)
+let boundary_move ~constant_right = function
+  | "<" -> Some (if constant_right then Up else Down)
+  | "<=" -> Some (if constant_right then Down else Up)
+  | ">" -> Some (if constant_right then Down else Up)
+  | ">=" -> Some (if constant_right then Up else Down)
+  | _ -> None
+
+let last_name = function
+  | { pexp_desc = Pexp_ident { txt = Lident name | Ldot (_, name); _ }; _ } ->
+      Some name
+  | _ -> None
+
+(* An argument of [Hashtbl.create], [Buffer.create] and their kin is a
+   capacity, which no test should pin. *)
+let is_create fn =
+  match last_name fn with
+  | Some name -> String.ends_with ~suffix:"create" name
+  | None -> false
+
+(* The labels of an OS flag, which no test observes. *)
+let os_flags = [ "cloexec" ]
+
+(* A resource release: a call of a [close] function, also under [ignore] or a
+   [try]. *)
+let releases =
+  [
+    "close";
+    "close_in";
+    "close_out";
+    "close_noerr";
+    "close_in_noerr";
+    "close_out_noerr";
+    "closedir";
+  ]
+
+let rec is_release e =
+  match e.pexp_desc with
+  | Pexp_apply (fn, [ (Nolabel, arg) ])
+    when Option.equal String.equal (last_name fn) (Some "ignore") ->
+      is_release arg
+  | Pexp_apply (fn, _) -> (
+      match last_name fn with
+      | Some name -> List.mem name releases
+      | None -> false)
+  | Pexp_try (body, _) -> is_release body
+  | _ -> false
 
 (* Guards *)
 
@@ -350,8 +433,10 @@ let branch ~loc ~module_name ~index e app left right =
 
 (* [lazy] of a trivial syntactic value compiles as already forced, and a
    guard under it would change that. Coverage's predicate, verbatim. No guard
-   weakens the generalization of a binding, since every site is an
-   application or a condition, which is never a syntactic value. *)
+   weakens the generalization of a binding: every site but a literal is an
+   application, a condition or a statement, and the guard of a literal is an
+   [if] whose two arms are constants, which the type-checker counts as a
+   syntactic value, as it does a sequence whose last expression is one. *)
 let rec is_trivial_syntactic_value e =
   match e.pexp_desc with
   | Pexp_function _ | Pexp_poly _ | Pexp_ident _ | Pexp_constant _
@@ -380,7 +465,19 @@ type site = {
   dismissed : string option;
 }
 
-class instrumenter ~keeps ~module_name =
+(* The coverage rewriter's visits, their indices and the booleans of its
+   [||] take the locations of the source, so in a file it ran on first [del],
+   [int] and [bool] cannot tell its code from the user's, and have no site. *)
+let covered structure =
+  List.exists
+    (function
+      | { pstr_desc = Pstr_module { pmb_name = { txt = Some name; _ }; _ }; _ }
+        ->
+          String.starts_with ~prefix:"Windtrap_cov___" name
+      | _ -> false)
+    structure
+
+class instrumenter ~keeps ~covered ~module_name =
   object (self)
     inherit Ast_traverse.map as super
 
@@ -390,6 +487,14 @@ class instrumenter ~keeps ~module_name =
     val mutable sites = [] (* newest first *)
     val mutable pins = false (* a guard names [operands] *)
     val mutable suppressed = false (* inside a [[@@@mutate off]] region *)
+
+    (* The expression whose children are being rewritten, with its context,
+       which the arid rules of a literal read. *)
+    val mutable parent = None
+
+    (* Whether the code being rewritten runs when the module is initialized:
+       outside every function, [lazy], method and functor. *)
+    val mutable at_load = true
     method sites = List.rev sites
     method pins = pins
 
@@ -420,15 +525,111 @@ class instrumenter ~keeps ~module_name =
         Some index
       end
 
+    (* The mutant of a literal, when no arid rule drops it. [int] skips a
+       constant whose nudge is ROR's own boundary move, an operand of [+] or
+       [-], which AOR moves, a [create] argument, and a literal that runs when
+       the module is initialized, before any test. [bool] flips a literal
+       outside a boolean context, where [neg] already acts, and skips an OS
+       flag. *)
+    method private literal context e =
+      if covered then None
+      else
+        let is_child arg = arg == e in
+        let applied =
+          Option.bind parent (fun (p, c) ->
+              Option.map (fun a -> (p, c, a)) (application p))
+        in
+        let loc = e.pexp_loc in
+        match e.pexp_desc with
+        | Pexp_constant (Pconst_integer (text, suffix)) -> (
+            match nudge text suffix with
+            | None -> None
+            | Some (direction, nudged) ->
+                let arid =
+                  at_load
+                  || (match applied with
+                    | Some (_, _, app) when app.name = "+" || app.name = "-" ->
+                        true
+                    | Some (_, c, app) when keeps Cmp && c <> Ordinary ->
+                        boundary_move ~constant_right:(is_child app.right)
+                          app.name
+                        = Some direction
+                    | Some _ | None -> false)
+                  ||
+                  match parent with
+                  | Some ({ pexp_desc = Pexp_apply (fn, args); _ }, _) ->
+                      is_create fn
+                      && List.exists (fun (_, a) -> is_child a) args
+                  | Some _ | None -> false
+                in
+                if arid then None
+                else
+                  let replacement =
+                    pexp_constant ~loc (Pconst_integer (nudged, suffix))
+                  in
+                  Some
+                    {
+                      guard = Literal replacement;
+                      rewrite = "int";
+                      after = render replacement;
+                    })
+        | Pexp_construct ({ txt = Lident (("true" | "false") as b); _ }, None)
+          when context = Ordinary ->
+            let os_flag =
+              match parent with
+              | Some ({ pexp_desc = Pexp_apply (_, args); _ }, _) ->
+                  List.exists
+                    (fun (label, a) ->
+                      is_child a
+                      &&
+                      match label with
+                      | Labelled l | Optional l -> List.mem l os_flags
+                      | Nolabel -> false)
+                    args
+              | Some _ | None -> false
+            in
+            if os_flag then None
+            else
+              let flipped = if String.equal b "true" then "false" else "true" in
+              let replacement =
+                pexp_construct ~loc { txt = Lident flipped; loc } None
+              in
+              Some
+                {
+                  guard = Literal replacement;
+                  rewrite = "bool";
+                  after = flipped;
+                }
+        | _ -> None
+
     (* [chained] marks the left operand of a site that applies the same
        operator: a chain of one operator carries one mutant, and reading it
        from the tree keeps a bracket from changing the count. A dismissal
-       leaves [e] as written. *)
-    method private mutate ?(chained = false) context e =
+       leaves [e] as written. [parent] and [at_load] hold for the children of
+       [e] while they are rewritten. *)
+    method private mutate ?chained context e =
+      let outer = (parent, at_load) in
+      let mutant =
+        match mutant ~keeps context e with
+        | Some mutant -> Some mutant
+        | None -> self#literal context e
+      in
+      parent <- Some (e, context);
+      (match e.pexp_desc with
+      | Pexp_function _ | Pexp_lazy _ | Pexp_poly _ | Pexp_object _
+      | Pexp_newtype _ ->
+          at_load <- false
+      | _ -> ());
+      let rewritten = self#rewrite ?chained context e mutant in
+      parent <- fst outer;
+      at_load <- snd outer;
+      rewritten
+
+    method private rewrite ?(chained = false) context e mutant =
       let off = off_reason e.pexp_attributes in
       if is_opaque e then e
       else
-        match (off, mutant ~keeps context e) with
+        match (off, mutant) with
         | Some _, None -> e
         | Some reason, Some mutant ->
             if not chained then
@@ -444,6 +645,15 @@ class instrumenter ~keeps ~module_name =
     method private guard e mutant index =
       let loc = { e.pexp_loc with loc_ghost = true } in
       match mutant.guard with
+      | Delete -> e (* [descend] guards a statement *)
+      | Literal replacement -> (
+          match index with
+          | None -> e
+          | Some index ->
+              [%expr
+                if [%e armed ~loc ~module_name index] then
+                  [%e { replacement with pexp_loc = loc }]
+                else [%e e]])
       | Neg -> (
           let value = self#descend e in
           match index with
@@ -504,6 +714,41 @@ class instrumenter ~keeps ~module_name =
             pexp_desc =
               Pexp_while (self#mutate Condition condition, self#expression body);
           }
+      | Pexp_sequence (first, rest) -> (
+          (* [del] drops a statement: [(if armed then () else (e1; ())); e2],
+             where [e1; ()] types [e1] as the statement it was. *)
+          let deletable =
+            (not covered)
+            && (not (is_opaque first))
+            && (not (is_release first))
+            &&
+            match first.pexp_desc with
+            | Pexp_construct ({ txt = Lident "()"; _ }, None) -> false
+            | _ -> true
+          in
+          let off = off_reason first.pexp_attributes in
+          let index =
+            if not deletable then None
+            else
+              let mutant = { guard = Delete; rewrite = "del"; after = "()" } in
+              match self#site first mutant ~dismissed:off with
+              | Some _ when Option.is_some off -> None
+              | index -> index
+          in
+          let first' = self#expression first in
+          let rest' = self#expression rest in
+          match index with
+          | None -> { e with pexp_desc = Pexp_sequence (first', rest') }
+          | Some index ->
+              let loc = { first.pexp_loc with loc_ghost = true } in
+              let dropped =
+                [%expr
+                  if [%e armed ~loc ~module_name index] then ()
+                  else (
+                    [%e first'];
+                    ())]
+              in
+              { e with pexp_desc = Pexp_sequence (dropped, rest') })
       | Pexp_apply (operator, [ (Nolabel, left); (Nolabel, right) ])
         when is_connective ~keeps e ->
           {
@@ -531,6 +776,25 @@ class instrumenter ~keeps ~module_name =
 
     method! module_binding mb =
       if is_off mb.pmb_attributes then mb else super#module_binding mb
+
+    (* A functor's body and a class run when they are applied or
+       instantiated, not when the module is initialized. *)
+    method! module_expr me =
+      match me.pmod_desc with
+      | Pmod_functor _ ->
+          let outer = at_load in
+          at_load <- false;
+          let me = super#module_expr me in
+          at_load <- outer;
+          me
+      | _ -> super#module_expr me
+
+    method! class_expr ce =
+      let outer = at_load in
+      at_load <- false;
+      let ce = super#class_expr ce in
+      at_load <- outer;
+      ce
 
     method! structure_item si =
       match si.pstr_desc with
@@ -655,7 +919,8 @@ let transform_impl_file ctxt ast =
   else
     let module_name = generated_module_name file in
     let instrumenter =
-      new instrumenter ~keeps:(kept_families ast) ~module_name
+      new instrumenter
+        ~keeps:(kept_families ast) ~covered:(covered ast) ~module_name
     in
     let instrumented = instrumenter#structure ast in
     match instrumenter#sites with

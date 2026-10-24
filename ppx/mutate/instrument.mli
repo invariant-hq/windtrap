@@ -30,6 +30,10 @@
     that does not type-check breaks the build of the whole project. Whoever adds
     an operator must keep the law.
 
+    The arms of [int] are constants, and [del]'s armed arm is [()]. [bool] names
+    the other of [true] and [false], which resolves as the original does unless
+    a type in scope redeclares one of the two constructors without the other.
+
     [ari] is the one exception, because [a + b] cannot become [a - b] without
     naming [-]. A file that rebinds an operator where the rewriter can see it
     thus loses the whole family of that operator: [ari] for [+], [-], [+.] and
@@ -63,6 +67,20 @@
       short-circuit evaluation. The deprecated [&] and [or] are not sites.
     - [ari] swaps [+] and [-] under the names [sub] and [add], and [+.] and [-.]
       under [fsub] and [fadd].
+    - [del] drops a statement: [e1] in [e1; e2] does not run, under the name
+      [del]. The guard is [(if armed then () else (e1; ())); e2], which types
+      [e1] as the statement that it was. [()] and an [assert] are no statement
+      it drops, and neither is the value [e2] of a sequence.
+    - [int] nudges an integer literal by one in the type that its suffix gives,
+      under the name [int]: [1] becomes [0], and any other [n] becomes [n + 1].
+      A literal whose nudge leaves its type, as [max_int], and a literal with a
+      suffix other than [l], [L] or [n] are no sites.
+    - [bool] flips [true] and [false], under the name [bool], outside a boolean
+      context, where [neg] already acts.
+
+    The guard of [int] and of [bool] is [if armed then n' else n], an [if] whose
+    two arms are constants, which the type-checker counts as a syntactic value,
+    so a binding that generalizes still does.
 
     A boolean context is the condition of an [if] or of a [while], the guard of
     an arm, or a direct operand of [&&] or [||] in a file that keeps the [con]
@@ -75,11 +93,34 @@
     floats this is the [after] text of the mutant except when an operand is NaN.
 *)
 
+(** {2:arid Arid code}
+
+    Some literals and statements carry no mutant, because no test should tell
+    the mutant from the original, or no test can run it:
+    - [del] skips a resource release: a call of a function named [close],
+      [close_in], [close_out], [close_noerr], [close_in_noerr],
+      [close_out_noerr] or [closedir], qualified or not, also under [ignore] or
+      as the body of a [try].
+    - [int] skips a literal that is an operand of a bare [+] or [-], which [ari]
+      moves already, and an argument of a function whose name ends in [create],
+      as [Hashtbl.create 16], which is a capacity.
+    - [int] skips the constant of a comparison that carries [cmp] when the nudge
+      is the boundary move of [cmp]: up for [x < c] and [x >= c], down for
+      [x <= c] and [x > c], and the mirror for a constant on the left. In
+      [x < 0] the [0] is no site, since [x < 1] is [x <= 0], and in [x >= 1] the
+      [1] is one.
+    - [int] skips a literal that runs when the module is initialized, before any
+      test: one outside every function, [lazy], method, class and functor body,
+      as in a top-level [let limit = 64].
+    - [bool] skips the argument of a [~cloexec] or [?cloexec] label, an OS flag.
+
+    These rules read the syntax alone, as [ari]'s chains do. *)
+
 (** {2:placement Placement}
 
     - An expression carries at most one mutant, and [neg] comes last. A
-      condition that is a comparison carries [cmp], and one that is a connective
-      carries [con].
+      statement may carry [del] besides its own. A condition that is a
+      comparison carries [cmp], and one that is a connective carries [con].
     - No guard duplicates another site. A connective with a connective for an
       operand carries no mutant, neither [con] nor [neg], so [a && b && c]
       mutates [b && c] alone. Its operands are boolean contexts all the same.
@@ -113,8 +154,9 @@
       identifier, which must name one site.
 
     The code that runs when a module is initialized is mutated like any other,
-    so a top-level [let origin = 1 + 2] carries a site. The [--mutate] loop
-    lists a site that ran outside tests alone as evaluated outside tests. *)
+    but for [int]'s literals, so a top-level [let origin = 1 + 2] carries a
+    site. The [--mutate] loop lists a site that ran outside tests alone as
+    evaluated outside tests. *)
 
 (** {1:dismissal Dismissal attributes}
 
@@ -208,6 +250,10 @@
       [con] mutant, and an operand that became a condition is mutated as one.
     - the [before] and [after] texts of a site hold the visits inside it, as
       [___windtrap_post_visit___ 0 (f x)] for [f x].
+    - [del], [int] and [bool] have no site. The visits, their indices and the
+      booleans of the [if] of [||] take the locations of the source, so these
+      rewrites could not tell that code from the user's. A file holds the visits
+      when one of its top-level modules is named [Windtrap_cov___…].
 
     The mutants of such a file are not those of the file under this rewriter
     alone. *)

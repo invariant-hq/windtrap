@@ -266,12 +266,13 @@ let lazy_witness () =
 
 (* {1 Generalization}
 
-   No guard sits on a value spine, the spine a binding generalizes over:
+   No guard weakens a value spine, the spine a binding generalizes over:
    every site of the four operators is an application or a conditional,
-   which is never a syntactic value, so a binding that generalizes
-   uninstrumented still generalizes instrumented. This binding is where
-   that would break first: put a guard anywhere on its spine and it
-   weakens to [bool * '_weak1 list]. Nothing here reads it at run time;
+   which is never a syntactic value, and the guard that [bool] puts on
+   this [true] is an [if] whose two arms are constants, which the
+   type-checker counts as one. This binding is where that would break
+   first: a guard on its spine that is no syntactic value weakens it to
+   [bool * '_weak1 list]. Nothing here reads it at run time;
    the check is the module coercion in test_mutate_semantics.ml, which compares
    this copy's inferred signature against the twin's and fails to
    compile the day the two disagree. *)

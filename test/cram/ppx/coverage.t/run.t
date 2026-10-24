@@ -859,8 +859,8 @@ dune builds for a stanza naming both backends:
   $ ../pp.exe -apply windtrap_mutate,windtrap_coverage --impl ./fixture_guards.ml | ../elide.exe
   coverage points of "./fixture_guards.ml" in Windtrap_cov_________fixture_guards___ml, with ___windtrap_post_visit___:
     0: 456-461
-    1: 474-475
-    2: 467-468
+    1: 467-468
+    2: 474-475
     3: 453-475
     4: 490-495
     5: 746-747
@@ -879,92 +879,104 @@ dune builds for a stanza naming both backends:
     18: 993-1012
     19: 1143-1144
   mutation sites of "./fixture_guards.ml" in Windtrap_mut_________fixture_guards___ml, with type 'a operands:
-    0: 9:16-9:21 "le" "a < b" -> "a <= b"
-    1: 10:14-10:19 "sub" "a + b" -> "a - b"
-    2: 16:11-16:14 "not" "p x" -> "not (p x)"
-    3: 17:11-17:16 "neq" "a = b" -> "a <> b"
-    4: 18:11-18:17 "or" "a && b" -> "a || b"
-    5: 21:27-21:33 "or" "a && b" -> "a || b"
-    6: 21:20-21:21 "not" "c" -> "not c"
-    7: 26:8-26:11 "not" "f x" -> "not (f x)"
-    8: 30:24-30:36 "or" "(f x) && (g x)" -> "(f x) || (g x)"
-    9: 34:17-34:23 "and" "a || b" -> "a && b"
+    0: 9:34-9:35 "int" "0" -> "1"
+    1: 9:27-9:28 "int" "1" -> "0"
+    2: 9:16-9:21 "le" "a < b" -> "a <= b"
+    3: 10:14-10:19 "sub" "a + b" -> "a - b"
+    4: 16:11-16:14 "not" "p x" -> "not (p x)"
+    5: 17:11-17:16 "neq" "a = b" -> "a <> b"
+    6: 18:11-18:17 "or" "a && b" -> "a || b"
+    7: 21:39-21:44 "bool" "false" -> "true"
+    8: 21:27-21:33 "or" "a && b" -> "a || b"
+    9: 21:20-21:21 "not" "c" -> "not c"
+    10: 26:8-26:11 "not" "f x" -> "not (f x)"
+    11: 30:24-30:36 "or" "(f x) && (g x)" -> "(f x) || (g x)"
+    12: 34:17-34:23 "and" "a || b" -> "a && b"
   let lt a b =
     ___windtrap_visit___ 3;
     if
-      (let (__windtrap_mut_0_l, __windtrap_mut_0_r) =
+      (let (__windtrap_mut_2_l, __windtrap_mut_2_r) =
          ((a, b) : _ Windtrap_mut_________fixture_guards___ml.operands) in
-       if Windtrap_mut_________fixture_guards___ml.___windtrap_armed___ 0
-       then Stdlib.not (__windtrap_mut_0_r < __windtrap_mut_0_l)
-       else (___windtrap_visit___ 0; __windtrap_mut_0_l < __windtrap_mut_0_r))
-    then (___windtrap_visit___ 2; 1)
-    else (___windtrap_visit___ 1; 0)
+       if Windtrap_mut_________fixture_guards___ml.___windtrap_armed___ 2
+       then Stdlib.not (__windtrap_mut_2_r < __windtrap_mut_2_l)
+       else (___windtrap_visit___ 0; __windtrap_mut_2_l < __windtrap_mut_2_r))
+    then
+      (if Windtrap_mut_________fixture_guards___ml.___windtrap_armed___ 1
+       then 0
+       else (___windtrap_visit___ 1; 1))
+    else
+      if Windtrap_mut_________fixture_guards___ml.___windtrap_armed___ 0
+      then 1
+      else (___windtrap_visit___ 2; 0)
   let add a b =
-    let (__windtrap_mut_1_l, __windtrap_mut_1_r) = (a, b) in
-    if Windtrap_mut_________fixture_guards___ml.___windtrap_armed___ 1
-    then __windtrap_mut_1_l - __windtrap_mut_1_r
-    else (___windtrap_visit___ 4; __windtrap_mut_1_l + __windtrap_mut_1_r)
+    let (__windtrap_mut_3_l, __windtrap_mut_3_r) = (a, b) in
+    if Windtrap_mut_________fixture_guards___ml.___windtrap_armed___ 3
+    then __windtrap_mut_3_l - __windtrap_mut_3_r
+    else (___windtrap_visit___ 4; __windtrap_mut_3_l + __windtrap_mut_3_r)
   let arms x p a b =
     ___windtrap_visit___ 10;
     (match x with
      | 0 when
-         let __windtrap_mut_2_p = p x in
-         if Windtrap_mut_________fixture_guards___ml.___windtrap_armed___ 2
-         then Stdlib.not __windtrap_mut_2_p
-         else __windtrap_mut_2_p -> (___windtrap_visit___ 6; "neg")
+         let __windtrap_mut_4_p = p x in
+         if Windtrap_mut_________fixture_guards___ml.___windtrap_armed___ 4
+         then Stdlib.not __windtrap_mut_4_p
+         else __windtrap_mut_4_p -> (___windtrap_visit___ 6; "neg")
      | 1 when
-         let __windtrap_mut_3_p = a = b in
-         if Windtrap_mut_________fixture_guards___ml.___windtrap_armed___ 3
-         then Stdlib.not __windtrap_mut_3_p
-         else __windtrap_mut_3_p -> (___windtrap_visit___ 7; "equality")
+         let __windtrap_mut_5_p = a = b in
+         if Windtrap_mut_________fixture_guards___ml.___windtrap_armed___ 5
+         then Stdlib.not __windtrap_mut_5_p
+         else __windtrap_mut_5_p -> (___windtrap_visit___ 7; "equality")
      | 2 when
-         let __windtrap_mut_4_p = a in
+         let __windtrap_mut_6_p = a in
          if
-           Stdlib.(<>) (__windtrap_mut_4_p : Stdlib.Bool.t)
-             (Windtrap_mut_________fixture_guards___ml.___windtrap_armed___ 4)
+           Stdlib.(<>) (__windtrap_mut_6_p : Stdlib.Bool.t)
+             (Windtrap_mut_________fixture_guards___ml.___windtrap_armed___ 6)
          then (___windtrap_visit___ 5; b)
-         else __windtrap_mut_4_p -> (___windtrap_visit___ 8; "con")
+         else __windtrap_mut_6_p -> (___windtrap_visit___ 8; "con")
      | _ -> (___windtrap_visit___ 9; "other"))
   let both c a b =
     ___windtrap_visit___ 13;
     if
-      (let __windtrap_mut_6_p = c in
-       if Windtrap_mut_________fixture_guards___ml.___windtrap_armed___ 6
-       then Stdlib.not __windtrap_mut_6_p
-       else __windtrap_mut_6_p)
+      (let __windtrap_mut_9_p = c in
+       if Windtrap_mut_________fixture_guards___ml.___windtrap_armed___ 9
+       then Stdlib.not __windtrap_mut_9_p
+       else __windtrap_mut_9_p)
     then
-      (let __windtrap_mut_5_p = a in
+      (let __windtrap_mut_8_p = a in
        if
-         Stdlib.(<>) (__windtrap_mut_5_p : Stdlib.Bool.t)
-           (Windtrap_mut_________fixture_guards___ml.___windtrap_armed___ 5)
+         Stdlib.(<>) (__windtrap_mut_8_p : Stdlib.Bool.t)
+           (Windtrap_mut_________fixture_guards___ml.___windtrap_armed___ 8)
        then (___windtrap_visit___ 11; b)
-       else __windtrap_mut_5_p)
-    else (___windtrap_visit___ 12; false)
+       else __windtrap_mut_8_p)
+    else
+      if Windtrap_mut_________fixture_guards___ml.___windtrap_armed___ 7
+      then true
+      else (___windtrap_visit___ 12; false)
   let rec loop f x =
     ___windtrap_visit___ 16;
     while
-      (let __windtrap_mut_7_p = f x in
-       if Windtrap_mut_________fixture_guards___ml.___windtrap_armed___ 7
-       then Stdlib.not __windtrap_mut_7_p
-       else __windtrap_mut_7_p)
+      (let __windtrap_mut_10_p = f x in
+       if Windtrap_mut_________fixture_guards___ml.___windtrap_armed___ 10
+       then Stdlib.not __windtrap_mut_10_p
+       else __windtrap_mut_10_p)
       do (___windtrap_visit___ 15; ___windtrap_post_visit___ 14 (loop f x))
       done
   let left f g x =
     ___windtrap_visit___ 18;
     ignore
-      (let __windtrap_mut_8_p = f x in
+      (let __windtrap_mut_11_p = f x in
        if
-         Stdlib.(<>) (__windtrap_mut_8_p : Stdlib.Bool.t)
-           (Windtrap_mut_________fixture_guards___ml.___windtrap_armed___ 8)
+         Stdlib.(<>) (__windtrap_mut_11_p : Stdlib.Bool.t)
+           (Windtrap_mut_________fixture_guards___ml.___windtrap_armed___ 11)
        then (___windtrap_visit___ 17; ___windtrap_post_visit___ 17 (g x))
-       else __windtrap_mut_8_p)
+       else __windtrap_mut_11_p)
   let either a b =
-    let __windtrap_mut_9_p = a in
+    let __windtrap_mut_12_p = a in
     if
-      Stdlib.(=) (__windtrap_mut_9_p : Stdlib.Bool.t)
-        (Windtrap_mut_________fixture_guards___ml.___windtrap_armed___ 9)
+      Stdlib.(=) (__windtrap_mut_12_p : Stdlib.Bool.t)
+        (Windtrap_mut_________fixture_guards___ml.___windtrap_armed___ 12)
     then (___windtrap_visit___ 19; b)
-    else __windtrap_mut_9_p
+    else __windtrap_mut_12_p
 
 A file is instrumented under its own name, and returned as parsed under
 an input name that is not a source file's:

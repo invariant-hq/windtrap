@@ -5,7 +5,9 @@ let lower c = if c >= 'A' && c <= 'Z' then Char.chr (Char.code c + 32) else c
 
 let slugify s =
   let buf = Buffer.create (String.length s) in
-  let pending_sep = ref false in
+  let pending_sep =
+    ref (false [@mutate off "the empty buffer drops a leading separator"])
+  in
   String.iter
     (fun c ->
       if is_alnum c then begin

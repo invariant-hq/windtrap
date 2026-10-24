@@ -189,6 +189,13 @@
   which editors and dune jump to. The verdict file records where each
   mutant ends and its version is now `windtrap-mutants-v5`; a file of
   an earlier version is refused, as before.
+- Three rewrites join the catalogue: `del` drops the statement `e1` of
+  `e1; e2`, `int` nudges an integer literal (`1` to `0`, `n` to `n + 1`)
+  and `bool` flips a boolean outside a condition. They skip code where a
+  survivor asks for no test worth writing: a resource release (`close`,
+  `close_out` and kin), an operand of `+` or `-`, a `create` capacity,
+  the comparison constant whose nudge is the comparison's own boundary
+  move, a literal that runs at module initialization, and `~cloexec`.
 
 ## v0.2.0 2026-09-26
 

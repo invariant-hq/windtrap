@@ -6,4 +6,4 @@
 
 let cap want =
   if (want > 16) [@mutate off "both arms yield 16 at the boundary"] then want
-  else 16
+  else (16 [@mutate off "a capacity"])
