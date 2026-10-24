@@ -142,6 +142,21 @@ with no repair step, and the printed program is the record of the run
 that failed, never a replay: a skipped call is absent, and a value
 prints as the name that run gave it.
 
+A program is parsed from choices, as any generator's value is, so it
+shrinks by the same passes and its failure has a replay token. A call
+takes a value as the k-th newest of its type, which a deletion of an
+earlier call can move: the parse records which makers a value counts
+past, and a deletion lowers it by those it removed, so a call keeps
+its value with no extra pass, and only deleting its own maker moves it
+to the next older one.
+
+On several domains an order that explains the outcomes keeps real
+time: a call that returned before another began comes first. Without
+it, a read on one domain that began after a write on another returned
+could pass while missing the write. Each call reads the monotonic
+clock on its own domain as it begins and as it returns; a shared
+counter would do the same job, but every domain would write it.
+
 A call runs the system first, and the reference judges its outcome. One
 order serves every signature: an outcome the API leaves open reaches
 the reference, which rules on it, and a value exists as soon as the
