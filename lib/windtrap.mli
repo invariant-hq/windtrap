@@ -2060,8 +2060,11 @@ val run : ?argv:string array -> string -> test list -> int
     test with a message that names it, and is never passed over. The tests a run
     executes update that record, and a test it did not execute, under a filter
     or after [-x], keeps its entry. A run never fails because it cannot read or
-    write the record, and a record it cannot read counts as empty. A record that
-    an earlier version of windtrap wrote names whole tests, and reads so.
+    write the record, and a record it cannot read counts as empty. Each
+    executable keeps its own record of a suite, so two executables that give
+    their suites one name do not erase each other's, and [dune runtest] and
+    [dune exec] of one executable share one. The record that windtrap 0.2 wrote
+    names the suite alone, so it may be another executable's, and is never read.
 
     Beyond the mirrors {!run} reads [WINDTRAP_PROJECT_ROOT] (see
     {{!section-baselines}baselines}), [CI], [GITHUB_ACTIONS], [INSIDE_DUNE],

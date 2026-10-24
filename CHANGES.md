@@ -267,8 +267,14 @@
   to no case, as a timeout's or a failing example's, reruns whole. A
   recorded row the table no longer has, or a token now stale, fails the
   test and names it, rather than pass on what remains. The record's
-  format is versioned (`windtrap-last-failed 2`); a record that 0.2.0
-  wrote names whole tests and reads so.
+  format is versioned (`windtrap-last-failed 2`).
+- (breaking) The record that `--failed` reads is kept per executable and
+  suite, as `<log_dir>/<suite>/.last-failed-<digest>`, so two
+  executables that name their suites alike no longer erase each other's
+  record, and `dune runtest` and `dune exec` of one executable still
+  share one. The record that 0.2.0 wrote, keyed by the suite alone, may
+  be another executable's and is never read: the first `--failed` after
+  upgrading finds no record, until one run has written it.
 - A selection that keeps no test prints its `list:` line above the
   summary, so the summary is the last line of every report, as `tail -1`
   expects; 0.2.0 printed the hint after it.

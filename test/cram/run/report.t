@@ -154,11 +154,14 @@ alone:
 
 A run given --failed selected the record of the last failed tests, which
 lies under its -o, so its line restates both. A record that names the two
-properties whole, as the first version of the record does, has them draw
-their cases again, and the line reruns them on their cases:
+properties whole, by their paths alone, has them draw their cases again,
+and the line reruns them on their cases:
 
-  $ mkdir -p _logs/fixture
-  $ printf 'windtrap-last-failed 1\neven\nsmall\n' > _logs/fixture/.last-failed
+  $ rm -f _logs/fixture/.last-failed-*
+  $ run env FACADE_FIXTURE=properties ./suite_main.exe > /dev/null 2>&1
+  [1]
+  $ store=$(echo _logs/fixture/.last-failed-*)
+  $ printf 'windtrap-last-failed 2\neven\nsmall\n' > "$store"
   $ run env FACADE_FIXTURE=properties ./suite_main.exe --failed > out 2> err
   [1]
   $ grep 'replay:' out | scrub

@@ -874,12 +874,15 @@ val exit_code : (outcome, startup_error) Stdlib.result -> int
 
 (** {2:store The last-failed store}
 
-    The store is the file [<log_dir>/<suite>/.last-failed], with [suite] through
-    {!Os.sanitize_component}. {!execute} rewrites it atomically
-    ({!Os.atomic_write}) at the end of every run that passed its startup checks,
-    a run that executed nothing included. {!list_selection} does not touch it.
-    Nor does a run that an exception ended, or a {{!section-signals}signal}
-    before this point.
+    The store is the file [<log_dir>/<suite>/.last-failed-<exe>], with [suite]
+    through {!Os.sanitize_component}, and [<exe>] the hexadecimal MD5 of the
+    running executable's {!Windtrap_runtime.Instr.exe_identity}: one record per
+    executable and suite, so two executables that name one suite alike keep each
+    their own, and a run under dune, in its sandbox and through [dune exec]
+    reads one record. {!execute} rewrites it atomically ({!Os.atomic_write}) at
+    the end of every run that passed its startup checks, a run that executed
+    nothing included. {!list_selection} does not touch it. Nor does a run that
+    an exception ended, or a {{!section-signals}signal} before this point.
 
     A test that counted as failed is recorded once, with the cases of its
     {!result.refuted}, and an executed test that did not is cleared. The entry
@@ -893,12 +896,12 @@ val exit_code : (outcome, startup_error) Stdlib.result -> int
     [String.escaped], a row's printed value or a counterexample's token. A test
     with several cases has a line for each, and a line that names it alone makes
     it whole. A case of a kind this version does not know names its test whole.
-    A file that opens on [windtrap-last-failed 1], the earlier version, is a
-    path per line and names whole tests. The format is not stable, and a file
-    that is not recognised reads as empty. Every I/O error is ignored, because
-    the store only feeds [config.failed_only]. A store that cannot be opened or
-    read, a directory at its path for example, reads as empty, and one that
-    cannot be written keeps its content. *)
+    The format is not stable, and a file that is not recognised reads as empty.
+    The record of 0.2.0, [<log_dir>/<suite>/.last-failed], is never read: any
+    executable that named the suite alike may have written it. Every I/O error
+    is ignored, because the store only feeds [config.failed_only]. A store that
+    cannot be opened or read, a directory at its path for example, reads as
+    empty, and one that cannot be written keeps its content. *)
 
 (** {2:exits Exits and backtraces}
 

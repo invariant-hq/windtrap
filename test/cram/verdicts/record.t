@@ -1,7 +1,8 @@
 The last-failed record that --failed reads: a run never fails because it
 cannot read or write it, and a record it cannot read counts as empty.
 The suite "record" is two passing tests, and its record is
-_logs/record/.last-failed. Each block is one situation and the verdict
+_logs/record/.last-failed-EXE, where EXE names the executable that ran
+it. Each block is one situation and the verdict
 the run gives it; a block whose line begins "Held for the redesign"
 pins a defect as it stands today (see doc/dev/testing.md).
 
@@ -31,7 +32,14 @@ first of standard error. A block whose point is a code of 0 echoes it.
   >   if [ -s err ]; then echo '--- stderr'; head -1 err | scrub; fi
   >   return $code
   > }
-  $ record=_logs/record/.last-failed
+A run names its record by its suite and by the executable, the MD5 of
+its path below the build directory:
+
+  $ run VERDICT_SUITE=record ./verdict_main.exe > /dev/null
+  $ record=$(echo _logs/record/.last-failed-*)
+  $ echo "$record" | sed -E 's/-[0-9a-f]{32}$/-EXE/'
+  _logs/record/.last-failed-EXE
+  $ rm -r _logs
 
 With no record at all, --failed has nothing to run and exits 2:
 
@@ -61,9 +69,9 @@ exits 2, and the next whole run exits 0 and writes the record again:
   $ for state in magic unreadable truncated renamed; do
   >   case $state in
   >     magic) printf 'nonsense\nfirst\n' > "$record" ;;
-  >     unreadable) printf 'windtrap-last-failed 1\nfirst\n' > "$record"; chmod 000 "$record" ;;
+  >     unreadable) printf 'windtrap-last-failed 2\nfirst\n' > "$record"; chmod 000 "$record" ;;
   >     truncated) printf 'windtrap-last' > "$record" ;;
-  >     renamed) printf 'windtrap-last-failed 1\nrenamed\n' > "$record" ;;
+  >     renamed) printf 'windtrap-last-failed 2\nrenamed\n' > "$record" ;;
   >   esac
   >   run VERDICT_SUITE=record ./verdict_main.exe --failed > /dev/null; failed=$?
   >   run VERDICT_SUITE=record ./verdict_main.exe > /dev/null; whole=$?
@@ -83,7 +91,8 @@ here is a regular file:
   record: 2 passed in DURATION.
   exit 0
 
-Held for the redesign (doc/dev/testing.md): the record is keyed by the suite's name alone, so two executables of one name erase each other's.
+Two executables that name one suite alike keep each their own record,
+so one's passing run leaves the other's failure recorded:
 
   $ mkdir a b
   $ cp verdict_main.exe a/ && cp verdict_main.exe b/
@@ -94,10 +103,23 @@ Held for the redesign (doc/dev/testing.md): the record is keyed by the suite's n
   $ brief VERDICT_SUITE=shared_b ./b/verdict_main.exe; echo "exit $?"
   shared: 1 passed in DURATION.
   exit 0
-  $ run VERDICT_SUITE=shared_a ./a/verdict_main.exe --failed
+  $ brief VERDICT_SUITE=shared_a ./a/verdict_main.exe --failed
+    FAIL  same path
+  1 failed in DURATION.
+  [1]
+
+The record that 0.2.0 wrote, keyed by the suite alone, may be any of
+those executables', so no run reads it, or writes it:
+
+  $ rm -r _logs && mkdir -p _logs/record
+  $ printf 'windtrap-last-failed 1\nfirst\n' > _logs/record/.last-failed
+  $ run VERDICT_SUITE=record ./verdict_main.exe --failed
   --- stderr
   windtrap: no recorded failures match the current suite
   [2]
+  $ run VERDICT_SUITE=record ./verdict_main.exe > /dev/null; cat _logs/record/.last-failed
+  windtrap-last-failed 1
+  first
 
 A table records the rows that failed, each by its printed value, and a
 property its counterexample, by its token: the record names a case
@@ -119,7 +141,8 @@ on:
         row d broke
       counterexample (case 0, shrunk 8 steps): 10
       which failed with:
-  $ sed 's/r1:[^ ]*/TOKEN/' _logs/rerun/.last-failed
+  $ rerun=$(echo _logs/rerun/.last-failed-*)
+  $ sed 's/r1:[^ ]*/TOKEN/' "$rerun"
   windtrap-last-failed 2
   rows	row	\"b\"
   rows	row	\"d\"
@@ -148,7 +171,7 @@ the row that still fails:
     FAIL  counterexample
   2 failed in DURATION.
   [1]
-  $ sed 's/r1:[^ ]*/TOKEN/' _logs/rerun/.last-failed
+  $ sed 's/r1:[^ ]*/TOKEN/' "$rerun"
   windtrap-last-failed 2
   rows	row	\"d\"
   counterexample	replay	TOKEN
@@ -162,10 +185,10 @@ the row that still fails:
   d
   10
 
-A record of the first version names whole tests, so --failed reruns
-every row of the table and draws the property's cases again:
+A line that names a test alone names it whole, so --failed reruns every
+row of the table and draws the property's cases again:
 
-  $ printf 'windtrap-last-failed 1\nrows\ncounterexample\n' > _logs/rerun/.last-failed
+  $ printf 'windtrap-last-failed 2\nrows\ncounterexample\n' > "$rerun"
   $ rm -f ran
   $ brief VERDICT_SUITE=rerun VERDICT_FAILING=d ./verdict_main.exe --failed
     FAIL  rows
@@ -182,7 +205,7 @@ A recorded row that the table no longer has is stale: the table fails and
 says so, and runs none of its rows rather than pass on the ones left. The
 record then names the table whole:
 
-  $ printf 'windtrap-last-failed 2\nrows\trow\t\\"x\\"\nrows\trow\t\\"b\\"\n' > _logs/rerun/.last-failed
+  $ printf 'windtrap-last-failed 2\nrows\trow\t\\"x\\"\nrows\trow\t\\"b\\"\n' > "$rerun"
   $ rm -f ran
   $ brief VERDICT_SUITE=rerun ./verdict_main.exe --failed
     FAIL  rows
@@ -192,7 +215,7 @@ record then names the table whole:
       --failed: the last-failed record names a case that this table no longer has: row "x"; run it without --failed
   $ test -e ran || echo no row ran
   no row ran
-  $ cat _logs/rerun/.last-failed
+  $ cat "$rerun"
   windtrap-last-failed 2
   rows
 
@@ -202,8 +225,8 @@ its property:
 
   $ brief VERDICT_SUITE=rerun VERDICT_FAILING=d ./verdict_main.exe > /dev/null
   [1]
-  $ sed -E 's/^(counterexample.*):[0-9a-f]+$/\1:00000000/' _logs/rerun/.last-failed > stale
-  $ mv stale _logs/rerun/.last-failed
+  $ sed -E 's/^(counterexample.*):[0-9a-f]+$/\1:00000000/' "$rerun" > stale
+  $ mv stale "$rerun"
   $ brief VERDICT_SUITE=rerun ./verdict_main.exe --failed -f counterexample
     FAIL  counterexample
   1 failed in DURATION.

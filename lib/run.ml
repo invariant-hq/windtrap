@@ -906,15 +906,22 @@ let startup_message = function
    for the whole test, or followed by a tab, a kind and a tab, then the
    escaped case: a table's row by its printed value, a property's
    counterexample by its token. An escaped string holds no tab, and a case
-   of a kind this version does not know names the whole test. The first
-   version's lines are paths alone, so its file reads as whole tests. *)
+   of a kind this version does not know names the whole test. *)
 let store_magic = "windtrap-last-failed 2"
-let store_magic_v1 = "windtrap-last-failed 1"
 
+(* One record per executable and suite, so two executables that name one
+   suite alike keep each their own. The executable is named as its dumps
+   name it, by the digest of its identity below its build directory: a run
+   under dune, in its sandbox and through [dune exec] reads one record. *)
 let store_path (config : config) ~suite =
+  let exe =
+    match Windtrap_runtime.Instr.(exe_identity ~exe:executable) with
+    | identity -> identity
+    | exception Sys_error _ -> Windtrap_runtime.Instr.executable
+  in
   Filename.concat
     (Filename.concat config.log_dir (Os.sanitize_component suite))
-    ".last-failed"
+    (".last-failed-" ^ Digest.to_hex (Digest.string exe))
 
 let case_kind = function Row _ -> "row" | Replay _ -> "replay"
 let case_text = function Row s | Replay s -> s
@@ -935,17 +942,10 @@ let entry_of_line line =
    read raises [Sys_error], so a read is guarded as the opening is. *)
 let read_store path =
   let entries ic =
-    let parse =
-      match input_line ic with
-      | exception End_of_file -> None
-      | magic when String.equal magic store_magic -> Some entry_of_line
-      | magic when String.equal magic store_magic_v1 ->
-          Some (fun line -> Some (Scanf.unescaped line, None))
-      | _ -> None
-    in
-    match parse with
-    | None -> []
-    | Some parse ->
+    match input_line ic with
+    | exception End_of_file -> []
+    | magic when not (String.equal magic store_magic) -> []
+    | _ ->
         let cases = Hashtbl.create 16 in
         let add path case =
           let merged =
@@ -961,7 +961,7 @@ let read_store path =
           match input_line ic with
           | exception End_of_file -> List.rev order
           | line -> (
-              match parse line with
+              match entry_of_line line with
               | exception _ -> lines order
               | None | Some ("", _) -> lines order
               | Some (path, case) ->

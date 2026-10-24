@@ -84,7 +84,7 @@ what the stopped test set with setenv:
 
   $ run FACADE_FIXTURE=leaving ./send_signal.exe TERM ./suite_main.exe --corrected -o logs
   killed by SIGTERM
-  $ test ! -e 'teardown ran' && test ! -e c.expected.corrected && test ! -e logs/fixture/.last-failed && echo 'none of them'
+  $ test ! -e 'teardown ran' && test ! -e c.expected.corrected && ! ls logs/fixture/.last-failed* > /dev/null 2>&1 && echo 'none of them'
   none of them
   $ cat 'env at release'
   set by the test

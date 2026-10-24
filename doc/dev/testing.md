@@ -126,8 +126,8 @@ what is non-obvious.
   `outcomes.t` the outcomes of catching, skipping, expected failures,
   vacuous properties and empty tables, `selection.t` the empty and
   refused selections, `record.t` the last-failed record (what
-  `--failed` reruns of a table and a property, an old record, stale
-  entries, a duplicate row), `baselines.t` baselines under CI with each
+  `--failed` reruns of a table and a property, two executables of one
+  suite name, 0.2.0's record, stale entries, a duplicate row), `baselines.t` baselines under CI with each
   stanza laid out by hand and an `expect` in a property's law, `refusals.t` the
   refused runs, the JUnit warning and SIGINT, and `crashes.t` a write
   at address 0 and a loop in C (`verdict_stubs.c`), under its own limit

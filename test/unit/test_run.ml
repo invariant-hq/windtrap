@@ -3967,6 +3967,13 @@ let release =
 
 (* The last-failed store *)
 
+(* The record of a suite under [dir], one per executable: this one's. *)
+let store_file dir suite =
+  let exe = Windtrap_runtime.Instr.(exe_identity ~exe:executable) in
+  Filename.concat
+    (Filename.concat dir (Os.sanitize_component suite))
+    (".last-failed-" ^ Digest.to_hex (Digest.string exe))
+
 let ran r =
   match Recorded.returned r with
   | Ok (outcome : Run.outcome) ->
@@ -4047,16 +4054,23 @@ let sanitized_store =
   Recorded.execute ~suite:"lib/a.ml" [ test "t" (fun () -> fail "x") ]
 
 let the_store_is_under_the_sanitized_suite () =
-  let suite_dir =
-    Filename.concat
-      (Recorded.log_dir sanitized_store)
-      (Os.sanitize_component "lib/a.ml")
-  in
-  is_some (contents (Filename.concat suite_dir ".last-failed"))
+  is_some (contents (store_file (Recorded.log_dir sanitized_store) "lib/a.ml"))
+
+(* 0.2.0's record, keyed by the suite alone, may be another executable's. *)
+let legacy_store =
+  let dir = Scratch.dir "windtrap-legacy-" in
+  let legacy = Filename.concat dir "suite/.last-failed" in
+  Os.mkdir_p (Filename.dirname legacy);
+  Out_channel.with_open_bin legacy (fun oc ->
+      output_string oc "windtrap-last-failed 1\nt\n");
+  let suite = [ test "t" ignore; test "u" ignore ] in
+  let rerun = with_store dir ~failed_only:true suite in
+  let whole = with_store dir suite in
+  ([ rerun; whole ], contents legacy)
 
 let unrecognised_store =
   let dir = Scratch.dir "windtrap-unrecognised-" in
-  let store = Filename.concat dir "suite/.last-failed" in
+  let store = store_file dir "suite" in
   Os.mkdir_p (Filename.dirname store);
   Out_channel.with_open_bin store (fun oc -> output_string oc "t\n");
   let suite = [ test "t" (fun () -> fail "x") ] in
@@ -4067,7 +4081,7 @@ let unrecognised_store =
 
 let unreadable_store =
   let dir = Scratch.dir "windtrap-unreadable-store-" in
-  Os.mkdir_p (Filename.concat dir "suite/.last-failed");
+  Os.mkdir_p (store_file dir "suite");
   let suite = [ test "a" ignore; test "b" ignore ] in
   [
     with_store dir ~filter:[ "a" ] suite; with_store dir ~failed_only:true suite;
@@ -4113,8 +4127,14 @@ let store =
             (List.map ran unexpected_in_store));
       test "--failed without a store is refused" (fun () ->
           equal string "refused: no recorded failures" (ran no_store));
-      test "the store is <log_dir>/<sanitized suite>/.last-failed"
+      test "the store is <log_dir>/<sanitized suite>/.last-failed-<exe>"
         the_store_is_under_the_sanitized_suite;
+      test "0.2.0's record of the suite is neither read nor written" (fun () ->
+          let runs, legacy = legacy_store in
+          equal (list string)
+            [ "refused: no recorded failures"; "exit 0: t, u" ]
+            (List.map ran runs);
+          equal (option string) (Some "windtrap-last-failed 1\nt\n") legacy);
       test
         "a store that is not recognised reads as empty, one not written is \
          ignored" (fun () ->
@@ -4374,7 +4394,7 @@ let ended_by_exception ~on_event ~tests =
       (tests fx)
   in
   aftermath ~raised:(Recorded.escaped r) ~released:!released
-    ~store:(Filename.concat (Recorded.log_dir r) "suite/.last-failed")
+    ~store:(store_file (Recorded.log_dir r) "suite")
     ~correction:(Filename.concat root "c.expected.corrected")
 
 let corrects fx =
@@ -4463,13 +4483,13 @@ let listed, listed_ran =
   in
   (listed, !ran)
 
-let stored = "windtrap-last-failed 1\none\n"
+let stored = "windtrap-last-failed 2\none\n"
 
 (* The store is written before the call, so the log directory is not the
    recorded one, which does not exist until the call. *)
 let listed_from_store =
   let dir = Scratch.dir "windtrap-listing-" in
-  let store = Filename.concat dir "suite/.last-failed" in
+  let store = store_file dir "suite" in
   Os.mkdir_p (Filename.dirname store);
   Out_channel.with_open_bin store (fun oc -> output_string oc stored);
   let r =

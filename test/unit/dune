@@ -124,7 +124,7 @@
 (test
  (name test_run)
  (modules test_run)
- (libraries windtrap recorded windtrap_test_support unix)
+ (libraries windtrap windtrap_runtime recorded windtrap_test_support unix)
  (action
   (progn
    (run %{test} --corrected)
