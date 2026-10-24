@@ -124,6 +124,14 @@
 - On several domains the labels of the calls after the prefix count
   along the order the judge accepted in each run of a case, where
   0.2.0 counted the first run's.
+- (breaking) On several domains the judge accepts only the orders that
+  keep real time: a call whose system returned before another's began
+  comes first, as each call's monotonic-clock readings show, so the test
+  checks linearizability where 0.2.0 checked program order alone. A
+  write that returned before a read on another domain began must be
+  seen by it. The readings write nothing shared, so they leave the
+  schedules as they were, and a run on one domain, as under `--mutate`,
+  leaves its branches one order.
 
 ### Running
 

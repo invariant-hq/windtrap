@@ -751,6 +751,10 @@ suffix. The prefix and the suffix run on the test's domain, and the
 branches run at once, each on a domain of its own. The test fails when
 no order of the calls, each branch keeping its order and the suffix
 last, replayed on the reference, gives every outcome the system gave.
+The order must also keep real time: a call that returned before another
+began comes first, as each call's monotonic-clock readings show, so the
+test checks that the structure is linearizable. A write that returns
+before a read on another domain begins must be seen by that read.
 
 One command list serves both tests. `Mpmc` is the project's own queue,
 meant to be shared, and the standard library's `Queue` is its

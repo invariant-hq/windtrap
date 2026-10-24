@@ -740,8 +740,8 @@ type 'a outcome = Returned of 'a | Raised of exn * Printexc.raw_backtrace
 type never = Failed of Failure.t | Discarded
 
 (* A call on the way to a record: bound, with how its system ended once it
-   ran, an outcome or what is none. [number] is its row's number once the
-   row is recorded. *)
+   ran, an outcome or what is none, and when it began and returned. [number]
+   is its row's number once the row is recorded. *)
 type pending =
   | Pending : {
       step : int;
@@ -752,6 +752,7 @@ type pending =
       reference : sides -> unit -> 'r;
       system : unit -> 's;
       mutable ended : ('s outcome, never) result option;
+      mutable ran : (Os.counter * Os.counter) option;
     }
       -> pending
 
@@ -1136,6 +1137,7 @@ let pending ?before ~domain (Call c) (Ready r) =
       reference = r.reference;
       system = r.system;
       ended = None;
+      ran = None;
     }
 
 let add_row run (Pending p) =
@@ -1144,10 +1146,13 @@ let add_row run (Pending p) =
 
 let has_run (Pending p) = Option.is_some p.ended
 
-(* Runs a pending call's system and records how it ended; [false] when it
-   raised what is no outcome. Every control but a discard leaves. *)
+(* Runs a pending call's system and records how it ended and when, on the
+   monotonic clock, which no domain writes; [false] when it raised what is no
+   outcome. Every control but a discard leaves. *)
 let run_system (Pending p) =
+  let began = Os.counter () in
   let ended = side p.system in
+  p.ran <- Some (began, Os.counter ());
   p.ended <- Some ended;
   match ended with
   | Ok outcome ->
@@ -1293,17 +1298,29 @@ type verdict =
 let completed taken numbers =
   taken @ List.filter (fun number -> not (List.mem number taken)) numbers
 
-(* Depth first over the orders that keep each branch's order, each followed
-   by the suffix. The first child of a branch point continues on the state
-   that the call before it left; every other starts from [fresh ()], replayed
-   along its path, so a state need be neither persistent nor copyable.
-   [path] is newest first. The closest order is the one whose first
-   difference comes latest, the first found winning a tie; it is completed
-   with the calls it did not reach, each branch in turn, then the suffix. *)
-let judge ~fresh ~branches ~suffix =
+(* Depth first over the orders that keep each branch's order and real time,
+   each followed by the suffix. A branch's next call waits while another
+   branch's next call [precedes] it; a later call of that branch returned
+   later still, so the heads alone decide. The first child of a branch point
+   continues on the state that the call before it left; every other starts
+   from [fresh ()], replayed along its path, so a state need be neither
+   persistent nor copyable. [path] is newest first. The closest order is the
+   one whose first difference comes latest, the first found winning a tie;
+   it is completed with the calls it did not reach, each branch in turn, then
+   the suffix. *)
+let judge ~fresh ~precedes ~branches ~suffix =
   let calls = Array.of_list (List.map Array.of_list branches) in
   let cursors = Array.make (Array.length calls) 0 in
   let exhausted i = cursors.(i) = Array.length calls.(i) in
+  let head i = fst calls.(i).(cursors.(i)) in
+  let waits i =
+    let rec on j =
+      j < Array.length calls
+      && ((j <> i && (not (exhausted j)) && precedes (head j) (head i))
+         || on (j + 1))
+    in
+    on 0
+  in
   let state = ref None in
   let at path =
     match !state with
@@ -1334,7 +1351,7 @@ let judge ~fresh ~branches ~suffix =
   let rec explore path =
     let rec from i =
       if i = Array.length calls then None
-      else if exhausted i then from (i + 1)
+      else if exhausted i || waits i then from (i + 1)
       else
         let s = at path in
         let ((_, call) as step) = calls.(i).(cursors.(i)) in
@@ -1499,9 +1516,18 @@ let run_parallel ~workers ~stuck run program =
         in
         (p.number, step))
   in
+  (* Real time: a call that returned before another began comes first. *)
+  let ran = Array.make (total + 1) None in
+  List.iter (fun (Pending p) -> ran.(p.number) <- p.ran) pendings;
+  let precedes a b =
+    match (ran.(a), ran.(b)) with
+    | Some (_, returned), Some (began, _) -> Os.earlier returned began
+    | _ -> false
+  in
   let verdict =
     Run.without_labels (fun () ->
-        judge ~fresh ~branches:(List.map steps branches) ~suffix:(steps suffix))
+        judge ~fresh ~precedes ~branches:(List.map steps branches)
+          ~suffix:(steps suffix))
   in
   match verdict with
   | Explained order ->

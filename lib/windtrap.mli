@@ -1586,11 +1586,12 @@ val stateful :
     ends. Branch [i] runs its system functions on domain [i], every branch at
     once, and the prefix and the suffix run on the test's domain. Each program
     runs 50 times from no value, and the test fails when no order of the calls,
-    each branch keeping its order and the suffix last, replayed on the
-    reference, gives every outcome the system gave where the reference predicts,
-    and is accepted where it judges. The search follows program order and never
-    real time, so every linearizable history passes. The invariant runs after
-    the prefix's calls only.
+    each branch keeping its order, a call that returned before another began
+    first and the suffix last, replayed on the reference, gives every outcome
+    the system gave where the reference predicts, and is accepted where it
+    judges. The test thus checks linearizability against the reference: a
+    history passes iff some order that keeps real time explains it. The
+    invariant runs after the prefix's calls only.
 
     The contract differs from one domain's in five ways:
     - a replay draws the same programs, not the same schedules, and may pass;

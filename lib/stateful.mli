@@ -364,17 +364,26 @@ val execute : ?workers:Workers.t -> program -> record
     + {b The suffix.} Its calls resolve among the prefix's values, and only
       their systems run, on the calling domain.
     + {b The judge} (see {!judge}) looks for an order of the calls that ran,
-      each branch in its order, then the suffix, whose replay on the reference
-      gives every outcome the system gave where the reference predicts it, and
-      is accepted where it judges it. A replay starts from a reference replayed
-      along the prefix. A {!judges} reference receives the system's recorded
-      outcome in every replay, and its rejection rules the order out. When no
-      order explains the outcomes, the run fails with
+      each branch in its order and a call whose system returned before another's
+      began first, then the suffix, whose replay on the reference gives every
+      outcome the system gave where the reference predicts it, and is accepted
+      where it judges it. A replay starts from a reference replayed along the
+      prefix. A {!judges} reference receives the system's recorded outcome in
+      every replay, and its rejection rules the order out. When no order
+      explains the outcomes, the run fails with
       [no order of the calls gives these results], then
       [the closest order, 2 then 3, differs at call 4: length q1], naming the
       parallel calls of the order whose first difference comes latest, over that
       difference's own failure. With no parallel call there is one order, and
       the failure reads as a call's does on one domain.
+
+    {b Real time.} Each call records when its system began and returned, on the
+    monotonic clock ({!Os.counter}), read on the domain that runs it: no domain
+    writes anything shared to take a stamp. Only a call that returned strictly
+    before another began orders the two, so calls that overlap, or that the
+    clock's resolution cannot tell apart, may come in either order. Without
+    [workers] the branches run one after the other, and real time leaves them
+    that one order.
 
     A replay of the prefix that gives one of its calls another outcome than the
     run's breaks the reference, [reference of call 2 of 5: get m1], with the
@@ -417,19 +426,24 @@ type verdict =
 
 val judge :
   fresh:(unit -> 'a) ->
+  precedes:(int -> int -> bool) ->
   branches:(int * ('a -> Failure.t option)) list list ->
   suffix:(int * ('a -> Failure.t option)) list ->
   verdict
-(** [judge ~fresh ~branches ~suffix] looks for an order of the calls of
-    [branches], each branch in its own order, followed by [suffix], in which
-    every call is [None], and is the first found. A call is a number and a
-    function that runs the call on a reference state, and is [None] when the
-    call's outcome is the system's, and its difference otherwise.
+(** [judge ~fresh ~precedes ~branches ~suffix] looks for an order of the calls
+    of [branches], each branch in its own order, in which a call [a] comes
+    before every call [b] of another branch that [precedes a b], followed by
+    [suffix], in which every call is [None], and is the first found. A call is a
+    number and a function that runs the call on a reference state, and is [None]
+    when the call's outcome is the system's, and its difference otherwise.
+    [precedes a b] is whether call [a] returned before call [b] began. It must
+    hold of no two calls of one branch out of their order, and hold of a later
+    call of a branch whenever it holds of an earlier one.
 
-    The search is depth first, over program order and never real time: the first
-    branch's next call is tried first, and a call that differs ends the orders
-    that start with the path to it. The first order of a branch point continues
-    on the state that the call before it left. Every other starts from
+    The search is depth first: the first branch's next call that no other
+    branch's next call precedes is tried first, and a call that differs ends the
+    orders that start with the path to it. The first order of a branch point
+    continues on the state that the call before it left. Every other starts from
     [fresh ()], on which the path is replayed, its calls' results ignored, so a
     state need be neither persistent nor copyable. With [n] calls in two
     branches, at most the binomial [n] choose the first branch's length orders

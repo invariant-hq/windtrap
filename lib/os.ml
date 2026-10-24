@@ -18,6 +18,7 @@ type counter = int64
 let counter = elapsed_ns
 let count start = Int64.sub (elapsed_ns ()) start
 let count_s start = Int64.to_float (count start) /. 1e9
+let earlier a b = Int64.compare a b < 0
 
 (* Environment variables *)
 

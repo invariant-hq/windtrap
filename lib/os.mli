@@ -26,6 +26,10 @@ val count_s : counter -> float
 (** [count_s start] is the time elapsed since [start], in seconds. It is never
     negative. *)
 
+val earlier : counter -> counter -> bool
+(** [earlier a b] is [true] iff [a] is a point before [b]. Two points read on
+    different domains compare as the platform's clock orders them. *)
+
 (** {1:env Environment variables}
 
     Every reader reads the environment on each call, and nothing is cached. A

@@ -612,9 +612,12 @@ let verdict = function
         (String.concat " " (List.map string_of_int order))
         at (kind failure)
 
-let judged ~branches ~suffix =
+(* [precedes] lists the pairs [(a, b)] of calls where [a] returned before
+   [b] began. *)
+let judged ?(precedes = []) ~branches ~suffix () =
   fakes := [];
-  verdict (Stateful.judge ~fresh ~branches ~suffix)
+  let precedes a b = List.mem (a, b) precedes in
+  verdict (Stateful.judge ~fresh ~precedes ~branches ~suffix)
 
 let states () =
   List.rev_map (fun s -> String.concat ", " (List.rev s.seen)) !fakes
@@ -647,11 +650,35 @@ let judge_rows =
       "unexplained 3 1 2 4, at 1: equality 9, 3" );
   ]
 
+let real_time_rows =
+  [
+    ( "without real time, either branch may come first",
+      [],
+      [ [ push 1 1 ]; [ push 2 2 ] ],
+      [ observe 3 [ 2; 1 ] ],
+      "explained 2 1 3" );
+    ( "a call that returned before another began comes first",
+      [ (1, 2) ],
+      [ [ push 1 1 ]; [ push 2 2 ] ],
+      [ observe 3 [ 2; 1 ] ],
+      "unexplained 1 2 3, at 3: equality 2;1, 1;2" );
+    ( "and so before the calls after the one it precedes",
+      [ (1, 2); (1, 3) ],
+      [ [ push 1 1 ]; [ push 2 2; push 3 3 ] ],
+      [ observe 4 [ 2; 1; 3 ] ],
+      "unexplained 1 2 3 4, at 4: equality 2;1;3, 1;2;3" );
+    ( "calls that overlap come in either order",
+      [ (1, 3) ],
+      [ [ push 1 1 ]; [ push 2 2; push 3 3 ] ],
+      [ observe 4 [ 2; 1; 3 ] ],
+      "explained 2 1 3 4" );
+  ]
+
 let replayed () =
   (* Orders tried: 1 2 3 (fails), 1 3 2 (fails), 3 1 2 (passes). *)
   let branches = [ [ push 1 1; push 2 2 ]; [ push 3 3 ] ] in
   let suffix = [ observe 4 [ 3; 1; 2 ] ] in
-  equal string "explained 3 1 2 4" (judged ~branches ~suffix);
+  equal string "explained 3 1 2 4" (judged ~branches ~suffix ());
   equal (list string)
     [
       "push 1, push 2, push 3, observe";
@@ -667,7 +694,12 @@ let judge_group =
         ~name:(fun (n, _, _, _) -> n)
         judge_rows
         (fun (_, branches, suffix, expected) ->
-          equal string expected (judged ~branches ~suffix));
+          equal string expected (judged ~branches ~suffix ()));
+      cases "judges only the orders that keep real time"
+        ~name:(fun (n, _, _, _, _) -> n)
+        real_time_rows
+        (fun (_, precedes, branches, suffix, expected) ->
+          equal string expected (judged ~precedes ~branches ~suffix ()));
       test
         "each branch point after the first starts from a fresh state replayed \
          along its path"
@@ -1088,19 +1120,34 @@ let judging =
 
 (* A queue whose [pop] always gives [Some popped]: beside a push of
    [popped] in parallel, the outcome of a run in which the push went first.
-   The reference is the queue's contents, and [!judge] rules on each pop. *)
+   The reference is the queue's contents, and [!judge] rules on each pop. On
+   a worker the two calls wait for each other, so that they overlap and real
+   time orders neither. *)
 let lying_queue ~popped judge =
   let queue = abstract "q" in
+  let meet arrived =
+    if self () <> Atomic.get main_domain then begin
+      Atomic.incr arrived;
+      while Atomic.get arrived < 2 do
+        Domain.cpu_relax ()
+      done
+    end
+  in
   [
-    command "create" (Gen.unit @-> makes queue) (fun () -> ref []) ignore;
+    command "create"
+      (Gen.unit @-> makes queue)
+      (fun () -> ref [])
+      (fun () -> Atomic.make 0);
     command "push"
       (queue ^-> Gen.int_range 0 9 @-> returns unit)
       (fun q x -> q := !q @ [ x ])
-      (fun () _ -> ());
+      (fun arrived _ -> meet arrived);
     command "pop"
       (queue ^-> judges (option int))
       (fun q seen -> !judge q seen)
-      (fun () -> Some popped);
+      (fun arrived ->
+        meet arrived;
+        Some popped);
   ]
 
 (* A judge that rejects, with a verb, every outcome it does not accept. *)
@@ -1154,22 +1201,37 @@ let pop_beside_push ~popped judge =
 let rejected_order () =
   let judge = ref strict in
   let _, tree = pop_beside_push ~popped:0 judge in
-  equal string "returned" (ended (execute (value tree)))
+  with_pool 2 @@ fun workers ->
+  equal string "returned" (ended (execute ~workers (value tree)))
 
 let rejected_everywhere () =
   let judge = ref strict in
   let _, tree = pop_beside_push ~popped:7 judge in
+  with_pool 2 @@ fun workers ->
   equal string
     "failure [no order of the calls gives these results\n\
      the closest order, 3 then 2, differs at call 2: pop q1] equality 0, 7"
-    (ended (execute (value tree)))
+    (ended (execute ~workers (value tree)))
 
 let crashed_order () =
   let judge = ref strict in
   let _, tree = pop_beside_push ~popped:0 judge in
   judge := careless;
+  with_pool 2 @@ fun workers ->
   equal string
     {|oracle [reference of call 2 of 3, in the order 2 then 3: pop q1] raise actual Failure("hd")|}
+    (ended (execute ~workers (value tree)))
+
+(* On the calling domain branch 1 runs before branch 2, and real time leaves
+   that order alone: the pop that only the push's going first explains then
+   fails. *)
+let sequential_order () =
+  let judge = ref strict in
+  let _, tree = pop_beside_push ~popped:0 judge in
+  equal string
+    "failure [no order of the calls gives these results\n\
+     the closest order, 2 then 3, differs at call 2: pop q1] message \"pop \
+     gave 0 from an empty queue\""
     (ended (execute (value tree)))
 
 (* With the pop moved to the suffix and the push deleted, no call is
@@ -1202,6 +1264,9 @@ let judging_calls =
          names that order"
         crashed_order;
       test "a crash names no order when no call is parallel" crashed_alone;
+      test
+        "on the calling domain the branches keep their order, as real time says"
+        sequential_order;
     ]
 
 (* Workers *)
