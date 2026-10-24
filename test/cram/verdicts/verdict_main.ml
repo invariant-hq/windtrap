@@ -251,9 +251,23 @@ let suite = function
         test "comes after" ignore;
       ]
   | "c_loop" -> [ test ~timeout:0.05 "loops in C" (fun () -> spin 300); passes ]
+  | "c_loop_default" -> [ test "loops in C" (fun () -> spin 300); passes ]
   | other -> invalid_arg ("verdict_main: unknown VERDICT_SUITE " ^ other)
 
 let name = function "shared_a" | "shared_b" -> "shared" | name -> name
+
+(* Under VERDICT_DEFAULT_LIMIT the run is [run]'s with that many seconds
+   standing in for the default limit's ten minutes, so a session can watch
+   the default act without waiting for it. *)
+let with_default_limit seconds name tests =
+  let open Windtrap.Private in
+  match Result.bind (Cli.parse Sys.argv) Cli.settings with
+  | Error error ->
+      prerr_endline (Cli.error_message error);
+      2
+  | Ok config ->
+      let config = { config with Run.default_timeout = seconds } in
+      Run.exit_code (Report.run ~suite:name config tests)
 
 (* Under VERDICT_DOMAIN_FIRST the program spawns a domain before [run],
    after which it cannot fork. *)
@@ -261,4 +275,9 @@ let () =
   if Sys.getenv_opt "VERDICT_DOMAIN_FIRST" <> None then
     Domain.join (Domain.spawn ignore);
   let selected = Sys.getenv "VERDICT_SUITE" in
-  exit (run (name selected) (suite selected))
+  match Sys.getenv_opt "VERDICT_DEFAULT_LIMIT" with
+  | Some seconds ->
+      exit
+        (with_default_limit (float_of_string seconds) (name selected)
+           (suite selected))
+  | None -> exit (run (name selected) (suite selected))

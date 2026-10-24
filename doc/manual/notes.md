@@ -309,6 +309,14 @@ records it.
 debugger. It accepts one test and no more, so it cannot become a way to
 run a suite.
 
+A test that hangs is also a test that does not end the run: every
+attempt has a limit, ten minutes unless `~timeout` or `--timeout` says
+otherwise. A hang reported by name beats a build killed with none, and
+the two errors cost unequally: a limit too low fails honest slow tests,
+one too high only reports a hang later, so the default is high, as Go's
+whole-binary default is. `--in-process` has none, since a debugger
+holds a test as long as it likes.
+
 ## Coverage is measured by runs and reported by a command
 
 A test run prints no coverage number. Each suite writes a dump of the

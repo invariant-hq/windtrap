@@ -127,7 +127,9 @@ what is non-obvious.
   entries, a duplicate row), `baselines.t` baselines under CI with each
   stanza laid out by hand and an `expect` in a property's law, `refusals.t` the
   refused runs, the JUnit warning and SIGINT, and `crashes.t` a write
-  at address 0 and a loop in C (`verdict_stubs.c`). A situation the
+  at address 0 and a loop in C (`verdict_stubs.c`), under its own limit
+  and under the default one, for which `VERDICT_DEFAULT_LIMIT` puts a
+  fraction of a second in place of ten minutes. A situation the
   code gets wrong today is a held defect, left for the change that
   redesigns its area: its block pins today's output under a one-line
   note that begins "Held for the redesign" and names the promise it

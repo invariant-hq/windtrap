@@ -568,9 +568,7 @@ let supervise ?(on_event = ignore) ~on_reach (config : Run.config) ~suite tests
         | None -> ()
         | Some w ->
             let case = cases.(!next) in
-            let limit =
-              match case.timeout with None -> config.timeout | some -> some
-            in
+            let limit = Run.limit config case in
             let job =
               {
                 index = !next;

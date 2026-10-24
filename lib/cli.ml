@@ -215,7 +215,8 @@ let entries =
          (seconds ~expected:"a positive number" (fun s -> s > 0.))
          (fun p limit -> { p with timeout = Some limit }))
       ~mirror:(mirrored "WINDTRAP_TIMEOUT" (fun p -> p.timeout = None))
-      "Default per-test timeout in seconds.";
+      "Limit each attempt of a test that declares no timeout to SECONDS \
+       (default 600; none under --in-process).";
     row "--slow-threshold"
       (value "SECONDS"
          (seconds ~expected:"a non-negative number" (fun s -> s >= 0.))
@@ -552,6 +553,7 @@ let settings cli =
         | _, Some true -> Baseline.Corrected
         | _ -> Baseline.Check);
       timeout = layered.timeout;
+      default_timeout = defaults.Run.default_timeout;
       prop_count = layered.prop_count;
       replay = layered.replay;
       log_dir =

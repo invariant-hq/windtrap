@@ -838,8 +838,8 @@ no retries and ignores a group's; under `--mutate` and `--arm` each
 program runs once on the test's domain, so a kill does not depend on a
 schedule; and a call still running one limit after the test's limit
 expired fails the test as timed out and stops the run after it.
-Without a limit, a deadlock hangs until interrupted, and Ctrl-C works
-on it.
+Under `--in-process`, which gives a test no default limit, a deadlock
+without a `~timeout` hangs until interrupted, and Ctrl-C works on it.
 
 The domains need a processor each beside the test's. On fewer, a
 failure stays a failure, but fewer schedules are tried. A structure

@@ -29,8 +29,9 @@
     - its case ended it: a call to [exit] or [Unix._exit], a signal, or a fatal
       exception. The case fails, saying which.
     - its case outlived its kill: [3 * limit * (retries + 1)] seconds after it
-      started, the time it waited for the parent's verdict on its checks left
-      out. The case fails as {!Failure.timeout} of its limit.
+      started, [limit] being {!Run.limit}'s, which every case has, the time it
+      waited for the parent's verdict on its checks left out. The case fails as
+      {!Failure.timeout} of its limit.
     - its case spawned a domain, which could still run in the next case. The
       worker retires: it releases its fixtures, and the case's row stands. A
       worker that a test ended releases nothing.

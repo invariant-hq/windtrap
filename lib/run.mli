@@ -103,8 +103,13 @@ type config = {
           [CI] (see {!Update_refused_in_ci}). *)
   timeout : float option;
       (** [--timeout]: the limit, in seconds, of a test that declares none, and
-          [None] for no limit. It must be finite and positive, which {!Cli}
-          guarantees and {!execute} does not check. *)
+          [None] to leave such a test [default_timeout]. It must be finite and
+          positive, which {!Cli} guarantees and {!execute} does not check. *)
+  default_timeout : float;
+      (** The limit, in seconds, of a test that declares none under a [None]
+          [timeout], except under [in_process], where such a test has none (see
+          {!limit}). No flag sets it: {!Cli} keeps {!default_config}'s, and
+          windtrap's own suites set a short one to stand in for it. *)
   prop_count : int option;
       (** [--prop-count]: the generated cases of a property, where it raises the
           declared or default count (see {!prop}). *)
@@ -148,7 +153,8 @@ type config = {
 
 val default_config : unit -> config
 (** [default_config ()] is the configuration of a run given no flag: no
-    selection, every boolean [false], {!Baseline.Check}, no limit and no count,
+    selection, every boolean [false], {!Baseline.Check}, no [timeout], a
+    [default_timeout] of [600.] seconds, ten minutes, no count,
     [color = Os.Auto], [slow_threshold = 1.], {!No_mutation}, [`Mirrors] and
     nothing broadcast. Every call draws [seed] from {!Seed.random} and takes
     [log_dir] from {!Os.default_log_dir}. *)
@@ -746,10 +752,10 @@ val exit_code : (outcome, startup_error) Stdlib.result -> int
     capture that cannot be set up or restored is a {!Failure.Raise} failure of
     the body, and the run goes on.
 
-    The limit of a test is its own, or else [config.timeout]. It is a [SIGALRM]
-    timer over the three phases, so the runner owns that signal during the
-    attempt, and it puts the previous handler back afterwards. On Windows no
-    timer is set, and the limit is not enforced.
+    The limit of a test is {!limit}'s. It is a [SIGALRM] timer over the three
+    phases, so the runner owns that signal during the attempt, and it puts the
+    previous handler back afterwards. On Windows no timer is set, and the limit
+    is not enforced.
 
     The frame keeps every failure that is added to it, so a body failure and a
     teardown failure are two entries. Each phase runs in a scope of its own
@@ -927,6 +933,13 @@ type selection = {
           with those cases. *)
 }
 (** The type for what a run selected. *)
+
+val limit : config -> Test_tree.case -> float option
+(** [limit config case] is the limit of each attempt of [case], in seconds: its
+    own, or else [config.timeout], or else [None] under [config.in_process], the
+    debugger's run, and [config.default_timeout] otherwise. {!execute} sets it
+    as the alarm of each attempt, and {!Supervisor} kills a worker past three
+    times it (see {!Supervisor.execute}). *)
 
 val select :
   config ->

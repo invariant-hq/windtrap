@@ -250,6 +250,25 @@ to `exit`. The exit codes section of `Windtrap.run` says which runs
 return which. Code under test that calls `exit` does not end the run;
 the call fails its test.
 
+## Bounding a test in time
+
+Every attempt of a test has a limit. A test that declares no `~timeout`,
+in a run given no `--timeout`, gets ten minutes, so a test that hangs
+fails by name, `timed out after 600s`, instead of holding the run until
+something outside it kills the build with no name. `--timeout SECONDS`
+(`WINDTRAP_TIMEOUT`) sets the limit of every test that declares none,
+and a test's own `~timeout`, or its group's, wins over both (see
+[Resources and structure](resources-and-structure.md)). The limit is an
+alarm, so a teardown still runs after a body that timed out; a test
+still running three limits after it started, in C code the alarm cannot
+reach, is killed with its worker and times out too.
+
+`--in-process` has no default limit, since a debugger may hold a test as
+long as it likes; a limit that `~timeout` or `--timeout` gives still
+holds there. On Windows the tests run in the calling process with no
+alarm, and no limit is enforced, the default included: a test that
+hangs there hangs the run.
+
 ## Running tests in worker processes
 
 The process that calls `run` runs no test. It forks a worker process,
@@ -318,7 +337,8 @@ OPTIONS:
       Stop after the first failure.
 
   --timeout=SECONDS (env WINDTRAP_TIMEOUT)
-      Default per-test timeout in seconds.
+      Limit each attempt of a test that declares no timeout to SECONDS (default
+      600; none under --in-process).
 
   --slow-threshold=SECONDS (env WINDTRAP_SLOW_THRESHOLD)
       Warn when an untagged test runs longer than SECONDS (0 disables).

@@ -33,6 +33,7 @@ type config = {
   in_process : bool;
   baseline : Baseline.mode;
   timeout : float option;
+  default_timeout : float;
   prop_count : int option;
   replay : string option;
   log_dir : string;
@@ -63,6 +64,7 @@ let default_config () =
     in_process = false;
     baseline = Baseline.Check;
     timeout = None;
+    default_timeout = 600.;
     prop_count = None;
     replay = None;
     log_dir = Os.default_log_dir ();
@@ -1130,6 +1132,17 @@ let set_alarm seconds =
     (Unix.setitimer Unix.ITIMER_REAL
        { Unix.it_value = seconds; it_interval = 0. })
 
+(* A hang reported by name beats a build killed with none, and a limit too
+   low fails honest tests where one too high only reports a hang later, so
+   the default is ten minutes. A debugger stops a test for as long as it
+   likes, so [--in-process] has none. *)
+let limit config (case : Test_tree.case) =
+  match (case.timeout, config.timeout) with
+  | (Some _ as declared), _ -> declared
+  | None, (Some _ as given) -> given
+  | None, None ->
+      if config.in_process then None else Some config.default_timeout
+
 (* The alarm fires once and a timeout is not fatal, so after a body that
    timed out [renew] bounds the teardown with what remains of the limit, or
    with a whole limit. The alarm can fire during the cleanup: [armed] makes
@@ -1555,9 +1568,7 @@ type served = {
    the verdict, and otherwise when the parent reaches the case. *)
 let run_case ~on_event run (case : Test_tree.case) =
   on_event (Test_started { path = case.path });
-  let limit =
-    match case.timeout with None -> run.config.timeout | declared -> declared
-  in
+  let limit = limit run.config case in
   let groups, test_name = split_last case.path in
   let rec attempt number spent =
     let frame = frame ~on_event run case in

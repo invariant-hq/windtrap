@@ -174,6 +174,7 @@ let fields (c : Run.config) =
     ("stream", string_of_bool c.stream);
     ("baseline", mode_name c.baseline);
     ("timeout", opt string_of_float c.timeout);
+    ("default_timeout", string_of_float c.default_timeout);
     ("prop_count", opt string_of_int c.prop_count);
     ("log_dir", c.log_dir);
     ("color", color_name c.color);
@@ -205,6 +206,7 @@ let given_no_flag =
     ("stream", "false");
     ("baseline", "check");
     ("timeout", "none");
+    ("default_timeout", "600.");
     ("prop_count", "none");
     ("color", "auto");
     ("slow_threshold", "1.");
@@ -2733,6 +2735,52 @@ let configured_limit =
     ~config:(fun c -> { c with timeout = Some 0.02 })
     [ test "slowpoke" busy_forever ]
 
+(* A twentieth of a second stands in for the default's ten minutes: it
+   bounds a test that declares no limit under no [--timeout], gives way to
+   either, and is no limit at all under [--in-process]. *)
+let defaulted ?(config = Fun.id) tests =
+  Recorded.execute
+    ~config:(fun c -> config { c with default_timeout = 0.05 })
+    tests
+
+let default_limits =
+  defaulted
+    [
+      test "declares none" (fun () -> spin 0.5);
+      test ~timeout:2. "declares a longer one" (fun () -> spin 0.2);
+      Run.prop "a property" Gen.int (fun _ -> spin 0.5);
+    ]
+
+let default_under_timeout =
+  defaulted
+    ~config:(fun c -> { c with timeout = Some 0.1 })
+    [ test "declares none" (fun () -> spin 0.5) ]
+
+let default_in_process =
+  defaulted
+    ~config:(fun c -> { c with in_process = true })
+    [ test "declares none" (fun () -> spin 0.2) ]
+
+let case_of ?timeout name =
+  match Test_tree.flatten [ Test_tree.test ?timeout name ignore ] with
+  | [ case ] -> case
+  | _ -> assert false
+
+let resolved_limits () =
+  let c = Run.default_config () in
+  let limit ?timeout config = Run.limit config (case_of ?timeout "t") in
+  equal
+    (list (option float_exact))
+    [ Some 600.; Some 3.; Some 7.; None; Some 3.; Some 7. ]
+    [
+      limit c;
+      limit ~timeout:3. c;
+      limit { c with timeout = Some 7. };
+      limit { c with in_process = true };
+      limit ~timeout:3. { c with in_process = true; timeout = Some 7. };
+      limit { c with in_process = true; timeout = Some 7. };
+    ]
+
 let both_phases_spin =
   Recorded.execute
     [
@@ -2965,6 +3013,28 @@ let attempts =
           needs_timeouts ();
           equal (list string) [ "body timeout 0.02s" ]
             (lines configured_limit [ "slowpoke" ]));
+      test
+        "a test's limit is its own, else --timeout, else none in-process, else \
+         the default"
+        resolved_limits;
+      test "the default limit bounds a test that declares none" (fun () ->
+          needs_timeouts ();
+          equal (list string) [ "body timeout 0.05s" ]
+            (lines default_limits [ "declares none" ]);
+          equal (list string)
+            [ "body timeout 0.05s in a case" ]
+            (lines default_limits [ "a property" ]));
+      test "a declared limit and --timeout each replace the default" (fun () ->
+          needs_timeouts ();
+          equal (list string) []
+            (lines default_limits [ "declares a longer one" ]);
+          equal (list string) [ "body timeout 0.1s" ]
+            (lines default_under_timeout [ "declares none" ]));
+      test "--in-process has no default limit" (fun () ->
+          needs_timeouts ();
+          equal (list string) [] (lines default_in_process [ "declares none" ]);
+          equal (list string) [ "declares none" ]
+            (Recorded.executed default_in_process));
       test "the Random state of a test is a function of its path"
         the_random_state_is_a_function_of_the_path;
       test "the Random state is restored after the run" (fun () ->

@@ -96,8 +96,8 @@ type 'a testable = 'a Testable.t
     - [tags] are tag names, added to those of the enclosing groups. A tag named
       by both [--tag] and [--exclude-tag] is excluded.
     - [timeout] is the test's limit in seconds. Defaults to the limit of the
-      nearest enclosing group that declares one, then to [--timeout], then to no
-      limit.
+      nearest enclosing group that declares one, then to [--timeout], then to
+      ten minutes, and under [--in-process] to no limit.
     - [retries] is the number of extra attempts a failing test gets. Defaults to
       the [retries] of the nearest enclosing group that declares one, then to
       [0].
@@ -106,14 +106,21 @@ type 'a testable = 'a Testable.t
     share the window, and a teardown gets what is left of it. When they spent it
     all, the teardown gets a fresh window.
 
+    Every attempt has a limit, ten minutes unless [timeout] or [--timeout] says
+    otherwise, so a test that hangs fails by name rather than hold the run until
+    something outside it kills the build. The one run without a default limit is
+    [--in-process], where a debugger may hold a test as long as it likes.
+
     The limit is a [SIGALRM] interval timer, so the teardown runs after a body
-    that timed out. The runner owns [SIGALRM] while a test with a limit runs. A
-    domain that the test spawned may take the signal: the timeout is then raised
-    on that domain, and ends the test only when it reaches the test's domain, as
-    through [Domain.join]. The alarm cannot interrupt a C call that does not
-    return to OCaml: a test still running three limits after it started, for
-    each of its attempts, is killed with its worker process (see {!run}), and
-    times out. On Windows the limit has no effect.
+    that timed out. The runner owns [SIGALRM] while a test with a limit runs,
+    which outside [--in-process] is every test. A domain that the test spawned
+    may take the signal: the timeout is then raised on that domain, and ends the
+    test only when it reaches the test's domain, as through [Domain.join]. The
+    alarm cannot interrupt a C call that does not return to OCaml: a test still
+    running three limits after it started, for each of its attempts, is killed
+    with its worker process (see {!run}), and times out. On Windows, where the
+    tests run in the calling process and no alarm exists, no limit has an
+    effect, the default included: a test that hangs there hangs the run.
 
     {b Retries.} Each attempt is a fresh setup, body, teardown and capture. A
     skip is never retried. An {!xfail} test is retried on an unexpected pass,

@@ -194,6 +194,13 @@
 - A test still running three limits after it started, per attempt, is
   killed with its worker and times out; the alarm still bounds the body
   first, so its teardown runs.
+- (breaking) Every attempt has a limit: a test that declares no
+  `~timeout`, in a run given no `--timeout`, times out after ten
+  minutes, where 0.2.0 let it run forever, so a hang fails by name
+  rather than end the build with none. `~timeout` and `--timeout`
+  replace the default, and `--in-process` has none. The runner therefore
+  owns `SIGALRM` during every test outside `--in-process`. On Windows no
+  limit is enforced, as before.
 - `-j N` (`WINDTRAP_JOBS`) runs the tests in `N` workers at once. The
   default is one, as in 0.2.0, and the report, the exit code and the
   corrections do not depend on it.

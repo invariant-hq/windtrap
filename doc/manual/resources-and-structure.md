@@ -285,7 +285,8 @@ releasing fixture (examples/06-resources-and-structure/server_tests.ml:3)
 under it that sets none, as the server's five seconds do. `~retries`
 gives a failing test more attempts, and a test that passes on a later
 attempt is listed under `flaky tests`. `--timeout` sets the limit of the
-tests that have none (see the declaring-tests section of
+tests that have none, and without it they get ten minutes (see
+[Running tests](running-tests.md) and the declaring-tests section of
 `lib/windtrap.mli`).
 
 ## Marking a slow test

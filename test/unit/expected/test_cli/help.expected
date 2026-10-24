@@ -31,7 +31,8 @@ OPTIONS:
       Stop after the first failure.
 
   --timeout=SECONDS (env WINDTRAP_TIMEOUT)
-      Default per-test timeout in seconds.
+      Limit each attempt of a test that declares no timeout to SECONDS (default
+      600; none under --in-process).
 
   --slow-threshold=SECONDS (env WINDTRAP_SLOW_THRESHOLD)
       Warn when an untagged test runs longer than SECONDS (0 disables).
