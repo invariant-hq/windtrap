@@ -647,10 +647,13 @@ let property ?loc ?count ?max_discard ?examples ?summary ?prints_run ?cost
     ?deterministic gen law =
   let frame = current_frame () in
   let config = frame.run.config and capture = frame.run.capture in
+  (* The command line raises a count and never lowers one, so a long run
+     scales every property; an examples-only property stays one. *)
   let count =
-    match count with
-    | Some n -> Some (`Declared n)
-    | None -> Option.map (fun n -> `Config n) config.prop_count
+    let declared = Option.value count ~default:Property.default_count in
+    match config.prop_count with
+    | Some n when n > declared && declared > 0 -> Some (`Config n)
+    | Some _ | None -> Option.map (fun n -> `Declared n) count
   in
   (* Not [Fun.protect], whose frames would end the backtrace of every law
      that raises, after the law's own. *)

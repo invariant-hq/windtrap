@@ -1146,7 +1146,9 @@ val prop :
 (** [prop name gen law] is the property [name], whose [law] must hold for every
     value of [gen].
     - [count] is the number of generated cases that must pass. Defaults to
-      [--prop-count], then to [100]. With [0] the examples run alone.
+      [100]. [--prop-count] raises it, and never lowers it, so a long run
+      scales every property. With [0] the examples run alone, whatever
+      [--prop-count] says.
     - [max_discard] is the number of discarded cases (see {!assume}) past which
       the property gives up and fails. Defaults to twice the effective [count].
       No flag sets it.

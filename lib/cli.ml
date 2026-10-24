@@ -227,7 +227,7 @@ let entries =
     row "--prop-count"
       (value "N" positive_int (fun p n -> { p with prop_count = Some n }))
       ~mirror:(mirrored "WINDTRAP_PROP_COUNT" (fun p -> p.prop_count = None))
-      "Generated cases per property.";
+      "Raise every property's generated cases to at least N.";
     row "--replay"
       (value "TOKEN" replay_token (fun p t -> { p with replay = Some t }))
       ~mirror:(mirrored "WINDTRAP_REPLAY" (fun p -> p.replay = None))

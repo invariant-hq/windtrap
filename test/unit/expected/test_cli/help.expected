@@ -40,7 +40,7 @@ OPTIONS:
       Root seed for property tests (s1:<16 hex>).
 
   --prop-count=N (env WINDTRAP_PROP_COUNT)
-      Generated cases per property.
+      Raise every property's generated cases to at least N.
 
   --replay=TOKEN (env WINDTRAP_REPLAY)
       Check each selected property on the one case of TOKEN alone.

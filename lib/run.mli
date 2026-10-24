@@ -93,8 +93,8 @@ type config = {
           [None] for no limit. It must be finite and positive, which {!Cli}
           guarantees and {!execute} does not check. *)
   prop_count : int option;
-      (** [--prop-count]: the generated cases of a property that declares no
-          [count] (see {!prop}). *)
+      (** [--prop-count]: the generated cases of a property, where it raises
+          the declared or default count (see {!prop}). *)
   replay : string option;
       (** [--replay]: the replay token that every property of the run checks
           alone, in place of its examples and generated cases (see
@@ -472,9 +472,10 @@ val prop :
     - [__POS__], [tags] and [timeout] are {!Test_tree.test}'s. The property is
       one body, so [timeout] covers generation and shrinking together (see
       {!Property.run}).
-    - [count] is the number of generated cases. A declared [count] wins over
-      [config.prop_count], which wins over the default of the engine, and the
-      engine is told which of the two it was given.
+    - [count] is the number of generated cases: the declared [count], or else
+      {!Property.default_count}, raised to [config.prop_count] when that is
+      larger and the count is not [0], and the engine is told which of the two
+      it was given.
     - [max_discard], [examples] and [summary] are {!Property.run}'s.
 
     [prop] adds no tag, so a caller must add {!Test_tree.Tag.prop} to [tags].

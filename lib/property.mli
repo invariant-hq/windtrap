@@ -163,6 +163,9 @@ type outcome =
 
 (** {1:running Running} *)
 
+val default_count : int
+(** [default_count] is the count of a run given none, [100]. *)
+
 val shrink_budget : int
 (** [shrink_budget] is the number of times a shrink search may run the law,
     [10_000]. Every candidate the law runs on counts, accepted or rejected, so

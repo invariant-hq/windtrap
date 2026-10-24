@@ -135,6 +135,10 @@
 - `--replay TOKEN` (`WINDTRAP_REPLAY`) checks each selected property on
   the one case of a token that a failure printed; a token whose
   generator now parses another value fails as stale and checks nothing.
+- (breaking) `--prop-count N` (`WINDTRAP_PROP_COUNT`) raises the count of
+  every property below `N`, a declared `~count` included, and lowers
+  none, so a long run scales every property and a short one no longer
+  cuts the default of 100; `~count:0` still runs the examples alone.
 
 ### Coverage
 

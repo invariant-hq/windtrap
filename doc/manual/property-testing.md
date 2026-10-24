@@ -76,8 +76,9 @@ them.
 
 `prop name gen law` is a test that runs `law` on the values `gen` draws
 and asserts with the verbs of [Assertions](assertions.md). `~count` sets
-its number of cases, and `--prop-count` sets it for the properties
-without one, 100 by default. `Gen` has a generator for each type that
+its number of cases, 100 by default, and `--prop-count` raises the
+count of every property whose count is smaller, so a long run scales
+them all. `Gen` has a generator for each type that
 has a witness, under the same name, and composes them with `map`, `let+`
 and `one_of`. `Gen.with_pp` gives a generator the printer its
 counterexamples print with, and `Gen.of_list ~pp` and `Gen.constant ~pp`

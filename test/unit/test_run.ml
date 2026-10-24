@@ -1717,15 +1717,23 @@ let props =
         (Gen.constant 0) fails_in_tail_position;
     ]
 
+let counted_props =
+  [
+    Run.prop "counted" Gen.int ignore;
+    Run.prop ~count:2 "declared" Gen.int ignore;
+    Run.prop ~count:300 "declared more" Gen.int ignore;
+    Run.prop ~count:0 "examples only" ~examples:[ 1 ] Gen.int ignore;
+    Run.prop "counted fails" Gen.int (fun _ -> fail "no");
+    Run.prop ~count:300 "declared more fails" Gen.int (fun _ -> fail "no");
+  ]
+
 let prop_counted =
-  Recorded.execute
-    ~config:(fun c -> { c with prop_count = Some 5 })
-    [
-      Run.prop "counted" Gen.int ignore;
-      Run.prop ~count:2 "declared" Gen.int ignore;
-      Run.prop "counted fails" Gen.int (fun _ -> fail "no");
-      Run.prop ~count:2 "declared fails" Gen.int (fun _ -> fail "no");
-    ]
+  Recorded.execute ~config:(fun c -> { c with prop_count = Some 200 })
+    counted_props
+
+let prop_counted_fewer =
+  Recorded.execute ~config:(fun c -> { c with prop_count = Some 5 })
+    counted_props
 
 let printing =
   Recorded.execute
@@ -1954,10 +1962,10 @@ let a_holding_law_runs_the_default_count () =
 let the_engine_knows_where_its_count_came_from () =
   equal
     (list (option int))
-    [ Some 5; None ]
+    [ Some 200; None ]
     [
       snd (seed_and_count prop_counted [ "counted fails" ]);
-      snd (seed_and_count prop_counted [ "declared fails" ]);
+      snd (seed_and_count prop_counted [ "declared more fails" ]);
     ]
 
 let a_property_failure_is_at_the_declaration () =
@@ -2040,10 +2048,24 @@ let properties =
         a_holding_law_runs_the_default_count;
       test "a declared count is the number of cases" (fun () ->
           equal (option int) (Some 3) (cases_run props [ "declares a count" ]));
-      test "the configuration's count applies when none is declared" (fun () ->
-          equal (option int) (Some 5) (cases_run prop_counted [ "counted" ]));
-      test "a declared count wins over the configuration's" (fun () ->
-          equal (option int) (Some 2) (cases_run prop_counted [ "declared" ]));
+      test "the configuration's count raises a smaller count, declared or not"
+        (fun () ->
+          equal
+            (list (option int))
+            [ Some 200; Some 200; Some 300 ]
+            (List.map (cases_run prop_counted)
+               [ [ "counted" ]; [ "declared" ]; [ "declared more" ] ]));
+      test "the configuration's count lowers no count, the default included"
+        (fun () ->
+          equal
+            (list (option int))
+            [ Some 100; Some 5; Some 300 ]
+            (List.map (cases_run prop_counted_fewer)
+               [ [ "counted" ]; [ "declared" ]; [ "declared more" ] ]));
+      test "a count of 0 runs the examples alone, whatever the configuration"
+        (fun () ->
+          equal (option int) (Some 1)
+            (cases_run prop_counted [ "examples only" ]));
       test "the engine is told whether its count came from the configuration"
         the_engine_knows_where_its_count_came_from;
       test "a failing law adds the engine's failure, drawn from the run's seed"
