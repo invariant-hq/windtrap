@@ -525,12 +525,12 @@ class instrumenter ~keeps ~covered ~module_name =
         Some index
       end
 
-    (* The mutant of a literal, when no arid rule drops it. [int] skips a
-       constant whose nudge is ROR's own boundary move, an operand of [+] or
-       [-], which AOR moves, a [create] argument, and a literal that runs when
-       the module is initialized, before any test. [bool] flips a literal
-       outside a boolean context, where [neg] already acts, and skips an OS
-       flag. *)
+    (* The mutant of a literal, when no arid rule drops it. Neither rewrite
+       has a site that runs when the module is initialized, before any test,
+       where no run can judge it. [int] skips a constant whose nudge is ROR's
+       own boundary move, an operand of [+] or [-], which AOR moves, and a
+       [create] argument. [bool] flips a literal outside a boolean context,
+       where [neg] already acts, and skips an OS flag. *)
     method private literal context e =
       if covered then None
       else
@@ -588,7 +588,7 @@ class instrumenter ~keeps ~covered ~module_name =
                     args
               | Some _ | None -> false
             in
-            if os_flag then None
+            if at_load || os_flag then None
             else
               let flipped = if String.equal b "true" then "false" else "true" in
               let replacement =
@@ -718,7 +718,7 @@ class instrumenter ~keeps ~covered ~module_name =
           (* [del] drops a statement: [(if armed then () else (e1; ())); e2],
              where [e1; ()] types [e1] as the statement it was. *)
           let deletable =
-            (not covered)
+            (not covered) && (not at_load)
             && (not (is_opaque first))
             && (not (is_release first))
             &&

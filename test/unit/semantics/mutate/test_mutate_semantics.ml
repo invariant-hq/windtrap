@@ -132,11 +132,8 @@ let registration =
           equal (list string)
             (List.map in_this_directory fixture_sources)
             (sources ()));
-      (* [int] skips a literal that runs at module initialization, and
-         [bool] has no such rule: the [true] of [Mutsem_order.generalizes]
-         is the one site that runs at load. *)
-      test "no site but a module-level boolean is evaluated at module load"
-        (fun () -> equal reach [ ("bool", 1) ] reached_at_load);
+      test "no site is evaluated at module load" (fun () ->
+          equal reach [] reached_at_load);
     ]
 
 (* The catalogue *)

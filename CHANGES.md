@@ -195,7 +195,8 @@
   survivor asks for no test worth writing: a resource release (`close`,
   `close_out` and kin), an operand of `+` or `-`, a `create` capacity,
   the comparison constant whose nudge is the comparison's own boundary
-  move, a literal that runs at module initialization, and `~cloexec`.
+  move, `~cloexec`, and any literal or statement that runs at module
+  initialization.
 
 ## v0.2.0 2026-09-26
 

@@ -271,12 +271,17 @@ let lazy_witness () =
    which is never a syntactic value, and the guard that [bool] puts on
    this [true] is an [if] whose two arms are constants, which the
    type-checker counts as one. This binding is where that would break
-   first: a guard on its spine that is no syntactic value weakens it to
-   [bool * '_weak1 list]. Nothing here reads it at run time;
-   the check is the module coercion in test_mutate_semantics.ml, which compares
-   this copy's inferred signature against the twin's and fails to
-   compile the day the two disagree. *)
-let generalizes = (true, [])
+   first: a guard on its spine that is no syntactic value leaves the
+   ['a] of [bool * ('a -> 'a)], which no relaxation generalizes, weak.
+   The binding sits in a functor, whose body runs when it is applied, so
+   [bool] mutates it; at the top level it would run at load and carry no
+   site. Nothing here applies it; the check is the module coercion in
+   test_mutate_semantics.ml, which compares this copy's inferred
+   signature against the twin's and fails to compile the day the two
+   disagree. *)
+module Generalizes (_ : sig end) = struct
+  let pair = (true, fun x -> x)
+end
 
 (* {1 Tail position, measured}
 

@@ -455,9 +455,11 @@ leaves alone an operand of `+` or `-`, which `add` and `sub` move
 already; an argument of a function whose name ends in `create`, as the
 capacity of `Hashtbl.create 16`; the constant of a comparison in a
 condition when the nudge is the comparison's own boundary move, as the
-`0` of `x < 0`, since `x < 1` is `x <= 0`; and a literal that runs when
-the module is initialized, before any test, as in a top-level
-`let limit = 64`. `bool` leaves alone the argument of `~cloexec`.
+`0` of `x < 0`, since `x < 1` is `x <= 0`. `bool` leaves alone the
+argument of `~cloexec`. None of the three has a mutant in code that runs
+when the module is initialized, before any test, as in a top-level
+`let limit = 64` or `let () = setup (); main ()`, since no run can
+judge it.
 
 A comparison outside a condition, as in `let ok = a < b`, carries no
 mutant, and neither does an `assert`. In a chain of one operator, as

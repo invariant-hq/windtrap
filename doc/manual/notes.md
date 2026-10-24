@@ -373,7 +373,8 @@ removed match case mostly a fast path, so neither is a rewrite. The same
 reason leaves some code without a mutant: a resource release, whose loss
 no test observes, a capacity, which no test should pin, a nudge that
 repeats a comparison's or an arithmetic operator's own mutant, an OS
-flag, and a literal that runs before any test, which no run can judge.
+flag, and a literal or a statement that runs before any test, which no
+run can judge.
 
 ## A mutant killed anywhere is killed
 

@@ -149,7 +149,7 @@ before and after, and the reason of a dismissed site.
     3: 25:2-25:62 "del" "print_string \"x\"" -> "()", dismissed "the output is not checked"
     4: 30:2-30:8 "del" "a || b" -> "()"
     5: 30:2-30:8 "and" "a || b" -> "a && b"
-    6: 35:2-35:25 "del" "output_string oc \"done\"" -> "()"
+    6: 40:2-40:25 "del" "output_string oc \"done\"" -> "()"
   let log = ref []
   let push x =
     if Windtrap_mut_________fixture_del___ml.___windtrap_armed___ 0
@@ -182,6 +182,7 @@ before and after, and the reason of a dismissed site.
         else __windtrap_mut_5_p);
        ());
     ()
+  let () = print_string "loaded"; print_newline ()
   let finish oc ic fd dir =
     if Windtrap_mut_________fixture_del___ml.___windtrap_armed___ 6
     then ()
@@ -226,9 +227,9 @@ before and after, and the reason of a dismissed site.
     29: 20:31-20:33 "int" "11" -> "12"
     30: 20:20-20:25 "le" "0 < x" -> "0 <= x"
     31: 20:20-20:21 "int" "0" -> "1"
-    32: 22:18-22:20 "int" "65" -> "66"
-    33: 25:13-25:15 "int" "66" -> "67"
-    34: 30:20-30:22 "int" "67" -> "68"
+    32: 23:18-23:20 "int" "65" -> "66"
+    33: 26:13-26:15 "int" "66" -> "67"
+    34: 31:20-31:22 "int" "67" -> "68"
   let pick b =
     if
       let __windtrap_mut_2_p = b in
@@ -378,6 +379,7 @@ before and after, and the reason of a dismissed site.
       then 13
       else 12
   let limit = 64
+  let verbose = false
   let later =
     lazy
       ((if Windtrap_mut_________fixture_literals___ml.___windtrap_armed___ 32

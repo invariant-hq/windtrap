@@ -109,9 +109,10 @@
       [x <= c] and [x > c], and the mirror for a constant on the left. In
       [x < 0] the [0] is no site, since [x < 1] is [x <= 0], and in [x >= 1] the
       [1] is one.
-    - [int] skips a literal that runs when the module is initialized, before any
-      test: one outside every function, [lazy], method, class and functor body,
-      as in a top-level [let limit = 64].
+    - [del], [int] and [bool] skip code that runs when the module is
+      initialized, before any test, so that no run can judge its mutant: code
+      outside every function, [lazy], method, class and functor body, as in a
+      top-level [let limit = 64] or [let () = setup (); main ()].
     - [bool] skips the argument of a [~cloexec] or [?cloexec] label, an OS flag.
 
     These rules read the syntax alone, as [ari]'s chains do. *)
@@ -154,9 +155,9 @@
       identifier, which must name one site.
 
     The code that runs when a module is initialized is mutated like any other,
-    but for [int]'s literals, so a top-level [let origin = 1 + 2] carries a
-    site. The [--mutate] loop lists a site that ran outside tests alone as
-    evaluated outside tests. *)
+    but for the sites of [del], [int] and [bool], so a top-level
+    [let origin = 1 + 2] carries a site. The [--mutate] loop lists a site that
+    ran outside tests alone as evaluated outside tests. *)
 
 (** {1:dismissal Dismissal attributes}
 

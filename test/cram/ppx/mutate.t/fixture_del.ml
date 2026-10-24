@@ -30,6 +30,11 @@ let either a b =
   a || b;
   ()
 
+(* A statement that runs when the module is initialized is no site. *)
+let () =
+  print_string "loaded";
+  print_newline ()
+
 (* A resource release is arid, also under [ignore] or as a [try] body. *)
 let finish oc ic fd dir =
   output_string oc "done";

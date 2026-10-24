@@ -19,6 +19,7 @@ let above x = if x > 1 then 6 else 8
 let at_least x = if x >= 1 then 9 else 10
 let mirrored x = if 0 < x then 11 else 12
 let limit = 64
+let verbose = false
 let later = lazy (65, ())
 
 module Make (X : sig end) = struct
