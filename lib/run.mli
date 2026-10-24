@@ -405,23 +405,19 @@ val property :
   ?max_discard:int ->
   ?examples:'a list ->
   ?summary:('a -> string option) ->
-  ?prints_run:bool ->
-  ?cost:int ->
-  ?deterministic:bool ->
+  ?runs:int ->
   'a Gen.t ->
   ('a -> unit) ->
   unit
 (** [property gen law] is the body of the test that {!prop} declares, [loc]
     being its declaration site. It returns [()] on a [Pass] and raises the
     failure of any other outcome as a [Failure.Check_failure] (see {!prop}).
-    [prints_run], [cost] and [deterministic] are {!Property.run}'s. Raises as
-    {!current_frame} does.
+    [runs] is {!Property.run}'s. Raises as {!current_frame} does.
 
-    The [output] of {!Property.run} is what a run of [law] wrote from its start,
-    or from the last {!restart_law_output} in it, to its end, as
-    {!Capture.output_tail} gives it within two {!Capture.mark}s. The failure of
-    a [Fail] thus carries the output of the run that failed on its
-    counterexample, and keeps it through {!execute}.
+    The [output] of {!Property.run} is what a run of [law] wrote from its start
+    to its end, as {!Capture.output_tail} gives it within two {!Capture.mark}s.
+    The failure of a [Fail] thus carries the output of the run that failed on
+    its counterexample, and keeps it through {!execute}.
 
     Its [shrinking] gives the search to the observer of the run, as {!Shrinking}
     events, and [property] gives {!Shrunk} when {!Property.run} returns or
@@ -430,12 +426,6 @@ val property :
     What the law raises reaches the engine through windtrap's frames alone, so
     its backtrace ends on the law's own frames once
     {!Failure.backtrace_to_string} drops the trailing run of windtrap's. *)
-
-val restart_law_output : unit -> unit
-(** [restart_law_output ()] makes the output of the running law's run start
-    here, for a law that runs its case several times: the output that the
-    failure of a case shows is then that of the run that failed. It does nothing
-    outside a law, and on a domain other than the run's. *)
 
 val without_labels : (unit -> 'a) -> 'a
 (** [without_labels fn] is [fn ()] with the labels of the running law going to a

@@ -629,8 +629,7 @@ let give_in_attempt frame event =
    second. *)
 let shrink_interval = 0.1
 
-let property ?loc ?count ?max_discard ?examples ?summary ?prints_run ?cost
-    ?deterministic gen law =
+let property ?loc ?count ?max_discard ?examples ?summary ?runs gen law =
   let frame = current_frame () in
   let config = frame.run.config and capture = frame.run.capture in
   (* The command line raises a count and never lowers one, so a long run
@@ -682,9 +681,8 @@ let property ?loc ?count ?max_discard ?examples ?summary ?prints_run ?cost
   in
   let outcome =
     match
-      Property.run ?loc ?count ?max_discard ?examples ?summary ?prints_run ?cost
-        ?deterministic ?replay:config.replay ~output ~shrinking
-        ~root:config.seed
+      Property.run ?loc ?count ?max_discard ?examples ?summary ?runs
+        ?replay:config.replay ~output ~shrinking ~root:config.seed
         ~path:(Test_tree.path_to_string frame.path)
         gen run_law
     with
@@ -704,13 +702,6 @@ let property ?loc ?count ?max_discard ?examples ?summary ?prints_run ?cost
   | Coverage_failed stats -> fail stats (coverage_failure ?loc:frame.loc stats)
   | Gave_up stats ->
       fail { stats with coverage = [] } (gave_up_failure ?loc:frame.loc stats)
-
-let restart_law_output () =
-  match Atomic.get slot with
-  | Some (In_test ({ prop = Some _; _ } as frame)) when on_run_domain frame.run
-    ->
-      frame.law_mark <- Capture.mark frame.run.capture
-  | Some (In_test _ | In_run _) | None -> ()
 
 (* The enclosing law's context comes back however [fn] ends. *)
 let without_labels fn =

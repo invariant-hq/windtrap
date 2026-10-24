@@ -965,26 +965,27 @@ let shrinking =
                 Not_found"
                row)
             (outcome_row o));
-      cases "a law whose run costs 50 spends the budget in 200 runs" ~name:fst
+      cases "a law that runs each case 50 times spends the budget in 200 cases"
+        ~name:fst
         [
           ("a candidate left", (201, "200 steps, budget spent: 1"));
           ("no candidate left", (200, "200 steps, converged: 0"));
         ]
         (fun (_, (n, row)) ->
           let o =
-            Property.run ~cost:50 ~root ~path:"budget"
+            Property.run ~runs:50 ~root ~path:"budget"
               (drawn (chain n))
               (fun _ _ -> raise Not_found)
           in
           equal string
             (strf "fail, 0 cases, 0 discards; case 0, %s; raise Not_found" row)
             (outcome_row o));
-      test "a cost below 1 raises" (fun () ->
+      test "runs below 1 raise" (fun () ->
           raises_match Exn.invalid_arg (fun () ->
-              Property.run ~cost:0 ~root ~path:"budget"
+              Property.run ~runs:0 ~root ~path:"budget"
                 (drawn (chain 1))
                 (fun _ _ -> ())));
-      test "a candidate that discards costs one run, whatever the cost"
+      test "a candidate that discards costs one run, whatever its runs"
         (fun () ->
           let discarding = Seq.init 300 (fun _ -> Shrink_tree.leaf (-1)) in
           let tree =
@@ -993,7 +994,7 @@ let shrinking =
                 (Seq.append discarding (Seq.return (Shrink_tree.leaf 1)))
           in
           let o =
-            Property.run ~cost:50 ~root ~path:"budget" (drawn tree) (fun _ n ->
+            Property.run ~runs:50 ~root ~path:"budget" (drawn tree) (fun _ n ->
                 if n < 0 then Property.reject ();
                 raise Not_found)
           in
@@ -1047,6 +1048,36 @@ let at_least_10 _ x = if x >= 10 then Check.fail "big"
    [10] fails and has none. *)
 let descent = drawn (node 40 [ node 5 []; node 20 [ node 10 []; node 15 [] ] ])
 let outcome_asked = triple string (option string) (list int)
+
+(* Runs *)
+
+(* A law that marks a label at every call, and fails at every [n]th. *)
+let every n =
+  let calls = ref 0 in
+  fun ctx _ ->
+    incr calls;
+    Property.collect ctx "ran";
+    if !calls mod n = 0 then Check.fail "nth"
+
+let runs =
+  group "Runs"
+    [
+      test "a case passes when every run passes, and counts a label once"
+        (fun () ->
+          match
+            Property.run ~count:(`Declared 5) ~runs:2 ~root ~path:"runs" Gen.int
+              (every 11)
+          with
+          | Pass stats ->
+              equal (list (pair string int)) [ ("ran", 5) ] stats.collected
+          | o -> failf "an outcome: %s" (outcome_row o));
+      test "a case fails at the first run that fails" (fun () ->
+          let o =
+            Property.run ~count:(`Declared 5) ~runs:3 ~root ~path:"runs" Gen.int
+              (every 11)
+          in
+          equal int 3 (counterexample o).case_index);
+    ]
 
 let output =
   group "Output"
@@ -1180,12 +1211,21 @@ let empties _ r =
   r := 0;
   if was >= 10 then Check.fail "big"
 
+(* [empties], whose failure carries a record of what the run left when
+   [recorded]. *)
+let recording _ r =
+  match empties () r with
+  | () -> ()
+  | exception Failure.Check_failure f ->
+      let record = strf "left %d" !r in
+      raise
+        (Property.Run_failure
+           { fault = `Assertion f; record; summary = Some record })
+
 (* The failure of [empties] over [gen], and its summary. *)
-let emptied ?prints_run ?examples gen =
-  let o =
-    Property.run ?prints_run ?examples ~summary:held ~root ~path:"cells" gen
-      empties
-  in
+let emptied ?(recorded = false) ?examples gen =
+  let law = if recorded then recording else empties in
+  let o = Property.run ?examples ~summary:held ~root ~path:"cells" gen law in
   (outcome_row o, (counterexample o).summary)
 
 let emptied_row = pair string (option string)
@@ -1208,16 +1248,14 @@ let unreached =
   ]
 
 (* How many times a failing case of [descent]'s tree is sampled. *)
-let samples ?prints_run ?deterministic () =
+let samples ?runs () =
   let count = ref 0 in
   let gen =
     Gen_engine.make ~pp:Format.pp_print_int (fun s ->
         incr count;
         (node 40 [ node 5 []; node 20 [ node 10 []; node 15 [] ] ], s))
   in
-  ignore
-    (Property.run ?prints_run ?deterministic ~root ~path:"samples" gen
-       at_least_10);
+  ignore (Property.run ?runs ~root ~path:"samples" gen at_least_10);
   !count
 
 (* A law that sorts its array in place and fails when the array was not
@@ -1258,13 +1296,13 @@ let printing =
                message big",
               Some "held 10" )
             (emptied cells));
-      test "a counterexample whose printer prints the run prints as it ran"
+      test "a counterexample whose run raised its record prints as the record"
         (fun () ->
           equal emptied_row
-            ( "fail, 1 cases, 0 discards; case 1, 4 steps, converged: 0; \
+            ( "fail, 1 cases, 0 discards; case 1, 4 steps, converged: left 0; \
                message big",
-              Some "held 0" )
-            (emptied ~prints_run:true cells));
+              Some "left 0" )
+            (emptied ~recorded:true cells));
       test "a counterexample of a search that a timeout ended prints as drawn"
         (fun () ->
           let runs = ref 0 in
@@ -1287,23 +1325,24 @@ let printing =
             (emptied (once (node (ref 40) [ node (ref 20) [] ]) later)));
       cases "one draw again serves the printing and the run again"
         ~name:(fun (n, _) -> n)
-        [
-          ("printed and run", ((None, None), 2));
-          ("printed, not run", ((None, Some false), 2));
-          ("printing the run, and run", ((Some true, None), 2));
-          ("printing the run, not run", ((Some true, Some false), 1));
-        ]
-        (fun (_, ((prints_run, deterministic), n)) ->
-          equal int n (samples ?prints_run ?deterministic ()));
-      cases "a failing example prints as it was given, before its run"
+        [ ("printed and run", None); ("printed, not run", Some 2) ]
+        (fun (_, runs) -> equal int 2 (samples ?runs ()));
+      cases
+        "a failing example prints as it was given, before its run, or as its \
+         record"
         ~name:(fun (n, _) -> n)
-        [ ("drawn printing", None); ("a printer of the run", Some true) ]
-        (fun (_, prints_run) ->
+        [
+          ("drawn printing", (false, ("42", Some "held 42")));
+          ("a record of the run", (true, ("left 0", Some "left 0")));
+        ]
+        (fun (_, (recorded, (shown, summary))) ->
           equal emptied_row
-            ( "fail, 0 cases, 0 discards; example 0, 0 steps, converged: 42; \
-               message big",
-              Some "held 42" )
-            (emptied ?prints_run ~examples:[ ref 42 ] cells));
+            ( strf
+                "fail, 0 cases, 0 discards; example 0, 0 steps, converged: %s; \
+                 message big"
+                shown,
+              summary )
+            (emptied ~recorded ~examples:[ ref 42 ] cells));
       test "a bytes counterexample that its law fills prints as it was drawn"
         (fun () ->
           equal string
@@ -1357,9 +1396,9 @@ let failed_again o =
 
 (* The outcome of [law] on [gen] as a row, its failure's [failed_again], and
    the values that the law ran on. *)
-let ran_again ?deterministic ?examples gen law =
+let ran_again ?runs ?examples gen law =
   let law, seen = traced law in
-  let o = Property.run ?deterministic ?examples ~root ~path:"again" gen law in
+  let o = Property.run ?runs ?examples ~root ~path:"again" gen law in
   (outcome_row o, failed_again o, seen ())
 
 let converged_at_10 =
@@ -1430,10 +1469,10 @@ let running_again =
               None,
               [ 3; 42 ] )
             (ran_again ~examples:[ 3; 42 ] descent (first_sight ignore)));
-      test "a law that is not deterministic does not run again" (fun () ->
+      test "a law that runs each case twice does not run again" (fun () ->
           equal ran_again_row
-            (converged_at_10, None, [ 40; 5; 20; 10 ])
-            (ran_again ~deterministic:false descent (first_sight ignore)));
+            (converged_at_10, None, [ 40; 5; 5; 20; 10 ])
+            (ran_again ~runs:2 descent (first_sight ignore)));
       test "a search that a timeout ended does not run again" timed_out_search;
       test "a generator that raised runs nothing again" (fun () ->
           equal ran_again_row
@@ -1616,6 +1655,7 @@ let () =
          examples;
          generated;
          shrinking;
+         runs;
          output;
          progress;
          printing;

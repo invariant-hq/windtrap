@@ -1306,10 +1306,10 @@ val cover : string -> bool -> unit
 
     {b Labels.} {!collect}, {!classify} and {!cover} in a command's functions, a
     [~pre], the [candidates] of an {!among} type, an invariant or a release
-    count once per case, in the run that executes it. Shrinking counts nothing.
+    count once per case, in the runs that execute it. Shrinking counts nothing.
     On several domains the reference runs again for every order the judge tries,
     and those runs count nothing: the labels of the calls after the prefix count
-    along the order the judge accepted for the case's first run.
+    along the order the judge accepted in each run of the case.
 
     {b The reference behaves the same from run to run}, since shrinking and
     retries run it again. Drift comes from [Random], a [Hashtbl] whose order a

@@ -47,7 +47,34 @@ let state ?(path = "test_stateful_domains") index =
 
 let drawn ?path gen index = Gen_engine.sample gen (state ?path index)
 let value node = Gen_engine.value (Shrink_tree.root node)
-let printed gen program = Gen_engine.render_value gen program
+
+(* The record of each program's last run and its summary, as [execute] gave
+   or raised them, the newest first. *)
+let records = ref []
+
+let execute ?workers program () =
+  let keep record summary =
+    records := (program, (record, summary)) :: !records
+  in
+  match Stateful.execute ?workers program with
+  | record ->
+      keep
+        (Format.asprintf "%a" Stateful.pp_record record)
+        (Stateful.summary record)
+  | exception (Property.Run_failure { record; summary; _ } as e) ->
+      keep record summary;
+      raise e
+  | exception e ->
+      keep "(no record)" None;
+      raise e
+
+(* [printed gen program] is the record of [program]'s last run. *)
+let printed _gen program =
+  match List.assq_opt program !records with
+  | Some (record, _) -> record
+  | None -> "(not run)"
+
+let summary program = Option.bind (List.assq_opt program !records) snd
 let self () = (Domain.self () :> int)
 let main_domain = Atomic.make (self ())
 
@@ -73,8 +100,15 @@ let kind (f : Failure.t) =
 let ended fn =
   match fn () with
   | () -> "returned"
-  | exception Failure.Check_failure f -> "failure " ^ label f ^ kind f
-  | exception Property.Oracle_failure f -> "oracle " ^ label f ^ kind f
+  | exception
+      ( Failure.Check_failure f
+      | Property.Run_failure { fault = `Assertion f; _ } ) ->
+      "failure " ^ label f ^ kind f
+  | exception
+      ( Property.Oracle_failure f
+      | Property.Run_failure
+          { fault = `Exception (Property.Oracle_failure f, _); _ } ) ->
+      "oracle " ^ label f ^ kind f
   | exception e -> "raised " ^ Failure.exn_to_string e
 
 (* The one test of a tree, and its body. *)
@@ -100,8 +134,6 @@ let with_pool n fn =
     skip ~reason:"under mutation testing no test spawns a domain" ();
   let pool = Workers.spawn n in
   Fun.protect ~finally:(fun () -> Workers.join pool) (fun () -> fn pool)
-
-let execute ?workers program () = Stateful.execute ?workers program
 
 (* [recorded gen program] runs [program], on the calling domain without
    [workers], and is its record, however the run ended. *)
@@ -624,10 +656,10 @@ let property_failure = function
    report prints it, under the test's declaration at [loc]. *)
 let screen ?workers ~loc commands =
   let loc = Loc.of_pos loc in
-  let law _ p = Stateful.execute ?workers p in
+  let law _ p = ignore (Stateful.execute ?workers p : Stateful.record) in
+  let runs = if Option.is_some workers then 50 else 1 in
   let outcome =
-    Property.run ~loc ~summary:Stateful.summary ~prints_run:true ~root
-      ~path:"screen"
+    Property.run ~loc ~runs ~root ~path:"screen"
       (Stateful.program ~domains:2 commands)
       law
   in
@@ -728,7 +760,7 @@ let summaries () =
        (strf "%d calls, %d in parallel"
           (List.length (table record))
           (parallel record)))
-    (Stateful.summary program)
+    (summary program)
 
 let one_domain_table () =
   let gen = Stateful.program ~steps:4 ~domains:2 (printed_counter ()) in
@@ -744,7 +776,7 @@ let one_domain_table () =
   is_true
     (String.starts_with
        ~prefix:(strf "%d calls, last: " (List.length (table record)))
-       (Option.get (Stateful.summary program)))
+       (Option.get (summary program)))
 
 let report =
   group "The report"
@@ -810,6 +842,11 @@ let placed () =
 
 let run_counter = Atomic.make 0
 
+(* Two runs of [program], as a case on the workers runs it. *)
+let twice ~workers program () =
+  execute ~workers program ();
+  execute ~workers program ()
+
 (* [get] returns the number of the run that made its value, which prints
    alike in every run: only the first of a program's runs gives the
    reference's [0]. *)
@@ -836,7 +873,7 @@ let witnessed () =
   with_pool 2 @@ fun workers ->
   Atomic.set run_counter 0;
   starts_with ~affix:"failure [no order of the calls gives these results\n"
-    (ended (execute ~workers (value tree)))
+    (ended (twice ~workers (value tree)))
 
 (* A bag of 1 and 2 whose [take] gives 2 in a program's first run and 1 in
    every later one, and whose [mem1] always holds: the second run's
@@ -875,7 +912,7 @@ let prefix_judged () =
   with_pool 2 @@ fun workers ->
   runs := 0;
   starts_with ~affix:"failure [no order of the calls gives these results\n"
-    (ended (execute ~workers (value tree)))
+    (ended (twice ~workers (value tree)))
 
 let judged () =
   let next = ref 0 in
@@ -1195,7 +1232,7 @@ let controls () =
   let ending program =
     Atomic.set armed true;
     Fun.protect ~finally:(fun () -> Atomic.set armed false) @@ fun () ->
-    match Stateful.execute ~workers program with
+    match execute ~workers program () with
     | () -> "returned"
     | exception Failure.Control (`Skip (Some why)) -> "skip " ^ why
     | exception Sys.Break -> "Sys.Break"
@@ -1214,9 +1251,9 @@ let backtrace () =
   Atomic.set armed true;
   let f =
     Fun.protect ~finally:(fun () -> Atomic.set armed false) @@ fun () ->
-    match Stateful.execute ~workers program with
+    match execute ~workers program () with
     | () -> None
-    | exception Failure.Check_failure f -> Some f
+    | exception Property.Run_failure { fault = `Assertion f; _ } -> Some f
   in
   match require_some f with
   | { kind = Raise { backtrace = Some bt; _ }; _ } ->
@@ -1243,7 +1280,7 @@ let alarmed () =
   Atomic.set armed true;
   let ending =
     Fun.protect ~finally:(fun () -> Atomic.set armed false) @@ fun () ->
-    match Stateful.execute ~workers program with
+    match execute ~workers program () with
     | () -> "returned"
     | exception Failure.Control (`Timeout limit) ->
         strf "timed out after %gs" limit
@@ -1456,9 +1493,9 @@ let met ~cover_when () =
     (exact (recorded gen program));
   with_pool 2 @@ fun workers ->
   ended (fun () ->
-      Run.property ~count:1
+      Run.property ~count:1 ~runs:50
         (Gen.map (fun () -> program) Gen.unit)
-        (fun p -> Stateful.execute ~workers p))
+        (fun p -> ignore (Stateful.execute ~workers p : Stateful.record)))
 
 let labels =
   [
@@ -1469,8 +1506,8 @@ let labels =
     );
   ]
 
-(* [create]'s system prints the number of the case's run, and [check]
-   fails in its third run, so a failing case runs three times. *)
+(* [create]'s system prints the number of its run, and [check] fails in the
+   third run, so the failing case is the first, run three times. *)
 let failing_run_output () =
   let runs = Atomic.make 0 in
   let r = abstract "r" in
@@ -1489,10 +1526,9 @@ let failing_run_output () =
   in
   with_pool 2 @@ fun workers ->
   let law program =
-    Atomic.set runs 0;
-    Stateful.execute ~workers program
+    ignore (Stateful.execute ~workers program : Stateful.record)
   in
-  match Run.property gen law with
+  match Run.property ~runs:50 gen law with
   | () -> fail "the property passed"
   | exception Failure.Check_failure f ->
       equal (option string) (Some "run 3\n")

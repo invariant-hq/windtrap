@@ -12,6 +12,15 @@ let assume condition = if not condition then reject ()
 
 exception Oracle_failure of Failure.t
 
+(* Runs that print themselves *)
+
+exception
+  Run_failure of {
+    fault : Failure.fault;
+    record : string;
+    summary : string option;
+  }
+
 (* Labelling *)
 
 (* The bookkeeping of one run. A case runs on fresh [marks], which commit into
@@ -43,9 +52,22 @@ let cover ctx label condition =
   Hashtbl.replace ctx.demands label ();
   classify ctx label condition
 
-let run_case ctx law value =
+(* What a run that failed printed of its case, from a [Run_failure]. *)
+type record = { text : string; summary : string option }
+
+(* A case runs [runs] times on one set of marks, and fails with the first run
+   that fails, and the record that run printed. *)
+let run_case ~runs ctx law value =
   Hashtbl.reset ctx.marks;
-  Failure.catch (fun () -> law ctx value)
+  let rec from run =
+    match Failure.catch (fun () -> law ctx value) with
+    | Ok () when run < runs -> from (run + 1)
+    | Ok () -> Ok ()
+    | Error (`Exception (Run_failure { fault; record; summary }, _)) ->
+        Error ((fault :> Failure.caught), Some { text = record; summary })
+    | Error c -> Error (c, None)
+  in
+  from 1
 
 let hits ctx label = Option.value ~default:0 (Hashtbl.find_opt ctx.counts label)
 
@@ -114,11 +136,12 @@ let failure_class : Failure.fault -> failure_class = function
 let same_class a b = failure_class a = failure_class b
 
 (* What a search found: the node that prints, the node to run once more,
-   drawn again, and the failure and output of its run. *)
+   drawn again, the failure and the record of its run, and its output. *)
 type 'a shrunk = {
   shown : 'a Gen.Engine.sample;
   again : 'a Gen.Engine.sample option Lazy.t;
   fault : Failure.fault;
+  record : record option;
   tail : Failure.tail option;
   steps : int;
   ending : Failure.shrink_end;
@@ -149,12 +172,16 @@ let digest text = String.sub (Digest.to_hex (Digest.string text)) 0 8
 let rendered_text node =
   match Gen.Engine.render node with Value text | Pre_image text -> text
 
-(* The text of a counterexample, and whether it is an OCaml value. *)
-let rendered node =
-  match Gen.Engine.render node with
-  | Value text when Gen.Engine.literal node -> (text, Failure.Ocaml)
-  | Value text -> (text, Failure.Value)
-  | Pre_image text -> (text, Failure.Pre_image)
+(* The text of a counterexample, and whether it is an OCaml value. A case
+   whose run printed a record prints as that record. *)
+let rendered ?record node =
+  match record with
+  | Some record -> (record.text, Failure.Value)
+  | None -> (
+      match Gen.Engine.render node with
+      | Value text when Gen.Engine.literal node -> (text, Failure.Ocaml)
+      | Value text -> (text, Failure.Value)
+      | Pre_image text -> (text, Failure.Pre_image))
 
 let parse_again gen choices =
   match
@@ -167,65 +194,72 @@ let parse_again gen choices =
    again. An edit whose parse discards or raises a fault is rejected at the
    cost of a discard, and one whose parse reads no smaller sequence runs no
    law; a candidate is a value of the generator by construction, so no
-   candidate can end the search. Each run of the law costs [cost]. *)
-let shrink_choices ~cost ~output ~shrinking ~prints_run gen law case node fault
-    =
+   candidate can end the search. Each case costs its [runs]. *)
+let shrink_choices ~runs ~output ~shrinking gen law case node (fault, record) =
   let scratch = make_context () in
-  let best = ref (case, node, fault, None) and steps = ref 0 in
+  let best = ref (case, node, fault, record, None) and steps = ref 0 in
   let test choices =
     let src = Choice.replaying choices in
     match Failure.catch (fun () -> Gen.Engine.parse gen src) with
     | Error (`Timeout _ as timeout) -> Failure.reraise timeout
     | Error (`Discard | #Failure.fault) -> Shrink.Discards
     | Error (#Failure.control as control) -> Failure.reraise control
-    | Ok _ when
-        let kept, _, _, _ = !best in
-        Shrink.shortlex (Choice.choices src) kept.Shrink.choices >= 0 ->
+    | Ok _
+      when let kept, _, _, _, _ = !best in
+           Shrink.shortlex (Choice.choices src) kept.Shrink.choices >= 0 ->
         Shrink.Not_smaller
     | Ok node -> (
         shrinking !steps;
-        match run_case scratch law (Gen.Engine.value node) with
-        | Error (`Timeout _ as timeout) -> Failure.reraise timeout
-        | Error (#Failure.fault as accepted) when same_class fault accepted ->
+        match run_case ~runs scratch law (Gen.Engine.value node) with
+        | Error ((`Timeout _ as timeout), _) -> Failure.reraise timeout
+        | Error ((#Failure.fault as accepted), record)
+          when same_class fault accepted ->
             let parsed = case_of src in
             let keep () =
               let tail = output () in
               incr steps;
-              best := (parsed, node, accepted, tail)
+              best := (parsed, node, accepted, record, tail)
             in
             Fails { parsed; keep }
-        | Error `Discard -> Discards
-        | Ok () | Error (#Failure.fault | #Failure.control) -> Passes)
+        | Error (`Discard, _) -> Discards
+        | Ok () | Error ((#Failure.fault | #Failure.control), _) -> Passes)
   in
   let search () =
-    best := (case, node, fault, output ());
-    match Shrink.shrink ~budget:shrink_budget ~cost test case with
+    best := (case, node, fault, record, output ());
+    match Shrink.shrink ~budget:shrink_budget ~cost:runs test case with
     | _, _, Shrink.Converged -> Failure.Converged
     | _, _, Shrink.Budget_spent -> Failure.Budget_spent
   in
   let ending = searched search in
-  let case, node, fault, tail = !best in
+  let case, node, fault, record, tail = !best in
   (* The final case is parsed again for printing: a run can change the value
      it is given, and a parse builds it as it was drawn. *)
   let again = lazy (parse_again gen case.choices) in
-  let shown =
-    if prints_run then node else Option.value ~default:node (Lazy.force again)
-  in
+  let shown = Option.value ~default:node (Lazy.force again) in
   let token =
     Choice.token case.choices ~digest:(digest (rendered_text shown))
   in
-  { shown; again; fault; tail; steps = !steps; ending; token = Some token }
+  {
+    shown;
+    again;
+    fault;
+    record;
+    tail;
+    steps = !steps;
+    ending;
+    token = Some token;
+  }
 
 (* Rose trees, until stateful programs parse choices: the search descends
    the tree of a sample, greedily, to the first candidate that fails in the
    class of the first failure. A route holds the index of each accepted
    candidate among its siblings, the last first. *)
-let shrink_tree ~cost ~output ~shrinking ~prints_run gen law state tree fault =
+let shrink_tree ~runs ~output ~shrinking gen law state tree (fault, record) =
   let scratch = make_context () in
   let root_value tree = Gen.Engine.value (Gen.Engine.Shrink_tree.root tree) in
-  let best = ref (tree, [], fault, None) in
-  let rec descend ~runs ~steps route tree =
-    let rec first_accepted ~runs index candidates =
+  let best = ref (tree, [], fault, record, None) in
+  let rec descend ~spent ~steps route tree =
+    let rec first_accepted ~spent index candidates =
       match Failure.catch candidates with
       | Error (`Timeout _ as timeout) -> Failure.reraise timeout
       | Error c ->
@@ -233,27 +267,29 @@ let shrink_tree ~cost ~output ~shrinking ~prints_run gen law state tree fault =
              behind it are unreachable. *)
           Failure.Candidate_raised (Failure.text (Failure.caught_to_string c))
       | Ok Seq.Nil -> Failure.Converged
-      | Ok (Seq.Cons _) when runs >= shrink_budget -> Failure.Budget_spent
+      | Ok (Seq.Cons _) when spent >= shrink_budget -> Failure.Budget_spent
       | Ok (Seq.Cons (candidate, rest)) -> (
           shrinking steps;
-          match run_case scratch law (root_value candidate) with
-          | Error (`Timeout _ as timeout) -> Failure.reraise timeout
-          | Error (#Failure.fault as accepted) when same_class fault accepted ->
+          match run_case ~runs scratch law (root_value candidate) with
+          | Error ((`Timeout _ as timeout), _) -> Failure.reraise timeout
+          | Error ((#Failure.fault as accepted), record)
+            when same_class fault accepted ->
               let route = index :: route in
-              best := (candidate, route, accepted, output ());
-              descend ~runs:(runs + cost) ~steps:(steps + 1) route candidate
-          | Error `Discard -> first_accepted ~runs:(runs + 1) (index + 1) rest
-          | Ok () | Error (#Failure.fault | #Failure.control) ->
-              first_accepted ~runs:(runs + cost) (index + 1) rest)
+              best := (candidate, route, accepted, record, output ());
+              descend ~spent:(spent + runs) ~steps:(steps + 1) route candidate
+          | Error (`Discard, _) ->
+              first_accepted ~spent:(spent + 1) (index + 1) rest
+          | Ok () | Error ((#Failure.fault | #Failure.control), _) ->
+              first_accepted ~spent:(spent + runs) (index + 1) rest)
     in
-    first_accepted ~runs 0 (Gen.Engine.Shrink_tree.children tree)
+    first_accepted ~spent 0 (Gen.Engine.Shrink_tree.children tree)
   in
   let search () =
-    best := (tree, [], fault, output ());
-    descend ~runs:0 ~steps:0 [] tree
+    best := (tree, [], fault, record, output ());
+    descend ~spent:0 ~steps:0 [] tree
   in
   let ending = searched search in
-  let tree, route, fault, tail = !best in
+  let tree, route, fault, record, tail = !best in
   let node = Gen.Engine.Shrink_tree.root tree in
   (* The counterexample drawn again from the case's [state] along the
      search's [route], as a replay draws it: a pure [gen] draws it as it was
@@ -274,10 +310,17 @@ let shrink_tree ~cost ~output ~shrinking ~prints_run gen law state tree fault =
       | Ok tree -> Option.map Gen.Engine.Shrink_tree.root tree
       | Error _ -> None)
   in
-  let shown =
-    if prints_run then node else Option.value ~default:node (Lazy.force again)
-  in
-  { shown; again; fault; tail; steps = List.length route; ending; token = None }
+  let shown = Option.value ~default:node (Lazy.force again) in
+  {
+    shown;
+    again;
+    fault;
+    record;
+    tail;
+    steps = List.length route;
+    ending;
+    token = None;
+  }
 
 (* Finite domains *)
 
@@ -340,9 +383,8 @@ let inner_failure : Failure.fault -> Failure.t = function
   | fault -> Failure.of_fault fault
 
 let run ?loc ?count ?max_discard ?(examples = []) ?(summary = Fun.const None)
-    ?(prints_run = false) ?(cost = 1) ?(deterministic = true)
-    ?(output = Fun.const None) ?(shrinking = ignore) ?replay ~root ~path gen
-    law =
+    ?(runs = 1) ?(output = Fun.const None) ?(shrinking = ignore) ?replay ~root
+    ~path gen law =
   let count, config_count =
     match count with
     | None -> (default_count, None)
@@ -350,7 +392,7 @@ let run ?loc ?count ?max_discard ?(examples = []) ?(summary = Fun.const None)
     | Some (`Config n) -> (n, Some n)
   in
   if count < 0 then invalid_arg "Property.run: count must be non-negative";
-  if cost < 1 then invalid_arg "Property.run: cost must be positive";
+  if runs < 1 then invalid_arg "Property.run: runs must be positive";
   let max_discard =
     match max_discard with
     | None -> if count > max_int / 2 then max_int else 2 * count
@@ -359,8 +401,11 @@ let run ?loc ?count ?max_discard ?(examples = []) ?(summary = Fun.const None)
     | Some limit -> limit
   in
   let ctx = make_context () in
-  let fail ~case_index ~examples ?summary ?rendering ?(shrink_steps = 0)
+  let fail ~case_index ~examples ?record ?summary ?rendering ?(shrink_steps = 0)
       ?shrink_end ?tail ?failed_again ?token ~rendered fault =
+    let summary =
+      match record with Some record -> record.summary | None -> summary
+    in
     let failure =
       Failure.property ?loc ~inner:(inner_failure fault) ?count:config_count
         ?summary ~rendered ~case_index ~shrink_steps ?shrink_end ~root ~examples
@@ -374,17 +419,18 @@ let run ?loc ?count ?max_discard ?(examples = []) ?(summary = Fun.const None)
     Fail { failure; stats = stats ctx }
   in
   (* A law that does not fail again on its own counterexample is no function
-     of it. It runs on the counterexample [drawn] again. *)
+     of it. It runs on the counterexample [drawn] again, unless it runs a case
+     several times, which says that a case may pass where it failed. *)
   let run_again drawn =
-    if not deterministic then None
+    if runs > 1 then None
     else
       match Lazy.force drawn with
       | None -> None
       | Some node -> (
-          match run_case (scratch ()) law (Gen.Engine.value node) with
-          | Error #Failure.fault -> Some true
-          | Ok () | Error (`Skip _ | `Exit | `Discard) -> Some false
-          | Error (`Timeout _) -> None)
+          match run_case ~runs (scratch ()) law (Gen.Engine.value node) with
+          | Error (#Failure.fault, _) -> Some true
+          | Ok () | Error ((`Skip _ | `Exit | `Discard), _) -> Some false
+          | Error (`Timeout _, _) -> None)
   in
   (* Built here: only the engine knows the case the limit cut and the cases
      that passed before it, which a replay needs. *)
@@ -401,16 +447,16 @@ let run ?loc ?count ?max_discard ?(examples = []) ?(summary = Fun.const None)
     Fail { failure = Failure.timeout ?loc ~case limit; stats = stats ctx }
   in
   let check law value =
-    match run_case ctx law value with
+    match run_case ~runs ctx law value with
     | Ok () ->
         commit ctx;
         `Passed
-    | Error `Discard ->
+    | Error (`Discard, _) ->
         discard ctx;
         `Discarded
-    | Error (#Failure.fault as fault) -> `Failed fault
-    | Error (`Timeout limit) -> `Timed_out limit
-    | Error (#Failure.control as control) -> Failure.reraise control
+    | Error ((#Failure.fault as fault), record) -> `Failed (fault, record)
+    | Error (`Timeout limit, _) -> `Timed_out limit
+    | Error ((#Failure.control as control), _) -> Failure.reraise control
   in
   (* A case drawn from [state]: its node, and the search from it. *)
   let draw state =
@@ -418,13 +464,12 @@ let run ?loc ?count ?max_discard ?(examples = []) ?(summary = Fun.const None)
     | Some _ ->
         let tree = Gen.Engine.sample gen state in
         ( Gen.Engine.Shrink_tree.root tree,
-          shrink_tree ~cost ~output ~shrinking ~prints_run gen law state tree )
+          shrink_tree ~runs ~output ~shrinking gen law state tree )
     | None ->
         let src = Choice.generating state in
         let node = Gen.Engine.parse gen src in
         ( node,
-          shrink_choices ~cost ~output ~shrinking ~prints_run gen law
-            (case_of src) node )
+          shrink_choices ~runs ~output ~shrinking gen law (case_of src) node )
   in
   let judged () =
     if ctx.discards > max_discard then Gave_up (stats ctx)
@@ -455,9 +500,10 @@ let run ?loc ?count ?max_discard ?(examples = []) ?(summary = Fun.const None)
           | `Discarded -> generate ~passed (index + 1)
           | `Timed_out limit ->
               timed_out ~case_index:index ~examples:false limit
-          | `Failed fault ->
-              let found = shrink fault in
-              let rendered, rendering = rendered found.shown in
+          | `Failed failed ->
+              let found = shrink failed in
+              let record = found.record in
+              let rendered, rendering = rendered ?record found.shown in
               let summary = summary (Gen.Engine.value found.shown) in
               (* The timeout spent the test's alarm: a run now has no limit. *)
               let failed_again =
@@ -466,7 +512,7 @@ let run ?loc ?count ?max_discard ?(examples = []) ?(summary = Fun.const None)
                 | Converged | Budget_spent | Candidate_raised _ ->
                     run_again found.again
               in
-              fail ~case_index:index ~examples:false ?summary ~rendering
+              fail ~case_index:index ~examples:false ?record ?summary ~rendering
                 ~shrink_steps:found.steps ~shrink_end:found.ending
                 ?tail:found.tail ?failed_again ?token:found.token ~rendered
                 found.fault)
@@ -484,14 +530,15 @@ let run ?loc ?count ?max_discard ?(examples = []) ?(summary = Fun.const None)
   let whole values =
     let domain = List.length values in
     ctx.whole <- Some domain;
-    let refuted ?also (index, choices, node, fault, tail) =
+    let refuted ?also (index, choices, node, (fault, record), tail) =
       let node = Option.value ~default:node (parse_again gen choices) in
-      let rendered, rendering = rendered node in
-      let token = Choice.token choices ~digest:(digest rendered) in
+      let token = Choice.token choices ~digest:(digest (rendered_text node)) in
+      let rendered, rendering = rendered ?record node in
+      let summary = Option.bind record (fun record -> record.summary) in
       let failure =
         Failure.property ?loc ~inner:(inner_failure fault) ?count:config_count
-          ~rendered ~case_index:index ~shrink_steps:0 ~root ~examples:false
-          ~rendering ~token ~domain ?also ()
+          ?summary ~rendered ~case_index:index ~shrink_steps:0 ~root
+          ~examples:false ~rendering ~token ~domain ?also ()
       in
       match tail with
       | Some tail -> Failure.with_output_tail tail failure
@@ -508,9 +555,9 @@ let run ?loc ?count ?max_discard ?(examples = []) ?(summary = Fun.const None)
           match check law (Gen.Engine.value node) with
           | `Passed | `Discarded -> check_all (index + 1) found rest
           | `Timed_out limit -> timed_out ~case_index:index ~examples:false limit
-          | `Failed fault ->
+          | `Failed failed ->
               let tail = output_after_failure () in
-              let found = (index, choices, node, fault, tail) :: found in
+              let found = (index, choices, node, failed, tail) :: found in
               check_all (index + 1) found rest)
     in
     check_all 0 [] values
@@ -542,15 +589,18 @@ let run ?loc ?count ?max_discard ?(examples = []) ?(summary = Fun.const None)
         match check printed_first value with
         | `Passed | `Discarded -> run_examples (index + 1) rest
         | `Timed_out limit -> timed_out ~case_index:index ~examples:true limit
-        | `Failed fault -> (
+        | `Failed (fault, record) -> (
             let tail = output_after_failure () in
             (* [render_value] makes a fault of the printer its text, so the
                example that failed was rendered. *)
-            match !rendered with
-            | Some rendered ->
+            match (record, !rendered) with
+            | Some record, _ ->
+                fail ~case_index:index ~examples:true ~record ?tail
+                  ~rendered:record.text fault
+            | None, Some rendered ->
                 fail ~case_index:index ~examples:true ?summary:!summarized ?tail
                   ~rendered fault
-            | None -> assert false))
+            | None, None -> assert false))
   in
   (* A replayed case is neither seeded nor shrunk, as an example, and keeps
      its token. A token that its generator no longer parses to the value it
@@ -571,7 +621,7 @@ let run ?loc ?count ?max_discard ?(examples = []) ?(summary = Fun.const None)
             refused "stale: its generator no longer parses a value from it"
         | Error (#Failure.control as control) -> Failure.reraise control
         | Ok node -> (
-            let text, rendering = rendered node in
+            let text = rendered_text node in
             if choices <> Choice.choices src || digested <> digest text then
               refused
                 (Pp.str "stale: its generator now parses %s, not the value it \
@@ -582,11 +632,12 @@ let run ?loc ?count ?max_discard ?(examples = []) ?(summary = Fun.const None)
               | `Discarded -> refused "the law discarded its case"
               | `Timed_out limit ->
                   timed_out ~case_index:0 ~examples:true limit
-              | `Failed fault ->
+              | `Failed (fault, record) ->
                   let tail = output_after_failure () in
                   let summary = summary (Gen.Engine.value node) in
-                  fail ~case_index:0 ~examples:true ?summary ~rendering ?tail
-                    ~token ~rendered:text fault))
+                  let rendered, rendering = rendered ?record node in
+                  fail ~case_index:0 ~examples:true ?record ?summary ~rendering
+                    ?tail ~token ~rendered fault))
   in
   match replay with
   | Some token -> replayed token

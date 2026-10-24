@@ -40,7 +40,34 @@ let state ?(path = "test_stateful") index =
 
 let drawn ?path gen index = Gen_engine.sample gen (state ?path index)
 let value node = Gen_engine.value (Shrink_tree.root node)
-let printed gen program = Gen_engine.render_value gen program
+
+(* The record of each program's last run and its summary, as [execute] gave
+   or raised them, the newest first. *)
+let records = ref []
+
+let execute program () =
+  let keep record summary =
+    records := (program, (record, summary)) :: !records
+  in
+  match Stateful.execute program with
+  | record ->
+      keep
+        (Format.asprintf "%a" Stateful.pp_record record)
+        (Stateful.summary record)
+  | exception (Property.Run_failure { record; summary; _ } as e) ->
+      keep record summary;
+      raise e
+  | exception e ->
+      keep "(no record)" None;
+      raise e
+
+(* [printed gen program] is the record of [program]'s last run. *)
+let printed _gen program =
+  match List.assq_opt program !records with
+  | Some (record, _) -> record
+  | None -> "(not run)"
+
+let summary program = Option.bind (List.assq_opt program !records) snd
 
 (* The functions under test note what they see. *)
 let noted = ref []
@@ -75,21 +102,36 @@ let label (f : Failure.t) =
 
 let row f = label f ^ kind f
 
-(* How [fn ()] ended: it returned, failed, broke the reference or raised. *)
+(* How [fn ()] ended: it returned, failed, broke the reference or raised. A
+   run fails with its record. *)
 let ended fn =
   match fn () with
   | () -> "returned"
-  | exception Failure.Check_failure f -> "failure " ^ row f
-  | exception Property.Oracle_failure f -> "oracle " ^ row f
+  | exception
+      ( Failure.Check_failure f
+      | Property.Run_failure { fault = `Assertion f; _ } ) ->
+      "failure " ^ row f
+  | exception
+      ( Property.Oracle_failure f
+      | Property.Run_failure
+          { fault = `Exception (Property.Oracle_failure f, _); _ } ) ->
+      "oracle " ^ row f
   | exception e -> "raised " ^ Failure.exn_to_string e
 
 let raised e = ended (fun () -> raise e)
-let execute program () = Stateful.execute program
 
 let failure fn =
   match fn () with
   | () -> None
-  | exception (Failure.Check_failure f | Property.Oracle_failure f) -> Some f
+  | exception
+      ( Failure.Check_failure f
+      | Property.Oracle_failure f
+      | Property.Run_failure
+          {
+            fault = `Assertion f | `Exception (Property.Oracle_failure f, _);
+            _;
+          } ) ->
+      Some f
   | exception _ -> None
 
 let site (loc : Loc.t option) =
@@ -352,7 +394,7 @@ let flattened_name () =
   in
   let p = value (drawn gen 0) in
   let failed = require_some (failure (execute p)) in
-  let summary = Option.value ~default:"no summary" (Stateful.summary p) in
+  let summary = Option.value ~default:"no summary" (summary p) in
   let label = (require_some failed.msg).kept in
   expect_exact (String.concat "\n" [ printed gen p; summary; label ])
   @@ __POS_OF__
@@ -972,7 +1014,7 @@ let broken_pre_row () =
   equal
     (pair string (option string))
     (" #  call\n 1  f ()", Some "1 call, last: f")
-    (printed gen p, Stateful.summary p)
+    (printed gen p, summary p)
 
 (* [raising_in place e] is a program whose [place] raises [e] once. *)
 let raising_in place e =
@@ -1660,7 +1702,7 @@ let rendering () =
     | Value s -> "value " ^ s
     | Pre_image s -> "pre-image " ^ s
   in
-  equal string "value (not run)" rendering
+  equal string "value set 1" rendering
 
 let the_record =
   group "The record"
@@ -1757,7 +1799,8 @@ let the_record =
         ~name:(fun (n, _) -> strf "%d calls" n)
         [ (40, "41 lines, "); (41, "42 lines, \u{2026} (1 call omitted)") ]
         (fun (n, row) -> equal string row (cut n));
-      test "a program renders as a value, never a pre-image" rendering;
+      test "a program renders as a value, as it was drawn, never a pre-image"
+        rendering;
     ]
 
 (* Summaries *)
@@ -1791,13 +1834,13 @@ let last_failing () =
   ignore (recorded ~reset gen p : string);
   equal (option string)
     (Some (strf "%d calls, last: fails" (rows (printed gen p))))
-    (Stateful.summary p)
+    (summary p)
 
 let summaries =
   group "Summaries"
     [
       test "a program that has not run has no summary" (fun () ->
-          is_none (Stateful.summary (value (drawn (ticks 3) 0))));
+          is_none (summary (value (drawn (ticks 3) 0))));
       cases "the summary is the record in one line, and none without calls"
         ~name:(fun (n, _) -> strf "steps %d" n)
         summary_rows
@@ -1805,7 +1848,7 @@ let summaries =
           let gen = ticks n in
           let p = value (drawn gen 0) in
           ignore (recorded gen p : string);
-          equal (option string) s (Stateful.summary p));
+          equal (option string) s (summary p));
       test "the summary of a failing run ends on the call that failed"
         last_failing;
     ]
@@ -2015,12 +2058,9 @@ let property_failure = function
    under the test's declaration at [loc]. *)
 let screen ~loc commands =
   let loc = Loc.of_pos loc in
-  let law _ p = Stateful.execute p in
+  let law _ p = ignore (Stateful.execute p : Stateful.record) in
   let outcome =
-    Property.run ~loc ~summary:Stateful.summary ~prints_run:true ~root
-      ~path:"screen"
-      (Stateful.program commands)
-      law
+    Property.run ~loc ~root ~path:"screen" (Stateful.program commands) law
   in
   let f = require_match property_failure outcome in
   Format.asprintf "%a"
@@ -2187,11 +2227,8 @@ let search (f : Failure.t) =
 
 let run_property ?(count = 100) ~path commands =
   let gen = Stateful.program commands in
-  let law _ p = Stateful.execute p in
-  let outcome =
-    Property.run ~count:(`Declared count) ~summary:Stateful.summary
-      ~prints_run:true ~root ~path gen law
-  in
+  let law _ p = ignore (Stateful.execute p : Stateful.record) in
+  let outcome = Property.run ~count:(`Declared count) ~root ~path gen law in
   (gen, require_match property_failure outcome)
 
 let shrunk_queue () =
@@ -2265,11 +2302,10 @@ let replayed () =
   let law _ p =
     Fun.protect
       ~finally:(fun () -> trace := printed gen p :: !trace)
-      (fun () -> Stateful.execute p)
+      (execute p)
   in
   let outcome =
-    Property.run ~count:(`Declared 40) ~prints_run:true ~root ~path:"replay" gen
-      law
+    Property.run ~count:(`Declared 40) ~root ~path:"replay" gen law
   in
   let f = require_match property_failure outcome in
   let case, steps = require_match search f in
@@ -2443,9 +2479,8 @@ let shrunk_element least =
     ]
   in
   let outcome =
-    Property.run ~summary:Stateful.summary ~prints_run:true ~root
-      ~path:"element" (Stateful.program ~steps:2 commands) (fun _ p ->
-        Stateful.execute p)
+    Property.run ~root ~path:"element" (Stateful.program ~steps:2 commands)
+      (fun _ p -> ignore (Stateful.execute p : Stateful.record))
   in
   let f = require_match property_failure outcome in
   let _, steps = require_match search f in
@@ -2534,7 +2569,7 @@ let listing_failures =
         discarded broken );
     ( "a skip",
       Failure.Control (`Skip (Some "why")),
-      "raised windtrap skip: why\n #  call\n 1  let d1 = create ()" );
+      "raised windtrap skip: why\n(no record)" );
   ]
 
 (* The call of [f] over the one element [v] of a value, printed by [w]. *)

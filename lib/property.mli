@@ -22,7 +22,7 @@
     ({!Oracle_failure}) or any other exception, and the shrink search keeps to
     the class of the first failure (see {!run}). It runs the law again on
     candidates, and once more on the counterexample, so a law must be
-    deterministic.
+    deterministic, or say through [runs] that it is not.
     - A [`Discard] discards the case.
     - A [`Timeout] while no case has failed, during an example, a generation or
       the first run of a case, ends the run in a [Fail] whose failure is a
@@ -52,6 +52,22 @@ exception Oracle_failure of Failure.t
     of a stateful test. A broken oracle is a class of failure of its own, so the
     shrink search of a case that raised it keeps to the candidates that raise
     it, and the search of any other failure rejects them (see {!run}). *)
+
+(** {1:records Runs that print themselves} *)
+
+exception
+  Run_failure of {
+    fault : Failure.fault;
+    record : string;
+    summary : string option;
+  }
+(** Raised by a law whose case prints as the record of what its run did, as a
+    stateful program prints the table of the calls that its run made: [fault] is
+    the failure of the run, [record] the text that stands for the case, and
+    [summary] says in one line what [record] holds, as {!run}'s [summary] would.
+    {!run} takes the failure as [fault] and prints a counterexample whose run
+    raised it as [record], so the record of the run that failed prints, never a
+    run of the case drawn again. *)
 
 (** {1:labelling Labelling}
 
@@ -186,9 +202,7 @@ val run :
   ?max_discard:int ->
   ?examples:'a list ->
   ?summary:('a -> string option) ->
-  ?prints_run:bool ->
-  ?cost:int ->
-  ?deterministic:bool ->
+  ?runs:int ->
   ?output:(unit -> Failure.tail option) ->
   ?shrinking:(int -> unit) ->
   ?replay:string ->
@@ -215,16 +229,11 @@ val run :
       the value that [rendered] describes. It must be [Some line] iff [gen]
       prints [v] as a table (see {!Failure.Property}), and must not raise.
       Defaults to [Fun.const None].
-    - [prints_run] is whether [gen]'s printer prints what a run of [law] left in
-      the value, as a stateful program prints the record of its run. The final
-      node of the search then prints as the search's run on it left it. Defaults
-      to [false].
-    - [cost] is the share of {!shrink_budget} that one run of [law] spends, for
-      a law that runs its case several times. A run that discards spends [1],
-      which assumes that such a law discards before it repeats its case.
-      Defaults to [1].
-    - [deterministic] is whether every run of [law] on a failing case fails,
-      which a law that races on several domains need not do. Defaults to [true].
+    - [runs] is the number of times [law] runs on each case, for a law that need
+      not fail in every run of a failing case, as one that races on several
+      domains. The case fails at the first run that fails, and passes when every
+      run passes. Its labels are the marks of all its runs, and [output] gives
+      the output of the run that failed. Defaults to [1].
     - [output ()] is the captured output of the run of [law] that has just
       ended. [run] calls it right after each run that fails on a case that
       becomes the counterexample: a failing example, the first failing case, and
@@ -255,8 +264,8 @@ val run :
 
     An example is formatted, and given to [summary], at the start of its run,
     before [law], which can change it. A failing example thus prints as it was
-    given, whatever [prints_run]. A control that the printer raises acts as one
-    that [law] raises.
+    given, unless its run raised a {!Run_failure}. A control that the printer
+    raises acts as one that [law] raises.
 
     {b Finite domains.} After the examples, unless [count] is [0] or [gen] is
     a tree of [Gen.Engine.make], the run parses [gen]'s sequences in
@@ -291,9 +300,9 @@ val run :
     raises a fault is rejected at the cost of a discard, and one whose parse
     reads no smaller sequence runs no law.
 
-    The search ends at a fixed point, [Failure.Converged], or when its runs of
-    [law], each costing [cost] or [1] when it discards, have spent
-    {!shrink_budget}, [Failure.Budget_spent].
+    The search ends at a fixed point, [Failure.Converged], or when its cases,
+    each costing [runs], or [1] when it discards, have spent {!shrink_budget},
+    [Failure.Budget_spent].
 
     The program of a stateful test is drawn as a tree ([Gen.Engine.make]),
     which no choice describes: its search descends the tree, moving at each
@@ -315,22 +324,24 @@ val run :
     drawn again along the search's route. A pure [gen] builds the counterexample
     as it was first generated, whatever a run of [law] did to the value it was
     given, and nothing runs on the value before it is printed. The final case
-    prints as the search left it under [prints_run], and when the parse fails,
-    which an impure [gen] or the test's limit can cause.
+    prints as the search left it when the parse fails, which an impure [gen] or
+    the test's limit can cause. A case whose run raised a {!Run_failure} prints
+    as its [record], with its [summary], in place of the value and of [summary];
+    its token's digest is still of the value's printing.
 
-    {b Running again.} After the search, a [deterministic] law runs once more on
-    the counterexample parsed again as for printing. One draw serves both, and
-    the run comes after the printing. The run's labels go to a {!scratch}
-    context. The [failed_again] of the failure is [Some true] when that run
-    raises a [Failure.fault], in any class, [Some false] when it returns or
-    raises a control other than [`Timeout], and [None] when the test's limit
-    expires during the draw or the run. The law does not run again, and
-    [failed_again] is [None], when [deterministic] is [false], after a search
-    that a timeout ended, for a failing example, which no seed draws, and for a
+    {b Running again.} After the search, a law of one run per case runs once
+    more on the counterexample parsed again as for printing. One draw serves
+    both, and the run comes after the printing. The run's labels go to a
+    {!scratch} context. The [failed_again] of the failure is [Some true] when
+    that run raises a [Failure.fault], in any class, [Some false] when it
+    returns or raises a control other than [`Timeout], and [None] when the
+    test's limit expires during the draw or the run. The law does not run again,
+    and [failed_again] is [None], when [runs] is above [1], after a search that
+    a timeout ended, for a failing example, which no seed draws, and for a
     generator that raised.
 
     Raises [Invalid_argument] if [count] or [max_discard] is negative, or if
-    [cost] is not positive, inside the running test, where [run] executes.
+    [runs] is not positive, inside the running test, where [run] executes.
     Raises a [Failure.Control] other than [`Discard] and [`Timeout] when [law]
     or [gen] raises it outside the search, or [gen]'s printer on an example, and
     no outcome then exists. A control delivered while the final node is

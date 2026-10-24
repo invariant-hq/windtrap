@@ -319,8 +319,10 @@ type program = {
   branches : call list array;
   suffix : call list;
   held : bool array; (* the case's subset, by position *)
-  mutable record : row list option; (* the rows of the last run, in order *)
 }
+
+(* The rows of a run, in order. *)
+type record = row list
 
 (* Printing *)
 
@@ -434,22 +436,67 @@ let record_text = function
         ((line "#" (List.map fst columns) :: List.map row head)
         @ omission @ List.map row tail)
 
-let pp_program ppf program =
-  Pp.string ppf
-    (match program.record with
-    | None -> "(not run)"
-    | Some rows -> record_text rows)
+let pp_record ppf record = Pp.string ppf (record_text record)
 
-let summary program =
-  match program.record with
-  | None | Some [] -> None
-  | Some rows -> (
+let summary = function
+  | [] -> None
+  | rows -> (
       let total = call_count (List.length rows) in
       match List.length (List.filter is_parallel rows) with
       | 0 ->
           let last = List.nth rows (List.length rows - 1) in
           Some (Pp.str "%s, last: %s" total last.name)
       | parallel -> Some (Pp.str "%s, %d in parallel" total parallel))
+
+let rec place_text = function
+  | Drawn k -> Pp.str "(place %d)" k
+  | Below (place, slot) -> Pp.str "(below %s %d)" (place_text place) slot
+
+(* A program prints as it was drawn, one call a line, a parallel call after
+   its branch: what a replay token's digest is of. A value is named as its
+   maker would name it if every call ran. *)
+let pp_program ppf program =
+  let names = Hashtbl.create 8 and counts = Hashtbl.create 8 in
+  let name ~step prefix =
+    let count = 1 + Option.value ~default:0 (Hashtbl.find_opt counts prefix) in
+    Hashtbl.replace counts prefix count;
+    let name = prefix ^ string_of_int count in
+    Hashtbl.replace names step name;
+    name
+  in
+  let rec words : type r s p. (r, s, p) args -> string list = function
+    | Last _ -> []
+    | Sample (sample, args) -> argument_text sample :: words args
+    | Index (_, maker, args) ->
+        Option.value ~default:"_" (Hashtbl.find_opt names maker) :: words args
+    | Element (_, place, args) -> place_text place :: words args
+  in
+  let rec made : type r s p. (r, s, p) args -> string option = function
+    | Last (Makes (Values t)) -> Some t.prefix
+    | Last (Makes (Among _) | Returns _ | Judges _) -> None
+    | Sample (_, args) -> made args
+    | Index (_, _, args) -> made args
+    | Element (_, _, args) -> made args
+  in
+  let line ?domain (Call c) =
+    let call = String.concat " " (c.name :: words c.args) in
+    let call =
+      match made c.args with
+      | None -> call
+      | Some prefix -> Pp.str "let %s = %s" (name ~step:c.step prefix) call
+    in
+    match domain with None -> call | Some i -> Pp.str "%d: %s" i call
+  in
+  let lines =
+    List.map line program.prefix
+    @ List.concat
+        (List.mapi
+           (fun i calls -> List.map (line ~domain:(i + 1)) calls)
+           (Array.to_list program.branches))
+    @ List.map line program.suffix
+  in
+  Pp.string ppf
+    (match lines with [] -> "(no calls)" | _ -> String.concat "\n" lines)
 
 (* Drawing *)
 
@@ -620,7 +667,6 @@ let parallel_program ~domains held calls =
     branches = Array.init domains (fun i -> in_slot (Branch i));
     suffix = in_slot Suffix;
     held;
-    record = None;
   }
 
 (* No reference runs here: a command is drawn when every type it takes has a
@@ -684,7 +730,7 @@ let program ?(steps = 20) ?(domains = 1) commands =
     if domains = 1 then
       let trees, state = draw_calls ~prefix:true steps [] state in
       let program calls =
-        { prefix = calls; branches = [||]; suffix = []; held; record = None }
+        { prefix = calls; branches = [||]; suffix = []; held }
       in
       (Shrink_tree.map program (Shrink_tree.list trees), state)
     else
@@ -1415,7 +1461,7 @@ let grace = function Failure.Control (`Timeout limit) -> limit | _ -> 0.
    after the other, then the suffix's systems on this domain, then the
    judge. [stuck] is set when a call still runs after the grace, and the
    run of the suite then stops after this test (see [Run.stop]). *)
-let run_parallel ~first ~workers ~stuck run program =
+let run_parallel ~workers ~stuck run program =
   let total () = List.length run.rows in
   let bind_call ~domain call =
     Option.map (pending ~domain call) (bind run call)
@@ -1508,17 +1554,15 @@ let run_parallel ~first ~workers ~stuck run program =
   in
   match verdict with
   | Explained order ->
-      (* Labels count along the accepted order, once per case. *)
-      if first then begin
-        let sides, _ = Run.without_labels fresh in
-        let replay number =
-          let pending =
-            List.find (fun (Pending p) -> p.number = number) pendings
-          in
-          ignore (judge_call ~total sides pending : Failure.t option)
+      (* Labels count along the accepted order. *)
+      let sides, _ = Run.without_labels fresh in
+      let replay number =
+        let pending =
+          List.find (fun (Pending p) -> p.number = number) pendings
         in
-        List.iter replay order
-      end
+        ignore (judge_call ~total sides pending : Failure.t option)
+      in
+      List.iter replay order
   | Unexplained { order; at; failure } ->
       raise
         (Failure.Check_failure
@@ -1526,36 +1570,29 @@ let run_parallel ~first ~workers ~stuck run program =
 
 (* One run from no value: the prefix as on one domain, invariants included,
    then, on several domains, the rest. A run whose call never returned
-   releases nothing. A fatal exception leaves no record. *)
-let run_once ~first ~workers program =
-  program.record <- None;
+   releases nothing. A failing run raises its record with its failure, and a
+   fatal exception leaves no record. *)
+let execute ?workers program =
   let run = fresh_run () in
   let stuck = ref false in
   let ending =
     Failure.catch (fun () ->
         List.iter (run_call run) program.prefix;
         if Array.length program.branches > 0 then
-          run_parallel ~first ~workers ~stuck run program)
+          run_parallel ~workers ~stuck run program)
   in
-  program.record <- Some (List.rev run.rows);
+  let record = List.rev run.rows in
   match if !stuck then ending else release_all run ending with
-  | Ok () -> ()
+  | Ok () -> record
+  | Error (#Failure.fault as fault) ->
+      raise
+        (Property.Run_failure
+           { fault; record = record_text record; summary = summary record })
   | Error c -> Failure.reraise c
 
-(* A repeat costs the system's calls and a judge, so it samples schedules
-   for the price of a run. *)
+(* A run on the workers costs the system's calls and a judge, so a case runs
+   [repetitions] times, sampling schedules for the price of a run. *)
 let repetitions = 50
-
-let execute ?workers program =
-  let runs =
-    if Array.length program.branches > 0 && Option.is_some workers then
-      repetitions
-    else 1
-  in
-  for i = 1 to runs do
-    if i > 1 then Run.restart_law_output ();
-    run_once ~first:(i = 1) ~workers program
-  done
 
 (* Declaring *)
 
@@ -1614,19 +1651,17 @@ let stateful ?__POS__ ?tags ?timeout ?count ?(steps = 20) ?(domains = 1) name
     check ~steps ~domains commands;
     let held = Array.make (Array.length commands) false in
     let called = Array.make (Array.length commands) false in
-    let cases = ref 0 in
+    let cases = ref 0 and passed = ref 0 in
     with_workers ?loc ~domains (fun workers ->
-        let cost = if Option.is_some workers then repetitions else 1 in
         (* On the workers a failing program depends on a schedule. *)
-        let deterministic = Option.is_none workers in
-        (* A program prints the record of its run. *)
-        Run.property ?loc ?count ~summary ~prints_run:true ~cost ~deterministic
-          gen (fun program ->
-            execute ?workers program;
-            incr cases;
+        let runs = if Option.is_some workers then repetitions else 1 in
+        Run.property ?loc ?count ~runs gen (fun program ->
+            let record = execute ?workers program in
+            incr passed;
             Array.iteri (fun i h -> if h then held.(i) <- true) program.held;
-            let ran (row : row) = called.(row.command) <- true in
-            List.iter ran (Option.value ~default:[] program.record)));
+            List.iter (fun (row : row) -> called.(row.command) <- true) record);
+        (* Every case runs [runs] times, and every run passed. *)
+        cases := !passed / runs);
     let firsts = first_positions commands in
     let never i _ = firsts.(i) = i && held.(i) && not called.(i) in
     match List.filteri never (Array.to_list commands) with
