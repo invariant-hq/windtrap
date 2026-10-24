@@ -1,0 +1,9 @@
+; test_lru.ml against an Lru whose find forgets to refresh its key, for the
+; transcript of doc/manual/stateful-testing.md.
+
+(copy_files# ../../test_lru.ml)
+
+(executable
+ (name test_lru)
+ (modules test_lru lru)
+ (libraries windtrap))

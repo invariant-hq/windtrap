@@ -1,0 +1,9 @@
+; test_mpmc.ml against an Mpmc whose push forgets the lock, for the
+; transcript of doc/manual/stateful-testing.md.
+
+(copy_files# ../../test_mpmc.ml)
+
+(executable
+ (name test_mpmc)
+ (modules test_mpmc mpmc)
+ (libraries windtrap))

@@ -2,3 +2,32 @@
  (name test_bounded_queue)
  (modules test_bounded_queue bounded_queue)
  (libraries windtrap))
+
+; The systems of the chapter's later sections, each beside its suite. Each
+; directory under planted/ builds one suite against its system with the bug
+; that the chapter plants, for the chapter's failing transcripts.
+
+(test
+ (name test_lru)
+ (modules test_lru lru)
+ (libraries windtrap))
+
+(test
+ (name test_vec)
+ (modules test_vec vec)
+ (libraries windtrap))
+
+(test
+ (name test_guard)
+ (modules test_guard guard)
+ (libraries windtrap))
+
+(test
+ (name test_mpmc)
+ (modules test_mpmc mpmc)
+ (libraries windtrap))
+
+(test
+ (name test_vault)
+ (modules test_vault vault)
+ (libraries windtrap))

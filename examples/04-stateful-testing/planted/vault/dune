@@ -1,0 +1,9 @@
+; test_vault.ml against a Vault whose store logs the pin's last digit, for the
+; transcript of doc/manual/stateful-testing.md.
+
+(copy_files# ../../test_vault.ml)
+
+(executable
+ (name test_vault)
+ (modules test_vault vault)
+ (libraries windtrap))

@@ -13,8 +13,12 @@ of them. `dune runtest` builds and runs every example, and each passes.
   [Property testing](../doc/manual/property-testing.md).
 - `04-stateful-testing`: `Bounded_queue` checked against a model, a
   list with the queue's capacity, and a failing program kept as a test,
-  for
-  [Stateful testing](../doc/manual/stateful-testing.md).
+  then the later sections' systems, `Lru`, `Vec`, `Guard`, `Mpmc` and
+  `Vault`, each with its suite, for
+  [Stateful testing](../doc/manual/stateful-testing.md). Each directory
+  of `planted/` builds one suite against its system with the bug that
+  the page plants, for the page's failing transcripts; those are
+  executables, which `dune runtest` builds and does not run.
 - `05-baselines`: `expect` literals and an `expect_file` baseline in a
   stanza run with `--corrected`, and a library of `let%expect_test`, for
   [Baselines and expect tests](../doc/manual/baselines.md).

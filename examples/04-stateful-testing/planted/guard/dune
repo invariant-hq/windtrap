@@ -1,0 +1,9 @@
+; test_guard.ml against a Guard that tests a path before resolving it, for the
+; transcript of doc/manual/stateful-testing.md.
+
+(copy_files# ../../test_guard.ml)
+
+(executable
+ (name test_guard)
+ (modules test_guard guard)
+ (libraries windtrap))
