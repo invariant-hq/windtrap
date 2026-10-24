@@ -188,6 +188,74 @@ module.
   alone (an uncounted `Fail` is an excused expected failure), never by
   reconstructing executor decisions from messages.
 
+**Gen and Shrink: the choice encoding.** A generator parses a
+sequence of choices. A choice is an unsigned 64-bit integer at most a
+bound that the parse states when it reads it, and `0` is every choice's
+target, so the value that a generator parses from zeros is its shrink
+target. A replayed choice above its bound reads as the bound, and a
+choice read past the end of a replayed sequence reads `0`, so every
+sequence parses.
+
+- **Drawing.** A primitive draws its value with 0.2's sampler and
+  records the choices that encode it; it never draws a choice by
+  itself. The samplers consume the frozen stream exactly as 0.2's did,
+  `Seed.split` included at `bind`, `one_of`, `such_that` and a sized
+  `list`, so every state draws the value 0.2 drew from it, and the
+  distribution of every constructor is 0.2's by construction. The test
+  "every generator draws 0.2's distribution" (`test_gen.ml`) pins each
+  constructor's moments, histogram and a digest of its printings on
+  fixed states, recorded on 0.2: the tolerance is zero, since nothing
+  approximates.
+- **Integers.** A value of a range with origin `o` (the point closest
+  to `0`) is one choice, its rank by distance to `o`: `o` is `0`, then
+  `o + 1`, `o - 1`, `o + 2`, … while both sides of the range have room,
+  then the side that is left, in order. The bound is the range's width,
+  so every choice names a value of the range. A whole type is the range
+  of its extremes: `int64`'s ranks fill the 64 bits.
+- **Floats.** A float is a sign choice (`0` is positive), absent where
+  the range admits one sign only, then a magnitude choice in the
+  lexicographic encoding of Hypothesis (MacIver and Donaldson, ECOOP
+  2020): an integral magnitude below 2^56 is that integer, so `1.` is
+  below `0.5`; any other is the tag bit 2^63, then the exponent
+  reordered (exponents `0`, `1`, … first, then `-1`, `-2`, …, then the
+  non-finite one last), then the mantissa with its fraction bits
+  reversed, so a fraction with fewer bits is simpler. The bound of the
+  magnitude is the last finite float of that order. A float therefore
+  shrinks toward `0.`, an integer before a fraction, and `-0.` toward
+  `0.` by its sign. `any_float` reads a class choice first (`0` finite,
+  then `infinity`, `neg_infinity`, `nan`), so a non-finite value
+  shrinks toward a finite one. `float_range low high` parses a float
+  the same way and clamps it into \[`low`;`high`\] in the order where
+  `-0.` is below `0.`, so its zeros parse to its origin: `low` when
+  `low` is positive, `high` when `high` is negative or `-0.`, `0.`
+  otherwise, and `-0.` belongs to the range only when `low` is negative
+  or `-0.`. A sampled float is encoded exactly, so the clamp only moves
+  values that a shrink step proposed.
+- **The rest.** `bool`, `option` (`None`), `result` (`Ok`), `either`
+  (`Left`), `of_list` and `one_of` (the first) read one choice each;
+  `frequency` reads the weighted point it drew, so a branch of weight
+  `0` is never parsed and the first branch of positive weight is the
+  target; `char` and `uchar` rank by distance to `'a'` among their
+  values, surrogates excluded; `list` reads a "one more" choice before
+  each element, the two one span, and with `~size` the length is the
+  size generator's value and only the elements follow; `subsequence`
+  reads a keep choice per value; `permutation` reads its Lehmer code,
+  whose zeros are the given order; `such_that` reads attempts, each one
+  span, until one satisfies its predicate, at most 100, and discards
+  after.
+- **Spans and dependents.** A parse marks a span over the choices that
+  one generator call read. A parse can also say that a choice counts
+  past some earlier positions (a reference to the k-th newest value
+  counts past the k makers newer than it): a deletion that removes such
+  positions lowers that choice by as many, in the same candidate.
+- **The reducer** (`Shrink`) keeps a candidate when the case still
+  fails in the class of the first failure and the choices it read are
+  shortlex smaller. It runs three passes to a fixed point: delete each
+  span; delete runs of 8, 4, 2 and 1 choices; minimise each choice, to
+  `0` and else by binary search. Every run of the law counts against
+  the fixed budget of 10,000 at the law's cost, a discard at 1, and a
+  candidate already tried is not run again.
+
 **Stateful.** A call runs its system, then its reference judges the
 outcome, one order for every result form. A value is made when its
 system returns, so it is named and released even when the reference
