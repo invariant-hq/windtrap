@@ -7,7 +7,7 @@
 
     The module holds the one projection of a {!Failure.t} that every transport
     of a run shares, and the section vocabulary of the coverage and mutation
-    reports. {!pp_failure} formats the entry of a failure, {!hints} the lines
+    reports. {!val-entry} is the entry of a failure as data, {!hints} the lines
     that close its block, and {!accept} and {!replay} the commands that end a
     report. {!coverage_report}, {!survivor_block}, {!mutation_closing} and
     {!mutation_report} build {!section} lists, which {!print} writes.
@@ -16,29 +16,50 @@
     {!type:coverage} or a {!type:mutation}. A producer builds that data and
     never text that carries a style or a command, so nothing is formatted where
     a failure is raised. Styling is the [ansi] decision that the caller passes
-    to {!pp_failure} and to {!print}, and section data holds no escape code. The
+    to {!render} and to {!print}, and section data holds no escape code. The
     module names no instrumentation runtime, so whoever holds one builds the
     records and spells the identifiers in them.
 
     No function reads the terminal or a colour setting, and each writes only on
-    the formatter that it is given. {!pp_failure} under [~excerpt:true] opens
-    the located source file, and the path of a file baseline prints through
+    the formatter that it is given. {!val-entry} under [~excerpt:true] opens the
+    located source file, and the path of a file baseline prints through
     {!Os.display_path}. Both read {!Os.project_root}, hence the environment and
     the working directory.
 
     A cap is a constant of [report_sections.ml], named here beside its value. *)
 
+(** {1:spans Spans} *)
+
+type span = { style : Pp.style option; text : string }
+(** The type for a run of text under one style, or under none. Styles do not
+    nest ({!Pp.style}), so a line is a flat list of spans. [text] is any bytes,
+    a test's included: it prints through {!Text.escape_controls}, so a span
+    shows its bytes and never drives the terminal. *)
+
+val plain : string -> span
+(** [plain text] is [text] unstyled. *)
+
+val styled : Pp.style -> string -> span
+(** [styled style text] is [text] under [style]. *)
+
+val render : ansi:bool -> span list -> string
+(** [render ~ansi l] is [l] as one line: each text escaped, then, iff [ansi] and
+    the text is not empty, between the SGR sequence of its style and the reset
+    [ESC \[0m]. Every line that this module formats goes through it, and apart
+    from the erase of {!Report}'s live line it is the only writer of an escape
+    sequence. *)
+
+val width : span list -> int
+(** [width l] is the columns of [l] as it prints, in code points, escapes
+    counted. Every padding and every [~] line of this module is measured so. *)
+
+val indented : string -> span list -> span list
+(** [indented pad l] is [l] after [pad], and [[]] when [l] is [[]], so that a
+    blank line stays bare. *)
+
 (** {1:failures Failure projections}
 
-    An entry is what {!pp_failure} prints for one failure. *)
-
-val headline : Failure.t -> string
-(** [headline f] is [f] as one unstyled sentence, for a field that holds a
-    single line. It is [labeled_msg f] and [": "] when there is one, then one
-    clause for the facts of [f.kind]. Line feeds, carriage returns and tabs
-    become spaces. Past 80 code points ([max_headline_chars]) the sentence is
-    cut and ends in an ellipsis. Any other control byte is left to the escaping
-    of the field that receives the sentence. *)
+    An entry is the lines that a failure's block holds for it, as data. *)
 
 val is_subtest_failure : Failure.t -> bool
 (** [is_subtest_failure f] is [true] iff [f.subtest] is not empty, that is iff
@@ -50,19 +71,23 @@ val labeled_msg : Failure.t -> string option
     test's own name first, joined by {!Test_tree.path_to_string}. [": "] and
     [f.msg] follow when there is one. For any other failure it is [f.msg]. *)
 
-val pp_failure :
-  ansi:bool ->
-  ?terminal:bool ->
-  ?excerpt:bool ->
-  ?hints:bool ->
-  ?filter:string ->
-  ?invocation:Run.invocation ->
-  ?armed:string ->
-  Format.formatter ->
-  Failure.t ->
-  unit
-(** [pp_failure ~ansi ppf f] formats the entry of [f] on [ppf], each line
-    through {!render}. The entry ends with a newline and holds, in this order:
+type entry = {
+  summary : string;
+      (** The failure as one unstyled sentence, for a field that holds a single
+          line: {!labeled_msg} and [": "] when there is one, then the facts
+          below in one clause. Line feeds, carriage returns and tabs become
+          spaces. Past 80 code points ([max_headline_chars]) the sentence is cut
+          and ends in an ellipsis. Any other control byte is left to the
+          escaping of the field that receives the sentence. *)
+  lines : span list list;
+      (** The entry's lines at its own column, each to print through {!render}
+          after its block's indent ({!indented}). *)
+}
+(** The type for the entry of a failure. The summary and the lines come from one
+    case analysis of the failure, so they cannot disagree. *)
+
+val entry : ?seen:bool -> excerpt:bool -> Failure.t -> entry
+(** [entry ~excerpt f] is the entry of [f]. Its lines hold, in this order:
     - the location of [f], with its phase before it when [f.phase] is not
       {!Failure.Body}. The phase stands alone when [f] has no location.
     - under [~excerpt:true], the source line at that location and a blank line.
@@ -72,30 +97,22 @@ val pp_failure :
       failure raised.
     - [f.msg], line by line.
     - the facts of [f.kind], as the paragraphs below list them.
-    - under [~hints:true], the lines of {!hints} for [f] alone, then its
-      {!accept} and {!replay} lines for the test at [filter]. A transport that
-      shows one failure at a time, away from the report, carries these.
 
     The captured output of the test is no part of an entry, because it belongs
     to the test and each transport places it.
 
-    - [terminal] is whether [ppf] reaches a terminal that a reader watches. It
-      defaults to [false].
-    - [excerpt] defaults to [false]. The source line prints when the file can be
-      read and holds the line, and the blank line prints only with it. A
-      relative path is tried under {!Os.project_root} first and then as given.
-      The line is bounded and escaped as a single-line value is.
-    - [hints] defaults to [true].
-    - [invocation] and [armed] are the arguments of {!hints}, {!accept} and
-      {!replay}, and [filter] is the path of their [`Filter]. Without [filter] a
-      command carries no filter.
+    - [seen] is whether the lines print under colour on a terminal that a reader
+      watches. It defaults to [false].
+    - [excerpt]: the source line prints when the file can be read and holds the
+      line, and the blank line prints only with it. A relative path is tried
+      under {!Os.project_root} first and then as given. The line is bounded and
+      escaped as a single-line value is.
 
     {b Equality.} Two single-line renderings print as the expected side over the
     actual side, and the spans of {!Diff.refine} mark what changed. A line of
-    [~] marks the span under each side that has one, unless both [ansi] and
-    [terminal] hold: the styling of an output that is no terminal may be
-    stripped, as dune strips an action's output when its own is no terminal, or
-    read as raw escapes.
+    [~] marks the span under each side that has one, unless [seen] holds: the
+    styling of an output that is no terminal may be stripped, as dune strips an
+    action's output when its own is no terminal, or read as raw escapes.
 
     When a side spans lines the entry is the unified diff of {!val:Diff.hunks},
     the expected lines as the deleted ones, under the header pair [--- expected]
@@ -129,9 +146,34 @@ val pp_failure :
     escaping. The escape is a projection, which equality, containment and
     baseline storage never see. *)
 
+val headline : Failure.t -> string
+(** [headline f] is the {!entry.summary} of [f]. *)
+
+val failure_hints :
+  ?armed:string ->
+  ?invocation:Run.invocation ->
+  filter:string option ->
+  Failure.t ->
+  string list
+(** [failure_hints ~filter f] is the lines of {!hints} for [f] alone, then its
+    {!accept} and {!replay} lines for the test at the path [filter], or for
+    every test when it is [None]. A transport that shows one failure at a time,
+    away from the report, carries these. *)
+
+val unstyled_entry :
+  ?armed:string ->
+  ?invocation:Run.invocation ->
+  filter:string option ->
+  Failure.t ->
+  string * string list
+(** [unstyled_entry ~filter f] is the summary of [f] and the lines that a
+    transport away from the report carries for it: its entry without excerpt,
+    then its {!failure_hints}, each indented by four spaces and rendered without
+    styling. *)
+
 val max_lines : int
 (** [max_lines] is [10], the bound on the two texts of a block that have no
-    other. {!pp_failure} prints at most that many frames of a backtrace, and
+    other. An {!type-entry} holds at most that many frames of a backtrace, and
     {!Report} at most that many lines of captured output in a failure block. *)
 
 val hints :
@@ -232,29 +274,6 @@ val dune_exec : mutate:bool -> string -> Run.invocation
 
     Adding a constructor to {!section} is a design amendment, as adding one to
     {!type:Failure.kind} is. *)
-
-type span = { style : Pp.style option; text : string }
-(** The type for a run of text under one style, or under none. Styles do not
-    nest ({!Pp.style}), so a line is a flat list of spans. [text] is any bytes,
-    a test's included: it prints through {!Text.escape_controls}, so a span
-    shows its bytes and never drives the terminal. *)
-
-val plain : string -> span
-(** [plain text] is [text] unstyled. *)
-
-val styled : Pp.style -> string -> span
-(** [styled style text] is [text] under [style]. *)
-
-val render : ansi:bool -> span list -> string
-(** [render ~ansi l] is [l] as one line: each text escaped, then, iff [ansi] and
-    the text is not empty, between the SGR sequence of its style and the reset
-    [ESC \[0m]. Every line that this module formats goes through it, and apart
-    from the erase of {!Report}'s live line it is the only writer of an escape
-    sequence. *)
-
-val width : span list -> int
-(** [width l] is the columns of [l] as it prints, in code points, escapes
-    counted. Every padding and every [~] line of this module is measured so. *)
 
 type column = { gap : string; align : [ `Left | `Right ]; width : int option }
 (** The type for a column of {!Rows}. [gap] is the text before each cell,
@@ -483,7 +502,7 @@ val survivor_block : exe_width:int option -> survivor -> section list
 (** [survivor_block ~exe_width s] is the block of [s]. It holds, in this order:
     - the {!diagnostic} of the mutant, at the start of its line.
     - the title.
-    - the mutated source line, as {!pp_failure} prints a source line, when
+    - the mutated source line, as an {!type-entry} holds a source line, when
       [source] is known and holds the line.
     - the sentence that counts the reaching tests, and their executables when
       they name several.

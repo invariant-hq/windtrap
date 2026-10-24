@@ -2079,44 +2079,4 @@ let mutation =
         interrupted_rows interrupted_loop;
     ]
 
-(* Failure projections *)
-
-let projections () =
-  let fs =
-    [
-      Fixtures.prop_failure;
-      Fixtures.subtest_failure "shape [0]";
-      Fixtures.snap_missing;
-    ]
-  in
-  let entry pp f =
-    Format.asprintf "%a"
-      (pp ~ansi:false ?terminal:None ?excerpt:None ?hints:None ?filter:None
-         ?invocation:None ?armed:None)
-      f
-  in
-  equal (list string)
-    (List.map Sections.headline fs)
-    (List.map Report.headline fs);
-  equal (list bool)
-    (List.map Sections.is_subtest_failure fs)
-    (List.map Report.is_subtest_failure fs);
-  equal
-    (list (option string))
-    (List.map Sections.labeled_msg fs)
-    (List.map Report.labeled_msg fs);
-  equal (list string)
-    (List.map (entry Sections.pp_failure) fs)
-    (List.map (entry Report.pp_failure) fs)
-
-let () =
-  exit
-    (run "report"
-       [
-         renderer;
-         transcript_group;
-         github;
-         mutation;
-         group "Failure projections"
-           [ test "they are Report_sections'" projections ];
-       ])
+let () = exit (run "report" [ renderer; transcript_group; github; mutation ])

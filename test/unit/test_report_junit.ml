@@ -449,10 +449,10 @@ let entries (_, invocation, armed) =
   let rows = failing @ [ located ] in
   let doc = junit ~invocation ?armed ~releases:release_failures rows in
   let entry (filter, f) =
-    Pp.str "%a"
-      (fun ppf ->
-        Report_sections.pp_failure ~ansi:false ~filter ~invocation ?armed ppf)
-      f
+    let _, lines =
+      Report_sections.unstyled_entry ~filter:(Some filter) ~invocation ?armed f
+    in
+    String.concat "" (List.map (fun l -> l ^ "\n") lines)
   in
   equal (list text)
     (List.map entry (written rows release_failures))

@@ -2096,9 +2096,11 @@ let screen ~loc commands =
     Property.run ~loc ~root ~path:"screen" (Stateful.program commands) law
   in
   let f = require_match property_failure outcome in
-  Format.asprintf "%a"
-    (fun ppf f -> Sections.pp_failure ~ansi:false ~hints:false ppf f)
-    f
+  String.concat ""
+    (List.map
+       (fun l ->
+         Sections.render ~ansi:false (Sections.indented "    " l) ^ "\n")
+       (Sections.entry ~excerpt:false f).lines)
 
 let screens =
   group "Screens"

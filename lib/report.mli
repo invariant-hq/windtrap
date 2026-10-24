@@ -29,12 +29,12 @@ val create :
 (** [create ~out ~ansi config] is a renderer that writes to [out].
     - [ansi] is whether styling is emitted.
     - [terminal] is whether [out] is a terminal that a reader watches. Defaults
-      to [false]. It is the [terminal] of every {!Report_sections.pp_failure}
-      entry. It is also whether {!begin_test}, {!shrinking}, {!note} and
-      {!mutation_testing} draw the live line, which the next write erases. The
-      live line is off whatever [terminal] is under [ansi:false] and under
-      [config.stream]. It is the one line that is cut to a width, which is 80
-      columns ([columns] in [report.ml]).
+      to [false]. Under [ansi] it is the [seen] of every
+      {!Report_sections.val-entry}. It is also whether {!begin_test},
+      {!shrinking}, {!note} and {!mutation_testing} draw the live line, which
+      the next write erases. The live line is off whatever [terminal] is under
+      [ansi:false] and under [config.stream]. It is the one line that is cut to
+      a width, which is 80 columns ([columns] in [report.ml]).
 
     The renderer keeps [config]. [create] reads [config.stream],
     [config.slow_threshold] and the identifier of a [config.mutation] that is
@@ -127,8 +127,7 @@ val result : t -> Run.result -> unit
     that opens the failures. A block holds, in this order:
     - the title, tagged [VACUOUS] when every failure of [r] is a
       {!Failure.Vacuous} one, and [FAIL] otherwise.
-    - one {!Report_sections.pp_failure} entry per failure of [r], with its
-      source line.
+    - one {!Report_sections.val-entry} per failure of [r], with its source line.
     - what a property ran ([scope: 37 cases passed, 3 discards]), its label
       table and the share each met {!Property.cover} share established.
     - one line per site of [equal] under a tolerance ({!Check.tolerances}), its
@@ -202,8 +201,8 @@ val finish :
       in order, the results that {!result} was given, because [finish] skips as
       many of its first counted failures as [t] committed blocks.
     - one block for each of [release_failures], titled
-      {!Report_sections.release_title}, then its {!Report_sections.pp_failure}
-      entry with its source line.
+      {!Report_sections.release_title}, then its {!Report_sections.val-entry}
+      with its source line.
     - in a compact run that committed a block, the rule that closes the
       failures.
     - the sections that have rows: slow tests, flaky tests, corrections. A
@@ -242,8 +241,8 @@ val finish :
     failed, and a failed fixture release as failed although it is no test. The
     tests not run are the [tests] of {!header} less the length of [results],
     never below [0]. Subtest failures are the entries of counted failures for
-    which {!is_subtest_failure} holds, and corrections and files not written
-    count files.
+    which {!Report_sections.is_subtest_failure} holds, and corrections and files
+    not written count files.
 
     A run with no result at all says instead that no tests ran, with the reason
     of {!empty_selection_reason} when there is one. When a selection emptied a
@@ -297,11 +296,10 @@ val annotation :
   string
 (** [annotation ~path f] is the [::error] command for [f], a failure of the test
     at [path]. Its [file] and [line] are those of the location of [f], when it
-    has one, and its title is [Test failure: <path>]. The message is the
-    {!Report_sections.pp_failure} entry of [f] without styling and without the
-    source line, hint lines included, with [path] as their filter. An annotation
-    is read alone, away from the transcript, so its [accept:] and its [replay:]
-    name the test. [invocation] and [armed] are those of
+    has one, and its title is [Test failure: <path>]. The message is the lines
+    of {!Report_sections.unstyled_entry} for [f], with [path] as their filter.
+    An annotation is read alone, away from the transcript, so its [accept:] and
+    its [replay:] name the test. [invocation] and [armed] are those of
     {!Report_sections.hints}, and [invocation] defaults to [`Mirrors]. *)
 
 val annotations :
@@ -394,33 +392,6 @@ val mutation_interrupted :
     is stopping. It says on standard error what was interrupted: the child of
     the mutant [testing], or the determinism probe when [testing] is [None]. It
     then calls {!mutation_finish} over [m]. *)
-
-(** {1:projections Failure projections}
-
-    The failure projection of {!Report_sections}, under the names of this
-    module. *)
-
-val headline : Failure.t -> string
-(** [headline] is {!Report_sections.headline}. *)
-
-val is_subtest_failure : Failure.t -> bool
-(** [is_subtest_failure] is {!Report_sections.is_subtest_failure}. *)
-
-val labeled_msg : Failure.t -> string option
-(** [labeled_msg] is {!Report_sections.labeled_msg}. *)
-
-val pp_failure :
-  ansi:bool ->
-  ?terminal:bool ->
-  ?excerpt:bool ->
-  ?hints:bool ->
-  ?filter:string ->
-  ?invocation:Run.invocation ->
-  ?armed:string ->
-  Format.formatter ->
-  Failure.t ->
-  unit
-(** [pp_failure] is {!Report_sections.pp_failure}. *)
 
 (** {1:running Running} *)
 

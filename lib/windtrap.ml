@@ -41,7 +41,7 @@ module Law = Law
 let () =
   Printexc.register_printer (function
     | Failure.Check_failure failure ->
-        Some ("windtrap assertion failure: " ^ Report.headline failure)
+        Some ("windtrap assertion failure: " ^ Report_sections.headline failure)
     | _ -> None)
 
 (* Witnesses *)

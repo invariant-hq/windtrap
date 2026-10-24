@@ -233,65 +233,63 @@ let test_line ?(title = false) ~tag ~style ~name ~qualifiers ~timing () =
 
 (* The headline of a failure names every label never covered, so the
    coverage rows earn their place by the labels that were. *)
-let label_table t (s : Property.stats) =
-  let faint line = put t [ plain indent; styled `Faint line ] in
-  if s.collected <> [] then begin
-    faint (strf "labels (%d passing case%s):" s.cases (plural s.cases));
-    List.iter
-      (fun (label, count) ->
-        faint
-          (if s.cases > 0 then
-             strf "  %5.1f%%  %s"
-               (100. *. float_of_int count /. float_of_int s.cases)
-               label
-           else strf "  %d  %s" count label))
-      s.collected
-  end;
-  if
-    List.length s.coverage > 1
-    && List.exists
-         (fun (c : Property.cover_status) -> not c.satisfied)
-         s.coverage
-  then begin
-    put t [ plain (indent ^ "covered labels:") ];
-    List.iter
-      (fun (c : Property.cover_status) ->
-        put t
-          [
-            plain
-              (strf "%s  %s  %d%s" indent c.label c.hits
-                 (match (c.satisfied, c.share) with
-                 | true, _ -> ""
-                 | false, None -> "  never covered"
-                 | false, Some _ -> "  share unmet"));
-          ])
-      s.coverage
-  end;
+let label_table (s : Property.stats) =
+  let faint line = [ plain indent; styled `Faint line ] in
+  (if s.collected = [] then []
+   else
+     faint (strf "labels (%d passing case%s):" s.cases (plural s.cases))
+     :: List.map
+          (fun (label, count) ->
+            faint
+              (if s.cases > 0 then
+                 strf "  %5.1f%%  %s"
+                   (100. *. float_of_int count /. float_of_int s.cases)
+                   label
+               else strf "  %d  %s" count label))
+          s.collected)
+  @ (if
+       List.length s.coverage > 1
+       && List.exists
+            (fun (c : Property.cover_status) -> not c.satisfied)
+            s.coverage
+     then
+       [ plain (indent ^ "covered labels:") ]
+       :: List.map
+            (fun (c : Property.cover_status) ->
+              [
+                plain
+                  (strf "%s  %s  %d%s" indent c.label c.hits
+                     (match (c.satisfied, c.share) with
+                     | true, _ -> ""
+                     | false, None -> "  never covered"
+                     | false, Some _ -> "  share unmet"));
+              ])
+            s.coverage
+     else [])
   (* A share met says what it established; an unmet one is the failure's. *)
-  List.iter
-    (fun (c : Property.cover_status) ->
-      match c.share with
-      | Some share when c.satisfied ->
-          faint (Property.share_fact ~label:c.label share)
-      | Some _ | None -> ())
-    s.coverage
+  @ List.filter_map
+      (fun (c : Property.cover_status) ->
+        match c.share with
+        | Some share when c.satisfied ->
+            Some (faint (Property.share_fact ~label:c.label share))
+        | Some _ | None -> None)
+      s.coverage
 
 (* How close each site of [equal] under a tolerance came to it. *)
-let tolerance_lines t (r : Run.result) =
-  List.iter
+let tolerance_lines (r : Run.result) =
+  List.map
     (fun (s : Check.tolerance) ->
       let site =
         match s.site with Some loc -> " at " ^ Loc.to_string loc | None -> ""
       in
-      put t
-        [
-          plain indent;
-          styled `Faint
-            (strf
-               "tolerance%s: largest error %.3g of %.3g allowed, over %d \
-                comparison%s"
-               site s.error s.tolerance s.comparisons (plural s.comparisons));
-        ])
+      [
+        plain indent;
+        styled `Faint
+          (strf
+             "tolerance%s: largest error %.3g of %.3g allowed, over %d \
+              comparison%s"
+             site s.error s.tolerance s.comparisons (plural s.comparisons));
+      ])
     r.tolerances
 
 (* What a property ran, each count that is not zero: the generated cases,
@@ -314,7 +312,7 @@ let ran ~verdict (r : Run.result) (s : Property.stats) =
 
 (* The heading counts every byte before the first line shown: what the
    capture cut and the lines the cap drops. *)
-let captured_output t (tail : Failure.tail) =
+let captured_output (tail : Failure.tail) =
   let total = List.length (Text.split_lines tail.text) in
   let cut, kept =
     Text.window ~lines:Sections.max_lines ~bytes:max_int Tail tail.text
@@ -328,43 +326,49 @@ let captured_output t (tail : Failure.tail) =
     else if n < total then strf "captured output (last %d of %d lines):" n total
     else strf "captured output (%d line%s):" total (plural total)
   in
-  put t [ plain indent; styled `Faint heading ];
-  List.iter (fun line -> put t [ plain (indent ^ "  " ^ line) ]) shown;
-  Option.iter
-    (fun path ->
-      put t
+  [ plain indent; styled `Faint heading ]
+  :: List.map (fun line -> [ plain (indent ^ "  " ^ line) ]) shown
+  @ List.map
+      (fun path ->
         [
           plain indent; styled `Faint ("full log: " ^ Os.display_artifact path);
         ])
-    tail.log_path
+      (Option.to_list tail.log_path)
+
+let entry_lines ~seen f =
+  List.map (Sections.indented indent)
+    (Sections.entry ~seen ~excerpt:true f).lines
 
 (* Sibling subtests, or a body and its teardown, fail independently: each
    failure has its entry, and the hints are the whole test's. *)
-let block_body t ~hints (r : Run.result) failures =
-  List.iteri
-    (fun i f ->
-      if i > 0 then put t [];
-      Sections.pp_failure ~ansi:t.ansi ~terminal:t.terminal ~excerpt:true
-        ~hints:false t.out f)
-    failures;
-  Option.iter
-    (fun s ->
-      (match ran ~verdict:false r s with
-      | [] -> ()
-      | facts ->
-          put t
-            [
-              plain indent; styled `Faint ("scope: " ^ String.concat ", " facts);
-            ]);
-      label_table t s)
-    r.prop_stats;
-  tolerance_lines t r;
-  Option.iter (captured_output t)
-    (List.find_map (fun (f : Failure.t) -> f.output_tail) failures);
+let block_lines t ~seen ~hints (r : Run.result) failures =
+  List.concat
+    (List.mapi
+       (fun i f -> (if i > 0 then [ [] ] else []) @ entry_lines ~seen f)
+       failures)
+  @ (match r.prop_stats with
+    | None -> []
+    | Some s ->
+        (match ran ~verdict:false r s with
+          | [] -> []
+          | facts ->
+              [
+                [
+                  plain indent;
+                  styled `Faint ("scope: " ^ String.concat ", " facts);
+                ];
+              ])
+        @ label_table s)
+  @ tolerance_lines r
+  @ List.concat_map captured_output
+      (Option.to_list
+         (List.find_map (fun (f : Failure.t) -> f.output_tail) failures))
+  @
   if hints then
-    List.iter
-      (fun hint -> put t [ plain (indent ^ hint) ])
+    List.map
+      (fun hint -> [ plain (indent ^ hint) ])
       (Sections.hints ?armed:t.armed ~invocation:t.config.invocation failures)
+  else []
 
 (* A counted failure's block. Under verbose its title is the test's row. *)
 let failure_block t (r : Run.result) =
@@ -393,18 +397,16 @@ let failure_block t (r : Run.result) =
          @ armed_qualifier t)
        ~timing:(if verbose then duration_to_string r.duration else "")
        ());
-  block_body t ~hints:true r failures
+  List.iter (put t)
+    (block_lines t ~seen:(t.ansi && t.terminal) ~hints:true r failures)
 
 (* An expected failure's block is a counted one's, dim past each line's
    indent, so it reads as evidence. It has no hints: an [accept:] would act
    on a failure the test expects. The text is escaped already, and escaping
    is idempotent. *)
 let excused_block t (r : Run.result) =
-  let buffer = Buffer.create 256 in
-  let out = Format.formatter_of_buffer buffer in
-  block_body { t with out; ansi = false } ~hints:false r (failures r);
-  Pp.flush out ();
   let dim line =
+    let line = Sections.render ~ansi:false line in
     let rec text_start i =
       if i < String.length line && line.[i] = ' ' then text_start (i + 1) else i
     in
@@ -415,7 +417,7 @@ let excused_block t (r : Run.result) =
         styled `Faint (String.sub line i (String.length line - i));
       ]
   in
-  List.iter dim (Text.split_lines (Buffer.contents buffer));
+  List.iter dim (block_lines t ~seen:false ~hints:false r (failures r));
   put t []
 
 (* A failed fixture release belongs to no test: its title has no attempts
@@ -424,8 +426,7 @@ let release_block t f =
   put t
     (test_line ~title:true ~tag:"FAIL" ~style:`Red ~name:Sections.release_title
        ~qualifiers:(armed_qualifier t) ~timing:"" ());
-  Sections.pp_failure ~ansi:t.ansi ~terminal:t.terminal ~excerpt:true
-    ~hints:false t.out f
+  List.iter (put t) (entry_lines ~seen:(t.ansi && t.terminal) f)
 
 (* A block is committed when its test finishes, so a run that dies has
    printed what it knew. A compact run opens its blocks with the header and
@@ -459,8 +460,9 @@ let row t (r : Run.result) =
         (test_line ~tag:"PASS" ~style:`Green ~name
            ~qualifiers:(attempts r @ scope_qualifiers r)
            ~timing ());
-      (match r.prop_stats with Some s -> label_table t s | None -> ());
-      tolerance_lines t r
+      List.iter (put t)
+        ((match r.prop_stats with Some s -> label_table s | None -> [])
+        @ tolerance_lines r)
   | Failure.Skip reason ->
       put t
         (test_line ~tag:"SKIP" ~style:`Yellow ~name
@@ -906,16 +908,12 @@ let annotation ?(invocation = `Mirrors) ?armed ~path (f : Failure.t) =
         strf "file=%s,line=%d," (escape_property file) line
     | None -> ""
   in
-  let entry =
-    Pp.str "%a"
-      (fun ppf f ->
-        Sections.pp_failure ~ansi:false ~filter:path ~invocation ?armed ppf f)
-      f
+  let _, lines =
+    Sections.unstyled_entry ~filter:(Some path) ~invocation ?armed f
   in
-  let rec stop i = if i > 0 && entry.[i - 1] = '\n' then stop (i - 1) else i in
   strf "::error %stitle=%s::%s\n" location
     (escape_property ("Test failure: " ^ path))
-    (escape_data (String.sub entry 0 (stop (String.length entry))))
+    (escape_data (String.concat "\n" lines))
 
 let annotations ?invocation ?armed ~release_failures results =
   let annotate path f = annotation ?invocation ?armed ~path f in
@@ -1000,13 +998,6 @@ let mutation_interrupted t ~testing m =
     | Some id -> "interrupted while testing " ^ id
     | None -> "interrupted during the determinism probe");
   mutation_finish t m
-
-(* Failure projections *)
-
-let headline = Sections.headline
-let is_subtest_failure = Sections.is_subtest_failure
-let labeled_msg = Sections.labeled_msg
-let pp_failure = Sections.pp_failure
 
 (* Running *)
 

@@ -20,12 +20,21 @@ let repeat n s = String.concat "" (List.init n (fun _ -> s))
 let exe = `Exe "./t.exe"
 let armed = "lib/calc.ml:9:12:add"
 
-let entry ?(ansi = false) ?(terminal = ansi) ?excerpt ?hints ?filter ?invocation
-    ?armed f =
-  Format.asprintf "%a"
-    (Sections.pp_failure ~ansi ~terminal ?excerpt ?hints ?filter ?invocation
-       ?armed)
-    f
+(* An entry as a block prints it, then the hint lines a transport away from
+   the report adds. *)
+let entry ?(ansi = false) ?(terminal = ansi) ?(excerpt = false) ?(hints = true)
+    ?filter ?invocation ?armed f =
+  let hint_lines =
+    if not hints then []
+    else
+      List.map
+        (fun h -> [ Sections.plain h ])
+        (Sections.failure_hints ?armed ?invocation ~filter f)
+  in
+  String.concat ""
+    (List.map
+       (fun l -> Sections.render ~ansi (Sections.indented "    " l) ^ "\n")
+       ((Sections.entry ~seen:(ansi && terminal) ~excerpt f).lines @ hint_lines))
 
 let printed ?(ansi = false) sections =
   Format.asprintf "%a" (fun ppf -> Sections.print ~out:ppf ~ansi) sections
@@ -1264,14 +1273,16 @@ let under_dune () =
   in
   contains ~sub:"\n      1 \u{2502} (*---" (entry ~excerpt:true f)
 
-let hints_default () =
-  let entry ?hints f =
-    Format.asprintf "%a"
-      (fun ppf f -> Sections.pp_failure ~ansi:false ?hints ppf f)
-      f
+let hints_away () =
+  let summary, lines =
+    Sections.unstyled_entry ~filter:None Fixtures.prop_failure
   in
-  contains ~sub:"replay:" (entry Fixtures.prop_failure);
-  not_contains ~sub:"replay:" (entry ~hints:false Fixtures.prop_failure)
+  let entry = Sections.entry ~excerpt:false Fixtures.prop_failure in
+  equal string (Sections.headline Fixtures.prop_failure) summary;
+  equal string entry.summary summary;
+  contains ~sub:"replay:" (String.concat "\n" lines);
+  not_contains ~sub:"replay:"
+    (String.concat "\n" (List.map (Sections.render ~ansi:false) entry.lines))
 
 (* Hints and the run's commands *)
 
@@ -1662,7 +1673,7 @@ let failure_projections =
         (Testable.contramap fst Testable.text) labeled_rows
         (fun (_, (f, expected)) ->
           equal (option string) expected (Sections.labeled_msg f));
-      group "pp_failure"
+      group "entry"
         [
           test "equality entries print as their gallery" (fun () ->
               gallery "equality" (equality_entries ()));
@@ -1702,7 +1713,10 @@ let failure_projections =
           test "an entry reads an absolute path as given" absolute_source;
           test "a path relative to the project root is found under dune"
             under_dune;
-          test "an entry carries its hints by default" hints_default;
+          test
+            "an entry away from the report carries its hints, a block's does \
+             not"
+            hints_away;
           group "bounds"
             [
               test "max_lines is 10" (fun () -> equal int 10 Sections.max_lines);

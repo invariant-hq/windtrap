@@ -70,13 +70,11 @@ type testcase = {
 }
 
 let failure ~invocation ~armed ~filter f =
-  let body =
-    Pp.str "%a"
-      (fun ppf ->
-        Report_sections.pp_failure ~ansi:false ~filter ~invocation ?armed ppf)
-      f
+  let message, lines =
+    Report_sections.unstyled_entry ~filter:(Some filter) ~invocation ?armed f
   in
-  Failure { message = Report_sections.headline f; body }
+  Failure
+    { message; body = String.concat "" (List.map (fun l -> l ^ "\n") lines) }
 
 let system_out (tail : Failure.tail) =
   let omitted =
