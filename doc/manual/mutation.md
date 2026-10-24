@@ -253,9 +253,12 @@ where `1` is the bare flag, `0` its absence, and a value that spells no
 boolean the prefixes. A suite with no mutant to test, such as a suite
 over another library, runs as usual and says why on standard error. A
 mutant killed by one executable is killed. A mutant that no executable
-killed and one did not evaluate is not evaluated. The command exits 1
+killed and one could not judge is unknown, and one that another did not
+evaluate is not evaluated; neither is a survivor. The command exits 1
 when a mutant survived every executable that reached it, listing the
-most reached first.
+most reached first, and when an executable could not mutation-test its
+suite: the merge names it under `not mutation-tested`, with the mutants
+its file leaves unknown.
 
 Dune does not track `WINDTRAP_MUTATE`. A suite that ran without it
 does not run again when it is set, unless its build changed, and the
@@ -414,7 +417,8 @@ project root; PATH arguments (.mutants files, or directories searched
 recursively) replace that default.
 
 Runs no tests and drives no build.
-Exits 1 when any mutant survived every executable that reached it.
+Exits 1 when any mutant survived every executable that reached it, or when an
+executable could not mutation-test its suite.
 
 OPTIONS:
   --color=MODE (env WINDTRAP_COLOR)

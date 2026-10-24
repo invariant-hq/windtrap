@@ -1,3 +1,30 @@
+=== a merge with an unknown mutant and a suite not mutation-tested
+───────────────────── survivors (1) ──────────────────────
+  SURVIVED  lib/calc.ml:21:16:ge  n > 0 → n >= 0
+      21 │ let sign n = if n > 0 then 1 else 0
+
+    2 tests ran this line and none failed:
+      sign of a negative  test/test_calc.ml:31
+      sign of a positive  test/test_calc.ml:30
+──────────────────────────────────────────────────────────
+
+────────────────────── unknown (1) ───────────────────────
+  lib/spin.ml:9:8:le  i < n → i <= n
+    test_spin.exe: its run passed its deadline of 1.5s
+    arm: ./test_spin.exe --arm lib/spin.ml:9:8:le
+──────────────────────────────────────────────────────────
+
+──────────────── not mutation-tested (1) ─────────────────
+  test_property.exe  27 mutants unknown: the suite is not deterministic: the probe failed 2 tests
+──────────────────────────────────────────────────────────
+
+─────────────────── never reached (2) ────────────────────
+  2  lib/calc.ml   lines 40-41
+──────────────────────────────────────────────────────────
+
+reproduce: WINDTRAP_MUTATE_ARM=lib/calc.ml:21:16:ge dune runtest --force --instrument-with ppx_windtrap.mutate
+mutants: 1 survived of 32 reached, 3 killed, 28 unknown, 2 never reached, 3 executables, 1 not mutation-tested
+
 === a survivor's block: its rewrite, its source line, the tests that ran it
   «r|SURVIVED»  «b|lib/calc.ml:21:16:ge»  n > 0 → n >= 0
       «d|21 │» let sign n = if n > 0 then 1 else 0

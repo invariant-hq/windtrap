@@ -57,6 +57,14 @@
     {!Windtrap.Private.Report_sections.scope.Executables} with the number of
     files kept.
 
+    {b Unknown.} A mutant that no file killed and one holds as
+    [Windtrap_runtime.Verdicts.Unknown] is unknown. The first file kept, in path
+    order, whose writer tested its suite and holds it so names it, with the
+    reason it records after its label, and its launcher is that file's. A mutant
+    that only refused files hold as unknown is counted under the first of them
+    instead. Every refused file is named, in path order, with its reason and
+    that count.
+
     {b Reaching tests.} The reaching tests of a survivor are the union of those
     of every file in which the mutant survived. Each is paired with the label of
     its file, and the pairs are sorted by label and then by test, without
@@ -110,15 +118,17 @@ val run : string list -> int
     usage line that follows a usage error.
 
     The result is:
-    - [0] when the report was printed and no mutant survived. Unreached mutants
-      are listed and do not fail the command. It is also [0] for the help page.
+    - [0] when the report was printed, no mutant survived and every file was
+      tested. Unreached, unknown and not-evaluated mutants are listed and do not
+      fail the command. It is also [0] for the help page.
     - [1] when the report was printed and at least one mutant survived every
-      executable that reached it. The command has no threshold, so one survivor
-      fails it, and a mutant that is equivalent to the original is dismissed at
-      its site with [[@mutate off]]. It is also [1], with no report, when a
-      [PATH] cannot be used, when no verdict file is found, when a file that is
-      not excluded cannot be read, is corrupt or has another format version, or
-      when every file is excluded.
+      executable that reached it, or a file is refused: a merge without that
+      suite's verdicts is not the project's. The command has no threshold, so
+      one survivor fails it, and a mutant that is equivalent to the original is
+      dismissed at its site with [[@mutate off]]. It is also [1], with no
+      report, when a [PATH] cannot be used, when no verdict file is found, when
+      a file that is not excluded cannot be read, is corrupt or has another
+      format version, or when every file is excluded.
     - [2] for a usage error: an unknown option, a [--color] without its value or
       with a value that the flag refuses. It is also [2] for a [WINDTRAP_COLOR]
       that the flag would refuse, read when [--color] is absent. *)

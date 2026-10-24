@@ -67,6 +67,8 @@ let verdict = function
   | "not_evaluated" -> Verdicts.Not_evaluated
   | "outside_tests" -> Verdicts.Outside_tests
   | "unreached" -> Verdicts.Unreached
+  | v when String.starts_with ~prefix:"unknown:" v ->
+      Verdicts.Unknown (String.sub v 8 (String.length v - 8))
   | v -> (
       match String.split_on_char ':' v with
       | [ "survived"; tests ] ->
@@ -90,8 +92,8 @@ let record spec =
       { Verdicts.id; before; after; verdict = verdict v }
   | _ -> die "%S: not FILE:LINE:COL:REWRITE:BEFORE:AFTER" mutant
 
-let mutants ~identity out specs =
-  Verdicts.save ?identity out
+let mutants ~identity ?refused out specs =
+  Verdicts.save ?identity ?refused out
     (List.fold_left Verdicts.add Verdicts.empty (List.map record specs))
 
 let () =
@@ -102,8 +104,16 @@ let () =
         | "--exe" :: exe :: args -> (Some (identity exe), args)
         | args -> (None, args)
       in
+      let refused, args =
+        match args with
+        | "--refused" :: reason :: args -> (Some reason, args)
+        | args -> (None, args)
+      in
       match kind with
       | "coverage" -> coverage ~identity out args
-      | "mutants" -> mutants ~identity out args
+      | "mutants" -> mutants ~identity ?refused out args
       | kind -> die "%S: not coverage or mutants" kind)
-  | _ -> die "usage: mkdata (coverage | mutants) OUT [--exe EXE] RECORD..."
+  | _ ->
+      die
+        "usage: mkdata (coverage | mutants) OUT [--exe EXE] [--refused REASON] \
+         RECORD..."

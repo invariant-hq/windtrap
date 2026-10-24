@@ -117,8 +117,8 @@ let shown s = Text.elide_middle max_value_bytes ~show:Fun.id s
 
 (* An example is never shrunk. *)
 (* A replayed case is reported as an example is, and keeps its token. *)
-let case_name ?(replayed = false) ?domain ~examples ~case_index ~shrink_steps
-    () =
+let case_name ?(replayed = false) ?domain ~examples ~case_index ~shrink_steps ()
+    =
   if replayed then "replayed case"
   else if Option.is_some domain then
     strf "value %d of %d" (case_index + 1) (Option.get domain)
@@ -1467,11 +1467,15 @@ type mutant = {
 
 type survivor = { mutant : mutant; witnesses : witness list }
 type not_evaluated = { mutant : mutant; invocation : Run.invocation }
+type unknown = { mutant : mutant; reason : string; invocation : Run.invocation }
+type refused = { executable : string; reason : string; mutants : int }
 type scope = Suite | Selected of int | Executables of int
 
 type mutation = {
   survivors : survivor list;
   not_evaluated : not_evaluated list;
+  unknown : unknown list;
+  refused : refused list;
   unreached : (string * int) list;
   outside_tests : (string * int) list;
   killed : int;
@@ -1558,8 +1562,15 @@ let survivor_block ~exe_width (s : survivor) =
    disagree with the blocks above it. A zero term is omitted. *)
 let mutation_summary (m : mutation) =
   let survived = List.length m.survivors in
+  let unknown =
+    List.fold_left
+      (fun n (r : refused) -> n + r.mutants)
+      (List.length m.unknown) m.refused
+  in
   let reached =
-    let n = m.killed + survived + List.length m.not_evaluated + m.not_tested in
+    let n =
+      m.killed + survived + List.length m.not_evaluated + unknown + m.not_tested
+    in
     match m.scope with
     | Suite -> strf "%d reached by this suite" n
     | Selected tests ->
@@ -1576,6 +1587,7 @@ let mutation_summary (m : mutation) =
     @ term m.killed (fun n -> [ styled `Green (strf "%d killed" n) ])
     @ term (List.length m.not_evaluated) (fun n ->
         [ styled `Yellow (strf "%d not evaluated" n) ])
+    @ term unknown (fun n -> [ styled `Yellow (strf "%d unknown" n) ])
     @ term (List.length m.unreached) (fun n ->
         [ styled `Yellow (strf "%d never reached" n) ])
     @ term (List.length m.outside_tests) (fun n ->
@@ -1583,7 +1595,10 @@ let mutation_summary (m : mutation) =
     @ term m.not_tested (fun n -> [ plain (strf "%d not tested" n) ])
     @
     match m.scope with
-    | Executables n -> [ [ plain (counted n "executable") ] ]
+    | Executables n ->
+        [ plain (counted n "executable") ]
+        :: term (List.length m.refused) (fun n ->
+            [ styled `Red (strf "%d not mutation-tested" n) ])
     | Suite | Selected _ -> []
   in
   plain "mutants: " :: separated (plain ", ") terms
@@ -1613,6 +1628,47 @@ let not_evaluated_section ~selection = function
                "  Each site ran in the dry run and not in its mutant's child.";
            ]
       :: List.concat_map mutant not_evaluated
+      @ [ Rule None ]
+
+(* Each mutant with why no run judged it, and the command that runs it
+   again. *)
+let unknown_section ~selection = function
+  | [] -> []
+  | unknown ->
+      let mutant (u : unknown) =
+        [
+          Line
+            [
+              plain "  ";
+              styled `Bold u.mutant.id;
+              plain (strf "  %s \u{2192} %s" u.mutant.before u.mutant.after);
+            ];
+          Line [ plain ("    " ^ u.reason) ];
+          Hint
+            ("    arm: "
+            ^ arm_command ~invocation:u.invocation ~selection u.mutant.id);
+        ]
+      in
+      Rule (Some (strf "unknown (%d)" (List.length unknown)))
+      :: List.concat_map mutant unknown
+      @ [ Rule None ]
+
+(* A suite that wrote no verdict would leave its mutants to the others, as
+   survivors they might have killed. *)
+let refused_section = function
+  | [] -> []
+  | refused ->
+      let row (r : refused) =
+        Line
+          [
+            plain "  ";
+            styled `Bold r.executable;
+            plain
+              (strf "  %s unknown: %s" (counted r.mutants "mutant") r.reason);
+          ]
+      in
+      Rule (Some (strf "not mutation-tested (%d)" (List.length refused)))
+      :: List.map row refused
       @ [ Rule None ]
 
 (* One row per file: what a reader does with an unreached mutant is write a
@@ -1682,6 +1738,7 @@ let mutation_closing ~(config : Run.config) (m : mutation) =
   let sections =
     [
       not_evaluated_section ~selection m.not_evaluated;
+      unknown_section ~selection m.unknown;
       unreached_section m.unreached;
       outside_tests_section m.outside_tests;
     ]
@@ -1717,6 +1774,8 @@ let mutation_report ~invocation (m : mutation) =
     [
       survivors;
       not_evaluated_section ~selection:"" m.not_evaluated;
+      unknown_section ~selection:"" m.unknown;
+      refused_section m.refused;
       unreached_section m.unreached;
       outside_tests_section m.outside_tests;
       outcome ~invocation ~selection:"" m;

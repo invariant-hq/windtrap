@@ -28,6 +28,7 @@ type file = {
   label : string; (* the executable, as the witness column names it *)
   invocation : Run.invocation; (* how that executable is run again *)
   verdicts : Verdicts.t;
+  refused : string option; (* why it could not test its mutants *)
 }
 
 (* Dune's inline-test runner is [inline-test-runner.exe] in every library's
@@ -95,12 +96,13 @@ let remedy excluded =
 let fresh files =
   let load path =
     match Verdicts.load path with
-    | Ok (verdicts, identity) ->
+    | Ok { Verdicts.verdicts; identity; refused } ->
         Ok
           {
             label = label ~path identity;
             invocation = invocation identity;
             verdicts;
+            refused;
           }
     | Error error -> Error (Pp.to_string Verdicts.pp_error error)
   in
@@ -144,9 +146,16 @@ let survived_in verdicts =
       match r.verdict with
       | Survived { first; others } ->
           Ids.add (Mutate.id_to_string r.id) (first :: others) acc
-      | Killed | Not_evaluated | Outside_tests | Unreached -> acc)
+      | Killed | Unknown _ | Not_evaluated | Outside_tests | Unreached -> acc)
     Ids.empty
     (Verdicts.records verdicts)
+
+let verdicts_by_id f =
+  List.fold_left
+    (fun acc (r : Verdicts.record) ->
+      Ids.add (Mutate.id_to_string r.id) r.verdict acc)
+    Ids.empty
+    (Verdicts.records f.verdicts)
 
 (* [Verdicts.merge] folds away which executable ran a reaching test, so a
    survivor's reaching tests are read from the files in which it survived. *)
@@ -157,6 +166,8 @@ let merge ~source files =
       Verdicts.empty files
   in
   let survivals = List.map (fun f -> (f, survived_in f.verdicts)) files in
+  let by_id = List.map (fun f -> (f, verdicts_by_id f)) files in
+  let verdict_in f id = Ids.find_opt id (List.assq f by_id) in
   let mutant (r : Verdicts.record) : Sections.mutant =
     {
       id = Mutate.id_to_string r.id;
@@ -191,16 +202,8 @@ let merge ~source files =
      the mutant is the one its command runs. A merge is [Not_evaluated] only
      when a file is. *)
   let not_evaluated (r : Verdicts.record) : Sections.not_evaluated =
-    let missed f =
-      List.exists
-        (fun (fr : Verdicts.record) ->
-          Mutate.compare_id fr.id r.id = 0
-          &&
-          match fr.verdict with
-          | Not_evaluated -> true
-          | Killed | Survived _ | Outside_tests | Unreached -> false)
-        (Verdicts.records f.verdicts)
-    in
+    let id = Mutate.id_to_string r.id in
+    let missed f = verdict_in f id = Some Verdicts.Not_evaluated in
     let invocation =
       match List.find_opt missed files with
       | Some f -> f.invocation
@@ -208,21 +211,73 @@ let merge ~source files =
     in
     { mutant = mutant r; invocation }
   in
-  let survivors, not_evaluated, unreached, outside_tests, killed =
-    List.fold_right
-      (fun (r : Verdicts.record) (survivors, missed, unreached, outside, killed)
-         ->
-        let site = (r.id.file, r.id.line) in
+  (* A merge is [Unknown] only when a file is. The first executable that ran
+     the mutant and could not judge it names it, with its reason; a mutant
+     that only refused suites hold counts under the first of them. *)
+  let unknown (r : Verdicts.record) =
+    let id = Mutate.id_to_string r.id in
+    let reason f =
+      match verdict_in f id with
+      | Some (Unknown reason) -> Some reason
+      | _ -> None
+    in
+    let tested = List.filter (fun f -> Option.is_none f.refused) files in
+    match
+      List.find_map (fun f -> Option.map (fun r -> (f, r)) (reason f)) tested
+    with
+    | Some (f, reason) ->
+        Either.Left
+          {
+            Sections.mutant = mutant r;
+            reason = strf "%s: %s" f.label reason;
+            invocation = f.invocation;
+          }
+    | None -> (
+        match List.find_opt (fun f -> Option.is_some (reason f)) files with
+        | Some f -> Either.Right f
+        | None -> assert false)
+  in
+  let records = Verdicts.records merged in
+  let pick f = List.filter_map f records in
+  let site (r : Verdicts.record) = (r.id.file, r.id.line) in
+  let survivors =
+    pick (fun r ->
+        match r.verdict with Survived _ -> Some (survivor r) | _ -> None)
+  in
+  let not_evaluated =
+    pick (fun r ->
         match r.verdict with
-        | Survived _ ->
-            (survivor r :: survivors, missed, unreached, outside, killed)
-        | Not_evaluated ->
-            (survivors, not_evaluated r :: missed, unreached, outside, killed)
-        | Unreached -> (survivors, missed, site :: unreached, outside, killed)
-        | Outside_tests ->
-            (survivors, missed, unreached, site :: outside, killed)
-        | Killed -> (survivors, missed, unreached, outside, killed + 1))
-      (Verdicts.records merged) ([], [], [], [], 0)
+        | Not_evaluated -> Some (not_evaluated r)
+        | _ -> None)
+  in
+  let unknown, untested =
+    List.partition_map Fun.id
+      (pick (fun r ->
+           match r.verdict with Unknown _ -> Some (unknown r) | _ -> None))
+  in
+  let unreached =
+    pick (fun r ->
+        match r.verdict with Unreached -> Some (site r) | _ -> None)
+  in
+  let outside_tests =
+    pick (fun r ->
+        match r.verdict with Outside_tests -> Some (site r) | _ -> None)
+  in
+  let killed =
+    List.length (pick (fun r -> if r.verdict = Killed then Some () else None))
+  in
+  let refused =
+    List.filter_map
+      (fun f ->
+        Option.map
+          (fun reason ->
+            {
+              Sections.executable = f.label;
+              reason;
+              mutants = List.length (List.filter (( == ) f) untested);
+            })
+          f.refused)
+      files
   in
   (* The survivor the most tests watched is the one a reader can act on
      soonest. The sort is stable, so identifier order holds within a count. *)
@@ -257,6 +312,8 @@ let merge ~source files =
   ( {
       Sections.survivors;
       not_evaluated;
+      unknown;
+      refused;
       unreached;
       outside_tests;
       killed;
@@ -282,7 +339,8 @@ project root; PATH arguments (.mutants files, or directories searched
 recursively) replace that default.
 
 Runs no tests and drives no build.
-Exits 1 when any mutant survived every executable that reached it.
+Exits 1 when any mutant survived every executable that reached it, or when an
+executable could not mutation-test its suite.
 
 OPTIONS:
   --color=MODE (env WINDTRAP_COLOR)
@@ -352,6 +410,6 @@ let run args =
     let mutation, invocation = merge ~source:(source ~roots) files in
     Sections.print ~out:Format.std_formatter ~ansi
       (Sections.mutation_report ~invocation mutation);
-    Ok (if mutation.survivors = [] then 0 else 1)
+    Ok (if mutation.survivors = [] && mutation.refused = [] then 0 else 1)
   in
   match code with Ok code | Error code -> code

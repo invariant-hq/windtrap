@@ -607,7 +607,8 @@ let test_mutants renderer loop reached =
                     }
                   in
                   (survivors, missed :: not_evaluated)
-              | Verdicts.Killed | Verdicts.Outside_tests | Verdicts.Unreached ->
+              | Verdicts.Killed | Verdicts.Unknown _ | Verdicts.Outside_tests
+              | Verdicts.Unreached ->
                   (survivors, not_evaluated)
             in
             let record = Verdicts.record_of_mutant mutant verdict in
@@ -656,7 +657,8 @@ let save_verdicts ~scope ~narrowed ~outside ~unreached tested =
       let identity = Verdicts.writer_identity ~exe in
       let kept =
         match (identity, Verdicts.load path) with
-        | Some identity, Ok (prior, Some writer) when writer = identity ->
+        | Some identity, Ok { verdicts = prior; identity = Some writer; _ }
+          when writer = identity ->
             List.filter
               (fun (r : Verdicts.record) -> not (in_scope ~scope r.id))
               (Verdicts.records prior)
@@ -689,8 +691,8 @@ let finish renderer ~narrowed ~reach ~reached ~outside ~unreached forks =
       let is_killed (r : Verdicts.record) =
         match r.verdict with
         | Verdicts.Killed -> true
-        | Verdicts.Survived _ | Verdicts.Not_evaluated | Verdicts.Outside_tests
-        | Verdicts.Unreached ->
+        | Verdicts.Unknown _ | Verdicts.Survived _ | Verdicts.Not_evaluated
+        | Verdicts.Outside_tests | Verdicts.Unreached ->
             false
       in
       let lines =
@@ -700,6 +702,8 @@ let finish renderer ~narrowed ~reach ~reached ~outside ~unreached forks =
         {
           survivors;
           not_evaluated;
+          unknown = [];
+          refused = [];
           unreached = lines unreached;
           outside_tests = lines outside;
           killed = List.length (List.filter is_killed records);

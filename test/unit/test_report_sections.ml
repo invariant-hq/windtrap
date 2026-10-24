@@ -684,8 +684,8 @@ let property_entries () =
            ~also:
              [
                Failure.property ~inner:(unequal "0" "3") ~rendered:"3"
-                 ~token:"r1:Aw:bb" ~domain:4 ~case_index:3 ~shrink_steps:0
-                 ~root ~examples:false ();
+                 ~token:"r1:Aw:bb" ~domain:4 ~case_index:3 ~shrink_steps:0 ~root
+                 ~examples:false ();
              ]
            ()) );
     ( "a replayed case is named so, and keeps its token",
@@ -2221,10 +2221,29 @@ let memo_missed =
     invocation = `Exe "./test_memo.exe";
   }
 
+let hung =
+  {
+    Sections.mutant =
+      mutant
+        ~source:(source_of [ (9, "  while i < n do incr i done") ])
+        "lib/spin.ml:9:8:le" 9 "i < n" "i <= n";
+    reason = "test_spin.exe: its run passed its deadline of 1.5s";
+    invocation = `Exe "./test_spin.exe";
+  }
+
+let property_refused =
+  {
+    Sections.executable = "test_property.exe";
+    reason = "the suite is not deterministic: the probe failed 2 tests";
+    mutants = 27;
+  }
+
 let loop_report =
   {
     Sections.survivors = [ add_survivor; ge_survivor ];
     not_evaluated = [];
+    unknown = [];
+    refused = [];
     unreached = [ ("lib/calc.ml", 40); ("lib/calc.ml", 41) ];
     outside_tests = [];
     killed = 3;
@@ -2267,6 +2286,8 @@ let merge_report =
   {
     Sections.survivors = [ eq_survivor; not_survivor ];
     not_evaluated = [];
+    unknown = [];
+    refused = [];
     unreached =
       List.map (fun line -> ("lib/text.ml", line)) [ 12; 13; 14; 32 ]
       @ [ ("lib/run.ml", 40); ("lib/run.ml", 40); ("lib/report.ml", 61) ];
@@ -2297,6 +2318,15 @@ let reached_report =
 
 let mutation_entries () =
   [
+    ( "a merge with an unknown mutant and a suite not mutation-tested",
+      at_rest
+        {
+          loop_report with
+          Sections.survivors = [ ge_survivor ];
+          unknown = [ hung ];
+          refused = [ property_refused ];
+          scope = Sections.Executables 3;
+        } );
     ( "a survivor's block: its rewrite, its source line, the tests that ran it",
       printed ~ansi:true (Sections.survivor_block ~exe_width:None ge_survivor)
     );
@@ -2347,6 +2377,8 @@ let mutation_entries () =
         {
           Sections.survivors = [];
           not_evaluated = [];
+          unknown = [];
+          refused = [];
           unreached =
             List.init 60 (fun i -> ("lib/report.ml", (i * 3) + 10))
             @ List.init 60 (fun i -> ("lib/report.ml", (i * 3) + 10))
@@ -2404,13 +2436,16 @@ let mutation_entries () =
         } );
   ]
 
-let summary ?(survivors = []) ?(not_evaluated = []) ?(unreached = [])
-    ?(outside_tests = []) ?(not_tested = 0) ~killed scope =
+let summary ?(survivors = []) ?(not_evaluated = []) ?(unknown = [])
+    ?(refused = []) ?(unreached = []) ?(outside_tests = []) ?(not_tested = 0)
+    ~killed scope =
   last_line
     (at_rest
        {
          Sections.survivors;
          not_evaluated;
+         unknown;
+         refused;
          unreached;
          outside_tests;
          killed;
@@ -2473,6 +2508,12 @@ let summary_rows =
           ~killed:2 Sections.Suite),
       "mutants: 1 survived of 3 reached by this suite, 2 killed, 2 never \
        reached, 1 evaluated outside tests" );
+    ( "an unknown mutant is reached, and so is what a refused suite holds",
+      (fun () ->
+        summary ~survivors:s ~unknown:[ hung ] ~refused:[ property_refused ]
+          ~killed:2 (Sections.Executables 2)),
+      "mutants: 1 survived of 31 reached, 2 killed, 28 unknown, 2 executables, \
+       1 not mutation-tested" );
     ( "a mutant its child did not evaluate is reached",
       (fun () ->
         summary ~survivors:s ~not_evaluated:[ memo_missed ] ~killed:2

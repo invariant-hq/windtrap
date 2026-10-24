@@ -74,6 +74,7 @@ let ended = function
 
 let verdict = function
   | Verdicts.Killed -> "killed"
+  | Verdicts.Unknown reason -> "unknown: " ^ reason
   | Verdicts.Survived { first; others } ->
       "survived by "
       ^ String.concat ", "
@@ -94,6 +95,7 @@ let row (r : Verdicts.record) =
 
 type file = {
   raw : string;
+  refused : string option;
   rows : string list;
   identity : (string * string) option; (* The writer's path and digest. *)
 }
@@ -105,16 +107,17 @@ let saved path =
   else
     let raw = read path in
     match Verdicts.load path with
-    | Ok (t, writer) ->
+    | Ok { verdicts; identity = writer; refused } ->
         Some
           {
             raw;
-            rows = List.map row (Verdicts.records t);
+            refused;
+            rows = List.map row (Verdicts.records verdicts);
             identity = Option.map identity writer;
           }
     | Error e ->
         let reason = Format.asprintf "unreadable: %a" Verdicts.pp_error e in
-        Some { raw; rows = [ reason ]; identity = None }
+        Some { raw; refused = None; rows = [ reason ]; identity = None }
 
 type ran = {
   status : string;
@@ -980,7 +983,7 @@ let kept_by_build () =
   let whole = require_some (Lazy.force green).file in
   let path = Verdicts.output_file ~exe:suite_exe in
   write path whole.raw;
-  let collection, identity =
+  let { Verdicts.verdicts = collection; identity; _ } =
     require_ok ~pp:Verdicts.pp_error (Verdicts.load path)
   in
   let other_build =

@@ -185,6 +185,59 @@ survivor: it is listed with the command that arms it, and exits 0:
   
   mutants: 2 reached, 1 killed, 1 not evaluated, 2 executables
 
+A mutant whose run one executable could not finish is no survivor
+either: it is listed with that executable's reason and the command that
+arms it, and exits 0. An executable that could not mutation-test its
+suite is named, with the mutants it leaves unknown, so its mutants never
+read as the others' survivors; the merge then exits 1:
+
+  $ plant "$scratch/unknown" && cd "$scratch/unknown"
+  $ mkdata mutants _build/_mutants/a.mutants "$add=killed" "$sub=survived:cli/runs" \
+  >   "$lt=survived:cli/compares"
+  $ mkdata mutants _build/_mutants/b.mutants "$add=killed" "$sub=unknown:its run was killed by SIGSEGV"
+  $ run windtrap mutants
+  ───────────────────── survivors (1) ──────────────────────
+    SURVIVED  lib/calc.ml:3:14:lt  a < b → a <= b
+        3 │ let cmp a b = a < b
+  
+      1 test ran this line and did not fail:
+        a.mutants  cli › compares
+  ──────────────────────────────────────────────────────────
+  
+  ────────────────────── unknown (1) ───────────────────────
+    lib/calc.ml:2:14:sub  a - b → a + b
+      b.mutants: its run was killed by SIGSEGV
+      arm: WINDTRAP_MUTATE_ARM=lib/calc.ml:2:14:sub dune runtest --force --instrument-with ppx_windtrap.mutate
+  ──────────────────────────────────────────────────────────
+  
+  reproduce: WINDTRAP_MUTATE_ARM=lib/calc.ml:3:14:lt dune runtest --force --instrument-with ppx_windtrap.mutate
+  mutants: 1 survived of 3 reached, 1 killed, 1 unknown, 2 executables
+  [1]
+  $ mkdata mutants _build/_mutants/a.mutants "$add=killed" "$sub=survived:cli/runs"
+  $ mkdata mutants _build/_mutants/b.mutants "$add=killed" "$sub=unknown:its run was killed by SIGSEGV"
+  $ run windtrap mutants
+  ────────────────────── unknown (1) ───────────────────────
+    lib/calc.ml:2:14:sub  a - b → a + b
+      b.mutants: its run was killed by SIGSEGV
+      arm: WINDTRAP_MUTATE_ARM=lib/calc.ml:2:14:sub dune runtest --force --instrument-with ppx_windtrap.mutate
+  ──────────────────────────────────────────────────────────
+  
+  mutants: 2 reached, 1 killed, 1 unknown, 2 executables
+  $ mkdata mutants _build/_mutants/b.mutants --refused "the suite is not deterministic" \
+  >   "$add=unknown:the suite is not deterministic" "$sub=unknown:the suite is not deterministic" \
+  >   "$lt=unreached"
+  $ run windtrap mutants
+  ──────────────── not mutation-tested (1) ─────────────────
+    b.mutants  1 mutant unknown: the suite is not deterministic
+  ──────────────────────────────────────────────────────────
+  
+  ─────────────────── never reached (1) ────────────────────
+    1  lib/calc.ml   line 3
+  ──────────────────────────────────────────────────────────
+  
+  mutants: 2 reached, 1 killed, 1 unknown, 1 never reached, 2 executables, 1 not mutation-tested
+  [1]
+
 Survivors are ordered by how many tests reached them, then by identifier:
 
   $ plant "$scratch/order" && cd "$scratch/order"
@@ -463,13 +516,13 @@ is to delete it, which a coverage dump in the directory shares:
   $ printf 'windtrap-mutants-v0\n1\nsome older payload\n' > _build/_mutants/old.mutants
   $ run windtrap mutants
   --- stderr
-  windtrap: .../old.mutants: not a windtrap verdict file (expected header "windtrap-mutants-v3", found "windtrap-mutants-v0"); files written by other windtrap versions are not readable - delete the stale verdict files, then re-run the mutation tests
+  windtrap: .../old.mutants: not a windtrap verdict file (expected header "windtrap-mutants-v4", found "windtrap-mutants-v0"); files written by other windtrap versions are not readable - delete the stale verdict files, then re-run the mutation tests
   [1]
   $ rm _build/_mutants/old.mutants
   $ printf 'windtrap-coverage-v3\n0\n' > _build/_mutants/cov.mutants
   $ run windtrap mutants
   --- stderr
-  windtrap: .../cov.mutants: not a windtrap verdict file (expected header "windtrap-mutants-v3", found "windtrap-coverage-v3"); files written by other windtrap versions are not readable - delete the stale verdict files, then re-run the mutation tests
+  windtrap: .../cov.mutants: not a windtrap verdict file (expected header "windtrap-mutants-v4", found "windtrap-coverage-v3"); files written by other windtrap versions are not readable - delete the stale verdict files, then re-run the mutation tests
   [1]
 
 A PATH that cannot be used fails the command, and the files named beside
@@ -500,7 +553,8 @@ The command line
   recursively) replace that default.
   
   Runs no tests and drives no build.
-  Exits 1 when any mutant survived every executable that reached it.
+  Exits 1 when any mutant survived every executable that reached it, or when an
+  executable could not mutation-test its suite.
   
   OPTIONS:
     --color=MODE (env WINDTRAP_COLOR)

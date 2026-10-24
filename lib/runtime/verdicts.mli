@@ -13,9 +13,9 @@
 
 (** {1:verdicts Verdicts}
 
-    A verdict is one of five cases, and never a boolean or an exit code. A
-    failure to supervise the child that arms a mutant is none of the five, and a
-    caller must record no verdict for it. *)
+    A verdict is one of six cases, and never a boolean or an exit code. What a
+    run could not decide is {!Unknown}, which outranks a survivor, so a mutant
+    that no run judged never reads as survived. *)
 
 type reaching_test = string list
 (** The type for a test that evaluated a mutant, by its path: the names of its
@@ -26,8 +26,13 @@ type reaching_test = string list
     mutant that no test reached is {!Outside_tests} or {!Unreached}. *)
 type verdict =
   | Killed
-      (** A reaching test failed, or the child that armed the mutant crashed or
-          hung. *)
+      (** A reaching test failed, or a fixture release failed, in the run that
+          armed the mutant. *)
+  | Unknown of string
+      (** No verdict, and the string says why: the run that armed the mutant
+          ended before its tests did, by a crash, an exit or its deadline, or
+          the executable could not be mutation-tested, as when its dry run is
+          red, its suite is not deterministic or its selection narrows it. *)
   | Survived of { first : reaching_test; others : reaching_test list }
       (** Every reaching test passed, and the armed site was evaluated. [first]
           and [others] are the reaching tests, sorted and without duplicates,
@@ -78,9 +83,10 @@ val add : t -> record -> t
     [(before, after)] pair in lexicographic order is kept, and the two verdicts
     combine into the verdict of a mutant that one executable saw one way and
     another the other way. It is {!Killed} if either is. Otherwise it is
-    {!Not_evaluated} if either is, then {!Survived} with the reaching tests of
-    both if either is, then {!Outside_tests} if either is, and {!Unreached} if
-    both are.
+    {!Unknown} if either is, with the smaller reason in [String.compare] order
+    when both are, then {!Not_evaluated} if either is, then {!Survived} with the
+    reaching tests of both if either is, then {!Outside_tests} if either is, and
+    {!Unreached} if both are.
 
     [add] checks nothing of [r.id]. It accepts an empty [file], a [line] below
     [1], a negative [col] and a [rewrite] outside {!Mutate.rewrites}, and
@@ -100,7 +106,7 @@ val merge : t -> t -> t
 
     An executable has one verdict file, at {!output_file}.
 
-    The first line of a file is the magic line [windtrap-mutants-v3], which
+    The first line of a file is the magic line [windtrap-mutants-v4], which
     carries the version of the format. A file with another first line is
     refused, never converted, and nothing is promised from one version to the
     next. *)
@@ -134,32 +140,43 @@ val output_file : exe:string -> string
     of the executable at [exe]. An executable that is renamed or moved leaves
     its previous file behind. *)
 
-val load : string -> (t * identity option, error) result
-(** [load path] is [Ok (t, identity)] when the file at [path] is a verdict file,
-    where [identity] is the recorded writer, if any. The file is read with
-    {!Instr.read_file}, and every error names [path]. Otherwise it is the error
-    of the read, [Error (Unknown_format _)] for another first line, or
-    [Error (Corrupt _)] for data that is truncated or invalid:
+type file = {
+  verdicts : t;  (** The records of the file. *)
+  identity : identity option;  (** The recorded writer, if any. *)
+  refused : string option;
+      (** [Some reason] when the writer could not mutation-test its suite, and
+          [reason] says why. Its records then hold what it could not judge as
+          {!Unknown}. *)
+}
+(** The type for what a verdict file holds. *)
+
+val load : string -> (file, error) result
+(** [load path] is [Ok file] when the file at [path] is a verdict file. The file
+    is read with {!Instr.read_file}, and every error names [path]. Otherwise it
+    is the error of the read, [Error (Unknown_format _)] for another first line,
+    or [Error (Corrupt _)] for data that is truncated or invalid:
     - a negative count, or a count larger than the input,
     - an empty file name, a line below [1] or a negative column,
     - a rewrite outside {!Mutate.rewrites}, or an unknown verdict,
     - a survivor with no reaching test, or a second record for one identifier,
-    - a malformed identity line, or bytes after the last record.
+    - a malformed identity line, a status that is neither [tested] nor [refused]
+      with its reason, or bytes after the last record.
 
     Nothing is repaired, and a file with one malformed record is not read at
     all. *)
 
-val save : ?identity:identity -> string -> t -> unit
-(** [save ?identity path t] writes [t] to [path] in the format of a verdict
-    file, with {!Instr.write_file}. Records are ordered by {!Mutate.compare_id}
-    and reaching tests are sorted, so equal collections give equal files.
-    [identity] is recorded after the magic line when it is given. A merged
-    collection has no single writer and is written without one.
+val save : ?identity:identity -> ?refused:string -> string -> t -> unit
+(** [save ?identity ?refused path t] writes [t] to [path] in the format of a
+    verdict file, with {!Instr.write_file}. Records are ordered by
+    {!Mutate.compare_id} and reaching tests are sorted, so equal collections
+    give equal files. [identity] is recorded after the magic line when it is
+    given. A merged collection has no single writer and is written without one.
+    The status line follows: [tested], or [refused] and [refused]'s reason.
 
-    [load path] is then [Ok (t, identity)] for every [t] whose identifiers
-    {!load} accepts, and [Error (Corrupt _)] for any other (see {!add}). A
-    collection built from the mutants of {!Mutate.val-catalogue} round-trips,
-    unless a source file was registered under the name [""].
+    [load path] is then [Ok { verdicts = t; identity; refused }] for every [t]
+    whose identifiers {!load} accepts, and [Error (Corrupt _)] for any other
+    (see {!add}). A collection built from the mutants of {!Mutate.val-catalogue}
+    round-trips, unless a source file was registered under the name [""].
 
     Raises [Invalid_argument] before anything is written if [identity.exe] is
     empty or if [identity.digest] is not 32 lowercase hexadecimal digits, and
