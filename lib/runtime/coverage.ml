@@ -254,6 +254,27 @@ let visit counts index =
   let count = counts.(index) in
   if count < max_int then counts.(index) <- count + 1
 
+(* Counts across processes *)
+
+let take () =
+  let t = snapshot () in
+  File_map.iter
+    (fun _ (_, live) ->
+      List.iter (fun c -> Array.fill c 0 (Array.length c) 0) live)
+    !registry;
+  t
+
+(* Into the first registration of a file: the dump adds up those of one
+   file. *)
+let absorb t =
+  File_map.iter
+    (fun file { points; counts } ->
+      match File_map.find_opt file !registry with
+      | Some (table, live :: _) when points_equal table points ->
+          Array.iteri (fun i n -> live.(i) <- saturating_add live.(i) n) counts
+      | Some _ | None -> ())
+    t
+
 (* Summaries *)
 
 type summary = { visited : int; total : int }

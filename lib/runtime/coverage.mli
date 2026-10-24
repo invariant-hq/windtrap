@@ -149,6 +149,22 @@ val load : string -> (t * identity option, error) result
       point tables. Two entries with an equal table are accepted, and their
       counts are added. *)
 
+(** {1:handover Counts across processes}
+
+    A process forked from one that counts holds the counts of before the fork as
+    well as its own. These two calls let a process hand only its own to another,
+    which dumps them with its own: windtrap's worker processes do, so a run
+    leaves one dump whatever its number of workers. *)
+
+val take : unit -> t
+(** [take ()] is what this process counted since it loaded, or since its
+    previous [take], and sets every count to zero. *)
+
+val absorb : t -> unit
+(** [absorb t] adds the counts of [t] to those of this process, for each file
+    whose point table this process registered equal to that of [t], so its dump
+    holds them. The counts of any other file are dropped. *)
+
 (** {1:reports Report data}
 
     The data below carries no presentation. *)
