@@ -38,8 +38,16 @@ let spelled ~prefixes ~lines (scope : Run.scope) =
     | None -> []
     | Some l -> [ lines (Lines.to_string l) ])
 
-type no_mutant = Uninstrumented | Out_of_scope | All_dismissed
+type no_mutant =
+  | Uninstrumented
+  | Out_of_scope
+  | No_site_on_lines (* the lines name no line, or none with a site *)
+  | All_dismissed
 
+(* Lines that name no line, or only lines of instrumented files with no site
+   on them, describe the change, not a mistake: a change to comments or
+   documentation leaves nothing to mutate. Lines that name no instrumented
+   file stay [Out_of_scope], as a typo would. *)
 let population ~scope =
   let catalogue = Mutate.catalogue () in
   let scoped =
@@ -48,11 +56,28 @@ let population ~scope =
   let undismissed =
     List.filter (fun (m : Mutate.mutant) -> Option.is_none m.dismissed) scoped
   in
+  let names_a_file lines =
+    Lines.is_empty lines
+    ||
+    let files = Lines.files lines in
+    List.exists
+      (fun (m : Mutate.mutant) ->
+        List.mem m.id.file files
+        && in_scope ~scope:{ scope with lines = None } m.id)
+      catalogue
+  in
   match (catalogue, scoped, undismissed) with
   | [], _, _ when scope = Run.every_mutant -> Error Uninstrumented
+  | _ :: _, [], _
+    when Option.fold ~none:false ~some:names_a_file scope.Run.lines ->
+      Error No_site_on_lines
   | _, [], _ -> Error Out_of_scope
   | _, _, [] -> Error All_dismissed
   | _, _, population -> Ok population
+
+let no_site_on_lines =
+  "the selected lines hold no mutation site, so nothing on them is \
+   mutation-tested"
 
 (* A prefix that leaves nothing is one sentence whatever the catalogue holds:
    the prefix is what the reader typed, and a build that is instrumented and
@@ -72,6 +97,7 @@ let refusal ~scope = function
            ~lines:(fun l -> "--lines=" ^ l))
         (if scope.lines = None then "prefix" else "scope")
         (if scope.lines = None then "files have" else "lines hold")
+  | No_site_on_lines -> no_site_on_lines
   | All_dismissed ->
       "every mutant this run could test is dismissed by [@mutate off]; there \
        is nothing to test"
@@ -85,6 +111,7 @@ let unmutated ~scope reason =
           (spelled scope
              ~prefixes:(fun ps -> "under " ^ String.concat "," ps)
              ~lines:(fun l -> "on " ^ l))
+    | No_site_on_lines -> no_site_on_lines
     | All_dismissed ->
         "every mutant of this executable is dismissed by [@mutate off]"
   in
@@ -540,6 +567,9 @@ let loop renderer ~scope ~suite (config : Run.config) tests =
              a failing one is not a score"
         else
           match population with
+          | Error No_site_on_lines ->
+              Os.say no_site_on_lines;
+              Ok outcome
           | Error reason -> refuse (refusal ~scope reason)
           | Ok population -> (
               let reached, unreached =

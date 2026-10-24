@@ -405,14 +405,22 @@ and add up, and --expect still asks of the whole merge:
         "percentage": 50.00,
         "uncovered_lines": [2] } ] }
   $ run windtrap coverage --lines=lib/none.ml:1
-  coverage: 100.0% (0/0 points)
+  coverage: no point to measure (0/0 points)
+
+A change that selects no point, such as an empty diff, claims no
+percentage, and a minimum over it is met:
+
+  $ : > empty.diff
+  $ run windtrap coverage --diff empty.diff --min 100; echo "exit $?"
+  coverage: no point to measure (0/0 points)
+  exit 0
 
 A file of the scope whose source is missing or stale cannot place its
 points on lines, and is left out and named:
 
   $ cd "$scratch/edges"
   $ run windtrap coverage --lines=lib/a.ml:1,lib/s.ml:1,lib/Z.ml:1
-  coverage: 100.0% (0/0 points)
+  coverage: no point to measure (0/0 points)
   --- stderr
   windtrap: lib/a.ml: source not found; left out of the line scope
   windtrap: lib/s.ml: the source changed since the run; left out of the line scope

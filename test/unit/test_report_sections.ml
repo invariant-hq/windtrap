@@ -2155,7 +2155,8 @@ let outcome_colour_rows =
         3,
         "coverage: \027[31m66.7%\027[0m (2/3 points), minimum 66.7%: " ^ failed
       ) );
-    ("no point: 100% and plain", (None, 0, 0, "coverage: 100.0% (0/0 points)"));
+    ( "no point: nothing to measure, and no gate",
+      (Some 100., 0, 0, "coverage: no point to measure (0/0 points)") );
     ( "the minimum prints as given",
       ( Some 99.99999,
         1,

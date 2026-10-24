@@ -1373,22 +1373,26 @@ let percentage ?(width = 0) ~min ~visited ~total () =
 
 (* The gate compares the unrounded percentage, and the line gives the counts
    beside its rounding, so no printed comparison contradicts its own digits.
-   The minimum prints as given. *)
+   The minimum prints as given. With no point, the line claims no
+   percentage: lines a change selects may hold none, and a gate over nothing
+   is met without being stated. *)
 let coverage_line ~min ~visited ~total =
-  [
-    plain "coverage: ";
-    percentage ~min ~visited ~total ();
-    plain (strf " (%d/%d points)" visited total);
-  ]
-  @
-  match min with
-  | None -> []
-  | Some min ->
-      [
-        plain (strf ", minimum %s%%: " (Pp.to_string Pp.decimal min));
-        (if percent ~visited ~total >= min then styled `Green "ok"
-         else styled `Red "FAILED");
-      ]
+  if total = 0 then [ plain "coverage: no point to measure (0/0 points)" ]
+  else
+    [
+      plain "coverage: ";
+      percentage ~min ~visited ~total ();
+      plain (strf " (%d/%d points)" visited total);
+    ]
+    @
+    match min with
+    | None -> []
+    | Some min ->
+        [
+          plain (strf ", minimum %s%%: " (Pp.to_string Pp.decimal min));
+          (if percent ~visited ~total >= min then styled `Green "ok"
+           else styled `Red "FAILED");
+        ]
 
 let coverage_report ~mode ~min (c : coverage) =
   let widest f =

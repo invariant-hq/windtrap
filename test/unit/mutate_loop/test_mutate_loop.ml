@@ -1155,6 +1155,35 @@ let line_scope () =
         [ "--diff"; diff; "--lines=test/unit/mutate_loop/subject.ml:14-15" ];
     ]
 
+(* A change to comments, or an empty diff, describes the change: the suite
+   runs and passes without mutation. A file nothing instruments stays a
+   refusal, as a typo would. *)
+let no_site_on_lines () =
+  let empty = Filename.concat (temp_dir ()) "empty.diff" in
+  write empty "";
+  let quiet args =
+    let r = spawn (mutate :: args) in
+    ( r.status,
+      r.err,
+      List.exists
+        (fun l -> String.starts_with ~prefix:"mutants:" (String.trim l))
+        (lines r.out) )
+  in
+  let note =
+    "windtrap: the selected lines hold no mutation site, so nothing on them is \
+     mutation-tested\n"
+  in
+  equal
+    (list (triple string text bool))
+    [ ("exited 0", note, false); ("exited 0", note, false) ]
+    [
+      quiet [ "--lines=test/unit/mutate_loop/subject.ml:14" ];
+      quiet [ "--diff"; empty ];
+    ];
+  let typo = spawn [ mutate; "--lines=test/unit/mutate_loop/subjet.ml:15" ] in
+  equal string "exited 1" typo.status;
+  contains ~sub:"leaves no mutant in this executable's catalogue" typo.err
+
 let verdict_file =
   group "The verdict file"
     [
@@ -1189,6 +1218,10 @@ let verdict_file =
         "a line scope tests the mutants of its lines alone, from --lines or a \
          git diff"
         line_scope;
+      test
+        "lines with no mutation site run the suite without mutation, and lines \
+         of no instrumented file are refused"
+        no_site_on_lines;
       test "a --failed run writes no verdict file" failed_run;
       test "a run with an active focus writes no verdict file" (fun () ->
           let r = spawn ~env:[ suite "focused" ] [ mutate ] in

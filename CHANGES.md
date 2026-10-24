@@ -312,8 +312,15 @@ for how to migrate from 0.2.0.
 - `windtrap coverage --lines FILE:A-B,...` and `--diff FILE`, the output
   of `git diff -U0`, report the points that start on those lines alone,
   as `windtrap mutants` reports the mutants on them.
+- A coverage report with no point says `coverage: no point to measure
+  (0/0 points)`, where it said `100.0%`; a `--min` over no point is met.
 
 ### Mutation testing
+
+- Under `--mutate`, lines that hold no mutation site, from `--lines` or
+  an empty `--diff`, run the suite without mutation and say so, with
+  its own exit code: a change to comments leaves nothing to mutate.
+  Lines of no instrumented file are refused, as a typo would be.
 
 - A surviving or unknown mutant's block opens on its location in the
   compiler's format, `File "lib/calc.ml", line 9, characters 12-17:`,
