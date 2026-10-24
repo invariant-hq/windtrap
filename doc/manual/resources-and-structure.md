@@ -59,9 +59,7 @@ tests that do, and runs nothing:
 ```
 $ dune exec examples/06-resources-and-structure/test_storage.exe -- -l
 database › an insert adds one row
-database › a name is stored › alice
-database › a name is stored › bob
-database › a name is stored › carol
+database › a name is stored
 database › every inserted row is found
 database › a duplicate row counts once
 server › it answers a ping
@@ -136,7 +134,7 @@ file:
 
 ```
 $ dune runtest
-storage: 12 passed, 2 skipped, 1 expected failure in 3.5ms.
+storage: 10 passed, 2 skipped, 1 expected failure in 2.1ms.
 keys/keys.ml: 3 passed in 0.8ms.
 ```
 
@@ -174,7 +172,7 @@ let database =
       with_db "an insert adds one row" (fun db ->
           Db.insert db "alice";
           equal int 1 (Db.count db));
-      cases ~name:Fun.id "a name is stored" [ "alice"; "bob"; "carol" ]
+      cases "a name is stored" string [ "alice"; "bob"; "carol" ]
         (fun name ->
           let db = Db.connect () in
           Db.insert db name;
@@ -189,23 +187,35 @@ A failure in `setup` or `teardown` prints `[setup]` or `[teardown]`
 before its location, and a teardown failure is reported beside the
 body's.
 
-## Running one test per input
+## Checking a table of inputs
 
-`cases ~name base inputs fn` is a group of one test per input, named by
-`name input`, as `a name is stored` above. Each input is a test of its
-own, so one that fails does not stop the others, and `-f` selects one:
+`cases name w rows fn` is a table: one test that runs `fn` on every row
+of `rows`, in order, as `a name is stored` above. It is a property whose
+domain is the rows, so it is checked whole: a row that fails does not
+stop the others, the report gives every row that failed, each as it was
+written, and `-v` says how many rows held:
 
 ```
-$ dune exec examples/06-resources-and-structure/test_storage.exe -- -v -f 'a name is stored › bob'
+$ dune exec examples/06-resources-and-structure/test_storage.exe -- -v -f 'a name is stored'
 storage: 1 test
-  PASS  database › a name is stored › bob          0.1ms
-1 passed in 0.5ms.
+  PASS  database › a name is stored                0.2ms (holds on all 3 values)
+1 passed in 1.5ms.
 ```
 
-The inputs and their names are computed when the suite is declared,
-outside any test (see `Windtrap.cases`). An input can carry its test's
-expected text as a `__POS_OF__` literal, which `expect` checks and a
-correction rewrites for that input alone (see
+A row is identified by how the witness `w` prints it, here `string`'s
+`"bob"`. A failure names it by its position and that printing, as in
+`row 2 of 3: "bob"`, cut to one line when it is long. Two rows that
+print alike are refused, since nothing could tell them apart. A witness
+can print a key of the row instead of all of it:
+`Testable.contramap fst string` identifies `("bob", 3)` as `"bob"`.
+`~label` gives a row a text shown beside its position, `row 2 of 3, the
+second`, which identifies nothing.
+
+`--failed` reruns the rows of a table that failed last, and no other
+(see [Rerunning failures](running-tests.md)). The rows are evaluated
+when the suite is declared; the witness and the label print them in
+the test. A row can carry its expected text as a `__POS_OF__` literal,
+which `expect` checks and a correction rewrites for that row alone (see
 [Giving each row of a table its own literal](baselines.md#giving-each-row-of-a-table-its-own-literal)).
 
 ## Naming the parts of one test

@@ -351,13 +351,13 @@ let checking =
   group "Checking the command list"
     [
       cases "sampling raises Invalid_argument with the rule the list breaks"
-        ~name:(fun (n, _, _, _) -> n)
+        (Testable.contramap (fun (n, _, _, _) -> n) Testable.text)
         malformed_rows
         (fun (_, steps, commands, message) ->
           let gen = Stateful.program ~steps (commands ()) in
           raises (Invalid_argument message) (fun () -> drawn gen 0));
       cases "a prefix is any lowercase identifier that ends with no digit"
-        ~name:Fun.id
+        Testable.text
         [ "q'"; "_q"; "cell_a"; "q1a" ]
         accepted;
       test "one type that two commands make is one prefix" one_type_two_commands;
@@ -445,7 +445,7 @@ let commands =
       cases
         "a failure that recorded no location gets its command's, and one that \
          did keeps it"
-        ~name:(fun (n, _, _) -> n)
+        (Testable.contramap (fun (n, _, _) -> n) Testable.text)
         located
         (fun ((_, _, site) as r) -> equal string site (located_site r));
       test "a name's newlines become spaces in the record, summary and label"
@@ -684,7 +684,7 @@ let drawing =
       cases
         "a printerless argument raises Invalid_argument when first drawn, \
          counted from one"
-        ~name:(fun (n, _, _) -> n)
+        (Testable.contramap (fun (n, _, _) -> n) Testable.text)
         printerless
         (fun (_, name, commands) -> no_printer name (commands ()));
     ]
@@ -935,7 +935,7 @@ let outcomes =
       cases
         "two results compare under the witness and two exceptions by \
          constructor name, the module path removed"
-        ~name:(fun (n, _, _, _) -> n)
+        (Testable.contramap (fun (n, _, _, _) -> n) Testable.text)
         outcome_rows
         (fun (_, reference, system, expected) ->
           equal string expected
@@ -944,7 +944,7 @@ let outcomes =
       test "the system's exception keeps its backtrace" system_backtrace;
       cases
         "makes makes a value when the system returns, and the run releases it"
-        ~name:(fun (n, _, _, _) -> n)
+        (Testable.contramap (fun (n, _, _, _) -> n) Testable.text)
         making_rows
         (fun (_, reference, system, expected) ->
           equal string expected (making reference system));
@@ -1100,7 +1100,7 @@ let never_outcomes =
       cases
         "a verb's failure, a broken contract or a discard fails at the call \
          from the system, and breaks the reference from the reference or pre"
-        ~name:(fun (n, _, _, _, _) -> n)
+        (Testable.contramap (fun (n, _, _, _, _) -> n) Testable.text)
         never_rows
         (fun (_, pre, reference, system, expected) ->
           equal string expected
@@ -1109,12 +1109,12 @@ let never_outcomes =
         system_first;
       test "the call whose pre raised is the last of the record" broken_pre_row;
       cases "a control or a fatal exception passes as itself"
-        ~name:(fun (n, _, _) -> n)
+        (Testable.contramap (fun (n, _, _) -> n) Testable.text)
         passing_rows
         (fun (_, place, e) ->
           equal string (raised e) (ended (execute (raising_in place e))));
       cases "a control or a fatal exception passes a cell's printer as itself"
-        ~name:fst controls (fun (_, e) ->
+        (Testable.contramap fst Testable.text) controls (fun (_, e) ->
           equal string (raised e) (raising_cell e));
     ]
 
@@ -1221,7 +1221,7 @@ let judging =
     [
       test "the reference receives the system's outcome" judges_order;
       cases "returning accepts; a verb, a broken contract or a re-raise rejects"
-        ~name:(fun (n, _, _, _) -> n)
+        (Testable.contramap (fun (n, _, _, _) -> n) Testable.text)
         verdict_rows
         (fun (_, reference, system, expected) ->
           equal string expected (ended (execute (judge reference system))));
@@ -1344,14 +1344,14 @@ let invariants =
       test "an invariant runs after a call that makes no value"
         invariant_after_use;
       cases "an invariant's failure ends the run under its label"
-        ~name:(fun (n, _, _, _) -> n)
+        (Testable.contramap (fun (n, _, _, _) -> n) Testable.text)
         invariant_failures
         (fun (_, visit, e, expected) ->
           equal string expected (checked ~visit (fun () -> raise e)));
       cases
         "an invariant's and a release's failure keep their own location, and \
          have none without one"
-        ~name:(fun (n, _, _, _) -> n)
+        (Testable.contramap (fun (n, _, _, _) -> n) Testable.text)
         sites
         (fun ((_, _, _, site) as r) -> equal string site (own_site r));
     ]
@@ -1508,7 +1508,7 @@ let releases =
       cases
         "a run releases the system side of each value, newest first, on every \
          path but a fatal exception"
-        ~name:(fun (n, _, _) -> n)
+        (Testable.contramap (fun (n, _, _) -> n) Testable.text)
         release_paths
         (fun (_, third, expected) -> equal string expected (released_on third));
       test "a system side that several values of one type hold is released once"
@@ -1526,7 +1526,7 @@ let releases =
       cases
         "every release runs; the first control wins, then the run's failure, \
          then the first release's"
-        ~name:(fun (n, _, _, _) -> n)
+        (Testable.contramap (fun (n, _, _, _) -> n) Testable.text)
         release_failures
         (fun (_, mismatch, fails, expected) ->
           equal string expected (releasing ~mismatch fails));
@@ -1761,7 +1761,7 @@ let the_record =
       cases
         "an argument prints as its sample renders, in parentheses on a space \
          or a leading -"
-        ~name:(fun (n, _, _) -> n)
+        (Testable.contramap (fun (n, _, _) -> n) Testable.text)
         argument_rows
         (fun (_, call, expected) -> equal string expected (call ()));
       test "an argument is cut at 200 bytes, with its size" long_argument;
@@ -1775,7 +1775,7 @@ let the_record =
          witness prints it"
         result_column;
       cases "only a judging call adds a result column"
-        ~name:(fun (n, _, _) -> n)
+        (Testable.contramap (fun (n, _, _) -> n) Testable.text)
         result_headers
         (fun (_, result, expected) ->
           let gen = Stateful.program ~steps:5 (popped result) in
@@ -1828,7 +1828,7 @@ let the_record =
 49  tick ()
 50  tick ()|});
       cases "the calls omitted start past 40"
-        ~name:(fun (n, _) -> strf "%d calls" n)
+        (Testable.contramap (fun (n, _) -> strf "%d calls" n) Testable.text)
         [ (40, "41 lines, "); (41, "42 lines, \u{2026} (1 call omitted)") ]
         (fun (n, row) -> equal string row (cut n));
       test "a program renders as a value, as it was drawn, never a pre-image"
@@ -1874,7 +1874,7 @@ let summaries =
       test "a program that has not run has no summary" (fun () ->
           is_none (summary (value (drawn (ticks 3) 0))));
       cases "the summary is the record in one line, and none without calls"
-        ~name:(fun (n, _) -> strf "steps %d" n)
+        (Testable.contramap (fun (n, _) -> strf "steps %d" n) Testable.text)
         summary_rows
         (fun (n, s) ->
           let gen = ticks n in
@@ -2757,7 +2757,7 @@ let elements =
          place"
         kept_place;
       cases "an element shrinks toward the head, to the least failing index"
-        ~name:(fun (n, _, _) -> n)
+        (Testable.contramap (fun (n, _, _) -> n) Testable.text)
         [
           ( "wrong from the second",
             1,
@@ -2779,24 +2779,25 @@ let elements =
       cases
         "what the candidates raise breaks the reference, the element printed \
          as _, and a control keeps its meaning"
-        ~name:(fun (n, _, _) -> n)
+        (Testable.contramap (fun (n, _, _) -> n) Testable.text)
         listing_failures
         (fun (_, e, expected) -> equal string expected (listing_breaks e));
       cases "an element prints through its witness, as a drawn argument does"
-        ~name:(fun (n, _, _) -> n)
+        (Testable.contramap (fun (n, _, _) -> n) Testable.text)
         element_rows
         (fun (_, call, expected) -> equal string expected (call ()));
       cases
         "an element reads the nearest value of its type before it, else the \
          first after it"
-        ~name:(fun (n, _, _) -> n)
+        (Testable.contramap (fun (n, _, _) -> n) Testable.text)
         two_values_rows
         (fun (_, pick, expected) -> equal string expected (two_values pick));
       test "Map.find takes a key the map holds, in the API's order" map_find;
       test "Set.mem takes an element the set holds, in the API's order" set_mem;
       test "blit takes an index of each of its two arrays" blit;
-      cases "an element may list elements in turn, before or after it" ~name:fst
-        nested_rows (fun (_, signature) -> nested signature);
+      cases "an element may list elements in turn, before or after it"
+        (Testable.contramap fst Testable.text) nested_rows
+        (fun (_, signature) -> nested signature);
     ]
 
 (* Declaring *)
@@ -2960,7 +2961,7 @@ let declaring =
       cases
         "a command that a passing case held and no passing case called fails \
          the test, named in the order of the commands"
-        ~name:(fun (n, _, _, _) -> n)
+        (Testable.contramap (fun (n, _, _, _) -> n) Testable.text)
         judged
         (fun ((_, _, _, expected) as r) -> equal string expected (verdict r));
       test "the declaration site locates a command never called"
@@ -2971,7 +2972,8 @@ let declaring =
       cases
         "a command's functions, pre, the candidates of an among type, an \
          invariant and a release may read the running test"
-        ~name:fst reading_places (fun (_, program) ->
+        (Testable.contramap fst Testable.text) reading_places
+        (fun (_, program) ->
           equal string "returned" (ended (execute (program ()))));
     ]
 

@@ -69,10 +69,10 @@ exits 2, and the next whole run exits 0 and writes the record again:
   >   run VERDICT_SUITE=record ./verdict_main.exe > /dev/null; whole=$?
   >   echo "$state: --failed [$failed], then [$whole] and $(head -1 "$record")"
   > done
-  magic: --failed [2], then [0] and windtrap-last-failed 1
-  unreadable: --failed [2], then [0] and windtrap-last-failed 1
-  truncated: --failed [2], then [0] and windtrap-last-failed 1
-  renamed: --failed [2], then [0] and windtrap-last-failed 1
+  magic: --failed [2], then [0] and windtrap-last-failed 2
+  unreadable: --failed [2], then [0] and windtrap-last-failed 2
+  truncated: --failed [2], then [0] and windtrap-last-failed 2
+  renamed: --failed [2], then [0] and windtrap-last-failed 2
 
 A record that cannot be written changes no run: under --stream nothing
 is captured, so only the record lives under the log directory, which
@@ -98,3 +98,124 @@ Held for the redesign (doc/dev/testing.md): the record is keyed by the suite's n
   --- stderr
   windtrap: no recorded failures match the current suite
   [2]
+
+A table records the rows that failed, each by its printed value, and a
+property its counterexample, by its token: the record names a case
+within its test. Here rows b and d fail, and the property fails from 10
+on:
+
+  $ rm -f ran
+  $ brief VERDICT_SUITE=rerun VERDICT_FAILING=b,d ./verdict_main.exe --seed s1:0000000000000001
+    FAIL  rows
+    FAIL  counterexample
+  1 passed, 2 failed in DURATION.
+  [1]
+  $ grep -E 'property failed|counterexample \(|which failed|row . broke' out
+      counterexample (row 2 of 4, the second): "b"
+      which failed with:
+        row b broke
+      counterexample (row 4 of 4): "d"
+      which failed with:
+        row d broke
+      counterexample (case 0, shrunk 8 steps): 10
+      which failed with:
+  $ sed 's/r1:[^ ]*/TOKEN/' _logs/rerun/.last-failed
+  windtrap-last-failed 2
+  rows	row	\"b\"
+  rows	row	\"d\"
+  counterexample	replay	TOKEN
+
+--failed reruns those cases and no other: rows b and d, and the
+property on its counterexample alone, which it checks again as --replay
+would, drawing nothing. The test that passed does not run:
+
+  $ rm -f ran
+  $ brief VERDICT_SUITE=rerun VERDICT_FAILING=b,d ./verdict_main.exe --failed
+    FAIL  rows
+    FAIL  counterexample
+  2 failed in DURATION.
+  [1]
+  $ cat ran
+  b
+  d
+  10
+
+A row that now passes leaves the record, and the next --failed reruns
+the row that still fails:
+
+  $ brief VERDICT_SUITE=rerun VERDICT_FAILING=d ./verdict_main.exe --failed
+    FAIL  rows
+    FAIL  counterexample
+  2 failed in DURATION.
+  [1]
+  $ sed 's/r1:[^ ]*/TOKEN/' _logs/rerun/.last-failed
+  windtrap-last-failed 2
+  rows	row	\"d\"
+  counterexample	replay	TOKEN
+  $ rm -f ran
+  $ brief VERDICT_SUITE=rerun VERDICT_FAILING=d ./verdict_main.exe --failed
+    FAIL  rows
+    FAIL  counterexample
+  2 failed in DURATION.
+  [1]
+  $ cat ran
+  d
+  10
+
+A record of the first version names whole tests, so --failed reruns
+every row of the table and draws the property's cases again:
+
+  $ printf 'windtrap-last-failed 1\nrows\ncounterexample\n' > _logs/rerun/.last-failed
+  $ rm -f ran
+  $ brief VERDICT_SUITE=rerun VERDICT_FAILING=d ./verdict_main.exe --failed
+    FAIL  rows
+    FAIL  counterexample
+  2 failed in DURATION.
+  [1]
+  $ head -4 ran
+  a
+  b
+  c
+  d
+
+A recorded row that the table no longer has is stale: the table fails and
+says so, and runs none of its rows rather than pass on the ones left. The
+record then names the table whole:
+
+  $ printf 'windtrap-last-failed 2\nrows\trow\t\\"x\\"\nrows\trow\t\\"b\\"\n' > _logs/rerun/.last-failed
+  $ rm -f ran
+  $ brief VERDICT_SUITE=rerun ./verdict_main.exe --failed
+    FAIL  rows
+  1 failed in DURATION.
+  [1]
+  $ grep 'last-failed record' out
+      --failed: the last-failed record names a case that this table no longer has: row "x"; run it without --failed
+  $ test -e ran || echo no row ran
+  no row ran
+  $ cat _logs/rerun/.last-failed
+  windtrap-last-failed 2
+  rows
+
+A recorded token whose generator no longer parses the value it recorded
+is stale too, here a token whose digest is another value's, and fails
+its property:
+
+  $ brief VERDICT_SUITE=rerun VERDICT_FAILING=d ./verdict_main.exe > /dev/null
+  [1]
+  $ sed -E 's/^(counterexample.*):[0-9a-f]+$/\1:00000000/' _logs/rerun/.last-failed > stale
+  $ mv stale _logs/rerun/.last-failed
+  $ brief VERDICT_SUITE=rerun ./verdict_main.exe --failed -f counterexample
+    FAIL  counterexample
+  1 failed in DURATION.
+  [1]
+  $ grep 'recorded counterexample' out | sed 's/r1:[^:]*:/r1:CHOICES:/'
+      --failed: the recorded counterexample r1:CHOICES:00000000: stale: its generator now parses 10, not the value it recorded
+
+Two rows that print alike are refused as duplicates, and no row runs:
+
+  $ brief VERDICT_SUITE=rerun_dup ./verdict_main.exe
+    FAIL  rows
+  1 failed in DURATION.
+  [1]
+  $ grep 'duplicate rows' out
+      duplicate rows: rows 1 and 3 print "a"; a row is identified by its printed value, so no two rows may print alike

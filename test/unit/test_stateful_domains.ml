@@ -487,7 +487,9 @@ let drawing =
       cases
         "each branch holds at most its share of calls, and nothing after the \
          prefix makes a value"
-        ~name:(fun (d, n) -> strf "%d domains, %d each" d n)
+        (Testable.contramap
+           (fun (d, n) -> strf "%d domains, %d each" d n)
+           Testable.text)
         shape_rows
         (fun row -> shape row ());
       test "a branch and the suffix draw no command that has a ~pre"
@@ -691,12 +693,12 @@ let judge_group =
   group "The judge"
     [
       cases "judges outcome vectors over program order"
-        ~name:(fun (n, _, _, _) -> n)
+        (Testable.contramap (fun (n, _, _, _) -> n) Testable.text)
         judge_rows
         (fun (_, branches, suffix, expected) ->
           equal string expected (judged ~branches ~suffix ()));
       cases "judges only the orders that keep real time"
-        ~name:(fun (n, _, _, _, _) -> n)
+        (Testable.contramap (fun (n, _, _, _, _) -> n) Testable.text)
         real_time_rows
         (fun (_, precedes, branches, suffix, expected) ->
           equal string expected (judged ~precedes ~branches ~suffix ()));
@@ -1703,7 +1705,7 @@ let executor =
          ending, and the pool runs on"
         in_the_ending;
       cases "labels count along the order the judge accepts"
-        ~name:(fun (n, _, _) -> n)
+        (Testable.contramap (fun (n, _, _) -> n) Testable.text)
         labels
         (fun (_, cover_when, expected) ->
           equal string expected (met ~cover_when ()));

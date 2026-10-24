@@ -118,7 +118,7 @@ A run that holds a property prints its seed on the summary line:
 
 ```
 $ dune runtest
-geo: 17 passed in 6.0ms (seed s1:296aaf2e3762014b).
+geo: 20 passed in 9.3ms (seed s1:6f4f2c9a9ee00736).
 ```
 
 ## Reading a counterexample
@@ -207,6 +207,12 @@ windtrap cannot know the text is OCaml, and the line is a token,
 a digest of its printing, so it replays on any machine and under a
 renamed test, and a token whose generator now parses another value is
 reported stale rather than checking it. Nothing writes the source.
+
+`--failed` keeps the token for you: a run records each failed
+property with its counterexample's token, and `--failed` checks that
+counterexample again as `--replay` would, drawing nothing, until it
+passes. A table (`cases`) is a property over its rows, and `--failed`
+reruns the rows that failed.
 
 `test/test_geo.ml`:
 
@@ -432,7 +438,7 @@ let codec =
     [
       prop "reads back what it prints" gen_shape
         (Law.round_trip shape string Geo.to_string read);
-      cases ~name:Fun.id "prints what it reads"
+      cases "prints what it reads" string
         [ "circle 1"; "rect 2 0.5" ]
         (Law.round_trip string shape read Geo.to_string);
       test "reads back a unit circle" (fun () ->
@@ -441,12 +447,12 @@ let codec =
 ```
 
 If `to_string` printed a rectangle's width twice, the property and the
-second row would fail, each naming its first function `f` and its second
-`g`:
+table's second row would fail, each naming its first function `f` and
+its second `g`:
 
 ```
 $ dune exec examples/03-property-testing/test_geo.exe -- --seed s1:5b58964be30f69a8 -f codec
-geo: 4 tests (seed s1:5b58964be30f69a8)
+geo: 3 tests (seed s1:5b58964be30f69a8)
 ──────────────────────── failures ────────────────────────
   FAIL  codec › reads back what it prints
     examples/03-property-testing/test_geo.ml:85
@@ -462,20 +468,22 @@ geo: 4 tests (seed s1:5b58964be30f69a8)
       x        Rect (1, 0)
                         ~
 
-  FAIL  codec › prints what it reads › rect 2 0.5
+  FAIL  codec › prints what it reads
     examples/03-property-testing/test_geo.ml:87
-      87 │ cases ~name:Fun.id "prints what it reads"
+      87 │ cases "prints what it reads" string
 
-    round trip: g (f x) = x
-    f x      Rect (2, 0.5)
-    g (f x)  "rect 2 2"
-                     ~
-    x        "rect 2 0.5"
-                     ~~~
+    counterexample (row 2 of 2): "rect 2 0.5"
+    which failed with:
+      round trip: g (f x) = x
+      f x      Rect (2, 0.5)
+      g (f x)  "rect 2 2"
+                       ~
+      x        "rect 2 0.5"
+                       ~~~
 ──────────────────────────────────────────────────────────
 
 replay: dune exec examples/03-property-testing/test_geo.exe -- --seed s1:5b58964be30f69a8 -f 'codec'
-2 passed, 2 failed in 0.4ms.
+1 passed, 2 failed in 1.7ms.
 ```
 
 ### Checking a witness's equality and order

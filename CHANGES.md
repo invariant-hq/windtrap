@@ -2,6 +2,33 @@
 
 ## Unreleased
 
+### Declaring tests
+
+- (breaking) `cases name w rows fn` is a table: one test, a property
+  over `Gen.of_list rows` checked whole, where 0.2.0's
+  `cases ~name base inputs fn` made a group of one test per input. A row
+  is identified by its printed value under the witness `w`, so no name
+  need be invented and kept unique; `Testable.contramap fst string`
+  identifies a row by a key. Two rows that print alike are refused as
+  duplicates, and the table fails before any row runs. Every row runs
+  and every row refuted is reported, as `row 2 of 5: "b"`, its printing
+  cut to one line in a label. `?label` shows a text beside the row's
+  position and identifies nothing. To migrate, `~name:f` becomes the
+  witness `(Testable.contramap f text)`, which keeps the names as the
+  rows' identities. Because a table is one test, `-f` selects a table
+  and not one row, `-v` prints one line,
+  `PASS  t (holds on all 3 values)`, `timeout` and `retries` cover the
+  whole table, the summary counts a table once, and a table with no row
+  fails, since it checks nothing, where 0.2.0 declared no test.
+- Each row of a table keeps or withholds its baseline corrections as a
+  test of its own would, in the order of the rows and at every `-j`: a
+  row that also fails another way keeps none, and the next rows are
+  compared with the baselines it left as they were. A failure that a
+  row records names the row, as a subtest's failure names the subtest.
+- A row of a table runs outside its property's labels, as a test's body
+  does: a law demands nothing of a row, and `collect`, `classify` and
+  `cover` refuse there as in 0.2.0's rows.
+
 ### Assertions
 
 - (breaking) A failing verb records its failure in the running test
@@ -171,6 +198,15 @@
 - `--replay TOKEN` (`WINDTRAP_REPLAY`) checks each selected property on
   the one case of a token that a failure printed; a token whose
   generator now parses another value fails as stale and checks nothing.
+- `--failed` reruns the cases that failed, not only the tests: a table
+  its rows that failed, by their printed value, and a property or a
+  stateful test each counterexample it recorded, by its token, as
+  `--replay` checks one, drawing nothing. A test whose failure belongs
+  to no case, as a timeout's or a failing example's, reruns whole. A
+  recorded row the table no longer has, or a token now stale, fails the
+  test and names it, rather than pass on what remains. The record's
+  format is versioned (`windtrap-last-failed 2`); a record that 0.2.0
+  wrote names whole tests and reads so.
 - (breaking) `--prop-count N` (`WINDTRAP_PROP_COUNT`) raises the count of
   every property below `N`, a declared `~count` included, and lowers
   none, so a long run scales every property and a short one no longer

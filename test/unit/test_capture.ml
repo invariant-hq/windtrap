@@ -178,7 +178,7 @@ let state_group =
       cases
         "a log is <log_dir>/<suite>/<groups...>/<test>.output, each component \
          sanitized"
-        ~name:(fun (name, _, _) -> name)
+        (Testable.contramap (fun (name, _, _) -> name) Testable.text)
         layouts
         (fun (_, (suite, groups, test_name), log) ->
           equal (list string) [ log ] (logs_of ~suite ~groups ~test_name));
@@ -482,7 +482,8 @@ let capturing =
   group "Capturing"
     [
       cases "drain forces the standard buffers through to descriptors 1 and 2"
-        ~name:fst buffers (fun (_, write) -> equal string "x" (drained write));
+        (Testable.contramap fst Testable.text) buffers (fun (_, write) ->
+          equal string "x" (drained write));
       test "drain reaches no formatter of the user's" own_formatter;
       test "drain raises Sys_error when a flush fails" (fun () ->
           posix_only ();
@@ -498,8 +499,8 @@ let capturing =
             (attempt cap (fun () -> pointing ~before ~log)));
       cases
         "every write to descriptors 1 and 2 reaches the log, a subprocess's \
-         included"
-        ~name:fst writers (fun (_, write) ->
+         included" (Testable.contramap fst Testable.text) writers
+        (fun (_, write) ->
           let cap, log = state () in
           attempt cap write;
           equal string "x" (read log));
@@ -512,7 +513,7 @@ let capturing =
       cases
         "with_capture puts the descriptors back on every exit, and keeps a log \
          only of an attempt that ran"
-        ~name:(fun (name, _, _) -> name)
+        (Testable.contramap (fun (name, _, _) -> name) Testable.text)
         exits
         (fun (_, scenario, row) -> equal string row (scenario ()));
       test "a subprocess inherits no descriptor beyond 1 and 2" inherits_nothing;
@@ -531,7 +532,8 @@ let capturing =
         outside_elsewhere;
       test "outside points the descriptors back when its function raises"
         outside_raises;
-      cases "outside with nothing redirected is its function" ~name:fst
+      cases "outside with nothing redirected is its function"
+        (Testable.contramap fst Testable.text)
         [
           ("no attempt running", fun () -> fst (state ()));
           ("disabled", fun () -> Capture.disabled);
@@ -683,7 +685,8 @@ let within ?(read = "") ~before ~inside ~after () =
 let marks =
   group "Marks"
     [
-      cases "mark is None" ~name:fst
+      cases "mark is None"
+        (Testable.contramap fst Testable.text)
         [
           ("when disabled", fun () -> Capture.disabled);
           ("before any attempt", fun () -> fst (state ()));
@@ -729,7 +732,7 @@ let reading =
   group "Reading captured output"
     [
       cases "with no current log, output is \"\" and output_tail is None"
-        ~name:fst
+        (Testable.contramap fst Testable.text)
         [
           ("a new state", fun () -> fst (state ()));
           ( "after a failed setup",
@@ -752,20 +755,20 @@ let reading =
       test "a log truncated below the cursor has no unread bytes" truncated;
       cases
         "output_tail is the end of what the attempt wrote after output's cursor"
-        ~name:(fun (name, _, _) -> name)
+        (Testable.contramap (fun (name, _, _) -> name) Testable.text)
         after_cursor
         (fun (_, unread, row) ->
           equal string
             (row ^ ", the end, on a code point")
             (tail_of ~read:"compared" unread));
       cases "output_tail is None when nothing was written after the cursor"
-        ~name:fst
+        (Testable.contramap fst Testable.text)
         [
           ("an attempt that wrote nothing", ""); ("all of it read", "compared");
         ]
         (fun (_, read) -> equal string "none" (silent_after ~read));
       cases "output_tail keeps at most 8,192 bytes, cut on a code point"
-        ~name:(fun (name, _, _) -> name)
+        (Testable.contramap (fun (name, _, _) -> name) Testable.text)
         bounded
         (fun (_, unread, row) -> equal string row (tail_of ~read:"" unread));
       test "the tail names the log, which holds every byte" whole_log;

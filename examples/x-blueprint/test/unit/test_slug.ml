@@ -26,8 +26,7 @@ let () =
                    (fun o ->
                      o = "" || (o.[0] <> '-' && o.[String.length o - 1] <> '-'))
                    out);
-             cases "specified points"
-               ~name:(fun (input, _) -> Printf.sprintf "%S" input)
+             cases "specified points" (Testable.contramap fst string)
                [
                  ("Hello, World!", "hello-world");
                  ("  OCaml 5.x  ", "ocaml-5-x");

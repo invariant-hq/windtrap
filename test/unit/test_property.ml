@@ -305,12 +305,14 @@ let laws =
                    raise Stack_overflow))
           in
           equal string "raise Stack overflow" (inner_row p.inner));
-      cases "a control or a fatal exception escapes run" ~name:fst escapes
-        (fun (_, (e, run)) -> equal string (Printexc.to_string e) (escaped run));
+      cases "a control or a fatal exception escapes run"
+        (Testable.contramap fst Testable.text) escapes (fun (_, (e, run)) ->
+          equal string (Printexc.to_string e) (escaped run));
       cases "a timeout before any case failed is a Fail naming the case"
-        ~name:fst timeouts (fun (_, (run, row)) ->
+        (Testable.contramap fst Testable.text) timeouts (fun (_, (run, row)) ->
           equal string row (outcome_row (run ())));
-      cases "an inner raise carries the backtrace iff one is recorded" ~name:fst
+      cases "an inner raise carries the backtrace iff one is recorded"
+        (Testable.contramap fst Testable.text)
         [
           ("recorded", (true, "a backtrace"));
           ("not recorded", (false, "no backtrace"));
@@ -323,7 +325,8 @@ let laws =
 let discarding =
   group "Discarding"
     [
-      cases "assume and reject raise Failure.Control `Discard" ~name:fst
+      cases "assume and reject raise Failure.Control `Discard"
+        (Testable.contramap fst Testable.text)
         [
           ("assume true", ((fun () -> Property.assume true), "returned"));
           ("assume false", ((fun () -> Property.assume false), "discard"));
@@ -455,7 +458,7 @@ let labelling =
         failing_cases_commit_nothing;
       test "a context used after its run changes no other run" late_context;
       cases "a cover demand registers when reached and is judged at the end"
-        ~name:fst covers (fun (_, (run, row)) ->
+        (Testable.contramap fst Testable.text) covers (fun (_, (run, row)) ->
           let o = run () in
           equal string row (strf "%s; %s" (verdict o) (coverage_row (stats o))));
     ]
@@ -510,7 +513,7 @@ let outcomes =
   group "Outcomes"
     [
       cases "a Fail is located at loc"
-        ~name:(fun (n, _, _) -> n)
+        (Testable.contramap (fun (n, _, _) -> n) Testable.text)
         located
         (fun (_, gen, law) ->
           let f = failed (Property.run ~loc ~root ~path:"located" gen law) in
@@ -523,7 +526,8 @@ let outcomes =
           equal string
             ("labelled: expected 0, actual " ^ p.rendered)
             (inner_row p.inner));
-      cases "count is the count of the configuration only" ~name:fst
+      cases "count is the count of the configuration only"
+        (Testable.contramap fst Testable.text)
         [
           ("`Config 7", (Some (`Config 7), Some 7));
           ("`Declared 7", (Some (`Declared 7), None));
@@ -535,11 +539,13 @@ let outcomes =
                 Check.fail "always")
           in
           equal (option int) expected (counterexample o).count);
-      cases "summary is the summary of the reported value" ~name:fst summarized
+      cases "summary is the summary of the reported value"
+        (Testable.contramap fst Testable.text) summarized
         (fun (_, (run, expected)) ->
           equal (option string) expected (counterexample (run ())).summary);
       cases "a replay descends the same path whatever the configuration"
-        ~name:fst configurations (fun (_, (count, max_discard)) ->
+        (Testable.contramap fst Testable.text) configurations
+        (fun (_, (count, max_discard)) ->
           equal string
             (replayed (`Config 100) None)
             (replayed count max_discard));
@@ -595,7 +601,7 @@ let examples =
       test "a failing example ends the run, unshrunk, at its position"
         failing_example;
       cases "a failing example renders through the generator's printer"
-        ~name:fst
+        (Testable.contramap fst Testable.text)
         [
           ("a printer", (Gen.int, "2"));
           ("no printer", (Gen.map Fun.id Gen.int, placeholder));
@@ -719,7 +725,8 @@ let generated =
           in
           equal string "pass, 0 cases, 0 discards" (verdict o);
           equal (list int) [] (seen ()));
-      cases "a count or max_discard below 0 raises Invalid_argument" ~name:fst
+      cases "a count or max_discard below 0 raises Invalid_argument"
+        (Testable.contramap fst Testable.text)
         [
           ( "count",
             fun () ->
@@ -740,11 +747,11 @@ let generated =
           in
           equal string "fail, 0 cases, 0 discards" (verdict o));
       cases "the run gives up once more than max_discard cases are discarded"
-        ~name:fst give_ups (fun (_, (run, row)) ->
+        (Testable.contramap fst Testable.text) give_ups (fun (_, (run, row)) ->
           equal string row (verdict (run ())));
       test "discards within max_discard leave the run to pass" mixed_discards;
-      cases "a discard spends its index" ~name:fst spenders
-        (fun (name, discarding) ->
+      cases "a discard spends its index" (Testable.contramap fst Testable.text)
+        spenders (fun (name, discarding) ->
           let before = if name = "by the generator" then 1 else 0 in
           equal int 1 (spent_index ~before discarding));
       test "a generation that discards discards the case" generator_discards;
@@ -756,8 +763,9 @@ let generated =
           in
           equal string "gave up, 0 cases, 7 discards" (verdict o);
           equal (list int) [] (seen ()));
-      cases "a generator's fault fails the case unshrunk" ~name:fst
-        raising_generators (fun (_, (gen, inner)) ->
+      cases "a generator's fault fails the case unshrunk"
+        (Testable.contramap fst Testable.text) raising_generators
+        (fun (_, (gen, inner)) ->
           let o = Property.run ~root ~path:"raising gen" gen (fun _ _ -> ()) in
           equal string
             (strf
@@ -928,7 +936,8 @@ let shrinking =
       test "the search descends to a node with no failing candidate" minimal;
       cases
         "a candidate is accepted iff it fails in the class of the first failure"
-        ~name:fst candidates (fun (_, (first, candidate, row)) ->
+        (Testable.contramap fst Testable.text) candidates
+        (fun (_, (first, candidate, row)) ->
           equal string row (search first candidate));
       test "a law that runs each case 50 times probes 200 cases with the budget"
         (fun () ->
@@ -957,11 +966,12 @@ let shrinking =
                  raise Not_found)));
       test "a quad of int64 converges within 256 steps" quad;
       cases "a timeout in the search ends it at the last accepted node"
-        ~name:fst timed_out_searches (fun (_, (run, row)) ->
-          equal string row (outcome_row (run ())));
+        (Testable.contramap fst Testable.text) timed_out_searches
+        (fun (_, (run, row)) -> equal string row (outcome_row (run ())));
       test "a timeout while formatting does not leave run" formatting_timeout;
-      cases "the counterexample renders as its value or its pre-image" ~name:fst
-        renderings (fun (_, (path, gen, row)) ->
+      cases "the counterexample renders as its value or its pre-image"
+        (Testable.contramap fst Testable.text) renderings
+        (fun (_, (path, gen, row)) ->
           let o =
             Property.run ~root ~path gen (fun _ x -> Check.is_true (x < 10))
           in
@@ -1140,7 +1150,8 @@ let progress =
                 "run 10";
               ] )
             (told descent));
-      cases "shrinking is not told of a failure that has no candidate" ~name:fst
+      cases "shrinking is not told of a failure that has no candidate"
+        (Testable.contramap fst Testable.text)
         [
           ("a failing example", fun () -> told ~examples:[ 42 ] descent);
           ( "a case whose sample has none",
@@ -1279,13 +1290,13 @@ let printing =
               Some "held 0" )
             (emptied (once ())));
       cases "one parse again serves the printing and the run again"
-        ~name:(fun (n, _) -> n)
+        (Testable.contramap (fun (n, _) -> n) Testable.text)
         [ ("printed and run", None); ("printed, not run", Some 2) ]
         (fun (_, runs) -> equal int 2 (samples ?runs ()));
       cases
         "a failing example prints as it was given, before its run, or as its \
          record"
-        ~name:(fun (n, _) -> n)
+        (Testable.contramap (fun (n, _) -> n) Testable.text)
         [
           ("drawn printing", (false, ("42", Some "held 42")));
           ("a record of the run", (true, ("left 0", Some "left 0")));
@@ -1317,7 +1328,7 @@ let printing =
                   Gen.(array (int_range 0 9))
                   sorts_in_place)));
       cases "a control that an example's printer raises acts as the law's"
-        ~name:fst
+        (Testable.contramap fst Testable.text)
         [
           ( "a timeout",
             ( `Timeout 0.25,
@@ -1409,8 +1420,8 @@ let past_discards () =
 let running_again =
   group "Running again"
     [
-      cases "the counterexample runs once more after the search" ~name:fst
-        reruns (fun (_, (law, again)) ->
+      cases "the counterexample runs once more after the search"
+        (Testable.contramap fst Testable.text) reruns (fun (_, (law, again)) ->
           equal ran_again_row
             (converged_at_10, again, [ 40; 0; 0; 20; 10; 5; 7; 8; 9; 10 ])
             (ran_again descent law));
@@ -1504,9 +1515,38 @@ let domains =
           equal
             (pair string (list string))
             ("value 2, 0 steps, converged: 1", [ "3"; "5"; "7"; "9" ])
-            (strf "value %d, %d steps, %s: %s" (p.case_index + 1) p.steps
-               (ending p.ending) p.rendered,
-             also_of o));
+            ( strf "value %d, %d steps, %s: %s" (p.case_index + 1) p.steps
+                (ending p.ending) p.rendered,
+              also_of o ));
+      test
+        "only checks the values it keeps, each at its position, and the domain \
+         is then not checked whole" (fun () ->
+          let ran = ref [] in
+          let only i = i = 1 || i = 3 || i = 4 in
+          let law _ x =
+            ran := x :: !ran;
+            if x mod 2 = 1 then Check.fail "odd"
+          in
+          let o =
+            Property.run ~only ~root ~path:"only" (Gen.int_range 0 9) law
+          in
+          let domain =
+            match (failed o).kind with
+            | Property { domain; _ } -> domain
+            | _ -> None
+          in
+          let p = counterexample o in
+          equal
+            (triple (list int) string (list string))
+            ([ 1; 3; 4 ], "value 2 of 10: 1, whole: none", [ "3" ])
+            ( List.rev !ran,
+              strf "value %d of %d: %s, whole: %s" (p.case_index + 1)
+                (Option.value ~default:0 domain)
+                p.rendered
+                (match whole_of o with
+                | Some n -> string_of_int n
+                | None -> "none"),
+              also_of o ));
       test "a count of 0 checks no domain" (fun () ->
           let o =
             Property.run ~count:(`Declared 0) ~root ~path:"none" Gen.bool

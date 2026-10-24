@@ -356,6 +356,13 @@ val fixture : ?teardown:('a -> unit) -> (unit -> 'a) -> unit -> 'a
 
 (** {1:results Results} *)
 
+(** The type for a case within a test, as the
+    {{!section-store}last-failed store} names it. *)
+type case_id =
+  | Row of string  (** A row of a table, by its printed value. *)
+  | Replay of string
+      (** A counterexample of a property, by its replay token. *)
+
 type result = {
   path : string list;  (** The path of the test, outermost group first. *)
   outcome : Failure.outcome;
@@ -386,6 +393,13 @@ type result = {
           outcome, which a timeout in a case does. [None] for any other test,
           and for a property that a skip ended, or a timeout outside its cases.
       *)
+  refuted : case_id list;
+      (** For a row that counts as failed, the cases that its last attempt
+          refuted, when each of its failures belongs to one: the rows of a table
+          that failed, by a failure they recorded or by their law raising, or
+          the counterexamples of a property, each with its token. [[]] when a
+          failure belongs to no case, as a timeout or an example's does, and for
+          every other row. *)
 }
 (** The type for result rows, one per executed test. A row carries every fact
     that a renderer needs, so no consumer derives a decision of the runner from
@@ -408,13 +422,22 @@ val property :
   ?examples:'a list ->
   ?summary:('a -> string option) ->
   ?runs:int ->
+  ?only:(int -> bool) ->
   'a Gen.t ->
   ('a -> unit) ->
   unit
 (** [property gen law] is the body of the test that {!prop} declares, [loc]
     being its declaration site. It returns [()] on a [Pass] and raises the
     failure of any other outcome as a [Failure.Check_failure] (see {!prop}).
-    [runs] is {!Property.run}'s. Raises as {!current_frame} does.
+    [runs] and [only] are {!Property.run}'s. Raises as {!current_frame} does.
+
+    [config.replay] is the token that the engine replays. Otherwise, under
+    [config.failed_only], the {!recorded} counterexamples of the test are
+    replayed in its place, one engine run each: a failure of each but the last
+    is added to the frame, and the last one's outcome is the property's. A
+    recorded {!Row} fails the test with a message that says so, as stale. With
+    [only] the test is a table, which selects its rows itself, and nothing
+    recorded is replayed.
 
     The engine runs [law] through {!Failure.catch}, so each run of it is a scope
     of its own: a verb's failure that the law caught fails that run, and what a
@@ -433,6 +456,27 @@ val property :
     What the law raises reaches the engine through windtrap's frames alone, so
     its backtrace ends on the law's own frames once
     {!Failure.backtrace_to_string} drops the trailing run of windtrap's. *)
+
+val recorded : unit -> case_id list
+(** [recorded ()] is the cases of the running test that the last-failed store
+    names under [config.failed_only], and [[]] for the whole test or any other
+    run. Raises as {!current_frame} does. *)
+
+val row : tag:string -> id:string -> (unit -> unit) -> unit
+(** [row ~tag ~id fn] runs [fn ()], the law of a table on its row [id], as a
+    part of the running attempt that settles alone, as the attempt of a test of
+    its own would: in the order of the rows, it keeps its corrections iff [fn]
+    returned and every failure added while it ran is a baseline failure, and
+    otherwise each such failure is withheld ({!Failure.with_withheld}), as
+    {!Failure.Skipped} when [fn] raised a skip or a discard. A run that makes
+    its checks as they come settles the row as it ends; a worker that leaves its
+    checks to the parent sends the row's bounds with the attempt, and {!verdict}
+    settles it there. A failure added while it runs is labelled as {!subtest}
+    labels one, with [tag] as the innermost name. A row is chosen, not drawn, so
+    [fn] runs with no property context, as a test's body does: {!prop_context}
+    is [None], a {!subtest} adds its failure, and a law demands nothing. What
+    [fn] raises is raised again. The row counts in {!result.refuted} when it
+    added a failure or [fn] raised a fault. Raises as {!current_frame} does. *)
 
 val without_labels : (unit -> 'a) -> 'a
 (** [without_labels fn] is [fn ()] with the labels of the running law going to a
@@ -792,10 +836,20 @@ val exit_code : (outcome, startup_error) Stdlib.result -> int
     Nor does a run that an exception ended, or a {{!section-signals}signal}
     before this point.
 
-    A test that counted as failed is recorded once, and an executed test that
-    did not is cleared. The entry of a test that the run did not execute
-    survives. A run that executed the whole declared suite also drops the
-    entries of paths that no longer exist. The format is not stable, and a file
+    A test that counted as failed is recorded once, with the cases of its
+    {!result.refuted}, and an executed test that did not is cleared. The entry
+    of a test that the run did not execute survives, cases included. A run that
+    executed the whole declared suite also drops the entries of paths that no
+    longer exist.
+
+    The file opens on the line [windtrap-last-failed 2], then holds one line per
+    entry: the test's path through [String.escaped], alone for the whole test,
+    or followed by a tab, [row] or [replay], a tab, and the case through
+    [String.escaped], a row's printed value or a counterexample's token. A test
+    with several cases has a line for each, and a line that names it alone makes
+    it whole. A case of a kind this version does not know names its test whole.
+    A file that opens on [windtrap-last-failed 1], the earlier version, is a
+    path per line and names whole tests. The format is not stable, and a file
     that is not recognised reads as empty. Every I/O error is ignored, because
     the store only feeds [config.failed_only]. A store that cannot be opened or
     read, a directory at its path for example, reads as empty, and one that
@@ -861,6 +915,9 @@ type selection = {
   cases : Test_tree.case list;  (** The selected tests, in declaration order. *)
   total : int;  (** The tests that the suite declares. *)
   focus_active : bool;  (** [true] iff the suite holds a focused node. *)
+  recorded : (string * case_id list) list;
+      (** Under [config.failed_only], the tests whose cases the store names,
+          with those cases. *)
 }
 (** The type for what a run selected. *)
 
@@ -879,11 +936,12 @@ val run_started : suite:string -> selection -> event
 
 type attempt
 (** The type for an attempt as data: its failures, the baseline checks it left
-    to the parent, and its skip. *)
+    to the parent, the bounds of a table's rows, and its skip. *)
 
 type verdict
 (** The type for the settlement of an attempt: its outcome, whether its failures
-    all carry kept corrections, and whether it must be the last. *)
+    all carry kept corrections, whether it must be the last, and the cases it
+    refuted. *)
 
 type served = {
   result : result;  (** The row of the case. *)

@@ -72,6 +72,31 @@ let record = [ test "first" ignore; test "second" ignore ]
 let interrupts =
   test "interrupts itself" (fun () -> Unix.kill (Unix.getpid ()) Sys.sigint)
 
+(* A table whose rows VERDICT_FAILING names fail, and a property that fails
+   from 10 on, each noting in the file "ran" what it ran on, so a session
+   sees what --failed reruns. *)
+let ran what =
+  Out_channel.with_open_gen [ Open_append; Open_creat ] 0o644 "ran" (fun oc ->
+      output_string oc (what ^ "\n"))
+
+let rerun () =
+  let failing =
+    String.split_on_char ','
+      (Option.value ~default:"" (Sys.getenv_opt "VERDICT_FAILING"))
+  in
+  [
+    cases "rows" string
+      ~label:(fun row -> if row = "b" then "the second" else "")
+      [ "a"; "b"; "c"; "d" ]
+      (fun row ->
+        ran row;
+        if List.mem row failing then fail ("row " ^ row ^ " broke"));
+    prop "counterexample" (Gen.int_range 0 1000) (fun n ->
+        ran (string_of_int n);
+        is_true (n < 10));
+    passes;
+  ]
+
 let suite = function
   | "exit_before_fail" -> [ passes; exits; fails ]
   | "exit_after_fail" -> [ passes; fails; exits ]
@@ -179,6 +204,8 @@ let suite = function
       [ test "prints a partial line" (fun () -> print_string "partial"); fails ]
   | "record" -> record
   | "record_renamed" -> [ test "first" ignore; test "renamed" ignore ]
+  | "rerun" -> rerun ()
+  | "rerun_dup" -> [ cases "rows" string [ "a"; "b"; "a" ] ignore ]
   | "prop_discard" ->
       [
         prop "assumes" Gen.int (fun _ -> assume false);
@@ -190,8 +217,8 @@ let suite = function
         prop ~count:0 "never runs" Gen.int (fun _ -> fail "the law ran");
         prop "fails" Gen.int (fun _ -> fail "the law ran");
       ]
-  | "table_zero" -> [ cases "rows" ~name:Fun.id [] ignore ]
-  | "table_zero_plus" -> [ cases "rows" ~name:Fun.id [] ignore; passes ]
+  | "table_zero" -> [ cases "rows" Testable.text [] ignore ]
+  | "table_zero_plus" -> [ cases "rows" Testable.text [] ignore; passes ]
   | "baseline_literal" ->
       [ test "never recorded" (fun () -> expect "hello" @@ __POS_OF__ {||}) ]
   | "baseline_file" ->

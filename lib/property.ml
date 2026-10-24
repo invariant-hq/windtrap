@@ -311,8 +311,8 @@ let inner_failure : Failure.fault -> Failure.t = function
   | fault -> Failure.of_fault fault
 
 let run ?loc ?count ?max_discard ?(examples = []) ?(summary = Fun.const None)
-    ?(runs = 1) ?(output = Fun.const None) ?(shrinking = ignore) ?replay ~root
-    ~path gen law =
+    ?(runs = 1) ?(output = Fun.const None) ?(shrinking = ignore) ?replay
+    ?(replayed_by = "--replay") ?only ~root ~path gen law =
   let count, config_count =
     match count with
     | None -> (default_count, None)
@@ -449,7 +449,9 @@ let run ?loc ?count ?max_discard ?(examples = []) ?(summary = Fun.const None)
      it was drawn, and none is shrunk. *)
   let whole values =
     let domain = List.length values in
-    ctx.whole <- Some domain;
+    (* A domain checked in part is not checked whole. *)
+    let only = Option.value only ~default:(Fun.const true) in
+    if List.for_all only (List.init domain Fun.id) then ctx.whole <- Some domain;
     let refuted ?also (index, choices, node, (fault, record), tail) =
       let node = Option.value ~default:node (parse_again gen choices) in
       let token = Choice.token choices ~digest:(digest (rendered_text node)) in
@@ -471,6 +473,7 @@ let run ?loc ?count ?max_discard ?(examples = []) ?(summary = Fun.const None)
           | first :: rest ->
               let also = List.map refuted rest in
               Fail { failure = refuted ~also first; stats = stats ctx })
+      | _ :: rest when not (only index) -> check_all (index + 1) found rest
       | (choices, node) :: rest -> (
           match check law (Gen.Engine.value node) with
           | `Passed | `Discarded -> check_all (index + 1) found rest
@@ -524,7 +527,7 @@ let run ?loc ?count ?max_discard ?(examples = []) ?(summary = Fun.const None)
      recorded is refused as stale: it never checks another value. *)
   let replayed token =
     let refused why =
-      let message = Pp.str "--replay %s: %s" token why in
+      let message = Pp.str "%s %s: %s" replayed_by token why in
       Fail { failure = Failure.message ?loc message; stats = stats ctx }
     in
     match Choice.of_token token with

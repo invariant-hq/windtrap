@@ -43,6 +43,7 @@ let result ?(attempts = 1) ?(duration = 0.0002) ?prop_stats
     duration;
     attempts;
     prop_stats;
+    refuted = [];
   }
 
 let tail =

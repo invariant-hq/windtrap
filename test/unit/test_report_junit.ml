@@ -538,7 +538,7 @@ let testcases =
       cases
         "a failure's text is its entry without excerpt, ending in the hint, \
          accept and replay lines of its test's path"
-        ~name:(fun (name, _, _) -> name)
+        (Testable.contramap (fun (name, _, _) -> name) Testable.text)
         [
           ("dune's mirrors", `Mirrors, None);
           ("an executable", exe, None);
@@ -653,7 +653,7 @@ let counts =
   group "Counts"
     [
       cases "tests, failures and skipped count the testcases; errors is 0"
-        ~name:(fun (name, _, _, _) -> name)
+        (Testable.contramap (fun (name, _, _, _) -> name) Testable.text)
         [
           ("an empty run", [], [], "tests=0 failures=0 errors=0 skipped=0");
           ( "a failing row counts one failure, however many elements",
@@ -777,7 +777,7 @@ let validity =
       cases
         "a string reads back escaped, controls as \\xNN, and reduced to the \
          Char range of XML 1.0"
-        ~name:(fun (name, _, _, _) -> name)
+        (Testable.contramap (fun (name, _, _, _) -> name) Testable.text)
         [
           ("the markup characters", {|a<b>&"c'|}, {|a<b>&"c'|}, {|a<b>&"c'|});
           ( "ESC, in an escape sequence",
@@ -905,7 +905,7 @@ let writing =
         directory_target;
       test "a suite's file is its name made one path component" partitions;
       cases "a report that cannot be written is one warning, and write returns"
-        ~name:(fun (name, _, _) -> name)
+        (Testable.contramap (fun (name, _, _) -> name) Testable.text)
         [
           ( "an .xml target whose directory is missing",
             (fun root -> Filename.concat root "missing/r.xml"),
@@ -927,13 +927,14 @@ let writing =
 let reader =
   group "The reader"
     [
-      cases "the reader accepts a well-formed document" ~name:Fun.id
+      cases "the reader accepts a well-formed document" Testable.text
         [
           "<a/>";
           "<a x='1' y=\"2\">t&amp;u<b/></a>";
           "<a x='\u{e9}'>\u{20ac}\u{1d11e}</a>";
         ] (fun doc -> is_ok ~pp:Format.pp_print_string (read doc));
-      cases "the reader refuses a malformed document" ~name:fst
+      cases "the reader refuses a malformed document"
+        (Testable.contramap fst Testable.text)
         [
           ("mismatched tags", "<a><b></a>");
           ("an unquoted attribute", "<a x=1/>");

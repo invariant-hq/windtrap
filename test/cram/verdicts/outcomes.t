@@ -165,19 +165,31 @@ The count cannot be broadcast as 0: the mirror refuses it.
   usage: verdict_main.exe [OPTIONS] [PATTERN...]
   [2]
 
-A suite whose only table has no row declares no test, and exits 2, even
-under a mirror's empty selection:
+A table with no row is a test that checks nothing, and fails. A mirror's
+selection that leaves it out exits 0, as it does for any test:
 
   $ run VERDICT_SUITE=table_zero ./verdict_main.exe
-  table_zero: no tests ran: the suite declares none.
-  [2]
+  table_zero: 1 test
+  ──────────────────────── failures ────────────────────────
+    FAIL  rows
+      test/cram/verdicts/verdict_main.ml:N
+      the table has no row, so it checks nothing
+  ──────────────────────────────────────────────────────────
+  
+  1 failed in DURATION.
+  [1]
   $ run VERDICT_SUITE=table_zero WINDTRAP_FILTER=nomatch ./verdict_main.exe
-  table_zero: no tests ran: the suite declares none.
-  [2]
+  table_zero: no tests ran: filter "nomatch" matched none of 1 test.
 
-A table with no row beside a passing test is no test, and the run exits
-0:
+A table with no row beside a passing test fails, and the run exits 1:
 
   $ run VERDICT_SUITE=table_zero_plus ./verdict_main.exe; echo "exit $?"
-  table_zero_plus: 1 passed in DURATION.
-  exit 0
+  table_zero_plus: 2 tests
+  ──────────────────────── failures ────────────────────────
+    FAIL  rows
+      test/cram/verdicts/verdict_main.ml:N
+      the table has no row, so it checks nothing
+  ──────────────────────────────────────────────────────────
+  
+  1 passed, 1 failed in DURATION.
+  exit 1

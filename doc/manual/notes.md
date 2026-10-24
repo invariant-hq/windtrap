@@ -32,10 +32,13 @@ A test is named by its groups and its own name, and that path keys what
 the runner keeps about it: the seed of a property, the record `--failed`
 reads, and the bucket of `--shard`. A position or an index changes when
 a test is added above another, while a name changes only when its author
-renames it. This is why `cases` requires `~name`: a child named by its
-index would take a new seed and lose its record each time a row is
-inserted before it. For the same reason a suite in which two tests share
-a path is refused.
+renames it. For the same reason a suite in which two tests share a path
+is refused. A row of a table is a case of its test, not a test, and is
+identified the same way, by what it is and not where it sits: by its
+printed value. A row named by its index would lose its record each time
+a row is inserted before it, and a row named by a string of its own had
+to be invented and kept unique; two rows that print alike are refused,
+as two tests of one path are.
 
 ## A witness is a printer and an equality
 

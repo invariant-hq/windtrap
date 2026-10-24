@@ -184,11 +184,12 @@ let operand_order =
   group "Operand order"
     [
       cases "the compiler evaluates the right operand first"
-        ~name:(fun (name, _, _) -> name)
+        (Testable.contramap (fun (name, _, _) -> name) Testable.text)
         compiler_order
         (fun (_, expected, f) ->
           equal string expected (observe Mutsem_baseline.Mutsem_order.trace f));
-      cases "an instrumented witness evaluates as its twin" ~name:fst
+      cases "an instrumented witness evaluates as its twin"
+        (Testable.contramap fst Testable.text)
         Mutsem_fixtures.Mutsem_order.witnesses as_twin;
     ]
 
@@ -365,8 +366,9 @@ let outcomes : (string * (fixture -> string)) list =
 let results =
   group "Results"
     [
-      cases "the instrumented fixture computes its twin's result" ~name:fst
-        outcomes (fun (_, f) -> equal string (f twin) (f instrumented));
+      cases "the instrumented fixture computes its twin's result"
+        (Testable.contramap fst Testable.text) outcomes (fun (_, f) ->
+          equal string (f twin) (f instrumented));
     ]
 
 (* Laziness *)
@@ -424,7 +426,7 @@ let reach_counts =
   group "Reach counts"
     [
       cases "a loop's sites count every evaluation"
-        ~name:(fun (n, _) -> strf "sum_while %d" n)
+        (Testable.contramap (fun (n, _) -> strf "sum_while %d" n) Testable.text)
         loops
         (fun (n, expected) ->
           equal (pair int reach) expected

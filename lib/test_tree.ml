@@ -89,18 +89,6 @@ let slow ?__POS__ ?(tags = []) ?timeout ?retries name fn =
 let group ?__POS__ ?tags ?timeout ?retries name children =
   node ?__POS__ ?tags ?timeout ?retries name (Group children)
 
-(* A row is a plain test under the table's group, whose annotations reach it
-   as any group's do. [name] has no positional default: inserting a row would
-   rename every later one, and so change its seeds and its last-failed entry. *)
-let cases ?__POS__ ?tags ?timeout ?retries ~name base inputs fn =
-  let annotations = declared ?tags ?timeout ?retries () in
-  let loc = Loc.resolve ?__POS__ () in
-  let row input =
-    let kind = Test (Body (fun () -> fn input)) in
-    { name = name input; loc; annotations = declared (); kind }
-  in
-  { name = base; loc; annotations; kind = Group (List.map row inputs) }
-
 let scoped scope ?__POS__ ?tags ?timeout ?retries name fn =
   node ?__POS__ ?tags ?timeout ?retries name
     (Test (Scoped { scope; body = fn }))

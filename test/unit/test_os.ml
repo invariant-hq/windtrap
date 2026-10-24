@@ -120,7 +120,7 @@ let environment =
   group "Environment variables"
     [
       cases "getenv is the value as it is, and None when unset or empty"
-        ~name:(fun (value, _) -> shown value)
+        (Testable.contramap (fun (value, _) -> shown value) Testable.text)
         [
           (None, None);
           (Some "", None);
@@ -132,11 +132,11 @@ let environment =
           equal (option string) read (Os.getenv var));
       test "setenv binds a variable, and None unbinds it" set_then_unset;
       cases "setenv refuses an empty name or one with =, before any change"
-        ~name:(strf "%S")
+        Testable.string
         [ ""; var ^ "=x" ]
         refused_name;
       cases "bool_of_string reads a boolean in any case, after trimming"
-        ~name:(fun (s, _) -> strf "%S" s)
+        (Testable.contramap (fun (s, _) -> strf "%S" s) Testable.text)
         [
           ("1", Some true);
           ("true", Some true);
@@ -160,7 +160,7 @@ let environment =
       test "bool_expected names every spelling but y and n" spellings;
       cases
         "split_comma is the trimmed items between commas, without empty ones"
-        ~name:(fun (s, _) -> strf "%S" s)
+        (Testable.contramap (fun (s, _) -> strf "%S" s) Testable.text)
         [
           ("a, b ,,c ", [ "a"; "b"; "c" ]);
           ("slow", [ "slow" ]);
@@ -181,7 +181,7 @@ let ci_row (ci, github) =
 
 let flag_cases name ~var read rows =
   cases name
-    ~name:(fun (value, _) -> shown value)
+    (Testable.contramap (fun (value, _) -> shown value) Testable.text)
     rows
     (fun (value, set) ->
       setenv var value;
@@ -193,8 +193,10 @@ let platform =
       cases
         "in_ci and in_github_actions count CI and GITHUB_ACTIONS as set unless \
          unset, empty or false"
-        ~name:(fun (ci, github, _) ->
-          strf "CI %s, GITHUB_ACTIONS %s" (shown ci) (shown github))
+        (Testable.contramap
+           (fun (ci, github, _) ->
+             strf "CI %s, GITHUB_ACTIONS %s" (shown ci) (shown github))
+           Testable.text)
         [
           (None, None, "no CI, no GitHub Actions");
           (Some "", Some "", "no CI, no GitHub Actions");
@@ -247,7 +249,7 @@ let colour =
   group "Colour"
     [
       cases "color_mode_of_string reads a mode in any case, untrimmed"
-        ~name:(fun (s, _) -> strf "%S" s)
+        (Testable.contramap (fun (s, _) -> strf "%S" s) Testable.text)
         [
           ("always", "always");
           ("NEVER", "never");
@@ -263,7 +265,7 @@ let colour =
       cases
         "resolve_color styles under Always, never under Never, and under Auto \
          on a terminal or under dune unless TERM is dumb or NO_COLOR is set"
-        ~name:(fun (name, _, _) -> name)
+        (Testable.contramap (fun (name, _, _) -> name) Testable.text)
         [
           ("always, on a pipe", (Os.Always, false, false, false, None), true);
           ("always, on a dumb terminal", (Always, true, false, true, None), true);
@@ -433,7 +435,7 @@ let atomic_writes =
     [
       cases
         "atomic_write leaves the target holding its contents, and no other file"
-        ~name:fst
+        (Testable.contramap fst Testable.text)
         [
           ("a new file of every byte value, past one write", (None, every_byte));
           ( "a replaced file",
@@ -444,7 +446,7 @@ let atomic_writes =
         (fun (_, row) -> written row);
       cases
         "the file takes perm under the umask, whatever the replaced file had"
-        ~name:(fun (name, _, _) -> name)
+        (Testable.contramap (fun (name, _, _) -> name) Testable.text)
         [
           ("the default under umask 022", (0o022, None, None), 0o644);
           ("0o600 under umask 022", (0o022, Some 0o600, None), 0o600);
@@ -453,13 +455,13 @@ let atomic_writes =
         ]
         (fun (_, input, perm) -> equal int perm (created input));
       cases "atomic_write refuses a perm beyond 0o777 before touching a file"
-        ~name:(fun (name, _) -> name)
+        (Testable.contramap (fun (name, _) -> name) Testable.text)
         [ ("-1", -1); ("0o1000", 0o1000); ("0o4755", 0o4755) ]
         (fun (_, perm) -> refused_perm perm);
       cases
         "a failed write raises Sys_error naming the path and the step, and \
          leaves the directory as it was"
-        ~name:(fun (name, _, _) -> name)
+        (Testable.contramap (fun (name, _, _) -> name) Testable.text)
         [
           ("a missing parent", missing_parent, "cannot create temporary file");
           ("a directory as target", directory_target, "cannot replace");
@@ -538,7 +540,7 @@ let root =
       cases
         "INSIDE_DUNE names the build directory, cut after its first _build \
          component"
-        ~name:fst
+        (Testable.contramap fst Testable.text)
         [
           ("a build context", ("/w/_build/default", ("/w", "/w/_build")));
           ( "a sandboxed action's context",
@@ -555,7 +557,7 @@ let root =
           equal (pair string string) (root, logs build) (under (Some value)));
       cases
         "a relative INSIDE_DUNE is made absolute against the working directory"
-        ~name:(fun (value, _) -> strf "%S" value)
+        (Testable.contramap (fun (value, _) -> strf "%S" value) Testable.text)
         [
           ("w/_build/default", ("w", "w/_build"));
           ("w\\_build\\default", ("w", "w/_build"));
@@ -564,14 +566,14 @@ let root =
       cases
         "an INSIDE_DUNE that names no build directory leaves it to the \
          executable"
-        ~name:shown
+        (Testable.contramap shown Testable.text)
         [ Some "1"; Some "/w/src"; Some "" ]
         falls_through;
       test "without INSIDE_DUNE, the directory of the executable decides"
         executable's_directory;
       cases
         "project_root is WINDTRAP_PROJECT_ROOT when set, normalized lexically"
-        ~name:(fun (value, _) -> strf "%S" value)
+        (Testable.contramap (fun (value, _) -> strf "%S" value) Testable.text)
         [
           ("/tmp/override", "/tmp/override");
           ("/r/", "/r");
@@ -609,7 +611,7 @@ let reconstruction =
       cases
         "reconstruct proves a source path under the root, or gives the \
          candidate"
-        ~name:(fun (name, _, _, _) -> name)
+        (Testable.contramap (fun (name, _, _, _) -> name) Testable.text)
         [
           ("a relative path", "/proj", "test/foo.ml", Ok "/proj/test/foo.ml");
           ( "a build context's copy",
@@ -691,7 +693,7 @@ let reconstruction =
           equal (result string string) proven (Os.reconstruct ~root file));
       test "reconstruct resolves no symbolic link" reconstruct_symlink;
       cases "build_root is the build directory and the context after it"
-        ~name:(fun (dir, _) -> strf "%S" dir)
+        (Testable.contramap (fun (dir, _) -> strf "%S" dir) Testable.text)
         [
           ("/w/_build/default/test", Some "/w/_build/default");
           ("/w/_build/default", Some "/w/_build/default");
@@ -725,7 +727,7 @@ let display =
       cases
         "display_path spells a path relative to the project root, without its \
          build segment, dots or repeated separators"
-        ~name:(fun (path, _) -> strf "%S" path)
+        (Testable.contramap (fun (path, _) -> strf "%S" path) Testable.text)
         [
           ("/r/_build/default/qa/x/t.exe", "qa/x/t.exe");
           ("/r/_build/release.x/qa/x/t.exe", "qa/x/t.exe");
@@ -745,12 +747,12 @@ let display =
       cases
         "display_path and display_artifact remove a root spelled with ., .. or \
          repeated separators"
-        ~name:(strf "%S") [ "/r/"; "/r/."; "/r//"; "/x/../r"; "//r/./" ]
+        Testable.string [ "/r/"; "/r/."; "/r//"; "/x/../r"; "//r/./" ]
         (fun root ->
           equal (pair string string) ("a/b.ml", "_build/x.log")
             (under_root_spelled root));
       cases "display_artifact removes the root prefix and nothing else"
-        ~name:(fun (path, _) -> strf "%S" path)
+        (Testable.contramap (fun (path, _) -> strf "%S" path) Testable.text)
         [
           ("/r/_build/_tests/s/t.output", "_build/_tests/s/t.output");
           ("/r/./a//b", "./a//b");
@@ -788,7 +790,7 @@ let components =
       cases
         "sanitize_component keeps a safe name, and marks a changed one with \
          its digest"
-        ~name:(fun (name, _, _) -> name)
+        (Testable.contramap (fun (name, _, _) -> name) Testable.text)
         [
           ("a safe name", "abc-1_2.x", "abc-1_2.x");
           ("a safe name with a leading dot", ".hidden", ".hidden");
@@ -875,7 +877,7 @@ let filesystem =
   group "Filesystem helpers"
     [
       cases "file_exists is true iff the path exists, and false on an error"
-        ~name:(fun (name, _, _) -> name)
+        (Testable.contramap (fun (name, _, _) -> name) Testable.text)
         [
           ("a directory", (fun () -> temp_dir ()), true);
           ("a file", (fun () -> temp_file ()), true);
@@ -900,7 +902,7 @@ let filesystem =
           Os.mkdir_p ".";
           equal (list string) [] (entries cwd));
       cases "failure_reason is why an operation on a path failed, less the path"
-        ~name:(fun (name, _, _, _) -> name)
+        (Testable.contramap (fun (name, _, _, _) -> name) Testable.text)
         [
           ( "a Sys_error that starts with the path",
             "a/b.xml",
@@ -961,7 +963,7 @@ let standard_error =
   group "Standard error"
     [
       cases "say writes windtrap: and its message as a line on standard error"
-        ~name:(fun (name, _, _) -> name)
+        (Testable.contramap (fun (name, _, _) -> name) Testable.text)
         [
           ( "a message",
             (fun () -> Os.say "could not write the verdict file: disk full"),
@@ -1165,7 +1167,7 @@ let signals =
         ignored_stays_ignored;
       cases
         "a signal of the list that the handler sends ends the process at once"
-        ~name:fst
+        (Testable.contramap fst Testable.text)
         [ ("the same signal", usr1); ("another of the list", usr2) ]
         (fun (_, sent) ->
           posix_only ();
@@ -1187,7 +1189,7 @@ let signals =
       cases
         "what the handler of a held signal raises, with_blocked raises in \
          place of its function's value, not of its exception"
-        ~name:fst
+        (Testable.contramap fst Testable.text)
         [
           ("the function returns", (false, "Stdlib.Exit"));
           ("the function raises", (true, "Not_found"));
@@ -1195,8 +1197,8 @@ let signals =
         (fun (_, (fn_raises, raised)) ->
           equal (pair string bool) (raised, false) (handler_raises ~fn_raises));
       cases "die_by ends the process by the signal, though handled and blocked"
-        ~name:signal_name [ Sys.sighup; Sys.sigint; Sys.sigpipe; Sys.sigterm ]
-        (fun signal ->
+        (Testable.contramap signal_name Testable.text)
+        [ Sys.sighup; Sys.sigint; Sys.sigpipe; Sys.sigterm ] (fun signal ->
           posix_only ();
           killed_by signal (wait (fork (dies_by signal))));
     ]

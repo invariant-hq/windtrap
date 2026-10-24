@@ -117,20 +117,20 @@ let seeds_and_tokens =
     [
       cases
         "to_string is s1: then 16 lowercase hexadecimal digits, the most \
-         significant first"
-        ~name:snd tokens (fun (seed, token) ->
-          equal string token (Seed.to_string seed));
-      cases "of_string reads the seed of a token" ~name:snd tokens
-        (fun (seed, token) ->
+         significant first" (Testable.contramap snd Testable.text) tokens
+        (fun (seed, token) -> equal string token (Seed.to_string seed));
+      cases "of_string reads the seed of a token"
+        (Testable.contramap snd Testable.text) tokens (fun (seed, token) ->
           equal (result word string) (Ok seed) (Seed.of_string token));
       prop "of_string reads back the 19-byte token of every seed" Gen.int64
         round_trip;
-      cases "of_string refuses any other spelling" ~name:fst refused
-        (fun (_, text) -> is_error ~pp:pp_word (Seed.of_string text));
+      cases "of_string refuses any other spelling"
+        (Testable.contramap fst Testable.text) refused (fun (_, text) ->
+          is_error ~pp:pp_word (Seed.of_string text));
       test "random draws another seed at each call" (fun () ->
           not_equal word (Seed.random ()) (Seed.random ()));
       cases "derive is frozen, the path hashed byte by byte"
-        ~name:(fun (name, _, _, _, _) -> name)
+        (Testable.contramap (fun (name, _, _, _, _) -> name) Testable.text)
         derived
         (fun (_, root, path, index, seed) ->
           equal word seed (Seed.derive ~root ~path ~index));
@@ -309,13 +309,13 @@ let sampling_states =
   group "Sampling states"
     [
       cases "make's stream is frozen"
-        ~name:(fun (name, _, _) -> name)
+        (Testable.contramap (fun (name, _, _) -> name) Testable.text)
         streams
         (fun (_, seed, expected) ->
           equal (list word) expected (words 6 (Seed.make seed)));
       test "a state used twice gives the same words twice" reused;
       cases "below is frozen, and its successor is past every word it drew"
-        ~name:(fun (name, _, _, _, _) -> name)
+        (Testable.contramap (fun (name, _, _, _, _) -> name) Testable.text)
         bounded below_then_next;
       prop "below draws from 0 to bound - 1"
         ~examples:[ (0L, 1L); (0L, Int64.max_int) ]
@@ -327,12 +327,12 @@ let sampling_states =
         ~examples:reference_examples
         (Gen.pair Gen.int64 small_bound)
         agrees_with_reference;
-      cases "below raises Invalid_argument on a bound below 1"
-        ~name:Int64.to_string [ 0L; -1L; Int64.min_int ] (fun bound ->
+      cases "below raises Invalid_argument on a bound below 1" Testable.int64
+        [ 0L; -1L; Int64.min_int ] (fun bound ->
           raises_match (Exn.invalid_arg ~substring:"Seed.below") (fun () ->
               Seed.below ~bound (Seed.make 0L)));
       cases "split is frozen"
-        ~name:(fun (name, _, _, _) -> name)
+        (Testable.contramap (fun (name, _, _, _) -> name) Testable.text)
         split_streams split_words;
     ]
 

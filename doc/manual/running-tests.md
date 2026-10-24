@@ -18,7 +18,7 @@ suite with nothing to report prints one line:
 
 ```
 $ dune runtest
-storage: 12 passed, 2 skipped, 1 expected failure in 2.8ms.
+storage: 10 passed, 2 skipped, 1 expected failure in 2.1ms.
 keys/keys.ml: 3 passed in 0.8ms.
 ```
 
@@ -77,7 +77,7 @@ suite's tests:
 
 ```
 $ dune exec examples/06-resources-and-structure/test_storage.exe -- -f servr
-storage: no tests ran: filter "servr" matched none of 15 tests.
+storage: no tests ran: filter "servr" matched none of 13 tests.
 list: dune exec examples/06-resources-and-structure/test_storage.exe -- -l
 ```
 
@@ -115,7 +115,7 @@ $ dune runtest
 File "examples/06-resources-and-structure/dune", line 2, characters 7-19:
 2 |  (name test_storage)
            ^^^^^^^^^^^^
-storage: 15 tests
+storage: 13 tests
 ──────────────────────── failures ────────────────────────
   FAIL  server › it answers a ping
     examples/06-resources-and-structure/server_tests.ml:9
@@ -125,7 +125,7 @@ storage: 15 tests
     actual    false
 ──────────────────────────────────────────────────────────
 
-11 passed, 2 skipped, 1 expected failure, 1 failed in 2.3ms.
+9 passed, 2 skipped, 1 expected failure, 1 failed in 3.5ms.
 keys/keys.ml: 3 passed in 0.5ms.
 ```
 
@@ -140,7 +140,7 @@ two commands below pass `-o` to keep this page's record apart:
 
 ```
 $ dune exec examples/06-resources-and-structure/test_storage.exe -- -o _build/rerun
-storage: 15 tests
+storage: 13 tests
 ──────────────────────── failures ────────────────────────
   FAIL  server › it answers a ping
     examples/06-resources-and-structure/server_tests.ml:9
@@ -150,7 +150,7 @@ storage: 15 tests
     actual    false
 ──────────────────────────────────────────────────────────
 
-11 passed, 2 skipped, 1 expected failure, 1 failed in 1.9ms.
+9 passed, 2 skipped, 1 expected failure, 1 failed in 3.5ms.
 $ dune exec examples/06-resources-and-structure/test_storage.exe -- -o _build/rerun --failed
 storage: 1 test
 ──────────────────────── failures ────────────────────────
@@ -162,7 +162,7 @@ storage: 1 test
     actual    false
 ──────────────────────────────────────────────────────────
 
-1 failed in 0.6ms.
+1 failed in 1.0ms.
 ```
 
 `-l --failed` lists the tests `--failed` would run, and `--failed` with
@@ -192,7 +192,7 @@ test runs, and the run warns on standard error:
 ```
 $ dune exec examples/06-resources-and-structure/test_storage.exe
 storage: 1 passed in 1.0ms.
-windtrap: warning: focus is active: 1 of 15 tests ran; remove the focus before committing
+windtrap: warning: focus is active: 1 of 13 tests ran; remove the focus before committing
 ```
 
 ## Running under CI
@@ -213,7 +213,7 @@ workflow run:
 ```
 $ CI=true GITHUB_ACTIONS=true dune exec examples/06-resources-and-structure/test_storage.exe
 ::group::storage
-storage: 15 tests
+storage: 13 tests
 ──────────────────────── failures ────────────────────────
   FAIL  server › it answers a ping
     examples/06-resources-and-structure/server_tests.ml:9
@@ -225,7 +225,7 @@ storage: 15 tests
 ::endgroup::
 ::error file=examples/06-resources-and-structure/server_tests.ml,line=9,title=Test failure%3A server › it answers a ping::    examples/06-resources-and-structure/server_tests.ml:9%0A    expected  true%0A    actual    false
 
-11 passed, 2 skipped, 1 expected failure, 1 failed in 20ms.
+9 passed, 2 skipped, 1 expected failure, 1 failed in 2.6ms.
 ```
 
 `--junit PATH` also writes the report as a JUnit file. A `PATH` that
@@ -238,8 +238,6 @@ the same on every machine, so `N` jobs run each test once:
 ```
 $ dune exec examples/06-resources-and-structure/test_storage.exe -- -l --shard 1/2
 database › an insert adds one row
-database › a name is stored › alice
-database › a name is stored › bob
 database › every inserted row is found
 server › reindexing keeps it running
 process state › a build writes in the working directory

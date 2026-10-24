@@ -206,6 +206,8 @@ val run :
   ?output:(unit -> Failure.tail option) ->
   ?shrinking:(int -> unit) ->
   ?replay:string ->
+  ?replayed_by:string ->
+  ?only:(int -> bool) ->
   root:Seed.seed ->
   path:string ->
   'a Gen.t ->
@@ -254,6 +256,14 @@ val run :
       whose parse reads other choices, prints another value, discards or raises,
       and a case the law discards each fail the run with a message that names
       the token, a stale token as stale.
+    - [replayed_by] opens that message, as what gave the token. Defaults to
+      ["--replay"].
+    - [only i] says whether the value at position [i] of a domain checked whole
+      runs (see below), as a table rerunning its failed rows asks. A value it
+      leaves out runs no law and counts nowhere, and its position still numbers
+      the others. Unless it keeps every value, [stats.whole] is [None]. It
+      changes nothing for a domain that is not checked whole. Defaults to
+      keeping every value.
 
     {b Examples.} The examples run first, in order, unshrunk and without a seed.
     A passing example commits its labels and counts in [cases], a discarding one

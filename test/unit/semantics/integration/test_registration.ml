@@ -169,7 +169,7 @@ let disarmed =
   group "Disarmed"
     [
       cases "with nothing armed, a function computes its original result"
-        ~name:(fun (name, _, _) -> name)
+        (Testable.contramap (fun (name, _, _) -> name) Testable.text)
         originals
         (fun (_, expected, actual) -> equal string expected (actual ()));
     ]
@@ -311,7 +311,8 @@ let armed_mutants =
   group "Armed"
     [
       cases "an armed mutant computes the rewrite its site names"
-        ~name:arming_name armings armed_row;
+        (Testable.contramap arming_name Testable.text)
+        armings armed_row;
     ]
 
 (* Every mutant *)

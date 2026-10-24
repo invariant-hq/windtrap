@@ -90,7 +90,7 @@ let messages =
       test "the report counts the rows" report_counts_the_rows;
       test "the help lists the commands" (fun () ->
           expect_file (Mytool.help ()) "examples/05-baselines/help.expected");
-      cases "the greeting names the user" ~name:fst
+      cases "the greeting names the user" (Testable.contramap fst string)
         [
           ("Ada", __POS_OF__ {| Hello, Ada! |});
           ("Grace", __POS_OF__ {| Hello, Grace! |});
@@ -119,8 +119,11 @@ other text.
 A row of `cases` can carry its own literal, as the greeting's rows do.
 `expect` checks each row against its literal, and `dune promote` or
 `-u` rewrites the literals of the stale rows alone (see
-`Windtrap.expect`). A literal written in the body of `cases` is shared,
-and every row must produce its one text.
+`Windtrap.expect`). Each row keeps or withholds its corrections as a
+test of its own would: a row that also fails another way keeps none,
+and the rows after it are compared with the baselines it left as they
+were. A literal written in the body of `cases` is shared, and every row
+must produce its one text.
 
 ## Running expectations under dune
 
@@ -159,7 +162,7 @@ one line per file of the library's expect tests (see below):
 
 ```
 $ dune runtest
-mytool: 4 passed in 0.9ms.
+mytool: 3 passed in 1.6ms.
 tokenizer/timing.ml: 1 passed in 0.8ms.
 tokenizer/tokens.ml: 2 passed in 1.6ms.
 ```
@@ -173,7 +176,7 @@ accepts the change. Dune then prints its own diff of the source file:
 
 ```
 $ dune runtest
-mytool: 4 tests
+mytool: 3 tests
 ──────────────────────── failures ────────────────────────
   FAIL  messages › the report counts the rows
     examples/05-baselines/test_mytool.ml:5
@@ -190,7 +193,7 @@ mytool: 4 tests
 corrections (1):
   wrote examples/05-baselines/test_mytool.ml.corrected (1 expectation)
 
-3 passed, 1 failed, 1 correction written in 1.1ms.
+2 passed, 1 failed, 1 correction written in 2.3ms.
 File "examples/05-baselines/test_mytool.ml", line 1, characters 0-0:
 diff --git a/_build/default/examples/05-baselines/test_mytool.ml b/_build/default/examples/05-baselines/test_mytool.ml.corrected
 index fd329b0..8d0b6e0 100644
@@ -233,7 +236,7 @@ A suite run by hand writes no correction. Its report closes on one
 
 ```
 $ dune exec examples/05-baselines/test_mytool.exe
-mytool: 4 tests
+mytool: 3 tests
 ──────────────────────── failures ────────────────────────
   FAIL  messages › the report counts the rows
     examples/05-baselines/test_mytool.ml:5
@@ -247,7 +250,7 @@ mytool: 4 tests
 ──────────────────────────────────────────────────────────
 
 accept: dune exec examples/05-baselines/test_mytool.exe -- -u
-3 passed, 1 failed in 1.7ms.
+2 passed, 1 failed in 1.2ms.
 ```
 
 To accept, run the line. `-u` rewrites every stale literal in place, and
@@ -256,11 +259,11 @@ next run:
 
 ```
 $ dune exec examples/05-baselines/test_mytool.exe -- -u
-mytool: 4 tests
+mytool: 3 tests
 corrections (1):
   accepted examples/05-baselines/test_mytool.ml (1 expectation; rebuild before the tests see it)
 
-4 passed, 1 correction accepted in 0.9ms.
+3 passed, 1 correction accepted in 1.3ms.
 ```
 
 Review the change with `git diff`. `-u` is refused under CI (see

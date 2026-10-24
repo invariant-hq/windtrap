@@ -72,8 +72,9 @@ let outcome verb =
       "raised " ^ Failure.exn_to_string e
 
 let outcomes claim rows =
-  cases claim rows
-    ~name:(fun (name, _, _) -> name)
+  cases claim
+    (Testable.contramap (fun (name, _, _) -> name) Testable.text)
+    rows
     (fun (_, verb, row) -> equal string row (outcome verb))
 
 let annotation verb =
@@ -101,8 +102,9 @@ let printer_calls use =
   !calls
 
 let count_calls claim rows =
-  cases claim rows
-    ~name:(fun (name, _, _) -> name)
+  cases claim
+    (Testable.contramap (fun (name, _, _) -> name) Testable.text)
+    rows
     (fun (_, use, calls) -> equal int calls (printer_calls use))
 
 (* Every verb *)
@@ -120,7 +122,8 @@ let raising_pp _ _ = raise Bug
 let every_verb =
   group "Every verb"
     [
-      cases "?msg and ?__POS__ are the failure's msg and site" ~name:fst
+      cases "?msg and ?__POS__ are the failure's msg and site"
+        (Testable.contramap fst Testable.text)
         [
           ("equal", fun () -> Check.equal ~__POS__:pos ~msg:"why" int 1 2);
           ( "not_equal",
@@ -179,7 +182,8 @@ let every_verb =
           );
         ]
         (fun (_, verb) -> equal string site (annotation verb));
-      cases "fail and failf take ?__POS__ and leave msg empty" ~name:fst
+      cases "fail and failf take ?__POS__ and leave msg empty"
+        (Testable.contramap fst Testable.text)
         [
           ("fail", fun () -> Check.fail ~__POS__:pos "x");
           ("failf", fun () -> Check.failf ~__POS__:pos "x %d" 1);
@@ -187,7 +191,7 @@ let every_verb =
         (fun (_, verb) ->
           equal string "nothing at fake.ml:42:3" (annotation verb));
       cases "without ?__POS__ a failure is located in the caller's file"
-        ~name:fst
+        (Testable.contramap fst Testable.text)
         [
           ("equal", fun () -> Check.equal int 1 2);
           ("failf, through Format", fun () -> Check.failf "boom %d" 1);
@@ -507,7 +511,7 @@ let orders =
         ];
       cases
         "an ordering verb refuses a witness without an order, holding or not"
-        ~name:(fun (name, _, _) -> name)
+        (Testable.contramap (fun (name, _, _) -> name) Testable.text)
         [
           ("less, holding", "less", fun () -> Check.less unordered ~than:3 2);
           ( "at_most, failing",
@@ -631,7 +635,8 @@ let containment =
                 (filler ^ "OPEN" ^ filler)),
             {|ordered 1 from 24004 "MIDDLE", nowhere in 48004 bytes|} );
         ];
-      cases "in_order refuses an empty chain, whatever the haystack" ~name:fst
+      cases "in_order refuses an empty chain, whatever the haystack"
+        (Testable.contramap fst Testable.text)
         [ ("the empty haystack", ""); ("a haystack", "abc") ]
         (fun (_, s) ->
           raises_match Exn.invalid_arg (fun () -> Check.in_order ~subs:[] s));
@@ -801,7 +806,7 @@ let exceptions =
       cases
         "an exception verb raises a failure, a control or a fatal exception \
          again"
-        ~name:(fun (name, _, _) -> name)
+        (Testable.contramap (fun (name, _, _) -> name) Testable.text)
         passed_through
         (fun (_, e, verb) ->
           equal string
@@ -819,7 +824,7 @@ let exceptions =
       cases
         "an Exn predicate accepts its constructor, with the substring when \
          given"
-        ~name:(fun (name, _, _) -> name)
+        (Testable.contramap (fun (name, _, _) -> name) Testable.text)
         [
           ("invalid_arg", Check.Exn.invalid_arg (Invalid_argument "x"), true);
           ( "invalid_arg, a Failure",

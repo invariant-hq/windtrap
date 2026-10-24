@@ -283,8 +283,9 @@ let declaring =
   group "Declaring tests"
     [
       test "prop adds the prop tag, under a group too" tagged_prop;
-      cases "a tag named by both --tag and --exclude-tag is excluded" ~name:fst
-        both_flags (fun (_, r) -> equal text "untagged\n" r.out);
+      cases "a tag named by both --tag and --exclude-tag is excluded"
+        (Testable.contramap fst Testable.text) both_flags (fun (_, r) ->
+          equal text "untagged\n" r.out);
       test "a property and a stateful test inherit a group's retries" (fun () ->
           equal (pair int int) (3, 3)
             ( (row_at retried [ "g"; "p" ]).attempts,
@@ -358,7 +359,7 @@ let properties =
       test "collect, classify and cover label the cases of the running law"
         the_labels_reach_the_engine;
       cases "a label outside a property fails the test with Invalid_argument"
-        ~name:Fun.id
+        Testable.text
         [ "collect"; "classify"; "cover" ]
         a_label_outside_a_property;
       test "reject outside a property fails the test with the message"
@@ -531,7 +532,8 @@ let checked_rows, accepted_rows, row_copy =
   write copy
     (read (Filename.concat (Filename.dirname Sys.executable_name) this_file));
   let table =
-    cases "rows" ~name:fst rows (fun (text, literal) -> expect text literal)
+    cases "rows" (Testable.contramap fst Testable.text) rows
+      (fun (text, literal) -> expect text literal)
   in
   let run baseline =
     Recorded.execute ~env:(project [] root)
@@ -541,26 +543,19 @@ let checked_rows, accepted_rows, row_copy =
   let checked = run Baseline.Check in
   (checked, run Baseline.Update, copy)
 
+(* A row's failure is labelled with the row, as a subtest's is. *)
 let each_row_checks_its_literal () =
-  let outcome (name, _) =
-    let path = [ "rows"; name ] in
-    match Recorded.failures checked_rows path with
-    | [] -> strf "%s: %s" name (Recorded.row checked_rows path)
-    | failures ->
-        let lines =
-          List.map
-            (fun (f : Failure.t) -> string_of_int (require_some f.loc).Loc.line)
-            failures
-        in
-        strf "%s: failed at line %s" name (String.concat ", " lines)
+  let failed (f : Failure.t) =
+    strf "%s: failed at line %d"
+      (Test_tree.path_to_string (List.tl f.subtest))
+      (require_some f.loc).Loc.line
   in
   equal (list string)
     [
-      "same: pass";
-      strf "new one: failed at line %d" (row_line (List.nth rows 1));
-      strf "new two: failed at line %d" (row_line (List.nth rows 2));
+      strf "row 2 of 3: new one: failed at line %d" (row_line (List.nth rows 1));
+      strf "row 3 of 3: new two: failed at line %d" (row_line (List.nth rows 2));
     ]
-    (List.map outcome rows)
+    (List.map failed (Recorded.failures checked_rows [ "rows" ]))
 
 let each_row_is_corrected_alone () =
   let lines = String.split_on_char '\n' (read row_copy) in
@@ -626,7 +621,7 @@ let baselines =
               ] )
             (Recorded.exit_code bracketed, written bracketed));
       cases "a correction dune will not promote is the one run that warns"
-        ~name:(fun (name, _, _) -> name)
+        (Testable.contramap (fun (name, _, _) -> name) Testable.text)
         [
           ("a correction beside a failure", 1, true);
           ("two corrections beside a failure", 1, true);
@@ -743,8 +738,8 @@ let an_operation_fails_a_release () =
 let the_running_test =
   group "The running test"
     [
-      cases "raises Invalid_argument outside a test" ~name:fst outside_a_test
-        (fun (_, e) ->
+      cases "raises Invalid_argument outside a test"
+        (Testable.contramap fst Testable.text) outside_a_test (fun (_, e) ->
           raises_match (Exn.invalid_arg ~substring:"no test is running")
             (fun () -> replay e));
       test "outside a test setenv, chdir and subtest change nothing" (fun () ->
@@ -909,7 +904,7 @@ let running =
   group "Running"
     [
       cases "run returns the exit code"
-        ~name:(fun (name, _, _) -> name)
+        (Testable.contramap (fun (name, _, _) -> name) Testable.text)
         codes
         (fun (_, code, r) -> equal int code r.code);
       test "run raises Invalid_argument while a run is executing" nested_run;
@@ -918,7 +913,7 @@ let running =
           equal string "" help.err);
       test "--version prints one line that names the version" version_line;
       cases "a usage error prints nothing on stdout and names the fault"
-        ~name:(fun (name, _, _) -> name)
+        (Testable.contramap (fun (name, _, _) -> name) Testable.text)
         usage_errors
         (fun (_, r, fault) ->
           equal string "" r.out;
@@ -950,7 +945,7 @@ let running =
 list: emptysuite -l
 |});
       cases "the code of a selection that keeps no test"
-        ~name:(fun (name, _, _) -> name)
+        (Testable.contramap (fun (name, _, _) -> name) Testable.text)
         selection_codes
         (fun (_, code, r) -> equal int code r.code);
       test "a mirror's emptied selection says why and names no way out"
@@ -975,8 +970,9 @@ list: emptysuite -l
         (fun () ->
           equal int 2 blank_usage.code;
           contains ~sub:"usage: blank [OPTIONS] [PATTERN...]" blank_usage.err);
-      cases "flags that change what prints change no exit code" ~name:fst
-        printing (fun (_, code) -> equal int 1 code);
+      cases "flags that change what prints change no exit code"
+        (Testable.contramap fst Testable.text) printing (fun (_, code) ->
+          equal int 1 code);
       test "a test of kept corrections still stops -x" (fun () ->
           contains ~sub:"1 not run" kept_stops.out);
       test "a test of kept corrections enters the last failed tests" (fun () ->

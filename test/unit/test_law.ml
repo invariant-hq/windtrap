@@ -102,7 +102,9 @@ let screens =
              prop "Version.compare is a total order"
                Gen.(triple v v v)
                (Law.order ~respell:Version.pad version);
-             cases ~name:Version.to_string "of_string reads these back" fixtures
+             cases "of_string reads these back"
+               (Testable.contramap Version.to_string Testable.text)
+               fixtures
                (Law.round_trip version string Version.to_string (fun s ->
                     require_some (Version.of_string s)));
            ];
@@ -329,8 +331,9 @@ let lawful =
 let holding =
   group "Laws that hold"
     [
-      cases "a law returns when its equation holds" ~name:fst lawful
-        (fun (_, law) -> equal string "holds" (outcome law));
+      cases "a law returns when its equation holds"
+        (Testable.contramap fst Testable.text) lawful (fun (_, law) ->
+          equal string "holds" (outcome law));
       prop "a law is the law of a prop"
         Gen.(triple small_int small_int small_int)
         (Law.associative int ( + ));
@@ -350,7 +353,7 @@ let holding =
       prop "involutive over drawn lists, palindromes among them"
         Gen.(list (int_range 0 1))
         (Law.involutive (list int) List.rev);
-      cases "a law is the function of a cases" ~name:string_of_int [ -1; 0; 2 ]
+      cases "a law is the function of a cases" Testable.int [ -1; 0; 2 ]
         (Law.idempotent int abs);
     ]
 
@@ -872,7 +875,7 @@ let failing =
       cases
         "a law raises one failure that names it, states its equation and lists \
          its terms"
-        ~name:(fun (name, _, _) -> name)
+        (Testable.contramap (fun (name, _, _) -> name) Testable.text)
         broken
         (fun (_, law, literal) -> expect (outcome law) literal);
     ]
@@ -1063,7 +1066,7 @@ let clause_order =
          respelled and transitive clauses"
         equivalence_calls;
       cases "a wrong equality fails the clause of the call it answered"
-        ~name:(fun (k, _) -> strf "call %d" k)
+        (Testable.contramap (fun (k, _) -> strf "call %d" k) Testable.text)
         equivalence_clauses
         (fun (k, row) ->
           equal string row
@@ -1223,7 +1226,7 @@ let failed_terms =
   group "Failed terms"
     [
       cases "a function under test that raises or fails ends the law there"
-        ~name:(fun (name, _, _) -> name)
+        (Testable.contramap (fun (name, _, _) -> name) Testable.text)
         failed_rows
         (fun (_, law, literal) -> expect (outcome law) literal);
       test "a failed term holds the very failure its function raised"
@@ -1231,7 +1234,7 @@ let failed_terms =
       test "an uncaught exception keeps the backtrace of its raise"
         backtrace_of_uncaught;
       cases "a control or a fatal exception passes through the law as raised"
-        ~name:fst passed_through (fun (_, e) ->
+        (Testable.contramap fst Testable.text) passed_through (fun (_, e) ->
           equal string
             (outcome (fun () -> raise e))
             (outcome (fun () -> Law.idempotent int (fun _ -> raise e) 1)));
@@ -1307,10 +1310,11 @@ let witnesses =
   group "Witnesses"
     [
       cases "what a witness's equality, order or printer raises escapes the law"
-        ~name:fst escapes (fun (_, law) ->
+        (Testable.contramap fst Testable.text) escapes (fun (_, law) ->
           equal string "raised Test_law.Bug" (outcome law));
-      cases "a law that holds calls no printer" ~name:fst over_ints
-        (fun (_, law) -> equal int 0 (printer_calls law));
+      cases "a law that holds calls no printer"
+        (Testable.contramap fst Testable.text) over_ints (fun (_, law) ->
+          equal int 0 (printer_calls law));
       test "a failing law prints each of its terms once" (fun () ->
           equal int 7
             (printer_calls (fun w -> Law.associative w ( - ) (1, 2, 3)));
@@ -1392,8 +1396,9 @@ let term_keeps_its_site () =
 let located_rows =
   group "Locations and messages"
     [
-      cases "?msg and ?__POS__ are the failure's msg and site" ~name:fst
-        every_law (fun (_, law) -> equal string site (annotation law));
+      cases "?msg and ?__POS__ are the failure's msg and site"
+        (Testable.contramap fst Testable.text) every_law (fun (_, law) ->
+          equal string site (annotation law));
       test "without ?__POS__ a law is located in the caller's file" (fun () ->
           starts_with ~affix:"nothing at test/unit/test_law.ml:"
             (annotation (fun () ->
@@ -1450,7 +1455,7 @@ let no_order =
   group "No order"
     [
       cases "order and monotone refuse a witness without an order, first"
-        ~name:(fun (name, _, _) -> name)
+        (Testable.contramap (fun (name, _, _) -> name) Testable.text)
         orderless refuses_before_any_clause;
     ]
 
@@ -1647,8 +1652,7 @@ let where =
       stateful ~count:10 "system"
         [ command "law" (Gen.unit @-> returns unit) ignore unmoved ];
       test "test" unmoved;
-      cases ~name:string_of_int "cases" [ 1; 2 ]
-        (Law.ignores int int Fun.id Fun.id);
+      cases "cases" Testable.int [ 1; 2 ] (Law.ignores int int Fun.id Fun.id);
       test "fixture" released;
       test "context in a test" (fun () -> is_none (Run.prop_context ()));
     ]
@@ -1700,7 +1704,7 @@ let demands =
   group "Demands"
     [
       cases "a law demands, by label, the case that could be trivial"
-        ~name:(fun (name, _, _) -> name)
+        (Testable.contramap (fun (name, _, _) -> name) Testable.text)
         demand_rows
         (fun (_, run, row) -> equal string row (run ()));
       test "a prop's law registers its demands" (fun () ->
@@ -1719,18 +1723,14 @@ let demands =
             {|never covered: "ignores: g x differs from x" (over 10 passing cases)|}
             (message where [ "system" ]));
       cases "two calls of one law share a demand unless their msgs differ"
-        ~name:(fun (name, _, _) -> name)
+        (Testable.contramap (fun (name, _, _) -> name) Testable.text)
         labelled
         (fun (_, run, row) -> equal string row (run ()));
       test "a test's law demands nothing and holds" (fun () ->
           equal string "pass" (Recorded.row where [ "test" ]);
           is_false (prop_stats where [ "test" ]));
       test "a cases row's law demands nothing and holds" (fun () ->
-          equal (list string) [ "pass"; "pass" ]
-            [
-              Recorded.row where [ "cases"; "1" ];
-              Recorded.row where [ "cases"; "2" ];
-            ]);
+          equal string "pass" (Recorded.row where [ "cases" ]));
       test "a law in a fixture's release demands nothing and holds" (fun () ->
           equal string "pass" (Recorded.row where [ "fixture" ]);
           equal int 0 (List.length (Recorded.outcome where).release_failures));
@@ -1828,20 +1828,22 @@ let proposal =
               labels (1 passing case):
                 100.0%  order: an unequal pair
 
-            FAIL  version › of_string reads these back › 0.0.0-a.1
+            FAIL  version › of_string reads these back
               test/unit/test_law.ml:105
-                105 │ cases ~name:Version.to_string "of_string reads these back" fixtures
+                105 │ cases "of_string reads these back"
 
-              round trip: g (f x) = x
-              x    0.0.0-a.1
-              f x  "0.0.0-a.1"
-              g (f x) failed with:
-                expected  Some _
-                actual    None
+              counterexample (row 2 of 2): 0.0.0-a.1
+              which failed with:
+                round trip: g (f x) = x
+                x    0.0.0-a.1
+                f x  "0.0.0-a.1"
+                g (f x) failed with:
+                  expected  Some _
+                  actual    None
 
             FAIL  path › Path.equal is an equivalence
-              test/unit/test_law.ml:111
-                111 │ prop "Path.equal is an equivalence"
+              test/unit/test_law.ml:113
+                113 │ prop "Path.equal is an equivalence"
 
               never covered: "equivalence: an unequal pair" (over 100 passing cases)
               labels (100 passing cases):

@@ -85,6 +85,8 @@ type kind =
       token : string option;
       domain : int option;
       also : t list;
+      table : bool;
+      label : text option;
     }
   | Law of {
       law : string;
@@ -383,7 +385,7 @@ let baseline ?loc baseline state =
 
 let property ?loc ?inner ?count ?summary ~rendered ~case_index ~shrink_steps
     ?(shrink_end = Converged) ~root ~examples ?(rendering = Value) ?failed_again
-    ?token ?domain ?(also = []) () =
+    ?token ?domain ?(also = []) ?(table = false) ?label () =
   make ?loc
     (Property
        {
@@ -401,6 +403,8 @@ let property ?loc ?inner ?count ?summary ~rendered ~case_index ~shrink_steps
          token;
          domain;
          also;
+         table;
+         label = Option.map text label;
        })
 
 let law ?loc ?msg ?clause ~law ~equation terms =

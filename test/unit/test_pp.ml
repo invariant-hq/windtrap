@@ -10,7 +10,7 @@ type printing = Prints : string * 'a Pp.t * 'a * string -> printing
 
 let prints claim rows =
   cases claim
-    ~name:(fun (Prints (name, _, _, _)) -> name)
+    (Testable.contramap (fun (Prints (name, _, _, _)) -> name) Testable.text)
     rows
     (fun (Prints (_, pp, v, printed)) ->
       equal string printed (Pp.to_string pp v))

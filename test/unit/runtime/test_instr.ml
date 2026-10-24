@@ -151,25 +151,25 @@ let build_paths =
             [ "/w/./a"; Filename.concat (Sys.getcwd ()) "./a/../b" ]
             [ Instr.absolute "/w/./a"; Instr.absolute "./a/../b" ]);
       cases "build_dir cuts the path after its first component named _build*"
-        ~name:fst build_dirs (fun (path, dir) ->
+        (Testable.contramap fst Testable.text) build_dirs (fun (path, dir) ->
           equal (option string) dir (Instr.build_dir ~path));
       test "a relative path is made absolute against the current directory"
         relative_path;
-      cases "build_root is the parent of the build directory" ~name:fst
-        build_roots (fun (path, root) ->
+      cases "build_root is the parent of the build directory"
+        (Testable.contramap fst Testable.text) build_roots (fun (path, root) ->
           equal (option string) root (Instr.build_root ~path));
       cases "exe_identity is the path below the build directory, normalized"
-        ~name:fst normalized (fun (exe, identity) ->
-          equal string identity (Instr.exe_identity ~exe));
+        (Testable.contramap fst Testable.text) normalized
+        (fun (exe, identity) -> equal string identity (Instr.exe_identity ~exe));
       cases
         "exe_identity drops the .sandbox/<digest> right below the build \
-         directory, and nothing else"
-        ~name:fst sandboxed (fun (exe, identity) ->
+         directory, and nothing else" (Testable.contramap fst Testable.text)
+        sandboxed (fun (exe, identity) ->
           equal string identity (Instr.exe_identity ~exe));
       cases
         "an executable's own name never makes it lie below a build directory"
-        ~name:fst named_build (fun (exe, identity) ->
-          equal string identity (Instr.exe_identity ~exe));
+        (Testable.contramap fst Testable.text) named_build
+        (fun (exe, identity) -> equal string identity (Instr.exe_identity ~exe));
       test "data_dir and standalone_data_dir name the format's directory"
         (fun () ->
           equal (list string)
@@ -181,16 +181,16 @@ let build_paths =
       cases
         "output_file is windtrap-<md5 of the identity>.<ext> in the data \
          directory of the build directory"
-        ~name:fst below_a_build (fun (exe, file) ->
+        (Testable.contramap fst Testable.text) below_a_build (fun (exe, file) ->
           equal string file (Instr.output_file format ~exe));
       cases
         "below no build directory, output_file is in the standalone data \
          directory of the current directory, hashed from the absolute path"
-        ~name:Fun.id below_none (fun exe ->
+        Testable.text below_none (fun exe ->
           equal string
             (strf "%s/windtrap-%s.smp" (standalone ()) (md5 exe))
             (Instr.output_file format ~exe));
-      cases "output_dir is output_file without its extension" ~name:Fun.id
+      cases "output_dir is output_file without its extension" Testable.text
         [ "/w/p/_build/default/test/a.exe"; "/opt/t.exe" ] (fun exe ->
           equal string
             (Filename.remove_extension (Instr.output_file format ~exe))
@@ -345,7 +345,7 @@ let the_header =
       cases
         "add_header refuses a malformed identity in a message the format's \
          owner prefixes, after the magic line"
-        ~name:fst malformed (fun (_, identity) ->
+        (Testable.contramap fst Testable.text) malformed (fun (_, identity) ->
           let message, written = refusal identity in
           starts_with ~affix:"Sample: " message;
           equal string "windtrap-sample-v1\n" written);
@@ -492,12 +492,13 @@ let parsing =
       test "without exe, read_identity is None past the whitespace only"
         no_identity;
       cases "read_identity is None when the first three bytes are not exe"
-        ~name:fst not_exe (fun (_, input) ->
+        (Testable.contramap fst Testable.text) not_exe (fun (_, input) ->
           is_none ~pp:pp_identity (Instr.read_identity (after input)));
       test "finish accepts trailing whitespace" (fun () ->
           Instr.finish (after " \t\r\n"));
-      cases "a reader refuses what it cannot read with Parse_error" ~name:fst
-        refused (fun (_, f) -> raises_match parse_error f);
+      cases "a reader refuses what it cannot read with Parse_error"
+        (Testable.contramap fst Testable.text) refused (fun (_, f) ->
+          raises_match parse_error f);
       test "the reasons name what was read, and where" (fun () ->
           expect
             (String.concat "\n"

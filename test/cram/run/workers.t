@@ -11,6 +11,7 @@ left: its exit code, both streams and every file of the project.
   >   rm -rf proj _logs && mkdir -p proj/test/cram/run && cp workers_main.ml proj/test/cram/run/
   >   printf 'h old\n' > proj/test/cram/run/h.expected
   >   printf 'k old\n' > proj/test/cram/run/k.expected
+  >   case "$vars" in *table*) printf 't old\n' > proj/test/cram/run/t.expected ;; esac
   > }
   $ scrub() {
   >   sed -E 's/ in [0-9.]+(m|µ)?s\./ in DURATION./'
@@ -98,8 +99,7 @@ Corrections spread across many tests, under every mode:
     FAIL  b2 slow, corrects s2
     FAIL  c1 corrects s3
     FAIL  c2 agrees on s3
-    FAIL  row › x
-    FAIL  row › y
+    FAIL  row
     FAIL  d fails outside
     FAIL  f subtests
     FAIL  g labelled
@@ -111,7 +111,7 @@ Corrections spread across many tests, under every mode:
     FAIL  r retried conflict (3 attempts)
     FAIL  o order
     FAIL  z corrects s4
-  2 passed, 1 expected failure, 18 failed (5 subtest failures) in DURATION.
+  2 passed, 1 expected failure, 17 failed (7 subtest failures) in DURATION.
   h.expected: h old
   k.expected: k old
   $ same WORKERS_SUITE=spread REPLACE=domain --
@@ -128,8 +128,7 @@ Corrections spread across many tests, under every mode:
     FAIL  b2 slow, corrects s2
     FAIL  b3 matches the old s2
     FAIL  c1 corrects s3
-    FAIL  row › x
-    FAIL  row › y
+    FAIL  row
     FAIL  d fails outside
     FAIL  f subtests
     FAIL  g labelled
@@ -141,7 +140,7 @@ Corrections spread across many tests, under every mode:
     FAIL  r retried conflict (3 attempts)
     FAIL  o order
     FAIL  z corrects s4
-  2 passed, 1 expected failure, 18 failed (5 subtest failures), 3 corrections written in DURATION.
+  2 passed, 1 expected failure, 17 failed (7 subtest failures), 3 corrections written in DURATION.
   windtrap: warning: dune registers a correction for promotion only when the run that wrote it exits 0, so the failures above withhold the corrections written here. Fix the failures, rerun, then 'dune promote'.
   h.expected: h old
   k.expected: k old
@@ -175,7 +174,7 @@ Corrections spread across many tests, under every mode:
     FAIL  r retried conflict (3 attempts)
     FAIL  o order
     FAIL  z corrects s4
-  11 passed, 1 expected failure, 9 failed (4 subtest failures), 4 corrections accepted in DURATION.
+  10 passed, 1 expected failure, 9 failed (4 subtest failures), 4 corrections accepted in DURATION.
   h.expected: h new
   k.expected: k two
   missing.expected: m
@@ -196,13 +195,93 @@ Corrections spread across many tests, under every mode:
   $ same WORKERS_SUITE=spread REPLACE=domain -- -u -j 8
   same
 
+Each row of a table settles its corrections alone, in the order of the
+rows, as a test of its own would: rows a and c keep theirs, row b, which
+also fails outside its expectations, keeps none, so row c is compared
+with the file as it was. A table that runs alone, in its worker or in
+the parent's process, leaves the same, at -j 1 as at -j 8:
+
+  $ show WORKERS_SUITE=table -- --corrected
+  exit 1
+    FAIL  rows
+  1 failed (5 subtest failures), 2 corrections written in DURATION.
+  windtrap: warning: dune registers a correction for promotion only when the run that wrote it exits 0, so the failures above withhold the corrections written here. Fix the failures, rerun, then 'dune promote'.
+  h.expected: h old
+  k.expected: k old
+  t.expected: t old
+  t.expected.corrected: t c
+  -      ("a", __POS_OF__ {| a old |}, false);
+  +      ("a", __POS_OF__ {| a new |}, false);
+  -      ("c", __POS_OF__ {| c old |}, false);
+  +      ("c", __POS_OF__ {| c new |}, false);
+  $ same WORKERS_SUITE=table -- --corrected --in-process
+  same
+  $ same WORKERS_SUITE=table -- --corrected -j 8
+  same
+  $ show WORKERS_SUITE=table -- -u
+  exit 1
+    FAIL  rows
+  1 failed, 2 corrections accepted in DURATION.
+  h.expected: h old
+  k.expected: k old
+  t.expected: t c
+  -      ("a", __POS_OF__ {| a old |}, false);
+  +      ("a", __POS_OF__ {| a new |}, false);
+  -      ("c", __POS_OF__ {| c old |}, false);
+  +      ("c", __POS_OF__ {| c new |}, false);
+  $ same WORKERS_SUITE=table -- -u --in-process
+  same
+  $ same WORKERS_SUITE=table -- -u -j 8
+  same
+
+and beside the tests that other workers run meanwhile, one of which
+checks the file the table corrected:
+
+  $ show WORKERS_SUITE=tables -- --corrected
+  exit 1
+    FAIL  slow, corrects s5
+    FAIL  rows
+  1 passed, 2 failed (5 subtest failures), 2 corrections written in DURATION.
+  windtrap: warning: dune registers a correction for promotion only when the run that wrote it exits 0, so the failures above withhold the corrections written here. Fix the failures, rerun, then 'dune promote'.
+  h.expected: h old
+  k.expected: k old
+  t.expected: t old
+  t.expected.corrected: t c
+  -      ("a", __POS_OF__ {| a old |}, false);
+  +      ("a", __POS_OF__ {| a new |}, false);
+  -      ("c", __POS_OF__ {| c old |}, false);
+  +      ("c", __POS_OF__ {| c new |}, false);
+  -        expect "s5 new" @@ __POS_OF__ {| s5 old |});
+  +        expect "s5 new" @@ __POS_OF__ {| s5 new |});
+  $ same WORKERS_SUITE=tables -- --corrected -j 8
+  same
+  $ same WORKERS_SUITE=tables REPLACE=domain -- --corrected -j 8
+  same
+  $ show WORKERS_SUITE=tables -- -u
+  exit 1
+    FAIL  rows
+  2 passed, 1 failed, 2 corrections accepted in DURATION.
+  h.expected: h old
+  k.expected: k old
+  t.expected: t c
+  -      ("a", __POS_OF__ {| a old |}, false);
+  +      ("a", __POS_OF__ {| a new |}, false);
+  -      ("c", __POS_OF__ {| c old |}, false);
+  +      ("c", __POS_OF__ {| c new |}, false);
+  -        expect "s5 new" @@ __POS_OF__ {| s5 old |});
+  +        expect "s5 new" @@ __POS_OF__ {| s5 new |});
+  $ same WORKERS_SUITE=tables -- -u -j 8
+  same
+  $ same WORKERS_SUITE=tables REPLACE=domain -- -u -j 8
+  same
+
 Under -x the run stops at the first failure, and keeps nothing from the
 tests that other workers ran past it:
 
   $ show WORKERS_SUITE=spread -- -x -u
   exit 1
     FAIL  a2 conflicts on s1
-  1 passed, 1 failed, 19 not run, 1 correction accepted in DURATION.
+  1 passed, 1 failed, 18 not run, 1 correction accepted in DURATION.
   h.expected: h old
   k.expected: k old
   -  let s1 x = expect x @@ __POS_OF__ {| s1 old |} in

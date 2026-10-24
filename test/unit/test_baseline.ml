@@ -180,8 +180,9 @@ let write_refusal path =
 (* Modes *)
 
 let by_mode claim ~files ~steps rows =
-  cases claim rows
-    ~name:(fun (mode, _) -> mode_name mode)
+  cases claim
+    (Testable.contramap (fun (mode, _) -> mode_name mode) Testable.text)
+    rows
     (fun (mode, trace) ->
       let root = project files in
       equal traced trace (scenario ~mode root (steps root)))
@@ -260,8 +261,9 @@ let modes =
 (* Subjects *)
 
 let compares claim rows =
-  cases claim rows
-    ~name:(fun (name, _, _, _) -> name)
+  cases claim
+    (Testable.contramap (fun (name, _, _, _) -> name) Testable.text)
+    rows
     (fun (_, subject, actual, row) ->
       equal traced [ row ]
         (scenario ~mode:Check (project []) [ check subject actual ]))
@@ -276,7 +278,7 @@ let subjects =
       cases
         "a file compares as canonical lines, where CR LF and CR are LF and a \
          final newline is added"
-        ~name:(fun (name, _, _, _) -> name)
+        (Testable.contramap (fun (name, _, _, _) -> name) Testable.text)
         [
           ("CR LF on disk", "hello\r\nworld", "hello\nworld\n", "pass");
           ("CR on disk", "a\rb", "a\nb\n", "pass");
@@ -396,7 +398,8 @@ let mode_witness =
 let registries =
   group "Registries"
     [
-      cases "mode is the mode of create" ~name:mode_name
+      cases "mode is the mode of create"
+        (Testable.contramap mode_name Testable.text)
         [ Baseline.Check; Corrected; Update ] (fun mode ->
           equal mode_witness mode
             (Baseline.mode (Baseline.create ~root:"/" ~cwd:"/" ~mode ())));
@@ -409,7 +412,7 @@ let registries =
       cases
         "a run whose cwd lies in a build context under the root reads dune's \
          copy"
-        ~name:Fun.id [ "_build/default"; "_build/.sandbox/3f/default" ]
+        Testable.text [ "_build/default"; "_build/.sandbox/3f/default" ]
         (fun context ->
           let root =
             project [ (help, "source\n"); (context ^ "/" ^ help, "copy\n") ]
@@ -517,8 +520,9 @@ let checking =
       cases
         "a path that cannot be proven under the root is Unresolvable in every \
          mode, and records nothing"
-        ~name:(fun (mode, (name, _, _, _)) ->
-          strf "%s, %s" name (mode_name mode))
+        (Testable.contramap
+           (fun (mode, (name, _, _, _)) -> strf "%s, %s" name (mode_name mode))
+           Testable.text)
         (List.concat_map
            (fun mode -> List.map (fun subject -> (mode, subject)) unproven)
            [ Baseline.Check; Corrected; Update ])
@@ -542,7 +546,7 @@ let checking =
       cases
         "an accepted key compares with its accepted content alone, and another \
          content is a conflict that records nothing"
-        ~name:(fun (mode, _) -> mode_name mode)
+        (Testable.contramap (fun (mode, _) -> mode_name mode) Testable.text)
         [
           ( Baseline.Corrected,
             "file test/help.expected: mismatch \"hi\\n\" against \"old\\n\"" );
@@ -567,7 +571,8 @@ let checking =
                ]));
       cases
         "a check with ~correct:false fails as under Check, whatever the mode"
-        ~name:mode_name [ Baseline.Corrected; Update ] (fun mode ->
+        (Testable.contramap mode_name Testable.text)
+        [ Baseline.Corrected; Update ] (fun mode ->
           equal traced
             [ "file x: mismatch \"v\\n\" against \"old\\n\""; "kept 0" ]
             (scenario ~mode
@@ -585,7 +590,7 @@ let checking =
       cases
         "a literal whose source cannot take its correction fails, refused, \
          whatever the mode, and records nothing"
-        ~name:(fun (name, _, _, _) -> name)
+        (Testable.contramap (fun (name, _, _, _) -> name) Testable.text)
         [
           ( "a drifted source under Corrected",
             Baseline.Corrected,
@@ -852,7 +857,7 @@ let writing =
       cases
         "a correction is Source_patch's rewrite of the literal, or insertion \
          of the node, to the produced text"
-        ~name:(fun (name, _, _, _) -> name)
+        (Testable.contramap (fun (name, _, _, _) -> name) Testable.text)
         [
           ("a flexible literal", source, old, "a\n  b");
           ("an exact literal", source, literal ~exact:true " old ", "a\n b");

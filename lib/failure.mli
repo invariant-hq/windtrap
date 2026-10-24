@@ -219,6 +219,12 @@ type kind =
           (** The other values that a domain checked whole refuted, in order,
               each a {!constructor-Property} failure of its own, and [[]]
               otherwise. *)
+      table : bool;
+          (** [true] iff the value is a row of a table: [case_index] is then its
+              position among the table's rows, and [domain] their number. *)
+      label : text option;
+          (** The display label of a table's row, when the table gives one. It
+              identifies nothing. *)
     }  (** A property failed. *)
   | Law of {
       law : string;
@@ -525,12 +531,15 @@ val property :
   ?token:string ->
   ?domain:int ->
   ?also:t list ->
+  ?table:bool ->
+  ?label:string ->
   unit ->
   t
 (** [property ~rendered ~case_index ~shrink_steps ~root ~examples ()] is a
     {!constructor-Property} failure with the fields given. [inner], [count],
-    [summary], [failed_again], [token] and [domain] default to [None], [also]
-    to [[]], [shrink_end] to {!Converged} and [rendering] to {!Value}. Nothing is validated, so the invariants that
+    [summary], [failed_again], [token], [domain] and [label] default to [None],
+    [also] to [[]], [table] to [false], [shrink_end] to {!Converged} and
+    [rendering] to {!Value}. Nothing is validated, so the invariants that
     {!type-kind} states are the producer's to keep. *)
 
 val timeout : ?loc:Loc.t -> ?case:timed_case -> float -> t

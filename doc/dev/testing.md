@@ -85,8 +85,9 @@ what is non-obvious.
   and `--corrected` (`baselines.t`) and the session without dune
   (`nodune.t`, below), and baselines that tests share across worker
   processes (`workers.t`, over `workers_main.exe`: every `-j`, a worker
-  retired or killed between two checks, `-x` and retries, each byte for
-  byte the outcome of `-j 1`, which is that of a run in one process).
+  retired or killed between two checks, `-x` and retries, a table whose
+  rows each settle their corrections, each byte for byte the outcome of `-j 1`, which is
+  that of a run in one process).
   What a message says is pinned by the unit suite
   of its module; a session shows its line beside the exit code and the
   streams that only a real process has.
@@ -120,8 +121,10 @@ what is non-obvious.
   `exits.t` is code under test that tries to end the process,
   `outcomes.t` the outcomes of catching, skipping, expected failures,
   vacuous properties and empty tables, `selection.t` the empty and
-  refused selections, `record.t` the last-failed record, `baselines.t`
-  baselines under CI with each stanza laid out by hand, `refusals.t` the
+  refused selections, `record.t` the last-failed record (what
+  `--failed` reruns of a table and a property, an old record, stale
+  entries, a duplicate row), `baselines.t` baselines under CI with each
+  stanza laid out by hand, `refusals.t` the
   refused runs, the JUnit warning and SIGINT, and `crashes.t` a write
   at address 0 and a loop in C (`verdict_stubs.c`). A situation the
   code gets wrong today is a held defect, left for the change that

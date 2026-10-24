@@ -68,7 +68,7 @@ session prints nothing:
 $ dune runtest
 issue-1: 1 expected failure in 0.5ms.
 stats: 5 passed in 86ms (seed s1:8faef35f5af54995).
-slug: 9 passed in 17ms (seed s1:5285379db091fe55).
+slug: 3 passed in 3.6ms (seed s1:b10cb9968b654b58).
 windtrap_example_blueprint_expect/expect_slug.ml: 1 passed in 0.6ms.
 ```
 
@@ -91,7 +91,7 @@ dumps. `--min 80` makes it exit 1 below 80% (see
 ```
 $ dune runtest --instrument-with ppx_windtrap.coverage
 stats: 5 passed in 139ms (seed s1:86285a8e0eb4e567).
-slug: 9 passed in 42ms (seed s1:c8e2d1bdbbcbb528).
+slug: 3 passed in 3.6ms (seed s1:b10cb9968b654b58).
 issue-1: 1 expected failure in 0.5ms.
 windtrap_example_blueprint_expect/expect_slug.ml: 1 passed in 0.7ms.
 $ dune exec windtrap -- coverage --min 80

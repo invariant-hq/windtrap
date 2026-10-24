@@ -57,7 +57,8 @@ let spread () =
     test "c2 agrees on s3" (fun () ->
         between ();
         s3 "s3\r\nnew");
-    cases "row" ~name:fst
+    cases "row"
+      (Testable.contramap fst Testable.text)
       [ ("x", __POS_OF__ {| row x old |}); ("y", __POS_OF__ {| row y old |}) ]
       (fun (n, lit) -> expect ("row " ^ n ^ " new") lit);
     test "d fails outside" (fun () ->
@@ -89,12 +90,45 @@ let spread () =
     test "z corrects s4" (fun () -> s4 "s4 z");
   ]
 
+(* A table whose rows check baselines, each settling alone and in order: a
+   row that also fails outside its expectations keeps no correction, so a
+   later row that checks its file is compared with the file as it was, and
+   one more test checks the file the last row corrected. Under
+   WORKERS_SUITE=table the table runs alone. *)
+let rows () =
+  let file = "test/cram/run/t.expected" in
+  cases "rows"
+    (Testable.contramap (fun (n, _, _) -> n) Testable.text)
+    [
+      ("a", __POS_OF__ {| a old |}, false);
+      ("b", __POS_OF__ {| b old |}, true);
+      ("c", __POS_OF__ {| c old |}, false);
+      ("d", __POS_OF__ {| d new |}, false);
+    ]
+    (fun (n, lit, broken) ->
+      expect (n ^ " new") lit;
+      if n = "b" || n = "c" then expect_file ("t " ^ n) file;
+      if broken then fail (n ^ " broke"))
+
+let table () =
+  [
+    test "slow, corrects s5" (fun () ->
+        nap 0.05;
+        expect "s5 new" @@ __POS_OF__ {| s5 old |});
+    rows ();
+    test "agrees on the file" (fun () ->
+        between ();
+        expect_file "t c" "test/cram/run/t.expected");
+  ]
+
 let () =
   let suite = Sys.getenv "WORKERS_SUITE" in
   let tests =
     match suite with
     | "conflict" -> conflict ()
     | "spread" -> spread ()
+    | "table" -> [ rows () ]
+    | "tables" -> table ()
     | other -> invalid_arg ("workers_main: unknown WORKERS_SUITE " ^ other)
   in
   exit (run suite tests)

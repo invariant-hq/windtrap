@@ -104,7 +104,7 @@ let () =
          group "Specs"
            [
              cases "of_spec"
-               ~name:(fun (n, _, _) -> n)
+               (Testable.contramap (fun (n, _, _) -> n) Testable.text)
                specs
                (fun (_, s, e) -> equal string e (spec s));
              test "mem holds the lines of the ranges of a file" membership;
@@ -112,7 +112,7 @@ let () =
          group "Diffs"
            [
              cases "of_diff"
-               ~name:(fun (n, _, _) -> n)
+               (Testable.contramap (fun (n, _, _) -> n) Testable.text)
                diffs
                (fun (_, d, e) ->
                  equal string e (Lines.to_string (Lines.of_diff d)));

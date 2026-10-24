@@ -149,13 +149,14 @@ let capturing =
     [
       cases
         "capture locates the innermost frame of neither windtrap nor the \
-         standard library"
-        ~name:fst captures (fun (_, located) ->
+         standard library" (Testable.contramap fst Testable.text) captures
+        (fun (_, located) ->
           let p, l = located () in
           equal string (here p) (where l));
       test "capture is None when every frame is the standard library's"
         domain_capture;
-      cases "capture reads the 24 innermost entries of the call stack" ~name:fst
+      cases "capture reads the 24 innermost entries of the call stack"
+        (Testable.contramap fst Testable.text)
         [
           ("a frame 4 entries in", (4, Some __FILE__));
           ("a frame 30 entries in", (30, None));
@@ -180,7 +181,7 @@ let capturing =
           let p, l = resolved () in
           equal string (here p) (where l));
       cases "own_unit is true for windtrap's units, by whole unit name"
-        ~name:fst
+        (Testable.contramap fst Testable.text)
         [
           ("Windtrap", true);
           ("Windtrap.run", true);

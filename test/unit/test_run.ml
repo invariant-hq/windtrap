@@ -317,8 +317,8 @@ let a_nested_run_fails_its_caller () =
 let ambient_slot =
   group "The ambient slot"
     [
-      cases "raises Invalid_argument outside a test" ~name:fst outside_a_run
-        (fun (_, raised) ->
+      cases "raises Invalid_argument outside a test"
+        (Testable.contramap fst Testable.text) outside_a_run (fun (_, raised) ->
           raises_match Exn.invalid_arg (fun () -> replay raised));
       test "an observer runs in the active run, with no frame current"
         (fun () ->
@@ -550,8 +550,8 @@ let refused_callers =
     [
       cases
         "an operation from another domain raises there, and fails the test \
-         when the join raises it again"
-        ~name:fst refused_operations (fun (name, _) ->
+         when the join raises it again" (Testable.contramap fst Testable.text)
+        refused_operations (fun (name, _) ->
           equal string (name ^ " -> " ^ refused_by_domain) (from_domain name));
       test "the refusal is located at the call" (fun () ->
           equal string "located -> pass" (from_domain "located"));
@@ -809,8 +809,9 @@ let check_baseline_labels_in_a_subtest () =
 let the_running_test =
   group "The running test"
     [
-      cases "raises Invalid_argument outside a test" ~name:fst
-        body_operations_outside_a_test (fun (_, raised) ->
+      cases "raises Invalid_argument outside a test"
+        (Testable.contramap fst Testable.text) body_operations_outside_a_test
+        (fun (_, raised) ->
           raises_match Exn.invalid_arg (fun () -> replay raised));
       test "current_test is the path of the running test" (fun () ->
           let _, path, _ = require_some in_body in
@@ -1319,13 +1320,13 @@ let process_state =
       test "setenv binds for the rest of the test"
         setenv_binds_for_the_rest_of_the_test;
       cases "the attempt's end restores a variable"
-        ~name:(fun (shape, _, _) -> shape)
+        (Testable.contramap (fun (shape, _, _) -> shape) Testable.text)
         restorations
         (fun (_, var, expected) ->
           equal (option string) expected (after_test "binds" var));
       test "a name that setenv rejects raises and records nothing"
         a_rejected_name_records_nothing;
-      cases "a binding is restored after a test that" ~name:Fun.id
+      cases "a binding is restored after a test that" Testable.text
         [ "fails"; "skips"; "times out" ] (fun name ->
           if name = "times out" then needs_timeouts ();
           equal (option string) (Some "before") (after_test name bound_var));
@@ -1633,7 +1634,7 @@ let results =
           expect (message (failure xfails [ "fixed" ]))
           @@ __POS_OF__ {| expected to fail (issue #42), but the test passed |});
       cases "the rows of expected failures"
-        ~name:(fun (claim, _, _) -> claim)
+        (Testable.contramap (fun (claim, _, _) -> claim) Testable.text)
         xfail_rows
         (fun (_, path, row) -> equal string row (Recorded.row xfails [ path ]));
       test "only the unexpected passes count as failed" (fun () ->
@@ -2442,13 +2443,13 @@ let startup_errors =
   group "Startup errors"
     [
       cases "refuses"
-        ~name:(fun (claim, _, _) -> claim)
+        (Testable.contramap (fun (claim, _, _) -> claim) Testable.text)
         refusals
         (fun (_, expected, r) -> equal string expected (refused r));
-      cases "runs" ~name:fst lifted (fun (_, r) ->
+      cases "runs" (Testable.contramap fst Testable.text) lifted (fun (_, r) ->
           equal int 0 (Recorded.exit_code r));
       cases "the exit code of a refusal of"
-        ~name:(fun (n, _, _) -> n)
+        (Testable.contramap (fun (n, _, _) -> n) Testable.text)
         exit_codes_of_refusals
         (fun (_, error, code) -> equal int code (Run.exit_code (Error error)));
       test "the message of duplicates lists a path per line, then the rule"
@@ -2618,14 +2619,14 @@ let selection =
   group "Selection"
     [
       cases "filters"
-        ~name:(fun (claim, _, _) -> claim)
+        (Testable.contramap (fun (claim, _, _) -> claim) Testable.text)
         filtered
         (fun (_, expected, r) ->
           equal (list string) expected (Recorded.executed r));
       test "the outcome counts the selection and the declared tests"
         the_selection_and_the_suite_are_counted;
       cases "tags"
-        ~name:(fun (claim, _, _) -> claim)
+        (Testable.contramap (fun (claim, _, _) -> claim) Testable.text)
         tag_selected
         (fun (_, expected, r) ->
           equal (list string) expected (Recorded.executed r));
@@ -2720,7 +2721,7 @@ let limits, limit_log =
         bracket ~timeout:0.02 "setup" ~setup:busy_forever
           ~teardown:(note "teardown after a setup timeout")
           (note "body after a setup timeout");
-        cases ~timeout:0.05 "table" ~name:Fun.id [ "slow"; "fast" ]
+        cases ~timeout:0.05 "table" Testable.text [ "slow"; "fast" ]
           (fun input -> if input = "slow" then busy_forever ());
       ]
   in
@@ -2865,9 +2866,9 @@ let each_phase_fails_on_its_own_limit () =
 
 let each_test_has_its_own_limit () =
   needs_timeouts ();
-  equal (list string) [ "body timeout 0.05s" ]
-    (lines limits [ "table"; "slow" ]);
-  equal string "pass" (Recorded.row limits [ "table"; "fast" ])
+  equal (list string)
+    [ "body timeout 0.05s in a case" ]
+    (lines limits [ "table" ])
 
 let a_body_timeout_bounds_the_teardown_too () =
   needs_timeouts ();
@@ -2942,8 +2943,8 @@ let a_stack_overflow_fails_its_test () =
 let attempts =
   group "Attempts"
     [
-      cases "a test ends with the phases of its failures" ~name:fst
-        boundary_rows (fun (name, row) ->
+      cases "a test ends with the phases of its failures"
+        (Testable.contramap fst Testable.text) boundary_rows (fun (name, row) ->
           equal string row (Recorded.row boundary [ name ]));
       test "a teardown runs after every setup that returned, and only then"
         teardowns_follow_returned_setups;
@@ -2979,7 +2980,7 @@ let attempts =
       test "a capture that cannot be set up fails the body, and the run goes on"
         an_uncapturable_test_fails_alone;
       cases "a failure without a location is located"
-        ~name:(fun (claim, _, _) -> claim)
+        (Testable.contramap (fun (claim, _, _) -> claim) Testable.text)
         where_failures_are_located
         (fun (_, path, expected) ->
           if path = "times out" then needs_timeouts ();
@@ -3105,8 +3106,8 @@ let the_limit_is_armed_again () =
 let scoped_tests =
   group "Scoped tests"
     [
-      cases "the phase of a failure is how far the callback got" ~name:fst
-        scope_rows (fun (name, row) ->
+      cases "the phase of a failure is how far the callback got"
+        (Testable.contramap fst Testable.text) scope_rows (fun (name, row) ->
           if name = "a finally cut by the limit" then needs_timeouts ();
           equal string row (Recorded.row scopes [ name ]));
       test "a scope acquires, runs the body, then releases" (fun () ->
@@ -3161,7 +3162,7 @@ let retried, skip_calls =
         test ~retries:2 "skips" (fun () ->
             incr skips;
             skip ());
-        cases ~retries:2 ~name:Fun.id "flaky table" [ "row" ]
+        cases ~retries:2 "flaky table" Testable.text [ "row" ]
           (let calls = ref 0 in
            fun _ ->
              incr calls;
@@ -3175,7 +3176,7 @@ let retry_rows =
     ("a test that passes on a retry", retried, [ "flaky" ], "pass", 3);
     ("a test that never passes", retried, [ "hopeless" ], "fail body", 2);
     ("a test that skips", retried, [ "skips" ], "skip", 1);
-    ("a child of cases", retried, [ "flaky table"; "row" ], "pass", 3);
+    ("a table", retried, [ "flaky table" ], "pass", 3);
     ("an expected failure", xfails, [ "keeps failing" ], "xfail body", 1);
     ("an unexpected pass", xfails, [ "keeps passing" ], "fail body", 3);
   ]
@@ -3184,7 +3185,7 @@ let retries =
   group "Retries"
     [
       cases "the row and the attempts of"
-        ~name:(fun (claim, _, _, _, _) -> claim)
+        (Testable.contramap (fun (claim, _, _, _, _) -> claim) Testable.text)
         retry_rows
         (fun (_, r, path, row, used) ->
           equal (pair string int) (row, used)
@@ -3597,17 +3598,17 @@ let corrections =
   group "Corrections"
     [
       cases "a stale file"
-        ~name:(fun (claim, _, _) -> claim)
+        (Testable.contramap (fun (claim, _, _) -> claim) Testable.text)
         (List.map2
            (fun (claim, expected) actual -> (claim, expected, actual))
            help_rows help_runs)
         (fun (_, expected, actual) -> equal (list string) expected (actual ()));
       cases "gating"
-        ~name:(fun (claim, _, _) -> claim)
+        (Testable.contramap (fun (claim, _, _) -> claim) Testable.text)
         gated
         (fun (_, expected, actual) -> equal (list string) expected (actual ()));
       cases "a stale literal"
-        ~name:(fun (claim, _, _) -> claim)
+        (Testable.contramap (fun (claim, _, _) -> claim) Testable.text)
         (List.map2
            (fun (claim, expected) actual -> (claim, expected, actual))
            stale_rows stale_runs)
@@ -4051,7 +4052,7 @@ let exits =
       test "an exit in a test is intercepted, and the run goes on"
         an_exit_is_intercepted_and_the_run_goes_on;
       cases "an exit is a failure of the phase that called it, in"
-        ~name:(fun (claim, _, _) -> claim)
+        (Testable.contramap (fun (claim, _, _) -> claim) Testable.text)
         exit_phases
         (fun (_, path, row) -> equal string row (Recorded.row exited [ path ]));
       test "the interception says what the test did" (fun () ->
@@ -4324,14 +4325,14 @@ let executing =
            let plain, dressed = undecided_by_the_report in
            equal (list string) (decisions plain) (decisions dressed));
        cases "the exit code is"
-         ~name:(fun (claim, _, _) -> claim)
+         (Testable.contramap (fun (claim, _, _) -> claim) Testable.text)
          exit_code_runs
          (fun (_, code, r) -> equal int code (Recorded.exit_code r));
        test "an empty selection records no row" (fun () ->
            let _, _, r = List.nth exit_code_runs 2 in
            equal (list string) [] (Recorded.executed r));
        cases "an exception leaves execute:"
-         ~name:(fun (claim, _, _) -> claim)
+         (Testable.contramap (fun (claim, _, _) -> claim) Testable.text)
          the_exceptions_that_leave_execute
          (fun (_, raised, expected) -> equal (option exn) expected raised);
        test "an observer's exception releases the fixtures first"

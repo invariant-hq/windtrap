@@ -153,11 +153,12 @@ alone:
   fixture: 1 test (seed SEED)
 
 A run given --failed selected the record of the last failed tests, which
-lies under its -o, so its line restates both. A run of the whole suite
-records the two properties, and the line reruns them on their cases:
+lies under its -o, so its line restates both. A record that names the two
+properties whole, as the first version of the record does, has them draw
+their cases again, and the line reruns them on their cases:
 
-  $ run env FACADE_FIXTURE=properties ./suite_main.exe > /dev/null 2>&1
-  [1]
+  $ mkdir -p _logs/fixture
+  $ printf 'windtrap-last-failed 1\neven\nsmall\n' > _logs/fixture/.last-failed
   $ run env FACADE_FIXTURE=properties ./suite_main.exe --failed > out 2> err
   [1]
   $ grep 'replay:' out | scrub
@@ -166,6 +167,23 @@ records the two properties, and the line reruns them on their cases:
   [1]
   $ head -1 again | scrub
   fixture: 2 tests (seed SEED)
-  $ grep 'counterexample' out > before && grep 'counterexample' again > after
+  $ grep 'counterexample' out | sed 's/.*: //' > before
+  $ grep 'counterexample' again | sed 's/.*: //' > after
+  $ diff before after && echo same counterexamples
+  same counterexamples
+
+A run of the whole suite records each property with its counterexample's
+token, and --failed then checks those counterexamples again, as --replay
+checks one: it draws nothing, so its report needs no replay line.
+
+  $ run env FACADE_FIXTURE=properties ./suite_main.exe > first 2>&1
+  [1]
+  $ run env FACADE_FIXTURE=properties ./suite_main.exe --failed > out 2> err
+  [1]
+  $ grep -c 'replay:' out
+  0
+  [1]
+  $ grep 'counterexample' first | sed 's/.*: //' > before
+  $ grep 'counterexample (replayed case)' out | sed 's/.*: //' > after
   $ diff before after && echo same counterexamples
   same counterexamples

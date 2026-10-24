@@ -7,11 +7,10 @@
 
     A suite is a list of {!t} values, leaf tests and nested groups. Declaring is
     data construction. A constructor stores a body, a scope, a setup and a
-    teardown without calling them, and the [name] of {!cases} is the one
-    function of the user that a constructor calls. A group has no hooks, so
-    every callback that a tree stores belongs to one test, and the runner calls
-    it inside the exception boundary of that test. {!flatten} resolves what the
-    groups declare onto their tests.
+    teardown without calling them, and calls no function of the user. A group
+    has no hooks, so every callback that a tree stores belongs to one test, and
+    the runner calls it inside the exception boundary of that test. {!flatten}
+    resolves what the groups declare onto their tests.
 
     The path of a test is the names of its enclosing groups, outermost first,
     then its own. {!path_to_string} joins it into the path string, which is the
@@ -142,25 +141,6 @@ val group :
 (** [group name children] is the group [name] over [children], which can hold
     groups in turn. [name] is a component of the path of every test under the
     group, and [tags] join their effective tags. *)
-
-val cases :
-  ?__POS__:Loc.pos ->
-  ?tags:string list ->
-  ?timeout:float ->
-  ?retries:int ->
-  name:('a -> string) ->
-  string ->
-  'a list ->
-  ('a -> unit) ->
-  t
-(** [cases ~name base inputs fn] is
-    [group base (List.map (fun i -> test (name i) (fun () -> fn i)) inputs)],
-    with two differences. Every child has the site of the [cases] call as its
-    declaration site. The optional arguments sit on the group, so [tags] reach
-    every child, and [timeout] and [retries] apply to each of them.
-
-    [name] is applied to every input, in the order of [inputs], when [cases] is
-    applied, so what it raises escapes at declaration, outside any test. *)
 
 val scoped :
   (('r -> unit) -> unit) ->

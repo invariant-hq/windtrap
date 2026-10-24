@@ -117,9 +117,19 @@ let shown s = Text.elide_middle max_value_bytes ~show:Fun.id s
 
 (* An example is never shrunk. *)
 (* A replayed case is reported as an example is, and keeps its token. *)
-let case_name ?(replayed = false) ?domain ~examples ~case_index ~shrink_steps ()
-    =
+(* A table's row is named by its position, then its label, cut to one line
+   as [Table] cuts a row's tag. *)
+let case_name ?(replayed = false) ?domain ?(table = false) ?label ~examples
+    ~case_index ~shrink_steps () =
+  let label =
+    match label with
+    | Some l ->
+        ", " ^ Text.elide_middle 60 ~show:Text.escape_controls (shown_text l)
+    | None -> ""
+  in
   if replayed then "replayed case"
+  else if table && Option.is_some domain then
+    strf "row %d of %d%s" (case_index + 1) (Option.get domain) label
   else if Option.is_some domain then
     strf "value %d of %d" (case_index + 1) (Option.get domain)
   else if examples then strf "example %d" (case_index + 1)
@@ -280,13 +290,15 @@ let headline (f : Failure.t) =
           token;
           domain;
           also;
+          table;
+          label;
           _;
         } ->
         (* [shrunk 100 steps] alone reads as a converged search. *)
         strf "property failed (%s%s):%s%s"
           (case_name
              ~replayed:(examples && Option.is_some token)
-             ?domain ~examples ~case_index ~shrink_steps ()
+             ?domain ~table ?label ~examples ~case_index ~shrink_steps ()
           ^
           match also with
           | [] -> ""
@@ -1025,6 +1037,8 @@ and facts ~seen ~excerpt = function
         token;
         domain;
         also;
+        table;
+        label;
         root = _;
         count = _;
       } ->
@@ -1035,7 +1049,7 @@ and facts ~seen ~excerpt = function
         strf "counterexample (%s):%s"
           (case_name
              ~replayed:(examples && Option.is_some token)
-             ?domain ~examples ~case_index ~shrink_steps ())
+             ?domain ~table ?label ~examples ~case_index ~shrink_steps ())
           (match rendering with
           | Failure.Ocaml | Failure.Value -> ""
           | Failure.Pre_image -> " computed from")
