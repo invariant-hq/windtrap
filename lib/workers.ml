@@ -54,9 +54,11 @@ let take t seen =
       Mutex.unlock t.mutex;
       raise exn
 
+(* [Format.std_formatter] is the main domain's: a worker's printing goes to
+   its own domain's formatters. *)
 let flush_formatters () =
-  Format.pp_print_flush Format.std_formatter ();
-  Format.pp_print_flush Format.err_formatter ()
+  Format.pp_print_flush (Format.get_std_formatter ()) ();
+  Format.pp_print_flush (Format.get_err_formatter ()) ()
 
 (* Whatever the job raises is its ending. *)
 let run_job t i generation jobs =
