@@ -106,15 +106,6 @@ let build_dirs =
     ("/w/p/src/lib", None);
   ]
 
-let build_roots =
-  [
-    ("/w/p/_build/default/test", Some "/w/p");
-    ("/w/p/_build/.sandbox/0abc12/default/test", Some "/w/p");
-    ("/w/p/_build/.sandbox/_build/_coverage", Some "/w/p");
-    ("/w/p/_build_ci/default/test/t.exe", Some "/w/p");
-    ("/w/p/src/lib", None);
-  ]
-
 let relative_path () =
   let cwd = Filename.concat (temp_dir ()) "_build/default" in
   Sys.mkdir (Filename.dirname cwd) 0o755;
@@ -155,9 +146,6 @@ let build_paths =
           equal (option string) dir (Instr.build_dir ~path));
       test "a relative path is made absolute against the current directory"
         relative_path;
-      cases "build_root is the parent of the build directory"
-        (Testable.contramap fst Testable.text) build_roots (fun (path, root) ->
-          equal (option string) root (Instr.build_root ~path));
       cases "exe_identity is the path below the build directory, normalized"
         (Testable.contramap fst Testable.text) normalized
         (fun (exe, identity) -> equal string identity (Instr.exe_identity ~exe));

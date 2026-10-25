@@ -8,11 +8,10 @@
 
     {!discover} finds the dumps or the verdict files of a
     {!Windtrap_runtime.Instr.format}, by the build-path rule under which the
-    runtime wrote them or under the paths of the command line. {!identity} reads
-    the writer identity that a file records on its header, {!val-freshness}
-    judges the file from it, {!load_fresh} loads the files that it keeps, and
-    {!warnings} and {!all_excluded} are the lines for the files that a command
-    excludes.
+    runtime wrote them or under the paths of the command line. {!load_fresh}
+    judges each file's {!type-freshness} from the writer identity on its header
+    and loads the files that it keeps, and {!warnings} and {!all_excluded} are
+    the lines for the files that a command excludes.
 
     The module prints nothing and writes nothing. Each command says the strings
     of this module on standard error behind [windtrap:]. The module reads
@@ -61,44 +60,27 @@ val discover :
 
 (** {1:freshness Freshness} *)
 
-val identity :
-  Windtrap_runtime.Instr.format ->
-  string ->
-  (Windtrap_runtime.Instr.identity option, Windtrap_runtime.Instr.error) result
-(** [identity format path] is [Ok identity], the writer identity on the header
-    of the file at [path], or [Ok None] when the header records none. The
-    records that follow the header are not parsed, so a file whose records are
-    corrupt has an identity. The result is the error of
-    {!Windtrap_runtime.Instr.read_file} when the file cannot be read,
-    [Error (Unknown_format _)] when it does not start with the magic line of
-    [format], and [Error (Corrupt _)] when its identity line is malformed. *)
-
 (** The type for the freshness of a file, judged from the
-    {!Windtrap_runtime.Instr.identity} that it records. [Orphan] and [Stale]
-    carry the path of the recorded executable relative to the parent of its
-    build directory, as [_build/default/test/t.exe], or its absolute path when
-    it lies below no build directory. *)
+    {!Windtrap_runtime.Instr.identity} on its header. The records that follow
+    the header are not parsed, so a file whose records are corrupt is judged
+    too. An absolute [identity.exe] is the path of the executable. A relative
+    one is resolved below the build directory of the file
+    ({!Windtrap_runtime.Instr.build_dir}). The comparison is by
+    {!Windtrap_runtime.Instr.file_digest} and never by modification time.
+    [Orphan] and [Stale] carry the path of the recorded executable relative to
+    the parent of its build directory, as [_build/default/test/t.exe], or its
+    absolute path when it lies below no build directory. *)
 type freshness =
   | Fresh
       (** The executable at the recorded path has the recorded digest, or
-          nothing can be judged (see {!val-freshness}). *)
+          nothing can be judged: the file records no identity, which it does
+          when written by hand or merged, or its identity is relative and it
+          lies in no build directory, or its executable exists and cannot be
+          read. *)
   | Orphan of string  (** No executable exists at the recorded path. *)
   | Stale of string
       (** The executable at the recorded path does not have the recorded digest,
           so another build wrote the file. *)
-
-val freshness :
-  path:string -> Windtrap_runtime.Instr.identity option -> freshness
-(** [freshness ~path identity] is the freshness of the file at [path], which
-    recorded [identity]. An absolute [identity.exe] is the path of the
-    executable. A relative one is resolved below the build directory of [path]
-    ({!Windtrap_runtime.Instr.build_dir}). The comparison is by
-    {!Windtrap_runtime.Instr.file_digest} and never by modification time.
-
-    Three files cannot be judged and are [Fresh]: one that records no identity,
-    which was written by hand or merged, one whose identity is relative and
-    which lies in no build directory, and one whose executable exists and cannot
-    be read. *)
 
 val warnings : (string * freshness) list -> string list
 (** [warnings excluded] is the warning lines for the [excluded] files, each a
@@ -122,9 +104,11 @@ val load_fresh :
   string list ->
   ('a list * (string * freshness) list, string) result
 (** [load_fresh format ~load files] is [Ok (loaded, excluded)]. [loaded] is
-    [load path] for each file of [files] whose {!val-freshness} is [Fresh], and
+    [load path] for each file of [files] whose {!type-freshness} is [Fresh], and
     [excluded] is every other file with its freshness, both in the order of
-    [files]. A file is judged from its {!identity} before it is loaded, so a
-    file of another build is excluded whatever its records hold. The error is
-    the first met in that order, that of {!identity} in the words of
-    [Windtrap_runtime.Instr.pp_error format], or that of [load]. *)
+    [files]. A file is judged from its header before it is loaded, so a file of
+    another build is excluded whatever its records hold. The error is the first
+    met in that order, in the words of [Windtrap_runtime.Instr.pp_error format]:
+    that of {!Windtrap_runtime.Instr.read_file} when a file cannot be read,
+    [Unknown_format] when it does not start with the magic line of [format],
+    [Corrupt] when its identity line is malformed; or that of [load]. *)

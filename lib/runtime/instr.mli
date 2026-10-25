@@ -80,10 +80,6 @@ val build_dir : path:string -> string option
     matching component decides whatever it names, so every path below
     [/home/u/_build_farm] has that directory as its build directory. *)
 
-val build_root : path:string -> string option
-(** [build_root ~path] is the parent directory of [build_dir ~path], or [None]
-    when there is none. *)
-
 val exe_identity : exe:string -> string
 (** [exe_identity ~exe] is the normalized path of [exe] below its build
     directory, without the sandbox prefix, or its normalized absolute path when

@@ -73,7 +73,6 @@ let split_build components =
   split [] components
 
 let build_dir ~path = Option.map fst (split_build (components path))
-let build_root ~path = Option.map Filename.dirname (build_dir ~path)
 
 (* The build directory [exe] lies in, if any, and its identity. Only a
    directory above [exe] can be its build directory, and the

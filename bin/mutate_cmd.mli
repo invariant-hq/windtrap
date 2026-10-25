@@ -25,10 +25,10 @@
     out can hold the one kill of a mutant, which would then be reported as a
     survivor.
 
-    A file is judged from the identity on its header ({!Data_files.identity})
+    A file is judged from the identity on its header ({!Data_files.load_fresh})
     before it is loaded: a file of another build is excluded whatever its
     records hold, and a file of the current build must load. A file of another
-    build is one whose {!Data_files.val-freshness} is not [Fresh]. It is
+    build is one whose {!Data_files.type-freshness} is not [Fresh]. It is
     excluded from the merge because a verdict of another build can claim a kill
     that the code no longer earns, and no flag keeps it. The first file that is
     not excluded and cannot be read or parsed, its header included, ends the

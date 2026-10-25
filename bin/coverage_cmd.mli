@@ -20,12 +20,12 @@
 
     The dumps are those that {!Data_files.discover} finds for
     [Windtrap_runtime.Coverage.format] and the [PATH] arguments. A dump is
-    judged from the identity on its header ({!Data_files.identity}) before it is
-    loaded: a dump of another build is excluded whatever its records hold, and a
-    dump of the current build must load. A dump of another build is one whose
-    {!Data_files.val-freshness} is not [Fresh], and no flag keeps it. The first
-    dump that is not excluded and cannot be read or parsed, its header included,
-    ends the command with its {!Windtrap_runtime.Coverage.pp_error}.
+    judged from the identity on its header ({!Data_files.load_fresh}) before it
+    is loaded: a dump of another build is excluded whatever its records hold,
+    and a dump of the current build must load. A dump of another build is one
+    whose {!Data_files.type-freshness} is not [Fresh], and no flag keeps it. The
+    first dump that is not excluded and cannot be read or parsed, its header
+    included, ends the command with its {!Windtrap_runtime.Coverage.pp_error}.
 
     On standard error the command says the {!Data_files.warnings} of the
     excluded dumps, then {!Data_files.all_excluded} when no dump is left, and
