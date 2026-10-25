@@ -12,17 +12,13 @@
     captures, and {!disabled} that of a run under [--stream], which captures
     nothing.
 
-    The redirection is a [dup2] of the descriptors, so the writes of C stubs and
-    of the subprocesses that inherit them are captured too. Both descriptors
-    write through one open file, so a log holds standard output and standard
-    error as one text, in the order in which the bytes reached the descriptors.
-    A buffer that holds bytes back changes that order.
-
-    The log of a test is [<log_dir>/<suite>/<groups...>/<test>.output], with
-    every component passed through {!Os.sanitize_component}. The path depends on
-    the identity of the test alone, so a run overwrites the logs of the run
-    before it. Each attempt truncates the log, so it holds the whole output of
-    the last attempt.
+    The redirection is a [dup2] of the descriptors, both writing through one
+    open file, which gives the facade's capture: C stubs and subprocesses
+    included, the two streams one text. The log of a test is the facade's path,
+    with every component passed through {!Os.sanitize_component}. The path
+    depends on the identity of the test alone, so a run overwrites the logs of
+    the run before it. Each attempt truncates the log, so it holds the whole
+    output of the last attempt.
 
     The module keeps no state outside a {!t}, but descriptors 1 and 2 and the
     buffers that a drain flushes belong to the process. *)
@@ -118,12 +114,9 @@ val abandon : t -> unit
 (** {1:reading Reading captured output} *)
 
 val output : ?__POS__:Loc.pos -> t -> string
-(** [output t] is the bytes that the current attempt wrote since the previous
-    call, or since it started. It drains first, and moves its cursor past what
-    it returns.
-
-    It is [""] when everything was read already, when the log was truncated
-    below the cursor, and when [t] has no current log.
+(** [output t] is the facade's [output] of the current attempt. It drains first,
+    and moves its cursor past what it returns. It is also [""] when the log was
+    truncated below the cursor, and when [t] has no current log.
 
     Refuses ({!Failure.refuse}) a failure when no bytes can be returned, with a
     {!Failure.Message} located at [Loc.resolve ?__POS__ ()]:

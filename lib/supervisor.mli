@@ -14,27 +14,22 @@
     worker ends and from how long it takes, so code under test cannot end the
     run or set its exit code.
 
-    {b Workers.} A worker is a fork of the parent made when a case needs one, so
-    it starts from what module initialisation built and nothing a test left. It
-    becomes a session of its own: a terminal's signal reaches the parent alone,
-    which sends it on, and the parent kills the worker's process group when it
-    ends. Its temporary directories ({!Run.temp_dir}) live under a directory of
-    its own, which the parent removes. A process that spawned a domain cannot
-    fork, so it executes [Sys.executable_name] again with [Sys.argv] for each
-    worker, and the call of {!enter} of the same rank in the new process serves.
+    {b Workers.} The facade ([{2:process}] in windtrap.mli) states how a worker
+    lives and ends. A worker is a fork of the parent made when a case needs one,
+    so it starts from what module initialisation built and nothing a test left.
+    As a session of its own, it leaves a terminal's signal to the parent, which
+    sends it on. The parent kills its process group when it ends, and removes
+    the directory of its {!Run.temp_dir}s. A process that spawned a domain
+    executes [Sys.executable_name] again with [Sys.argv] for each worker, and
+    the call of {!enter} of the same rank serves.
 
     Up to [config.jobs] workers run at once, and one under [config.stream], so
-    that what the tests write to the real descriptors keeps its order. A worker
-    ends, and the next case starts in a new one, when:
-    - its case ended it: a call to [exit] or [Unix._exit], a signal, or a fatal
-      exception. The case fails, saying which.
-    - its case outlived its kill: [3 * limit * (retries + 1)] seconds after it
-      started, [limit] being {!Run.limit}'s, which every case has, the time it
-      waited for the parent's verdict on its checks left out. The case fails as
-      {!Failure.timeout} of its limit.
-    - its case spawned a domain, which could still run in the next case. The
-      worker retires: it releases its fixtures, and the case's row stands. A
-      worker that a test ended releases nothing.
+    that what the tests write to the real descriptors keeps its order. A case
+    whose worker ends fails, saying how. The kill of its limit comes
+    [3 * limit * (retries + 1)] seconds after it started, [limit] being
+    {!Run.limit}'s, the time it waited for the parent's verdict on its checks
+    left out, and fails it as {!Failure.timeout} of its limit. The row of a case
+    that retires its worker stands.
 
     {b Order.} The rows reach the observer in the order of the selection, a
     case's events with them, and the events of the case the observer is at as
@@ -44,11 +39,11 @@
     at any number of workers. Under [config.bail] the cases that other workers
     ran past the stop are not reported, and their checks are never made.
 
-    {b Signals.} While it runs, the parent handles [SIGINT], [SIGTERM] and
-    [SIGHUP] and sends the first to every worker, each of which ends as
-    {!Run.execute} does on it. A worker that dies of one of them after it said
-    so ends the run too. The parent then gives {!Run.Interrupted}, with the test
-    or the release that a worker named, and dies by the signal.
+    {b Signals.} The parent sends the first of the signals that the facade names
+    to every worker, each of which ends as {!Run.execute} does on it, then gives
+    {!Run.Interrupted}, with the test or the release that a worker named, and
+    dies by the signal. A worker that dies of one after it said so ends the run
+    too.
 
     {b Coverage.} A worker hands the parent the coverage it counted as it ends,
     and the parent's dump at exit holds it, so a run leaves one dump. A worker

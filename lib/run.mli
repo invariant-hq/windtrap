@@ -114,9 +114,9 @@ type config = {
           positive, which {!Cli} guarantees and {!execute} does not check. *)
   default_timeout : float;
       (** The limit, in seconds, of a test that declares none under a [None]
-          [timeout], except under [in_process], where such a test has none (see
-          {!limit}). No flag sets it: {!Cli} keeps {!default_config}'s, and
-          windtrap's own suites set a short one to stand in for it. *)
+          [timeout] (see {!limit}). No flag sets it: {!Cli} keeps
+          {!default_config}'s, and windtrap's own suites set a short one to
+          stand in for it. *)
   prop_count : int option;
       (** [--prop-count]: the generated cases of a property, where it raises the
           declared or default count (see {!prop}). *)
@@ -260,13 +260,12 @@ val prop_context : unit -> Property.context option
     on the frame lasts for the attempt, and the runner undoes it when the
     attempt ends (see {{!section-attempts}attempts}). *)
 
-(* What a test's author is told about these operations, about [fixture] and
-   about [prop] is stated in windtrap.mli. This file states what the other
-   modules of the library rely on. *)
+(* The facade ([{1:body}] in windtrap.mli) states each operation's contract,
+   and those of [fixture] and [prop], for a test's author. The docs here state
+   only what it does not: what the other modules of the library rely on. *)
 
 val current_test : unit -> string list
-(** [current_test ()] is the path of the running test, outermost group first. It
-    is the same in every attempt, and {!Test_tree.path_to_string} of it is the
+(** See the facade's [current_test]. {!Test_tree.path_to_string} of it is the
     string that the filters match. *)
 
 val subtest : string -> (unit -> unit) -> unit
@@ -323,17 +322,14 @@ val check_baseline : ?loc:Loc.t -> Baseline.subject -> string -> unit
     ends the run. *)
 
 val temp_dir : ?prefix:string -> unit -> string
-(** [temp_dir ?prefix ()] is a fresh directory in the temporary directory of the
-    attempt, with mode [0o700]. [prefix] starts its name, after
-    {!Os.sanitize_component}, and defaults to ["dir"]. Raises [Unix.Unix_error]
-    if a directory cannot be made, and [Invalid_argument] if no test is running.
-*)
+(** [temp_dir ?prefix ()] makes its directory in that of the attempt, with mode
+    [0o700], and passes [prefix] through {!Os.sanitize_component}. See the
+    facade's [temp_dir]. *)
 
 val temp_file : ?suffix:string -> unit -> string
-(** [temp_file ?suffix ()] is the path of a fresh empty file in the same
-    directory, with mode [0o600]. [suffix] ends its name, after
-    {!Os.sanitize_component} unless it is empty, and defaults to [""]. Raises as
-    {!temp_dir} does. *)
+(** [temp_file ?suffix ()] makes its file in that of the attempt, with mode
+    [0o600], and passes a non-empty [suffix] through {!Os.sanitize_component}.
+    See the facade's [temp_file]. *)
 
 val remove_tree : string -> unit
 (** [remove_tree path] removes [path] and what is under it, as far as it can. It
@@ -350,39 +346,29 @@ val remove_tree : string -> unit
 
 val setenv : string -> string option -> unit
 (** [setenv name value] is {!Os.setenv}[ name value], after which the frame
-    records what [name] held before. The frame keeps what the first [setenv] of
-    [name] in the attempt found, and a later call leaves that record alone.
-
-    Raises as {!Os.setenv} does. Raises [Invalid_argument] if no test is
-    running, before the process is touched. *)
+    records what [name] held before, unless an earlier [setenv] of [name] in the
+    attempt did. Raises as {!Os.setenv} does, and [Invalid_argument] if no test
+    is running, before the process is touched. *)
 
 val chdir : string -> unit
-(** [chdir dir] is [Unix.chdir dir]. The first [chdir] of the attempt records
-    the working directory on the frame before it moves, and a later call leaves
-    that record alone.
-
-    Raises [Unix.Unix_error] if [dir] cannot be entered, [Sys_error] if the
-    first call cannot read the current directory, and [Invalid_argument] if no
-    test is running. *)
+(** [chdir dir] is [Unix.chdir dir], before which the first [chdir] of the
+    attempt records the working directory on the frame. Raises [Sys_error] if
+    that first call cannot read the current directory. See the facade's [chdir].
+*)
 
 (** {2:fixtures Fixtures} *)
 
 val fixture : ?teardown:('a -> unit) -> (unit -> 'a) -> unit -> 'a
-(** [fixture ?teardown create] is an accessor for a resource that a run shares.
-    The accessor holds no state. The record of the run caches the outcome of its
-    first call, so nothing is acquired twice in a run.
-
-    The first call is [create ()], inside the failure boundary of the calling
-    test, and its outcome is a value, an exception with its backtrace, or a
-    [Failure.Control (`Skip _)] with its reason. Only a value acquired with a
-    [teardown] is registered for the {{!section-release}release} at the end of
-    the run.
+(** [fixture ?teardown create] is the facade's [fixture]. The accessor holds no
+    state: the record of the run caches the outcome of its first call,
+    [create ()] inside the failure boundary of the calling test, as a value, an
+    exception with its backtrace, or a [Failure.Control (`Skip _)] with its
+    reason. Only a value acquired with a [teardown] is registered for the
+    {{!section-release}release}.
 
     The accessor is named [fixture (<file:line>)] after the site where [fixture]
     was applied, or [fixture #<n>] when {!Loc.capture} finds none. An
-    {!event.Fixture_release} and the failure of a release carry that name.
-    Raises [Invalid_argument] if the accessor is called while no test is
-    running. *)
+    {!event.Fixture_release} and the failure of a release carry that name. *)
 
 (** {1:results Results} *)
 
@@ -743,19 +729,15 @@ val list_selection :
 
 val exit_code : (outcome, startup_error) Stdlib.result -> int
 (** [exit_code result] is the exit code of a run that ended with [result], the
-    one rule every runner applies:
-    - [1] when a row counts as failed, when a release failed, or when a
-      correction could not be written (a {!Baseline.Refused} entry). A test
-      whose failures are all kept corrections does not count here, because under
-      [--corrected] the [diff?] that follows the run decides.
-    - Otherwise [2] when no test executed, in an empty suite and in an empty
-      selection, and else [0]. A selection whose tests all skipped gives [0],
-      and so does a run whose only failures were expected. A selection that
-      [config.broadcast] says the environment alone gave, and that keeps none of
-      the tests of a suite that declares some, gives [0] too.
+    one rule every runner applies for the facade's exit codes:
+    - [1] when [outcome.uncorrected], when a release failed, or when a
+      correction could not be written (a {!Baseline.Refused} entry).
+    - Otherwise [0] when a test executed, or when [config.broadcast] says the
+      environment alone gave a selection that keeps none of the tests of a suite
+      that declares some, and else [2].
     - For a refused startup, [2] for {!No_recorded_failures},
-      {!In_process_selects} and {!Case_selects}, since nothing ran, and [1]
-      otherwise, a refused mutation run included. *)
+      {!In_process_selects} and {!Case_selects}, and [1] otherwise,
+      {!Mutation_refused} included. *)
 
 (** {2:selection Selection}
 
@@ -777,17 +759,14 @@ val exit_code : (outcome, startup_error) Stdlib.result -> int
 
 (** {2:attempts Attempts}
 
-    Around the three phases of an attempt the runner seeds the global [Random]
-    state from the path of the test alone, whatever [config.seed], and restores
-    the saved state afterwards. Unless [config.stream], it redirects the output
-    into the log file of the test, truncated first ({!Capture.with_capture}). A
-    capture that cannot be set up or restored is a {!Failure.Raise} failure of
-    the body, and the run goes on.
+    Around the three phases of an attempt the runner seeds [Random] as the
+    facade's [test] states, whatever [config.seed]. Unless [config.stream], it
+    redirects the output into the log file of the test, truncated first
+    ({!Capture.with_capture}). A capture that cannot be set up or restored is a
+    {!Failure.Raise} failure of the body, and the run goes on.
 
-    The limit of a test is {!limit}'s. It is a [SIGALRM] timer over the three
-    phases, so the runner owns that signal during the attempt, and it puts the
-    previous handler back afterwards. On Windows no timer is set, and the limit
-    is not enforced.
+    The limit of a test is {!limit}'s, the facade's [SIGALRM] timer over the
+    three phases, and the runner puts the previous handler back afterwards.
 
     The frame keeps every failure that is added to it, so a body failure and a
     teardown failure are two entries. Each phase runs in a scope of its own
@@ -809,19 +788,17 @@ val exit_code : (outcome, startup_error) Stdlib.result -> int
 
     What {!Failure.catch} never returns is not caught (see {!execute}). After
     every attempt, on every path where it regains control, the fatal one
-    included, the runner undoes what the attempt changed, outside the window of
-    the limit and outside the capture. It returns to the directory that {!chdir}
-    recorded, then restores the bindings that {!setenv} recorded, then removes
-    the temporary directory. A restoration that fails is added to the frame as a
-    {!Failure.Teardown} message failure, located at the call that made the
-    change, and so fails the test. *)
+    included, the runner undoes what the attempt changed, in the order of the
+    facade's [chdir], outside the window of the limit and outside the capture. A
+    restoration that fails is a {!Failure.Teardown} message failure, located at
+    the call that made the change. *)
 
 (** {2:scoped Scoped tests}
 
     The body of a {!Test_tree.Scoped} test runs inside the callback that the
-    runner gives to [scope], and a {!Test_tree.bracket} is such a test. The
-    runner adds the failure of the body before it raises it again through
-    [scope], unrecorded, and does not add it a second time on its way out. A
+    runner gives to [scope], as the facade's [scoped] states, and a
+    {!Test_tree.bracket} is such a test. The runner raises the failure of the
+    body again unrecorded, and does not add it a second time on its way out. A
     failure caught in [scope] itself is one of {!Failure.Setup} when the
     callback was never called, and of {!Failure.Teardown} otherwise. Whatever
     else leaves [scope] is attributed by how far the callback got:
@@ -830,19 +807,18 @@ val exit_code : (outcome, startup_error) Stdlib.result -> int
 
     A second call of the callback runs nothing and returns, and the attempt then
     fails with a body message that gives the number of calls. A scope that
-    returns without calling back fails the attempt with a setup message. A scope
-    that raised or skipped instead has said what happened, and gets no such
-    message. *)
+    returns without calling back, and neither raised nor skipped, fails the
+    attempt with a setup message. *)
 
 (** {2:retries Retries}
 
-    A test with [retries = n] runs again while its attempt counts as failed
-    ({!result.counted}), up to [n + 1] attempts. An attempt that kept a
-    correction is the last whatever [n], because the next one would be compared
-    with the text it recorded. Its first failure carries the tail of what that
-    attempt wrote ({!Capture.output_tail}), unless [config.stream], or unless it
-    is a {!Failure.Property} failure, which carries that of its counterexample's
-    run (see {!property}). *)
+    A test runs again while its attempt counts as failed ({!result.counted}),
+    within the facade's [retries], and an attempt that kept a correction is the
+    last, because the next one would be compared with the text it recorded. Its
+    first failure carries the tail of what that attempt wrote
+    ({!Capture.output_tail}), unless [config.stream], or unless it is a
+    {!Failure.Property} failure, which carries that of its counterexample's run
+    (see {!property}). *)
 
 (** {2:corrections Corrections}
 
@@ -862,31 +838,26 @@ val exit_code : (outcome, startup_error) Stdlib.result -> int
 
 (** {2:release Fixture release}
 
-    After the last test, under [config.bail] too and outside any limit, the
-    runner releases the fixtures that the run acquired, the latest first. Before
-    each teardown it gives an {!event.Fixture_release} to the observer.
-
-    A teardown that raises adds a {!Failure.Release} message failure, located at
-    the site of the fixture, and the releases after it still run. A fatal
-    exception from a teardown leaves {!execute} at once and the fixtures not yet
-    released are never released, as when the observer raises on the event (see
-    {!execute}). *)
+    The runner releases the fixtures as the facade's [fixture] states, and gives
+    an {!event.Fixture_release} to the observer before each teardown. A teardown
+    that raises adds a {!Failure.Release} message failure, located at the site
+    of the fixture. A fatal exception from a teardown leaves {!execute} at once
+    and the fixtures not yet released are never released, as when the observer
+    raises on the event (see {!execute}). *)
 
 (** {2:store The last-failed store}
 
     The store is the file [<log_dir>/<suite>/.last-failed-<exe>], with [suite]
     through {!Os.sanitize_component}, and [<exe>] the hexadecimal MD5 of the
-    running executable's {!Windtrap_runtime.Instr.exe_identity}: one record per
-    executable and suite, so two executables that name one suite alike keep each
-    their own, and a run under dune, in its sandbox and through [dune exec]
-    reads one record. {!execute} rewrites it atomically ({!Os.atomic_write}) at
+    running executable's {!Windtrap_runtime.Instr.exe_identity}, which gives the
+    facade's one record per executable and suite, a run under dune, in its
+    sandbox, included. {!execute} rewrites it atomically ({!Os.atomic_write}) at
     the end of every run that passed its startup checks, a run that executed
     nothing included. {!list_selection} does not touch it. Nor does a run that
     an exception ended, or a {{!section-signals}signal} before this point.
 
     A test that counted as failed is recorded once, with the cases of its
-    {!result.refuted}, and an executed test that did not is cleared. The entry
-    of a test that the run did not execute survives, cases included. A run that
+    {!result.refuted}, and an executed test that did not is cleared. A run that
     executed the whole declared suite also drops the entries of paths that no
     longer exist.
 
@@ -896,12 +867,9 @@ val exit_code : (outcome, startup_error) Stdlib.result -> int
     [String.escaped], a row's printed value or a counterexample's token. A test
     with several cases has a line for each, and a line that names it alone makes
     it whole. A case of a kind this version does not know names its test whole.
-    The format is not stable, and a file that is not recognised reads as empty.
-    The record of 0.2.0, [<log_dir>/<suite>/.last-failed], is never read: any
-    executable that named the suite alike may have written it. Every I/O error
-    is ignored, because the store only feeds [config.failed_only]. A store that
-    cannot be opened or read, a directory at its path for example, reads as
-    empty, and one that cannot be written keeps its content. *)
+    The format is not stable, and a file that is not recognised reads as empty,
+    as one that cannot be read does. One that cannot be written keeps its
+    content. The record of 0.2.0 is [<log_dir>/<suite>/.last-failed]. *)
 
 (** {2:exits Exits and backtraces}
 
@@ -1027,7 +995,7 @@ type report =
   | Done of { served : served; stopped : bool; retire : bool }
       (** The case ended. [stopped] is {!stop}'s, and [retire] says that the
           worker must not run another case: the case spawned a domain, which may
-          still run, or raised what ends a process. *)
+          still run, or raised [Out_of_memory] or [Sys.Break]. *)
   | Released of Failure.t list
       (** The fixtures are released, with these release failures. *)
   | Exited  (** Code under test called [exit] in the case that runs. *)
@@ -1063,10 +1031,7 @@ val serve :
       {!Judge} when a retry may follow, else in {!served.deferred}.
     - A call to [exit] in code under test ends the process: the worker sends
       {!Exited}, or {!Outside} when no case runs, then [last ()].
-    - A case that raises [Out_of_memory] or [Sys.Break] fails on it, and its
-      worker retires.
-    - A signal acts as in {!execute}: the worker sends its {!Interrupted} event,
-      releases what it can and dies by the signal. *)
+    - A signal acts as in {!execute}, with its {!Interrupted} event sent. *)
 
 val supervising : config -> suite:string -> t
 (** [supervising config ~suite] is the record of a supervised run's parent: an
