@@ -735,15 +735,16 @@ let screen ?workers ~loc commands =
 
 (* The case that first loses an update, the shrink steps that follow it and
    the order of the calls in the choices they end on depend on how the
-   domains are scheduled; the counterexample they print does not.
-   [unscheduled s] is [s] with the two counts and the token replaced by
-   [_]. *)
+   domains are scheduled; the counterexample they print does not. Nor does
+   the closest order: when the two pushes do not overlap, real time allows
+   only the order they ran in. [unscheduled s] is [s] with the two counts,
+   the closest order and the token replaced by [_]. *)
 let unscheduled s =
   let replace ~after ~until by s =
     let rec find i =
       if i + String.length after > String.length s then s
       else if String.sub s i (String.length after) = after then
-        let close = String.index_from s i until in
+        let close = String.index_from s (i + String.length after) until in
         String.sub s 0 i ^ by ^ String.sub s close (String.length s - close)
       else find (i + 1)
     in
@@ -751,6 +752,7 @@ let unscheduled s =
   in
   s
   |> replace ~after:"(case " ~until:')' "(case _, shrunk _ steps"
+  |> replace ~after:"the closest order, " ~until:',' "the closest order, _"
   |> replace ~after:"--replay " ~until:'\n' "--replay _"
 
 let lossy_screen () =
@@ -771,7 +773,7 @@ let lossy_screen () =
     replay it: --replay _
     which failed with:
       no order of the calls gives these results
-      the closest order, 2 then 3, differs at call 4: length q1
+      the closest order, _, differs at call 4: length q1
       expected  2
       actual    1
 |}
