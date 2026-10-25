@@ -298,11 +298,25 @@ let start_log = "start.log"
 let fd_to_int : Unix.file_descr -> int = Obj.magic
 let fd_of_int : int -> Unix.file_descr = Obj.magic
 
-(* On Linux the executable the process runs, even once another file took its
-   place, as dune's watch mode does when it rebuilds. *)
-let program () =
-  if Sys.file_exists "/proc/self/exe" then "/proc/self/exe"
-  else Sys.executable_name
+let same_file a b =
+  match (Unix.stat a, Unix.stat b) with
+  | s, t -> s.st_dev = t.st_dev && s.st_ino = t.st_ino
+  | exception Unix.Unix_error _ -> false
+
+(* The program to start and its arguments. On Linux it is the executable the
+   process runs, even once another file took its place, as dune's watch mode
+   does when it rebuilds. Under bytecode that is [ocamlrun], which takes the
+   bytecode file in front of the arguments, unless the two are one file, as
+   with [-custom] or [-output-complete-exe]. *)
+let command () =
+  let self = "/proc/self/exe" in
+  if not (Sys.file_exists self) then (Sys.executable_name, Sys.argv)
+  else if
+    Sys.backend_type = Sys.Bytecode && not (same_file self Sys.executable_name)
+  then
+    let args = Array.sub Sys.argv 1 (Array.length Sys.argv - 1) in
+    (self, Array.append [| self; Sys.executable_name |] args)
+  else (self, Sys.argv)
 
 (* A copy of [fd] for the worker to inherit, above 2: the worker starts with
    its log on 1 and 2, and a copy that took the number of a descriptor this
@@ -367,8 +381,8 @@ let exec ~quiet ~armed config ~suite tests =
         List.iter Unix.close [ log_fd; out; child_input; child_output ];
         if err <> out then Unix.close err)
       (fun () ->
-        Unix.create_process_env (program ()) Sys.argv env Unix.stdin log_fd
-          log_fd)
+        let program, argv = command () in
+        Unix.create_process_env program argv env Unix.stdin log_fd log_fd)
   in
   let w = worker pid ~start_log:log ~temp_dir ends in
   (* Sent while the parent holds the read end, so a worker that is already

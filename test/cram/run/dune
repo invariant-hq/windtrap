@@ -28,9 +28,11 @@
 
 ; process.t and replaced.t run process_main.exe, whose suites fork, spawn
 ; domains and start the program again; replaced.t reads /proc/self/exe.
+; process.t also runs process_main.bc, which loads windtrap's stubs.
 
 (executable
  (name process_main)
+ (modes byte exe)
  (modules process_main)
  (libraries windtrap unix))
 
@@ -38,7 +40,7 @@
  (applies_to process)
  (enabled_if
   (<> %{os_type} Win32))
- (deps process_main.exe))
+ (deps process_main.exe process_main.bc ../../../lib/dllwindtrap_stubs.so))
 
 (cram
  (applies_to replaced)

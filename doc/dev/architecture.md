@@ -122,7 +122,8 @@ module.
 
 - The workers of the first `Windtrap.run` call of the process the
   executable started as are the executable started again, from
-  `/proc/self/exe` on Linux, so a test sees a fresh start's values and
+  `/proc/self/exe` on Linux (`ocamlrun` under bytecode, given the
+  bytecode file first), so a test sees a fresh start's values and
   not what `fork` left of the parent's (see
   `_autoresearch/audits/spike-exec-workers.md`); the parent never runs
   user code itself. Every other run forks, before any test runs: a later

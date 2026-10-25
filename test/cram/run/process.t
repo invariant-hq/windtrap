@@ -31,6 +31,15 @@ process that called `run`:
   declaring the suite
   own_pid: 11 passed in DURATION.
 
+So it is in a bytecode executable, where the program the process runs
+is `ocamlrun`, and a worker is `ocamlrun` started again on the same
+bytecode file:
+
+  $ run CAML_LD_LIBRARY_PATH="$PWD/../../../lib" PROCESS_SUITE=own_pid \
+  >   ../process_main.bc
+  declaring the suite
+  own_pid: 11 passed in DURATION.
+
 A run whose standard error is closed starts its workers all the same,
 since the descriptors it hands them stay clear of the three standard
 ones:
