@@ -75,14 +75,16 @@ for how to migrate from 0.2.0.
 
 ### Property testing
 
-- `cover ~share:p label cond` demands that a share `p` of the cases
-  carry `label`, judged as QuickCheck's `checkCoverage` judges it: the
-  property doubles its cases, up to 1024 times its count, until the
-  Wilson interval of the share at 1 − 10⁻⁹ puts it at `0.9 *. p` or
+- (breaking) `cover ~share:p label cond` demands that a share `p` of
+  the cases carry `label`, judged as QuickCheck's `checkCoverage` judges
+  it: the property doubles its cases, up to 1024 times its count, until
+  the Wilson interval of the share at 1 − 10⁻⁹ puts it at `0.9 *. p` or
   above, or below `p`, and the report states the bound it established,
   as `cover "accepted" ~share:0.2: 27.9% of 800 cases, at least 19.3%`.
   An unmet or undecided share makes the property vacuous. A domain
-  checked whole is judged exactly.
+  checked whole is judged exactly. `cover`'s type is now
+  `?share:float -> string -> bool -> unit`, so code that passes `cover`
+  where a `string -> bool -> unit` is expected no longer compiles.
 - (breaking) A test that refuted nothing and checked less than it
   claims is vacuous, a verdict of its own that fails and exits `1`:
   every case of a property discarded, a table with no row, no case and

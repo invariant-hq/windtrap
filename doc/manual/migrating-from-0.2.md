@@ -6,9 +6,9 @@ what it writes now. A change this page does not list keeps a 0.2 suite
 compiling and passing as before. The entries of
 [`CHANGES.md`](../../CHANGES.md) after `0.2.0` list every change.
 
-Two changes break every suite that uses them at compile time: the
-signature of `cases`, and `judges` in place of `chooses`. The others
-compile and can change a verdict.
+Three changes break every suite that uses them at compile time: the
+signature of `cases`, `judges` in place of `chooses`, and the type of
+`cover`. The others compile and can change a verdict.
 
 ## Declaring tests
 
@@ -17,7 +17,9 @@ compile and can change a verdict.
   its rows by how its witness prints them, so the function that named
   them becomes a witness, and a witness of the rows themselves, as
   `cases "rev" (list int) inputs fn`, needs no name at all. A text shown
-  beside a row and identifying nothing is `~label:f`.
+  beside a row and identifying nothing is `~label:f`. In a module that
+  binds a `text` of its own, a font's or a unit's, the witness is
+  `Testable.contramap f Windtrap.text`.
 
   ```ocaml
   (* 0.2 *)
@@ -34,7 +36,24 @@ compile and can change a verdict.
     failed.
   - one `-v` line and one summary count per row → one per table, whose
     line says `holds on all 2 rows`.
-  - `~timeout` and `~retries` per row → over the whole table.
+  - `~timeout` and `~retries` per row → over the whole table. A
+    group's `~timeout` reaches a table the same way, as
+    `group ~timeout:60. "graphs" [ cases "chain" … ]`: it bounds the
+    table, where it bounded each row. Size the limit for every row
+    together.
+  - `--shard K/N`, which spread the rows over the shards → a table goes
+    to one shard whole, so a suite split into shards rebalances, and a
+    shard that holds a large table takes longer. Split a large table into
+    several to spread it again.
+  - `current_test ()` inside a row, which gave the row's path → the
+    table's path, since the table is the test, and no call gives the
+    row's. A name per row, as a golden file's, comes from the row's own
+    value, which the function receives:
+
+    ```ocaml
+    cases "renders" (Testable.contramap fst text) docs (fun (key, doc) ->
+        expect_file (render doc) ("golden/" ^ key ^ ".txt"))
+    ```
   - `skip` in a row, which skipped that row's test → skips that row
     alone, as before, and the table goes on with the next. The summary
     counts the table once: failed if a row failed, else passed if a row
@@ -62,6 +81,11 @@ compile and can change a verdict.
 
 ## Property testing
 
+- `cover` passed as a value of type `string -> bool -> unit`, as
+  `let check ?(cover = cover) …` called with `~cover:(fun _ _ -> ())` →
+  does not type, since `cover` takes `?share:float` now and its type is
+  `?share:float -> string -> bool -> unit`. Where the code needs a value
+  of the old type, write `(fun label hit -> cover label hit)`.
 - `prop ~count:0 "p" g law` with no `~examples`, which passed in 0.2 →
   vacuous, a failing verdict: it checks nothing. Give it `~examples`, or
   a count.
@@ -144,6 +168,15 @@ compile and can change a verdict.
   that ran a test that spawned a domain retires, so a test that reads
   state an earlier test left sets it up itself, or in a `fixture`. An
   `at_exit` handler that a test registers runs as its worker ends.
+- A value made at declaration, which 0.2 made once for the whole run →
+  made again by each worker, which starts the test executable again. A
+  device, a connection or a pool opened at declaration works in the
+  test as it did in 0.2, but each worker has its own: a module-level
+  counter starts over in each worker, under `-j` and after a worker
+  retires, so file names drawn from it repeat names an earlier worker
+  used, and a file that an earlier test left under such a name collides
+  (`File exists`). Take a unique directory from `temp_dir ()` in the
+  test, or remove what the test made before it ends.
 - A declaration that is not the same at each start of the program, as
   tests named from the clock or a random generator, or one per entry of
   a directory that the suite writes to → an error: each worker starts
