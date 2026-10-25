@@ -14,11 +14,11 @@
 
     A verb's [?msg] is the failure's [msg], and its [?__POS__] is the failure's
     site in place of the one {!Loc.resolve} finds. A verb prints nothing,
-    computes no diff and reads no state of the run. A passing verb resolves no
-    location and calls no printer. Only {!raises}, {!raises_match} and
-    {!eventually} catch an exception, and only from the function that they run.
-    What the equality, the order or the printer of a witness, a [?pp], a
-    predicate or an [extract] raises escapes the verb as it is. *)
+    computes no diff and reads no state of the run, and a passing one resolves
+    no location. Only {!raises}, {!raises_match} and {!eventually} catch an
+    exception, and only from the function that they run: what the equality, the
+    order or the printer of a witness, a [?pp], a predicate or an [extract]
+    raises escapes the verb as it is. *)
 
 (* The facade ([{1:assertions}] in windtrap.mli) states each verb's contract
    for a test's author. The docs here state only what it does not: the payload

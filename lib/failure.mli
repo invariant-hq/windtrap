@@ -185,7 +185,8 @@ type kind =
               columns. [line] then says in one line what the table holds. *)
       case_index : int;
           (** The zero-based index of the failing case: the position of an
-              example among the examples, or for a generated case the index that
+              explicit example among the examples, [0] for a replayed case or a
+              case from bytes, or for a generated case the index that
               {!Seed.derive} took, which counts the discarded cases too. *)
       shrink_steps : int;
           (** The accepted shrink steps that led to [rendered]. *)
@@ -197,8 +198,8 @@ type kind =
           (** The case count when the configuration of the run gave it, and
               [None] when the declaration or the default of the engine did. *)
       examples : bool;
-          (** [true] iff the case is one of the explicit examples, which are
-              never seeded or shrunk. *)
+          (** [true] iff the case was neither seeded nor shrunk: an explicit
+              example, a replayed case or a case from bytes. *)
       rendering : rendering;
       inner : t option;
           (** The failure of the law on the reported counterexample, as
@@ -212,8 +213,8 @@ type kind =
               {!Property.run}). *)
       token : string option;
           (** The replay token of the counterexample, which [--replay] checks
-              alone (see {!Choice.token}). [None] for an example and for a case
-              that no choice sequence describes. *)
+              alone (see {!Choice.token}). [None] for an explicit example and
+              for a generator that raised before producing a value. *)
       domain : int option;
           (** [Some n] when the property's domain was checked whole, its [n]
               values: [case_index] is then the position of the value among them,
@@ -277,7 +278,9 @@ and timed_case = {
   case_index : int;
       (** The index of the case, as the [case_index] of a
           {!constructor-Property} failure. *)
-  examples : bool;  (** [true] iff the case is one of the explicit examples. *)
+  examples : bool;
+      (** [true] iff the case was neither seeded nor shrunk, as the [examples]
+          of a {!constructor-Property} failure. *)
   passed : int;  (** The cases that had passed, the examples included. *)
   root : Seed.seed;
   count : int option;
@@ -595,10 +598,10 @@ val with_output_tail : tail -> t -> t
 val with_withheld : withheld -> t -> t
 (** [with_withheld why f] is [f] with its correction withheld for [why] when [f]
     is a {!constructor-Baseline} failure, in any state, and [f] otherwise. A
-    failure already marked {!Refused} or {!Conflict} keeps that mark, because it
-    holds whatever the rest of the attempt does. It does not reach a nested
-    failure: the [inner] of a {!constructor-Property} failure, or the failure of
-    a {!constructor-Law} failure's term. *)
+    failure already marked {!Refused}, {!Conflict} or {!In_law} keeps that mark,
+    because it holds whatever the rest of the attempt does. It does not reach a
+    nested failure: the [inner] of a {!constructor-Property} failure, or the
+    failure of a {!constructor-Law} failure's term. *)
 
 (** {1:tails Captured-output tails} *)
 

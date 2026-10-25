@@ -201,17 +201,10 @@ type stats = {
       [<generator raised before producing a value>]. [rendering] can be [Ocaml]
       or a pre-image in the first case only, and is [Ocaml] when
       [Gen.Engine.literal] holds of the case.
-    - [token] is the final case's replay token, its choices and the digest of
-      [rendered] (see {!Choice.token}), for a generator that parses choices, and
-      [None] otherwise.
-    - [case_index] counts the discarded cases. For a failing example it is the
-      zero-based position in [examples].
+    - [token] is made of the final case's choices and the digest of [rendered]
+      (see {!Choice.token}).
     - [shrink_steps] is [0] for an example and for a generator that raised.
-    - [count] is [Some n] for a [`Config n] count, and [None] otherwise.
-    - [inner] is the failure of the law on the reported counterexample, the
-      final node of the search.
-    - [failed_again] is what the law did when it ran once more on the reported
-      counterexample, drawn again (see {!run}).
+    - [inner] is the failure of the law on the final node of the search.
 
     Its [output_tail] is the captured output of the run of the law that failed
     on the reported counterexample, as [output] gave it, and [None] for a
