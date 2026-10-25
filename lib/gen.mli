@@ -11,34 +11,30 @@
     shrinking edits them ({!Shrink}). The values below are the vocabulary that
     tests compose.
 
-    {b Shrinking.} Every sequence parses, so every candidate is a value of its
-    generator and satisfies its constraints. A choice of [0] is the simplest:
-    the value that a generator parses from zeros is its shrink target, which
-    each generator states. A parse marks a span over the choices of each call of
-    a generator. A new generator must keep both rules.
+    {b Shrinking.} Every sequence parses, which gives the facade's shrinking, a
+    choice of [0] is the simplest, and a parse marks a span over the choices of
+    each call of a generator. A new generator must keep these rules.
 
     {b Printing.} A generator prints through two channels. Its optional printer
     prints a bare value (see {!Engine.render_value}). Each sample carries its
     own rendering (see {!Engine.render}), which is parsed with the value. A
-    container derives both by one rule, and prints iff every component prints.
+    container derives both by one rule.
 
     A rendering is a [Value], a [Pre_image] or nothing (see
     {!Engine.type-rendering}). A composite renders iff every part renders, and
     as a [Value] iff every part is one.
 
-    {b Validation.} A constructor never raises. Every check of an argument runs
-    inside the draw, so a malformed generator raises [Invalid_argument] when it
-    first samples, inside the test that uses it. A new generator must keep its
-    checks there, and so must the draw given to {!Engine.make}.
+    {b Validation.} Every check of an argument runs inside the draw, which gives
+    the facade's validation. A new generator must keep its checks there, and so
+    must the draw given to {!Engine.make}.
 
     {b Determinism.} A value is a function of the generator and the choices it
     parses, and generating consumes the stream of a {!Seed.state} as 0.2's
     rose-tree generators did: {!bind}, {!one_of}, {!such_that} and {!list} under
     an explicit size draw their inner part from a state split off, so every
-    state draws the value 0.2 drew from it. The functions given to {!map},
-    {!bind} and {!such_that} must be pure for that to hold. The values that a
-    recorded seed replays depend on the words that each generator draws and on
-    their order. *)
+    state draws the value 0.2 drew from it, given the facade's purity. The
+    values that a recorded seed replays depend on the words that each generator
+    draws and on their order. *)
 
 (* The facade ([module Gen] in windtrap.mli) states each value's contract for
    a test's author. The docs here state only what it does not: the choices a

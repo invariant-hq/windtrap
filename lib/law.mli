@@ -23,13 +23,13 @@
     escapes a verb. In {!equivalence} and {!order} they are the functions under
     test, and they are still called directly.
 
-    {b Demands.} {!equivalence}, {!order}, {!partial_order}, {!idempotent},
-    {!involutive}, {!monotone} and {!ignores} register the {!Property.cover}
-    demands their docs name in {!Run.prop_context}, and none when it is [None].
-    A demand is labelled ["<law>: <label>"], then [" (<msg>)"] when the law's
-    [?msg] is given. A demand on a changed value reads structural difference,
-    [Stdlib.compare x y <> 0], and a pair that [compare] refuses differs, since
-    [compare] answers [0] for a physically equal pair before it looks inside.
+    {b Demands.} The laws that the facade says demand a case register the
+    {!Property.cover} demands their docs name in {!Run.prop_context}, and none
+    when it is [None], labelled ["<law>: <label>"], then [" (<msg>)"] when the
+    law's [?msg] is given. A demand on a changed value reads structural
+    difference, [Stdlib.compare x y <> 0], and a pair that [compare] refuses
+    differs, since [compare] answers [0] for a physically equal pair before it
+    looks inside.
 
     In the terms below, [cmp] is the order of the witness, a comparison prints
     as the [int] it returned, a [leq] as the [bool] it returned, and a [=]
