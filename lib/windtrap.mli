@@ -2140,7 +2140,11 @@ val run : ?argv:string array -> string -> test list -> int
     A suite must declare the same tests each time the program starts. A worker
     whose module initialisation declares another suite, with names taken from
     the clock, a random generator or a directory listing that changes, runs none
-    of it, and the tests it was to run fail, saying so.
+    of it, and the tests it was to run fail, saying so. Nor may a declaration
+    wait on what the process that called {!run} holds, such as a lock it took or
+    a device it opened exclusively: the worker then never starts, and an
+    interrupt of the run says that a worker was still in module initialisation,
+    with what it wrote.
 
     Only the first call of {!run} in the process the program started as starts
     the program again. A later call, and a call in a process forked from it,

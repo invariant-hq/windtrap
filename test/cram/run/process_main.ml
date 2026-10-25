@@ -83,6 +83,15 @@ let held () =
   close_out (open_out "device");
   [ test "uses the device" ignore; test "uses it again" ignore ]
 
+(* A lock that the first start of the executable takes and keeps: every
+   later start waits for it, and the process that holds it waits for that
+   start. *)
+let locked () =
+  print_endline "taking the lock";
+  let fd = Unix.openfile "lock" [ Unix.O_RDWR; Unix.O_CREAT ] 0o644 in
+  Unix.lockf fd Unix.F_LOCK 0;
+  [ test "never runs" ignore ]
+
 (* A test that puts another program in the place of the executable, then
    retires its worker: the worker that replaces it is the executable the run
    started as. *)
@@ -104,6 +113,7 @@ let () =
     | "listing" -> listing ()
     | "held" -> held ()
     | "replaced" -> replaced ()
+    | "locked" -> locked ()
     | other -> invalid_arg ("process_main: unknown PROCESS_SUITE " ^ other)
   in
   exit (run suite tests)

@@ -610,16 +610,23 @@ type event =
   | Interrupted of {
       running : string list option;
       releasing : string option;
+      starting : starting option;
       results : result list;
       duration : float;
     }
       (** A signal is ending the run (see {{!section-signals}signals}).
           [running] is the path of the test it stopped, and [None] outside a
           test. [releasing] is the name of the fixture whose release it stopped,
-          if any. [results] are the rows recorded so far, and [duration] the
-          seconds the run took so far. It is the last event and it is given
-          once. What the observer raises on it is ignored, and the process then
-          dies by the signal. *)
+          if any. [starting] is a worker that had not yet reached its run, the
+          one that had been starting longest, if any. [results] are the rows
+          recorded so far, and [duration] the seconds the run took so far. It is
+          the last event and it is given once. What the observer raises on it is
+          ignored, and the process then dies by the signal. *)
+
+and starting = { seconds : float; output : string }
+(** The type for a worker still in module initialisation when a signal came: the
+    [seconds] since it was started, and the end of what it wrote, at most
+    {!Failure.tail_bytes} bytes. *)
 
 (** {1:startup Startup errors} *)
 

@@ -254,6 +254,7 @@ val interrupted :
   t ->
   ?before_summary:(unit -> unit) ->
   ?releasing:string ->
+  ?starting:Run.starting ->
   running:string list option ->
   results:Run.result list ->
   duration:float ->
@@ -262,12 +263,14 @@ val interrupted :
 (** [interrupted t ~running ~results ~duration ()] ends the transcript of a run
     that a signal is stopping. It first says on standard error ({!Os.say}) what
     the signal interrupted: the test at [running], or when [running] is [None]
-    the release of the fixture [releasing], or else the gap between two tests.
-    It then ends as {!finish} does over [results], with [before_summary],
-    without [baselines] and with no failed release, since a signal stops the
-    release before it returns any failure. No [accept:] or [replay:] line
-    prints: each would run the tests that the signal kept from running, and [-u]
-    would accept baselines that the transcript does not show. *)
+    the release of the fixture [releasing], or else a worker still [starting],
+    how long after it started and the last ten lines it wrote, or else the gap
+    between two tests. It then ends as {!finish} does over [results], with
+    [before_summary], without [baselines] and with no failed release, since a
+    signal stops the release before it returns any failure. No [accept:] or
+    [replay:] line prints: each would run the tests that the signal kept from
+    running, and [-u] would accept baselines that the transcript does not show.
+*)
 
 (** {1:github The GitHub Actions envelope}
 

@@ -183,6 +183,11 @@ signature of `cases`, `judges` in place of `chooses`, and the type of
   the test executable again and must declare its parent's tests, and
   the tests of a worker that declares others fail, saying so. Name the
   tests from fixed data, and draw the varying part inside the test.
+- A declaration that takes what only one process may hold, as a lock on
+  a file or a device opened exclusively, which 0.2 took once → each
+  worker waits for it forever, since the process that called `run` holds
+  it; an interrupt then says that a worker was still in module
+  initialisation. Take it in a `fixture`, or in the test.
 - Expensive work at declaration, as loading a dataset into a module-level
   value, which 0.2 paid once → paid once per worker start, since each
   worker runs module initialisation again, a worker that replaces a

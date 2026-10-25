@@ -215,9 +215,12 @@ type event =
   | Interrupted of {
       running : string list option;
       releasing : string option;
+      starting : starting option;
       results : result list;
       duration : float;
     }
+
+and starting = { seconds : float; output : string }
 
 (* Frames *)
 
@@ -1728,6 +1731,7 @@ let interrupt ~on_event run ~started signal =
             running = Option.map (fun frame -> frame.path) frame;
             releasing =
               Option.map (fun (release : release) -> release.name) run.releasing;
+            starting = None;
             results = results run;
             duration = Os.count_s started;
           })

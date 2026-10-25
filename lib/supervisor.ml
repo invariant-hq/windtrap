@@ -144,6 +144,7 @@ type worker = {
   reports : Unix.file_descr;
   temp_dir : string;
   start_log : string option; (* what a new start writes before it serves *)
+  born : Os.counter; (* when it was started *)
   mutable serving : bool; (* it reached its run, or is a fork *)
   mutable job : case_job option;
   mutable releasing : string option; (* the fixture it announced last *)
@@ -195,6 +196,7 @@ let worker ?start_log pid ~temp_dir (requests, reports) =
     reports;
     temp_dir;
     start_log;
+    born = Os.counter ();
     serving = Option.is_none start_log;
     job = None;
     releasing = None;
@@ -302,10 +304,26 @@ let program () =
   if Sys.file_exists "/proc/self/exe" then "/proc/self/exe"
   else Sys.executable_name
 
-(* A copy of [fd] for the worker to inherit, or the null device if [fd] is
-   closed. *)
+(* A copy of [fd] for the worker to inherit, above 2: the worker starts with
+   its log on 1 and 2, and a copy that took the number of a descriptor this
+   process had closed would be lost there. *)
+let inheritable fd =
+  let rec above low fd =
+    if fd_to_int fd > 2 then begin
+      List.iter Unix.close low;
+      fd
+    end
+    else above (fd :: low) (Unix.dup ~cloexec:false fd)
+  in
+  above [] (Unix.dup ~cloexec:false fd)
+
+let inheritable_null () =
+  let null = null () in
+  Fun.protect ~finally:(fun () -> Unix.close null) (fun () -> inheritable null)
+
+(* The same, of the null device if [fd] is closed. *)
 let inherited fd =
-  try Unix.dup ~cloexec:false fd with Unix.Unix_error _ -> null ()
+  try inheritable fd with Unix.Unix_error _ -> inheritable_null ()
 
 (* The worker is the executable started again, with [Sys.argv], and the
    [run] call of the parent's rank serves (see [enter]). Until it does, it
@@ -330,15 +348,14 @@ let exec ~quiet ~armed config ~suite tests =
   in
   let out, err =
     if quiet then
-      let fd = null () in
+      let fd = inheritable_null () in
       (fd, fd)
     else (inherited Unix.stdout, inherited Unix.stderr)
   in
-  Unix.clear_close_on_exec input;
-  Unix.clear_close_on_exec output;
+  let child_input = inheritable input and child_output = inheritable output in
   let spec =
-    strf "%s=%d:%d:%d:%d:%d:%s:%s" worker_variable rank (fd_to_int input)
-      (fd_to_int output) (fd_to_int out) (fd_to_int err)
+    strf "%s=%d:%d:%d:%d:%d:%s:%s" worker_variable rank (fd_to_int child_input)
+      (fd_to_int child_output) (fd_to_int out) (fd_to_int err)
       (String.concat "," earlier)
       temp_dir
   in
@@ -347,8 +364,7 @@ let exec ~quiet ~armed config ~suite tests =
   let pid =
     Fun.protect
       ~finally:(fun () ->
-        Unix.close log_fd;
-        Unix.close out;
+        List.iter Unix.close [ log_fd; out; child_input; child_output ];
         if err <> out then Unix.close err)
       (fun () ->
         Unix.create_process_env (program ()) Sys.argv env Unix.stdin log_fd
@@ -917,7 +933,7 @@ let supervise ?(on_event = ignore) ~on_reach (config : Run.config) ~suite tests
           busy;
         loop ()
   in
-  let die_by s =
+  let die_by ?starting s =
     let running, releasing = Option.value !interrupted ~default:(None, None) in
     (try
        on_event
@@ -925,6 +941,7 @@ let supervise ?(on_event = ignore) ~on_reach (config : Run.config) ~suite tests
             {
               running;
               releasing;
+              starting;
               results = Run.results run;
               duration = Os.count_s started;
             })
@@ -939,6 +956,18 @@ let supervise ?(on_event = ignore) ~on_reach (config : Run.config) ~suite tests
     match !signal with
     | None -> ()
     | Some s ->
+        (* The worker that has been starting longest, read before its
+           burial: what waits on this process never serves. *)
+        let starting =
+          List.find_map
+            (fun w ->
+              match w.start_log with
+              | Some log when not w.serving ->
+                  Some
+                    { Run.seconds = Os.count_s w.born; output = read_start log }
+              | Some _ | None -> None)
+            !workers
+        in
         forward ();
         List.iter
           (fun w ->
@@ -947,7 +976,7 @@ let supervise ?(on_event = ignore) ~on_reach (config : Run.config) ~suite tests
             ignore (reap w);
             bury w)
           !workers;
-        die_by s
+        die_by ?starting s
   in
   match
     loop ();

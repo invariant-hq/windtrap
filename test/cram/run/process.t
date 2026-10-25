@@ -5,7 +5,7 @@ its own, and prints standard output, then standard error under a
 `--- stderr` line, with durations masked.
 
   $ scrub() {
-  >   sed -E 's/ in [0-9.]+(m|µ)?s\./ in DURATION./; s/(process_main\.ml):[0-9]+/\1:N/g; s/^( *)[0-9]+ │/\1N │/'
+  >   sed -E 's/ in [0-9.]+(m|µ)?s\./ in DURATION./; s/ [0-9.]+(m|µ)?s after / DURATION after /; s/(process_main\.ml):[0-9]+/\1:N/g; s/^( *)[0-9]+ │/\1N │/'
   > }
   $ run() {
   >   rm -rf sandbox && mkdir sandbox && cd sandbox
@@ -28,6 +28,15 @@ process that called `run`:
   own_pid: 11 passed in DURATION.
 
   $ run PROCESS_SUITE=own_pid ../process_main.exe -j 8
+  declaring the suite
+  own_pid: 11 passed in DURATION.
+
+A run whose standard error is closed starts its workers all the same,
+since the descriptors it hands them stay clear of the three standard
+ones:
+
+  $ env -i PATH="$PATH" TMPDIR="${TMPDIR:-/tmp}" WINDTRAP_COLOR=never \
+  >   PROCESS_SUITE=own_pid ./process_main.exe 2>&- | scrub
   declaring the suite
   own_pid: 11 passed in DURATION.
 
@@ -99,3 +108,16 @@ ended and what it wrote, which the run shows nowhere else:
   
   2 failed in DURATION.
   [1]
+
+A worker whose declaration waits on what the run's own process holds,
+here a lock, never reaches its run, and nothing bounds that wait. An
+interrupt says that a worker was still in module initialisation, how
+long after it started, and what it wrote:
+
+  $ run PROCESS_SUITE=locked timeout -s INT 1 ../process_main.exe
+  taking the lock
+  locked: 1 not run in DURATION.
+  --- stderr
+  windtrap: interrupted while a worker was still in module initialisation, DURATION after it started, and it wrote:
+    taking the lock
+  [124]

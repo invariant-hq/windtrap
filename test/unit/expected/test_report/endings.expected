@@ -371,3 +371,17 @@ s: 4 tests
 === stopped before its first result, while releasing a fixture
 s: 4 not run in 500ms.
 (standard error) windtrap: interrupted while releasing fixture (db.ml:3)\x1b[31m
+
+=== stopped while a worker starts: its last ten lines, how long it took
+s: 4 not run in 3.0s.
+(standard error) windtrap: interrupted while a worker was still in module initialisation, 2.5s after it started, and it wrote:
+  line 2
+  line 3
+  line 4
+  line 5
+  line 6
+  line 7
+  line 8
+  line 9
+  line 10
+  line 11

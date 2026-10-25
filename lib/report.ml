@@ -858,18 +858,39 @@ let close t ~commands ~results ~release_failures ~duration ?baselines ?stopped
 
 let finish = close ~commands:true
 
+(* A worker that waits on what this process holds never reaches its run, and
+   the interrupt is then the one thing that says where it waits. *)
+let still_starting (s : Run.starting) =
+  let _, kept =
+    Text.window ~lines:Sections.max_lines ~bytes:max_int Tail s.output
+  in
+  let wrote =
+    match Text.split_lines kept with
+    | [] -> ""
+    | lines ->
+        ", and it wrote:"
+        ^ String.concat "" (List.map (fun line -> "\n  " ^ line) lines)
+  in
+  strf
+    "interrupted while a worker was still in module initialisation, %s after \
+     it started%s"
+    (duration_to_string s.seconds)
+    wrote
+
 (* A path is one line of the diagnostic, whatever it holds. *)
-let interrupted t ?before_summary ?releasing ~running ~results ~duration () =
+let interrupted t ?before_summary ?releasing ?starting ~running ~results
+    ~duration () =
   sync t;
   clear_live t;
   Pp.flush t.out ();
   Os.say
-    (match (running, releasing) with
-    | Some path, _ ->
+    (match (running, releasing, starting) with
+    | Some path, _, _ ->
         "interrupted in " ^ Text.escape_controls (Test_tree.path_to_string path)
-    | None, Some fixture ->
+    | None, Some fixture, _ ->
         "interrupted while releasing " ^ Text.escape_controls fixture
-    | None, None -> "interrupted between tests");
+    | None, None, Some starting -> still_starting starting
+    | None, None, None -> "interrupted between tests");
   close t ~commands:false ~results ~release_failures:[] ~duration
     ?before_summary ()
 
@@ -882,8 +903,8 @@ let observe t ~seed ~selection = function
   | Run.Shrinking { path; steps } -> shrinking t ~path ~steps
   | Run.Test_finished r -> result t r
   | Run.Fixture_release { name } -> note t ("releasing " ^ name)
-  | Run.Interrupted { running; releasing; results; duration } ->
-      interrupted t ?releasing ~running ~results ~duration ()
+  | Run.Interrupted { running; releasing; starting; results; duration } ->
+      interrupted t ?releasing ?starting ~running ~results ~duration ()
 
 (* The GitHub Actions envelope *)
 
@@ -1043,8 +1064,8 @@ let run
      reorder the run's own output. *)
   let on_event event =
     (match event with
-    | Run.Interrupted { running; releasing; results; duration } ->
-        interrupted renderer ?releasing ~running ~results ~duration
+    | Run.Interrupted { running; releasing; starting; results; duration } ->
+        interrupted renderer ?releasing ?starting ~running ~results ~duration
           ~before_summary:(close_envelope ~release_failures:[] results)
           ()
     | Run.Run_started _ | Run.Test_started _ | Run.Shrinking _ | Run.Shrunk _

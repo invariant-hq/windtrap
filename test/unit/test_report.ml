@@ -641,6 +641,7 @@ let observe_interrupted () =
              {
                running = Some [ "g"; "t" ];
                releasing = None;
+               starting = None;
                results = [];
                duration = 0.5;
              }))
@@ -666,6 +667,7 @@ let observe_raises_nothing () =
               {
                 running = None;
                 releasing = Some "\027";
+                starting = None;
                 results = [ fail; fail ];
                 duration = Float.nan;
               })))
@@ -1251,6 +1253,17 @@ let endings_entries () =
       stopped (fun r ->
           Report.interrupted r ~releasing:"fixture (db.ml:3)\027[31m"
             ~running:None ~results:[] ~duration:0.5 ()) );
+    ( "stopped while a worker starts: its last ten lines, how long it took",
+      stopped (fun r ->
+          Report.interrupted r
+            ~starting:
+              {
+                seconds = 2.5;
+                output =
+                  String.concat ""
+                    (List.init 12 (fun i -> Printf.sprintf "line %d\n" i));
+              }
+            ~running:None ~results:[] ~duration:3. ()) );
   ]
 
 let write_source root =
