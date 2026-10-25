@@ -41,11 +41,12 @@ val execute_and_report :
     The loop proceeds in this order.
     + It fixes the population, which is the catalogue of the executable
       ({!val:Windtrap_runtime.Mutate.catalogue}) narrowed to the scope, without
-      the mutants that [[@mutate off]] dismisses. The scope is the list of
-      source-path prefixes that [--mutate] gave. A mutant is in scope when the
-      list is empty, or when one prefix is a prefix of its recorded file
-      ([String.starts_with]). A mutant out of scope is neither tested nor
-      recorded.
+      the mutants that [[@mutate off]] dismisses. The scope ({!Run.scope}) is
+      the list of source-path prefixes that [--mutate] gave, and the lines of
+      [--lines] or [--diff]. A mutant is in scope when the list is empty, or
+      when one prefix is a prefix of its recorded file ([String.starts_with]),
+      and when it lies on those lines, if any. A mutant out of scope is neither
+      tested nor recorded.
     + It runs the dry run, which is {!Report.run} with {!Supervisor.execute}
       over [config] with [junit] cleared, its workers telling it which tests
       evaluate each mutant. Every other field is that of [config], [baseline]
@@ -116,13 +117,11 @@ val execute_and_report :
     [tags], [exclude_tags], [failed_only], [shard] and an active focus narrow
     the suite. The scope of [--mutate] does not.
 
-    {b What the environment asks.} [WINDTRAP_MUTATE] reaches every test
-    executable of a project, so an executable that cannot honour it is not in
-    error. When [config.broadcast.mutate] holds, an empty population and a
-    selection that keeps no test ({!Run.list_selection}) are no refusal. The
-    result is then that of the ordinary run under {!Run.No_mutation}, before
-    which an empty population says why on standard error. Every other refusal
-    stands.
+    {b What the environment asks.} The facade's [WINDTRAP_MUTATE] rule holds
+    when [config.broadcast.mutate] does: an empty population and a selection
+    that keeps no test ({!Run.list_selection}) are no refusal, and the result is
+    that of the ordinary run under {!Run.No_mutation}, before which an empty
+    population says why on standard error. Every other refusal stands.
 
     {b Refusals.} Each of these is [Error (Run.Mutation_refused reason)] with
     one sentence on standard error ({!Os.say}), and but the first and the empty
@@ -134,7 +133,9 @@ val execute_and_report :
     - This process has spawned a domain, so it cannot fork its jobs.
     - The dry run is refused at startup. {!Report.run} has said why.
     - No test ran in the dry run, or it is red.
-    - The population is empty.
+    - The population is empty, unless the scope's lines name no line, or hold no
+      site of a file of the catalogue that they name. The loop then says so on
+      standard error and is [Ok] of its dry run, with no verdict file.
     - The probe disagrees with the dry run, and the sentence names the tests
       that failed in it, or its worker ended early or passed its deadline. *)
 
