@@ -379,6 +379,12 @@ type case_id =
   | Replay of string
       (** A counterexample of a property, by its replay token. *)
 
+type skipped_rows = {
+  count : int;  (** The rows that skipped, at least [1]. *)
+  reason : string option;  (** The reason that the first gave, if any. *)
+}
+(** The type for the rows of a table that skipped (see {!row}). *)
+
 type result = {
   path : string list;  (** The path of the test, outermost group first. *)
   outcome : Failure.outcome;
@@ -408,10 +414,15 @@ type result = {
           {!Property.cover} demands, for a property whose engine returned an
           outcome, which a timeout in a case does. [None] for any other test,
           and for a property that a skip ended, or a timeout outside its cases.
-      *)
+          A table's [cases] are the rows that passed, and leave out the rows
+          that skipped. *)
   table : bool;
       (** [true] iff the test is a table: its property was given [table] (see
           {!property}), so its cases are rows. *)
+  skipped_rows : skipped_rows option;
+      (** The rows of a table that skipped in the last attempt, [None] when none
+          did. A table that a skip ended, every row that ran having skipped, has
+          its count too. *)
   tolerances : Check.tolerance list;
       (** What each site of [equal] under a tolerance saw in the last attempt
           ({!Check.tolerances}), read in the process that ran it, so a worker's
@@ -455,8 +466,11 @@ val property :
     being its declaration site. It returns [()] on a [Pass] and raises the
     failure of any other outcome as a [Failure.Check_failure] (see {!prop}).
     [runs] and [only] are {!Property.run}'s. [table], [false] by default, says
-    that the test is a table, whose row says so ([table]). Raises as
-    {!current_frame} does.
+    that the test is a table, whose row says so ([table]). A table's row that
+    skipped ({!row}) is no row that passed: the statistics leave it out of
+    [cases], and a table whose engine passed with no row that passed, every row
+    that ran having skipped, raises the first row's skip, with no statistics.
+    Raises as {!current_frame} does.
 
     [config.replay] is the token that the engine replays. Otherwise, under
     [config.failed_only], the {!recorded} counterexamples of the test are
@@ -501,9 +515,12 @@ val row : tag:string -> id:string -> (unit -> unit) -> unit
     settles it there. A failure added while it runs is labelled as {!subtest}
     labels one, with [tag] as the innermost name. A row is chosen, not drawn, so
     [fn] runs with no property context, as a test's body does: {!prop_context}
-    is [None], a {!subtest} adds its failure, and a law demands nothing. What
-    [fn] raises is raised again. The row counts in {!result.refuted} when it
-    added a failure or [fn] raised a fault. Raises as {!current_frame} does. *)
+    is [None], a {!subtest} adds its failure, and a law demands nothing. A skip
+    that [fn] raises, a {!subtest}'s or a fixture's included, ends the row alone
+    when the row added no failure: [row] returns, and the row counts in
+    {!result.skipped_rows}. Anything else that [fn] raises is raised again. The
+    row counts in {!result.refuted} when it added a failure or [fn] raised a
+    fault. Raises as {!current_frame} does. *)
 
 val without_labels : (unit -> 'a) -> 'a
 (** [without_labels fn] is [fn ()] with the labels of the running law going to a

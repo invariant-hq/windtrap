@@ -32,6 +32,16 @@ for how to migrate from 0.2.0.
 - A row of a table runs outside its property's labels, as a test's body
   does: a law demands nothing of a row, and `collect`, `classify` and
   `cover` refuse there as in 0.2.0's rows.
+- A `skip` in a row of a table skips that row alone, as 0.2.0's skip of
+  a row's test did, and the table goes on with the next row. The table
+  fails if a row failed, passes if no row failed and one passed, and
+  skips only when every row skipped, with the first row's reason. A
+  passing table with rows that skipped says so under `-v`, as
+  `holds on 2 of 3 rows, 1 skipped: no GPU`, a failing table's block as
+  `scope: 1 of 3 rows passed, 1 skipped: no GPU`, and `--json`'s scope
+  counts them in `skipped`. Before, the first row that skipped ended
+  the table as a skip, dropping the failures of the rows before it and
+  running none after it.
 
 ### Assertions
 
@@ -224,7 +234,8 @@ for how to migrate from 0.2.0.
   `xfail`), the reason of a vacuous test or a skip, its failures and
   its scope: what a property, a table or a stateful test ran (its
   cases, examples, count, discards, the values or rows of a domain
-  checked whole, its labels and its `cover` demands). A `PATH` that
+  checked whole, a table's rows that skipped, its labels and its
+  `cover` demands). A `PATH` that
   ends in `.json` is the file, and any other a directory with one file
   per suite, as for `--junit`.
 - Under `-v` a passing property's row says what it ran, as

@@ -475,6 +475,18 @@ let row_entries () =
   let one ?ansi ?invocation ?armed r =
     verbose ?ansi ?invocation ?armed (fun rd -> Report.result rd r)
   in
+  (* A table of 3 rows that passed, [passed] of them holding. *)
+  let table passed skipped_rows =
+    {
+      (result
+         ~prop_stats:
+           { (label_stats []) with cases = passed; whole = Some 3; count = 3 }
+         [ "rows" ] Failure.Pass)
+      with
+      Run.table = true;
+      skipped_rows;
+    }
+  in
   let excused_property =
     {
       Fixtures.excused_result with
@@ -526,6 +538,12 @@ let row_entries () =
            ~duration:0.0012 [ "labels visible" ] Failure.Pass) );
     ( "and none without collected labels",
       one (result ~prop_stats:(label_stats []) [ "no labels" ] Failure.Pass) );
+    ("a table that held on every row says so", one (table 3 None));
+    ( "a table whose other rows held counts its skipped rows, with the first \
+       one's reason",
+      one (table 2 (Some { Run.count = 1; reason = Some "no GPU" })) );
+    ( "and without one, the count alone",
+      one (table 1 (Some { Run.count = 2; reason = None })) );
     ( "an expected failure's table is in its block",
       one
         {

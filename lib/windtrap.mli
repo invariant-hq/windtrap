@@ -201,6 +201,15 @@ val cases :
     keeps none, whatever the other rows did. A failure that a row records names
     the row as a subtest's names the subtest.
 
+    {b Skipping.} A {!skip} in a row, a {!subtest}'s or a {!fixture}'s included,
+    skips that row alone, and the table goes on with the next. A row that
+    recorded a failure before it skipped fails. The table fails if a row failed,
+    reported as above; otherwise it passes if a row passed, and it is skipped,
+    with the first row's reason, only when every row skipped. [-v] says how many
+    rows of a passing table skipped, and why the first did, as
+    [holds on 2 of 3 rows, 1 skipped: REASON], and a failing table's [scope:]
+    counts them too.
+
     {b Rerunning.} Under [--failed] a table runs the rows that failed last, and
     no other. A recorded row that the table no longer prints is stale: the table
     then fails and says so, rather than pass on the rows that remain.
@@ -758,8 +767,9 @@ val failf : ?__POS__:pos -> ('a, Format.formatter, unit, 'b) format4 -> 'a
 (** [failf fmt ...] is {!fail} with the message [fmt] formats. *)
 
 val skip : ?reason:string -> unit -> 'a
-(** [skip ?reason ()] skips the running test. A skip is not a failure, and a
-    selection whose every test skipped exits [0]. *)
+(** [skip ?reason ()] skips the running test or, in a row of a {!cases} table,
+    that row alone (see {!cases}). A skip is not a failure, and a selection
+    whose every test skipped exits [0]. *)
 
 (** {1:witnesses Witnesses}
 
@@ -1950,10 +1960,11 @@ val subtest : string -> (unit -> unit) -> unit
 
     A {!skip}, a timeout or a call to [exit] ends the whole test, which still
     fails on what was recorded, and inside the law of a property an {!assume}
-    discards the case. [-f] cannot select a subtest. Inside the law of a
-    property or a function of a {!stateful} test, a failure of [fn] is not
-    recorded: it fails the case, which shrinks as any failing case does, and the
-    report names the subtest under the counterexample. *)
+    discards the case. A skip in a row of a {!cases} table ends that row alone.
+    [-f] cannot select a subtest. Inside the law of a property or a function of
+    a {!stateful} test, a failure of [fn] is not recorded: it fails the case,
+    which shrinks as any failing case does, and the report names the subtest
+    under the counterexample. *)
 
 val temp_dir : ?prefix:string -> unit -> string
 (** [temp_dir ?prefix ()] is a fresh empty directory under the system temporary

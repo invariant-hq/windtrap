@@ -210,6 +210,14 @@ can print a key of the row instead of all of it:
 `~label` gives a row a text shown beside its position, `row 2 of 3, the
 second`, which identifies nothing.
 
+A `skip` in a row skips that row alone, and the table goes on with the
+next. The table fails if a row failed, passes if no row failed and one
+passed, and is skipped only when every row skipped, with the first
+row's reason. `-v` says how many rows of a passing table skipped, and
+why the first did, as `holds on 2 of 3 rows, 1 skipped: no GPU`, so a
+table whose rows skip on this machine shows it. A row that recorded a
+failure before its skip fails.
+
 `--failed` reruns the rows of a table that failed last, and no other
 (see [Rerunning failures](running-tests.md)). The rows are evaluated
 when the suite is declared; the witness and the label print them in

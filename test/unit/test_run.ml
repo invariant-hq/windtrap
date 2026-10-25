@@ -2181,6 +2181,122 @@ let properties =
       test "Run.prop adds no tag" run_prop_adds_no_tag;
     ]
 
+(* Tables *)
+
+(* The rows each table ran, by name, in order. *)
+let rows_ran = Hashtbl.create 8
+
+let ran name =
+  List.rev (Option.value ~default:[] (Hashtbl.find_opt rows_ran name))
+
+(* The table [name] over [rows]: a row in [skips] skips, with a reason that
+   names it, and every other row holds when [holds] does. *)
+let skipping ?(skips = []) name rows holds =
+  cases name int rows (fun r ->
+      Hashtbl.replace rows_ran name (r :: List.rev (ran name));
+      if List.mem r skips then skip ~reason:(strf "row %d skips" r) ();
+      is_true (holds r))
+
+let row_skips =
+  Recorded.execute
+    [
+      skipping ~skips:[ 2 ] "skip in the middle" [ 1; 2; 3 ] (fun r ->
+          r mod 3 = 0);
+      skipping ~skips:[ 2 ] "skip first, failure later" [ 2; 4 ] (fun r ->
+          r = 0);
+      skipping ~skips:[ 2 ] "failure first, skip later" [ 4; 2 ] (fun r ->
+          r = 0);
+      skipping ~skips:[ 1; 2 ] "every row skips" [ 1; 2 ] (fun _ -> true);
+      skipping ~skips:[ 2; 3 ] "the other rows hold" [ 1; 2; 3; 4 ] (fun _ ->
+          true);
+      cases "a row fails, then skips" int [ 1; 2 ] (fun r ->
+          if r = 1 then begin
+            (try equal int 0 r with _ -> ());
+            skip ~reason:"row 1 skips" ()
+          end);
+      cases "a subtest of a row skips" int [ 1; 2 ] (fun r ->
+          subtest "inner" (fun () -> if r = 1 then skip ~reason:"inner" ()));
+    ]
+
+let skip_shapes =
+  [
+    ("skip in the middle", "fail body", [ 1; 2; 3 ], [ "1" ]);
+    ("skip first, failure later", "fail body", [ 2; 4 ], [ "4" ]);
+    ("failure first, skip later", "fail body", [ 4; 2 ], [ "4" ]);
+    ("every row skips", "skip row 1 skips", [ 1; 2 ], []);
+    ("the other rows hold", "pass", [ 1; 2; 3; 4 ], []);
+  ]
+
+let refuted_rows r path =
+  List.map
+    (function Run.Row id -> "row " ^ id | Run.Replay t -> "replay " ^ t)
+    (row_at r path).refuted
+
+let skipped_rows r path =
+  Option.map
+    (fun (s : Run.skipped_rows) -> (s.count, s.reason))
+    (row_at r path).skipped_rows
+
+let whole_stats r path =
+  Option.map (fun (s : Property.stats) -> (s.cases, s.whole)) (stats r path)
+
+let skip_shape (name, row, rows, refuted) =
+  equal string row (Recorded.row row_skips [ name ]);
+  equal (list int) rows (ran name);
+  equal (list string)
+    (List.map (fun id -> "row " ^ id) refuted)
+    (refuted_rows row_skips [ name ])
+
+let tables =
+  group "Tables"
+    [
+      cases "a row's skip skips that row, and the table goes on"
+        (Testable.contramap (fun (name, _, _, _) -> name) Testable.text)
+        skip_shapes skip_shape;
+      test "a failing table reports the rows that failed, beside a skip"
+        (fun () ->
+          equal (list string) [ "body property" ]
+            (lines row_skips [ "skip in the middle" ]);
+          match (failure row_skips [ "skip in the middle" ]).kind with
+          | Failure.Property { case_index; also; table; _ } ->
+              equal (triple int int bool) (0, 0, true)
+                (case_index, List.length also, table)
+          | _ -> fail "not a property failure");
+      test "a table counts the rows that skipped, and the first one's reason"
+        (fun () ->
+          equal
+            (list (option (pair int (option string))))
+            [ Some (1, Some "row 2 skips"); Some (2, Some "row 2 skips"); None ]
+            [
+              skipped_rows row_skips [ "skip in the middle" ];
+              skipped_rows row_skips [ "the other rows hold" ];
+              skipped_rows row_skips [ "a row fails, then skips" ];
+            ]);
+      test "a row that skipped is no row that passed" (fun () ->
+          equal
+            (list (option (pair int (option int))))
+            [ Some (1, Some 3); Some (2, Some 4) ]
+            [
+              whole_stats row_skips [ "skip in the middle" ];
+              whole_stats row_skips [ "the other rows hold" ];
+            ]);
+      test "a table whose every row skipped has no statistics, as a skip"
+        (fun () ->
+          equal (option int) None (cases_run row_skips [ "every row skips" ]));
+      test "a row that recorded a failure before its skip fails" (fun () ->
+          equal string "fail body"
+            (Recorded.row row_skips [ "a row fails, then skips" ]);
+          equal (list string) [ "row 1" ]
+            (refuted_rows row_skips [ "a row fails, then skips" ]));
+      test "a skip in a subtest of a row skips the row" (fun () ->
+          equal string "pass"
+            (Recorded.row row_skips [ "a subtest of a row skips" ]);
+          equal
+            (option (pair int (option string)))
+            (Some (1, Some "inner"))
+            (skipped_rows row_skips [ "a subtest of a row skips" ]));
+    ]
+
 (* Events *)
 
 let event_line = function
@@ -4615,6 +4731,7 @@ let () =
          fixtures;
          results;
          properties;
+         tables;
          events;
          startup_errors;
          executing;

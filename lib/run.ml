@@ -97,6 +97,9 @@ type release = { name : string; loc : Loc.t option; teardown : unit -> unit }
 (* A case within a test, as the last-failed store names it. *)
 type case_id = Row of string | Replay of string
 
+(* The rows of a table that skipped, and the reason of the first. *)
+type skipped_rows = { count : int; reason : string option }
+
 type result = {
   path : string list;
   outcome : Failure.outcome;
@@ -107,6 +110,7 @@ type result = {
   attempts : int;
   prop_stats : Property.stats option;
   table : bool;
+  skipped_rows : skipped_rows option;
   tolerances : Check.tolerance list;
   refuted : case_id list;
 }
@@ -235,6 +239,7 @@ type frame = {
   mutable rev_failures : Failure.t list;
   mutable rev_checks : check list; (* left to the parent, newest first *)
   mutable rev_rows : row list; (* the rows of a table, newest first *)
+  mutable skipped_rows : skipped_rows option; (* the rows that skipped *)
   mutable subtests : string list; (* the open subtests, innermost first *)
   mutable temp_root : string option;
   mutable temp_seq : int; (* the number of the next temporary path *)
@@ -258,6 +263,7 @@ let frame ~on_event run (case : Test_tree.case) =
     rev_failures = [];
     rev_checks = [];
     rev_rows = [];
+    skipped_rows = None;
     subtests = [];
     temp_root = None;
     temp_seq = 0;
@@ -769,8 +775,15 @@ let property ?loc ?count ?max_discard ?examples ?summary ?runs ?only
       give_in_attempt frame (Shrunk { path = frame.path })
     end
   in
+  (* A table's row that skipped returned to the engine, which counts it as
+     passed; it is no row that passed. *)
+  let passed (stats : Property.stats) =
+    match frame.skipped_rows with
+    | Some { count; _ } when table -> { stats with cases = stats.cases - count }
+    | Some _ | None -> stats
+  in
   let fail stats failure =
-    frame.prop_stats <- Some stats;
+    frame.prop_stats <- Some (passed stats);
     raise (Failure.Check_failure failure)
   in
   (* [--case] checks its file's case alone: [Property.run] puts it before
@@ -799,8 +812,15 @@ let property ?loc ?count ?max_discard ?examples ?summary ?runs ?only
         shrunk ();
         Printexc.raise_with_backtrace exn backtrace
   in
+  (* A table whose every row that ran skipped is a skip, with the first
+     row's reason, and no statistics, as a property that a skip ended. *)
   let judged : Property.outcome -> unit = function
-    | Pass stats -> frame.prop_stats <- Some stats
+    | Pass stats -> (
+        let stats = passed stats in
+        match frame.skipped_rows with
+        | Some { reason; _ } when table && stats.cases = 0 ->
+            raise (Failure.Control (`Skip reason))
+        | Some _ | None -> frame.prop_stats <- Some stats)
     (* Coverage is judged once every case has run, so a property that
        stopped early reports no coverage it did not judge. *)
     | Fail { failure; stats } -> fail { stats with coverage = [] } failure
@@ -1505,7 +1525,8 @@ let judge baselines (case : Test_tree.case) attempt =
    subtest's are, and a run that makes its checks as they come settles the
    row's corrections as it ends, so the next row is compared with what this
    one kept. A row is chosen in view, not drawn, so it runs outside the
-   law's labels, as a test's body does. *)
+   law's labels, as a test's body does. A skip ends the row alone: it
+   returns to the engine, and the frame counts it. *)
 let row ~tag ~id fn =
   let frame = current_frame () in
   let failures_from = List.length frame.rev_failures in
@@ -1557,6 +1578,12 @@ let row ~tag ~id fn =
       match (caught, ending) with
       | first :: _, _ -> Failure.refuse first
       | [], Ok () -> ()
+      | [], Error (`Skip reason) ->
+          frame.skipped_rows <-
+            Some
+              (match frame.skipped_rows with
+              | None -> { count = 1; reason }
+              | Some s -> { s with count = s.count + 1 })
       | [], Error c -> Failure.reraise c)
 
 (* Retries *)
@@ -1592,7 +1619,7 @@ let attach_tail tail (outcome : Failure.outcome) =
 
 (* The row of [case] from the outcome of its last attempt. *)
 let result_of (case : Test_tree.case) ~tail ~duration ~attempts ~prop_stats
-    ?(table = false) ?(tolerances = []) ?(refuted = []) outcome =
+    ?(table = false) ?skipped_rows ?(tolerances = []) ?(refuted = []) outcome =
   let counted = counts_failed ~xfail:case.xfail outcome in
   let outcome =
     match (outcome, case.xfail) with
@@ -1609,6 +1636,7 @@ let result_of (case : Test_tree.case) ~tail ~duration ~attempts ~prop_stats
     attempts;
     prop_stats;
     table;
+    skipped_rows;
     tolerances;
     refuted = (if counted then refuted else []);
   }
@@ -1668,8 +1696,8 @@ let run_case ~on_event run (case : Test_tree.case) =
       let tail () = Capture.output_tail run.capture in
       let result =
         result_of case ~tail ~duration ~attempts:number
-          ~prop_stats:frame.prop_stats ~table:frame.table ~tolerances ~refuted
-          outcome
+          ~prop_stats:frame.prop_stats ~table:frame.table
+          ?skipped_rows:frame.skipped_rows ~tolerances ~refuted outcome
       in
       run.rev_results <- result :: run.rev_results;
       on_event (Test_finished result);
@@ -2045,13 +2073,15 @@ let adjudicate run case served =
   match served.deferred with
   | None -> (served.result, served.corrected)
   | Some (attempt, tail) ->
-      let { duration; attempts; prop_stats; table; tolerances; _ } =
+      let { duration; attempts; prop_stats; table; skipped_rows; tolerances; _ }
+          =
         served.result
       in
       let outcome, corrected, _, refuted = judge run.baselines case attempt in
       ( result_of case
           ~tail:(fun () -> tail)
-          ~duration ~attempts ~prop_stats ~table ~tolerances ~refuted outcome,
+          ~duration ~attempts ~prop_stats ~table ?skipped_rows ~tolerances
+          ~refuted outcome,
         corrected )
 
 let lost run (case : Test_tree.case) failure ~duration =

@@ -201,7 +201,7 @@ scope for a test that ran no case. The durations are masked:
   $ sed -E 's/"duration": [0-9.e-]+/"duration": D/g' scope.json
   {"version": 1, "suite": "fixture", "seed": "s1:0000000000000001", "tests": [
     {"path": ["labels"], "verdict": "pass", "attempts": 1, "duration": D, "failures": [], "scope": {"cases": 200, "examples": 1, "count": 200, "discards": 26, "labels": [{"label": "even", "cases": 77}, {"label": "small", "cases": 26}], "cover": [{"label": "small", "cases": 26, "met": true}], "tolerances": []}},
-    {"path": ["rows"], "verdict": "pass", "attempts": 1, "duration": D, "failures": [], "scope": {"cases": 3, "examples": 0, "count": 3, "discards": 0, "rows": 3, "labels": [], "cover": [], "tolerances": []}},
+    {"path": ["rows"], "verdict": "pass", "attempts": 1, "duration": D, "failures": [], "scope": {"cases": 3, "examples": 0, "count": 3, "discards": 0, "rows": 3, "skipped": 0, "labels": [], "cover": [], "tolerances": []}},
     {"path": ["counter"], "verdict": "pass", "attempts": 1, "duration": D, "failures": [], "scope": {"cases": 20, "examples": 0, "count": 20, "discards": 0, "labels": [], "cover": [], "tolerances": []}},
     {"path": ["shares"], "verdict": "pass", "attempts": 1, "duration": D, "failures": [], "scope": {"cases": 800, "examples": 0, "count": 800, "discards": 0, "labels": [{"label": "a quarter", "cases": 223}], "cover": [{"label": "a quarter", "cases": 223, "met": true, "share": {"demand": 0.2, "hits": 223, "cases": 800, "low": 0.19343228918344313, "high": 0.3837927486271963}}], "tolerances": []}},
     {"path": ["plain"], "verdict": "pass", "attempts": 1, "duration": D, "failures": [], "scope": {"tolerances": []}},

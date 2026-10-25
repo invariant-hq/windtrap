@@ -142,6 +142,9 @@ let property (r : Run.result) (s : Property.stats) =
   @ (match s.whole with
     | Some n -> [ ((if r.table then "rows" else "values"), Int n) ]
     | None -> [])
+  @ (match r.skipped_rows with
+    | Some { count; _ } -> [ ("skipped", Int count) ]
+    | None -> if r.table then [ ("skipped", Int 0) ] else [])
   @ [
       ("labels", List (List.map label s.collected));
       ("cover", List (List.map cover s.coverage));

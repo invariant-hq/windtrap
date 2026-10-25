@@ -293,7 +293,8 @@ let tolerance_lines (r : Run.result) =
     r.tolerances
 
 (* What a property ran, each count that is not zero: the generated cases,
-   or the values of a domain checked whole, then the examples and the
+   or the values of a domain checked whole, then the rows of a table that
+   skipped, with the first one's reason, then the examples and the
    discards. A verdict says what held, and a failure what passed before
    it. *)
 let ran ~verdict (r : Run.result) (s : Property.stats) =
@@ -303,10 +304,18 @@ let ran ~verdict (r : Run.result) (s : Property.stats) =
   let passed = if verdict then "" else " passed" in
   let drawn = s.cases - s.examples in
   let unit = if r.table then "row" else "value" in
-  (match s.whole with
-    | Some n when verdict -> [ strf "holds on all %d %s%s" n unit (plural n) ]
-    | Some n -> [ strf "%d of %d %s%s passed" drawn n unit (plural n) ]
-    | None -> some ~passed drawn "case")
+  (match (s.whole, r.skipped_rows) with
+    | Some n, None when verdict ->
+        [ strf "holds on all %d %s%s" n unit (plural n) ]
+    | Some n, Some _ when verdict ->
+        [ strf "holds on %d of %d %s%s" drawn n unit (plural n) ]
+    | Some n, _ -> [ strf "%d of %d %s%s passed" drawn n unit (plural n) ]
+    | None, _ -> some ~passed drawn "case")
+  @ (match r.skipped_rows with
+    | Some { count; reason = Some reason } ->
+        [ strf "%d skipped: %s" count reason ]
+    | Some { count; reason = None } -> [ strf "%d skipped" count ]
+    | None -> [])
   @ some ~passed s.examples "example"
   @ some s.discards "discard"
 

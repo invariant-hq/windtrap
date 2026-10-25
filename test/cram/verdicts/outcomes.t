@@ -265,3 +265,98 @@ A table with no row beside a passing test is vacuous, and the run exits
   
   1 passed, 1 vacuous in DURATION.
   exit 1
+
+A skip in a row skips that row, and the table goes on with the next. A
+table fails on the rows that failed, wherever the skip fell, passes when
+no row failed and a row passed, and skips only when every row skipped.
+A passing table says how many of its rows skipped, and why the first
+did. `verbose` runs with -v and masks each test's duration:
+
+  $ verbose() {
+  >   run "$@" -v > shown
+  >   code=$?
+  >   sed -E 's/ [0-9.]+m?s( |$)/ D\1/' shown
+  >   return $code
+  > }
+  $ verbose VERDICT_SUITE=table_skip ./verdict_main.exe
+  table_skip: 5 tests
+    FAIL  skip in the middle                         D
+      test/cram/verdicts/verdict_main.ml:N
+      counterexample (row 1 of 3): 1
+      which failed with:
+        expected  0
+        actual    1
+      scope: 1 of 3 rows passed, 1 skipped: row 2 skips
+  
+    FAIL  skip first, failure later                  D
+      test/cram/verdicts/verdict_main.ml:N
+      counterexample (row 2 of 2): 4
+      which failed with:
+        expected  0
+        actual    4
+      scope: 0 of 2 rows passed, 1 skipped: row 2 skips
+  
+    FAIL  failure first, skip later                  D
+      test/cram/verdicts/verdict_main.ml:N
+      counterexample (row 1 of 2): 4
+      which failed with:
+        expected  0
+        actual    4
+      scope: 0 of 2 rows passed, 1 skipped: row 2 skips
+  
+    SKIP  every row skips (row 2 skips)
+    PASS  the other rows hold                        D (holds on 2 of 3 rows, 1 skipped: row 2 skips)
+  1 passed, 1 skipped, 3 failed in DURATION.
+  [1]
+
+Under workers, -j 8, a row's skip is the same:
+
+  $ verbose VERDICT_SUITE=table_skip ./verdict_main.exe -j 8
+  table_skip: 5 tests
+    FAIL  skip in the middle                         D
+      test/cram/verdicts/verdict_main.ml:N
+      counterexample (row 1 of 3): 1
+      which failed with:
+        expected  0
+        actual    1
+      scope: 1 of 3 rows passed, 1 skipped: row 2 skips
+  
+    FAIL  skip first, failure later                  D
+      test/cram/verdicts/verdict_main.ml:N
+      counterexample (row 2 of 2): 4
+      which failed with:
+        expected  0
+        actual    4
+      scope: 0 of 2 rows passed, 1 skipped: row 2 skips
+  
+    FAIL  failure first, skip later                  D
+      test/cram/verdicts/verdict_main.ml:N
+      counterexample (row 1 of 2): 4
+      which failed with:
+        expected  0
+        actual    4
+      scope: 0 of 2 rows passed, 1 skipped: row 2 skips
+  
+    SKIP  every row skips (row 2 skips)
+    PASS  the other rows hold                        D (holds on 2 of 3 rows, 1 skipped: row 2 skips)
+  1 passed, 1 skipped, 3 failed in DURATION.
+  [1]
+
+And so it is in the process, with --in-process, which runs one test:
+
+  $ verbose VERDICT_SUITE=table_skip ./verdict_main.exe --in-process -f 'skip in the middle'
+  table_skip: 1 test
+    FAIL  skip in the middle                         D
+      test/cram/verdicts/verdict_main.ml:N
+      counterexample (row 1 of 3): 1
+      which failed with:
+        expected  0
+        actual    1
+      scope: 1 of 3 rows passed, 1 skipped: row 2 skips
+  
+  1 failed in DURATION.
+  [1]
+  $ verbose VERDICT_SUITE=table_skip ./verdict_main.exe --in-process -f 'the other rows hold'
+  table_skip: 1 test
+    PASS  the other rows hold                        D (holds on 2 of 3 rows, 1 skipped: row 2 skips)
+  1 passed in DURATION.

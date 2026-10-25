@@ -61,6 +61,7 @@
     - [discards], the cases discarded, the examples included;
     - [values], for a domain checked whole, its number of values, which a table
       calls [rows];
+    - [skipped], for a table, the rows that skipped, which [cases] leaves out;
     - [labels], one [{"label": ..., "cases": ...}] per label of
       {!Run.prop_context}, with the passing cases that marked it, sorted by
       label;

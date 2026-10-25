@@ -35,6 +35,13 @@ compile and can change a verdict.
   - one `-v` line and one summary count per row → one per table, whose
     line says `holds on all 2 rows`.
   - `~timeout` and `~retries` per row → over the whole table.
+  - `skip` in a row, which skipped that row's test → skips that row
+    alone, as before, and the table goes on with the next. The summary
+    counts the table once: failed if a row failed, else passed if a row
+    passed, and skipped only if every row skipped. Under `-v` a passing
+    table with rows that skipped says
+    `holds on 2 of 3 rows, 1 skipped: REASON`, with the first row's
+    reason.
 - `cases "t" w [] fn`, which declared no test → a vacuous test that
   fails; remove the table or give it rows.
 

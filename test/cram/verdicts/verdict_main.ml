@@ -242,6 +242,22 @@ let suite = function
       ]
   | "table_zero" -> [ cases "rows" Testable.text [] ignore ]
   | "table_zero_plus" -> [ cases "rows" Testable.text [] ignore; passes ]
+  | "table_skip" ->
+      let skips_row_2 r = if r = 2 then skip ~reason:"row 2 skips" () in
+      [
+        cases "skip in the middle" int [ 1; 2; 3 ] (fun r ->
+            skips_row_2 r;
+            equal int 0 (r mod 3));
+        cases "skip first, failure later" int [ 2; 4 ] (fun r ->
+            skips_row_2 r;
+            equal int 0 r);
+        cases "failure first, skip later" int [ 4; 2 ] (fun r ->
+            skips_row_2 r;
+            equal int 0 r);
+        cases "every row skips" int [ 2; 3 ] (fun r ->
+            skip ~reason:(Printf.sprintf "row %d skips" r) ());
+        cases "the other rows hold" int [ 1; 2; 3 ] skips_row_2;
+      ]
   | "baseline_literal" ->
       [ test "never recorded" (fun () -> expect "hello" @@ __POS_OF__ {||}) ]
   | "baseline_file" ->
