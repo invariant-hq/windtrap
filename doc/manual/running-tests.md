@@ -281,13 +281,32 @@ hangs there hangs the run.
 
 ## Running tests in worker processes
 
-The process that calls `run` runs no test. It forks a worker process,
+The process that calls `run` runs no test. It starts a worker process,
 which runs the tests one at a time, and reads each verdict from what the
 worker reports, how it ends and how long it takes. A test that calls
 `exit` or `Unix._exit`, crashes, raises `Out_of_memory` or outlives its
 limit in C code fails, saying which, and the run goes on in a new
 worker. A test that spawns a domain retires its worker after it, so the
 domain cannot run into the next test.
+
+A worker is the test executable started again, with the same command
+line. Its module initialisation runs again, so a test sees what a fresh
+start of the program builds, as under `--in-process`: a device, a
+connection or a pool opened at declaration is the worker's own. Each
+worker pays for that initialisation once, a worker that replaces a
+retired one included, so expensive work at declaration belongs in a
+`lazy` value or a `fixture`. What the initialisation prints appears
+once, from the process that called `run`. A worker that ends before its
+first test fails that test with how it ended and what it printed.
+
+A suite must declare the same tests each time the program starts. Names
+taken from the clock, a random generator or a directory listing that
+changes give a worker another suite than its parent, and the tests it
+was to run fail, saying so.
+
+Only a program's first `run` starts the program again. A later `run`,
+and a `run` in a process forked from the program, forks its workers
+from the calling process before any test runs.
 
 `-j N` runs the tests in `N` workers at once, each one test at a time.
 The default is one: tests in two workers share no fixture, and they race

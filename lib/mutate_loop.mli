@@ -55,13 +55,13 @@ val execute_and_report :
       test, at module initialization or in a fixture release, is evaluated
       outside tests ({!Windtrap_runtime.Verdicts.Outside_tests}). A site that
       only tests marked xfail evaluated is unreached.
-    + It runs the jobs ({!Supervisor.fresh}), each in a fork of this process,
-      which ran no test: the determinism probe, which is the tests that the dry
-      run executed, unarmed, and then one job per reached mutant, in the order
-      of the catalogue, with the mutant armed and its reaching tests up to the
-      first failure. Up to [config.jobs] run at once, and they are given in that
-      order. The probe agrees iff it executed as many tests, skipped as many and
-      counted no failure.
+    + It runs the jobs ({!Supervisor.fresh}), each in a worker of its own, which
+      ran no test before it: the determinism probe, which is the tests that the
+      dry run executed, unarmed, and then one job per reached mutant, in the
+      order of the catalogue, with the mutant armed and its reaching tests up to
+      the first failure. Up to [config.jobs] run at once, and they are given in
+      that order. The probe agrees iff it executed as many tests, skipped as
+      many and counted no failure.
     + Once the last job is given it writes the verdict file.
 
     A job starts from module initialization, so what the dry run left, a table
@@ -129,8 +129,10 @@ val execute_and_report :
     ({!Windtrap_runtime.Verdicts.save}): its records hold the population as
     unknown, or, past a whole green dry run, the reached mutants as unknown and
     the others as that dry run found them. They are tried in this order:
-    - The platform is Windows, which has no [Unix.fork].
-    - This process has spawned a domain, so it cannot fork its jobs.
+    - The platform is Windows, where windtrap starts no worker process.
+    - This process cannot start the jobs' workers ([Supervisor.can_spawn]): it
+      spawned a domain, so it cannot fork, and a new start of the executable
+      would not reach this run.
     - The dry run is refused at startup. {!Report.run} has said why.
     - No test ran in the dry run, or it is red.
     - The population is empty, unless the scope's lines name no line, or hold no

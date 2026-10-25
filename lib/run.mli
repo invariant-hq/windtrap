@@ -894,8 +894,8 @@ val exit_code : (outcome, startup_error) Stdlib.result -> int
     ([Printexc.record_backtrace]) and leave it on. They register an [at_exit]
     function, the exit guard. A supervised run ({!Supervisor}) registers none: a
     worker that code under test exits ends, and its parent records it. The guard
-    serves the runs that stay in one process, [--in-process] and Windows, which
-    has no fork.
+    serves the runs that stay in one process: [--in-process], Windows, and a
+    process that can start no worker ([Supervisor.execute]).
 
     While a run is {!active}, a call to [exit] raises [Failure.Control `Exit]
     from the guard and the process does not end. The exception is classified

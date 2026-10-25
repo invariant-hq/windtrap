@@ -14,10 +14,12 @@ let ( let* ) = Result.bind
 
 (* Frames *)
 
-(* What a worker sends: a report of [Run.serve], the mutants each test
-   evaluated, and as it ends the coverage counts it hands over and the
-   evaluations of its armed site. *)
+(* What a worker sends: that a new start of the executable reached its run
+   and serves, a report of [Run.serve], the mutants each test evaluated, and
+   as it ends the coverage counts it hands over and the evaluations of its
+   armed site. *)
 type to_parent =
+  | Serving
   | Report of Run.report
   | Reached of { test : string list option; sites : (Mutate.id * int) list }
   | Counts of Coverage.t
@@ -141,6 +143,8 @@ type worker = {
   requests : Unix.file_descr;
   reports : Unix.file_descr;
   temp_dir : string;
+  start_log : string option; (* what a new start writes before it serves *)
+  mutable serving : bool; (* it reached its run, or is a fork *)
   mutable job : case_job option;
   mutable releasing : string option; (* the fixture it announced last *)
   mutable exited : bool; (* it said that code under test called exit *)
@@ -184,12 +188,14 @@ let pipes () =
   let reports_r, reports_w = Unix.pipe ~cloexec:true () in
   ((requests_r, reports_w), (requests_w, reports_r))
 
-let worker pid ~temp_dir (requests, reports) =
+let worker ?start_log pid ~temp_dir (requests, reports) =
   {
     pid;
     requests;
     reports;
     temp_dir;
+    start_log;
+    serving = Option.is_none start_log;
     job = None;
     releasing = None;
     exited = false;
@@ -198,10 +204,33 @@ let worker pid ~temp_dir (requests, reports) =
     status = None;
   }
 
-(* A fork of the parent before it ran any test, so the worker starts warm and
-   clean. The buffers are drained first, or the worker would write them a
-   second time. *)
-let fork ?(prepare = fun ~temp_dir:_ config -> config) config ~suite tests =
+(* A worker of a fresh job writes nothing to the parent's descriptors, and
+   its capture logs live and die with it. *)
+let quiet_config ~temp_dir (config : Run.config) =
+  {
+    config with
+    stream = false;
+    baseline = Baseline.Check;
+    junit = None;
+    log_dir = Filename.concat temp_dir "logs";
+  }
+
+let null () = Unix.openfile "/dev/null" [ Unix.O_WRONLY ] 0
+
+(* A mutant is armed as its worker starts, after module initialisation, and
+   its evaluations count from there. A mutant of the catalogue always arms,
+   and one that did not would count no hit. *)
+let arm = function
+  | None -> ()
+  | Some (id, budget) -> (
+      match Mutate.arm ~budget id with
+      | Ok _ -> Mutate.reset_reach ()
+      | Error _ -> ())
+
+(* A fork of the parent before it ran any test, so the worker starts from
+   what module initialisation built and nothing a test left. The buffers are
+   drained first, or the worker would write them a second time. *)
+let fork ~quiet ~armed config ~suite tests =
   let temp_dir = make_temp_dir () in
   let (input, output), ends = pipes () in
   Capture.drain ();
@@ -210,7 +239,19 @@ let fork ?(prepare = fun ~temp_dir:_ config -> config) config ~suite tests =
       Unix.close (fst ends);
       Unix.close (snd ends);
       try
-        let config = prepare ~temp_dir config in
+        let config =
+          if quiet then begin
+            (match null () with
+            | fd ->
+                Unix.dup2 fd Unix.stdout;
+                Unix.dup2 fd Unix.stderr;
+                Unix.close fd
+            | exception Unix.Unix_error _ -> ());
+            quiet_config ~temp_dir config
+          end
+          else config
+        in
+        arm armed;
         serve config ~suite tests ~temp_dir ~input ~output
       with _ -> Unix._exit 2)
   | pid ->
@@ -218,36 +259,121 @@ let fork ?(prepare = fun ~temp_dir:_ config -> config) config ~suite tests =
       Unix.close output;
       worker pid ~temp_dir ends
 
-(* A process that spawned a domain cannot fork, so it executes itself again,
-   and the [run] call of the same rank serves (see [enter]). *)
-let worker_variable = "WINDTRAP_WORKER"
+(* Re-executing the test executable *)
+
+(* The process the executable started as. A fork of it has another pid, and
+   so has a fork of a worker that started the executable again. *)
+let start_pid = Unix.getpid ()
+let started_here () = Unix.getpid () = start_pid
+
+(* The [Windtrap.run] calls this process made: how many began, the one under
+   way, and the code that each returned, by rank. *)
 let rank = ref 0
+let running = ref None
+let codes = ref []
+
+(* What a new start of the executable must declare: the suite's name and
+   the paths of its cases, in order. *)
+let digest_of ~suite tests =
+  Digest.string
+    (String.concat "\n"
+       (suite
+       :: List.map
+            (fun (c : Test_tree.case) -> Test_tree.path_to_string c.path)
+            (Test_tree.flatten tests)))
+
+let declared_other =
+  "windtrap: this worker started the test executable again, and its module \
+   initialisation declared other tests than the run's. A suite must declare \
+   the same tests each time the executable starts: no test's name, or whether \
+   it is declared, may come from the clock, a random generator or a directory \
+   listing that changes."
+
+let worker_variable = "WINDTRAP_WORKER"
+let start_log = "start.log"
 
 (* On POSIX systems a descriptor is its number. *)
 let fd_to_int : Unix.file_descr -> int = Obj.magic
 let fd_of_int : int -> Unix.file_descr = Obj.magic
 
-let exec config =
+(* On Linux the executable the process runs, even once another file took its
+   place, as dune's watch mode does when it rebuilds. *)
+let program () =
+  if Sys.file_exists "/proc/self/exe" then "/proc/self/exe"
+  else Sys.executable_name
+
+(* A copy of [fd] for the worker to inherit, or the null device if [fd] is
+   closed. *)
+let inherited fd =
+  try Unix.dup ~cloexec:false fd with Unix.Unix_error _ -> null ()
+
+(* The worker is the executable started again, with [Sys.argv], and the
+   [run] call of the parent's rank serves (see [enter]). Until it does, it
+   writes to a log in its temporary directory, since the parent already
+   showed what module initialisation writes; then to the parent's standard
+   output and error, or to the null device for a quiet worker. It reads the
+   digest of the suite, then the run's configuration and its mutant. *)
+let exec ~quiet ~armed config ~suite tests =
   let temp_dir = make_temp_dir () in
   let (input, output), ends = pipes () in
+  let log = Filename.concat temp_dir start_log in
+  let config = if quiet then quiet_config ~temp_dir config else config in
+  let rank = Option.value !running ~default:0 in
+  let earlier =
+    List.init (rank - 1) (fun i ->
+        string_of_int (Option.value ~default:0 (List.assoc_opt (i + 1) !codes)))
+  in
+  let log_fd =
+    Unix.openfile log
+      [ Unix.O_WRONLY; Unix.O_CREAT; Unix.O_TRUNC; Unix.O_CLOEXEC ]
+      0o600
+  in
+  let out, err =
+    if quiet then
+      let fd = null () in
+      (fd, fd)
+    else (inherited Unix.stdout, inherited Unix.stderr)
+  in
   Unix.clear_close_on_exec input;
   Unix.clear_close_on_exec output;
   let spec =
-    strf "%s=%d:%d:%d:%s" worker_variable !rank (fd_to_int input)
-      (fd_to_int output) temp_dir
+    strf "%s=%d:%d:%d:%d:%d:%s:%s" worker_variable rank (fd_to_int input)
+      (fd_to_int output) (fd_to_int out) (fd_to_int err)
+      (String.concat "," earlier)
+      temp_dir
   in
   let env = Array.append [| spec |] (Unix.environment ()) in
   Capture.drain ();
   let pid =
-    Unix.create_process_env Sys.executable_name Sys.argv env Unix.stdin
-      Unix.stdout Unix.stderr
+    Fun.protect
+      ~finally:(fun () ->
+        Unix.close log_fd;
+        Unix.close out;
+        if err <> out then Unix.close err)
+      (fun () ->
+        Unix.create_process_env (program ()) Sys.argv env Unix.stdin log_fd
+          log_fd)
   in
+  let w = worker pid ~start_log:log ~temp_dir ends in
+  (* Sent while the parent holds the read end, so a worker that is already
+     gone cannot make the write fail. *)
+  let start = Buffer.create 256 in
+  Buffer.add_bytes start (frame (digest_of ~suite tests));
+  Buffer.add_bytes start (frame ((config : Run.config), armed));
+  write_all w.requests (Buffer.to_bytes start) 0 (Buffer.length start);
   Unix.close input;
   Unix.close output;
-  let w = worker pid ~temp_dir ends in
-  let frame = frame config in
-  write_all w.requests frame 0 (Bytes.length frame);
   w
+
+type re_executed = {
+  target : int; (* the rank of the parent's call *)
+  input : Unix.file_descr;
+  output : Unix.file_descr;
+  out : Unix.file_descr;
+  err : Unix.file_descr;
+  earlier : int list; (* the codes of the calls before it *)
+  dir : string;
+}
 
 (* Read as the library initialises, before a test can change the
    environment, which the worker's tests then do not inherit. *)
@@ -257,30 +383,97 @@ let re_executed =
   | Some spec -> (
       Os.setenv worker_variable None;
       match String.split_on_char ':' spec with
-      | rank :: input :: output :: dir -> (
-          match List.map int_of_string_opt [ rank; input; output ] with
-          | [ Some rank; Some input; Some output ] ->
+      | target :: input :: output :: out :: err :: earlier :: dir -> (
+          let earlier =
+            if earlier = "" then Some []
+            else
+              List.fold_right
+                (fun code acc ->
+                  match (int_of_string_opt code, acc) with
+                  | Some c, Some acc -> Some (c :: acc)
+                  | _ -> None)
+                (String.split_on_char ',' earlier)
+                (Some [])
+          in
+          match
+            ( List.map int_of_string_opt [ target; input; output; out; err ],
+              earlier )
+          with
+          | ( [ Some target; Some input; Some output; Some out; Some err ],
+              Some earlier ) ->
               Some
-                (rank, fd_of_int input, fd_of_int output, String.concat ":" dir)
+                {
+                  target;
+                  input = fd_of_int input;
+                  output = fd_of_int output;
+                  out = fd_of_int out;
+                  err = fd_of_int err;
+                  earlier;
+                  dir = String.concat ":" dir;
+                }
           | _ -> None)
       | _ -> None)
 
-(* A re-executed worker skips the calls before its own, which its parent
-   made, and its own never returns. *)
-let enter ~suite tests =
+(* The worker checks that it declared the parent's suite, takes the
+   parent's descriptors and serves. An exception that escapes [serve] exits
+   2, as in a fork, and not through the [at_exit] function of [serve]. *)
+let work w ~suite tests =
+  match (receive w.input : Digest.t) with
+  | exception _ -> Unix._exit 2
+  | digest when digest <> digest_of ~suite tests ->
+      prerr_endline declared_other;
+      Unix._exit 2
+  | _ -> (
+      try
+        let config, armed =
+          (receive w.input : Run.config * (Mutate.id * int) option)
+        in
+        Capture.drain ();
+        Unix.dup2 w.out Unix.stdout;
+        Unix.dup2 w.err Unix.stderr;
+        Unix.close w.out;
+        if w.err <> w.out then Unix.close w.err;
+        (try Sys.remove (Filename.concat w.dir start_log)
+         with Sys_error _ -> ());
+        let serving = frame Serving in
+        write_all w.output serving 0 (Bytes.length serving);
+        arm armed;
+        serve config ~suite tests ~temp_dir:w.dir ~input:w.input
+          ~output:w.output
+      with _ -> Unix._exit 2)
+
+(* A worker started again skips the calls before its own, which its parent
+   made, returning what they returned there, and its own never returns. A
+   fork of the worker is no worker, and makes its calls. *)
+let enter ~suite tests run =
   incr rank;
+  let rank = !rank in
   match re_executed with
-  | None -> `Parent
-  | Some (target, _, _, _) when !rank < target -> `Skip
-  | Some (_, input, output, temp_dir) -> (
-      match (receive input : Run.config) with
-      | config -> serve config ~suite tests ~temp_dir ~input ~output
-      | exception Closed -> Unix._exit 2)
+  | Some w when started_here () ->
+      if rank < w.target then
+        Option.value ~default:0 (List.nth_opt w.earlier (rank - 1))
+      else work w ~suite tests
+  | Some _ | None ->
+      running := Some rank;
+      let code = Fun.protect ~finally:(fun () -> running := None) run in
+      codes := (rank, code) :: !codes;
+      code
 
 let domain_spawned () =
   match Domain.before_first_spawn ignore with
   | () -> false
   | exception Invalid_argument _ -> true
+
+(* A new start of the executable reaches the runs of the process it started
+   as, and no other: the first [Windtrap.run] call's workers start it again.
+   A later call, a call in a fork and a run not entered through
+   [Windtrap.run] fork, unless the process spawned a domain, which OCaml
+   refuses [Unix.fork] after. Then a call of the process the executable
+   started as starts it again, and any other has no worker. *)
+let spawning () =
+  match !running with
+  | Some rank when started_here () && (rank = 1 || domain_spawned ()) -> `Exec
+  | Some _ | None -> if domain_spawned () then `None else `Fork
 
 (* The parent *)
 
@@ -354,6 +547,29 @@ let ended = function
   | Unix.WSIGNALED s -> "was killed by " ^ signal_name s
   | Unix.WSTOPPED s -> "was stopped by " ^ signal_name s
 
+(* The end of what a new start of the executable wrote before it served. *)
+let read_start log =
+  try
+    In_channel.with_open_bin log (fun ic ->
+        let length = Int64.to_int (In_channel.length ic) in
+        let start = max 0 (length - Failure.tail_bytes) in
+        In_channel.seek ic (Int64.of_int start);
+        In_channel.input_all ic)
+  with Sys_error _ -> ""
+
+(* How a fresh job's worker ended before it served, with the last line it
+   wrote. *)
+let before_tests status text =
+  let last =
+    List.find_opt
+      (fun line -> String.trim line <> "")
+      (List.rev (String.split_on_char '\n' text))
+  in
+  strf "%s before it began to run tests%s" (ended status)
+    (match last with
+    | None -> ""
+    | Some line -> ", writing: " ^ Text.truncate_utf8 200 (String.trim line))
+
 (* The soft limit bounds setup and body, then the teardown with what is left
    or a fresh window. The kill comes one window after that, for each
    attempt. *)
@@ -420,11 +636,26 @@ let supervise ?(on_event = ignore) ~on_reach (config : Run.config) ~suite tests
      it. *)
   let died w status =
     drop w;
+    let start = if w.serving then None else Option.map read_start w.start_log in
     bury w;
     match (w.job, w.releasing, status) with
     | _, _, Unix.WSIGNALED s
       when Option.is_some !interrupted && List.mem s interrupting ->
         interrupt s
+    | Some job, _, _ when Option.is_some start ->
+        w.job <- None;
+        let loc = job.case.loc in
+        let failure =
+          Failure.message ?loc
+            (strf
+               "its worker process, a new start of the test executable, %s \
+                before it began to run tests"
+               (ended status))
+        in
+        lose job
+          (match Option.get start with
+          | "" -> failure
+          | text -> Failure.with_output_tail (Failure.tail text) failure)
     | Some job, _, _ ->
         w.job <- None;
         let loc = job.case.loc in
@@ -502,7 +733,7 @@ let supervise ?(on_event = ignore) ~on_reach (config : Run.config) ~suite tests
     | Reached { test; sites } ->
         on_reach test sites;
         drain w
-    | Hits _ -> drain w
+    | Hits _ | Serving -> drain w
     | exception Closed -> ()
   in
   let finish w =
@@ -593,6 +824,15 @@ let supervise ?(on_event = ignore) ~on_reach (config : Run.config) ~suite tests
     match (receive_from w, w.job) with
     | exception Closed -> (
         match reap w with Some status -> died w status | None -> ())
+    | Serving, job ->
+        (* The kill of its first case counts from here: module
+           initialisation is no part of the test. *)
+        w.serving <- true;
+        Option.iter
+          (fun (job : case_job) ->
+            job.deadline <-
+              Option.map (fun d -> d +. Os.count_s job.started) job.deadline)
+          job
     | Counts counts, _ -> Coverage.absorb counts
     | Reached { test; sites }, _ -> on_reach test sites
     | Hits _, _ -> ()
@@ -618,8 +858,8 @@ let supervise ?(on_event = ignore) ~on_reach (config : Run.config) ~suite tests
       | exception Unix.Unix_error (Unix.EINTR, _, _) -> dead w status
   in
   let busy () = List.filter (fun w -> Option.is_some w.job) !workers in
-  let remaining (job : case_job) =
-    if Option.is_some job.asked then None
+  let remaining w (job : case_job) =
+    if Option.is_some job.asked || not w.serving then None
     else Option.map (fun d -> d -. Os.count_s job.started) job.deadline
   in
   (* The rows already settled reach the observer before the next case
@@ -648,7 +888,7 @@ let supervise ?(on_event = ignore) ~on_reach (config : Run.config) ~suite tests
         let wait =
           List.fold_left
             (fun acc w ->
-              match Option.bind w.job remaining with
+              match Option.bind w.job (remaining w) with
               | Some r -> Float.min acc (Float.max 0. r)
               | None -> acc)
             1. busy
@@ -667,7 +907,7 @@ let supervise ?(on_event = ignore) ~on_reach (config : Run.config) ~suite tests
             | None -> ()
             | Some _ when List.mem w.reports ready -> handle w
             | Some job -> (
-                match (remaining job, job.limit) with
+                match (remaining w job, job.limit) with
                 | Some r, Some limit when r <= 0. -> expire w job limit
                 | _ when ready = [] -> (
                     match reap ~flags:[ Unix.WNOHANG ] w with
@@ -740,7 +980,8 @@ let supervise ?(on_event = ignore) ~on_reach (config : Run.config) ~suite tests
 let execute ?(on_reach = fun _ _ -> ()) ?(on_event = ignore)
     (config : Run.config) ~suite tests =
   if mutating config then window ~send:on_reach None;
-  if config.in_process || Sys.win32 then (
+  let spawning = if Sys.win32 then `None else spawning () in
+  if config.in_process || spawning = `None then (
     let on_event event =
       if mutating config then reach_windows ~send:on_reach event;
       on_event event
@@ -749,21 +990,22 @@ let execute ?(on_reach = fun _ _ -> ()) ?(on_event = ignore)
     if mutating config then window ~send:on_reach None;
     ran)
   else
-    let spawn =
-      if domain_spawned () then fun () -> exec config
-      else fun () -> fork config ~suite tests
+    let spawn () =
+      match spawning with
+      | `Exec -> exec ~quiet:false ~armed:None config ~suite tests
+      | `Fork | `None -> fork ~quiet:false ~armed:None config ~suite tests
     in
     supervise ~on_event ~on_reach config ~suite tests ~spawn
 
 (* Fresh workers *)
 
-let can_fork () = not (Sys.win32 || domain_spawned ())
+let can_spawn () = (not Sys.win32) && spawning () <> `None
 
 type job = {
   cases : string list;
   deadline : float;
   bail : bool;
-  arm : unit -> unit;
+  armed : (Mutate.id * int) option;
 }
 
 type ended = Ran | Lost of string | Expired
@@ -793,36 +1035,17 @@ type state = {
   mutable hits : int;
 }
 
-(* Nothing a mutated program prints reaches the parent's descriptors, and
-   its capture logs live and die with the worker. *)
-let quiet ~temp_dir (config : Run.config) =
-  (match Unix.openfile "/dev/null" [ Unix.O_WRONLY ] 0 with
-  | fd ->
-      Unix.dup2 fd Unix.stdout;
-      Unix.dup2 fd Unix.stderr;
-      Unix.close fd
-  | exception Unix.Unix_error _ -> ());
-  {
-    config with
-    stream = false;
-    baseline = Baseline.Check;
-    junit = None;
-    log_dir = Filename.concat temp_dir "logs";
-  }
-
 let fresh (config : Run.config) ~suite tests jobs ~on_ran ~on_signal =
   let jobs = Array.of_list jobs in
   let n = Array.length jobs in
   let settled = Array.make n None in
   let running = ref [] and next = ref 0 and delivered = ref 0 in
   let signal = ref None in
+  let spawning = spawning () in
   let spawn job =
-    let prepare ~temp_dir config =
-      let config = quiet ~temp_dir config in
-      job.arm ();
-      config
-    in
-    fork ~prepare config ~suite tests
+    match spawning with
+    | `Exec -> exec ~quiet:true ~armed:job.armed config ~suite tests
+    | `Fork | `None -> fork ~quiet:true ~armed:job.armed config ~suite tests
   in
   let send_next st =
     match st.pending with
@@ -880,10 +1103,15 @@ let fresh (config : Run.config) ~suite tests jobs ~on_ran ~on_signal =
         st.finishing <- false;
         send_next st
     | status ->
+        let start =
+          if st.w.serving then None else Option.map read_start st.w.start_log
+        in
         settle st
           (Lost
-             (if st.w.exited then "ended when code under test called exit"
-              else ended status))
+             (match start with
+             | _ when st.w.exited -> "ended when code under test called exit"
+             | Some text -> before_tests status text
+             | None -> ended status))
   in
   let handle st =
     match receive st.w.reports with
@@ -900,6 +1128,7 @@ let fresh (config : Run.config) ~suite tests jobs ~on_ran ~on_signal =
         st.rev_failures <- List.rev_append failures st.rev_failures
     | Report (Outside failure) -> st.rev_failures <- failure :: st.rev_failures
     | Report Exited -> st.w.exited <- true
+    | Serving -> st.w.serving <- true
     | Report (Event _ | Judge _) | Reached _ | Counts _ -> ()
     | Hits hits -> st.hits <- st.hits + hits
   in

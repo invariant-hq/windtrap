@@ -43,11 +43,11 @@ type verdict =
           cached the result of the site in a table or a forced lazy value. *)
   | Outside_tests
       (** No test reached the site, and the dry run evaluated it outside every
-          test, at module initialization or in a fixture release. The loop forks
-          no child for the mutant. *)
+          test, at module initialization or in a fixture release. The loop
+          starts no worker for the mutant. *)
   | Unreached
       (** No test reached the site, and the dry run did not evaluate it outside
-          every test either. The loop forks no child for the mutant. *)
+          every test either. The loop starts no worker for the mutant. *)
 
 val survived : reaching_test list -> verdict
 (** [survived ts] is the {!Survived} verdict whose reaching tests are [ts],

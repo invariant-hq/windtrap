@@ -241,7 +241,7 @@ let save_narrowed ~scope population =
 let deadline_multiplier = 10.
 
 (* The dry run's wall clock bounds what a job pays besides its tests: the
-   fork, and its share of a loaded machine. *)
+   start of its worker, and its share of a loaded machine. *)
 let deadline ~wall ~durations paths =
   let took path = Option.value ~default:0. (Hashtbl.find_opt durations path) in
   let scheduled = List.fold_left (fun acc path -> acc +. took path) 0. paths in
@@ -249,13 +249,6 @@ let deadline ~wall ~durations paths =
 
 let budget_of hits =
   if hits > (max_int - 1000) / 8 then max_int else (hits * 8) + 1000
-
-(* The budget counts the job's evaluations, not the dry run's. A mutant of
-   the catalogue always arms, and one that did not would count no hit. *)
-let arming (mutant : Mutate.mutant) (site : site) () =
-  match Mutate.arm ~budget:(budget_of site.hits) mutant.id with
-  | Ok _ -> Mutate.reset_reach ()
-  | Error _ -> ()
 
 let counted_failure (r : Run.result) =
   r.counted
@@ -439,23 +432,26 @@ type ended =
   | Interrupted of int * Mutate.mutant option
   | Finished of string option
 
+(* The budget counts the job's evaluations, not the dry run's. *)
 let jobs_of ~deadline ~dry_run reached =
-  let job ~bail ~arm paths =
+  let job ~bail ~armed paths =
     {
       Supervisor.cases = List.map Test_tree.path_to_string paths;
       deadline = deadline paths;
       bail;
-      arm;
+      armed;
     }
   in
-  job ~bail:false ~arm:ignore
+  job ~bail:false ~armed:None
     (List.map (fun (r : Run.result) -> r.path) dry_run)
   :: List.map
        (fun ((mutant : Mutate.mutant), site) ->
-         job ~bail:true ~arm:(arming mutant site) (List.rev site.tests))
+         job ~bail:true
+           ~armed:(Some (mutant.id, budget_of site.hits))
+           (List.rev site.tests))
        reached
 
-(* Every job runs in a fresh fork, the probe first and then one per reached
+(* Every job runs in a fresh worker, the probe first and then one per reached
    mutant in catalogue order, up to [-j] at once; they are given in that
    order. *)
 let test_mutants renderer ~suite (config : Run.config) tests ~dry_run ~wall
@@ -540,11 +536,13 @@ let loop renderer ~scope ~suite (config : Run.config) tests =
   let reach = { sites = Hashtbl.create 256; outside = Hashtbl.create 16 } in
   let started = Os.counter () in
   let refuse ?say ?reach message = refuse ?say ?reach ~scope all message in
-  if not (Supervisor.can_fork ()) then
+  if not (Supervisor.can_spawn ()) then
     refuse
-      "this process has spawned a domain, and OCaml refuses Unix.fork in a \
-       process that has: mutation testing runs every mutant in a fork of this \
-       one, so it cannot run here. Spawn the domain in a test instead"
+      "this run is in a process that has spawned a domain, after which OCaml \
+       refuses Unix.fork, and that the test executable did not start as, so a \
+       new start of the executable would not reach the run: mutation testing \
+       runs every mutant in a fresh worker, so it cannot run here. Spawn the \
+       domain in a test instead"
   else
     let on_reach = observe reach ~xfail:(xfail_paths tests) in
     match
@@ -696,7 +694,8 @@ let execute_and_report ~suite (config : Run.config) tests =
   | Run.Armed spec -> armed (Report.terminal config) ~spec ~suite config tests
   | Run.Loop _ when Sys.win32 ->
       let message =
-        "mutation testing needs Unix.fork, which Windows does not have"
+        "mutation testing needs worker processes, which windtrap does not \
+         start on Windows"
       in
       Os.say message;
       Error (Run.Mutation_refused message)

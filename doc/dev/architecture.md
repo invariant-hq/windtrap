@@ -76,8 +76,8 @@ report and the aggregate cannot drift apart.
 | `Choice`, `Shrink`, `Gen`, `Property`, `Stateful`, `Workers` | choice sequences (the source a generator parses, spans, dependents, replay tokens); the reducer of a failing sequence; generators; the case loop (examples first, per-case seeds, the discard budget, the shrink search, replay, label tables); commands and programs, compiled into properties, and the judge of a program on several domains; the worker domains that run its branches |
 | `Baseline`, `Source_patch`, `Capture` | the correction registry keyed by site or path, read-only checking, corrections gated per test and written once as `.corrected` files or in place; literal rewriting inside a source file; fd-level capture into per-test log files |
 | `Cli`, `Run`, `Report`, `Report_sections`, `Report_junit` | one declarative item table (flags and flagless settings) resolved once into the one `Run.config`, each mirror declared beside its flag and read through the flag's parser; the run record and the ambient slot, the sequential executor (startup checks, selection, the per-test boundary, SIGALRM timeouts, retries, fixture release, the last-failed store, the exit guard, the one exit-code function), which prints nothing and emits typed events, and the worker's loop that serves a supervisor; the transcript, the GitHub envelope and `Report.run`, execute reported; the failure projection every transport shares and the section vocabulary the coverage and mutation reports project into; the JUnit document and its file |
-| `Supervisor` | the process boundary: the parent that forks workers (or executes itself again after a domain), hands each a case, gives the events in the order of the selection, judges a correcting mode's checks in its one registry, fails a case whose worker died or outlived its kill, retires a worker after a domain, forwards signals and merges the workers' coverage |
-| `Mutate_loop` | the dry run and its reach map, the scope applied to the population it forks over, the determinism probe, the fork loop (one child per reached mutant, each running only the tests that reach it), the verdict file, the per-executable report. It wraps `Report.run` rather than sitting beside it, because a mutation run must announce an armed mutant before any other output and fork after the dry run |
+| `Supervisor` | the process boundary: the parent that starts workers (the executable started again for the first `run`, forks for any other), hands each a case, gives the events in the order of the selection, judges a correcting mode's checks in its one registry, fails a case whose worker died or outlived its kill, retires a worker after a domain, forwards signals and merges the workers' coverage |
+| `Mutate_loop` | the dry run and its reach map, the scope applied to the population it tests, the determinism probe, the mutant loop (one fresh worker per reached mutant, each running only the tests that reach it), the verdict file, the per-executable report. It wraps `Report.run` rather than sitting beside it, because a mutation run must announce an armed mutant before any other output and start its mutants' workers after the dry run |
 | `Os`, `Pp`, `Text`, `Loc`, `Seed` | the clock, environment reading and its value vocabularies, atomic files, the project root and build-copy resolution; style-aware `Format` helpers; newline, UTF-8 and substring utilities; `pos` and backtrace-derived attribution; SplitMix64, `s1:` tokens and the `(root, path, index)` derivation |
 
 The rows group by role, not by layer: `Os`, `Pp`, `Text`, `Loc` and
@@ -120,12 +120,26 @@ module.
 
 **Supervisor.**
 
-- The parent forks before any test runs, from the state module
-  initialisation left, and never runs user code itself; re-executing the
-  program instead cost a module initialisation per worker (41 s against
-  3.6 s on windtrap's own suite) and cannot reach a `run` that only a
-  forked child makes. It re-executes only when the process already
-  spawned a domain, after which `fork` is refused.
+- The workers of the first `Windtrap.run` call of the process the
+  executable started as are the executable started again, from
+  `/proc/self/exe` on Linux, so a test sees a fresh start's values and
+  not what `fork` left of the parent's (see
+  `_autoresearch/audits/spike-exec-workers.md`); the parent never runs
+  user code itself. Every other run forks, before any test runs: a later
+  call, whose worker would skip the earlier ones; a call in a fork, which
+  a new start never reaches; and a run not entered through
+  `Windtrap.run` (`Report.run` alone), whose new start would spawn its
+  own worker again. A process that spawned a domain cannot fork: a later
+  call starts the program again, `WINDTRAP_WORKER` carrying the codes of
+  the earlier calls, and any other runs in the process.
+- A worker started again sends nothing until it has checked a digest of
+  its suite (name and case paths) against its parent's, taken back the
+  parent's descriptors from the log it wrote until then, and said
+  `Serving`. The parent shows that log only for a worker that ended
+  first, and counts a case's kill from `Serving`, so module
+  initialisation is no part of a test's limit. A fork of the worker
+  keeps the parsed `WINDTRAP_WORKER` but not the worker's pid, so it
+  never serves in the worker's place.
 - A worker never runs the `at_exit` functions its parent registered: the
   worker's own, registered first, ends the process, and so runs after
   every function a test registers. A test's `exit` therefore stops there
@@ -154,7 +168,7 @@ module.
   comes to look non-deterministic. It keeps `mutation`: a stateful test
   on several domains reads it to run each program on the test's domain,
   and a mutation child must run it as the dry run did, which spawned
-  nothing, so the loop can still fork.
+  nothing.
 - The ambient slot is an `Atomic.t`, and `Run.t` records the domain
   that called `execute`, so a read from another domain is defined and
   refused instead of racing. The refusal is raised in the calling domain
@@ -341,11 +355,11 @@ a lossy `%g` spelling is asked for at the call site.
 
 **Mutate_loop.**
 
-- Child hygiene. A forked child never reaches `Stdlib`'s exit
-  machinery: every exception, fatal included, is caught, reduced to a
-  verdict line and followed by `Unix._exit`; otherwise a child dying of
-  `Out_of_memory` would run the coverage at-exit dump against a path
-  resolved before the fork and overwrite the parent's `.coverage`. For
+- Child hygiene. A mutant's worker never reaches `Stdlib`'s exit
+  machinery once it serves: every exception, fatal included, is caught,
+  reduced to a verdict line and followed by `Unix._exit`; otherwise a
+  child dying of `Out_of_memory` would run the coverage at-exit dump
+  against the parent's path and overwrite the parent's `.coverage`. For
   the same reason the parent removes each child's log directory
   (`Run.remove_tree`): a child killed at its deadline never runs its own
   cleanup, and an orphaned capture tree would be a trace of the mutant.
@@ -431,7 +445,7 @@ Changing one is a design decision, recorded here first.
   lies below no build directory writes under `_windtrap/` in its working
   directory. A mutant catalogue is a literal in the binary.
 - **A mutant changes meaning only when armed, only in a build that
-  asked, and only in the process that armed it**: a forked child of
+  asked, and only in the process that armed it**: a mutant's worker of
   the `--mutate` loop, or the run itself under `--arm`; an armed
   process announces it before any output and concludes with one
   verdict line; armed checking is read-only; the aggregate is the one

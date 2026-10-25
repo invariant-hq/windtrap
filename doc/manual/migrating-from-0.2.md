@@ -144,6 +144,17 @@ compile and can change a verdict.
   that ran a test that spawned a domain retires, so a test that reads
   state an earlier test left sets it up itself, or in a `fixture`. An
   `at_exit` handler that a test registers runs as its worker ends.
+- A declaration that is not the same at each start of the program, as
+  tests named from the clock or a random generator, or one per entry of
+  a directory that the suite writes to → an error: each worker starts
+  the test executable again and must declare its parent's tests, and
+  the tests of a worker that declares others fail, saying so. Name the
+  tests from fixed data, and draw the varying part inside the test.
+- Expensive work at declaration, as loading a dataset into a module-level
+  value, which 0.2 paid once → paid once per worker start, since each
+  worker runs module initialisation again, a worker that replaces a
+  retired one included. Make the value `lazy`, or a `fixture`, so that
+  only a worker whose tests use it pays for it.
 - The record that `--failed` reads, which 0.2 kept per suite name →
   per executable and suite: the first `--failed` after upgrading finds
   no record and exits `2`; run the suite once.

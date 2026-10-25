@@ -242,14 +242,30 @@ for how to migrate from 0.2.0.
   `PASS  sorts  1.2ms (100 cases, 2 examples, 14 discards)`, and a
   table's says `holds on all 3 rows`; a failing property's block says
   what passed before it failed, as `scope: 37 cases passed, 3 discards`.
-- The process that calls `run` runs no test. Worker processes forked
-  from it run the tests, and it decides each verdict from what a worker
-  reports, how it ends and how long it takes. A test that calls `exit`
-  or `Unix._exit`, segfaults, raises `Out_of_memory` or `Sys.Break`, or
-  loops in C past its limit fails, saying which, and the run goes on.
-  In 0.2.0 `Unix._exit` and an `at_exit` handler could end a failed run
-  with 0, a catch-all around `exit` passed the test, and a segfault or
+- The process that calls `run` runs no test. Worker processes run the
+  tests, and it decides each verdict from what a worker reports, how it
+  ends and how long it takes. A test that calls `exit` or `Unix._exit`,
+  segfaults, raises `Out_of_memory` or `Sys.Break`, or loops in C past
+  its limit fails, saying which, and the run goes on. In 0.2.0
+  `Unix._exit` and an `at_exit` handler could end a failed run with 0, a
+  catch-all around `exit` passed the test, and a segfault or
   `Out_of_memory` ended the run with no summary.
+- A worker is the test executable started again with the same command
+  line, so a test sees what a fresh start of the program builds, as in
+  0.2.0: a device, a connection or a pool opened at declaration is the
+  worker's own. Module initialisation runs again in each worker, one
+  that replaces a retired worker included, so expensive work at
+  declaration is paid once per worker start; make it `lazy` or a
+  `fixture`. What it prints appears once, and a worker that ends before
+  its first test fails that test with how it ended and what it printed.
+  On Linux a worker starts the executable the run started as, even once
+  dune replaced the file. A later `run` in the same process, and a `run`
+  in a forked child, fork their workers.
+- (breaking) A suite must declare the same tests each time the program
+  starts. A declaration whose tests come from the clock, a random
+  generator or a directory listing that changes gives a worker another
+  suite than its parent, and the tests that worker was to run fail,
+  saying so.
 - A test still running three limits after it started, per attempt, is
   killed with its worker and times out; the alarm still bounds the body
   first, so its teardown runs.
@@ -328,6 +344,9 @@ for how to migrate from 0.2.0.
 
 ### Mutation testing
 
+- The probe and each mutant run in a worker started as a run's workers
+  are, so a suite that spawns a domain before `run` is mutation-tested,
+  where 0.2.0 refused it.
 - Under `--mutate`, lines that hold no mutation site, from `--lines` or
   an empty `--diff`, run the suite without mutation and say so, with
   its own exit code: a change to comments leaves nothing to mutate.

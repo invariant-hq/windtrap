@@ -26,6 +26,26 @@
   (<> %{os_type} Win32))
  (deps workers_main.exe workers_main.ml))
 
+; process.t and replaced.t run process_main.exe, whose suites fork, spawn
+; domains and start the program again; replaced.t reads /proc/self/exe.
+
+(executable
+ (name process_main)
+ (modules process_main)
+ (libraries windtrap unix))
+
+(cram
+ (applies_to process)
+ (enabled_if
+  (<> %{os_type} Win32))
+ (deps process_main.exe))
+
+(cram
+ (applies_to replaced)
+ (enabled_if
+  (= %{system} linux))
+ (deps process_main.exe))
+
 (executable
  (name send_signal)
  (modules send_signal)

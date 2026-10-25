@@ -1379,17 +1379,15 @@ let refusals =
             "mutants: 1 reached by this suite, 1 killed, 3 never reached"
             (outcome r.out));
       test
-        "a process that spawned a domain before its run is refused, since it \
-         cannot fork" (fun () ->
+        "a process that spawned a domain before its run is tested, in workers \
+         that start the executable again" (fun () ->
           let r = spawn ~env:[ suite "domain_first" ] [ mutate ] in
-          equal (pair string text) ("exited 1", "") (r.status, r.out);
-          equal text
-            "windtrap: this process has spawned a domain, and OCaml refuses \
-             Unix.fork in a process that has: mutation testing runs every \
-             mutant in a fork of this one, so it cannot run here. Spawn the \
-             domain in a test instead\n"
-            r.err;
-          equal (option bool) (Some true)
+          equal string "exited 0" r.status;
+          equal text "" r.err;
+          equal string
+            "mutants: 1 reached by this suite, 1 killed, 3 never reached"
+            (outcome r.out);
+          equal (option bool) (Some false)
             (Option.map (fun (f : file) -> Option.is_some f.refused) r.file));
     ]
 

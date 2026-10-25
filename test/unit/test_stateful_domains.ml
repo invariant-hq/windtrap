@@ -7,12 +7,12 @@
    that depend on the domain a call runs on, never on a race, so every
    verdict here is deterministic.
 
-   A process that has spawned a domain can never fork again, and the
-   mutation loop forks every mutant from this one. Under mutation testing a
-   stateful test on several domains spawns nothing, and every test here that
-   spawns a pool skips; the scenarios that leave a domain running forever
-   or spawn every domain the runtime has run in forked children, before any
-   domain exists. *)
+   Under mutation testing a stateful test on several domains spawns
+   nothing, and every test here that spawns a pool skips. The scenarios that
+   leave a domain running forever or spawn every domain the runtime has run
+   in a fresh process of this executable, which the test that reads them
+   starts: each worker starts the executable again, so work done as the
+   module initialises is paid once per worker. *)
 
 open Windtrap
 module Failure = Windtrap.Private.Failure
@@ -1765,38 +1765,46 @@ let mutation =
 
 (* A call that never returns *)
 
-(* The run is forked before any domain exists: its worker sleeps on until
-   the child leaves by [_exit], and hands back the run's facts on a pipe. *)
-let in_fork fn =
-  if Sys.win32 then None
-  else begin
-    Format.pp_print_flush Format.std_formatter ();
-    Format.pp_print_flush Format.err_formatter ();
-    flush stdout;
-    flush stderr;
-    let read_fd, write_fd = Unix.pipe ~cloexec:true () in
-    match Unix.fork () with
-    | 0 ->
-        Unix.close read_fd;
-        let text = try fn () with e -> "raised " ^ Printexc.to_string e in
-        let oc = Unix.out_channel_of_descr write_fd in
-        output_string oc text;
-        close_out oc;
-        Unix._exit 0
-    | pid ->
-        Unix.close write_fd;
-        let ic = Unix.in_channel_of_descr read_fd in
-        let text = In_channel.input_all ic in
-        close_in ic;
-        ignore (Unix.waitpid [] pid);
-        Some text
-  end
+(* The run happens in a fresh process of this executable, before any domain
+   exists, and only when the test asks: the process runs the scenario its
+   variable names as the module initialises, prints the run's facts and
+   leaves by [_exit]. *)
+let scenario_variable = "STATEFUL_DOMAINS_SCENARIO"
+
+let in_a_fresh_process name fn =
+  match Sys.getenv_opt scenario_variable with
+  | Some n when n = name ->
+      let text = try fn () with e -> "raised " ^ Printexc.to_string e in
+      print_string text;
+      flush stdout;
+      Unix._exit 0
+  | _ ->
+      lazy
+        (if Sys.win32 then None
+         else begin
+           let read_fd, write_fd = Unix.pipe ~cloexec:true () in
+           let env =
+             Array.append
+               [| scenario_variable ^ "=" ^ name |]
+               (Unix.environment ())
+           in
+           let pid =
+             Unix.create_process_env Sys.executable_name
+               [| Sys.executable_name |] env Unix.stdin write_fd Unix.stderr
+           in
+           Unix.close write_fd;
+           let ic = Unix.in_channel_of_descr read_fd in
+           let text = In_channel.input_all ic in
+           close_in ic;
+           ignore (Unix.waitpid [] pid);
+           Some text
+         end)
 
 (* The timeout covers the whole body, the spawn of the workers included: it
    must outlast that spawn on a loaded builder, or it fires before the call
    starts, and the test then times out without a stuck call. *)
 let stuck =
-  in_fork (fun () ->
+  in_a_fresh_process "stuck" (fun () ->
       let block =
         command "block"
           (Gen.unit @-> returns unit)
@@ -1831,7 +1839,7 @@ let stuck =
 
 (* More workers than the runtime has domains, then a test that spawns two. *)
 let unspawnable =
-  in_fork (fun () ->
+  in_a_fresh_process "unspawnable" (fun () ->
       let r =
         Recorded.execute
           [
@@ -1857,8 +1865,8 @@ let unspawnable =
       String.concat "\n" lines)
 
 let spawn_fails () =
-  match unspawnable with
-  | None -> skip ~reason:"POSIX only: the run is forked" ()
+  match Lazy.force unspawnable with
+  | None -> skip ~reason:"POSIX only: the run is in a fresh process" ()
   | Some text -> (
       match String.split_on_char '\n' text with
       | [ too_many; failures; two ] ->
@@ -1868,8 +1876,8 @@ let spawn_fails () =
       | _ -> fail text)
 
 let never_returns () =
-  match stuck with
-  | None -> skip ~reason:"POSIX only: the run is forked" ()
+  match Lazy.force stuck with
+  | None -> skip ~reason:"POSIX only: the run is in a fresh process" ()
   | Some text ->
       equal string
         "stuck: fail body\n\

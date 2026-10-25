@@ -35,22 +35,24 @@ what is non-obvious.
   is a test of its own and the stanza runs `-j 8`, so the slowest row,
   not their sum, sets the suite's time.
   `test_stateful_domains` holds the stateful tests on several domains,
-  in an executable of its own because a process that has spawned a
-  domain can never fork again. Its systems give results that depend on
+  in an executable of its own because each of its tests that spawns a
+  domain retires its worker. Its systems give results that depend on
   the domain a call runs on, never on a race, so every verdict is
   deterministic. Under mutation testing it spawns nothing: a stateful
   test on several domains then runs each program on the test's domain,
   and each test that spawns a pool skips. Its scenarios that leave a
   domain running forever or spawn every domain the runtime has run in
-  children forked as the module initialises, before any domain exists.
+  a fresh process of the executable, which the test that reads them
+  starts: run at module initialisation, they would cost 2.3 s in each
+  of the twenty or so workers the suite starts.
   `runtime/` holds the suites over the runtime's modules:
   `test_coverage` and `test_mutate`, each with a child executable (for
   the at_exit dump and for a registration that runs before any window
   opens); `test_instr`, what the two file formats share (the header, the
   build paths, the atomic write); and `test_verdicts`, the verdict
-  lattice and the verdict file. `mutate_loop/` drives the fork loop
-  through a real spawned process (a loop that forks cannot be observed
-  from inside its own image), with `plain_main.exe` as the zero-mutant
+  lattice and the verdict file. `mutate_loop/` drives the mutant loop
+  through a real spawned process (a loop that starts a worker per mutant
+  cannot be observed from inside its own image), with `plain_main.exe` as the zero-mutant
   control that must be declined by name, `runaway/` for the hit-count
   budget and `inline/` for an armed inline partition. Its scenarios
   share `suite_main.exe`'s one verdict file, so the stanza runs `-j 1`,
@@ -91,7 +93,13 @@ what is non-obvious.
   retired or killed between two checks, `-x` and retries, a table whose
   rows each settle their corrections, a property's law whose literal is
   never corrected, each byte for byte the outcome of `-j 1`, which is
-  that of a run in one process).
+  that of a run in one process), and what a worker starts from
+  (`process.t`, over `process_main.exe`: a value made at declaration is
+  each worker's own at every `-j`, a run reached only in a forked child
+  that spawned a domain, a second run after a domain, a declaration
+  that changes between starts, and a worker that ends before its first
+  test; `replaced.t`, on Linux, a worker of an executable renamed over
+  during the run).
   What a message says is pinned by the unit suite
   of its module; a session shows its line beside the exit code and the
   streams that only a real process has.
@@ -188,8 +196,7 @@ error apart and gives it an empty standard input. A child started this
 way sees no `WINDTRAP_*`, `CI` or `GITHUB_ACTIONS` of the machine it
 runs on. `Child.forked fn` runs `fn` in a forked child and hands back
 the string it returns: a test that spawns a domain spawns it there,
-since a process that has spawned one can never fork again, and the
-mutation loop forks from the test's process.
+since a process that has spawned one can never fork again.
 
 `preload/` holds C libraries a suite preloads into a child with
 `LD_PRELOAD`, to change what the C library tells it: `no_proc_exe.so`
@@ -222,7 +229,7 @@ under the real `_build/_coverage` point the dump elsewhere with
 `WINDTRAP_COVERAGE_FILE` on the action, because the destination is
 resolved at the first registration, before the test's own code runs; the
 loop's scenarios pass `--mutate=test/unit/mutate_loop/` so the
-population they fork over is their own fixtures; `test_mutate` registers
+population they test is their own fixtures; `test_mutate` registers
 its synthetic sites under `t/`, a directory no instrumented source is
 in, and reads the catalogue of its own files alone; and
 a suite that reads the merge's report of a child linking the core pins
@@ -328,8 +335,8 @@ opt out with `[@@@mutate exclude_file]`: a mutant armed inside the
 judging process hangs rather than survives.
 
 While working on one file, mutate it alone from the executable that owns
-its tests; the loop forks once per mutant and the prefixes narrow the
-population it forks over:
+its tests; the loop starts a worker per mutant and the prefixes narrow
+the population it tests:
 
 ```
 dune exec --instrument-with ppx_windtrap.mutate test/unit/test_diff.exe -- --mutate=lib/diff.ml
@@ -340,12 +347,12 @@ A per-executable run exits 0 whatever it found, and a narrowed run
 the aggregate never merges a partial answer; a survivor is confirmed by
 arming it against the whole suite, with `--arm <id>` from the footer or
 `WINDTRAP_MUTATE_ARM=<id>` in front of the tree-wide command. Every
-forked child runs under a deadline derived from the dry run (its wall
+mutant's worker runs under a deadline derived from the dry run (its wall
 clock, plus ten times the measured timings of the tests that child runs,
 floored at one second) and under the runtime's per-site hit-count
 budget; a child that overruns or spins is killed with its process group
 and scored killed, because a suite that hangs has noticed the change.
-Mutation needs `Unix.fork` and declines by name on Windows.
+Mutation needs worker processes and declines by name on Windows.
 
 ## The conformance corpus
 

@@ -2118,14 +2118,38 @@ val run : ?argv:string array -> string -> test list -> int
 
 (** {2:process The process}
 
-    The process that calls {!run} runs no test. It forks a worker process,
-    before any test runs, and the worker runs the tests and reports on each;
-    {!run} decides every verdict from what the worker reports, how it ends and
-    how long it takes, and returns its own code. A worker is a session of its
-    own, with its own directory for {!temp_dir}. A process that spawned a domain
-    before {!run} cannot fork: it runs its program again for each worker, and
-    the [run] call of the same rank serves, the earlier ones returning [0] at
-    once.
+    The process that calls {!run} runs no test. It starts a worker process, and
+    the worker runs the tests and reports on each; {!run} decides every verdict
+    from what the worker reports, how it ends and how long it takes, and returns
+    its own code. A worker is a session of its own, with its own directory for
+    {!temp_dir}.
+
+    A worker is the test executable started again, with the same command line,
+    so a test sees what a fresh start of the program builds, as under 0.2 and
+    [--in-process]: a value made as the module initialises, such as an open
+    device, a connection or a domain pool, is the worker's own. Module
+    initialisation runs again in each worker the run starts, a worker that
+    replaces a retired one included, and the worker's own call of {!run} runs
+    the tests. Work that is expensive at declaration is paid once per worker
+    start: make it [lazy], or a {!fixture}. What a worker writes before its
+    tests start is not shown, since the process that called {!run} showed it; a
+    worker that ends before then fails its test with how it ended and what it
+    wrote. On Linux a worker starts the executable that the run started as, even
+    once another file took its place.
+
+    A suite must declare the same tests each time the program starts. A worker
+    whose module initialisation declares another suite, with names taken from
+    the clock, a random generator or a directory listing that changes, runs none
+    of it, and the tests it was to run fail, saying so.
+
+    Only the first call of {!run} in the process the program started as starts
+    the program again. A later call, and a call in a process forked from it,
+    forks its workers from the calling process before any test runs, so a worker
+    starts from what that process built and nothing a test left. A process that
+    spawned a domain before {!run} cannot fork. There a later call starts the
+    program again too, its worker's earlier calls returning at once the codes
+    they returned in that process, and a call in a forked process runs its tests
+    in that process, as under [--in-process].
 
     Code under test cannot end the run. A test whose worker ends, by a call to
     [exit] or [Unix._exit], by a signal such as [SIGSEGV], by [Out_of_memory] or
@@ -2154,10 +2178,10 @@ val run : ?argv:string array -> string -> test list -> int
     same signal. A worker that receives one of these signals itself ends the run
     so too.
 
-    On Windows, which has no [fork], and under [--in-process], the tests run in
-    the process that called {!run}. There a call to [exit] in code under test is
-    recorded as the failure of its test, unless a handler that catches every
-    exception surrounds the call, and the rest of this section does not hold. *)
+    On Windows, and under [--in-process], the tests run in the process that
+    called {!run}. There a call to [exit] in code under test is recorded as the
+    failure of its test, unless a handler that catches every exception surrounds
+    the call, and the rest of this section does not hold. *)
 
 (** {1:private Private} *)
 

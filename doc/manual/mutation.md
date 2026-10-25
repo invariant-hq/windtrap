@@ -251,9 +251,11 @@ the withheld-correction warning:
   mutant is killed.
 
 Every pass runs in worker processes, and the probe and each mutant in a
-worker of its own, forked before any test ran: none starts from what
-the dry run or another mutant left, a table filled or a lazy value
-forced, so a cache cannot hide a mutant. They run up to `-j` at once,
+worker of its own, started as a run's workers are (see [Running
+tests](running-tests.md#running-tests-in-worker-processes)): none starts
+from what the dry run or another mutant left, a table filled or a lazy
+value forced, so a cache cannot hide a mutant. The mutant is armed once
+the worker's module initialisation is over. They run up to `-j` at once,
 as tests do, and are reported in catalogue order. Unless `--seed` is
 given, a mutation run draws its property cases from one fixed seed,
 `s1:6d7574616e747321`, so a verdict is the same on every run of one
@@ -489,15 +491,16 @@ the suite then runs with `--mutate`.
 
 ## When a run cannot mutate
 
-A mutation run forks a process for each mutant. It is refused on
-Windows, and in a process that started a domain before its run, which
-cannot fork; a test may start one. A run that is refused, or whose
-selection narrows the suite, still writes its verdict file when this
-build has none, saying why, and the project's merge names the
-executable under `not mutation-tested`. `--mutate` and `--arm` together
-are a usage error. An interrupt ends the run: the running mutants are
-killed, the first not yet reported is named on standard error, and no
-verdict file is written.
+A mutation run starts a worker process for each mutant. It is refused on
+Windows, and in a process forked from the test executable that spawned a
+domain before its run: that process cannot fork, and a new start of the
+program would not reach its run. A test may spawn a domain. A run that
+is refused, or whose selection narrows the suite, still writes its
+verdict file when this build has none, saying why, and the project's
+merge names the executable under `not mutation-tested`. `--mutate` and
+`--arm` together are a usage error. An interrupt ends the run: the
+running mutants are killed, the first not yet reported is named on
+standard error, and no verdict file is written.
 
 ## The command's options
 

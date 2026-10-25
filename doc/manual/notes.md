@@ -297,7 +297,7 @@ command line is read from the working directory.
 
 ## A test cannot end the run
 
-The process that calls `run` runs no test: it forks worker processes,
+The process that calls `run` runs no test: it starts worker processes,
 which run them, and decides each verdict from what a worker reports, how
 it ends and how long it takes. Code under test that calls `exit` or
 `Unix._exit`, segfaults, runs out of memory or loops in C past its limit
@@ -307,15 +307,34 @@ leaked: a catch-all around `exit` swallowed it, `Unix._exit` bypassed
 it, and an `at_exit` handler set the code of a failed run to 0. The
 parent's exit code is its own, decided once.
 
-A worker forks from the parent before any test runs, so it starts with
-what module initialisation built and nothing a test left. Tests run one
-at a time in one worker by default, as they did in one process, so a
-fixture is acquired once and process state never races; `-j N` is an
-opt-in. A test that spawns a domain retires its worker, since the domain
-could run into the next test and a process with a domain cannot fork.
-One gap is left: a domain that outlives its test dies with that test's
-worker, so an exit it would call later is never made, and no test
-records it.
+A worker is the test executable started again, so a test sees what a
+fresh start of the program builds, which is what 0.2 and `--in-process`
+gave. A fork of the declaring process would start a worker faster and
+pay for module initialisation once, but a test would then see the
+declaration's values as `fork` leaves them, and a library that refuses
+to cross `fork` leaves them dead: a device, a GPU context, a connection,
+a thread. Ported to forked workers, the suites of raven, an ML library
+whose tests open GPU devices as they are declared, took 57 accessor
+bindings and still could not run on the GPU; started again, their 0.2
+code passed unchanged. The price is one module initialisation per worker
+start, about a millisecond more per worker on top, and one rule: a suite
+must declare the same tests each time the program starts, which a digest
+of the suite checks in every worker.
+
+Only the first `run` of the program's own process starts the program
+again. A later `run`'s worker would have to skip the calls before it,
+and a new start never reaches a `run` that only a forked child makes, so
+those fork, before any test runs. A process that spawned a domain cannot
+fork, so there a later `run` starts the program again, its worker
+skipping the earlier calls with the codes they returned, and a `run` in
+a forked child runs its tests in the child.
+
+Tests run one at a time in one worker by default, as they did in one
+process, so a fixture is acquired once and process state never races;
+`-j N` is an opt-in. A test that spawns a domain retires its worker,
+since the domain could run into the next test. One gap is left: a domain
+that outlives its test dies with that test's worker, so an exit it would
+call later is never made, and no test records it.
 
 `--in-process` runs one test in the process that was started, for a
 debugger. It accepts one test and no more, so it cannot become a way to
@@ -365,10 +384,10 @@ The test executable runs its own mutation run under `--mutate`. It is
 the program that knows its tests, so its workers can report which tests
 evaluate each mutant and the report name them in a survivor's block,
 which turns a score into a list of tests to strengthen. Each reached
-mutant runs in a worker of its own, forked from the suite's process
-before any test ran, and the worker runs only the tests that reach its
-mutant, up to the first failure. A tool outside the suite would rebuild
-or restart the suite for each mutant, and could not name the tests.
+mutant runs in a worker of its own, started as a run's workers are, and
+the worker runs only the tests that reach its mutant, up to the first
+failure. A tool outside the suite would rebuild the suite for each
+mutant, and could not name the tests.
 
 A worker that ran another mutant, or the dry run, keeps what they
 cached: measured on windtrap's suites, reusing workers changed a
