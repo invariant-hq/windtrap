@@ -1202,18 +1202,19 @@ let entry ?(seen = false) ~excerpt f =
 
 let headline f = (entry ~excerpt:false f).summary
 
-let failure_hints ?armed ?(invocation = `Mirrors) ~filter f =
-  hints ?armed ~invocation [ f ]
-  @ Option.to_list (accept ?armed ~invocation ~tests:(`Filter filter) [ f ])
-  @ Option.to_list (replay ?armed ~invocation ~tests:(`Filter filter) [ f ])
-
 (* A failure away from its block: its entry and its hint lines, unstyled. *)
-let unstyled_entry ?armed ?invocation ~filter f =
+let unstyled_entry ?armed ?(invocation = `Mirrors) ~filter f =
   let e = entry ~excerpt:false f in
+  let tests = `Filter filter in
+  let hints =
+    hints ?armed ~invocation [ f ]
+    @ Option.to_list (accept ?armed ~invocation ~tests [ f ])
+    @ Option.to_list (replay ?armed ~invocation ~tests [ f ])
+  in
   ( e.summary,
     List.map
       (fun l -> render ~ansi:false (indented indent l))
-      (e.lines @ List.map line (failure_hints ?armed ?invocation ~filter f)) )
+      (e.lines @ List.map line hints) )
 
 (* The section vocabulary *)
 
@@ -1229,12 +1230,13 @@ type section =
 
 let dashes n = String.concat "" (List.init (max 0 n) (fun _ -> "\u{2500}"))
 
-let rule ~width = function
-  | None -> dashes width
+let rule = function
+  | None -> dashes rule_width
   | Some label ->
       let inner = Text.length_utf8 label + 2 in
-      let left = max 2 ((width - inner) / 2) in
-      dashes left ^ " " ^ label ^ " " ^ dashes (max 2 (width - inner - left))
+      let left = max 2 ((rule_width - inner) / 2) in
+      dashes left ^ " " ^ label ^ " "
+      ^ dashes (max 2 (rule_width - inner - left))
 
 (* The runs of [lines], ascending and without duplicates, as pairs of their
    first and last line: lines at most [within] apart share a run. *)
@@ -1327,7 +1329,7 @@ let print ~out ~ansi sections =
       | Rows { margin; columns; rows } ->
           List.iter put_trimmed (table ~margin ~columns rows)
       | Excerpt e -> List.iter put_trimmed (excerpt_rows e)
-      | Rule label -> put [ styled `Faint (rule ~width:rule_width label) ])
+      | Rule label -> put [ styled `Faint (rule label) ])
     sections;
   Pp.flush out ()
 

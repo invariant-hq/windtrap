@@ -149,17 +149,6 @@ val entry : ?seen:bool -> excerpt:bool -> Failure.t -> entry
 val headline : Failure.t -> string
 (** [headline f] is the {!entry.summary} of [f]. *)
 
-val failure_hints :
-  ?armed:string ->
-  ?invocation:Run.invocation ->
-  filter:string option ->
-  Failure.t ->
-  string list
-(** [failure_hints ~filter f] is the lines of {!hints} for [f] alone, then its
-    {!accept} and {!replay} lines for the test at the path [filter], or for
-    every test when it is [None]. A transport that shows one failure at a time,
-    away from the report, carries these. *)
-
 val unstyled_entry :
   ?armed:string ->
   ?invocation:Run.invocation ->
@@ -168,8 +157,9 @@ val unstyled_entry :
   string * string list
 (** [unstyled_entry ~filter f] is the summary of [f] and the lines that a
     transport away from the report carries for it: its entry without excerpt,
-    then its {!failure_hints}, each indented by four spaces and rendered without
-    styling. *)
+    then the lines of {!hints} for [f] alone, then its {!accept} and {!replay}
+    lines for the test at the path [filter], or for every test when it is
+    [None], each indented by four spaces and rendered without styling. *)
 
 val max_lines : int
 (** [max_lines] is [10], the bound on the two texts of a block that have no
@@ -310,13 +300,9 @@ type section =
           region. Each line carries its number, and a marked line a marker. The
           text of a line is whole, neither dedented nor elided. *)
   | Rule of string option
-      (** A {!rule} of the width that every report shares, with its label when
-          given. *)
-
-val rule : width:int -> string option -> string
-(** [rule ~width label] is a horizontal rule [width] columns wide, unstyled,
-    with [label] centred in it when given. A long label takes the rule past
-    [width]. *)
+      (** A horizontal rule of the width that every report shares, 58 columns,
+          faint, with its label centred in it when given. A long label takes the
+          rule past that width. *)
 
 val print : out:Format.formatter -> ansi:bool -> section list -> unit
 (** [print ~out ~ansi sections] writes [sections] to [out] in order, each line

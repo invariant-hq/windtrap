@@ -27,9 +27,12 @@ let entry ?(ansi = false) ?(terminal = ansi) ?(excerpt = false) ?(hints = true)
   let hint_lines =
     if not hints then []
     else
+      let tests = `Filter filter in
       List.map
         (fun h -> [ Sections.plain h ])
-        (Sections.failure_hints ?armed ?invocation ~filter f)
+        (Sections.hints ?armed ?invocation [ f ]
+        @ Option.to_list (Sections.accept ?armed ?invocation ~tests [ f ])
+        @ Option.to_list (Sections.replay ?armed ?invocation ~tests [ f ]))
   in
   String.concat ""
     (List.map
@@ -1870,10 +1873,10 @@ let print_flushes () =
   equal string "x\n" (Buffer.contents b)
 
 let long_rule () =
-  let label = String.make 30 'l' in
-  let r = Sections.rule ~width:20 (Some label) in
+  let label = String.make 70 'l' in
+  let r = String.trim (printed [ Sections.Rule (Some label) ]) in
   contains ~sub:label r;
-  greater int ~than:20 (Text.length_utf8 r)
+  greater int ~than:58 (Text.length_utf8 r)
 
 let vocabulary =
   group "The section vocabulary"
@@ -1896,8 +1899,9 @@ let vocabulary =
             (Sections.render ~ansi:true [ Sections.styled style "x" ]));
       test "width counts each escape's four columns" (fun () ->
           equal int 15 (Sections.width hostile_line));
-      test "a rule is width columns" (fun () ->
-          equal int 20 (Text.length_utf8 (Sections.rule ~width:20 None)));
+      test "a rule is 58 columns" (fun () ->
+          equal int 58
+            (Text.length_utf8 (String.trim (printed [ Sections.Rule None ]))));
       test "a long label is whole and takes the rule past its width" long_rule;
       test "print writes a hint unstyled" (fun () ->
           equal string "cmd --flag\n"

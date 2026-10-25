@@ -288,31 +288,25 @@ val group_end : string
 (** [group_end] is the command that closes the section that {!group_start}
     opened. *)
 
-val annotation :
-  ?invocation:Run.invocation ->
-  ?armed:string ->
-  path:string list ->
-  Failure.t ->
-  string
-(** [annotation ~path f] is the [::error] command for [f], a failure of the test
-    at [path]. Its [file] and [line] are those of the location of [f], when it
-    has one, and its title is [Test failure: <path>]. The message is the lines
-    of {!Report_sections.unstyled_entry} for [f], with [path] as their filter.
-    An annotation is read alone, away from the transcript, so its [accept:] and
-    its [replay:] name the test. [invocation] and [armed] are those of
-    {!Report_sections.hints}, and [invocation] defaults to [`Mirrors]. *)
-
 val annotations :
   ?invocation:Run.invocation ->
   ?armed:string ->
   release_failures:Failure.t list ->
   Run.result list ->
   string
-(** [annotations ~release_failures results] is the {!annotation} of every
-    failure of every counted failed result of [results] ([r.counted]), in order,
-    then that of each of [release_failures], at the path
+(** [annotations ~release_failures results] is the annotation of every failure
+    of every counted failed result of [results] ([r.counted]), in order, then
+    that of each of [release_failures], at the path
     [[Report_sections.release_title]], concatenated. It is [""] when there is
-    none. *)
+    none.
+
+    The annotation of [f], a failure of the test at [path], is an [::error]
+    command. Its [file] and [line] are those of the location of [f], when it has
+    one, and its title is [Test failure: <path>]. The message is the lines of
+    {!Report_sections.unstyled_entry} for [f], with [path] as their filter. An
+    annotation is read alone, away from the transcript, so its [accept:] and its
+    [replay:] name the test. [invocation] and [armed] are those of
+    {!Report_sections.hints}, and [invocation] defaults to [`Mirrors]. *)
 
 (** {1:mutation Mutation lines}
 

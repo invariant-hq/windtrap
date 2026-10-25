@@ -1562,7 +1562,8 @@ let transcript_group =
 
 (* A row's annotation is made in its test. *)
 let annotation ?invocation ?armed ?(path = [ "t" ]) f () =
-  Report.annotation ?invocation ?armed ~path f
+  Report.annotations ?invocation ?armed ~release_failures:[]
+    [ result path (Failure.Fail [ f ]) ]
 
 let annotations ?invocation ?armed ?(release_failures = []) results () =
   Report.annotations ?invocation ?armed ~release_failures results
