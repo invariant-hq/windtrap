@@ -157,14 +157,14 @@ the background of a script ignores an interrupt, so this one is a
 termination:
 
   $ rm -rf sandbox && mkdir sandbox && cd sandbox
-  $ env -i PATH="$PATH" TMPDIR="${TMPDIR:-/tmp}" WINDTRAP_COLOR=never \
-  >   WINDTRAP_PROJECT_ROOT="$PWD" PROCESS_SUITE=locked \
-  >   ../process_main.exe > ../out 2> ../err &
-  > pid=$!
-  > until [ "$(cat starts 2> /dev/null | wc -l)" -ge 2 ]; do sleep 0.05; done
-  > kill -TERM $pid; wait $pid; echo "[$?]"; cd ..
+  $ sh -c '
+  >   env -i PATH="$PATH" TMPDIR="${TMPDIR:-/tmp}" WINDTRAP_COLOR=never \
+  >     WINDTRAP_PROJECT_ROOT="$PWD" PROCESS_SUITE=locked \
+  >     ../process_main.exe > ../out 2> ../err &
+  >   pid=$!
+  >   until [ "$(cat starts 2> /dev/null | wc -l)" -ge 2 ]; do sleep 0.05; done
+  >   kill -TERM $pid; wait $pid; echo "[$?]"' 2> /dev/null; cd ..
   > scrub < out; echo '--- stderr'; scrub < err
-  Terminated
   [143]
   taking the lock
   locked: 1 not run in DURATION.
