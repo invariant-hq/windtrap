@@ -1120,8 +1120,7 @@ let duplicate_paths paths =
 (* The checks run in the order of [startup_error], so a suite that fails two
    of them is always told of the same one. The result is the paths that
    [--failed] keeps. *)
-let startup (config : config) ~suite ~focus_sites paths =
-  let in_ci = Os.in_ci () in
+let startup (config : config) ~suite ~in_ci ~focus_sites paths =
   let* () =
     match duplicate_paths paths with
     | [] -> Ok ()
@@ -1151,6 +1150,7 @@ type selection = {
   total : int;
   focus_active : bool;
   recorded : (string * case_id list) list;
+  in_ci : bool;
 }
 
 let select (config : config) ~suite tests =
@@ -1166,7 +1166,8 @@ let select (config : config) ~suite tests =
   let paths = List.map case_path cases in
   let focus_sites = Test_tree.focus_sites tests in
   let focus_active = focus_sites <> [] in
-  let* recorded = startup config ~suite ~focus_sites paths in
+  let in_ci = Os.in_ci () in
+  let* recorded = startup config ~suite ~in_ci ~focus_sites paths in
   (* Hashed: the store can name every path of the suite. *)
   let allowed =
     match recorded with
@@ -1189,7 +1190,14 @@ let select (config : config) ~suite tests =
           (fun (_, cases) -> cases <> [])
           (Option.value recorded ~default:[])
       in
-      Ok { cases = selected; total = List.length cases; focus_active; recorded }
+      Ok
+        {
+          cases = selected;
+          total = List.length cases;
+          focus_active;
+          recorded;
+          in_ci;
+        }
 
 let record_cases (run : t) entries =
   List.iter
@@ -1805,6 +1813,7 @@ type outcome = {
   release_failures : Failure.t list;
   duration : float;
   uncorrected : bool;
+  failed_in_ci : bool;
 }
 
 (* The store, then the corrections: what a run that reached its end leaves
@@ -1825,6 +1834,9 @@ let conclude run (selection : selection) ~suite ~started ~uncorrected
     release_failures;
     duration = Os.count_s started;
     uncorrected;
+    (* A correction lets a run exit 0 only for a promotion to accept it, and
+       no one promotes under CI. *)
+    failed_in_ci = selection.in_ci && List.exists (fun r -> r.counted) results;
   }
 
 let execute ?(on_event = ignore) config ~suite tests =
@@ -1873,7 +1885,11 @@ let exit_code = function
           (function Baseline.Refused _ -> true | Baseline.Written _ -> false)
           (Baseline.writes outcome.run.baselines)
       in
-      if outcome.uncorrected || outcome.release_failures <> [] || refused then 1
+      if
+        outcome.uncorrected || outcome.failed_in_ci
+        || outcome.release_failures <> []
+        || refused
+      then 1
       else if outcome.run.rev_results <> [] then 0
         (* A mirror reaches every stanza of a project, and a stanza whose
            tests its selection leaves out holds no mistyped filter. *)

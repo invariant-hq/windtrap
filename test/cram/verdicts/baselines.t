@@ -48,23 +48,28 @@ first of standard error. A block whose point is a code of 0 echoes it.
   >   return 0
   > }
 
-A literal never recorded, under a stanza that diffs its correction,
-under CI: the run exits 0 with its correction written, and the diff?
-fails the action:
+A literal never recorded, under a stanza that diffs its correction:
+the run exits 0 with its correction written, and the diff? fails the
+action. Under CI the run itself fails, its correction written still:
 
-  $ stanza "$source" CI=true VERDICT_SUITE=baseline_literal ./verdict_main.exe
+  $ stanza "$source" VERDICT_SUITE=baseline_literal ./verdict_main.exe
   1 failed, 1 correction written in DURATION.
   -      [ test "never recorded" (fun () -> expect "hello" @@ __POS_OF__ {||}) ]
   +      [ test "never recorded" (fun () -> expect "hello" @@ __POS_OF__ {| hello |}) ]
   the diff? differs
   [1]
   $ rm "$source.corrected"
+  $ stanza "$source" CI=true VERDICT_SUITE=baseline_literal ./verdict_main.exe
+  1 failed, 1 correction written in DURATION.
+  the run failed: [1]
+  [1]
+  $ rm "$source.corrected"
 
 An inline expectation never recorded, under CI: the partition writes
-its correction and exits 0, and the diff? fails the action:
+its correction and exits 1:
 
   $ run CI=true ./inline/runner.exe inline-test-runner inline -partition hello.ml > /dev/null; echo "exit $?"
-  exit 0
+  exit 1
   $ diff -U0 test/cram/verdicts/inline/hello.ml test/cram/verdicts/inline/hello.ml.corrected | grep '^[-+] '
   -  [%expect]
   +  [%expect {| hello, world |}]
@@ -108,11 +113,25 @@ cannot be combined with --corrected:
   usage: verdict_main.exe [OPTIONS] [PATTERN...]
   [2]
 
-A stanza that runs --corrected with no diff? after it passes, though its
-literal was never recorded: the action is the run alone, and the run
-exits 0:
+A stanza that runs --corrected with no diff? after it: the action is
+the run alone, and no diff? fails it on the literal never recorded.
+Under CI, where no one promotes, the mismatch fails the run though its
+correction is written, and the run says why it exits 1:
 
-  $ brief CI=true VERDICT_SUITE=baseline_literal ./verdict_main.exe --corrected; echo "exit $?"
+  $ brief CI=true VERDICT_SUITE=baseline_literal ./verdict_main.exe --corrected
+    FAIL  never recorded
+  1 failed, 1 correction written in DURATION.
+  --- stderr
+  windtrap: warning: CI is set, so a baseline mismatch fails the run: no one promotes the correction written here under CI. To accept it, rerun outside CI, then 'dune promote'.
+  [1]
+  $ test -e "$source.corrected" && echo 'correction written'
+  correction written
+  $ rm "$source.corrected"
+
+Outside CI the same run exits 0, so that a diff? can register its
+correction for dune promote:
+
+  $ brief VERDICT_SUITE=baseline_literal ./verdict_main.exe --corrected; echo "exit $?"
     FAIL  never recorded
   1 failed, 1 correction written in DURATION.
   exit 0

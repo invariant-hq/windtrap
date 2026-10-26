@@ -1831,7 +1831,12 @@ val stateful :
     is compiled into the executable, so after [-u] has rewritten one the
     executable must be built again before the next run.
 
-    [-u] is refused under [CI], and [-u] with [--corrected] is a usage error.
+    {b Under [CI]} a baseline mismatch fails the run's exit code in every mode.
+    A [--corrected] run exits [0] on a mismatch only for a [diff?] to hand the
+    correction to [dune promote], and no one promotes under [CI], so a stanza
+    that lacks the file's [diff?] would pass. The run still writes the
+    correction, and says on standard error why it exits [1]. [-u] is refused
+    under [CI], and [-u] with [--corrected] is a usage error.
 
     A correction is kept only for a test whose every failure is a baseline
     mismatch. An assertion failure, another exception or a skip beside the
@@ -2043,8 +2048,9 @@ val run : ?argv:string array -> string -> test list -> int
       [--case] over a selection of other than one.
 
     Under [--corrected] a test whose failures are all kept corrections leaves
-    the code alone. It still stops a run under [-x], and it still enters the
-    record that [--failed] reads. *)
+    the code alone, except under [CI], where no one promotes them and it returns
+    [1] (see {{!section-baselines}Baselines}). It still stops a run under [-x],
+    and it still enters the record that [--failed] reads. *)
 
 (** {2:command_line Command line and environment}
 

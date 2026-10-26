@@ -79,6 +79,14 @@ signature of `cases`, `judges` in place of `chooses`, and the type of
   `inf`, `-inf` or `-nan` → `infinity`, `neg_infinity` and `nan`;
   accept the new text with `dune runtest` and `dune promote`.
 
+## Baselines
+
+- A stanza that runs `--corrected` with no `diff?` for a file that holds
+  a baseline, which passed under `CI` when that file was stale → the
+  run exits 1 under `CI`, and writes the correction still. Add the
+  file's `diff?`, so that `dune promote` can accept the correction
+  outside CI.
+
 ## Property testing
 
 - `cover` passed as a value of type `string -> bool -> unit`, as

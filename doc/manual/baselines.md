@@ -239,6 +239,16 @@ at most one correction per stanza and run. When two files are stale, the
 second file's `accept:` line finds nothing to promote until the first is
 accepted and the tests run again.
 
+Under CI a stale baseline fails the run itself, whatever its mode. A
+`--corrected` run exits 0 on a mismatch only so that a `diff?` can hand
+the correction to `dune promote`, and no one promotes under CI: a stanza
+that lacks the file's `diff?` would pass. The run still writes the
+correction, and says on standard error why it exits 1:
+
+```
+windtrap: warning: CI is set, so a baseline mismatch fails the run: no one promotes the correction written here under CI. To accept it, rerun outside CI, then 'dune promote'.
+```
+
 ## Accepting without dune promote
 
 A suite run by hand writes no correction. Its report closes on one

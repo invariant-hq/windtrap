@@ -73,6 +73,16 @@ for how to migrate from 0.2.0.
   print `infinity`, `neg_infinity` and `nan`, where 0.2.0 printed
   `inf`, `-inf` and, under some C libraries, `-nan`.
 
+### Baselines
+
+- Under `CI` a baseline mismatch fails the run's exit code in every
+  mode. A `--corrected` run exits 0 when its only failures are
+  mismatches whose corrections it wrote, so that a `diff?` can hand them
+  to `dune promote`; where no one promotes, that exit 0 passed a stale
+  baseline whenever the stanza lacked the file's `diff?`. The run still
+  writes the correction, and says on standard error why it exits 1.
+  Outside CI nothing changes.
+
 ### Property testing
 
 - (breaking) `cover ~share:p label cond` demands that a share `p` of

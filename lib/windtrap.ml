@@ -223,15 +223,25 @@ let execute ~suite (config : Run.config) tests =
       (* dune registers a [.corrected] file only after an action that exits 0,
          and the blocks' [accept:] lines were printed before the code was. *)
       let exit_code = Run.exit_code ran in
+      let plural = if List.length written = 1 then "" else "s" in
       if config.baseline = Baseline.Corrected && written <> [] && exit_code = 1
       then
-        Os.warn
-          (Pp.str
-             "dune registers a correction for promotion only when the run that \
-              wrote it exits 0, so the failures above withhold the \
-              correction%s written here. Fix the failures, rerun, then 'dune \
-              promote'."
-             (if List.length written = 1 then "" else "s"));
+        if outcome.failed_in_ci && not outcome.uncorrected then
+          Os.warn
+            (Pp.str
+               "CI is set, so a baseline mismatch fails the run: no one \
+                promotes the correction%s written here under CI. To accept %s, \
+                rerun outside CI, then 'dune promote'."
+               plural
+               (if plural = "" then "it" else "them"))
+        else
+          Os.warn
+            (Pp.str
+               "dune registers a correction for promotion only when the run \
+                that wrote it exits 0, so the failures above withhold the \
+                correction%s written here. Fix the failures, rerun, then 'dune \
+                promote'."
+               plural);
       exit_code
 
 let run_parent ~argv suite tests =

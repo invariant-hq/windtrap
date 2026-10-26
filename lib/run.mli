@@ -695,6 +695,10 @@ type outcome = {
   uncorrected : bool;
       (** [true] iff a row counts as failed and some failure of its last attempt
           carries no kept correction. *)
+  failed_in_ci : bool;
+      (** [true] iff [selection.in_ci] and a row counts as failed, kept
+          corrections or not. A correction leaves a run's exit code [0] only for
+          [dune promote] to accept it, and no one promotes under CI. *)
 }
 (** The type for finished runs: what a report renders, and what the caller needs
     to exit ({!exit_code}). *)
@@ -754,8 +758,9 @@ val list_selection :
 val exit_code : (outcome, startup_error) Stdlib.result -> int
 (** [exit_code result] is the exit code of a run that ended with [result], the
     one rule every runner applies for the facade's exit codes:
-    - [1] when [outcome.uncorrected], when a release failed, or when a
-      correction could not be written (a {!Baseline.Refused} entry).
+    - [1] when [outcome.uncorrected] or [outcome.failed_in_ci], when a release
+      failed, or when a correction could not be written (a {!Baseline.Refused}
+      entry).
     - Otherwise [0] when a test executed, or when [config.broadcast] says the
       environment alone gave a selection that keeps none of the tests of a suite
       that declares some, and else [2].
@@ -958,6 +963,9 @@ type selection = {
   recorded : (string * case_id list) list;
       (** Under [config.failed_only], the tests whose cases the store names,
           with those cases. *)
+  in_ci : bool;
+      (** [true] iff [CI] was set ({!Os.in_ci}) when the startup checks read it,
+          once for the run. *)
 }
 (** The type for what a run selected. *)
 

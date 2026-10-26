@@ -205,7 +205,8 @@ $ CI=true dune exec examples/06-resources-and-structure/test_storage.exe
 windtrap: focused tests committed (focus at examples/06-resources-and-structure/server_tests.ml:10); remove focus to run under CI
 ```
 
-`-u` is refused under CI too. With `GITHUB_ACTIONS` set as well, the
+`-u` is refused under CI too, and a stale baseline fails the run even
+under `--corrected` (see [Baselines](baselines.md)). With `GITHUB_ACTIONS` set as well, the
 report is folded in a group, and each failure adds an annotation to the
 workflow run:
 
