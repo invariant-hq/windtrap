@@ -92,10 +92,14 @@ let reach_windows ~send (event : Run.event) =
 
 (* The worker is a session of its own, so a terminal's signal reaches the
    parent alone, which forwards it, and the parent kills the group. *)
-let serve (config : Run.config) ~suite tests ~temp_dir ~input ~output =
+let serve (config : Run.config) ~suite tests ~temp_dir ~own_exits ~input ~output
+    =
   ignore (Unix.setsid ());
-  (* What the parent counted before the fork is the parent's to dump. *)
+  (* What the parent counted before the fork is the parent's to dump, and so
+     is what the worker counts, which [last] hands over. *)
   ignore (Coverage.take ());
+  (let pid = Unix.getpid () in
+   Coverage.hand_over ~self:(fun () -> Unix.getpid () = pid));
   (* The parent validated an [--arm] identifier, which a re-executed worker
      arms anew. Evaluations count from here. *)
   (match config.mutation with
@@ -136,7 +140,7 @@ let serve (config : Run.config) ~suite tests ~temp_dir ~input ~output =
         interrupted ();
         raise Closed
   in
-  Run.serve config ~suite tests ~temp_dir ~send:report ~receive ~last
+  Run.serve config ~suite tests ~temp_dir ~own_exits ~send:report ~receive ~last
 
 type worker = {
   pid : int;
@@ -254,7 +258,7 @@ let fork ~quiet ~armed config ~suite tests =
           else config
         in
         arm armed;
-        serve config ~suite tests ~temp_dir ~input ~output
+        serve config ~suite tests ~temp_dir ~own_exits:false ~input ~output
       with _ -> Unix._exit 2)
   | pid ->
       Unix.close input;
@@ -468,7 +472,7 @@ let work w ~suite tests =
         let serving = frame Serving in
         write_all w.output serving 0 (Bytes.length serving);
         arm armed;
-        serve config ~suite tests ~temp_dir:w.dir ~input:w.input
+        serve config ~suite tests ~temp_dir:w.dir ~own_exits:true ~input:w.input
           ~output:w.output
       with _ -> Unix._exit 2)
 

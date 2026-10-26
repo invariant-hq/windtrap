@@ -212,6 +212,10 @@ let dump target ~exe () =
         Instr.warn "cannot write a coverage file under %s: %s" dir
           (Printexc.to_string e))
 
+(* A process that hands its counts to another, as a worker hands them to its
+   parent, dumps none of its own. A process it forks still dumps its own. *)
+let handed_over = ref (fun () -> false)
+
 (* A relative executable path under an unreadable current directory
    leaves the target known and the identity not, and the dump is then
    written without one. *)
@@ -235,7 +239,7 @@ let install_dump () =
       let exe =
         determined (fun () -> Instr.exe_identity ~exe:Instr.executable)
       in
-      at_exit (dump target ~exe)
+      at_exit (fun () -> if not (!handed_over ()) then dump target ~exe ())
 
 let validate ~file points counts =
   let err fmt =
@@ -270,6 +274,8 @@ let visit counts index =
   if count < max_int then counts.(index) <- count + 1
 
 (* Counts across processes *)
+
+let hand_over ~self = handed_over := self
 
 let take () =
   let t = snapshot () in

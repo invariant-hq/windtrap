@@ -1037,24 +1037,29 @@ val serve :
   suite:string ->
   Test_tree.t list ->
   temp_dir:string ->
+  own_exits:bool ->
   send:(report -> unit) ->
   receive:(interrupted:(unit -> unit) -> request) ->
   last:(unit -> unit) ->
   'a
-(** [serve config ~suite tests ~temp_dir ~send ~receive ~last] is the life of a
-    worker process: it runs each case that [receive] asks for, of the flattened
-    [tests], with the attempts of {!execute}, and sends what happens. [receive]
-    calls [interrupted] when a signal interrupts its wait. On {!Finish} it
-    releases the fixtures, then runs the [at_exit] functions that its tests
-    registered and none that the process held before. It ends the process with
-    [Unix._exit], after [last ()], and never returns.
+(** [serve config ~suite tests ~temp_dir ~own_exits ~send ~receive ~last] is the
+    life of a worker process: it runs each case that [receive] asks for, of the
+    flattened [tests], with the attempts of {!execute}, and sends what happens.
+    [receive] calls [interrupted] when a signal interrupts its wait. On
+    {!Finish} it releases the fixtures, then runs the [at_exit] functions that
+    its tests registered. The functions that the process held before run after
+    them when [own_exits], as in a worker that started the executable again,
+    whose module initialisation registered them, and not in a fork, whose
+    parent's they are. One of them that raises is sent as {!Outside}. It ends
+    the process with [Unix._exit 0], after [last ()], and never returns.
     - Temporary directories are made under [temp_dir].
     - Under {!Baseline.Check} the worker judges its checks. Under a correcting
       mode it checks in a {!Baseline.Check} registry only to prove the path and
       read the file, and leaves each check to the parent: in the {!attempt} of
       {!Judge} when a retry may follow, else in {!served.deferred}.
     - A call to [exit] in code under test ends the process: the worker sends
-      {!Exited}, or {!Outside} when no case runs, then [last ()].
+      {!Exited}, or {!Outside} when no case runs, runs the functions the process
+      held before when [own_exits], then [last ()].
     - A signal acts as in {!execute}, with its {!Interrupted} event sent. *)
 
 val supervising : config -> suite:string -> t

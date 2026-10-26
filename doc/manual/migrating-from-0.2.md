@@ -176,7 +176,10 @@ signature of `cases`, `judges` in place of `chooses`, and the type of
   retires, so file names drawn from it repeat names an earlier worker
   used, and a file that an earlier test left under such a name collides
   (`File exists`). Take a unique directory from `temp_dir ()` in the
-  test, or remove what the test made before it ends.
+  test, or remove what the test made before it ends. An `at_exit`
+  handler registered at declaration, which 0.2 ran once, runs in each
+  worker as it ends, and a declaration that clears or writes a shared
+  directory does so in each worker, at the same time under `-j`.
 - A declaration that is not the same at each start of the program, as
   tests named from the clock or a random generator, or one per entry of
   a directory that the suite writes to → an error: each worker starts

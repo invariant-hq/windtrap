@@ -593,7 +593,7 @@ let probe =
    log; [fatal]'s armed child raises Out_of_memory, which only the child's
    own wrapper keeps from the uncaught-exception handler that runs
    [at_exit]. *)
-let no_at_exit () =
+let own_at_exit () =
   let log = Filename.concat (temp_dir ()) "atexit" in
   let r = spawn ~env:[ suite "fatal"; ("MUTATE_ATEXIT_LOG", log) ] [ mutate ] in
   equal string "exited 0" r.status;
@@ -601,7 +601,9 @@ let no_at_exit () =
   equal string
     "mutants: 1 survived of 3 reached by this suite, 2 killed, 1 never reached"
     (outcome r.out);
-  equal int 1 (List.length (pids (read log)))
+  let pids = pids (read log) in
+  equal int (List.length pids) (List.length (List.sort_uniq Int.compare pids));
+  equal int 6 (List.length pids)
 
 let release = lazy (spawn ~env:[ suite "release"; measured () ] [ mutate ])
 
@@ -641,8 +643,10 @@ let children =
             "mutants: 1 reached by this suite, 1 killed, 3 never reached"
             (outcome b.ran.out);
           equal text "6\n" b.baseline);
-      test "no at_exit function runs in a child, a fatal exception included"
-        no_at_exit;
+      test
+        "each process runs its own at_exit functions once, a fatal exception \
+         included"
+        own_at_exit;
       test "nothing a child prints reaches the loop's descriptors" (fun () ->
           let r = Lazy.force release in
           not_contains ~sub:"a child's release" r.out;

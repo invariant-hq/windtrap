@@ -18,13 +18,13 @@
 open Windtrap
 module Subject = Mutate_loop_subject.Subject
 
-(* The child-hygiene rule's witness. Every process reaching Stdlib's exit machinery
-   appends its pid here; a mutation child must never appear, because it
-   leaves through [Unix._exit] and its whole body is wrapped so that not
-   even a fatal exception escapes to the toplevel handler, which runs
-   [at_exit] before it prints. This is the general form of "no child
-   overwrote the parent's .coverage dump": the coverage dump IS an at_exit
-   handler, and so is this. *)
+(* The child-hygiene rule's witness. Every process reaching Stdlib's exit
+   machinery appends its pid here. A forked child never appears, because the
+   function is its parent's: it leaves through [Unix._exit], and its whole
+   body is wrapped so that not even a fatal exception escapes to the
+   toplevel handler, which runs [at_exit] before it prints. A child that
+   started the executable again registered the function itself, and runs it
+   once, as it ends. *)
 let () =
   match Sys.getenv_opt "MUTATE_ATEXIT_LOG" with
   | None | Some "" -> ()

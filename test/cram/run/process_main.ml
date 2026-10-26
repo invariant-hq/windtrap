@@ -88,6 +88,9 @@ let held () =
    start. *)
 let locked () =
   print_endline "taking the lock";
+  let starts = open_out_gen [ Open_append; Open_creat ] 0o644 "starts" in
+  output_string starts "a start\n";
+  close_out starts;
   let fd = Unix.openfile "lock" [ Unix.O_RDWR; Unix.O_CREAT ] 0o644 in
   Unix.lockf fd Unix.F_LOCK 0;
   [ test "never runs" ignore ]
@@ -103,6 +106,26 @@ let replaced () =
     test "runs in the executable the run started as" own;
   ]
 
+(* A file that each start of the executable makes as it initialises, named
+   after its pid, and removes with an at_exit function registered with it.
+   The second suite's test removes its worker's file first, so that worker's
+   removal raises. *)
+let made () =
+  let dir = "made" in
+  if not (Sys.file_exists dir) then Sys.mkdir dir 0o755;
+  let path = Filename.concat dir (string_of_int (Unix.getpid ())) in
+  close_out (open_out path);
+  at_exit (fun () -> Sys.remove path);
+  path
+
+let cleaned () =
+  ignore (made ());
+  [ test "one" ignore; test "two" ignore ]
+
+let cleaned_twice () =
+  let path = made () in
+  [ test "removes the file" (fun () -> Sys.remove path) ]
+
 let () =
   let suite = Sys.getenv "PROCESS_SUITE" in
   let tests =
@@ -114,6 +137,8 @@ let () =
     | "held" -> held ()
     | "replaced" -> replaced ()
     | "locked" -> locked ()
+    | "cleaned" -> cleaned ()
+    | "cleaned_twice" -> cleaned_twice ()
     | other -> invalid_arg ("process_main: unknown PROCESS_SUITE " ^ other)
   in
   exit (run suite tests)

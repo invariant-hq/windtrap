@@ -59,6 +59,34 @@ so its tests run in the child:
   the child exited with code 0
   in_a_fork: 1 passed in DURATION.
 
+An `at_exit` function that module initialisation registers is each
+process's own, and runs in each as it ends: here each start of the
+program makes a file named after its pid and removes it, and a run
+leaves none, at any number of workers:
+
+  $ run PROCESS_SUITE=cleaned ../process_main.exe; ls sandbox/made
+  cleaned: 2 passed in DURATION.
+
+  $ run PROCESS_SUITE=cleaned ../process_main.exe -j 2; ls sandbox/made
+  cleaned: 2 passed in DURATION.
+
+One that raises in a worker fails the run, as no test does. Here the
+test removed its worker's file first:
+
+  $ run PROCESS_SUITE=cleaned_twice ../process_main.exe > log
+  [1]
+  $ sed -E 's|made/[0-9]+|made/PID|; /^ *(Raised|Called from)/d' log; ls sandbox/made
+  cleaned_twice: 1 test
+  ──────────────────────── failures ────────────────────────
+    FAIL  fixture release
+      [release]
+      an at_exit function that module initialisation registered raised
+      uncaught exception:
+        Sys_error("made/PID: No such file or directory")
+  ──────────────────────────────────────────────────────────
+  
+  1 passed, 1 failed in DURATION.
+
 A second run in a process that spawned a domain before the first: its
 worker starts the program again, and the first run, which the worker
 does not make again, returns the code it returned in the process that
@@ -123,10 +151,23 @@ here a lock, never reaches its run, and nothing bounds that wait. An
 interrupt says that a worker was still in module initialisation, how
 long after it started, and what it wrote:
 
-  $ run PROCESS_SUITE=locked timeout -s INT 1 ../process_main.exe
+Each start of the executable appends a line to `starts` before it
+takes the lock, so the signal comes once the worker has started. A job in
+the background of a script ignores an interrupt, so this one is a
+termination:
+
+  $ rm -rf sandbox && mkdir sandbox && cd sandbox
+  $ env -i PATH="$PATH" TMPDIR="${TMPDIR:-/tmp}" WINDTRAP_COLOR=never \
+  >   WINDTRAP_PROJECT_ROOT="$PWD" PROCESS_SUITE=locked \
+  >   ../process_main.exe > ../out 2> ../err &
+  > pid=$!
+  > until [ "$(cat starts 2> /dev/null | wc -l)" -ge 2 ]; do sleep 0.05; done
+  > kill -TERM $pid; wait $pid; echo "[$?]"; cd ..
+  > scrub < out; echo '--- stderr'; scrub < err
+  Terminated
+  [143]
   taking the lock
   locked: 1 not run in DURATION.
   --- stderr
   windtrap: interrupted while a worker was still in module initialisation, DURATION after it started, and it wrote:
     taking the lock
-  [124]

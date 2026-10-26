@@ -1924,11 +1924,13 @@ let exited run ~last =
                   running, which ended its worker; %s"
                  after exit_text)))
 
-let handler_failure (case : Test_tree.case option) exn backtrace =
+(* [None] for one that module initialisation registered. *)
+let handler_failure (case : Test_tree.case option option) exn backtrace =
   let loc, whose =
     match case with
-    | Some case -> (case.loc, "the test " ^ case_path case)
-    | None -> (None, "a test")
+    | Some (Some case) -> (case.loc, "the test " ^ case_path case)
+    | Some None -> (None, "a test")
+    | None -> (None, "module initialisation")
   in
   Failure.with_phase Failure.Release
     (Failure.raised ?loc
@@ -1951,7 +1953,7 @@ let fatal_result run (case : Test_tree.case) ~started exn backtrace =
   result_of case ~tail ~duration:(Os.count_s started) ~attempts:1
     ~prop_stats:None (Failure.Fail [ failure ])
 
-let serve config ~suite tests ~temp_dir ~send ~receive ~last =
+let serve config ~suite tests ~temp_dir ~own_exits ~send ~receive ~last =
   Printexc.record_backtrace true;
   temp_base := Some temp_dir;
   let owner = Unix.getpid () in
@@ -1978,14 +1980,36 @@ let serve config ~suite tests ~temp_dir ~send ~receive ~last =
   let started = Os.counter () in
   let ending = ref false in
   let last_case = ref None and registrant = ref None in
+  (* Every [at_exit] function not run yet, each failure given to [report]:
+     [do_at_exit] runs each function once, and stops at one that raises. *)
+  let rec handlers report =
+    match Stdlib.do_at_exit () with
+    | () -> ()
+    | exception exn ->
+        report exn (Printexc.get_raw_backtrace ());
+        handlers report
+  in
   (* [at_exit] runs its functions newest first, so this one runs after every
-     function a test registers and before the parent's, which are not the
-     worker's to run: code under test that calls exit ends here, and so does
-     the worker. *)
+     function a test registers and before those the process held before:
+     code under test that calls exit ends here, and so does the worker. Those
+     are a fork's parent's, not the worker's to run, but they are a new
+     start's own, which its module initialisation registered: it runs them
+     here, since nothing raised out of this function may reach a test, and
+     [_exit] keeps its code. *)
   at_exit (fun () ->
       if Unix.getpid () = owner then begin
         (if not !ending then
            try send (exited run ~last:!last_case) with _ -> ());
+        (* The exit guard is among them, and would register itself again and
+           raise for as long as the run is active: this function is how a
+           worker ends on [exit]. *)
+        (if own_exits then
+           try
+             exit_guard_owner := None;
+             handlers (fun exn backtrace ->
+                 try send (Outside (handler_failure None exn backtrace))
+                 with _ -> ())
+           with _ -> ());
         last ();
         Unix._exit 0
       end);
@@ -2047,15 +2071,8 @@ let serve config ~suite tests ~temp_dir ~send ~receive ~last =
        (release_fixtures run ~announce:(fun name ->
             on_event (Fixture_release { name }))));
   ending := true;
-  let rec handlers () =
-    match Stdlib.do_at_exit () with
-    | () -> ()
-    | exception exn ->
-        let backtrace = Printexc.get_raw_backtrace () in
-        send (Outside (handler_failure !registrant exn backtrace));
-        handlers ()
-  in
-  handlers ();
+  handlers (fun exn backtrace ->
+      send (Outside (handler_failure (Some !registrant) exn backtrace)));
   Unix._exit 0
 
 (* The parent's side *)

@@ -2131,11 +2131,13 @@ val run : ?argv:string array -> string -> test list -> int
     initialisation runs again in each worker the run starts, a worker that
     replaces a retired one included, and the worker's own call of {!run} runs
     the tests. Work that is expensive at declaration is paid once per worker
-    start: make it [lazy], or a {!fixture}. What a worker writes before its
-    tests start is not shown, since the process that called {!run} showed it; a
-    worker that ends before then fails its test with how it ended and what it
-    wrote. On Linux a worker starts the executable that the run started as, even
-    once another file took its place.
+    start: make it [lazy], or a {!fixture}. An [at_exit] function that
+    initialisation registers runs in each worker as it ends, and work that
+    writes or clears a shared path runs once per worker, at the same time under
+    [-j]. What a worker writes before its tests start is not shown, since the
+    process that called {!run} showed it; a worker that ends before then fails
+    its test with how it ended and what it wrote. On Linux a worker starts the
+    executable that the run started as, even once another file took its place.
 
     A suite must declare the same tests each time the program starts. A worker
     whose module initialisation declares another suite, with names taken from
