@@ -1628,22 +1628,26 @@ let stateful ?__POS__ ?tags ?timeout ?count ?(steps = 20) ?(domains = 1) name
     check ~steps ~domains commands;
     let held = Array.make (Array.length commands) false in
     let called = Array.make (Array.length commands) false in
-    let cases = ref 0 and passed = ref 0 in
+    let cases = ref 0 and passed = ref 0 and replayed = ref false in
     with_workers ?loc ~domains (fun workers ->
         (* On the workers a failing program depends on a schedule. *)
         let runs = if Option.is_some workers then repetitions else 1 in
-        Run.property ?loc ?count ~runs gen (fun program ->
-            let record = execute ?workers program in
-            incr passed;
-            Array.iteri (fun i h -> if h then held.(i) <- true) program.held;
-            List.iter (fun (row : row) -> called.(row.command) <- true) record);
+        let stats =
+          Run.property ?loc ?count ~runs gen (fun program ->
+              let record = execute ?workers program in
+              incr passed;
+              Array.iteri (fun i h -> if h then held.(i) <- true) program.held;
+              List.iter (fun (row : row) -> called.(row.command) <- true) record)
+        in
         (* Every case runs [runs] times, and every run passed. *)
-        cases := !passed / runs);
+        cases := !passed / runs;
+        replayed := stats.replayed > 0);
     let firsts = first_positions commands in
     let never i _ = firsts.(i) = i && held.(i) && not called.(i) in
     match List.filteri never (Array.to_list commands) with
     | [] -> ()
-    | _ when !cases = 0 -> ()
+    (* Vacuity judges a generated run, and a replayed case alone is none. *)
+    | _ when !cases = 0 || !replayed -> ()
     | never ->
         let name (Command c) = c.name in
         let elements =

@@ -295,6 +295,8 @@ let label_stats collected =
     discards = 0;
     whole = None;
     count = 100;
+    replayed = 0;
+    runs = 1;
     collected;
     coverage = [];
   }
@@ -1135,6 +1137,8 @@ let endings_entries () =
                 whole = None;
                 count = 100;
                 discards = 3;
+                replayed = 0;
+                runs = 1;
                 collected = [ ("empty", 36); ("nonempty", 64) ];
                 coverage =
                   [
@@ -1166,6 +1170,8 @@ let endings_entries () =
                 whole = None;
                 count = 100;
                 discards = 3;
+                replayed = 0;
+                runs = 1;
                 collected = [ ("empty", 36); ("nonempty", 64) ];
                 coverage =
                   [

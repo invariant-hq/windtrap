@@ -115,7 +115,7 @@ let check ?loc ?label w rows fn =
     | _ -> f
   in
   match Run.property ?loc ~count:n ?only ~table:true gen law with
-  | () -> ()
+  | (_ : Property.stats) -> ()
   | exception Failure.Check_failure ({ kind = Property p; _ } as f)
     when Option.is_some p.domain ->
       let backtrace = Printexc.get_raw_backtrace () in

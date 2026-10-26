@@ -968,6 +968,15 @@ val pass : 'a testable
     from {!Gen.with_pp} makes the token check the value. Nothing writes the
     source.
 
+    A replayed case that passes passes the test, which says so under [-v] and in
+    a [replayed (N):] section above the summary: [the replayed case passed]. A
+    case of a {!stateful} test on several domains runs as many times as the
+    search runs each of its programs, 50, and stops at the first run that fails,
+    so one that passes reads
+    [its schedule is not replayed: the case passed 50 times]. A replay draws
+    nothing, so it is judged for no {{!section-vacuity}vacuity}: neither a
+    {!cover} demand nor a command never called fails it.
+
     {b A case from bytes.} [--case PATH] with [-f] selecting one property or
     stateful test checks the one case that the bytes of [PATH] decode to, in
     place of its examples and generated cases: the statement that the law holds
@@ -980,7 +989,8 @@ val pass : 'a testable
     between [r1:] and the digest: decoding that field gives the file of a
     counterexample, though [--replay] with the token itself checks that case and
     also refuses it once stale. A failure is reported as a replayed case's, with
-    the token of the choices read, and exits [1]. A case that times out fails
+    the token of the choices read, and exits [1]; a case that passes is reported
+    as a replayed case that passes is (see above). A case that times out fails
     after the test's limit. A case that the generator or the law discards is
     outside the law's domain and checks nothing, so the test skips, saying why.
     A test that checks no property fails. A selection of another number of tests
@@ -1004,6 +1014,9 @@ val pass : 'a testable
     - a {!cover} demand is unmet, which reads [never covered: …];
     - a {!stateful} command that a passing program could call was never called,
       which reads [never called: …].
+
+    Vacuity is a judgement of a generated run. A run of replayed cases alone,
+    under [--replay], [--failed] or [--case], is judged for none.
 
     A vacuous test returns the exit code of a failure, [1]: a run that claims
     more than it checked must not end green, and a gate that reads the code has
@@ -2106,17 +2119,18 @@ val run : ?argv:string array -> string -> test list -> int
     [--failed] selects the last failed tests, and within each the cases that
     failed: a {!cases} table reruns the rows that failed, by their printed
     value, and a {!prop} or a {!stateful} test checks each counterexample it
-    recorded again, by its token, as [--replay] does. A test whose failure
-    belongs to no case, as a timeout's or an example's, reruns whole. A recorded
-    case that the test no longer has, a row gone or a token stale, fails the
-    test with a message that names it, and is never passed over. The tests a run
-    executes update that record, and a test it did not execute, under a filter
-    or after [-x], keeps its entry. A run never fails because it cannot read or
-    write the record, and a record it cannot read counts as empty. Each
-    executable keeps its own record of a suite, so two executables that give
-    their suites one name do not erase each other's, and [dune runtest] and
-    [dune exec] of one executable share one. The record that windtrap 0.2 wrote
-    names the suite alone, so it may be another executable's, and is never read.
+    recorded again, by its token, as [--replay] does, and one that now passes
+    leaves the record as any passing test does. A test whose failure belongs to
+    no case, as a timeout's or an example's, reruns whole. A recorded case that
+    the test no longer has, a row gone or a token stale, fails the test with a
+    message that names it, and is never passed over. The tests a run executes
+    update that record, and a test it did not execute, under a filter or after
+    [-x], keeps its entry. A run never fails because it cannot read or write the
+    record, and a record it cannot read counts as empty. Each executable keeps
+    its own record of a suite, so two executables that give their suites one
+    name do not erase each other's, and [dune runtest] and [dune exec] of one
+    executable share one. The record that windtrap 0.2 wrote names the suite
+    alone, so it may be another executable's, and is never read.
 
     Beyond the mirrors {!run} reads [WINDTRAP_PROJECT_ROOT] (see
     {{!section-baselines}baselines}), [CI], [GITHUB_ACTIONS], [INSIDE_DUNE],

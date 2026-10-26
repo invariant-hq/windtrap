@@ -249,6 +249,23 @@ for how to migrate from 0.2.0.
 
 ### Running
 
+- A replay is judged for no vacuity, and a replayed case that passes
+  says so. `--replay`, and `--failed` with a recorded counterexample,
+  check that case alone and draw nothing, yet a stateful test judged it
+  for the commands it never called and failed it as VACUOUS: on a fixed
+  bug under `--failed`, which kept the test in the record, and in four
+  replays of five of a passing two-domain case. A run of replayed or
+  stored cases alone now judges no vacuity, neither a command never
+  called nor a `cover` demand, and passes. The `-v` row and a
+  `replayed (N):` section above the summary say
+  `the replayed case passed`, or, for a case run on several domains,
+  `its schedule is not replayed: the case passed 50 times`: such a
+  replay runs its case as many times as the search runs each program,
+  and stops at the first run that fails. A case that now passes leaves
+  the last-failed record, as any passing test does. A case that
+  `--case` reads from bytes passes the same way. `--json`'s scope gives
+  `replayed`, and no `cover` for such a run.
+
 - `--json PATH` (`WINDTRAP_JSON`) also writes the results as one JSON
   document, versioned, a test per line, closed by the summary's counts.
   Each test carries its verdict (`pass`, `fail`, `vacuous`, `skip`,

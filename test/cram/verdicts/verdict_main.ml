@@ -97,6 +97,36 @@ let rerun () =
     passes;
   ]
 
+(* A counter whose [incr] does nothing under VERDICT_BUG, checked on one
+   domain and on two. Each run of a program notes its test in the file
+   "ran", so a session counts the runs of a replayed case. *)
+let replayed () =
+  let bug = Sys.getenv_opt "VERDICT_BUG" <> None in
+  let counter = abstract "c" in
+  let commands tag =
+    [
+      command "create"
+        (Gen.unit @-> makes counter)
+        (fun () -> ref 0)
+        (fun () ->
+          ran tag;
+          Atomic.make 0);
+      command "incr"
+        (counter ^-> returns unit)
+        incr
+        (fun c -> if not bug then Atomic.incr c);
+      command "get" (counter ^-> returns int) ( ! ) Atomic.get;
+      command "reset"
+        (counter ^-> returns unit)
+        (fun c -> c := 0)
+        (fun c -> Atomic.set c 0);
+    ]
+  in
+  [
+    stateful "counts" (commands "one domain");
+    stateful ~domains:2 "counts from two domains" (commands "two domains");
+  ]
+
 let suite = function
   | "exit_before_fail" -> [ passes; exits; fails ]
   | "exit_after_fail" -> [ passes; fails; exits ]
@@ -205,6 +235,7 @@ let suite = function
   | "record" -> record
   | "record_renamed" -> [ test "first" ignore; test "renamed" ignore ]
   | "rerun" -> rerun ()
+  | "replayed" -> replayed ()
   | "rerun_dup" -> [ cases "rows" string [ "a"; "b"; "a" ] ignore ]
   | "prop_discard" ->
       [

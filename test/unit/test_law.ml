@@ -1466,7 +1466,7 @@ let no_order =
    is checked whole. *)
 let demanded value law =
   match Run.property ~count:5 (Gen.constant value) law with
-  | () -> "covered"
+  | (_ : Windtrap.Private.Property.stats) -> "covered"
   | exception Failure.Check_failure { kind = Vacuous m; _ } -> m.kept
 
 let fn =

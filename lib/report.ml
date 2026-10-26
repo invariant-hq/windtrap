@@ -292,32 +292,46 @@ let tolerance_lines (r : Run.result) =
       ])
     r.tolerances
 
+(* A replay that passed checked its case again, which says nothing of the
+   cases a generated run would draw, and on several domains does not run the
+   schedule that failed. *)
+let replay_fact (s : Property.stats) =
+  match (s.replayed, s.runs) with
+  | 1, 1 -> "the replayed case passed"
+  | n, 1 -> strf "the %d replayed cases passed" n
+  | 1, runs ->
+      strf "its schedule is not replayed: the case passed %d times" runs
+  | _, runs ->
+      strf "their schedules are not replayed: each case passed %d times" runs
+
 (* What a property ran, each count that is not zero: the generated cases,
    or the values of a domain checked whole, then the rows of a table that
    skipped, with the first one's reason, then the examples and the
    discards. A verdict says what held, and a failure what passed before
-   it. *)
+   it. A verdict on replayed cases alone says that they passed. *)
 let ran ~verdict (r : Run.result) (s : Property.stats) =
-  let some ?(passed = "") n what =
-    if n > 0 then [ strf "%d %s%s%s" n what (plural n) passed ] else []
-  in
-  let passed = if verdict then "" else " passed" in
-  let drawn = s.cases - s.examples in
-  let unit = if r.table then "row" else "value" in
-  (match (s.whole, r.skipped_rows) with
-    | Some n, None when verdict ->
-        [ strf "holds on all %d %s%s" n unit (plural n) ]
-    | Some n, Some _ when verdict ->
-        [ strf "holds on %d of %d %s%s" drawn n unit (plural n) ]
-    | Some n, _ -> [ strf "%d of %d %s%s passed" drawn n unit (plural n) ]
-    | None, _ -> some ~passed drawn "case")
-  @ (match r.skipped_rows with
-    | Some { count; reason = Some reason } ->
-        [ strf "%d skipped: %s" count reason ]
-    | Some { count; reason = None } -> [ strf "%d skipped" count ]
-    | None -> [])
-  @ some ~passed s.examples "example"
-  @ some s.discards "discard"
+  if verdict && s.replayed > 0 then [ replay_fact s ]
+  else
+    let some ?(passed = "") n what =
+      if n > 0 then [ strf "%d %s%s%s" n what (plural n) passed ] else []
+    in
+    let passed = if verdict then "" else " passed" in
+    let drawn = s.cases - s.examples in
+    let unit = if r.table then "row" else "value" in
+    (match (s.whole, r.skipped_rows) with
+      | Some n, None when verdict ->
+          [ strf "holds on all %d %s%s" n unit (plural n) ]
+      | Some n, Some _ when verdict ->
+          [ strf "holds on %d of %d %s%s" drawn n unit (plural n) ]
+      | Some n, _ -> [ strf "%d of %d %s%s passed" drawn n unit (plural n) ]
+      | None, _ -> some ~passed drawn "case")
+    @ (match r.skipped_rows with
+      | Some { count; reason = Some reason } ->
+          [ strf "%d skipped: %s" count reason ]
+      | Some { count; reason = None } -> [ strf "%d skipped" count ]
+      | None -> [])
+    @ some ~passed s.examples "example"
+    @ some s.discards "discard"
 
 (* The heading counts every byte before the first line shown: what the
    capture cut and the lines the cap drops. *)
@@ -697,6 +711,20 @@ let slow_section t results =
        (Pp.to_string Pp.decimal t.config.slow_threshold));
   List.iter (fun (d, path) -> caution t (strf "  %*s  %s" width d path)) rows
 
+(* Each test whose replayed cases passed, under its path. *)
+let replayed_section t results =
+  put t [ plain (strf "replayed (%d):" (List.length results)) ];
+  List.iter
+    (fun (r : Run.result) ->
+      Option.iter
+        (fun (s : Property.stats) ->
+          let line =
+            strf "  %s: %s" (Test_tree.path_to_string r.path) (replay_fact s)
+          in
+          put t [ (if s.runs > 1 then styled `Yellow line else plain line) ])
+        r.prop_stats)
+    results
+
 let flaky_section t results =
   caution t (strf "flaky tests (%d):" (List.length results));
   List.iter
@@ -763,6 +791,13 @@ let close t ~commands ~results ~release_failures ~duration ?baselines ?stopped
       (fun (r : Run.result) -> r.attempts > 1 && status r = `Passed)
       results
   in
+  let replayed =
+    List.filter
+      (fun (r : Run.result) ->
+        status r = `Passed
+        && match r.prop_stats with Some s -> s.replayed > 0 | None -> false)
+      results
+  in
   let rows = match baselines with Some b -> corrections b | None -> [] in
   let accepted =
     match baselines with
@@ -803,6 +838,7 @@ let close t ~commands ~results ~release_failures ~duration ?baselines ?stopped
   let sections =
     section slow slow_section
     @ section flaky flaky_section
+    @ section replayed replayed_section
     @ section rows (corrections_section ~accepted)
   in
   (* A green run with nothing to show is its summary line alone. *)

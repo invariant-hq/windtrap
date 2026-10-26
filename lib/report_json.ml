@@ -139,6 +139,7 @@ let property (r : Run.result) (s : Property.stats) =
     ("count", Int s.count);
     ("discards", Int s.discards);
   ]
+  @ (if s.replayed > 0 then [ ("replayed", Int s.replayed) ] else [])
   @ (match s.whole with
     | Some n -> [ ((if r.table then "rows" else "values"), Int n) ]
     | None -> [])

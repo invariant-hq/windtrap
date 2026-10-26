@@ -181,6 +181,11 @@ type stats = {
       (** The generated cases that the run demands pass: [count] of {!run},
           doubled for each extension of the cases that a {!cover} share asked
           for. *)
+  replayed : int;
+      (** The cases among [cases] that [replay] or [case] of {!run} checked
+          alone. A run of them draws nothing, so it judges no {!cover} demand:
+          its [coverage] is then [[]]. *)
+  runs : int;  (** [runs] of {!run}: the runs of each case. *)
   collected : (string * int) list;
       (** The distribution of the labels over the passing cases, sorted by
           label. A {!cover} label counts here too. *)

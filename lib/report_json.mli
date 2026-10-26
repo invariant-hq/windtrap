@@ -59,6 +59,8 @@
       checked whole, and [examples], the examples that passed;
     - [count], the cases that the property demanded, after [--prop-count];
     - [discards], the cases discarded, the examples included;
+    - [replayed], for a run of replayed cases alone, under [--replay],
+      [--failed] or [--case], the cases among [cases] that it replayed;
     - [values], for a domain checked whole, its number of values, which a table
       calls [rows];
     - [skipped], for a table, the rows that skipped, which [cases] leaves out;

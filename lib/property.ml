@@ -39,6 +39,8 @@ type context = {
   mutable discards : int;
   mutable whole : int option; (* the values of a domain checked whole *)
   mutable count : int; (* the generated cases that must pass *)
+  mutable replayed : int; (* the passing cases checked alone, among [cases] *)
+  mutable runs : int; (* the runs of each case *)
 }
 
 let make_context () =
@@ -53,6 +55,8 @@ let make_context () =
     discards = 0;
     whole = None;
     count = 0;
+    replayed = 0;
+    runs = 1;
   }
 
 let scratch = make_context
@@ -147,6 +151,8 @@ type stats = {
   discards : int;
   whole : int option;
   count : int;
+  replayed : int;
+  runs : int;
   collected : (string * int) list;
   coverage : cover_status list;
 }
@@ -221,6 +227,8 @@ let stats ctx =
     discards = ctx.discards;
     whole = ctx.whole;
     count = ctx.count;
+    replayed = ctx.replayed;
+    runs = ctx.runs;
     collected = sorted_bindings ctx.counts;
     coverage = List.map status (sorted_bindings ctx.demands);
   }
@@ -445,6 +453,7 @@ let run ?loc ?count ?max_discard ?(examples = []) ?(summary = Fun.const None)
   in
   let ctx = make_context () in
   ctx.count <- count;
+  ctx.runs <- runs;
   let fail ~case_index ~examples ?record ?summary ?rendering ?(shrink_steps = 0)
       ?shrink_end ?tail ?failed_again ?token ~rendered fault =
     let summary =
@@ -677,6 +686,12 @@ let run ?loc ?count ?max_discard ?(examples = []) ?(summary = Fun.const None)
                   ~rendered fault
             | None, None -> assert false))
   in
+  (* A case checked alone, a token's or a case file's, drew nothing, so no
+     demand of [cover] is judged over it. *)
+  let checked_alone () =
+    ctx.replayed <- ctx.replayed + 1;
+    Pass { (stats ctx) with coverage = [] }
+  in
   (* A replayed case is neither seeded nor shrunk, as an example, and keeps
      its token. A token that its generator no longer parses to the value it
      recorded is refused as stale: it never checks another value. *)
@@ -704,7 +719,7 @@ let run ?loc ?count ?max_discard ?(examples = []) ?(summary = Fun.const None)
                    text)
             else
               match check law (Gen.Engine.value node) with
-              | `Passed -> Pass (stats ctx)
+              | `Passed -> checked_alone ()
               | `Discarded -> refused "the law discarded its case"
               | `Timed_out limit -> timed_out ~case_index:0 ~examples:true limit
               | `Failed (fault, record) ->
@@ -737,7 +752,7 @@ let run ?loc ?count ?max_discard ?(examples = []) ?(summary = Fun.const None)
     | Error (#Failure.control as control) -> Failure.reraise control
     | Ok node -> (
         match check law (Gen.Engine.value node) with
-        | `Passed -> Pass (stats ctx)
+        | `Passed -> checked_alone ()
         | `Discarded -> discarded ()
         | `Timed_out limit -> timed_out limit
         | `Failed (fault, record) ->

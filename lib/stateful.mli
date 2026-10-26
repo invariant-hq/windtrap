@@ -384,9 +384,10 @@ val stateful :
     {!Property.run} shrinks and rejects as the facade says.
 
     {b Commands never called.} When {!Run.property} returns, every case has
-    passed. If at least one did, a command that some passing case's subset held
-    and that no passing case ran makes the test vacuous, with a
-    [Failure.Check_failure] of a {!Failure.Vacuous} failure at the declaration
+    passed. If at least one did, and the cases were generated, not replayed
+    alone ([replayed] of {!Property.stats} is [0]), a command that some passing
+    case's subset held and that no passing case ran makes the test vacuous, with
+    a [Failure.Check_failure] of a {!Failure.Vacuous} failure at the declaration
     site, whose text names every such command in the order of [commands]:
     [never called: "pop", "peek" (over 100 passing cases); a call runs only
      where its arguments resolve and its ~pre holds]. When one of them takes an

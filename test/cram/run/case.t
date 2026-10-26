@@ -40,7 +40,11 @@ the case of zeros, here the empty list:
 
   $ : > empty
   $ run ./suite_main.exe --case empty -f small | scrub
-  fixture: 1 passed in DURATION (seed SEED).
+  fixture: 1 test (seed SEED)
+  replayed (1):
+    small: the replayed case passed
+  
+  1 passed in DURATION.
 
 Every string of bytes is some case: random files of any length never
 fail to decode. The law that holds passes on each, and the one over

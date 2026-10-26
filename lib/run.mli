@@ -461,10 +461,10 @@ val property :
   ?table:bool ->
   'a Gen.t ->
   ('a -> unit) ->
-  unit
+  Property.stats
 (** [property gen law] is the body of the test that {!prop} declares, [loc]
-    being its declaration site. It returns [()] on a [Pass] and raises the
-    failure of any other outcome as a [Failure.Check_failure] (see {!prop}).
+    being its declaration site. It returns the statistics of a [Pass] and raises
+    the failure of any other outcome as a [Failure.Check_failure] (see {!prop}).
     [runs] and [only] are {!Property.run}'s. [table], [false] by default, says
     that the test is a table, whose row says so ([table]). A table's row that
     skipped ({!row}) is no row that passed: the statistics leave it out of
@@ -475,7 +475,8 @@ val property :
     [config.replay] is the token that the engine replays. Otherwise, under
     [config.failed_only], the {!recorded} counterexamples of the test are
     replayed in its place, one engine run each: a failure of each but the last
-    is added to the frame, and the last one's outcome is the property's. A
+    is added to the frame, and the last one's outcome is the property's, with
+    the replays that passed before it counted in its [cases] and [replayed]. A
     recorded {!Row} fails the test with a message that says so, as stale. With
     [only] the test is a table, which selects its rows itself, and nothing
     recorded is replayed.

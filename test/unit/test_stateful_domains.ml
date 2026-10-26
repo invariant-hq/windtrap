@@ -1599,9 +1599,11 @@ let met ~cover_when () =
     (exact (recorded gen program));
   with_pool 2 @@ fun workers ->
   ended (fun () ->
-      Run.property ~count:1 ~runs:50
-        (Gen.map (fun () -> program) Gen.unit)
-        (fun p -> ignore (Stateful.execute ~workers p : Stateful.record)))
+      ignore
+        (Run.property ~count:1 ~runs:50
+           (Gen.map (fun () -> program) Gen.unit)
+           (fun p -> ignore (Stateful.execute ~workers p : Stateful.record))
+          : Property.stats))
 
 let labels =
   [
@@ -1641,7 +1643,7 @@ let failing_run_output () =
     ignore (Stateful.execute ~workers program : Stateful.record)
   in
   match Run.property ~runs:50 gen law with
-  | () -> fail "the property passed"
+  | (_ : Property.stats) -> fail "the property passed"
   | exception Failure.Check_failure f ->
       equal (option string) (Some "run 3\n")
         (Option.map (fun (t : Failure.tail) -> t.text) f.output_tail)

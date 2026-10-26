@@ -287,7 +287,10 @@ replay: dune exec examples/04-stateful-testing/test_bounded_queue.exe -- --seed 
 
 The `replay it:` token checks the program that failed again, alone, on
 any machine, as long as the command list and the generators parse it
-the same way. A test holds no token, so a program that failed is kept
+the same way. A replay draws nothing, so a command its program never
+calls does not make it vacuous; once the bug is fixed, it passes and
+says `the replayed case passed`, and `--failed` does the same with the
+recorded token. A test holds no token, so a program that failed is kept
 in the suite by copying its calls into a `test`.
 
 `test/test_bounded_queue.ml`:
@@ -845,7 +848,9 @@ after the branches, several orders may explain what the system did.
 
 The contract differs from one domain's in five ways, all stated under
 `Windtrap.stateful`: a replay draws the same programs but not the same
-schedules, so it may pass; a counterexample does not run once more
+schedules, so it may pass: it runs its program 50 times, as the search
+runs each, stops at the first run that fails, and when none does says
+`its schedule is not replayed: the case passed 50 times`; a counterexample does not run once more
 after the search, except under `--mutate` and `--arm`; the test takes
 no retries and ignores a group's; under `--mutate` and `--arm` each
 program runs once on the test's domain, so a kill does not depend on a

@@ -816,14 +816,24 @@ let property ?loc ?count ?max_discard ?examples ?summary ?runs ?only
         Printexc.raise_with_backtrace exn backtrace
   in
   (* A table whose every row that ran skipped is a skip, with the first
-     row's reason, and no statistics, as a property that a skip ended. *)
-  let judged : Property.outcome -> unit = function
+     row's reason, and no statistics, as a property that a skip ended. The
+     replays that passed before the last one count with it. *)
+  let judged ?(earlier = 0) : Property.outcome -> Property.stats = function
     | Pass stats -> (
         let stats = passed stats in
+        let stats =
+          {
+            stats with
+            cases = stats.cases + earlier;
+            replayed = stats.replayed + earlier;
+          }
+        in
         match frame.skipped_rows with
         | Some { reason; _ } when table && stats.cases = 0 ->
             raise (Failure.Control (`Skip reason))
-        | Some _ | None -> frame.prop_stats <- Some stats)
+        | Some _ | None ->
+            frame.prop_stats <- Some stats;
+            stats)
     (* Coverage is judged once every case has run, so a property that
        stopped early reports no coverage it did not judge. *)
     | Fail { failure; stats } -> fail { stats with coverage = [] } failure
@@ -856,18 +866,19 @@ let property ?loc ?count ?max_discard ?examples ?summary ?runs ?only
              test is no table; run it without --failed"));
   (* Each replay that fails but the last is recorded, as the failures of a
      test that fails more than once. *)
-  let rec replay = function
+  let rec replay earlier = function
     | [] -> judged (engine ())
-    | [ token ] -> judged (engine ~replay:token ())
-    | token :: tokens ->
-        (match engine ~replay:token () with
+    | [ token ] -> judged ~earlier (engine ~replay:token ())
+    | token :: tokens -> (
+        match engine ~replay:token () with
         | Fail { failure; stats } ->
             frame.prop_stats <- Some stats;
-            add_failure frame failure
-        | outcome -> judged outcome);
-        replay tokens
+            add_failure frame failure;
+            replay earlier tokens
+        | Pass stats -> replay (earlier + stats.replayed) tokens
+        | outcome -> judged outcome)
   in
-  replay replays
+  replay 0 replays
 
 (* The enclosing law's context comes back however [fn] ends. *)
 let without_labels fn =
@@ -882,7 +893,9 @@ let prop ?__POS__ ?tags ?timeout ?count ?max_discard ?examples ?summary name gen
     law =
   let loc = Loc.resolve ?__POS__ () in
   Test_tree.test ?__POS__ ?tags ?timeout name (fun () ->
-      property ?loc ?count ?max_discard ?examples ?summary gen law)
+      ignore
+        (property ?loc ?count ?max_discard ?examples ?summary gen law
+          : Property.stats))
 
 (* Startup errors *)
 
