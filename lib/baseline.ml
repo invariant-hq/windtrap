@@ -104,7 +104,7 @@ let form subject text =
   match subject with
   | Literal { exact = true; _ } -> text
   | Literal { exact = false; _ } | Trailing _ -> Source_patch.normalize text
-  | File _ -> Text.ensure_trailing_newline (Text.normalize_newlines text)
+  | File _ -> Text.normalize_newlines text
 
 let read_file path = In_channel.with_open_bin path In_channel.input_all
 
@@ -142,7 +142,7 @@ let cached table key make =
 (* A literal's patch is tried alone on the bytes that [write] will patch:
    [Source_patch.apply] locates every patch of a file against the same
    original bytes, so one valid alone is valid with the others. *)
-let correction t subject where ~actual ~accepted =
+let correction t subject where ~actual =
   let input, output = destination t where in
   let tried ~line patch =
     let source = cached t.sources input (fun () -> read_source input) in
@@ -155,7 +155,7 @@ let correction t subject where ~actual ~accepted =
     | Error reason -> Error (Failure.Refused { line; reason })
   in
   match subject with
-  | File _ -> Ok (Content { output; text = accepted })
+  | File _ -> Ok (Content { output; text = actual })
   | Literal { pos = (_, line, _, _) as pos; value; exact } ->
       let style = if exact then Source_patch.Exact else Source_patch.Flexible in
       tried ~line (Source_patch.patch ~site:pos ~literal:value ~style actual)
@@ -215,7 +215,7 @@ let check t ?loc ?(correct = true) subject actual =
           match mode with
           | Check -> fail state
           | (Corrected | Update) as mode -> (
-              match correction t subject where ~actual ~accepted:actual' with
+              match correction t subject where ~actual with
               | Error refused -> fail ~withheld:refused state
               | Ok correction ->
                   entry.accepted <- Some actual';

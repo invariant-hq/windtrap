@@ -3940,7 +3940,7 @@ let corrections =
           let r, accepted = ci_read_once in
           equal
             (pair int (option string))
-            (0, Some "v\n")
+            (0, Some "v")
             (Recorded.exit_code r, accepted));
     ]
 

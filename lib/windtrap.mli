@@ -1893,9 +1893,12 @@ val expect_file : ?__POS__:pos -> string -> string -> unit
     records a failure and returns. A missing file is a mismatch that [-u]
     corrects by writing the file.
 
-    The comparison is of lines of text. CR and CRLF read as LF, and both sides
-    are given a final newline. Text in which those bytes matter must be encoded
-    first, as with [String.escaped].
+    The comparison is of lines of text. CR and CRLF read as LF on both sides,
+    and the final newline is compared as any other byte: an [actual] that lacks
+    the file's final newline is a mismatch, and when it is the only difference
+    the failure says so, as {!expect_exact}'s does. Text in which a CR matters
+    must be encoded first, as with [String.escaped]. A correction, [-u]'s or
+    [--corrected]'s, writes [actual] byte for byte.
 
     Under dune the run reads dune's copy of the file. Under [--corrected] a
     missing file gets no correction and fails the run, so a new baseline starts

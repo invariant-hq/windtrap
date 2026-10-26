@@ -25,9 +25,6 @@ let normalize_newlines s =
     loop 0;
     Buffer.contents b
 
-let ensure_trailing_newline s =
-  if String.ends_with ~suffix:"\n" s then s else s ^ "\n"
-
 (* "a\nb\n" and "a\nb" both split to ["a"; "b"]: a single trailing newline
    terminates the last line instead of opening an empty one. *)
 let split_lines s =

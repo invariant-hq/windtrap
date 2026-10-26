@@ -39,15 +39,6 @@ let newlines =
         ]
         (fun (_, s, normalized) ->
           equal string normalized (Text.normalize_newlines s));
-      cases "ensure_trailing_newline appends LF to a string that lacks one"
-        (Testable.contramap name3 Testable.text)
-        [
-          ("no final LF", "a", "a\n");
-          ("a final LF", "a\n", "a\n");
-          ("the empty string", "", "\n");
-        ]
-        (fun (_, s, ensured) ->
-          equal string ensured (Text.ensure_trailing_newline s));
       cases "split_lines splits at each LF, a final LF ending the last line"
         (Testable.contramap name3 Testable.text)
         [

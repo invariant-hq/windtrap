@@ -17,10 +17,6 @@ val normalize_newlines : string -> string
 (** [normalize_newlines s] is [s] with each CRLF pair, and each other CR,
     replaced by one LF. *)
 
-val ensure_trailing_newline : string -> string
-(** [ensure_trailing_newline s] is [s] when [s] ends with LF, and [s ^ "\n"]
-    otherwise, so [""] becomes ["\n"]. *)
-
 val split_lines : string -> string list
 (** [split_lines s] is the lines of [s], split at each LF. A final LF ends the
     last line and opens no empty one, so ["a\nb\n"] and ["a\nb"] both give

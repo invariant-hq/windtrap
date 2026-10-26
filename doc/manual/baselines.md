@@ -13,17 +13,19 @@ greeting.
 
 ```ocaml
 let help () =
-  String.concat "\n"
-    [
-      "Usage: mytool [OPTIONS] COMMAND";
-      "";
-      "Commands:";
-      "  build    Build the project";
-      "  test     Run the tests";
-      "";
-      "Options:";
-      "  --help   Show this help";
-    ]
+  String.concat ""
+    (List.map
+       (fun line -> line ^ "\n")
+       [
+         "Usage: mytool [OPTIONS] COMMAND";
+         "";
+         "Commands:";
+         "  build    Build the project";
+         "  test     Run the tests";
+         "";
+         "Options:";
+         "  --help   Show this help";
+       ])
 
 let report ~rows = Printf.sprintf "processed %d rows\nstatus: ok" rows
 let greet name = Printf.printf "Hello, %s!\n" name
@@ -63,7 +65,10 @@ stale baseline (see `Windtrap.expect`).
 root whatever the working directory. Under dune the root is the
 directory that holds the build directory, here windtrap's repository,
 and `WINDTRAP_PROJECT_ROOT` sets another. The file holds the text as it
-is.
+is. CR LF reads as LF, and the final newline counts: a text that lacks
+the file's final newline fails, and its block says
+`values differ only by a trailing newline (on the expected side)`.
+Each line of the help, the last included, ends with one.
 
 `test/help.expected`:
 

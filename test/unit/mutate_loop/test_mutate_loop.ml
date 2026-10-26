@@ -533,7 +533,7 @@ let dry_run =
           let b = Lazy.force baseline_loop in
           equal string "exited 0" b.ran.status;
           contains ~sub:"  accepted sub.expected\n" b.ran.out;
-          equal text "6\n" b.baseline);
+          equal text "6" b.baseline);
       test "the dry run writes no JUnit file" (fun () ->
           equal (list string) [] (Lazy.force baseline_loop).beside);
       test
@@ -642,7 +642,7 @@ let children =
           equal string
             "mutants: 1 reached by this suite, 1 killed, 3 never reached"
             (outcome b.ran.out);
-          equal text "6\n" b.baseline);
+          equal text "6" b.baseline);
       test
         "each process runs its own at_exit functions once, a fatal exception \
          included"

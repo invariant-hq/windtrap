@@ -460,7 +460,7 @@ let relative_file =
     [
       test "moved" (fun () ->
           chdir (temp_dir ());
-          expect_file "v" "rel.expected");
+          expect_file "v\n" "rel.expected");
     ]
 
 let bracketed, bracket_root =
@@ -614,6 +614,29 @@ let placed_file =
           expect_file ~__POS__:("elsewhere.ml", 7, 2, 9) "v" "placed.expected");
     ]
 
+(* A file whose last line ends in a newline that the produced text lacks,
+   checked, then accepted with -u. *)
+let lost_newline =
+  let root = Scratch.dir "windtrap-newline-" in
+  let file = Filename.concat root "n.expected" in
+  write file "a\nb\n";
+  let tests = [ test "drops it" (fun () -> expect_file "a\nb" "n.expected") ] in
+  let env = project [] root in
+  let checked = facade ~env "newline" tests in
+  let accepted = facade ~env ~flags:[ "-u" ] "newline" tests in
+  (checked, accepted, In_channel.with_open_bin file In_channel.input_all)
+
+let a_lost_final_newline_fails () =
+  let checked, _, _ = lost_newline in
+  equal int 1 checked.code;
+  contains
+    ~sub:"values differ only by a trailing newline (on the expected side)"
+    checked.out
+
+let u_writes_the_produced_bytes () =
+  let _, accepted, on_disk = lost_newline in
+  equal (pair int string) (0, "a\nb") (accepted.code, on_disk)
+
 let one_warning () =
   expect_exact (promoted "a correction beside a failure").err
   @@ __POS_OF__
@@ -653,6 +676,11 @@ let baselines =
       test "expect_file locates its failure at the __POS__ given" (fun () ->
           let loc = require_some (failure placed_file [ "placed" ]).loc in
           equal (pair string int) ("elsewhere.ml", 7) (loc.Loc.file, loc.line));
+      test
+        "expect_file compares the final newline, and says when it alone differs"
+        a_lost_final_newline_fails;
+      test "-u writes expect_file's text as produced"
+        u_writes_the_produced_bytes;
       test "a relative expect_file path does not follow chdir" (fun () ->
           equal string "pass" (Recorded.row relative_file [ "moved" ]));
       test "a baseline in a bracket's body is accepted like any other"

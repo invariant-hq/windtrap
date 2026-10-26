@@ -86,6 +86,15 @@ signature of `cases`, `judges` in place of `chooses`, and the type of
   run exits 1 under `CI`, and writes the correction still. Add the
   file's `diff?`, so that `dune promote` can accept the correction
   outside CI.
+- An `expect_file` whose text lacks the final newline of its file, or
+  ends with one the file lacks, which 0.2 passed by giving both sides a
+  final newline → a mismatch, whose block says
+  `values differ only by a trailing newline (on the expected side)`.
+  0.2's `-u` and `--corrected` always wrote a final newline, so a 0.2
+  baseline of a text that does not end with one now fails. End the
+  produced text with a newline, or re-record the file: `dune runtest`
+  then `dune promote`, or `-u` outside dune, which now write the text
+  byte for byte. CR and CR LF still read as LF.
 
 ## Property testing
 

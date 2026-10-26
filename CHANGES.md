@@ -82,6 +82,15 @@ for how to migrate from 0.2.0.
   baseline whenever the stanza lacked the file's `diff?`. The run still
   writes the correction, and says on standard error why it exits 1.
   Outside CI nothing changes.
+- (breaking) `expect_file` compares the final newline: a text that
+  lacks the file's final newline, or ends with one the file lacks, is a
+  mismatch, and when it is the only difference the block says
+  `values differ only by a trailing newline (on the expected side)`, as
+  `expect_exact`'s does. 0.2.0 gave both sides a final newline, so a
+  printer that dropped its last newline passed every file pin. CR and
+  CR LF still read as LF. `-u` and `--corrected` write the produced
+  text byte for byte, where 0.2.0 wrote it with LF line endings and a
+  final newline.
 
 ### Property testing
 

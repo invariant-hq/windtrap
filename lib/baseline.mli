@@ -13,9 +13,10 @@
     records a correction, {!settle} keeps or drops the corrections of each
     attempt, and {!val-write} writes the kept ones once.
 
-    A file baseline is lines of text. Both sides of its comparison and every
-    file written are made canonical: CR and CRLF line endings become LF and the
-    text ends with a newline, so an empty file equals an empty produced text. *)
+    A file baseline is lines of text. Both sides of its comparison are made
+    canonical: CR and CRLF line endings become LF. The final newline is compared
+    as any other, so a text that lacks one differs from a file that ends with
+    one. A file written holds the produced text as it is. *)
 
 (** {1:modes Modes} *)
 
@@ -92,11 +93,11 @@ val mode : t -> mode
 val check : t -> ?loc:Loc.t -> ?correct:bool -> subject -> string -> unit
 (** [check t subject actual] compares [actual] with the baseline of [subject]:
     byte for byte for an exact literal, through {!Source_patch.normalize} on
-    both sides for a flexible one, and as canonical lines of text for a file. It
-    returns [()] when they are equal. When they differ it raises
-    {!Failure.Check_failure} with the failure that {!Failure.val-baseline}
-    builds at [loc], which bounds its texts, except under {!Update}, where it
-    records a correction and returns (see the steps).
+    both sides for a flexible one, and as canonical lines of text, final newline
+    included, for a file. It returns [()] when they are equal. When they differ
+    it raises {!Failure.Check_failure} with the failure that
+    {!Failure.val-baseline} builds at [loc], which bounds its texts, except
+    under {!Update}, where it records a correction and returns (see the steps).
     - [loc] is the location that a failure carries. [check] computes none.
     - [correct] is whether this check may record a correction. With [false] the
       check behaves as under {!constructor-Check} whatever the mode of [t].
@@ -115,12 +116,13 @@ val check : t -> ?loc:Loc.t -> ?correct:bool -> subject -> string -> unit
       {!Failure.Conflict}, and records no correction.
     + Otherwise a difference is a {!Failure.Mismatch} of both texts in their
       comparison form, and a missing file or a {!Trailing} text a
-      {!Failure.Missing} of the canonical content that the check would accept.
-      Under {!Update}, and under {!Corrected} unless the file is missing, the
-      check then records a correction, which holds [actual] whole where the
-      failure bounds it: the literal as {!Source_patch.val-patch} rewrites it to
-      [actual], or the file holding the canonical [actual]. The key is accepted
-      with that content from then on, unless a {!settle} drops the attempt.
+      {!Failure.Missing} of the content that the check would accept, the
+      canonical [actual] for a file. Under {!Update}, and under {!Corrected}
+      unless the file is missing, the check then records a correction, which
+      holds [actual] whole where the failure bounds it: the literal as
+      {!Source_patch.val-patch} rewrites it to [actual], or the file holding
+      [actual] byte for byte. The key is accepted with the canonical [actual]
+      from then on, unless a {!settle} drops the attempt.
     + Before it records the correction of a literal, the check reads the source
       file that {!val-write} will patch, once per run, and tries the patch on it
       alone. When the file cannot be read or the patch is refused, no correction
