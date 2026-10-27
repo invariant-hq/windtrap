@@ -20,11 +20,12 @@ module Testable = Testable
 
 let test = Test_tree.test
 let group = Test_tree.group
-let slow = Test_tree.slow
 let cases = Table.cases
 let bracket = Test_tree.bracket
 let scoped = Test_tree.scoped
 let fixture = Run.fixture
+let tag = Test_tree.tag
+let slow = Test_tree.slow
 let focus = Test_tree.focus
 let xfail = Test_tree.xfail
 
@@ -76,9 +77,9 @@ let pass = Testable.pass
 module Gen_engine = Gen.Engine
 module Gen = Gen
 
-let prop ?__POS__ ?tags ?timeout ?count ?max_discard ?examples name gen law =
-  let tags = Test_tree.Tag.prop :: Option.value ~default:[] tags in
-  Run.prop ?__POS__ ~tags ?timeout ?count ?max_discard ?examples name gen law
+let prop ?__POS__ ?timeout ?count ?max_discard ?examples name gen law =
+  Test_tree.tag Test_tree.Tag.prop
+    (Run.prop ?__POS__ ?timeout ?count ?max_discard ?examples name gen law)
 
 let assume = Property.assume
 let reject = Property.reject

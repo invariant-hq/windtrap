@@ -179,7 +179,7 @@ let database =
           is_true (Db.mem db name));
       with_db "every inserted row is found" every_row_is_found;
       xfail ~reason:"issue #42"
-        (with_db "a duplicate row counts once" a_duplicate_counts_once);
+      @@ with_db "a duplicate row counts once" a_duplicate_counts_once;
     ]
 ```
 
@@ -262,7 +262,8 @@ let server =
           is_true (Server.ping (shared_server ())));
       with_session "a first session gets id 1" (fun session ->
           equal int 1 (Server.session_id session));
-      slow ~timeout:60. "reindexing keeps it running" (fun () ->
+      slow
+      @@ test ~timeout:60. "reindexing keeps it running" (fun () ->
           is_true (Server.reindex (shared_server ())));
       test ~retries:2 "a backup completes" (fun () ->
           is_true (Server.backup (shared_server ())));
@@ -300,12 +301,13 @@ tests that have none, and without it they get ten minutes (see
 
 ## Marking a slow test
 
-`slow` declares a test tagged `slow`, as `reindexing keeps it running`
+`slow @@ test …` tags a test `slow`, as `reindexing keeps it running`
 is, and `--exclude-tag slow` leaves the tagged tests out of a run (see
-[Running tests](running-tests.md)). `~tags` puts any tag on a test or on
-every test of a group. An untagged test that runs longer than
-`--slow-threshold` seconds, one by default, is listed under `slow tests`
-in the report.
+[Running tests](running-tests.md)). `tag "gpu" @@ …` puts any tag on a
+test, a property, a table or a stateful test, or on every test of a
+group, and `slow` is `tag "slow"`. A test without the tag that runs
+longer than `--slow-threshold` seconds, one by default, is listed under
+`slow tests` in the report.
 
 ## Skipping when the machine lacks a resource
 
@@ -426,8 +428,8 @@ under its `XFAIL` line:
 $ dune exec examples/06-resources-and-structure/test_storage.exe -- -v -f duplicate
 storage: 1 test
   XFAIL  database › a duplicate row counts once    0.2ms (expected failure: issue #42)
-    examples/06-resources-and-structure/db_tests.ml:29
-      29 │ (with_db "a duplicate row counts once" a_duplicate_counts_once);
+    examples/06-resources-and-structure/db_tests.ml:30
+      30 │ @@ with_db "a duplicate row counts once" a_duplicate_counts_once;
 
     expected  1
     actual    2

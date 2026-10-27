@@ -862,7 +862,7 @@ without a `~timeout` hangs until interrupted, and Ctrl-C works on it.
 The domains need a processor each beside the test's. On fewer, a
 failure stays a failure, but fewer schedules are tried. A structure
 known to be unsafe is a negative test,
-`xfail ~reason:"not thread-safe" (stateful ~domains:2 "…" commands)`,
+`xfail ~reason:"not thread-safe" @@ stateful ~domains:2 "…" commands`,
 which fails as an unexpected pass when it finds nothing. The branches
 run outside the handlers that surround `run`, so a system whose calls
 need an effect handler is tested on one domain. Without a model the

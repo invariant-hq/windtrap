@@ -90,11 +90,11 @@ type 'a testable = 'a Testable.t
     selects and the bucket of [--shard]. Renaming or regrouping a test changes
     all three.
 
-    {!val:test}, {!group}, {!slow}, {!cases}, {!bracket} and {!scoped} take the
-    same four optional arguments.
+    {!val:test}, {!group}, {!cases}, {!bracket} and {!scoped} take the same
+    three optional arguments. A mark that means the same on any test or group, a
+    {{!section-annotations}tag}, a focus or an expected failure, wraps the
+    declaration instead, as [slow @@ test "n" f].
     - [__POS__] is the declaration site.
-    - [tags] are tag names, added to those of the enclosing groups. A tag named
-      by both [--tag] and [--exclude-tag] is excluded.
     - [timeout] is the test's limit in seconds. Defaults to the limit of the
       nearest enclosing group that declares one, then to [--timeout], then to
       ten minutes, and under [--in-process] to no limit.
@@ -131,7 +131,6 @@ type 'a testable = 'a Testable.t
 
 val test :
   ?__POS__:pos ->
-  ?tags:string list ->
   ?timeout:float ->
   ?retries:int ->
   string ->
@@ -144,31 +143,12 @@ val test :
     path, and it is restored afterwards. *)
 
 val group :
-  ?__POS__:pos ->
-  ?tags:string list ->
-  ?timeout:float ->
-  ?retries:int ->
-  string ->
-  test list ->
-  test
+  ?__POS__:pos -> ?timeout:float -> ?retries:int -> string -> test list -> test
 (** [group name tests] is the group [name] over [tests]. A group has no hooks.
     {!bracket}, {!scoped} and {!fixture} scope resources. *)
 
-val slow :
-  ?__POS__:pos ->
-  ?tags:string list ->
-  ?timeout:float ->
-  ?retries:int ->
-  string ->
-  (unit -> unit) ->
-  test
-(** [slow name fn] is {!val:test} with the tag ["slow"] added to [tags]. The
-    report lists under [slow tests] every test without the tag that ran for at
-    least [--slow-threshold] seconds. *)
-
 val cases :
   ?__POS__:pos ->
-  ?tags:string list ->
   ?timeout:float ->
   ?retries:int ->
   ?label:('a -> string) ->
@@ -212,7 +192,7 @@ val cases :
     counts them too.
 
     {b Rerunning.} Under [--failed] a table runs the rows that failed last, and
-    no other. A recorded row that the table no longer prints is stale: the table
+    no other. A recorded row that the table no longer has is stale: the table
     then fails and says so, rather than pass on the rows that remain.
 
     [rows] is evaluated at declaration. [id] and [label] run in the test, once
@@ -223,7 +203,6 @@ val cases :
 
 val bracket :
   ?__POS__:pos ->
-  ?tags:string list ->
   ?timeout:float ->
   ?retries:int ->
   setup:(unit -> 'r) ->
@@ -244,7 +223,6 @@ val bracket :
 val scoped :
   (('r -> unit) -> unit) ->
   ?__POS__:pos ->
-  ?tags:string list ->
   ?timeout:float ->
   ?retries:int ->
   string ->
@@ -300,9 +278,22 @@ val fixture : ?teardown:('a -> unit) -> (unit -> 'a) -> unit -> 'a
 
 (** {2:annotations Annotations}
 
-    An annotation wraps a declared test or group, which keeps its declaration
-    site. On a group it reaches every test under it. The annotation nearest a
-    test wins. *)
+    An annotation wraps a declared test or group, written [focus @@ test "n" f]
+    or [tag "gpu" @@ group "g" tests], and the test or group keeps its
+    declaration site. On a group it reaches every test under it. Tags add up: a
+    test carries its own and those of its enclosing groups. Of the other
+    annotations, the one nearest a test wins. *)
+
+val tag : string -> test -> test
+(** [tag name t] is [t] tagged [name]. [--tag] keeps the tests that carry every
+    tag it names, and [--exclude-tag] drops those that carry one, so a tag named
+    by both is excluded. A {!prop} carries the tag ["prop"], and a {!stateful}
+    test ["prop"] and ["stateful"]. *)
+
+val slow : test -> test
+(** [slow t] is [tag "slow" t]. The tag keeps a test out of the report's
+    [slow tests], which lists every test without it that ran for at least
+    [--slow-threshold] seconds. *)
 
 val focus : test -> test
 (** [focus t] is [t] focused. When a suite holds a focused test, only focused
@@ -1316,7 +1307,6 @@ end
 
 val prop :
   ?__POS__:pos ->
-  ?tags:string list ->
   ?timeout:float ->
   ?count:int ->
   ?max_discard:int ->
@@ -1730,7 +1720,6 @@ val command :
 
 val stateful :
   ?__POS__:pos ->
-  ?tags:string list ->
   ?timeout:float ->
   ?count:int ->
   ?steps:int ->

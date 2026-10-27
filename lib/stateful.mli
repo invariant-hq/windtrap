@@ -357,7 +357,6 @@ val judge :
 
 val stateful :
   ?__POS__:Loc.pos ->
-  ?tags:string list ->
   ?timeout:float ->
   ?count:int ->
   ?steps:int ->

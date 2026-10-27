@@ -1509,8 +1509,8 @@ let row_facts =
   let attempts = ref 0 in
   Recorded.execute
     [
-      slow "own" ignore;
-      group ~tags:[ Test_tree.Tag.slow ] "g" [ test "inherited" ignore ];
+      slow @@ test "own" ignore;
+      slow @@ group "g" [ test "inherited" ignore ];
       test "plain" ignore;
       test ~retries:2 "twice failed" (fun () ->
           incr attempts;
@@ -1524,24 +1524,24 @@ let row_facts =
 let xpass_pos = ("test/xfail_decl.ml", 12, 2, 30)
 
 let known_bug =
-  xfail ~reason:"issue #42" (test "known bug" (fun () -> fail "still broken"))
+  xfail ~reason:"issue #42" @@ test "known bug" (fun () -> fail "still broken")
 
-let fixed = xfail ~reason:"issue #42" (test ~__POS__:xpass_pos "fixed" ignore)
-let undecided = xfail (test "undecided" (fun () -> skip ()))
+let fixed = xfail ~reason:"issue #42" @@ test ~__POS__:xpass_pos "fixed" ignore
+let undecided = xfail @@ test "undecided" (fun () -> skip ())
 
 let known_bad_law =
-  xfail (prop "known bad law" Gen.int (fun n -> equal int n (n + 1)))
+  xfail @@ prop "known bad law" Gen.int (fun n -> equal int n (n + 1))
 
 let leaky =
   xfail ~reason:"leaky teardown"
-    (bracket "leaky" ~setup:ignore ~teardown:(fun () -> fail "leak") ignore)
+  @@ bracket "leaky" ~setup:ignore ~teardown:(fun () -> fail "leak") ignore
 
-let clean = xfail (bracket "clean" ~setup:ignore ~teardown:ignore ignore)
+let clean = xfail @@ bracket "clean" ~setup:ignore ~teardown:ignore ignore
 
 let keeps_failing =
-  xfail (test ~retries:2 "keeps failing" (fun () -> fail "expected"))
+  xfail @@ test ~retries:2 "keeps failing" (fun () -> fail "expected")
 
-let keeps_passing = xfail (test ~retries:2 "keeps passing" ignore)
+let keeps_passing = xfail @@ test ~retries:2 "keeps passing" ignore
 
 let xfails =
   Recorded.execute
@@ -2333,7 +2333,7 @@ let event_log, release_order =
 
 let property_flags =
   let suite =
-    [ test "plain" ignore; test ~tags:[ Test_tree.Tag.prop ] "law" ignore ]
+    [ test "plain" ignore; tag Test_tree.Tag.prop @@ test "law" ignore ]
   in
   let started filter =
     let seen = ref "not started" in
@@ -2578,15 +2578,15 @@ let focus_pos line = ("test/focus_decl.ml", line, 0, 0)
 let focused_suite =
   [
     focus
-      (group ~__POS__:(focus_pos 1) "g"
-         [ focus (test ~__POS__:(focus_pos 2) "x" ignore) ]);
+    @@ group ~__POS__:(focus_pos 1) "g"
+         [ focus @@ test ~__POS__:(focus_pos 2) "x" ignore ];
     test "y" ignore;
-    focus (test ~__POS__:(focus_pos 3) "z" ignore);
+    focus @@ test ~__POS__:(focus_pos 3) "z" ignore;
   ]
 
 let refusals =
   let update c = { c with Run.baseline = Baseline.Update } in
-  let focused = focus (test ~__POS__:(focus_pos 4) "f" ignore) in
+  let focused = focus @@ test ~__POS__:(focus_pos 4) "f" ignore in
   [
     ( "two tests of one path, and names each path once, sorted",
       "duplicate paths: a, g › same",
@@ -2752,8 +2752,8 @@ let filtered =
 let tagged_suite =
   [
     test "plain" ignore;
-    test ~tags:[ "db" ] "tagged" ignore;
-    slow "molasses" ignore;
+    tag "db" @@ test "tagged" ignore;
+    slow @@ test "molasses" ignore;
   ]
 
 let tag_selected =
@@ -2775,7 +2775,7 @@ let tag_selected =
     ]
 
 let focused =
-  Recorded.execute [ test "unfocused" ignore; focus (test "starred" ignore) ]
+  Recorded.execute [ test "unfocused" ignore; focus @@ test "starred" ignore ]
 
 let shard_names = [ "t-one"; "t-two"; "t-three"; "t-four"; "t-five" ]
 let shard_suite = List.map (fun name -> test name ignore) shard_names
@@ -2805,7 +2805,7 @@ let focused_buckets =
   let suite =
     [
       test "plain one" ignore;
-      focus (test "starred" ignore);
+      focus @@ test "starred" ignore;
       test "plain two" ignore;
     ]
   in
@@ -3763,7 +3763,7 @@ let excused =
   in
   let known =
     xfail ~reason:"issue #42"
-      (test "known" (fun () -> expect_file "buggy\n" "src/known.expected"))
+    @@ test "known" (fun () -> expect_file "buggy\n" "src/known.expected")
   in
   let undecided =
     test "undecided" (fun () ->
@@ -4146,7 +4146,7 @@ let expected_in_store =
   let dir = Scratch.dir "windtrap-xfail-store-" in
   let suite =
     [
-      xfail (test "xf" (fun () -> fail "known"));
+      xfail @@ test "xf" (fun () -> fail "known");
       test "real" (fun () -> fail "boom");
     ]
   in
@@ -4155,7 +4155,7 @@ let expected_in_store =
 
 let unexpected_in_store =
   let dir = Scratch.dir "windtrap-xpass-store-" in
-  let suite = [ xfail (test "xp" ignore) ] in
+  let suite = [ xfail @@ test "xp" ignore ] in
   let first = with_store dir suite in
   [ first; with_store dir ~failed_only:true suite ]
 
@@ -4279,7 +4279,7 @@ let exited, sibling_ran, after_ran =
           ignore;
         test ~retries:2 "exits on every attempt" (fun () -> exit 0);
         prop "law exits" (Gen.int_range 0 1000) (fun n -> if n > 10 then exit 0);
-        xfail ~reason:"known" (test "expected to exit" (fun () -> exit 0));
+        xfail ~reason:"known" @@ test "expected to exit" (fun () -> exit 0);
         test "subtest exits" (fun () ->
             Run.subtest "exits" (fun () -> exit 0);
             Run.subtest "sibling" (fun () -> sibling := true));
@@ -4443,8 +4443,8 @@ let undecided_by_the_report =
       test "passes" ignore;
       test "fails" (fun () -> fail "x");
       test "skips" (fun () -> skip ());
-      xfail (test "expected" (fun () -> fail "y"));
-      slow "slow" ignore;
+      xfail @@ test "expected" (fun () -> fail "y");
+      slow @@ test "slow" ignore;
     ]
   in
   let dressed (c : Run.config) =
@@ -4583,7 +4583,7 @@ let bail_past_xfail =
   Recorded.execute
     ~config:(fun c -> { c with bail = true })
     [
-      xfail (test "excused" (fun () -> fail "known"));
+      xfail @@ test "excused" (fun () -> fail "known");
       test "ok" ignore;
       test "boom" (fun () -> fail "real");
       test "after" ignore;

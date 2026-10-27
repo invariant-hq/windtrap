@@ -337,7 +337,8 @@ let checking =
           equal (list string)
             [ "custom"; "parallel"; "prop"; "stateful" ]
             (tags
-               (Stateful.stateful ~domains:2 ~tags:[ "custom" ] "t" [ tick ]));
+               (Test_tree.tag "custom"
+               @@ Stateful.stateful ~domains:2 "t" [ tick ]));
           equal (list string) [ "prop"; "stateful" ]
             (tags (Stateful.stateful "t" [ tick ])));
       test "a test on several domains takes no retries, a group's included"

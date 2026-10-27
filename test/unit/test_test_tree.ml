@@ -16,7 +16,7 @@ exception Teardown_boom
 
 (* What a flattened test holds *)
 
-let known_tags = [ "a"; "b"; "c"; "db"; "eio"; "g"; "net"; "slow"; "tbl"; "x" ]
+let known_tags = [ "a"; "b"; "c"; "db"; "net"; "slow"; "x" ]
 
 let tag_names tags =
   let names = List.filter (fun name -> Tag.mem name tags) known_tags in
@@ -55,6 +55,7 @@ let single tree =
     (Test_tree.flatten [ tree ])
 
 let focus_sites tests = List.map site (Test_tree.focus_sites tests)
+let tagged names t = List.fold_left (fun t name -> Test_tree.tag name t) t names
 let here line = strf "%s:%d" __FILE__ line
 
 (* Tags *)
@@ -68,9 +69,9 @@ let predicate calls =
   in
   List.fold_left apply Tag.any calls
 
-(* Through a test that declares the names, since the set constructors of [Tag]
+(* Through a test tagged with the names, since the set constructors of [Tag]
    have no client outside the tests. *)
-let tag_set names = (single (Test_tree.test ~tags:names "t" ignore)).tags
+let tag_set names = (single (tagged names (Test_tree.test "t" ignore))).tags
 
 let selection_name (calls, tags) =
   let call = function Require n -> "require " ^ n | Drop n -> "drop " ^ n in
@@ -195,34 +196,32 @@ let trees =
 
 (* Declaring tests *)
 
-type constructor = Test | Slow | Group | Cases | Scoped | Bracket
+type constructor = Test | Group | Cases | Scoped | Bracket
 
-let constructors = [ Test; Slow; Group; Cases; Scoped; Bracket ]
+let constructors = [ Test; Group; Cases; Scoped; Bracket ]
 
 let constructor_name = function
   | Test -> "test"
-  | Slow -> "slow"
   | Group -> "group"
   | Cases -> "cases"
   | Scoped -> "scoped"
   | Bracket -> "bracket"
 
 (* [declare c] is one test declared with the constructor [c]. *)
-let declare c ?__POS__ ?tags ?timeout ?retries () =
+let declare c ?__POS__ ?timeout ?retries () =
   match c with
-  | Test -> Test_tree.test ?__POS__ ?tags ?timeout ?retries "t" ignore
-  | Slow -> Test_tree.slow ?__POS__ ?tags ?timeout ?retries "s" ignore
+  | Test -> Test_tree.test ?__POS__ ?timeout ?retries "t" ignore
   | Group ->
       let t = Test_tree.test "t" ignore in
-      Test_tree.group ?__POS__ ?tags ?timeout ?retries "g" [ t ]
+      Test_tree.group ?__POS__ ?timeout ?retries "g" [ t ]
   | Cases ->
-      Windtrap.cases ?__POS__ ?tags ?timeout ?retries "c"
-        (Testable.to_string int) [ 0 ] ignore
+      Windtrap.cases ?__POS__ ?timeout ?retries "c" (Testable.to_string int)
+        [ 0 ] ignore
   | Scoped ->
       let scope k = k () in
-      Test_tree.scoped scope ?__POS__ ?tags ?timeout ?retries "s" ignore
+      Test_tree.scoped scope ?__POS__ ?timeout ?retries "s" ignore
   | Bracket ->
-      Test_tree.bracket ?__POS__ ?tags ?timeout ?retries ~setup:ignore
+      Test_tree.bracket ?__POS__ ?timeout ?retries ~setup:ignore
         ~teardown:ignore "b" ignore
 
 let each values =
@@ -241,15 +240,10 @@ let accepted (c, timeout) =
     (Some timeout, 0)
     (case.timeout, case.retries)
 
-(* The tags hold slow, which the slow constructor adds, so every row reads
-   alike. *)
 let own_settings c =
-  let own = declare c ~tags:[ "slow"; "x" ] ~timeout:1.5 ~retries:2 () in
-  let tree =
-    Test_tree.group ~tags:[ "g" ] ~timeout:9. ~retries:9 "outer" [ own ]
-  in
-  equal string "tags [g, slow, x], limit 1.5s, 2 retries"
-    (settings (single tree))
+  let own = declare c ~timeout:1.5 ~retries:2 () in
+  let tree = Test_tree.group ~timeout:9. ~retries:9 "outer" [ own ] in
+  equal string "tags [], limit 1.5s, 2 retries" (settings (single tree))
 
 let declared_site c =
   let tree = declare c ~__POS__:("f.ml", 7, 2, 9) () in
@@ -261,7 +255,7 @@ let inert () =
   let tests =
     [
       Test_tree.test "test" (note "test body");
-      Test_tree.slow "slow" (note "slow body");
+      Test_tree.slow @@ Test_tree.test "slow" (note "slow body");
       Windtrap.cases "cases"
         (fun _ ->
           note "id" ();
@@ -303,16 +297,16 @@ let defaults () =
 (* Each declares its tree on the line it returns, the line that a capture of
    the call stack gives. *)
 let test_here () = (__LINE__, Test_tree.test "t" ignore)
-let slow_here () = (__LINE__, Test_tree.slow ~tags:[ "s" ] "s" ignore)
+let slow_here () = (__LINE__, Test_tree.slow @@ Test_tree.test "s" ignore)
 
 let cases_here () =
   (__LINE__, Windtrap.cases "c" (Testable.to_string int) [ 0; 1 ] ignore)
 
 let nested_here () =
-  (__LINE__, Test_tree.group ~tags:[ "g" ] "g" [ Test_tree.test "t" ignore ])
+  (__LINE__, Test_tree.group ~retries:1 "g" [ Test_tree.test "t" ignore ])
 
 let scoped_here () =
-  (__LINE__, Test_tree.scoped (fun k -> k ()) ~tags:[ "s" ] "s" ignore)
+  (__LINE__, Test_tree.scoped (fun k -> k ()) ~timeout:1. "s" ignore)
 
 let bracket_here () =
   (__LINE__, Test_tree.bracket ~setup:ignore ~teardown:ignore "b" ignore)
@@ -326,7 +320,7 @@ let group_here () = (__LINE__, Test_tree.group ~retries:1 "g" [])
 let captured =
   [
     ("test", (test_here, [ "t" ]));
-    ("slow", (slow_here, [ "s" ]));
+    ("a slow test", (slow_here, [ "s" ]));
     ("cases", (cases_here, [ "c" ]));
     ("a test in a group", (nested_here, [ "g/t" ]));
     ("scoped", (scoped_here, [ "s" ]));
@@ -368,16 +362,14 @@ let no_site () =
   equal string "no site" (site (single t).loc);
   equal (list string) [ "no site" ] (focus_sites [ Test_tree.focus t ])
 
-let slow_tags = [ ("no tags", ([], "[slow]")); ("x", ([ "x" ], "[slow, x]")) ]
-
 (* A table is one test, whatever its rows; they run in its body. *)
 let one_test () =
   let tree =
-    Windtrap.cases ~__POS__:("f.ml", 5, 0, 0) ~tags:[ "tbl" ] ~timeout:2.5
-      ~retries:3 "c" (Testable.to_string int) [ 0; 1 ] ignore
+    Windtrap.cases ~__POS__:("f.ml", 5, 0, 0) ~timeout:2.5 ~retries:3 "c"
+      (Testable.to_string int) [ 0; 1 ] ignore
   in
   equal (list string)
-    [ "c: tags [tbl], limit 2.5s, 3 retries" ]
+    [ "c: tags [], limit 2.5s, 3 retries" ]
     (column settings [ tree ]);
   equal (list string) [ "c: f.ml:5" ] (column (fun c -> site c.loc) [ tree ])
 
@@ -406,11 +398,9 @@ let scope_calls_body () =
 let partial_scoped () =
   let with_unit = Test_tree.scoped (fun k -> k ()) in
   let c =
-    single
-      (with_unit ~__POS__:("f.ml", 3, 0, 0) ~tags:[ "eio" ] ~timeout:3. "s"
-         ignore)
+    single (with_unit ~__POS__:("f.ml", 3, 0, 0) ~timeout:3. "s" ignore)
   in
-  equal string "tags [eio], limit 3s, 0 retries" (settings c);
+  equal string "tags [], limit 3s, 0 retries" (settings c);
   equal string "f.ml:3" (site c.loc)
 
 let escaped = function
@@ -541,8 +531,8 @@ let declaring =
         (fun (c, v) -> strf "%s, %g" (constructor_name c) v)
         good_timeouts accepted;
       cases
-        "every constructor's own tags, timeout and retries reach its test over \
-         those of a group"
+        "every constructor's own timeout and retries reach its test over those \
+         of a group"
         constructor_name constructors own_settings;
       cases "every constructor's __POS__ is its site" constructor_name
         constructors declared_site;
@@ -556,13 +546,9 @@ let declaring =
         group_site;
       test "a test keeps its own site, not its group's" given_sites;
       test "a node declared where no site is known has none" no_site;
-      cases "slow adds the slow tag to the declared ones" fst slow_tags
-        (fun (_, (declared, expected)) ->
-          let c = single (Test_tree.slow ~tags:declared "s" ignore) in
-          equal string expected (tag_names c.tags));
       test
-        "cases declares one test, with the site of the call and its tags, \
-         timeout and retries"
+        "cases declares one test, with the site of the call, its timeout and \
+         its retries"
         one_test;
       test "cases over no rows declares one test" (fun () ->
           equal
@@ -584,11 +570,12 @@ let declaring =
 
 (* Annotations *)
 
-let[@inline never] annotate t = Test_tree.xfail (Test_tree.focus t)
+let[@inline never] annotate t =
+  Test_tree.slow @@ Test_tree.tag "x" (Test_tree.xfail @@ Test_tree.focus t)
 
 let annotated_sites () =
   let pos = ("src/declared.ml", 12, 0, 8) in
-  let t = Test_tree.test ~__POS__:pos ~tags:[ "x" ] ~timeout:1. "t" ignore in
+  let t = Test_tree.test ~__POS__:pos ~timeout:1. "t" ignore in
   equal string "src/declared.ml:12" (site (single (annotate t)).loc);
   let g = Test_tree.group ~__POS__:pos "g" [] in
   equal (list string) [ "src/declared.ml:12" ] (focus_sites [ annotate g ]);
@@ -600,19 +587,19 @@ let listed_sites () =
   let tests =
     [
       Test_tree.focus
-        (Test_tree.group ~__POS__:(p 1) "g"
+      @@ Test_tree.group ~__POS__:(p 1) "g"
            [
              Test_tree.test "a" ignore;
-             Test_tree.focus (Test_tree.test ~__POS__:(p 2) "b" ignore);
+             Test_tree.focus @@ Test_tree.test ~__POS__:(p 2) "b" ignore;
              Test_tree.test "c" ignore;
-           ]);
+           ];
       Test_tree.test "plain" ignore;
       Test_tree.group "h"
         [
           Test_tree.group "i"
-            [ Test_tree.focus (Test_tree.test ~__POS__:(p 3) "d" ignore) ];
+            [ Test_tree.focus @@ Test_tree.test ~__POS__:(p 3) "d" ignore ];
         ];
-      Test_tree.focus (Test_tree.group ~__POS__:(p 4) "empty" []);
+      Test_tree.focus @@ Test_tree.group ~__POS__:(p 4) "empty" [];
     ]
   in
   equal (list string)
@@ -623,11 +610,12 @@ let focus_reach () =
   let tests =
     [
       Test_tree.focus
-        (Test_tree.group "g"
-           [ Test_tree.group "h" [ Test_tree.test "a" ignore ] ]);
+      @@ Test_tree.group "g"
+           [ Test_tree.group "h" [ Test_tree.test "a" ignore ] ];
       Test_tree.group "i"
         [
-          Test_tree.focus (Test_tree.test "b" ignore); Test_tree.test "c" ignore;
+          Test_tree.focus @@ Test_tree.test "b" ignore;
+          Test_tree.test "c" ignore;
         ];
     ]
   in
@@ -645,11 +633,11 @@ let nearest_xfail () =
   let tests =
     [
       Test_tree.xfail ~reason:"outer"
-        (Test_tree.group "g"
+      @@ Test_tree.group "g"
            [
-             Test_tree.xfail ~reason:"inner" (Test_tree.test "refined" ignore);
+             Test_tree.xfail ~reason:"inner" @@ Test_tree.test "refined" ignore;
              Test_tree.test "plain" ignore;
-           ]);
+           ];
       Test_tree.test "free" ignore;
     ]
   in
@@ -658,24 +646,40 @@ let nearest_xfail () =
     (column (fun c -> xfail_mark c.xfail) tests)
 
 let composed () =
-  let t () = Test_tree.test ~tags:[ "db" ] ~timeout:1.5 ~retries:2 "t" ignore in
+  let t () =
+    Test_tree.tag "db" (Test_tree.test ~timeout:1.5 ~retries:2 "t" ignore)
+  in
   let row tree =
     let c = single tree in
     settings c ^ ", " ^ marks c
   in
   let expected = "tags [db], limit 1.5s, 2 retries, focused, xfail r" in
   equal string expected
-    (row (Test_tree.xfail ~reason:"r" (Test_tree.focus (t ()))));
+    (row (Test_tree.xfail ~reason:"r" @@ Test_tree.focus @@ t ()));
   equal string expected
-    (row (Test_tree.focus (Test_tree.xfail ~reason:"r" (t ()))))
+    (row (Test_tree.focus @@ Test_tree.xfail ~reason:"r" @@ t ()))
 
 let annotations =
   group "Annotations"
     [
       test "an annotation leaves the site of its node alone" annotated_sites;
+      cases "tag and slow mark the tests of every constructor" constructor_name
+        constructors (fun c ->
+          let marked = Test_tree.slow @@ Test_tree.tag "x" (declare c ()) in
+          equal (list string) [ "[slow, x]" ]
+            (List.map
+               (fun (c : Test_tree.case) -> tag_names c.tags)
+               (Test_tree.flatten [ marked ])));
+      test "tags add up, and a tag given twice is one" (fun () ->
+          let t = tagged [ "a"; "b"; "a" ] (Test_tree.test "t" ignore) in
+          equal string "[a, b]" (tag_names (single t).tags));
+      test "slow is the tag slow" (fun () ->
+          equal string "[slow]"
+            (tag_names
+               (single (Test_tree.slow @@ Test_tree.test "t" ignore)).tags));
       cases "focus marks the tests of every constructor" constructor_name
         constructors (fun c ->
-          let focused = Test_tree.flatten [ Test_tree.focus (declare c ()) ] in
+          let focused = Test_tree.flatten [ Test_tree.focus @@ declare c () ] in
           equal (list bool) [ true ]
             (List.map (fun (c : Test_tree.case) -> c.focused) focused));
       test "a focus on a group reaches every test under it and no sibling"
@@ -683,7 +687,7 @@ let annotations =
       cases "xfail marks a test with its reason, or with none" fst reasons
         (fun (_, (reason, mark)) ->
           let c =
-            single (Test_tree.xfail ?reason (Test_tree.test "t" ignore))
+            single (Test_tree.xfail ?reason @@ Test_tree.test "t" ignore)
           in
           equal string mark (xfail_mark c.xfail));
       test "an xfail on a group reaches every test under it" (fun () ->
@@ -698,7 +702,7 @@ let annotations =
                [ Test_tree.xfail ~reason:"bug" g ]));
       test "the xfail nearest a test is the one its case carries" nearest_xfail;
       test "on one node the first xfail applied stays" (fun () ->
-          let t = Test_tree.xfail ~reason:"a" (Test_tree.test "t" ignore) in
+          let t = Test_tree.xfail ~reason:"a" @@ Test_tree.test "t" ignore in
           equal string "xfail a"
             (xfail_mark (single (Test_tree.xfail ~reason:"b" t)).xfail));
       test "focus and xfail compose in either order and keep the settings"
@@ -778,12 +782,14 @@ let nearest_wins () =
 let inherited_tags () =
   let tests =
     [
-      Test_tree.group ~tags:[ "db" ] "g"
-        [
-          Test_tree.test ~tags:[ "net" ] "a" ignore;
-          Test_tree.group ~tags:[ "x" ] "h" [ Test_tree.test "b" ignore ];
-          Test_tree.test "c" ignore;
-        ];
+      Test_tree.tag "db"
+      @@ Test_tree.group "g"
+           [
+             Test_tree.tag "net" @@ Test_tree.test "a" ignore;
+             Test_tree.tag "x"
+             @@ Test_tree.group "h" [ Test_tree.test "b" ignore ];
+             Test_tree.test "c" ignore;
+           ];
       Test_tree.test "d" ignore;
     ]
   in

@@ -26,7 +26,7 @@ let default =
     (* The one failing test: scenarios select it by name to fail a run and
        exclude it by name to pass one. *)
     test "boom" (fun () -> equal ~msg:"deliberate" int 1 2);
-    slow "crawls" (fun () -> is_true true);
+    slow @@ test "crawls" (fun () -> is_true true);
     (* The baseline the sessions plant, at a path both files agree on. *)
     test "greeting" (fun () ->
         expect_file "hello from the fixture\n" "test/cram/run/greeting.expected");
@@ -34,7 +34,7 @@ let default =
 
 let focused =
   [
-    focus (test "focused" (fun () -> is_true true));
+    focus @@ test "focused" (fun () -> is_true true);
     test "unfocused" (fun () -> is_true true);
   ]
 

@@ -28,6 +28,16 @@ signature of `cases`, `judges` in place of `chooses`, and the type of
   cases "parses" fst [ ("1", 1); ("10", 10) ] (fun (s, n) ->
       equal int n (int_of_string s))
   ```
+- `slow "n" f` → `slow @@ test "n" f`, with its optional arguments on
+  `test`: `slow ~timeout:60. "n" f` → `slow @@ test ~timeout:60. "n" f`.
+  `slow` marks any test or group, as `focus` and `xfail` do. A choice
+  between the two constructors, `(if heavy then slow else test) "n" f`,
+  becomes a choice of mark, `(if heavy then slow else Fun.id) @@ test "n" f`.
+- `~tags:[ "gpu" ]` on `test`, `group`, `slow`, `cases`, `bracket`,
+  `scoped`, `prop` or `stateful` → `tag "gpu" @@ …` around the
+  declaration, one `tag` per tag, and `~tags:[ "slow" ]` → `slow @@ …`.
+  A helper that took `?tags` only to pass it on drops it, and its
+  caller tags the helper's result.
 - A table is one test, not a group of one test per row:
   - `-f 'parses › 10'`, which selected one row → `-f parses`, which
     selects the table; `--failed` then reruns only the rows that

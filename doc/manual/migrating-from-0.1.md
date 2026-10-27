@@ -10,12 +10,12 @@ spelling this page does not list is unchanged. The entries of
 - `let () = run "mylib" tests` → `let () = exit (run "mylib" tests)`
 - `run ~quick ~filter ~seed …` and `run`'s other optional arguments →
   the command-line flags or their `WINDTRAP_*` mirrors, or `run ~argv`
-- `ftest "x" fn`, `fgroup "g" ts` → `focus (test "x" fn)`,
-  `focus (group "g" ts)`
-- `~tags:(Tag.labels [ "net" ])` → `~tags:[ "net" ]`
-- `Tag.speed Slow` → `slow name fn`, or `~tags:[ "slow" ]`
-- `Tag.empty`, `Tag.add_label`, `Tag.merge`, `Tag.has_label` → a
-  `string list` and the functions of `List`
+- `ftest "x" fn`, `fgroup "g" ts` → `focus @@ test "x" fn`,
+  `focus @@ group "g" ts`
+- `~tags:(Tag.labels [ "net" ])` → `tag "net" @@ …`
+- `Tag.speed Slow` → `slow @@ test name fn`
+- `Tag.empty`, `Tag.add_label`, `Tag.merge`, `Tag.has_label` → one
+  `tag name @@ …` per tag
 - `~tags:(Tag.labels [ "disabled" ])` → `skip ()` in the body, or
   `--exclude-tag` on the command line
 - `group ~before_each ~after_each` → `bracket ~setup ~teardown` on each

@@ -35,7 +35,6 @@ val check :
 
 val cases :
   ?__POS__:Loc.pos ->
-  ?tags:string list ->
   ?timeout:float ->
   ?retries:int ->
   ?label:('a -> string) ->

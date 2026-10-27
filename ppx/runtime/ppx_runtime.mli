@@ -59,10 +59,10 @@ val add_test :
   (unit -> unit) ->
   unit
 (** [add_test ?library ~file ~pos ~tags name fn] registers
-    [Windtrap.test ~__POS__:pos ~tags name fn] in the innermost open group, or
-    at the top level of [file] when no group is open. [pos] is the position of
-    the extension point, and the [name] of an anonymous [let%test _] is
-    [line_<N>], after its line. *)
+    [Windtrap.test ~__POS__:pos name fn], with each of [tags] given by
+    [Windtrap.tag], in the innermost open group, or at the top level of [file]
+    when no group is open. [pos] is the position of the extension point, and the
+    [name] of an anonymous [let%test _] is [line_<N>], after its line. *)
 
 val enter_group :
   ?library:string -> file:string -> tags:string list -> string -> unit
@@ -74,10 +74,10 @@ val enter_group :
 
 val leave_group : unit -> unit
 (** [leave_group ()] closes the innermost open group and registers it as
-    [Windtrap.group ~tags name children], with its children in the order of
-    registration. It lands in the enclosing group, or at the top level of the
-    library and the file that {!enter_group} named. Raises [Invalid_argument] if
-    no group is open. *)
+    [Windtrap.group name children], with each of its [tags] given by
+    [Windtrap.tag] and its children in the order of registration. It lands in
+    the enclosing group, or at the top level of the library and the file that
+    {!enter_group} named. Raises [Invalid_argument] if no group is open. *)
 
 (** {1:expect_tests Expect tests} *)
 

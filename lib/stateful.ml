@@ -1613,13 +1613,12 @@ let with_workers ?loc ~domains fn =
    passing program, and [Run.property] returns only when every case passed, so
    [held] and [called] then mark the passing programs. On several domains the
    test takes no retries, since a failure there is never undone. *)
-let stateful ?__POS__ ?tags ?timeout ?count ?(steps = 20) ?(domains = 1) name
-    commands =
+let stateful ?__POS__ ?timeout ?count ?(steps = 20) ?(domains = 1) name commands
+    =
   let loc = Loc.resolve ?__POS__ () in
   let tags =
     Test_tree.Tag.prop :: "stateful"
-    :: ((if domains > 1 then [ "parallel" ] else [])
-       @ Option.value ~default:[] tags)
+    :: (if domains > 1 then [ "parallel" ] else [])
   in
   let retries = if domains > 1 then Some 0 else None in
   let gen = program ~steps ~domains commands in
@@ -1657,4 +1656,7 @@ let stateful ?__POS__ ?tags ?timeout ?count ?(steps = 20) ?(domains = 1) name
           (Failure.Check_failure
              (never_called ?loc ~cases:!cases ~elements (List.map name never)))
   in
-  Test_tree.test ?__POS__ ~tags ?timeout ?retries name body
+  List.fold_left
+    (fun t name -> Test_tree.tag name t)
+    (Test_tree.test ?__POS__ ?timeout ?retries name body)
+    tags

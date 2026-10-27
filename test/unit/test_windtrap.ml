@@ -221,8 +221,35 @@ let tagged_prop () =
          if carries c then Some (Test_tree.path_to_string c.path) else None)
        (Test_tree.flatten tests))
 
+(* A mark wraps a test of any family, and a group, as [slow @@ …]. *)
+let marked () =
+  let noop = command "noop" (Gen.unit @-> returns unit) ignore ignore in
+  let tests =
+    [
+      slow @@ prop "law" Gen.int ignore;
+      tag "gpu" @@ cases "table" string_of_int [ 1 ] ignore;
+      tag "gpu" @@ slow @@ stateful "program" [ noop ];
+      slow @@ group "g" [ test "inner" ignore ];
+    ]
+  in
+  let known = [ "gpu"; "prop"; "slow"; "stateful" ] in
+  equal (list string)
+    [
+      "law: prop slow";
+      "table: gpu";
+      "program: gpu prop slow stateful";
+      "g › inner: slow";
+    ]
+    (List.map
+       (fun (c : Test_tree.case) ->
+         Test_tree.path_to_string c.path
+         ^ ": "
+         ^ String.concat " "
+             (List.filter (fun t -> Test_tree.Tag.mem t c.tags) known))
+       (Test_tree.flatten tests))
+
 let both_flags =
-  let tests = [ test ~tags:[ "x" ] "tagged" ignore; test "untagged" ignore ] in
+  let tests = [ tag "x" @@ test "tagged" ignore; test "untagged" ignore ] in
   List.map
     (fun flags ->
       (String.concat " " flags, facade ~flags:("-l" :: flags) "both" tests))
@@ -283,6 +310,7 @@ let declaring =
   group "Declaring tests"
     [
       test "prop adds the prop tag, under a group too" tagged_prop;
+      test "slow and tag mark a test of any family, and a group" marked;
       cases "a tag named by both --tag and --exclude-tag is excluded" fst
         both_flags (fun (_, r) -> equal text "untagged\n" r.out);
       test "a property and a stateful test inherit a group's retries" (fun () ->

@@ -99,10 +99,12 @@ let register origin tree =
   | [] -> top_level := (origin, tree) :: !top_level
   | frame :: _ -> frame.children <- tree :: frame.children
 
+let tagged tags t = List.fold_left (fun t name -> Windtrap.tag name t) t tags
+
 let add_test ?library ~file ~pos ~tags name fn =
   let origin = note_origin ?library file in
   let name = scoped_name origin name in
-  register origin (Windtrap.test ~__POS__:pos ~tags name fn)
+  register origin (tagged tags (Windtrap.test ~__POS__:pos name fn))
 
 let enter_group ?library ~file ~tags name =
   let origin = note_origin ?library file in
@@ -116,7 +118,8 @@ let leave_group () =
   | frame :: rest ->
       groups := rest;
       register frame.origin
-        (Windtrap.group ~tags:frame.tags frame.name (List.rev frame.children))
+        (tagged frame.tags
+           (Windtrap.group frame.name (List.rev frame.children)))
 
 (* Expect tests *)
 

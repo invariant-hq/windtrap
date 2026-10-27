@@ -123,7 +123,7 @@ let () = exit (run "mylib" [ parse ])
   across the run. `temp_dir`, `setenv` and `chdir` are undone when the
   test ends. Tests share only a `fixture`, and never through its mutable
   state, since `-f`, `--failed` and `--shard` change which tests run.
-- A known bug is `xfail ~reason:"issue #N" (test …)`: green while the
+- A known bug is `xfail ~reason:"issue #N" @@ test …`: green while the
   bug exists, red the day it is fixed. A test the machine cannot run is
   `skip ~reason ()`. `focus` is for a local session only; under CI a
   suite that holds one is refused.
@@ -381,7 +381,7 @@ In `windtrap.mli`: Baselines, Captured output.
   value or has a `~pre` runs only before the parallel calls, so an
   operation meant to be called concurrently must be total. Its failure
   does not replay its schedule; a structure known to be unsafe is
-  `xfail (stateful ~domains:2 …)`.
+  `xfail @@ stateful ~domains:2 …`.
 
 In `windtrap.mli`: Properties, `Gen`, Discarding and labelling cases,
 Laws, Stateful tests (with `judges`, `among` and `stateful`'s

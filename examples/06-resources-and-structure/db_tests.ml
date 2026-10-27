@@ -27,5 +27,5 @@ let database =
           is_true (Db.mem db name));
       with_db "every inserted row is found" every_row_is_found;
       xfail ~reason:"issue #42"
-        (with_db "a duplicate row counts once" a_duplicate_counts_once);
+      @@ with_db "a duplicate row counts once" a_duplicate_counts_once;
     ]

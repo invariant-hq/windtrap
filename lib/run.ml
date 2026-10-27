@@ -889,10 +889,9 @@ let without_labels fn =
       Fun.protect ~finally:(fun () -> frame.prop <- enclosing) fn
   | Some (In_test _ | In_run _) | None -> fn ()
 
-let prop ?__POS__ ?tags ?timeout ?count ?max_discard ?examples ?summary name gen
-    law =
+let prop ?__POS__ ?timeout ?count ?max_discard ?examples ?summary name gen law =
   let loc = Loc.resolve ?__POS__ () in
-  Test_tree.test ?__POS__ ?tags ?timeout name (fun () ->
+  Test_tree.test ?__POS__ ?timeout name (fun () ->
       ignore
         (property ?loc ?count ?max_discard ?examples ?summary gen law
           : Property.stats))

@@ -531,7 +531,6 @@ val without_labels : (unit -> 'a) -> 'a
 
 val prop :
   ?__POS__:Loc.pos ->
-  ?tags:string list ->
   ?timeout:float ->
   ?count:int ->
   ?max_discard:int ->
@@ -545,8 +544,8 @@ val prop :
     {!Property.run} over [gen] and [law], then turns the {!Property.outcome}
     into the outcome of the test. It takes no [retries] of its own, and those of
     an enclosing group apply to it as to any test.
-    - [__POS__], [tags] and [timeout] are {!Test_tree.test}'s. The property is
-      one body, so [timeout] covers generation and shrinking together (see
+    - [__POS__] and [timeout] are {!Test_tree.test}'s. The property is one body,
+      so [timeout] covers generation and shrinking together (see
       {!Property.run}).
     - [count] is the number of generated cases: the declared [count], or else
       {!Property.default_count}, raised to [config.prop_count] when that is
@@ -554,7 +553,8 @@ val prop :
       it was given.
     - [max_discard], [examples] and [summary] are {!Property.run}'s.
 
-    [prop] adds no tag, so a caller must add {!Test_tree.Tag.prop} to [tags].
+    [prop] adds no tag, so a caller must add {!Test_tree.Tag.prop} with
+    {!Test_tree.tag}.
 
     The engine draws from [config.seed] and from the path string of the test.
     Its context is {!prop_context} while [law] runs. A [Fail] adds the

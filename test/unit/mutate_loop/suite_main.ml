@@ -397,7 +397,8 @@ let flip =
 
 let focused =
   [
-    focus (test "widen is nonzero" (fun () -> is_true (Subject.widen 3 4 <> 0)));
+    focus
+    @@ test "widen is nonzero" (fun () -> is_true (Subject.widen 3 4 <> 0));
     test "widen is not 99" (fun () -> is_true (Subject.widen 1 2 <> 99));
   ]
 
@@ -410,10 +411,10 @@ let known =
     test "watches sub without pinning it" (fun () ->
         is_true (Subject.sub 10 4 < 100));
     xfail ~reason:"sub subtracts"
-      (test "sub adds" (fun () -> equal int 7 (Subject.sub 3 4)));
+    @@ test "sub adds" (fun () -> equal int 7 (Subject.sub 3 4));
     test "widen is nonzero" (fun () -> is_true (Subject.widen 3 4 <> 0));
-    xfail (test "widen is 99" (fun () -> equal int 99 (Subject.widen 1 2)));
-    xfail (test "orphan is 99" (fun () -> equal int 99 (Subject.orphan 1 2)));
+    xfail @@ test "widen is 99" (fun () -> equal int 99 (Subject.widen 1 2));
+    xfail @@ test "orphan is 99" (fun () -> equal int 99 (Subject.orphan 1 2));
   ]
 
 (* [widen]'s answer, memoized. The dry run fills the table, and a child
@@ -536,8 +537,8 @@ let () =
       exit
       @@ run "calc"
            [
-             group ~tags:[ "gated" ] "calc" strong;
-             group ~tags:[ "gated" ] "widen" weak;
+             tag "gated" @@ group "calc" strong;
+             tag "gated" @@ group "widen" weak;
            ]
   | _ ->
       exit

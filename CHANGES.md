@@ -23,6 +23,14 @@ for how to migrate from 0.2.0.
   `PASS  t (holds on all 3 rows)`, `timeout` and `retries` cover the
   whole table, the summary counts a table once, and a table with no row
   is vacuous, since it checks nothing, where 0.2.0 declared no test.
+- (breaking) `slow : test -> test` and `tag : string -> test -> test`
+  are annotations, as `focus` and `xfail` are: they mark any test, a
+  property, a table or a stateful test included, or every test under a
+  group, written `slow @@ test "n" f` and `tag "gpu" @@ group "g" ts`.
+  `slow` is `tag "slow"`, the tag the runner leaves out of `slow tests`.
+  `?tags` is removed from every constructor, so a tag has one spelling,
+  and 0.2.0's `slow name fn`, the only constructor twin of `test`, is
+  `slow @@ test name fn`.
 - Each row of a table keeps or withholds its baseline corrections as a
   test of its own would, in the order of the rows and at every `-j`: a
   row that also fails another way keeps none, and the next rows are

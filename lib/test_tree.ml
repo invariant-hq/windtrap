@@ -63,7 +63,7 @@ and kind = Test of body | Group of t list
 
 (* Declaring tests *)
 
-let declared ?(tags = []) ?timeout ?retries () =
+let declared ?timeout ?retries () =
   (match timeout with
   | Some s when (not (Float.is_finite s)) || s <= 0. ->
       invalid_arg "windtrap: timeout must be finite and positive"
@@ -71,32 +71,28 @@ let declared ?(tags = []) ?timeout ?retries () =
   (match retries with
   | Some n when n < 0 -> invalid_arg "windtrap: retries must be non-negative"
   | Some _ | None -> ());
-  { tags = Tag.of_list tags; focused = false; timeout; retries; xfail = None }
+  { tags = Tag.of_list []; focused = false; timeout; retries; xfail = None }
 
 (* Inside a constructor [__POS__] is the parameter, not the builtin, so a
    position is passed on and never captured anew. *)
-let node ?__POS__ ?tags ?timeout ?retries name kind =
-  let annotations = declared ?tags ?timeout ?retries () in
+let node ?__POS__ ?timeout ?retries name kind =
+  let annotations = declared ?timeout ?retries () in
   let loc = Loc.resolve ?__POS__ () in
   { name; loc; annotations; kind }
 
-let test ?__POS__ ?tags ?timeout ?retries name fn =
-  node ?__POS__ ?tags ?timeout ?retries name (Test (Body fn))
+let test ?__POS__ ?timeout ?retries name fn =
+  node ?__POS__ ?timeout ?retries name (Test (Body fn))
 
-let slow ?__POS__ ?(tags = []) ?timeout ?retries name fn =
-  node ?__POS__ ~tags:(Tag.slow :: tags) ?timeout ?retries name (Test (Body fn))
+let group ?__POS__ ?timeout ?retries name children =
+  node ?__POS__ ?timeout ?retries name (Group children)
 
-let group ?__POS__ ?tags ?timeout ?retries name children =
-  node ?__POS__ ?tags ?timeout ?retries name (Group children)
-
-let scoped scope ?__POS__ ?tags ?timeout ?retries name fn =
-  node ?__POS__ ?tags ?timeout ?retries name
-    (Test (Scoped { scope; body = fn }))
+let scoped scope ?__POS__ ?timeout ?retries name fn =
+  node ?__POS__ ?timeout ?retries name (Test (Scoped { scope; body = fn }))
 
 (* Not [Fun.protect]: a raising teardown must reach the runner as itself, not
    as [Finally_raised], and a fatal exception, which [Failure.catch] never
    returns, must run no user code on its way out. *)
-let bracket ?__POS__ ?tags ?timeout ?retries ~setup ~teardown name fn =
+let bracket ?__POS__ ?timeout ?retries ~setup ~teardown name fn =
   let scope k =
     let resource = setup () in
     match Failure.catch (fun () -> k resource) with
@@ -105,10 +101,15 @@ let bracket ?__POS__ ?tags ?timeout ?retries ~setup ~teardown name fn =
         teardown resource;
         Failure.reraise c
   in
-  scoped scope ?__POS__ ?tags ?timeout ?retries name fn
+  scoped scope ?__POS__ ?timeout ?retries name fn
 
 (* Annotations *)
 
+let tag name t =
+  let tags = Tag.String_set.add name t.annotations.tags in
+  { t with annotations = { t.annotations with tags } }
+
+let slow t = tag Tag.slow t
 let focus t = { t with annotations = { t.annotations with focused = true } }
 let nearest own inherited = match own with Some _ -> own | None -> inherited
 

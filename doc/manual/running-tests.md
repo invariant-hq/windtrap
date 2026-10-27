@@ -61,8 +61,8 @@ server › reindexing keeps it running
 ## Selecting tests by tag
 
 `--tag TAG` keeps the tests that carry every named tag, and
-`--exclude-tag TAG` drops those that carry any. A test declared with
-`slow` carries the tag `slow`:
+`--exclude-tag TAG` drops those that carry any. `tag "net" @@ t` tags
+a test or a group, and `slow @@ t` carries the tag `slow`:
 
 ```
 $ dune exec examples/06-resources-and-structure/test_storage.exe -- -l --tag slow
@@ -185,7 +185,7 @@ fails.
 ## Focusing on one test
 
 `focus` on a test or a group runs only the focused tests. With the
-server's first test wrapped as `focus (test "it answers a ping" …)`, one
+server's first test wrapped as `focus @@ test "it answers a ping" …`, one
 test runs, and the run warns on standard error:
 
 ```

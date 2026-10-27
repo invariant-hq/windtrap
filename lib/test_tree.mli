@@ -93,14 +93,13 @@ type body =
 
 (** {1:declaring Declaring tests}
 
-    The facade states the four optional arguments of the constructors, and when
+    The facade states the three optional arguments of the constructors, and when
     a constructor raises. Each stores what it is given on the node that it
-    builds, [tags] being the node's own, and a node without [timeout] or without
-    [retries] declares none, which {!flatten} resolves. *)
+    builds, with no tag, and a node without [timeout] or without [retries]
+    declares none, which {!flatten} resolves. *)
 
 val test :
   ?__POS__:Loc.pos ->
-  ?tags:string list ->
   ?timeout:float ->
   ?retries:int ->
   string ->
@@ -108,30 +107,13 @@ val test :
   t
 (** [test name fn] stores [fn] as a {!Body}. See the facade's [test]. *)
 
-val slow :
-  ?__POS__:Loc.pos ->
-  ?tags:string list ->
-  ?timeout:float ->
-  ?retries:int ->
-  string ->
-  (unit -> unit) ->
-  t
-(** [slow name fn] is {!val-test} with {!Tag.slow} added to [tags]. *)
-
 val group :
-  ?__POS__:Loc.pos ->
-  ?tags:string list ->
-  ?timeout:float ->
-  ?retries:int ->
-  string ->
-  t list ->
-  t
+  ?__POS__:Loc.pos -> ?timeout:float -> ?retries:int -> string -> t list -> t
 (** See the facade's [group]. *)
 
 val scoped :
   (('r -> unit) -> unit) ->
   ?__POS__:Loc.pos ->
-  ?tags:string list ->
   ?timeout:float ->
   ?retries:int ->
   string ->
@@ -148,7 +130,6 @@ val scoped :
 
 val bracket :
   ?__POS__:Loc.pos ->
-  ?tags:string list ->
   ?timeout:float ->
   ?retries:int ->
   setup:(unit -> 'r) ->
@@ -177,6 +158,13 @@ val bracket :
 (** {1:annotating Annotations}
 
     {!flatten} resolves an annotation on a group onto every test under it. *)
+
+val tag : string -> t -> t
+(** [tag name t] is [t] with [name] added to its own tags, which {!flatten}
+    unions with those of its ancestors. See the facade's [tag]. *)
+
+val slow : t -> t
+(** [slow t] is [tag Tag.slow t]. *)
 
 val focus : t -> t
 (** See the facade's [focus], and {!focus_sites}. *)

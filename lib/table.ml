@@ -127,7 +127,7 @@ let check ?loc ?label id rows fn =
       in
       Printexc.raise_with_backtrace (Failure.Check_failure f) backtrace
 
-let cases ?__POS__ ?tags ?timeout ?retries ?label name id rows fn =
+let cases ?__POS__ ?timeout ?retries ?label name id rows fn =
   let loc = Loc.resolve ?__POS__ () in
-  Test_tree.test ?__POS__ ?tags ?timeout ?retries name (fun () ->
+  Test_tree.test ?__POS__ ?timeout ?retries name (fun () ->
       check ?loc ?label id rows fn)

@@ -63,7 +63,7 @@ let spread () =
     test "d fails outside" (fun () ->
         s4 "s4 d";
         fail "d broke");
-    xfail (test "e xfail" (fun () -> s4 "s4 e"));
+    xfail @@ test "e xfail" (fun () -> s4 "s4 e");
     test "f subtests" (fun () ->
         subtest "x" (fun () -> s4 "s4 x");
         subtest "y" (fun () -> s4 "s4 y"));

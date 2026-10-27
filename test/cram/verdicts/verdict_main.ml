@@ -58,7 +58,7 @@ let fails_on_teardown =
   test "acquires" (fun () -> held ())
 
 let rec deep n = 1 + deep (n + 1)
-let alpha = test ~tags:[ "fast" ] "alpha" ignore
+let alpha = tag "fast" @@ test "alpha" ignore
 
 let skips =
   group "skips"
@@ -223,10 +223,10 @@ let suite = function
   | "xfail" ->
       [
         passes;
-        xfail (test "fails as expected" (fun () -> equal int 1 2));
-        xfail (test "exits as expected" (fun () -> exit 0));
+        xfail @@ test "fails as expected" (fun () -> equal int 1 2);
+        xfail @@ test "exits as expected" (fun () -> exit 0);
       ]
-  | "xpass" -> [ xfail (test "passes unexpectedly" ignore) ]
+  | "xpass" -> [ xfail @@ test "passes unexpectedly" ignore ]
   | "selection" -> [ alpha ]
   | "one_line" -> [ passes; skips ]
   | "none" -> []

@@ -140,7 +140,7 @@ $ dune exec test/failures/issue_1.exe -- -v
 issue-1: 1 test
   XFAIL  keeps UTF-8 letters                       0.1ms (expected failure: issue #1)
     test/failures/issue_1.ml:13
-      13 │ (test "keeps UTF-8 letters" (fun () ->
+      13 │ @@ test "keeps UTF-8 letters" (fun () ->
 
     expected  "caf\195\169"
     actual    "caf"

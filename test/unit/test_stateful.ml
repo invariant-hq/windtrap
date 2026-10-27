@@ -2857,8 +2857,8 @@ let known_tags = [ "absent"; "custom"; "prop"; "stateful" ]
 let declared () =
   let pos = ("spec.ml", 42, 0, 7) in
   let t =
-    Stateful.stateful ~__POS__:pos ~tags:[ "custom" ] ~timeout:2.5 "spec"
-      [ tick () ]
+    Test_tree.tag "custom"
+    @@ Stateful.stateful ~__POS__:pos ~timeout:2.5 "spec" [ tick () ]
   in
   let c = single t in
   let tags = List.filter (fun n -> Test_tree.Tag.mem n c.tags) known_tags in
