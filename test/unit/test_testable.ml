@@ -7,6 +7,7 @@
    give, never through a witness of their own kind. *)
 
 open Windtrap
+module Tolerance = Windtrap.Private.Tolerance
 
 type equality =
   | Equal : 'a Testable.t * 'a * 'a -> equality
@@ -553,9 +554,9 @@ let containers =
 (* Observed errors *)
 
 let observation (w, a, b) =
-  match snd (Testable.observed (fun () -> Testable.equal w a b)) with
+  match snd (Tolerance.observed (fun () -> Testable.equal w a b)) with
   | None -> "none"
-  | Some { Testable.error; tolerance } ->
+  | Some { Tolerance.error; tolerance } ->
       Printf.sprintf "%g of %g" error tolerance
 
 let observed_rows =
@@ -575,22 +576,22 @@ let observed_rows =
 let observed_in_containers () =
   let w = Testable.list (Testable.float 1.) in
   let _, worst =
-    Testable.observed (fun () ->
+    Tolerance.observed (fun () ->
         Testable.equal w [ 1.; 2.; 3. ] [ 1.5; 2.; 3.25 ])
   in
   equal (option string) (Some "0.5 of 1")
     (Option.map
-       (fun { Testable.error; tolerance } ->
+       (fun { Tolerance.error; tolerance } ->
          Printf.sprintf "%g of %g" error tolerance)
        worst)
 
 let observed_nested () =
   let w = Testable.float 1. in
-  let error = Option.map (fun (e : Testable.error) -> e.error) in
+  let error = Option.map (fun (e : Tolerance.error) -> e.error) in
   let (_, inner), outer =
-    Testable.observed (fun () ->
+    Tolerance.observed (fun () ->
         ignore (Testable.equal w 0. 0.25);
-        Testable.observed (fun () -> Testable.equal w 0. 0.75))
+        Tolerance.observed (fun () -> Testable.equal w 0. 0.75))
   in
   equal
     (pair (option float_exact) (option float_exact))

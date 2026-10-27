@@ -235,7 +235,7 @@ val skip : ?reason:string -> unit -> 'a
 (** {1:tolerances Tolerances}
 
     Each call of {!equal} whose witness compared under a tolerance
-    ({{!Testable.observed}observed}) records, at its call site, the comparison
+    ({{!Tolerance.observed}observed}) records, at its call site, the comparison
     whose error was the largest share of the bound it allowed: a test reads, for
     each site, how close its values came to its tolerance, and a tolerance far
     looser than the errors it saw says the test is weaker than it reads. The

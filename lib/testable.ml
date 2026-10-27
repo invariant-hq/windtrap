@@ -99,41 +99,6 @@ let float_exact =
           | order -> order);
   }
 
-(* Observed errors *)
-
-type error = { error : float; tolerance : float }
-
-(* The comparisons of a tolerance that [observed] keeps, on each domain: the
-   one whose error is the largest share of its tolerance. *)
-let observer : error option ref option Domain.DLS.key =
-  Domain.DLS.new_key (fun () -> None)
-
-let ratio e = if e.error = 0. then 0. else e.error /. e.tolerance
-
-let observe error tolerance =
-  match Domain.DLS.get observer with
-  | None -> ()
-  | Some worst -> (
-      let e = { error; tolerance } in
-      match !worst with
-      | Some w when ratio w > ratio e || (ratio w = ratio e && w.error >= error)
-        ->
-          ()
-      | Some _ | None -> worst := Some e)
-
-let observed fn =
-  let enclosing = Domain.DLS.get observer in
-  let worst = ref None in
-  Domain.DLS.set observer (Some worst);
-  match fn () with
-  | v ->
-      Domain.DLS.set observer enclosing;
-      (v, !worst)
-  | exception exn ->
-      let backtrace = Printexc.get_raw_backtrace () in
-      Domain.DLS.set observer enclosing;
-      Printexc.raise_with_backtrace exn backtrace
-
 (* A NaN side makes [diff] NaN, which no comparison accepts. With an
    infinite side, [rel *. max_ab] is infinite and would make an infinity
    equal to any float, so the relative test needs a finite [max_ab]. *)
@@ -152,12 +117,12 @@ let float_rel ~rel ~abs =
     (* The bound this comparison allows, which the relative part widens
        where the sides are finite; an error that is not finite is no
        margin. *)
-    (if Option.is_some (Domain.DLS.get observer) then
+    (if Tolerance.observing () then
        let allowed =
          Float.max abs (if Float.is_finite max_ab then rel *. max_ab else 0.)
        in
-       if a = b then observe 0. allowed
-       else if Float.is_finite diff then observe diff allowed);
+       if a = b then Tolerance.observe 0. allowed
+       else if Float.is_finite diff then Tolerance.observe diff allowed);
     a = b || diff <= abs || (Float.is_finite max_ab && diff <= rel *. max_ab)
   in
   { pp = Pp.float_exact; equal; compare = Some Float.compare }

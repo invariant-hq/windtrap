@@ -100,29 +100,6 @@ val float : float -> float t
 val float_rel : rel:float -> abs:float -> float t
 (** See {!Windtrap.float_rel}. *)
 
-(** {2:observed Observed errors}
-
-    A comparison under {!float} or {!float_rel}, whatever witness holds it, as a
-    {!list} of them does, measures its error, [|a -. b|], and the bound it
-    allows, [Float.max abs (rel *. Float.max (abs_float a) (abs_float b))], the
-    relative part being [0.] when a side is not finite. Two equal sides have
-    error [0.], and a comparison whose error is not finite, one side NaN or
-    infinite, measures nothing. A witness without a tolerance measures nothing.
-*)
-
-type error = {
-  error : float;  (** The error of the comparison, [|a -. b|]. *)
-  tolerance : float;  (** The bound the comparison allowed. *)
-}
-(** The type for the error of one comparison under a tolerance. *)
-
-val observed : (unit -> 'a) -> 'a * error option
-(** [observed fn] is [fn ()] with the comparison, among those under a tolerance
-    that [fn ()] made on the calling domain, whose error is the largest share of
-    its tolerance, the larger error between two equal shares: [None] when it
-    made none. An [observed] within [fn] keeps its comparisons from the
-    enclosing one. What [fn] raises is raised again. *)
-
 (** {1:containers Containers} *)
 
 val option : 'a t -> 'a option t

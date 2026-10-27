@@ -306,5 +306,6 @@ module Private = struct
   module Stateful = Stateful
   module Test_tree = Test_tree
   module Text = Text
+  module Tolerance = Tolerance
   module Workers = Workers
 end

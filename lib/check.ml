@@ -65,7 +65,7 @@ let add table (t : tolerance) =
 let resolved : (int array, Loc.t option) Hashtbl.t = Hashtbl.create 8
 
 (* Located within the verb's call, as [Loc.capture] requires. *)
-let note ?__POS__ (e : Testable.error) =
+let note ?__POS__ (e : Tolerance.error) =
   let site =
     match __POS__ with
     | Some _ -> Loc.resolve ?__POS__ ()
@@ -109,7 +109,7 @@ let reset_tolerances () = locked (fun () -> Hashtbl.reset sites)
 
 let equal ?__POS__ ?msg t expected actual =
   let holds, error =
-    Testable.observed (fun () -> Testable.equal t expected actual)
+    Tolerance.observed (fun () -> Testable.equal t expected actual)
   in
   Option.iter (note ?__POS__) error;
   if not holds then
