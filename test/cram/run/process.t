@@ -52,9 +52,11 @@ ones:
 A run that only a child forked during initialisation reaches, after the
 child spawned a domain, gives its verdict and returns. The child can
 neither fork a worker nor reach its run in a new start of the program,
-so its tests run in the child:
+so its tests run in the child. Where `timeout` exists (macOS has none),
+it bounds the run, so a recursion would fail rather than hang:
 
-  $ run PROCESS_SUITE=in_a_fork timeout 60 ../process_main.exe
+  $ guard=$(command -v timeout > /dev/null && echo 'timeout 60')
+  $ run PROCESS_SUITE=in_a_fork $guard ../process_main.exe
   child: 1 passed in DURATION.
   the child exited with code 0
   in_a_fork: 1 passed in DURATION.
