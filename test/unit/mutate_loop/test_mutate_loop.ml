@@ -772,7 +772,7 @@ let seed_decides () =
           "subject.ml:21 unreached";
           "subject.ml:27 unreached";
         ] )
-    ( row [ "--seed"; "s1:0000000000000000" ],
+    ( row [ "--seed"; "s1:0000000000000002" ],
       row [ "--seed"; "s1:0000000000000001" ] )
 
 let seeds_stable () =

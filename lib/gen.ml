@@ -4,8 +4,10 @@
   --------------------------------------------------------------------------*)
 
 (* The distributions (stratified nat, float bit patterns) follow QCheck2's
-   tuning (https://github.com/c-cube/qcheck); the float encoding is
-   Hypothesis's (MacIver and Donaldson, ECOOP 2020). *)
+   tuning (https://github.com/c-cube/qcheck); the integers by scale and the
+   copies of earlier calls follow Hypothesis's providers and mutator, and
+   the float encoding is Hypothesis's (MacIver and Donaldson, ECOOP
+   2020). *)
 
 (* Renderings *)
 
@@ -23,9 +25,18 @@ type 'a rendering = Value of 'a | Pre_image of 'a
 type doc = Atom of (Format.formatter -> unit) | Arrow of doc * doc
 type 'a node = { value : 'a; shown : doc rendering option; literal : bool }
 
-type 'a t = { pp : (Format.formatter -> 'a -> unit) option; draw : 'a draw }
+(* [key] names the generator's pool in a case (see [parse]): a fresh one per
+   construction, or its type and range for an integer generator. *)
+type 'a t = {
+  pp : (Format.formatter -> 'a -> unit) option;
+  key : Choice.key;
+  draw : 'a draw;
+}
+
 and 'a draw = Parse of (Choice.t -> 'a node)
 
+let next_key = Atomic.make 0
+let fresh () = Choice.Unique (Atomic.fetch_and_add next_key 1)
 let atom pp v = Atom (fun ppf -> pp ppf v)
 
 let rec pp_doc ppf = function
@@ -153,9 +164,54 @@ let bound outer inner =
 
 (* Parsing *)
 
-(* Every call of a generator is a span. *)
+(* Every call of a generator is a span.
+
+   A generating call whose generator was called before in the case copies,
+   with probability 1/8, the choices of one of those calls, each equally
+   likely, and so parses the same value again, as a span of its own: values
+   drawn apart are then equal often enough that a collection holds
+   duplicates and two keys collide. Hypothesis's mutator (engine.py,
+   generate_mutations_from) copies a span over another of the same label
+   after a run; here the copy happens while drawing, so it needs no extra
+   run. The copied choices replace what the samplers draw, and the samplers
+   still run. A call inside a copy neither copies nor joins a pool; every
+   other call joins its key's pool once it returns. A replay reads the
+   choices alone, so it copies nothing. *)
 let parse gen src =
-  match gen.draw with Parse parse -> Choice.span src (fun () -> parse src)
+  match gen.draw with
+  | Parse parse ->
+      if Choice.copying src || Option.is_none (Choice.state src) then
+        Choice.span src (fun () -> parse src)
+      else
+        let pool = Choice.pool src gen.key in
+        let copied =
+          if pool.count = 0 then None
+          else
+            Option.join
+              (Choice.sample src (fun state ->
+                   let w, state = Seed.bits64 state in
+                   (* The low three bits are the coin; a span is drawn from
+                      the rest, its bias below 2^-50. *)
+                   if Int64.equal (Int64.logand w 7L) 0L then
+                     let i =
+                       Int64.unsigned_rem
+                         (Int64.shift_right_logical w 3)
+                         (Int64.of_int pool.count)
+                     in
+                     (Some pool.spans.(Int64.to_int i), state)
+                   else (None, state)))
+        in
+        let start = Choice.position src in
+        let node =
+          match copied with
+          | None -> Choice.span src (fun () -> parse src)
+          | Some span ->
+              Choice.span src (fun () ->
+                  Choice.copy src span (fun () -> parse src))
+        in
+        let stop = Choice.position src in
+        if stop > start then Choice.pooled pool { start; stop };
+        node
 
 (* The choice that encodes what [sample] draws, through [encode]. *)
 let read src ~bound encode sample =
@@ -191,6 +247,7 @@ module type Integer = sig
   val succ : t -> t
   val to_int64 : t -> int64
   val of_int64 : int64 -> t
+  val tag : int (* the type, in an integer generator's key *)
 end
 
 module Int_ = struct
@@ -198,6 +255,7 @@ module Int_ = struct
 
   let to_int64 = Int64.of_int
   let of_int64 = Int64.to_int
+  let tag = 0
 end
 
 module Int32_ = struct
@@ -205,6 +263,7 @@ module Int32_ = struct
 
   let to_int64 = Int64.of_int32
   let of_int64 = Int64.to_int32
+  let tag = 1
 end
 
 module Int64_ = struct
@@ -212,6 +271,7 @@ module Int64_ = struct
 
   let to_int64 = Fun.id
   let of_int64 = Fun.id
+  let tag = 2
 end
 
 module Nativeint_ = struct
@@ -219,6 +279,7 @@ module Nativeint_ = struct
 
   let to_int64 = Int64.of_nativeint
   let of_int64 = Int64.to_nativeint
+  let tag = 3
 end
 
 (* The value of \[[low];[high]\] that [sample] draws, read as its distance
@@ -250,13 +311,90 @@ let ranked src ~low ~high ~origin encode sample =
     let distance = Option.map (fun x -> Int64.sub x origin) x in
     Int64.add origin (Choice.choice src ~bound:above distance)
 
-(* An integer generator; [check] validates the arguments inside the parse. *)
+(* A distance to the origin by scale, so that small values and the edges of
+   each power of two come first, as the small scope hypothesis argues
+   (SmallCheck, Runciman et al. 2008: a program that fails almost always
+   fails in some simple case). A side whose extent is at most 256 draws it
+   uniformly, as Hypothesis's integers do inside 256 (providers.py,
+   INTEGERS_DISTRIBUTION). A wider one draws a bit length [k], uniform over
+   0..8 or over 0..the extent's, with equal probability, then a distance of
+   [k] bits, \[2^(k-1);2^k - 1\]: one draw in four an edge of the scale, its
+   least (1/4), its greatest (1/2) or the next power of two (1/4), the others
+   uniform. Integer arithmetic only: every distance is unsigned, and the
+   range holds it. *)
+let umin a b = if Int64.unsigned_compare a b <= 0 then a else b
+
+let bit_length d =
+  let rec go n d =
+    if Int64.equal d 0L then n else go (n + 1) (Int64.shift_right_logical d 1)
+  in
+  go 0 d
+
+let scaled_distance extent state =
+  if Int64.unsigned_compare extent 256L <= 0 then
+    Seed.below ~bound:(Int64.succ extent) state
+  else
+    (* One word decides: bit 0 the half, bits 1-2 an edge (at 0), bits 3-4
+       which edge, and the rest the bit length, its bias below 2^-50. *)
+    let w, state = Seed.bits64 state in
+    let top =
+      if Int64.equal (Int64.logand w 1L) 0L then 8 else bit_length extent
+    in
+    let k =
+      Int64.to_int
+        (Int64.unsigned_rem
+           (Int64.shift_right_logical w 5)
+           (Int64.of_int (top + 1)))
+    in
+    if k = 0 then (0L, state)
+    else
+      let lo = Int64.shift_left 1L (k - 1) in
+      let hi = if k = 64 then -1L else Int64.pred (Int64.shift_left 1L k) in
+      let hi = umin hi extent in
+      if Int64.equal (Int64.logand w 6L) 0L then
+        let v =
+          match
+            Int64.to_int (Int64.logand (Int64.shift_right_logical w 3) 3L)
+          with
+          | 0 -> lo
+          | 1 | 2 -> hi
+          | _ -> if Int64.equal hi extent then extent else Int64.succ hi
+        in
+        (v, state)
+      else
+        let span = Int64.sub hi lo in
+        if Int64.equal span Int64.max_int then
+          let w, state = Seed.bits64 state in
+          (Int64.add lo (Int64.logand w Int64.max_int), state)
+        else
+          let offset, state = Seed.below ~bound:(Int64.succ span) state in
+          (Int64.add lo offset, state)
+
+(* The side above holds the origin and the side below starts one past it,
+   each drawn in proportion to its count of values up to 256, so a range
+   of at most 256 values each side is uniform. *)
+let scaled ~low ~high ~origin state =
+  let above = Int64.sub high origin and below = Int64.sub origin low in
+  let wa = Int64.succ (umin above 256L) and wb = umin below 256L in
+  let r, state = Seed.below ~bound:(Int64.add wa wb) state in
+  if Int64.compare r wb < 0 then
+    let d, state = scaled_distance (Int64.pred below) state in
+    (Int64.sub origin (Int64.succ d), state)
+  else
+    let d, state = scaled_distance above state in
+    (Int64.add origin d, state)
+
+(* An integer generator; [check] validates the arguments inside the parse.
+   Its key is its type and range, so two generators of one range share their
+   pool: [int_range 0 9] built twice, or [pair int int], repeats values across
+   both. *)
 let integer (type n) (module N : Integer with type t = n) pp ?(check = ignore)
     ~low ~high ~origin sample =
   let low = N.to_int64 low and high = N.to_int64 high in
   let origin = N.to_int64 origin in
   {
     pp = Some pp;
+    key = Choice.Range (N.tag, low, high);
     draw =
       Parse
         (fun src ->
@@ -266,9 +404,8 @@ let integer (type n) (module N : Integer with type t = n) pp ?(check = ignore)
   }
 
 (* The range generator [name] of an integer type: its origin is the point
-   closest to [0], and [uniform] draws once [low <= high] holds. *)
-let range (type n) (module N : Integer with type t = n) ~name pp uniform low
-    high =
+   closest to [0], and [scaled] draws once [low <= high] holds. *)
+let range (type n) (module N : Integer with type t = n) ~name pp low high =
   let origin = N.max low (N.min high N.zero) in
   (* The neighbours stay inside the range, where they cannot overflow. *)
   let corners =
@@ -280,40 +417,19 @@ let range (type n) (module N : Integer with type t = n) ~name pp uniform low
   let check () =
     if N.compare high low < 0 then invalid_arg (name ^ ": high < low")
   in
-  integer (module N) pp ~check ~low ~high ~origin (with_corners corners uniform)
-
-let range_uniform low high state =
-  let low64 = Int64.of_int low in
-  let span = Int64.sub (Int64.of_int high) low64 in
-  (* The whole [int] range counts one value more than [Int64.max_int]. *)
-  if Int64.equal span Int64.max_int then word Int64.to_int state
-  else
-    let offset, state = Seed.below ~bound:(Int64.succ span) state in
-    (Int64.to_int (Int64.add low64 offset), state)
+  let draw state =
+    let v, state =
+      scaled ~low:(N.to_int64 low) ~high:(N.to_int64 high)
+        ~origin:(N.to_int64 origin) state
+    in
+    (N.of_int64 v, state)
+  in
+  integer (module N) pp ~check ~low ~high ~origin (with_corners corners draw)
 
 let int_range low high =
-  range
-    (module Int_)
-    ~name:"Gen.int_range" Pp.int (range_uniform low high) low high
+  range (module Int_) ~name:"Gen.int_range" Pp.int low high
 
 let int = int_range min_int max_int
-
-(* A uniform [int64] in \[[low];[high]\], through [of_int64]. A span that
-   [Seed.below] cannot bound takes whole words, and at least half of them
-   fall in the range. *)
-let between of_int64 low high state =
-  let span = Int64.sub high low in
-  if Int64.compare span 0L >= 0 && Int64.compare span Int64.max_int < 0 then
-    let offset, state = Seed.below ~bound:(Int64.succ span) state in
-    (of_int64 (Int64.add low offset), state)
-  else
-    let rec draw state =
-      let bits, state = Seed.bits64 state in
-      if Int64.compare low bits <= 0 && Int64.compare bits high <= 0 then
-        (of_int64 bits, state)
-      else draw state
-    in
-    draw state
 
 (* 50% below [b0], 25% below [b1], 20% below [b2], 5% below [b3]. *)
 let draw_strata (b0, b1, b2, b3) state =
@@ -340,50 +456,22 @@ let small_int =
       let magnitude, state = draw_nat state in
       ((if Int64.equal sign 1L then -magnitude else magnitude), state))
 
-(* A whole type: its corners are [0], [1], [-1] and its extremes. *)
-let whole (type n) (module N : Integer with type t = n) pp ~min_int ~max_int
-    ~minus_one ~one of_bits =
-  integer
-    (module N)
-    pp ~low:min_int ~high:max_int ~origin:N.zero
-    (with_corners [ min_int; minus_one; N.zero; one; max_int ] (word of_bits))
-
-let int32 =
-  whole
-    (module Int32_)
-    pp_int32 ~min_int:Int32.min_int ~max_int:Int32.max_int ~minus_one:(-1l)
-    ~one:1l Int64.to_int32
-
+(* A whole type draws as its widest range, whose corners are [0], [1], [-1]
+   and its extremes. *)
 let int32_range low high =
-  let uniform =
-    between Int64.to_int32 (Int64.of_int32 low) (Int64.of_int32 high)
-  in
-  range (module Int32_) ~name:"Gen.int32_range" pp_int32 uniform low high
+  range (module Int32_) ~name:"Gen.int32_range" pp_int32 low high
 
-let int64 =
-  whole
-    (module Int64_)
-    pp_int64 ~min_int:Int64.min_int ~max_int:Int64.max_int ~minus_one:(-1L)
-    ~one:1L Fun.id
+let int32 = int32_range Int32.min_int Int32.max_int
 
 let int64_range low high =
-  let uniform = between Fun.id low high in
-  range (module Int64_) ~name:"Gen.int64_range" pp_int64 uniform low high
+  range (module Int64_) ~name:"Gen.int64_range" pp_int64 low high
 
-let nativeint =
-  whole
-    (module Nativeint_)
-    pp_nativeint ~min_int:Nativeint.min_int ~max_int:Nativeint.max_int
-    ~minus_one:(-1n) ~one:1n Int64.to_nativeint
+let int64 = int64_range Int64.min_int Int64.max_int
 
 let nativeint_range low high =
-  let uniform =
-    between Int64.to_nativeint (Int64.of_nativeint low)
-      (Int64.of_nativeint high)
-  in
-  range
-    (module Nativeint_)
-    ~name:"Gen.nativeint_range" pp_nativeint uniform low high
+  range (module Nativeint_) ~name:"Gen.nativeint_range" pp_nativeint low high
+
+let nativeint = nativeint_range Nativeint.min_int Nativeint.max_int
 
 (* Floats *)
 
@@ -505,6 +593,7 @@ let draw_float =
 let float =
   {
     pp = Some Pp.float_exact;
+    key = fresh ();
     draw =
       Parse
         (fun src ->
@@ -528,6 +617,7 @@ let any_float =
   in
   {
     pp = Some Pp.float_exact;
+    key = fresh ();
     draw =
       Parse
         (fun src ->
@@ -594,6 +684,7 @@ let float_range low high =
   in
   {
     pp = Some Pp.float_exact;
+    key = fresh ();
     draw =
       Parse
         (fun src ->
@@ -610,11 +701,17 @@ let float_range low high =
 
 (* Unlike [constant ()], [unit] prints, so a composition over it keeps its
    printer. *)
-let unit = { pp = Some pp_unit; draw = Parse (fun _ -> literal pp_unit ()) }
+let unit =
+  {
+    pp = Some pp_unit;
+    key = fresh ();
+    draw = Parse (fun _ -> literal pp_unit ());
+  }
 
 let bool =
   {
     pp = Some Pp.bool;
+    key = fresh ();
     draw =
       Parse
         (fun src ->
@@ -634,6 +731,7 @@ let char_range low high =
   in
   {
     pp = Some pp_char;
+    key = fresh ();
     draw =
       Parse
         (fun src ->
@@ -679,6 +777,7 @@ let uchar =
   let origin = index (Uchar.of_char 'a') in
   {
     pp = Some pp_uchar;
+    key = fresh ();
     draw =
       Parse
         (fun src ->
@@ -730,6 +829,7 @@ let string_of ?size char =
   in
   {
     pp = Some pp_string;
+    key = fresh ();
     draw = Parse (fun src -> implode (elements ?size char src));
   }
 
@@ -739,6 +839,7 @@ let bytes_of ?size char =
   let as_bytes node = literal pp_bytes (Bytes.of_string node.value) in
   {
     pp = Some pp_bytes;
+    key = fresh ();
     draw = Parse (fun src -> as_bytes (parse (string_of ?size char) src));
   }
 
@@ -749,6 +850,7 @@ let bytes = bytes_of char
 let list ?size gen =
   {
     pp = Option.map pp_list gen.pp;
+    key = fresh ();
     draw =
       Parse
         (fun src ->
@@ -760,6 +862,7 @@ let array ?size gen =
   let pp_docs ppf docs = pp_array pp_doc ppf (Array.of_list docs) in
   {
     pp = Option.map pp_array gen.pp;
+    key = fresh ();
     draw =
       Parse
         (fun src ->
@@ -781,6 +884,7 @@ let option gen =
   let none = literal Pp.string "None" in
   {
     pp = Option.map pp_option gen.pp;
+    key = fresh ();
     draw =
       Parse
         (fun src ->
@@ -800,6 +904,7 @@ let result ok error =
   in
   {
     pp = both pp_result ok error;
+    key = fresh ();
     draw =
       Parse
         (fun src ->
@@ -811,6 +916,7 @@ let result ok error =
 let either left right =
   {
     pp = both pp_either left right;
+    key = fresh ();
     draw =
       Parse
         (fun src ->
@@ -824,6 +930,7 @@ let tuple value nodes = composed pp_tuple value nodes
 let pair a b =
   {
     pp = both pp_pair a b;
+    key = fresh ();
     draw =
       Parse
         (fun src ->
@@ -838,6 +945,7 @@ let triple a b c =
       (match (a.pp, b.pp, c.pp) with
       | Some pp_a, Some pp_b, Some pp_c -> Some (pp_triple pp_a pp_b pp_c)
       | _ -> None);
+    key = fresh ();
     draw =
       Parse
         (fun src ->
@@ -854,6 +962,7 @@ let quad a b c d =
       | Some pp_a, Some pp_b, Some pp_c, Some pp_d ->
           Some (pp_quad pp_a pp_b pp_c pp_d)
       | _ -> None);
+    key = fresh ();
     draw =
       Parse
         (fun src ->
@@ -872,7 +981,8 @@ let quad a b c d =
 let listed ?pp value =
   match pp with None -> unprintable value | Some pp -> printed pp value
 
-let constant ?pp value = { pp; draw = Parse (fun _ -> listed ?pp value) }
+let constant ?pp value =
+  { pp; key = fresh (); draw = Parse (fun _ -> listed ?pp value) }
 
 (* An index below [count], drawn uniformly. *)
 let index src count =
@@ -884,6 +994,7 @@ let of_list ?pp values =
   let count = Array.length values in
   {
     pp;
+    key = fresh ();
     draw =
       Parse
         (fun src ->
@@ -906,10 +1017,15 @@ let subsequence ?pp values =
   let length =
     with_corners
       (List.sort_uniq Int.compare [ 0; count; Int.min 1 count ])
-      (range_uniform 0 count)
+      (fun state ->
+        let length, state =
+          Seed.below ~bound:(Int64.of_int (count + 1)) state
+        in
+        (Int64.to_int length, state))
   in
   {
     pp = Option.map pp_list pp;
+    key = fresh ();
     draw =
       Parse
         (fun src ->
@@ -986,6 +1102,7 @@ let permutation ?pp values =
   in
   {
     pp = Option.map pp_list pp;
+    key = fresh ();
     draw =
       Parse
         (fun src ->
@@ -1019,6 +1136,7 @@ let one_of gens =
   let count = Array.length gens in
   {
     pp;
+    key = fresh ();
     draw =
       Parse
         (fun src ->
@@ -1034,6 +1152,7 @@ let frequency weighted =
   let weighted = Array.of_list weighted in
   {
     pp;
+    key = fresh ();
     draw =
       Parse
         (fun src ->
@@ -1068,6 +1187,7 @@ let resample_budget = 100
 let such_that keep gen =
   {
     pp = gen.pp;
+    key = fresh ();
     draw =
       Parse
         (fun src ->
@@ -1091,6 +1211,7 @@ let such_that keep gen =
 let map f gen =
   {
     pp = None;
+    key = fresh ();
     draw =
       Parse
         (fun src ->
@@ -1102,6 +1223,7 @@ let map f gen =
 let bind gen f =
   {
     pp = None;
+    key = fresh ();
     draw =
       Parse
         (fun src ->
@@ -1112,7 +1234,11 @@ let bind gen f =
   }
 
 let with_pp pp gen =
-  { pp = Some pp; draw = Parse (fun src -> printed pp (parse gen src).value) }
+  {
+    pp = Some pp;
+    key = fresh ();
+    draw = Parse (fun src -> printed pp (parse gen src).value);
+  }
 
 let ( let+ ) gen f = map f gen
 let ( and+ ) = pair
@@ -1165,5 +1291,5 @@ module Engine = struct
 
   let make ?pp parse =
     let node = match pp with Some pp -> printed pp | None -> unprintable in
-    { pp; draw = Parse (fun src -> node (parse src)) }
+    { pp; key = fresh (); draw = Parse (fun src -> node (parse src)) }
 end

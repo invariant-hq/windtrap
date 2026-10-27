@@ -382,14 +382,14 @@ let table () =
   expect (String.concat "\n" (List.map row benchmarks))
   @@ __POS_OF__
        {|
-    bound5, minimum 2: 33% there, worst 11, 192 runs (max 1664)
-    large union list, minimum 6: 100% there, worst 6, 144 runs (max 263)
-    nested lists, minimum 12: 100% there, worst 12, 103 runs (max 180)
-    reverse, minimum 2: 100% there, worst 2, 31 runs (max 67)
-    calculator, minimum 5: 100% there, worst 5, 93 runs (max 175)
-    queue, capacity 2, minimum 6: 100% there, worst 6, 98 runs (max 116)
-    queue, capacity 3, minimum 8: 100% there, worst 8, 136 runs (max 158)
-    key-value, minimum 4: 100% there, worst 4, 86 runs (max 238)
+    bound5, minimum 2: 57% there, worst 5, 129 runs (max 664)
+    large union list, minimum 6: 100% there, worst 6, 141 runs (max 216)
+    nested lists, minimum 12: 100% there, worst 12, 102 runs (max 196)
+    reverse, minimum 2: 100% there, worst 2, 32 runs (max 72)
+    calculator, minimum 5: 100% there, worst 5, 87 runs (max 200)
+    queue, capacity 2, minimum 6: 100% there, worst 6, 98 runs (max 118)
+    queue, capacity 3, minimum 8: 100% there, worst 8, 135 runs (max 158)
+    key-value, minimum 4: 100% there, worst 4, 85 runs (max 263)
     |}
 
 (* Stateful programs *)
@@ -720,22 +720,22 @@ let programs =
     [
       pinned queue_2
       @@ __POS_OF__
-           {| queue, capacity 2, minimum 7: 100% there, mean 7.00, worst 7, 178 runs (max 186), 100 tokens replay |};
+           {| queue, capacity 2, minimum 7: 100% there, mean 7.00, worst 7, 178 runs (max 188), 100 tokens replay |};
       pinned queue_3
       @@ __POS_OF__
-           {| queue, capacity 3, minimum 9: 100% there, mean 9.00, worst 9, 230 runs (max 243), 100 tokens replay |};
+           {| queue, capacity 3, minimum 9: 100% there, mean 9.00, worst 9, 229 runs (max 239), 100 tokens replay |};
       pinned key_value_store
       @@ __POS_OF__
-           {| key-value, minimum 5: 100% there, mean 5.00, worst 5, 131 runs (max 155), 100 tokens replay |};
+           {| key-value, minimum 5: 100% there, mean 5.00, worst 5, 131 runs (max 163), 100 tokens replay |};
       pinned element_500
       @@ __POS_OF__
            {| element 500, minimum 2: 100% there, mean 2.00, worst 2, 105 runs (max 106), 100 tokens replay |};
       pinned guide_set
       @@ __POS_OF__
-           {| the guide's set, minimum 5: 84% there, mean 5.16, worst 6, 125 runs (max 159), 100 tokens replay |};
+           {| the guide's set, minimum 5: 84% there, mean 5.16, worst 6, 124 runs (max 161), 100 tokens replay |};
       pinned bank_transfer
       @@ __POS_OF__
-           {| bank, minimum 6: 92% there, mean 6.08, worst 7, 147 runs (max 188), 100 tokens replay |};
+           {| bank, minimum 6: 94% there, mean 6.06, worst 7, 147 runs (max 195), 100 tokens replay |};
       pinned union_find_program
       @@ __POS_OF__
            {| union-find, minimum 7: 100% there, mean 7.00, worst 7, 114 runs (max 327), 100 tokens replay |};

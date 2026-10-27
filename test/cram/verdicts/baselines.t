@@ -167,7 +167,7 @@ written for the literal, under --corrected as under -u:
       test/cram/verdicts/verdict_main.ml:N
         N │ prop "checks one literal for every value" (Gen.int_range 0 1000)
   
-      counterexample (case 0, shrunk 5 steps): 10
+      counterexample (case 1, shrunk 5 steps): 10
       keep it: ~examples:[ 10 ]
       which failed at:
         test/cram/verdicts/verdict_main.ml:N
@@ -177,6 +177,7 @@ written for the literal, under --corrected as under -u:
         - x
         + 10
         no correction: a property's law claims this for every value, and one text cannot hold for them all
+      scope: 1 case passed
   ──────────────────────────────────────────────────────────
   
   replay: WINDTRAP_SEED=SEED dune runtest

@@ -518,13 +518,13 @@ let replayed_values () =
        ])
   @@ __POS_OF__
        {|
-    int: 3814646949886580551
+    int: 70368744177663
     nat: 254
     float: 3.626460398842157e-116
-    string_of: "evmm"
-    list of small_int: [1809; 5; -31; -839; 0]
-    option, one_of and frequency: (Some (false), 9, 8)
-    list of the default length: [false; true]
+    string_of: "kz"
+    list of small_int: [-5; 6; -6; -789]
+    option, one_of and frequency: (Some (false), 4, 1)
+    list of the default length: [false; false]
     |}
 
 let replayed_choices () =
@@ -543,13 +543,24 @@ let replayed_choices () =
     Left: 1026
     |}
 
-(* Distribution parity. Each row draws 2,000 values from the states that
+(* The distributions. Each row draws 2,000 values from the states that
    [sample] reads and summarises them: a numeric projection's mean, standard
    deviation, extremes and an eight-bin histogram between them, the number
    of distinct printings and a digest of the printings in draw order. The
-   table was recorded on 0.2's rose-tree generators. The samplers consume
-   the frozen stream as they did then, so every row stays exact and the
-   tolerance is zero: a changed bin is a changed distribution. *)
+   samplers consume a frozen stream, so every row is exact and the tolerance
+   is zero: a changed bin is a changed distribution.
+
+   What each one is for. An integer comes small or at an edge first, as the
+   small scope hypothesis argues (a program that fails almost always fails in
+   some simple case): a range of at most 256 values a side is uniform, a
+   wider one draws half its distances below 256 and one in four at an edge of
+   a power of two, and one draw in ten is a corner. [nat], [small_int] and
+   the lengths of a collection keep their strata, which favour small values
+   too, and a float spreads over its bit patterns. A call repeats an earlier
+   value of its generator in the case one time in eight, so that a
+   collection holds duplicates and two components collide; [in_case] below
+   pins what that does inside a case, which a summary of one value cannot
+   see. *)
 type summary =
   | Summary : string * (unit -> 'a Gen.t) * ('a -> float) -> summary
 
@@ -703,8 +714,8 @@ let distributions () =
   @@ __POS_OF__
        {|
     int
-      mean -9.927e+15, sd 2.698e+18, in [-4.612e+18;4.612e+18]
-      bins 264 227 239 215 346 210 230 269, 1813 distinct, cb04683a
+      mean -1.497e+16, sd 1.001e+18, in [-4.612e+18;4.612e+18]
+      bins 47 3 11 372 1516 5 3 43, 942 distinct, 27517cb5
     nat
       mean 367.4, sd 1272, in [0;9978]
       bins 1911 7 15 19 12 13 10 13, 486 distinct, a76cc67c
@@ -712,32 +723,32 @@ let distributions () =
       mean -21.85, sd 1361, in [-9904;9967]
       bins 16 10 14 1553 372 10 12 13, 627 distinct, 07ca8332
     int_range -5 5
-      mean -0.0855, sd 3.182, in [-5;5]
-      bins 386 164 161 213 397 176 149 354, 11 distinct, 07f3ad10
+      mean -0.079, sd 3.164, in [-5;5]
+      bins 384 162 171 207 391 166 170 349, 11 distinct, 4886fc8c
     int_range 3 1000
-      mean 488, sd 314.3, in [3;1000]
-      bins 354 225 241 209 207 250 227 287, 812 distinct, d173cf9c
+      mean 121.1, sd 233.4, in [3;1000]
+      bins 1531 195 77 33 47 18 8 91, 316 distinct, 2bbd8283
     int32
-      mean -3.43e+07, sd 1.258e+09, in [-2.147e+09;2.147e+09]
-      bins 281 247 208 258 308 229 207 262, 1813 distinct, 543edd80
+      mean -6.509e+06, sd 4.982e+08, in [-2.147e+09;2.147e+09]
+      bins 52 6 19 913 943 16 3 48, 816 distinct, 55c9feef
     int32_range -7l 9l
-      mean 0.8395, sd 4.982, in [-7;9]
-      bins 258 239 206 301 223 213 185 375, 17 distinct, 2285489d
+      mean 0.796, sd 4.943, in [-7;9]
+      bins 261 226 233 277 241 203 211 348, 17 distinct, 5f033c22
     int64
-      mean 1.544e+16, sd 5.379e+18, in [-9.223e+18;9.223e+18]
-      bins 260 227 229 221 340 233 218 272, 1813 distinct, 51bd3418
+      mean -2.099e+15, sd 2.014e+18, in [-9.223e+18;9.223e+18]
+      bins 47 2 6 368 1519 10 3 45, 950 distinct, 54e351cd
     int64_range min_int max_int
-      mean 1.544e+16, sd 5.379e+18, in [-9.223e+18;9.223e+18]
-      bins 260 227 229 221 340 233 218 272, 1813 distinct, 51bd3418
+      mean -2.099e+15, sd 2.014e+18, in [-9.223e+18;9.223e+18]
+      bins 47 2 6 368 1519 10 3 45, 950 distinct, 54e351cd
     int64_range 0L 99L
-      mean 48.84, sd 31.48, in [0;99]
-      bins 369 174 254 209 198 257 226 313, 100 distinct, 63f5c1cf
+      mean 46.87, sd 30.94, in [0;99]
+      bins 375 221 230 236 215 253 200 270, 100 distinct, 2aed87c4
     nativeint
-      mean 1.544e+16, sd 5.379e+18, in [-9.223e+18;9.223e+18]
-      bins 260 227 229 221 340 233 218 272, 1813 distinct, bdc4a337
+      mean -2.099e+15, sd 2.014e+18, in [-9.223e+18;9.223e+18]
+      bins 47 2 6 368 1519 10 3 45, 950 distinct, b4ef4698
     nativeint_range -3n 3n
-      mean 0.031, sd 2.05, in [-3;3]
-      bins 309 270 267 0 281 270 283 320, 7 distinct, de860e77
+      mean 0.006, sd 1.977, in [-3;3]
+      bins 280 265 301 0 312 285 273 284, 7 distinct, a6001900
     float, by binary exponent
       mean -18.29, sd 614.6, in [-1073;1024]
       bins 278 211 227 235 310 239 234 266, 1818 distinct, 272e5780
@@ -770,28 +781,28 @@ let distributions () =
       bins 1571 66 68 47 65 55 57 71, 1421 distinct, cb3a7ad8
     string
       mean 4.569, sd 7.892, in [0;62]
-      bins 1729 192 12 20 13 11 13 10, 1495 distinct, 7fca6efb
+      bins 1729 192 12 20 13 11 13 10, 1494 distinct, 7e20cc36
     string_of ~size:(int_range 0 6) (char_range 'a' 'c')
-      mean 2.982, sd 2.115, in [0;6]
-      bins 319 344 229 0 243 237 283 345, 555 distinct, 8190ea47
+      mean 2.917, sd 2.055, in [0;6]
+      bins 311 338 266 0 249 255 289 292, 520 distinct, 1bed5ee9
     bytes
       mean 4.569, sd 7.892, in [0;62]
-      bins 1729 192 12 20 13 11 13 10, 1495 distinct, 8a59aeb4
+      bins 1729 192 12 20 13 11 13 10, 1494 distinct, 424a05f7
     bytes_of ~size:(int_range 0 3) char
-      mean 1.473, sd 1.138, in [0;3]
-      bins 527 0 518 0 0 437 0 518, 1179 distinct, 30cd36fa
+      mean 1.466, sd 1.129, in [0;3]
+      bins 525 0 519 0 0 455 0 501, 1167 distinct, d09c1a8d
     list bool
       mean 4.569, sd 7.892, in [0;62]
-      bins 1729 192 12 20 13 11 13 10, 438 distinct, ffe2ba3e
+      bins 1729 192 12 20 13 11 13 10, 435 distinct, e8f90914
     list (list nat)
       mean 4.569, sd 7.892, in [0;62]
-      bins 1729 192 12 20 13 11 13 10, 1543 distinct, 222c5dfc
+      bins 1729 192 12 20 13 11 13 10, 1530 distinct, 5824e76b
     list ~size:(int_range 2 4) small_int, by sum
-      mean -79.68, sd 2261, in [-1.712e+04;1.267e+04]
-      bins 2 11 47 57 1778 45 46 14, 1951 distinct, bbe17d72
+      mean -12.74, sd 2412, in [-2.698e+04;1.648e+04]
+      bins 1 0 3 64 1480 388 59 5, 1929 distinct, 25eb6e22
     array nat
       mean 4.569, sd 7.892, in [0;62]
-      bins 1729 192 12 20 13 11 13 10, 1414 distinct, 10df722e
+      bins 1729 192 12 20 13 11 13 10, 1400 distinct, 79f06d49
     option nat
       mean 341.7, sd 1278, in [-1;9967]
       bins 1921 10 8 13 10 11 12 15, 461 distinct, 7fbb0318
@@ -808,8 +819,8 @@ let distributions () =
       mean 505.6, sd 1310, in [1;1.021e+04]
       bins 1912 13 11 13 12 12 13 14, 1903 distinct, bf76dc1c
     quad bool bool bool bool, by trues
-      mean 1.968, sd 1.019, in [0;4]
-      bins 139 0 523 0 733 0 473 132, 16 distinct, 26f7e486
+      mean 1.97, sd 1.105, in [0;4]
+      bins 180 0 536 0 626 0 481 177, 16 distinct, b67e6d70
     constant 7
       mean 7, sd 0, in [7;7]
       bins 2000 0 0 0 0 0 0 0, 1 distinct, c576b848
@@ -823,26 +834,68 @@ let distributions () =
       mean 2.493, sd 1.718, in [0;5]
       bins 353 310 0 335 333 0 338 331, 681 distinct, 7f93fcda
     one_of [int_range 0 9; int_range 100 109]
-      mean 53.07, sd 50.1, in [0;109]
-      bins 1026 0 0 0 0 0 0 974, 20 distinct, 6305e483
+      mean 53.04, sd 50.04, in [0;109]
+      bins 1026 0 0 0 0 0 0 974, 20 distinct, d0c9e810
     frequency [1, 0..9; 3, 100..109; 0, 1000]
-      mean 78.02, sd 44.12, in [0;109]
-      bins 527 0 0 0 0 0 0 1473, 20 distinct, 7bab34ee
+      mean 78, sd 44.17, in [0;109]
+      bins 527 0 0 0 0 0 0 1473, 20 distinct, 408bf1f2
     such_that even nat
-      mean 387.6, sd 1342, in [0;9842]
-      bins 1904 11 18 9 13 13 18 14, 400 distinct, ef35c917
+      mean 342.1, sd 1224, in [0;9840]
+      bins 1916 16 11 10 10 12 12 13, 379 distinct, aae110f1
     map succ nat
       mean 368.4, sd 1272, in [1;9979]
       bins 1911 7 15 19 12 13 10 13, 486 distinct, 0907295b
     bind (int_range 0 20) (fun n -> int_range 0 n)
-      mean 4.644, sd 4.911, in [0;20]
-      bins 928 277 306 131 168 81 71 38, 21 distinct, e00b1e25
+      mean 4.764, sd 5.129, in [0;20]
+      bins 927 276 295 135 154 83 69 61, 21 distinct, 5cc06370
     bind (list ~size:(int_range 1 4) nat) of_list
-      mean 388, sd 1314, in [0;9933]
-      bins 1902 15 14 13 16 14 10 16, 496 distinct, de6d64ca
+      mean 330.6, sd 1146, in [0;9953]
+      bins 1920 10 17 11 12 12 8 10, 490 distinct, dff98ec0
     with_pp nat
       mean 367.4, sd 1272, in [0;9978]
       bins 1911 7 15 19 12 13 10 13, 486 distinct, a76cc67c
+    |}
+
+(* What the distributions do inside a case, over 10,000 cases each, counted
+   exactly. Under 0.2's uniform integers and independent draws these shares
+   were about 5.9%, 0.15%, 6.3%, 24% and 14%: a bug that needs a small
+   integer, two equal ones or a repeated element was found through the
+   corners alone. *)
+let in_case () =
+  let n = 10_000 in
+  let row name values p =
+    strf "%s: %d of %d" name
+      (List.length (List.filter p values))
+      (List.length values)
+  in
+  let duplicate l = List.length (List.sort_uniq compare l) < List.length l in
+  let long l = List.length l >= 2 in
+  let lists gen = List.filter long (samples gen n) in
+  expect
+    (String.concat "\n"
+       [
+         row "int within 256" (samples Gen.int n) (fun x ->
+             -256 <= x && x <= 256);
+         row "pair int int, equal"
+           (samples Gen.(pair int int) n)
+           (fun (a, b) -> a = b);
+         row "list int of length 2 or more, a duplicate"
+           (lists Gen.(list int))
+           duplicate;
+         row "list string of length 2 or more, a duplicate"
+           (lists Gen.(list string))
+           duplicate;
+         row "int_range 3 1000, at most 100"
+           (samples (Gen.int_range 3 1000) n)
+           (fun x -> x <= 100);
+       ])
+  @@ __POS_OF__
+       {|
+    int within 256: 5819 of 10000
+    pair int int, equal: 1352 of 10000
+    list int of length 2 or more, a duplicate: 2788 of 6572
+    list string of length 2 or more, a duplicate: 3068 of 6572
+    int_range 3 1000, at most 100: 7398 of 10000
     |}
 
 let generators =
@@ -862,7 +915,8 @@ let generators =
         pure forced_in_any_order;
       test "a recorded seed replays these values" replayed_values;
       test "a recorded seed replays these choices" replayed_choices;
-      test "every generator draws 0.2's distribution" distributions;
+      test "every generator draws the distribution of its row" distributions;
+      test "a case draws small integers and repeats values" in_case;
     ]
 
 (* Numbers *)
@@ -1019,7 +1073,8 @@ let small_int_range () =
   greater int ~than:0 (greatest values);
   at_most int ~than:9_999 (greatest values)
 
-(* On a 64-bit platform a hundred uniform draws cannot all fit in 32 bits. *)
+(* On a 64-bit platform a hundred draws reach past 32 bits on both sides: a
+   wide draw's bit length runs up to the word's half the time. *)
 let nativeint_word () =
   let values = samples Gen.nativeint 100 in
   let wide =
@@ -1125,11 +1180,12 @@ let reaches_its_corners (Corners (_, gen, w, corners)) =
   let drawn c = List.exists (Testable.equal w c) values in
   equal (list w) corners (List.filter drawn corners)
 
-(* In a wide range the uniform draws almost never hit a corner. *)
+(* The corners of [int_range 0 255] are [0], [1] and [255]: the corner draw,
+   and the uniform draws of the other nine in ten that land on one. *)
 let corner_share () =
-  let values = samples (Gen.int_range (-1_000_000) 1_000_000) 20_000 in
-  let corner v = List.mem v [ -1_000_000; -1; 0; 1; 1_000_000 ] in
-  equal (float 0.01) 0.1 (share values corner)
+  let values = samples (Gen.int_range 0 255) 20_000 in
+  let corner v = List.mem v [ 0; 1; 255 ] in
+  equal (float 0.01) (0.1 +. (0.9 *. 3. /. 256.)) (share values corner)
 
 type sized =
   | Sized :
@@ -1158,13 +1214,17 @@ let sized_range (Sized (name, range, whole, w, zero)) =
         (fun (_, child) -> within w low high child)
         (edges ~limit:100 tree))
 
-(* [-2^62; Int64.max_int] holds a third of its values below 0, and two of its
+(* [-2^62; Int64.max_int] counts more than 2^63 values, and a side's share
+   counts its values up to 256: 256 below [0] against 257 from it, so a
+   little under half the draws but the corners are negative, and two of the
    five corners. *)
 let wide_int64_range () =
   let values =
     samples (Gen.int64_range (Int64.div Int64.min_int 2L) Int64.max_int) 4_000
   in
-  equal (float 0.02) 0.34 (share values (fun v -> Int64.compare v 0L < 0))
+  equal (float 0.02)
+    ((0.9 *. 256. /. 513.) +. (0.1 *. 2. /. 5.))
+    (share values (fun v -> Int64.compare v 0L < 0))
 
 (* Half the finite bit patterns are negative, and half have a magnitude of at
    least 1; a float uniform over the reals would have nearly none below 1. The
@@ -1231,7 +1291,9 @@ let numbers =
         ~count:30 bounds nearer_the_origin;
       group "a range of int32, int64 or nativeint behaves as int_range"
         (List.map sized_range sized_ranges);
-      test "int64_range draws uniformly over a range of more than 2^63 values"
+      test
+        "int64_range over more than 2^63 values draws each side by its values \
+         up to 256"
         wide_int64_range;
       literals
         "a number prints as an OCaml literal, a float as its shortest round \
@@ -1606,12 +1668,14 @@ let constructor_shares () =
       at Gen.(either unit unit) Either.is_left;
     ]
 
+(* Two generators of their own, so that the second call has no earlier call of
+   its generator to repeat (see [in_case]). *)
 let first_then_second () =
   let draws index =
     let s = state index in
     let a, after_a = drawn Gen.int s in
-    let b, after_b = drawn Gen.int after_a in
-    let ab, after_ab = drawn Gen.(pair int int) s in
+    let b, after_b = drawn Gen.small_int after_a in
+    let ab, after_ab = drawn Gen.(pair int small_int) s in
     ((value a, value b), value ab, words 2 after_b, words 2 after_ab)
   in
   let rows = List.init 10 draws in

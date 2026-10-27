@@ -54,8 +54,9 @@ val choice : t -> bound:int64 -> int64 option -> int64
 (** [choice src ~bound drawn] reads one choice in \[[0];[bound]\], unsigned, and
     records it with its bound. A generating [src] reads [drawn], which must be
     [Some v], and a replaying one its next choice, clamped to [bound], or [0]
-    past the end of its sequence. A [bound] of [0L] reads [0L] and records
-    nothing. *)
+    past the end of its sequence. Inside {!copy}, it reads the next copied
+    choice instead, clamped to [bound], as long as they last. A [bound] of [0L]
+    reads [0L] and records nothing. *)
 
 val span : t -> (unit -> 'a) -> 'a
 (** [span src f] is [f ()], and marks the choices that [f] read as one span when
@@ -123,3 +124,35 @@ val token : int64 array -> digest:string -> string
 val of_token : string -> (int64 array * string, string) result
 (** [of_token text] is the choices and the digest of the token [text], or an
     error that says what a token is. *)
+
+(** {1:copies Copies}
+
+    A generating call may parse again the choices of an earlier call of the same
+    generator in the case, so that it draws the same value (see [Gen.parse]).
+    The pools record each generator's calls, by key. *)
+
+(** The type for the key of a generator's pool. *)
+type key =
+  | Unique of int  (** a generator of its own *)
+  | Range of int * int64 * int64
+      (** an integer generator: its type's tag and its bounds, which every
+          generator of that type and range shares *)
+
+val copying : t -> bool
+(** [copying src] is [true] inside {!copy}. *)
+
+val copy : t -> span -> (unit -> 'a) -> 'a
+(** [copy src span f] is [f ()], whose choices read those [src] recorded inside
+    [span], in order, instead of what they draw, as long as they last. [span] is
+    a span of an earlier call, inside {!pool}'s record. *)
+
+type pool = { mutable spans : span array; mutable count : int }
+(** The type for the spans that the calls of one generator read in a case, the
+    first [count] of [spans]. *)
+
+val pool : t -> key -> pool
+(** [pool src key] is the pool of the generator keyed [key] in [src]. From the
+    first call on, [src] also keeps its choices in order, for {!copy}. *)
+
+val pooled : pool -> span -> unit
+(** [pooled pool span] adds [span] to [pool]. *)

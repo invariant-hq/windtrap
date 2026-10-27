@@ -1719,10 +1719,10 @@ let result_column () =
   @@ __POS_OF__
        {| #  call                result
  1  let q1 = create ()
- 2  push q1 7           ()
- 3  pop q1              7
+ 2  push q1 1           ()
+ 3  pop q1              1
  4  pop q1              exception Stdlib.Queue.Empty
- 5  pop q1              exception Stdlib.Queue.Empty|}
+ 5  push q1 9           ()|}
 
 (* A row ends where its last cell's text ends, as a report's table does, so
    a result printed with a trailing blank ends without it. *)
@@ -2160,19 +2160,19 @@ let screens =
                (fast_set_commands ()))
           @@ __POS_OF__
                {|    test/test_fast_set.ml:17
-    counterexample (case 27, shrunk 19 steps): 5 calls, last: elements
+    counterexample (case 10, shrunk 17 steps): 5 calls, last: elements
        #  call
        1  let s1 = empty ()
-       2  let s2 = add 0 s1
-       3  let s3 = add 1 s2
+       2  let s2 = add 1 s1
+       3  let s3 = add 0 s2
        4  let s4 = union s3 s2
        5  elements s4
-    replay it: --replay r1:AQABAQAAAQEBAAECAAEBBAAA:bde48f8a
+    replay it: --replay r1:AQABAQEAAQEAAAECAAEBBAAA:fc17118c
     which failed at:
       test/test_fast_set.ml:15
       call 5 of 5: elements s4
       expected  [0; 1]
-      actual    [0]
+      actual    [1]
 |});
       test "a mismatch of an exception under the manual's bounded queue"
         (fun () ->
@@ -2182,7 +2182,7 @@ let screens =
                (queue_commands ()))
           @@ __POS_OF__
                {|    test/test_bounded_queue.ml:32
-    counterexample (case 1, shrunk 16 steps): 3 calls, last: push
+    counterexample (case 0, shrunk 18 steps): 3 calls, last: push
        #  reference before  call
        1                    let q1 = create 1
        2  []                push q1 0
@@ -2201,7 +2201,7 @@ let screens =
                (monitor_commands ()))
           @@ __POS_OF__
                {|    test/test_queue_monitor.ml:31
-    counterexample (case 10, shrunk 18 steps): 5 calls, last: pop
+    counterexample (case 1, shrunk 18 steps): 5 calls, last: pop
        #  reference before  call                result
        1                    let q1 = create ()
        2  []                push q1 0           ()
@@ -2220,7 +2220,7 @@ let screens =
             (screen ~loc:("test/test_darr.ml", 14, 0, 10) (darr_commands ()))
           @@ __POS_OF__
                {|    test/test_darr.ml:14
-    counterexample (case 18, shrunk 34 steps): 4 calls, last: get
+    counterexample (case 3, shrunk 31 steps): 4 calls, last: get
        #  reference before  call
        1                    let d1 = create ()
        2  []                add_last d1 0

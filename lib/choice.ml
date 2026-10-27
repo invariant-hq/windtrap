@@ -8,6 +8,22 @@
    and a case is the sequence it read. *)
 
 type span = { start : int; stop : int }
+type key = Unique of int | Range of int * int64 * int64
+
+(* The pools of a case, by generator key (see [Gen.parse]). *)
+module Keyed = Hashtbl.Make (struct
+  type t = key
+
+  let equal a b =
+    match (a, b) with
+    | Unique a, Unique b -> Int.equal a b
+    | Range (t, l, h), Range (t', l', h') ->
+        Int.equal t t' && Int64.equal l l' && Int64.equal h h'
+    | Unique _, Range _ | Range _, Unique _ -> false
+
+  let hash = Hashtbl.hash
+end)
+
 type dependent = { at : int; over : int list }
 
 type t = {
@@ -19,7 +35,16 @@ type t = {
   mutable spans : span list;
   mutable dependents : dependent list;
   mutable redundant : bool;
+  (* A copy reads [buffer] from [copy_at] up to [copy_stop]; [pools] holds
+     the spans each generator read, and [buffer] the choices in order, from
+     the first pool on. *)
+  mutable copy_at : int; (* the next copied position, below [copy_stop] *)
+  mutable copy_stop : int; (* [-1] outside a copy *)
+  mutable pools : pool Keyed.t option;
+  mutable buffer : int64 array; (* the choices, in order, once pools exist *)
 }
+
+and pool = { mutable spans : span array; mutable count : int }
 
 let make prefix state =
   {
@@ -31,6 +56,10 @@ let make prefix state =
     spans = [];
     dependents = [];
     redundant = false;
+    copy_at = 0;
+    copy_stop = -1;
+    pools = None;
+    buffer = [||];
   }
 
 let generating state = make [||] (Some state)
@@ -70,13 +99,27 @@ let umin a b = if Int64.unsigned_compare a b <= 0 then a else b
    bound to [0] then leaves the choices after it where they were. *)
 let choice src ~bound drawn =
   let v =
-    match drawn with
-    | Some v -> umin v bound
-    | None ->
-        if src.length < Array.length src.prefix then
-          umin src.prefix.(src.length) bound
-        else 0L
+    if src.copy_at < src.copy_stop then begin
+      let c = src.buffer.(src.copy_at) in
+      src.copy_at <- src.copy_at + 1;
+      umin c bound
+    end
+    else
+      match drawn with
+      | Some v -> umin v bound
+      | None ->
+          if src.length < Array.length src.prefix then
+            umin src.prefix.(src.length) bound
+          else 0L
   in
+  if Option.is_some src.pools then begin
+    if src.length = Array.length src.buffer then begin
+      let grown = Array.make (Int.max 64 (2 * src.length)) 0L in
+      Array.blit src.buffer 0 grown 0 src.length;
+      src.buffer <- grown
+    end;
+    src.buffer.(src.length) <- v
+  end;
   src.read <- v :: src.read;
   src.bounds <- bound :: src.bounds;
   src.length <- src.length + 1;
@@ -88,6 +131,46 @@ let span src f =
   if src.length - start > 0 then
     src.spans <- { start; stop = src.length } :: src.spans;
   v
+
+(* Copies *)
+
+let copying src = src.copy_stop >= 0
+
+let copy src { start; stop } f =
+  src.copy_at <- start;
+  src.copy_stop <- stop;
+  Fun.protect
+    ~finally:(fun () ->
+      src.copy_at <- 0;
+      src.copy_stop <- -1)
+    f
+
+let pools src =
+  match src.pools with
+  | Some t -> t
+  | None ->
+      let t = Keyed.create 8 in
+      src.buffer <- Array.of_list (List.rev src.read);
+      src.pools <- Some t;
+      t
+
+let pool src key =
+  let pools = pools src in
+  match Keyed.find_opt pools key with
+  | Some p -> p
+  | None ->
+      let p = { spans = [||]; count = 0 } in
+      Keyed.replace pools key p;
+      p
+
+let pooled p span =
+  if p.count = Array.length p.spans then begin
+    let grown = Array.make (Int.max 8 (2 * p.count)) span in
+    Array.blit p.spans 0 grown 0 p.count;
+    p.spans <- grown
+  end;
+  p.spans.(p.count) <- span;
+  p.count <- p.count + 1
 
 let counts_past src ~at over =
   if over <> [] then src.dependents <- { at; over } :: src.dependents

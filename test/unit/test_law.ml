@@ -1826,8 +1826,6 @@ let proposal =
                 cmp a (r a)  0
                 a = r a      false
               scope: 1 case passed
-              labels (1 passing case):
-                100.0%  order: an unequal pair
 
             FAIL  version › of_string reads these back
               test/unit/test_law.ml:105

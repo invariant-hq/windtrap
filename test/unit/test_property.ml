@@ -460,26 +460,28 @@ let shared ?(count = 100) ?(demands = [ 0.2 ]) gen marks =
     | _ -> "other")
     (stats o).count (String.concat "; " facts)
 
-let wide = Gen.int_range 0 9999
+(* A range of at most 256 values is uniform, apart from its corners, and
+   holds more values than any count here, so it is sampled. *)
+let wide = Gen.int_range 0 199
 
 let shares =
   [
     ( "a share that holds but is not yet shown extends the cases until it is",
-      ( (fun () -> shared wide (fun x -> x < 2500)),
-        "pass; count 800; cover \"marked\" ~share:0.2: 29.0% of 800 cases, at \
-         least 20.3%" ) );
+      ( (fun () -> shared wide (fun x -> x < 50)),
+        "pass; count 800; cover \"marked\" ~share:0.2: 29.1% of 800 cases, at \
+         least 20.4%" ) );
     ( "a share clearly unmet extends the cases until it is shown unmet",
-      ( (fun () -> shared wide (fun x -> x < 500)),
-        "unmet; count 800; cover \"marked\" ~share:0.2: 10.9% of 800 cases, at \
-         most 19.4%" ) );
+      ( (fun () -> shared wide (fun x -> x < 10)),
+        "unmet; count 800; cover \"marked\" ~share:0.2: 9.8% of 800 cases, at \
+         most 18.1%" ) );
     ( "a share shown at the count draws no more case",
-      ( (fun () -> shared wide (fun x -> x < 5000)),
-        "pass; count 100; cover \"marked\" ~share:0.2: 50.0% of 100 cases, at \
-         least 23.9%" ) );
+      ( (fun () -> shared wide (fun x -> x < 100)),
+        "pass; count 100; cover \"marked\" ~share:0.2: 52.0% of 100 cases, at \
+         least 25.4%" ) );
     ( "a share still undecided after the last doubling is unmet",
-      ( (fun () -> shared ~count:1 wide (fun x -> x < 1900)),
-        "unmet; count 1024; cover \"marked\" ~share:0.2: 25.3% of 1024 cases, \
-         undecided between 18.0% and 34.4%" ) );
+      ( (fun () -> shared ~count:1 wide (fun x -> x < 38)),
+        "unmet; count 1024; cover \"marked\" ~share:0.2: 24.5% of 1024 cases, \
+         undecided between 17.3% and 33.5%" ) );
     ( "a domain checked whole is judged exactly",
       ( (fun () -> shared (Gen.int_range 0 3) (fun x -> x < 1)),
         "pass; count 100; cover \"marked\" ~share:0.2: 25.0% of 4 cases" ) );
@@ -1352,7 +1354,7 @@ let printing =
           in
           equal string
             "fail, 1 cases, 0 discards; case 1, 0 steps, timed out after \
-             0.25s: 91; message big"
+             0.25s: 36; message big"
             (outcome_row (Property.run ~root ~path:"cells" cells law)));
       test
         "a counterexample that the parse again does not reach prints as the \
@@ -1476,7 +1478,7 @@ let changed_in_place () =
   in
   equal
     (pair string (option bool))
-    ( "fail, 0 cases, 0 discards; case 0, 9 steps, converged: [|1; 0|]; \
+    ( "fail, 0 cases, 0 discards; case 0, 6 steps, converged: [|1; 0|]; \
        message unsorted",
       Some true )
     (outcome_row o, failed_again o)

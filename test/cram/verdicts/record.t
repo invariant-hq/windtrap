@@ -139,7 +139,7 @@ on:
       counterexample (row 4 of 4): "d"
       which failed with:
         row d broke
-      counterexample (case 0, shrunk 8 steps): 10
+      counterexample (case 0, shrunk 2 steps): 10
       which failed with:
   $ rerun=$(echo _logs/rerun/.last-failed-*)
   $ sed 's/r1:[^ ]*/TOKEN/' "$rerun"

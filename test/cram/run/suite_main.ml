@@ -132,8 +132,8 @@ let scope =
     cases "rows" (Testable.to_string int) [ 1; 2; 3 ] (fun n -> is_true (n > 0));
     stateful ~count:20 "counter"
       [ command "incr" (Gen.unit @-> returns unit) ignore ignore ];
-    prop "shares" (Gen.int_range 0 9999) (fun n ->
-        cover ~share:0.2 "a quarter" (n < 2500));
+    prop "shares" (Gen.int_range 0 199) (fun n ->
+        cover ~share:0.2 "a quarter" (n < 50));
     test "plain" ignore;
     test "close" (fun () ->
         equal (float 1e-6) 1. (1. +. 3e-9);

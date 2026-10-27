@@ -258,8 +258,8 @@ let suite = function
       ]
   | "cover_share" ->
       [
-        prop "rarely accepts" (Gen.int_range 0 9999) (fun n ->
-            cover ~share:0.2 "accepted" (n < 500));
+        prop "rarely accepts" (Gen.int_range 0 199) (fun n ->
+            cover ~share:0.2 "accepted" (n < 10));
       ]
   | "never_called" ->
       [
