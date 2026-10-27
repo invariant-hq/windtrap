@@ -448,9 +448,34 @@ for how to migrate from 0.2.0.
 
 ### Mutation testing
 
-- The probe and each mutant run in a worker started as a run's workers
-  are, so a suite that spawns a domain before `run` is mutation-tested,
-  where 0.2.0 refused it.
+- `--mutate` takes `--lines FILE:A-B,...` and `--diff FILE`, the output
+  of `git diff -U0`, and tests the mutants on those lines alone, where
+  0.2.0 could narrow it only to whole files by prefix: a change is
+  judged by the mutants of its own lines (see
+  [Testing a change's mutants](https://github.com/invariant-hq/windtrap/blob/main/doc/manual/mutation.md#testing-a-changes-mutants)).
+  `windtrap mutants` takes the same two flags, and reports, and fails
+  on, the mutants of those lines alone. Their mirrors are
+  `WINDTRAP_LINES` and `WINDTRAP_DIFF`.
+- (breaking) A mutant that no run could judge is unknown, with the
+  reason, and never a survivor. Under 0.2.0 a suite that `--mutate`
+  refused wrote no verdict file, and `windtrap mutants` read the
+  mutants it reached elsewhere as survivors; a child that crashed or
+  passed its deadline counted as killing its mutant. A refused suite now
+  writes its verdict file as refused, with the reason, and
+  `windtrap mutants` names it under `not mutation-tested` and exits 1,
+  since the merge is then not the project's; an unknown mutant does not
+  fail the merge.
+- Under `--mutate` and `--arm` the root seed is fixed unless `--seed`
+  gives one, so the same binary draws the same cases on every run and a
+  mutant that only some cases kill keeps its verdict, where 0.2.0's
+  verdicts changed from run to run.
+- The dry run, the probe and each mutant run in workers started as a
+  run's workers are, each mutant in a fresh worker of its own, up to
+  `-j` at once; 0.2.0 forked each mutant from the state the dry run
+  left, one at a time. So a mutant's verdict does not depend on what
+  earlier tests cached, a suite that spawns a domain, before `run` or in
+  a test, is mutation-tested, where 0.2.0 refused it, and the report
+  and the verdict file are the same at every `-j`.
 - Under `--mutate`, lines that hold no mutation site, from `--lines` or
   an empty `--diff`, run the suite without mutation and say so, with
   its own exit code: a change to comments leaves nothing to mutate.

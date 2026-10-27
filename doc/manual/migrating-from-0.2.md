@@ -264,3 +264,14 @@ change a verdict.
 - A verdict file that `--mutate` wrote under 0.2 → refused by
   `windtrap mutants`, since the file now records where each mutant ends
   (`windtrap-mutants-v5`); run the mutation tests again.
+- A project whose `windtrap mutants` passed while one executable's
+  `--mutate` was refused → `windtrap mutants` exits `1` and names that
+  executable under `not mutation-tested`: 0.2 read the mutants it
+  reached elsewhere as survivors and never said the suite went
+  untested. Its verdict file says why; a run whose selection narrowed
+  the suite says so too, so run the whole suite under `--mutate`.
+- A survivor list that changed from run to run → the same on every run:
+  under `--mutate` and `--arm` the root seed is fixed unless `--seed`
+  gives one. A mutant that only some cases kill may now survive on
+  every run, or be killed on every run; raise its property's `~count`
+  or add the case as an example to kill it for good.
