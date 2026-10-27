@@ -2504,7 +2504,10 @@ let raising_observer =
     [ Run.prop "fails" (Gen.int_range 0 1000) (fun x -> is_true (x < 10)) ]
 
 (* The observer sleeps past the limit on the search's first event. Were the
-   limit not held, it would cut the observer, and the search would run on. *)
+   limit not held, it would cut the observer, and the search would run on.
+   The seed is fixed so that the first case is not already the minimum,
+   [10]: a search that starts there converges without running the law
+   again, and the limit has nothing to cut. *)
 let held_limit =
   let slept = ref false in
   let on_event = function
@@ -2517,7 +2520,9 @@ let held_limit =
   in
   let r =
     Recorded.execute ~on_event
-      ~config:(fun c -> { c with timeout = Some 0.2 })
+      ~config:(fun c ->
+        let seed = Result.get_ok (Seed.of_string "s1:0000000000000001") in
+        { c with timeout = Some 0.2; seed })
       [ Run.prop "fails" (Gen.int_range 10 1000) (fun x -> is_true (x < 10)) ]
   in
   (r, !slept)
