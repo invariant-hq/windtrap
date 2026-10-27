@@ -157,11 +157,11 @@ val contains : ?__POS__:pos -> ?msg:string -> sub:string -> string -> unit
 val not_contains : ?__POS__:pos -> ?msg:string -> sub:string -> string -> unit
 (** See the facade's [not_contains]. *)
 
-val starts_with : ?__POS__:pos -> ?msg:string -> affix:string -> string -> unit
+val starts_with : ?__POS__:pos -> ?msg:string -> prefix:string -> string -> unit
 (** See the facade's [starts_with]. *)
 
-val ends_with : ?__POS__:pos -> ?msg:string -> affix:string -> string -> unit
-(** The [found_at] of [ends_with ~affix s] is the leftmost occurrence and not
+val ends_with : ?__POS__:pos -> ?msg:string -> suffix:string -> string -> unit
+(** The [found_at] of [ends_with ~suffix s] is the leftmost occurrence and not
     the one nearest the end. *)
 
 val in_order : ?__POS__:pos -> ?msg:string -> subs:string list -> string -> unit
@@ -201,13 +201,13 @@ val raises_match :
 module Exn : sig
   (** See the facade's [Exn]. *)
 
-  val invalid_arg : ?substring:string -> exn -> bool
+  val invalid_arg : ?sub:string -> exn -> bool
   (** See the facade's [Exn.invalid_arg]. *)
 
-  val failure : ?substring:string -> exn -> bool
+  val failure : ?sub:string -> exn -> bool
   (** See the facade's [Exn.failure]. *)
 
-  val sys_error : ?substring:string -> exn -> bool
+  val sys_error : ?sub:string -> exn -> bool
   (** See the facade's [Exn.sys_error]. *)
 end
 

@@ -81,8 +81,8 @@ let apply =
       test "adds" (fun () -> equal int 5 (Calc.apply Calc.Add 2 3));
       test "divides" (fun () -> equal int 3 (Calc.apply Calc.Div 7 2));
       test "rejects a zero divisor" (fun () ->
-          raises_match (Exn.invalid_arg ~substring:"division by zero")
-            (fun () -> Calc.apply Calc.Div 1 0));
+          raises_match (Exn.invalid_arg ~sub:"division by zero") (fun () ->
+              Calc.apply Calc.Div 1 0));
     ]
 
 let eval =

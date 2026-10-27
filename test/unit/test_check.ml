@@ -165,10 +165,10 @@ let every_verb =
             fun () -> Check.not_contains ~__POS__:pos ~msg:"why" ~sub:"a" "abc"
           );
           ( "starts_with",
-            fun () -> Check.starts_with ~__POS__:pos ~msg:"why" ~affix:"z" "abc"
-          );
+            fun () ->
+              Check.starts_with ~__POS__:pos ~msg:"why" ~prefix:"z" "abc" );
           ( "ends_with",
-            fun () -> Check.ends_with ~__POS__:pos ~msg:"why" ~affix:"z" "abc"
+            fun () -> Check.ends_with ~__POS__:pos ~msg:"why" ~suffix:"z" "abc"
           );
           ( "in_order",
             fun () ->
@@ -195,7 +195,7 @@ let every_verb =
           ("failf, through Format", fun () -> Check.failf "boom %d" 1);
         ]
         (fun (_, verb) ->
-          starts_with ~affix:"nothing at test/unit/test_check.ml:"
+          starts_with ~prefix:"nothing at test/unit/test_check.ml:"
             (annotation verb));
       count_calls "a passing verb calls no printer"
         [
@@ -446,8 +446,8 @@ let close = float 0.5
 let ordered_explosive = Testable.with_compare Int.compare explosive
 
 let refuses_unordered verb e =
-  Exn.invalid_arg ~substring:("Windtrap." ^ verb ^ ":") e
-  && Exn.invalid_arg ~substring:"Testable.with_compare" e
+  Exn.invalid_arg ~sub:("Windtrap." ^ verb ^ ":") e
+  && Exn.invalid_arg ~sub:"Testable.with_compare" e
 
 let orders =
   group "Orders"
@@ -553,19 +553,19 @@ let containment =
             (fun () -> Check.not_contains ~sub:"zz" "hello"),
             "returned" );
           ( "starts_with",
-            (fun () -> Check.starts_with ~affix:"sessions/" path),
+            (fun () -> Check.starts_with ~prefix:"sessions/" path),
             "returned" );
-          ( "starts_with, the empty affix",
-            (fun () -> Check.starts_with ~affix:"" path),
+          ( "starts_with, the empty prefix",
+            (fun () -> Check.starts_with ~prefix:"" path),
             "returned" );
           ( "starts_with, the whole haystack",
-            (fun () -> Check.starts_with ~affix:path path),
+            (fun () -> Check.starts_with ~prefix:path path),
             "returned" );
           ( "ends_with",
-            (fun () -> Check.ends_with ~affix:".json" path),
+            (fun () -> Check.ends_with ~suffix:".json" path),
             "returned" );
-          ( "ends_with, the empty affix",
-            (fun () -> Check.ends_with ~affix:"" path),
+          ( "ends_with, the empty suffix",
+            (fun () -> Check.ends_with ~suffix:"" path),
             "returned" );
           ( "in_order",
             (fun () -> Check.in_order ~subs:[ "start"; "send"; "stop" ] log),
@@ -606,17 +606,17 @@ let containment =
             (fun () ->
               Check.not_contains ~sub:"NEEDLE" (filler ^ "NEEDLE" ^ filler)),
             {|anywhere "NEEDLE", at 24000 in 48006 bytes|} );
-          ( "starts_with, an absent affix",
-            (fun () -> Check.starts_with ~affix:"users/" path),
+          ( "starts_with, an absent prefix",
+            (fun () -> Check.starts_with ~prefix:"users/" path),
             {|prefix "users/", nowhere in 27 bytes|} );
-          ( "starts_with, an affix elsewhere",
-            (fun () -> Check.starts_with ~affix:"ghost" path),
+          ( "starts_with, a prefix elsewhere",
+            (fun () -> Check.starts_with ~prefix:"ghost" path),
             {|prefix "ghost", at 9 in 27 bytes|} );
           ( "ends_with, the leftmost occurrence",
-            (fun () -> Check.ends_with ~affix:"session" path),
+            (fun () -> Check.ends_with ~suffix:"session" path),
             {|suffix "session", at 0 in 27 bytes|} );
-          ( "ends_with, an affix longer than the haystack",
-            (fun () -> Check.ends_with ~affix:"xxxxxxxxxx" "ab"),
+          ( "ends_with, a suffix longer than the haystack",
+            (fun () -> Check.ends_with ~suffix:"xxxxxxxxxx" "ab"),
             {|suffix "xxxxxxxxxx", nowhere in 2 bytes|} );
           ( "in_order, an element that is nowhere",
             (fun () -> Check.in_order ~subs:[ "start"; "abort" ] log),
@@ -725,9 +725,8 @@ let exceptions =
             "returned" );
           ( "raises_match with an Exn predicate",
             (fun () ->
-              Check.raises_match
-                (Check.Exn.invalid_arg ~substring:"unhandled op") (fun () ->
-                  invalid_arg "step: unhandled op HALT")),
+              Check.raises_match (Check.Exn.invalid_arg ~sub:"unhandled op")
+                (fun () -> invalid_arg "step: unhandled op HALT")),
             "returned" );
         ];
       outcomes
@@ -795,8 +794,8 @@ let exceptions =
           );
           ( "raises_match, an Exn predicate's substring",
             (fun () ->
-              Check.raises_match (Check.Exn.failure ~substring:"underflow")
-                (fun () -> failwith "overflow")),
+              Check.raises_match (Check.Exn.failure ~sub:"underflow") (fun () ->
+                  failwith "overflow")),
             {|raise predicate, expected nothing, raised Failure("overflow"), with a backtrace|}
           );
         ];
@@ -829,14 +828,14 @@ let exceptions =
             false );
           ("invalid_arg, Not_found", Check.Exn.invalid_arg Not_found, false);
           ( "invalid_arg, the substring",
-            Check.Exn.invalid_arg ~substring:"unhandled op"
+            Check.Exn.invalid_arg ~sub:"unhandled op"
               (Invalid_argument "step: unhandled op HALT"),
             true );
           ( "invalid_arg, a missing substring",
-            Check.Exn.invalid_arg ~substring:"overflow" (Invalid_argument "x"),
+            Check.Exn.invalid_arg ~sub:"overflow" (Invalid_argument "x"),
             false );
           ( "invalid_arg, the empty substring",
-            Check.Exn.invalid_arg ~substring:"" (Invalid_argument ""),
+            Check.Exn.invalid_arg ~sub:"" (Invalid_argument ""),
             true );
           ("failure", Check.Exn.failure (Stdlib.Failure "x"), true);
           ( "failure, an Invalid_argument",
@@ -847,7 +846,7 @@ let exceptions =
             Check.Exn.sys_error (Stdlib.Failure "x"),
             false );
           ( "sys_error, the substring",
-            Check.Exn.sys_error ~substring:"No such file"
+            Check.Exn.sys_error ~sub:"No such file"
               (Sys_error "nope.txt: No such file or directory"),
             true );
         ]

@@ -2318,7 +2318,7 @@ let composition =
           let gen =
             Gen.(map String.length (map String.uppercase_ascii string))
           in
-          starts_with ~affix:"from \"" (shown (find gen (fun n -> n > 0))));
+          starts_with ~prefix:"from \"" (shown (find gen (fun n -> n > 0))));
       test "a bind candidate on which the function raises is skipped" (fun () ->
           let gen =
             Gen.bind (Gen.int_range 0 10) (fun v ->

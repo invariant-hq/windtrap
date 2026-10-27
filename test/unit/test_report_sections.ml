@@ -1020,7 +1020,7 @@ let diff_bound () =
          [ "    @@"; "    -"; "    +" ]
   in
   equal int 200 (List.length (List.filter hunk_line (lines e)));
-  ends_with ~affix:"    \u{2026} (+801 more diff lines)\n" e
+  ends_with ~suffix:"    \u{2026} (+801 more diff lines)\n" e
 
 let diff_at_bound () =
   not_contains ~sub:"more diff lines"
@@ -1032,7 +1032,7 @@ let baseline_diff_bound () =
       (file_mismatch "p.expected" (side 'e' 300 ^ "\n") (side 'a' 300 ^ "\n"))
   in
   ends_with
-    ~affix:"(+401 more diff lines)\n    accept: dune promote p.expected\n" e
+    ~suffix:"(+401 more diff lines)\n    accept: dune promote p.expected\n" e
 
 let e n = repeat n "\u{00e9}"
 
@@ -1099,7 +1099,7 @@ let cut_marker = "... (truncated; 70000 bytes total)"
 
 let cut_message () =
   ends_with
-    ~affix:(String.make 20 'm' ^ cut_marker ^ "\n")
+    ~suffix:(String.make 20 'm' ^ cut_marker ^ "\n")
     (entry (Failure.message (String.make 70_000 'm')))
 
 let cut_value () =
@@ -1115,7 +1115,7 @@ let one_side_cut () =
       (unequal ("a\n" ^ String.make 70_000 'x') ("a\n" ^ String.make 100 'x'))
   in
   ends_with
-    ~affix:
+    ~suffix:
       "    (the diff covers the first 65536 of the 70002 bytes of expected)\n"
     b;
   not_contains ~sub:"truncated" b

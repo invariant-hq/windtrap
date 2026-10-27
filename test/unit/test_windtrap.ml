@@ -331,7 +331,7 @@ let strays =
 
 let a_label_outside_a_property name =
   let text = raised (failure strays [ name ]) in
-  starts_with ~affix:"Invalid_argument" text;
+  starts_with ~prefix:"Invalid_argument" text;
   contains ~sub:name text;
   contains ~sub:"property" text
 
@@ -731,7 +731,7 @@ let baselines =
       test "the warning agrees in number" the_warning_agrees_in_number;
       test "the warning leaves the summary the report's last line" (fun () ->
           let r = promoted "a correction beside a failure" in
-          starts_with ~affix:"2 failed, 1 correction written in "
+          starts_with ~prefix:"2 failed, 1 correction written in "
             (last_line r.out));
       test "-u beside a failure accepts in place" (fun () ->
           contains ~sub:"1 correction accepted in "
@@ -833,8 +833,8 @@ let the_running_test =
     [
       cases "raises Invalid_argument outside a test" fst outside_a_test
         (fun (_, e) ->
-          raises_match (Exn.invalid_arg ~substring:"no test is running")
-            (fun () -> replay e));
+          raises_match (Exn.invalid_arg ~sub:"no test is running") (fun () ->
+              replay e));
       test "outside a test setenv, chdir and subtest change nothing" (fun () ->
           equal
             (triple (option string) string bool)
@@ -989,7 +989,7 @@ let bailed_entries =
 
 let version_line () =
   let out = version.out in
-  starts_with ~affix:"windtrap " out;
+  starts_with ~prefix:"windtrap " out;
   one_line out;
   not_contains ~sub:"%" out
 
@@ -1012,12 +1012,12 @@ let running =
           equal string "" r.out;
           contains ~sub:fault r.err);
       test "the report is complete on stdout when run returns" (fun () ->
-          starts_with ~affix:"codes: 1 passed in " green.out;
+          starts_with ~prefix:"codes: 1 passed in " green.out;
           equal string "" green.err);
       test "a failing suite's report holds its failure" (fun () ->
           contains ~sub:"  FAIL  boom" red.out);
       test "a second suite in the same process prints its own report" (fun () ->
-          starts_with ~affix:"second: 1 passed in " second.out);
+          starts_with ~prefix:"second: 1 passed in " second.out);
       test "-l prints the selection alone, in declaration order" (fun () ->
           equal (triple int text string)
             (0, "outer › picked\nother\n", "")

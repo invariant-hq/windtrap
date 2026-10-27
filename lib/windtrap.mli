@@ -408,11 +408,11 @@ val satisfies :
 
     The string verbs compare bytes. *)
 
-val starts_with : ?__POS__:pos -> ?msg:string -> affix:string -> string -> unit
-(** [starts_with ~affix s] asserts that [s] begins with [affix]. *)
+val starts_with : ?__POS__:pos -> ?msg:string -> prefix:string -> string -> unit
+(** [starts_with ~prefix s] asserts that [s] begins with [prefix]. *)
 
-val ends_with : ?__POS__:pos -> ?msg:string -> affix:string -> string -> unit
-(** [ends_with ~affix s] asserts that [s] ends with [affix]. *)
+val ends_with : ?__POS__:pos -> ?msg:string -> suffix:string -> string -> unit
+(** [ends_with ~suffix s] asserts that [s] ends with [suffix]. *)
 
 val contains : ?__POS__:pos -> ?msg:string -> sub:string -> string -> unit
 (** [contains ~sub s] asserts that [sub] occurs in [s]. The empty string occurs
@@ -491,19 +491,19 @@ val raises_match :
 
 (** Exception predicates for {!raises_match}.
 
-    A predicate checks the constructor, and the message, as bytes, when
-    [substring] is given. An empty [substring] matches every message. A
+    A predicate checks the constructor, and the message, as bytes, when [sub] is
+    given, as {!contains} does. An empty [sub] matches every message. A
     predicate never raises. *)
 module Exn : sig
-  val invalid_arg : ?substring:string -> exn -> bool
-  (** [invalid_arg ?substring e] is [true] iff [e] is [Invalid_argument m] and
-      [m] contains [substring], when given. *)
+  val invalid_arg : ?sub:string -> exn -> bool
+  (** [invalid_arg ?sub e] is [true] iff [e] is [Invalid_argument m] and [m]
+      contains [sub], when given. *)
 
-  val failure : ?substring:string -> exn -> bool
-  (** [failure ?substring e] is {!invalid_arg} for [Failure m]. *)
+  val failure : ?sub:string -> exn -> bool
+  (** [failure ?sub e] is {!invalid_arg} for [Failure m]. *)
 
-  val sys_error : ?substring:string -> exn -> bool
-  (** [sys_error ?substring e] is {!invalid_arg} for [Sys_error m]. *)
+  val sys_error : ?sub:string -> exn -> bool
+  (** [sys_error ?sub e] is {!invalid_arg} for [Sys_error m]. *)
 end
 
 (** {2:laws Laws}

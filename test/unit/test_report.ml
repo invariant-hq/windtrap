@@ -285,7 +285,7 @@ let shrinking_line_cut () =
   in
   at_most int ~than:80 (Text.length_utf8 line);
   not_contains ~sub:long line;
-  ends_with ~affix:"...: shrinking, 12 steps\u{2026}" line
+  ends_with ~suffix:"...: shrinking, 12 steps\u{2026}" line
 
 let label_stats collected =
   {
@@ -606,7 +606,7 @@ let noteworthy_notice () =
         Report.finish r ~release_failures:[] ~results ~duration:0.01 ())
   in
   not_contains ~sub:"releasing" t;
-  starts_with ~affix:("s: 2 tests\n" ^ failures_rule ^ "\n  FAIL  b\n") t
+  starts_with ~prefix:("s: 2 tests\n" ^ failures_rule ^ "\n  FAIL  b\n") t
 
 (* The observer *)
 
@@ -1341,7 +1341,7 @@ let refused_file () =
   let head = "  could not write " ^ display "help.expected" ^ ": " in
   let refused = List.nth t 3 in
   equal string ("  accepted " ^ display "a.expected") (List.nth t 2);
-  starts_with ~affix:head refused;
+  starts_with ~prefix:head refused;
   not_contains ~sub:"help.expected"
     (String.sub refused (String.length head)
        (String.length refused - String.length head));
@@ -1776,7 +1776,7 @@ let withheld_annotation () =
       ()
   in
   ends_with
-    ~affix:
+    ~suffix:
       "%0A    no correction was kept: the test also failed outside its \
        expectations; fix that failure and rerun\n"
     a

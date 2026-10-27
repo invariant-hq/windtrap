@@ -505,7 +505,7 @@ let a_suite_that_never_drains () =
 let a_suite_over_a_library () =
   let c = ended linked_library in
   equal string "exit 0" c.status;
-  starts_with ~affix:"suite: 1 passed" c.out;
+  starts_with ~prefix:"suite: 1 passed" c.out;
   equal string "" c.err
 
 let a_forked_child_is_silent () =

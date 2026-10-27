@@ -1388,7 +1388,7 @@ let term_keeps_its_site () =
   in
   equal (option string) (Some "fake.ml")
     (Option.map (fun (l : Loc.t) -> l.file) f.loc);
-  starts_with ~affix:"test/unit/test_law.ml"
+  starts_with ~prefix:"test/unit/test_law.ml"
     (require_some (last_failed f).loc).file
 
 let located_rows =
@@ -1397,7 +1397,7 @@ let located_rows =
       cases "?msg and ?__POS__ are the failure's msg and site" fst every_law
         (fun (_, law) -> equal string site (annotation law));
       test "without ?__POS__ a law is located in the caller's file" (fun () ->
-          starts_with ~affix:"nothing at test/unit/test_law.ml:"
+          starts_with ~prefix:"nothing at test/unit/test_law.ml:"
             (annotation (fun () ->
                  Law.idempotent int succ 1;
                  ())));

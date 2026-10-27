@@ -86,7 +86,7 @@ let label =
   group "label"
     [
       test "starts with the name" (fun () ->
-          starts_with ~__POS__ ~affix:"bread" (Shop.label bread));
+          starts_with ~__POS__ ~prefix:"bread" (Shop.label bread));
       test "shows the quantity then the price" (fun () ->
           in_order ~__POS__ ~subs:[ "2"; "250" ] (Shop.label bread));
     ]
@@ -111,8 +111,8 @@ let validation =
             (Invalid_argument "Shop.item: quantity must be positive") (fun () ->
               Shop.item "eggs" ~price:30 ~quantity:0));
       test "rejects a negative quantity" (fun () ->
-          raises_match ~__POS__ (Exn.invalid_arg ~substring:"quantity")
-            (fun () -> Shop.item "eggs" ~price:30 ~quantity:(-1)));
+          raises_match ~__POS__ (Exn.invalid_arg ~sub:"quantity") (fun () ->
+              Shop.item "eggs" ~price:30 ~quantity:(-1)));
     ]
 
 let () =

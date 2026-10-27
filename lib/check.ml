@@ -229,13 +229,15 @@ let not_contains ?__POS__ ?msg ~sub haystack =
   if Text.contains_substring ~pattern:sub haystack then
     fail_containment ?__POS__ ?msg ~demand:Failure.Anywhere ~needle:sub haystack
 
-let starts_with ?__POS__ ?msg ~affix haystack =
-  if not (String.starts_with ~prefix:affix haystack) then
-    fail_containment ?__POS__ ?msg ~demand:Failure.Prefix ~needle:affix haystack
+let starts_with ?__POS__ ?msg ~prefix haystack =
+  if not (String.starts_with ~prefix haystack) then
+    fail_containment ?__POS__ ?msg ~demand:Failure.Prefix ~needle:prefix
+      haystack
 
-let ends_with ?__POS__ ?msg ~affix haystack =
-  if not (String.ends_with ~suffix:affix haystack) then
-    fail_containment ?__POS__ ?msg ~demand:Failure.Suffix ~needle:affix haystack
+let ends_with ?__POS__ ?msg ~suffix haystack =
+  if not (String.ends_with ~suffix haystack) then
+    fail_containment ?__POS__ ?msg ~demand:Failure.Suffix ~needle:suffix
+      haystack
 
 let in_order ?__POS__ ?msg ~subs haystack =
   if subs = [] then invalid_arg "Windtrap.in_order: subs is empty";
@@ -302,22 +304,14 @@ let raises_match ?__POS__ ?msg pred fn =
   | raised -> fail_raise ?__POS__ ?msg ~predicate:true raised
 
 module Exn = struct
-  let has substring m =
-    match substring with
+  let has sub m =
+    match sub with
     | None -> true
     | Some pattern -> Text.contains_substring ~pattern m
 
-  let invalid_arg ?substring = function
-    | Invalid_argument m -> has substring m
-    | _ -> false
-
-  let failure ?substring = function
-    | Stdlib.Failure m -> has substring m
-    | _ -> false
-
-  let sys_error ?substring = function
-    | Sys_error m -> has substring m
-    | _ -> false
+  let invalid_arg ?sub = function Invalid_argument m -> has sub m | _ -> false
+  let failure ?sub = function Stdlib.Failure m -> has sub m | _ -> false
+  let sys_error ?sub = function Sys_error m -> has sub m | _ -> false
 end
 
 (* Polling *)

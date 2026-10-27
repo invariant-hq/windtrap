@@ -281,7 +281,7 @@ let bad_tables =
 
 let refused_table (_, bad) =
   raises_match
-    (Exn.invalid_arg ~substring:"Windtrap_runtime.Mutate: t/bad.ml: site 1:")
+    (Exn.invalid_arg ~sub:"Windtrap_runtime.Mutate: t/bad.ml: site 1:")
     (fun () ->
       register_only ~file:"t/bad.ml" ~sites:[| site 1 0 "lt"; bad; bad |])
 

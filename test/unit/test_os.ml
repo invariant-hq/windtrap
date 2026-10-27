@@ -103,8 +103,8 @@ let set_then_unset () =
 
 let refused_name name =
   setenv var None;
-  raises_match (Exn.invalid_arg ~substring:"environment variable name")
-    (fun () -> Os.setenv name (Some "v"));
+  raises_match (Exn.invalid_arg ~sub:"environment variable name") (fun () ->
+      Os.setenv name (Some "v"));
   equal (option string) None (Sys.getenv_opt var)
 
 let spellings () =

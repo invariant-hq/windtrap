@@ -64,6 +64,11 @@ signature of `cases`, `judges` in place of `chooses`, and the type of
 
 ## Assertions
 
+- `starts_with ~affix:p s` → `starts_with ~prefix:p s`, and
+  `ends_with ~affix:x s` → `ends_with ~suffix:x s`, the labels of
+  `String.starts_with` and `String.ends_with`.
+- `Exn.invalid_arg ~substring:m`, `Exn.failure ~substring:m` and
+  `Exn.sys_error ~substring:m` → `~sub:m`, the label of `contains`.
 - A failing verb inside a catch-all, `(try equal int 1 (f ()) with _ ->
   ())`, which passed in 0.2 → the test fails, and the block says
   `failed, then caught`. A library that ignores what its callbacks

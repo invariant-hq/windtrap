@@ -335,7 +335,7 @@ let the_header =
          owner prefixes, after the magic line"
         fst malformed (fun (_, identity) ->
           let message, written = refusal identity in
-          starts_with ~affix:"Sample: " message;
+          starts_with ~prefix:"Sample: " message;
           equal string "windtrap-sample-v1\n" written);
       test "add_header names what is malformed" (fun () ->
           expect

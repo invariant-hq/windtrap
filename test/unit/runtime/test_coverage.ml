@@ -491,7 +491,7 @@ let unwritable () =
   let r = run_child ~dump:blocked [ "first" ] in
   equal int 0 (Child.exit_code r);
   starts_with
-    ~affix:("windtrap: warning: cannot write coverage file " ^ blocked ^ ": ")
+    ~prefix:("windtrap: warning: cannot write coverage file " ^ blocked ^ ": ")
     r.err
 
 let silent () =
@@ -636,7 +636,7 @@ let relative_needs_cwd () =
   no_removed_cwd ();
   let err = cwd_gone ~dump:"rel.coverage" in
   starts_with
-    ~affix:"windtrap: warning: cannot determine the coverage output file: " err;
+    ~prefix:"windtrap: warning: cannot determine the coverage output file: " err;
   equal int 1 (List.length (String.split_on_char '\n' (String.trim err)))
 
 let absolute_needs_none () =

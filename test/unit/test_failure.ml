@@ -137,7 +137,7 @@ let reraise_keeps_the_backtrace () =
   in
   let original = text (Error c) in
   contains ~sub:"Test_failure.raise_not_found" original;
-  starts_with ~affix:original
+  starts_with ~prefix:original
     (text (Failure.catch (fun () -> Failure.reraise c)))
 
 let catching =
@@ -301,9 +301,9 @@ let trailing_run_dropped () =
   let whole = Printexc.raw_backtrace_to_string raw in
   let trimmed = Failure.backtrace_to_string raw in
   contains ~sub:"Windtrap__Failure.recording" whole;
-  starts_with ~affix:"Raised at Dune__exe__Test_failure.raise_not_found" whole;
-  starts_with ~affix:"Raised at Test_failure.raise_not_found" trimmed;
-  starts_with ~affix:trimmed (unwrapped whole);
+  starts_with ~prefix:"Raised at Dune__exe__Test_failure.raise_not_found" whole;
+  starts_with ~prefix:"Raised at Test_failure.raise_not_found" trimmed;
+  starts_with ~prefix:trimmed (unwrapped whole);
   not_contains ~sub:"Windtrap__" trimmed;
   not_contains ~sub:"Dune__exe__" trimmed
 
@@ -858,7 +858,7 @@ let tail_law (output, omitted) =
   let t = Failure.tail ~omitted_bytes:omitted output in
   let len = String.length output and kept = String.length t.text in
   cover "longer than tail_bytes" (len > Failure.tail_bytes);
-  ends_with ~affix:t.text output;
+  ends_with ~suffix:t.text output;
   at_most int ~than:Failure.tail_bytes kept;
   if len <= Failure.tail_bytes then equal int len kept
   else at_least int ~than:(Failure.tail_bytes - 3) kept;

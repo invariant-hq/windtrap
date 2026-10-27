@@ -397,7 +397,7 @@ let exact_is_an_equivalence () =
 let apart w (a, b) =
   not_equal string (Testable.to_string w a) (Testable.to_string w b)
 
-let refuses substring make = raises_match (Exn.invalid_arg ~substring) make
+let refuses sub make = raises_match (Exn.invalid_arg ~sub) make
 
 let floats =
   group "Floats"
@@ -448,8 +448,8 @@ let floats =
           ("a nan abs", ("~abs", 0.1, Float.nan));
           ("two zero bounds", ("float_exact", 0., 0.));
         ]
-        (fun (_, (substring, rel, abs)) ->
-          refuses substring (fun () -> Testable.float_rel ~rel ~abs));
+        (fun (_, (sub, rel, abs)) ->
+          refuses sub (fun () -> Testable.float_rel ~rel ~abs));
     ]
 
 (* Containers *)

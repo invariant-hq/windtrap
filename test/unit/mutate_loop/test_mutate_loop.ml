@@ -1114,7 +1114,7 @@ let unwritable () =
   equal string "exited 0" r.status;
   equal string "mutants: 1 survived of 1 reached by this suite, 3 never reached"
     (outcome r.out);
-  starts_with ~affix:"windtrap: could not write the verdict file: " r.err;
+  starts_with ~prefix:"windtrap: could not write the verdict file: " r.err;
   equal int 1 (List.length (lines (String.trim r.err)))
 
 (* A change to [widen]'s line, as [git diff -U0] prints it. *)
@@ -1668,7 +1668,7 @@ let streamed () =
   not_contains ~sub:closing_rule seen;
   not_contains ~sub:"mutants:" seen;
   equal string "exited 0" r.status;
-  starts_with ~affix:seen r.out;
+  starts_with ~prefix:seen r.out;
   equal (list string) [ site 15; site 18 ] (survivors r.out)
 
 let held_order () =

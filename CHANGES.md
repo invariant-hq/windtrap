@@ -44,6 +44,11 @@ for how to migrate from 0.2.0.
 
 ### Assertions
 
+- (breaking) `starts_with ~prefix` and `ends_with ~suffix` take the
+  labels of `String.starts_with` and `String.ends_with`, where 0.2.0
+  took `~affix`. `Exn.invalid_arg`, `Exn.failure` and `Exn.sys_error`
+  take `?sub`, the label `contains` gives the text to find, where 0.2.0
+  took `?substring`.
 - `equal` under `float eps` or `float_rel`, alone or inside a container
   witness, records at its call site the largest error it saw against
   the bound it allowed, and the report states it, as

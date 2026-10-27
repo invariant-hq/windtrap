@@ -492,7 +492,7 @@ let refusal_site () =
     | Error (`Assertion f) -> Option.map Loc.to_string f.loc
     | Error c -> Failure.reraise c
   in
-  starts_with ~affix:"test/unit/test_run.ml:"
+  starts_with ~prefix:"test/unit/test_run.ml:"
     (require_some (Domain.join (Domain.spawn refused)))
 
 let spawning =
@@ -1058,7 +1058,7 @@ let ignores_an_error_on_the_way () =
 
 let the_empty_suffix_adds_nothing () =
   let name = scratch_name "file" in
-  starts_with ~affix:"file-" name;
+  starts_with ~prefix:"file-" name;
   is_some (int_of_string_opt (String.sub name 5 (String.length name - 5)))
 
 let every_path_is_in_one_directory () =
@@ -1108,16 +1108,16 @@ let temporary_paths =
       test "temp_dir makes a new directory at every call" (fun () ->
           not_equal string (scratch_name "dir") (scratch_name "repo"));
       test "temp_dir's prefix starts the directory's name" (fun () ->
-          starts_with ~affix:"repo" (scratch_name "repo"));
+          starts_with ~prefix:"repo" (scratch_name "repo"));
       test "temp_file's suffix ends the file's name" (fun () ->
-          ends_with ~affix:".json" (scratch_name "json"));
+          ends_with ~suffix:".json" (scratch_name "json"));
       test "temp_file's empty suffix adds nothing to the name"
         the_empty_suffix_adds_nothing;
       test "an attempt's paths share one directory, hostile names included"
         every_path_is_in_one_directory;
       test "the directory of an attempt has mode 0o700" (fun () ->
           if Sys.win32 then skip ~reason:"POSIX only" ();
-          starts_with ~affix:"directory 700" (scratch_made ()).root);
+          starts_with ~prefix:"directory 700" (scratch_made ()).root);
       test "temp_dir raises Unix_error when no directory can be made" (fun () ->
           raises_match
             (function Unix.Unix_error _ -> true | _ -> false)
@@ -3189,7 +3189,7 @@ let where_failures_are_located =
 
 let a_failure_away_from_tail_position_is_at_its_line () =
   let at = require_some (loc (failure located [ "captured" ])) in
-  starts_with ~affix:"test/unit/test_run.ml:" at
+  starts_with ~prefix:"test/unit/test_run.ml:" at
 
 let teardowns_follow_returned_setups () =
   equal (list string)
@@ -3221,7 +3221,7 @@ let no_tail_without_unread_output () =
   not_contains ~sub:"system-out" (require_some (contents junit))
 
 let an_uncapturable_test_fails_alone () =
-  starts_with ~affix:"body raise" (line (failure uncapturable [ "first" ]));
+  starts_with ~prefix:"body raise" (line (failure uncapturable [ "first" ]));
   equal (list string) [ "first"; "second" ] (Recorded.executed uncapturable)
 
 let a_stack_overflow_fails_its_test () =

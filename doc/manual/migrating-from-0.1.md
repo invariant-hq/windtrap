@@ -58,10 +58,10 @@ spelling this page does not list is unchanged. The entries of
 - `raises_invalid_arg "m" fn` → `raises (Invalid_argument "m") fn`
 - `raises_failure "m" fn` → `raises (Failure "m") fn`
 - a predicate of your own on the message → `raises_match Exn.invalid_arg
-  fn`, `raises_match (Exn.failure ~substring:"…") fn`, and `Exn.sys_error`
+  fn`, `raises_match (Exn.failure ~sub:"…") fn`, and `Exn.sys_error`
 - `is_true (a < b)` → `less int ~than:b a`, and `at_most`, `greater`,
   `at_least`
-- `is_true (String.starts_with ~prefix s)` → `starts_with ~affix:prefix s`
+- `is_true (String.starts_with ~prefix s)` → `starts_with ~prefix s`
 - `is_true (List.mem x xs)` → `mem int x xs`
 - `'a Pp.t` and the `Pp` combinators → `'a printer` and `Format`
 

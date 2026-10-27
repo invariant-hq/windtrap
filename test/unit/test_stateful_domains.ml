@@ -439,7 +439,7 @@ let guarded_after_prefix () =
       if List.exists in_branch rows then incr parallel;
       List.iter
         (fun row ->
-          starts_with ~msg:"only incr runs after the prefix" ~affix:"incr "
+          starts_with ~msg:"only incr runs after the prefix" ~prefix:"incr "
             (cell "call" row))
         (after_prefix rows))
     (Seq.init 300 Fun.id);
@@ -475,7 +475,7 @@ let listing_after_prefix () =
         rows;
       List.iter
         (fun row ->
-          starts_with ~msg:"only incr runs after the prefix" ~affix:"incr "
+          starts_with ~msg:"only incr runs after the prefix" ~prefix:"incr "
             (cell "call" row))
         (after_prefix rows))
     (Seq.init 300 Fun.id);
@@ -943,7 +943,7 @@ let witnessed () =
   in
   with_pool 2 @@ fun workers ->
   Atomic.set run_counter 0;
-  starts_with ~affix:"failure [no order of the calls gives these results\n"
+  starts_with ~prefix:"failure [no order of the calls gives these results\n"
     (ended (twice ~workers (value tree)))
 
 (* A bag of 1 and 2 whose [take] gives 2 in a program's first run and 1 in
@@ -982,7 +982,7 @@ let prefix_judged () =
   in
   with_pool 2 @@ fun workers ->
   runs := 0;
-  starts_with ~affix:"failure [no order of the calls gives these results\n"
+  starts_with ~prefix:"failure [no order of the calls gives these results\n"
     (ended (twice ~workers (value tree)))
 
 let judged () =
@@ -1042,9 +1042,9 @@ let drifting () =
   in
   reset ();
   let ending = ended (execute (value tree)) in
-  starts_with ~affix:"oracle [reference of call 2 of " ending;
+  starts_with ~prefix:"oracle [reference of call 2 of " ending;
   ends_with
-    ~affix:
+    ~suffix:
       "a replay of the reference differs from this run; the reference must \
        behave the same from run to run\""
     ending
@@ -1311,7 +1311,7 @@ let branch_failure () =
   let alone = recorded gen program in
   Atomic.set armed false;
   with_pool 2 @@ fun workers ->
-  starts_with ~affix:"failure [call " (armed_run ~workers program);
+  starts_with ~prefix:"failure [call " (armed_run ~workers program);
   Atomic.set armed true;
   equal string alone (recorded ~workers gen program);
   Atomic.set armed false
@@ -1324,8 +1324,8 @@ let reads_the_test () =
   let _, program = with_odd (fun () -> ignore (current_test ())) in
   with_pool 2 @@ fun workers ->
   let ending = armed_run ~workers program in
-  starts_with ~affix:"failure [call " ending;
-  ends_with ~affix:(strf "message %S" other_domain_error) ending
+  starts_with ~prefix:"failure [call " ending;
+  ends_with ~suffix:(strf "message %S" other_domain_error) ending
 
 let controls () =
   let _, skipping = with_odd (fun () -> skip ~reason:"why" ()) in
@@ -1871,7 +1871,8 @@ let spawn_fails () =
       match String.split_on_char '\n' text with
       | [ too_many; failures; two ] ->
           equal string "too many: fail body" too_many;
-          starts_with ~affix:"failures: cannot spawn a worker domain: " failures;
+          starts_with ~prefix:"failures: cannot spawn a worker domain: "
+            failures;
           equal string "two: pass" two
       | _ -> fail text)
 

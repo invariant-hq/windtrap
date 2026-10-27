@@ -330,7 +330,7 @@ let sampling_states =
       cases "below raises Invalid_argument on a bound below 1"
         (Testable.to_string Testable.int64) [ 0L; -1L; Int64.min_int ]
         (fun bound ->
-          raises_match (Exn.invalid_arg ~substring:"Seed.below") (fun () ->
+          raises_match (Exn.invalid_arg ~sub:"Seed.below") (fun () ->
               Seed.below ~bound (Seed.make 0L)));
       cases "split is frozen"
         (fun (name, _, _, _) -> name)

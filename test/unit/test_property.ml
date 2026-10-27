@@ -1679,7 +1679,7 @@ let replaying =
           in
           List.iter
             (fun text ->
-              starts_with ~affix:("--replay " ^ token ^ ": stale") text)
+              starts_with ~prefix:("--replay " ^ token ^ ": stale") text)
             [
               stale (Gen.int_range 0 5);
               stale (Gen.pair (Gen.int_range 0 100) Gen.bool);

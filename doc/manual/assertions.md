@@ -455,9 +455,10 @@ shop: 2 tests
 ## Searching a string
 
 `contains ~sub` checks that a string occurs in another, and
-`not_contains` that it does not. `starts_with` and `ends_with` check an
-`~affix`, and `in_order ~subs` checks that strings occur one after the
-other. `mem` checks that a list holds an element.
+`not_contains` that it does not. `starts_with ~prefix` and
+`ends_with ~suffix` check either end, with the labels of
+`String.starts_with` and `String.ends_with`, and `in_order ~subs` checks
+that strings occur one after the other. `mem` checks that a list holds an element.
 
 `test/test_assertions.ml`:
 
@@ -466,7 +467,7 @@ let label =
   group "label"
     [
       test "starts with the name" (fun () ->
-          starts_with ~__POS__ ~affix:"bread" (Shop.label bread));
+          starts_with ~__POS__ ~prefix:"bread" (Shop.label bread));
       test "shows the quantity then the price" (fun () ->
           in_order ~__POS__ ~subs:[ "2"; "250" ] (Shop.label bread));
     ]
@@ -511,8 +512,8 @@ let validation =
             (Invalid_argument "Shop.item: quantity must be positive") (fun () ->
               Shop.item "eggs" ~price:30 ~quantity:0));
       test "rejects a negative quantity" (fun () ->
-          raises_match ~__POS__ (Exn.invalid_arg ~substring:"quantity")
-            (fun () -> Shop.item "eggs" ~price:30 ~quantity:(-1)));
+          raises_match ~__POS__ (Exn.invalid_arg ~sub:"quantity") (fun () ->
+              Shop.item "eggs" ~price:30 ~quantity:(-1)));
     ]
 ```
 
@@ -532,7 +533,7 @@ shop: 2 tests
 
   FAIL  validation › rejects a negative quantity
     examples/02-assertions/test_assertions.ml:114
-      114 │ raises_match ~__POS__ (Exn.invalid_arg ~substring:"quantity")
+      114 │ raises_match ~__POS__ (Exn.invalid_arg ~sub:"quantity") (fun () ->
 
     expected an exception, but none was raised
 ──────────────────────────────────────────────────────────

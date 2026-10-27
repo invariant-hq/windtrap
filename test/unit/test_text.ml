@@ -346,7 +346,7 @@ let search =
       cases "first_occurrence raises Invalid_argument for a start outside s" fst
         [ ("a negative start", -1); ("a start past the end", 4) ]
         (fun (_, start) ->
-          raises_match (Exn.invalid_arg ~substring:"start") (fun () ->
+          raises_match (Exn.invalid_arg ~sub:"start") (fun () ->
               Text.first_occurrence ~start ~pattern:"a" "abc"));
       cases "contains_substring tells whether pattern occurs in s" name3
         containments (fun (_, (pattern, s), found) ->

@@ -424,8 +424,7 @@ let bad_identities =
 
 let refused_identity (_, identity) =
   let dir = temp_dir () in
-  raises_match (Exn.invalid_arg ~substring:"Windtrap_runtime.Verdicts")
-    (fun () ->
+  raises_match (Exn.invalid_arg ~sub:"Windtrap_runtime.Verdicts") (fun () ->
       Verdicts.save ~identity
         (Filename.concat dir "unwritten.mutants")
         Verdicts.empty);
