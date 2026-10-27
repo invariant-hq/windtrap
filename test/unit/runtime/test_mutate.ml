@@ -248,7 +248,7 @@ let identifiers =
               "bool";
             ]
             Mutate.rewrites);
-      cases "id_to_string is <file>:<line>:<col>:<rewrite>" snd spellings
+      cases "id_to_string is <file>:<line>:<col>:<rewrite>" ~id:snd spellings
         (fun (i, spelling) -> equal string spelling (Mutate.id_to_string i));
       prop "compare_id orders by file, then line, column and rewrite"
         (Gen.pair small_id small_id)
@@ -257,7 +257,7 @@ let identifiers =
         ~examples:(List.map fst spellings @ [ id "f" max_int max_int "or" ])
         any_id reads_back;
       cases "id_of_string refuses a spelling as Malformed, naming it"
-        (fun spec -> if spec = "" then "the empty string" else spec)
+        ~id:(fun spec -> if spec = "" then "the empty string" else spec)
         refused
         (fun spec ->
           equal string spec
@@ -361,7 +361,7 @@ let conflict_dropped () =
 let sites_and_catalogue =
   group "Sites and the catalogue"
     [
-      cases "register raises Invalid_argument on a malformed site" fst
+      cases "register raises Invalid_argument on a malformed site" ~id:fst
         bad_tables refused_table;
       test "the message names the file and the first malformed site"
         refusal_messages;
@@ -386,7 +386,7 @@ let sites_and_catalogue =
          the first table stays catalogued"
         conflict_dropped;
       cases "a guard raises Invalid_argument for an index outside its table"
-        (Testable.to_string Testable.int) [ 1; -1 ] (fun i ->
+        ~id:(Testable.to_string Testable.int) [ 1; -1 ] (fun i ->
           let g =
             Mutate.register ~file:"t/bounds.ml" ~sites:[| site 1 0 "lt" |]
           in
@@ -586,7 +586,7 @@ let arming =
       cases
         "an identifier no site of a catalogued file matches is Unmatched, with \
          the file's mutants in order"
-        Mutate.id_to_string
+        ~id:Mutate.id_to_string
         [
           id "t/near.ml" 5 4 "lt";
           id "t/near.ml" 9 3 "lt";
@@ -623,7 +623,7 @@ let arming =
           disarm ();
           equal int 0 (Mutate.armed_hits ()));
       cases "a budget below 1 raises Invalid_argument and disarms nothing"
-        (Testable.to_string Testable.int) [ 0; -1; min_int ] (fun budget ->
+        ~id:(Testable.to_string Testable.int) [ 0; -1; min_int ] (fun budget ->
           disarming (fun () -> refused_budget budget) ());
       test "the guard of a differing table never answers true nor raises"
         (disarming inert_armed);
@@ -741,7 +741,7 @@ let child () =
 let reach_map =
   group "The reach map"
     [
-      cases "drains" (fun (claim, _, _, _) -> claim) reach_rows drains;
+      cases "drains" ~id:(fun (claim, _, _, _) -> claim) reach_rows drains;
       test "reset_reach does not disarm" (disarming reset_keeps_armed);
       test
         "in a fresh process, the first drain is module initialization's, and \

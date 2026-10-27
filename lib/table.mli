@@ -15,11 +15,11 @@ val shown_bytes : int
 val check :
   ?loc:Loc.t ->
   ?label:('a -> string) ->
-  ('a -> string) ->
+  id:('a -> string) ->
   'a list ->
   ('a -> unit) ->
   unit
-(** [check id rows fn] is the body of the test that {!cases} declares, [loc]
+(** [check ~id rows fn] is the body of the test that {!cases} declares, [loc]
     being its declaration site. A table with no row is vacuous, with a
     {!Failure.Vacuous} failure. Under [--failed] the table runs only the rows
     that {!Run.recorded} names. A recorded counterexample is stale too, and a
@@ -38,10 +38,10 @@ val cases :
   ?timeout:float ->
   ?retries:int ->
   ?label:('a -> string) ->
+  id:('a -> string) ->
   string ->
-  ('a -> string) ->
   'a list ->
   ('a -> unit) ->
   Test_tree.t
-(** [cases name id rows fn] is the {!Test_tree.test} [name] whose body is
-    [check id rows fn] (see {!Windtrap.cases}). *)
+(** [cases name ~id rows fn] is the {!Test_tree.test} [name] whose body is
+    [check ~id rows fn] (see {!Windtrap.cases}). *)

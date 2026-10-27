@@ -165,7 +165,7 @@ let duplicate_counts_once () =
 let points_and_instrumentation =
   group "Points and instrumentation"
     [
-      cases "register refuses a table no instrumenter emits" fst
+      cases "register refuses a table no instrumenter emits" ~id:fst
         [
           ("counts of another length", ([| pt 0 1 |], Array.make 2 0));
           ("an inverted extent", ([| pt 5 3 |], [| 0 |]));
@@ -718,9 +718,9 @@ let dumps =
       test "load reads a dump of no file as the empty collection" (fun () ->
           equal string "files: "
             (loaded (load_text "windtrap-coverage-v3\n0\n")));
-      cases "load refuses another first line" fst foreign (fun (_, text) ->
+      cases "load refuses another first line" ~id:fst foreign (fun (_, text) ->
           equal string "unknown format" (loaded (load_text text)));
-      cases "load refuses truncated or invalid data" fst corrupt
+      cases "load refuses truncated or invalid data" ~id:fst corrupt
         (fun (_, text) -> equal string "corrupt" (loaded (load_text text)));
       test "load refuses a missing file as unreadable" (fun () ->
           equal string "unreadable"
@@ -889,7 +889,7 @@ let report_data =
             { Coverage.visited = 0; total = 0 }
             (Coverage.summary (collection [ ("lib/e.ml", []) ])));
       cases "uncovered_lines are the lines an unvisited extent touches"
-        (fun (name, _, _, _) -> name)
+        ~id:(fun (name, _, _, _) -> name)
         touched_lines
         (fun (_, source, extents, lines) ->
           equal (list int) lines

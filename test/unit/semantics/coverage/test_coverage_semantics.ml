@@ -170,7 +170,7 @@ let tail_calls =
     [
       test "a non-tail recursion as deep overflows" (fun () ->
           raises ~msg:unbounded Stack_overflow (fun () -> non_tail depth));
-      cases "a tail call 2,000,000 deep stays a tail call" row_name
+      cases "a tail call 2,000,000 deep stays a tail call" ~id:row_name
         deep_recursions row;
       test "a tail_mod_cons map runs in constant stack" tail_mod_cons;
     ]
@@ -221,7 +221,7 @@ let evaluation_order =
   group "Evaluation order"
     [
       cases "a branch runs its condition, one arm, its scrutinee and its guard"
-        (fun (b, _) -> strf "order_witness %b" b)
+        ~id:(fun (b, _) -> strf "order_witness %b" b)
         branches
         (fun (b, expected) ->
           equal
@@ -229,7 +229,7 @@ let evaluation_order =
             expected
             (Covsem_fixtures.order_witness b));
       cases "a connective runs its right arm only when the left does not decide"
-        row_name connectives (fun (_, expected, actual) ->
+        ~id:row_name connectives (fun (_, expected, actual) ->
           equal (pair bool (list string)) expected (actual ()));
       test "arguments run in the uninstrumented order" (fun () ->
           equal
@@ -350,7 +350,7 @@ let points =
       test "a raising application leaves its out-edge unvisited"
         raising_out_edge;
       cases "a call that never returns leaves no point of its check unvisited"
-        fst never_returning (fun (_, run) ->
+        ~id:fst never_returning (fun (_, run) ->
           equal (list extent) [] (unvisited_inside run));
       test "a send with a successor visits its out-edge" send_out_edge;
       test "an arm that is a function has a point visited when it is applied"
@@ -402,8 +402,8 @@ let forms =
 let results =
   group "Results"
     [
-      cases "an instrumented form computes the uninstrumented result" row_name
-        forms row;
+      cases "an instrumented form computes the uninstrumented result"
+        ~id:row_name forms row;
     ]
 
 (* Reports *)

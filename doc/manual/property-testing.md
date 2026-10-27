@@ -504,7 +504,7 @@ let codec =
     [
       prop "reads back what it prints" gen_shape
         (Law.round_trip shape string Geo.to_string read);
-      cases "prints what it reads" (Printf.sprintf "%S")
+      cases "prints what it reads" ~id:(Printf.sprintf "%S")
         [ "circle 1"; "rect 2 0.5" ]
         (Law.round_trip string shape read Geo.to_string);
       test "reads back a unit circle" (fun () ->
@@ -537,7 +537,7 @@ geo: 3 tests (seed s1:5b58964be30f69a8)
 
   FAIL  codec › prints what it reads
     examples/03-property-testing/test_geo.ml:87
-      87 │ cases "prints what it reads" (Printf.sprintf "%S")
+      87 │ cases "prints what it reads" ~id:(Printf.sprintf "%S")
 
     counterexample (row 2 of 2): "rect 2 0.5"
     which failed with:

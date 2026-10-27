@@ -85,7 +85,7 @@ let rerun () =
       (Option.value ~default:"" (Sys.getenv_opt "VERDICT_FAILING"))
   in
   [
-    cases "rows" (Printf.sprintf "%S")
+    cases "rows" ~id:(Printf.sprintf "%S")
       ~label:(fun row -> if row = "b" then "the second" else "")
       [ "a"; "b"; "c"; "d" ]
       (fun row ->
@@ -237,7 +237,7 @@ let suite = function
   | "rerun" -> rerun ()
   | "replayed" -> replayed ()
   | "rerun_dup" ->
-      [ cases "rows" (Printf.sprintf "%S") [ "a"; "b"; "a" ] ignore ]
+      [ cases "rows" ~id:(Printf.sprintf "%S") [ "a"; "b"; "a" ] ignore ]
   | "prop_discard" ->
       [
         prop "assumes" Gen.int (fun _ -> assume false);
@@ -272,26 +272,26 @@ let suite = function
               ignore ignore;
           ];
       ]
-  | "table_zero" -> [ cases "rows" Fun.id [] ignore ]
-  | "table_zero_plus" -> [ cases "rows" Fun.id [] ignore; passes ]
+  | "table_zero" -> [ cases "rows" ~id:Fun.id [] ignore ]
+  | "table_zero_plus" -> [ cases "rows" ~id:Fun.id [] ignore; passes ]
   | "table_skip" ->
       let skips_row_2 r = if r = 2 then skip ~reason:"row 2 skips" () in
       [
-        cases "skip in the middle" (Testable.to_string int) [ 1; 2; 3 ]
+        cases "skip in the middle" ~id:(Testable.to_string int) [ 1; 2; 3 ]
           (fun r ->
             skips_row_2 r;
             equal int 0 (r mod 3));
-        cases "skip first, failure later" (Testable.to_string int) [ 2; 4 ]
+        cases "skip first, failure later" ~id:(Testable.to_string int) [ 2; 4 ]
           (fun r ->
             skips_row_2 r;
             equal int 0 r);
-        cases "failure first, skip later" (Testable.to_string int) [ 4; 2 ]
+        cases "failure first, skip later" ~id:(Testable.to_string int) [ 4; 2 ]
           (fun r ->
             skips_row_2 r;
             equal int 0 r);
-        cases "every row skips" (Testable.to_string int) [ 2; 3 ] (fun r ->
+        cases "every row skips" ~id:(Testable.to_string int) [ 2; 3 ] (fun r ->
             skip ~reason:(Printf.sprintf "row %d skips" r) ());
-        cases "the other rows hold" (Testable.to_string int) [ 1; 2; 3 ]
+        cases "the other rows hold" ~id:(Testable.to_string int) [ 1; 2; 3 ]
           skips_row_2;
       ]
   | "baseline_literal" ->

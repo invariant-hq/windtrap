@@ -15,13 +15,14 @@ change a verdict.
 
 ## Declaring tests
 
-- `cases ~name:f "parse" inputs fn` → `cases "parse" f inputs fn`. The
-  function that named a row's test is the second positional argument.
-  The name it gives is the row's identity. A table over the rows' own
-  values identifies them by their printing,
-  `cases "rev" (Testable.to_string (list int)) inputs fn`, and a table of
-  strings by the quoted string, `cases "t" (Printf.sprintf "%S") …`. A
-  text shown beside a row and identifying nothing is `~label:f`.
+- `cases ~name:f "parse" inputs fn` → `cases "parse" ~id:f inputs fn`.
+  The function that named a row's test is `~id`, and the name it gives
+  is the row's identity. A table over the rows' own values identifies
+  them by their printing,
+  `cases "rev" ~id:(Testable.to_string (list int)) inputs fn`, and a
+  table of strings by the quoted string,
+  `cases "t" ~id:(Printf.sprintf "%S") …`. A text shown beside a row and
+  identifying nothing is `~label:f`.
 
   ```ocaml
   (* 0.2 *)
@@ -29,7 +30,7 @@ change a verdict.
       equal int n (int_of_string s))
 
   (* now *)
-  cases "parses" fst [ ("1", 1); ("10", 10) ] (fun (s, n) ->
+  cases "parses" ~id:fst [ ("1", 1); ("10", 10) ] (fun (s, n) ->
       equal int n (int_of_string s))
   ```
 - `slow "n" f` → `slow @@ test "n" f`. The optional arguments go on
@@ -63,7 +64,7 @@ change a verdict.
     value, which the function receives:
 
     ```ocaml
-    cases "renders" fst docs (fun (key, doc) ->
+    cases "renders" ~id:fst docs (fun (key, doc) ->
         expect_file ~file:("golden/" ^ key ^ ".txt") (render doc))
     ```
   - `skip` in a row, which skipped that row's test → skips that row
@@ -73,7 +74,7 @@ change a verdict.
     table with rows that skipped says
     `holds on 2 of 3 rows, 1 skipped: REASON`, with the first row's
     reason.
-- `cases "t" f [] fn`, which declared no test → a vacuous test that
+- `cases "t" ~id:f [] fn`, which declared no test → a vacuous test that
   fails; remove the table or give it rows.
 
 ## Assertions

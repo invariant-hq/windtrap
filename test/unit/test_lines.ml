@@ -104,7 +104,7 @@ let () =
          group "Specs"
            [
              cases "of_spec"
-               (fun (n, _, _) -> n)
+               ~id:(fun (n, _, _) -> n)
                specs
                (fun (_, s, e) -> equal string e (spec s));
              test "mem holds the lines of the ranges of a file" membership;
@@ -112,7 +112,7 @@ let () =
          group "Diffs"
            [
              cases "of_diff"
-               (fun (n, _, _) -> n)
+               ~id:(fun (n, _, _) -> n)
                diffs
                (fun (_, d, e) ->
                  equal string e (Lines.to_string (Lines.of_diff d)));

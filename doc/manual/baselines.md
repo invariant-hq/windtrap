@@ -96,7 +96,7 @@ let messages =
       test "the help lists the commands" (fun () ->
           expect_file ~file:"examples/05-baselines/help.expected"
             (Mytool.help ()));
-      cases "the greeting names the user" fst
+      cases "the greeting names the user" ~id:fst
         [
           ("Ada", __POS_OF__ {| Hello, Ada! |});
           ("Grace", __POS_OF__ {| Hello, Grace! |});

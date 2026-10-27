@@ -205,10 +205,10 @@ scope for a test that ran no case. The durations are masked:
     {"path": ["counter"], "verdict": "pass", "attempts": 1, "duration": D, "failures": [], "scope": {"cases": 20, "examples": 0, "count": 20, "discards": 0, "labels": [], "cover": [], "tolerances": []}},
     {"path": ["shares"], "verdict": "pass", "attempts": 1, "duration": D, "failures": [], "scope": {"cases": 800, "examples": 0, "count": 800, "discards": 0, "labels": [{"label": "a quarter", "cases": 222}], "cover": [{"label": "a quarter", "cases": 222, "met": true, "share": {"demand": 0.2, "hits": 222, "cases": 800, "low": 0.19236219075473532, "high": 0.3824742879474897}}], "tolerances": []}},
     {"path": ["plain"], "verdict": "pass", "attempts": 1, "duration": D, "failures": [], "scope": {"tolerances": []}},
-    {"path": ["close"], "verdict": "pass", "attempts": 1, "duration": D, "failures": [], "scope": {"tolerances": [{"file": "test/cram/run/suite_main.ml", "line": 138, "comparisons": 1, "error": 0.04999999999999716, "tolerance": 0.10005}, {"file": "test/cram/run/suite_main.ml", "line": 139, "comparisons": 1, "error": 3.000000026176508e-09, "tolerance": 1e-06}]}},
-    {"path": ["far"], "verdict": "fail", "attempts": 1, "duration": D, "failures": [{"headline": "expected 1., got 1.5", "file": "test/cram/run/suite_main.ml", "line": 141}], "scope": {"tolerances": [{"file": "test/cram/run/suite_main.ml", "line": 141, "comparisons": 1, "error": 0.5, "tolerance": 1e-06}, {"file": "test/cram/run/suite_main.ml", "line": 142, "comparisons": 1, "error": 1.000000082740371e-09, "tolerance": 1e-06}]}},
-    {"path": ["near"], "verdict": "pass", "attempts": 1, "duration": D, "failures": [], "scope": {"cases": 100, "examples": 0, "count": 100, "discards": 0, "labels": [], "cover": [], "tolerances": [{"file": "test/cram/run/suite_main.ml", "line": 144, "comparisons": 100, "error": 2.000177801164682e-12, "tolerance": 1e-09}]}},
-    {"path": ["nothing"], "verdict": "vacuous", "reason": "no case and no example ran: ~count:0 runs the examples alone, and there are none", "attempts": 1, "duration": D, "failures": [{"headline": "vacuous: no case and no example ran: ~count:0 runs the examples alone, and there…", "file": "test/cram/run/suite_main.ml", "line": 146}], "scope": {"cases": 0, "examples": 0, "count": 0, "discards": 0, "labels": [], "cover": [], "tolerances": []}},
+    {"path": ["close"], "verdict": "pass", "attempts": 1, "duration": D, "failures": [], "scope": {"tolerances": [{"file": "test/cram/run/suite_main.ml", "line": 139, "comparisons": 1, "error": 0.04999999999999716, "tolerance": 0.10005}, {"file": "test/cram/run/suite_main.ml", "line": 140, "comparisons": 1, "error": 3.000000026176508e-09, "tolerance": 1e-06}]}},
+    {"path": ["far"], "verdict": "fail", "attempts": 1, "duration": D, "failures": [{"headline": "expected 1., got 1.5", "file": "test/cram/run/suite_main.ml", "line": 142}], "scope": {"tolerances": [{"file": "test/cram/run/suite_main.ml", "line": 142, "comparisons": 1, "error": 0.5, "tolerance": 1e-06}, {"file": "test/cram/run/suite_main.ml", "line": 143, "comparisons": 1, "error": 1.000000082740371e-09, "tolerance": 1e-06}]}},
+    {"path": ["near"], "verdict": "pass", "attempts": 1, "duration": D, "failures": [], "scope": {"cases": 100, "examples": 0, "count": 100, "discards": 0, "labels": [], "cover": [], "tolerances": [{"file": "test/cram/run/suite_main.ml", "line": 145, "comparisons": 100, "error": 2.000177801164682e-12, "tolerance": 1e-09}]}},
+    {"path": ["nothing"], "verdict": "vacuous", "reason": "no case and no example ran: ~count:0 runs the examples alone, and there are none", "attempts": 1, "duration": D, "failures": [{"headline": "vacuous: no case and no example ran: ~count:0 runs the examples alone, and there…", "file": "test/cram/run/suite_main.ml", "line": 147}], "scope": {"cases": 0, "examples": 0, "count": 0, "discards": 0, "labels": [], "cover": [], "tolerances": []}},
     {"path": ["skips"], "verdict": "skip", "reason": "later", "attempts": 1, "duration": D, "failures": [], "scope": {"tolerances": []}}
   ], "counts": {"tests": 10, "passed": 7, "failed": 1, "vacuous": 1, "skipped": 1, "expected_failures": 0, "flaky": 0, "not_run": 0, "release_failures": 0, "duration": D}}
   $ tail -1 out | scrub
@@ -229,10 +229,10 @@ Under -v the terminal says the same of each passing test, on its row:
          27.8%  a quarter
       cover "a quarter" ~share:0.2: 27.8% of 800 cases, at least 19.2%
     PASS  close                                      DURATION
-      tolerance at test/cram/run/suite_main.ml:138: largest error 0.05 of 0.1 allowed, over 1 comparison
-      tolerance at test/cram/run/suite_main.ml:139: largest error 3e-09 of 1e-06 allowed, over 1 comparison
+      tolerance at test/cram/run/suite_main.ml:139: largest error 0.05 of 0.1 allowed, over 1 comparison
+      tolerance at test/cram/run/suite_main.ml:140: largest error 3e-09 of 1e-06 allowed, over 1 comparison
     PASS  near                                       DURATION (100 cases)
-      tolerance at test/cram/run/suite_main.ml:144: largest error 2e-12 of 1e-09 allowed, over 100 comparisons
+      tolerance at test/cram/run/suite_main.ml:145: largest error 2e-12 of 1e-09 allowed, over 100 comparisons
   6 passed in DURATION.
 
 A worker reads the scope, tolerances included, and its row carries it to
@@ -255,12 +255,12 @@ comparison under a tolerance saw against the bound it allowed:
   fixture: 1 test
   ──────────────────────── failures ────────────────────────
     FAIL  far
-      test/cram/run/suite_main.ml:141
+      test/cram/run/suite_main.ml:142
       expected  1.
       actual    1.5
                   ~
-      tolerance at test/cram/run/suite_main.ml:141: largest error 0.5 of 1e-06 allowed, over 1 comparison
-      tolerance at test/cram/run/suite_main.ml:142: largest error 1e-09 of 1e-06 allowed, over 1 comparison
+      tolerance at test/cram/run/suite_main.ml:142: largest error 0.5 of 1e-06 allowed, over 1 comparison
+      tolerance at test/cram/run/suite_main.ml:143: largest error 1e-09 of 1e-06 allowed, over 1 comparison
   ──────────────────────────────────────────────────────────
   
   1 failed in DURATION.

@@ -81,7 +81,7 @@ let row name source ~site patch result = { name; source; site; patch; result }
 
 let applies claim rows =
   cases claim
-    (fun r -> r.name)
+    ~id:(fun r -> r.name)
     rows
     (fun r ->
       let site = r.site r.source in
@@ -108,7 +108,7 @@ let drifts name spelled value =
 
 let normalized claim rows =
   cases claim
-    (fun (s, _) -> strf "%S" s)
+    ~id:(fun (s, _) -> strf "%S" s)
     rows
     (fun (s, form) -> equal string form (Source_patch.normalize s))
 
@@ -244,7 +244,8 @@ let refusals =
             (flexible ~literal:"stale" "new")
             drifted;
         ];
-      cases "error_message is one sentence that names neither file nor line" fst
+      cases "error_message is one sentence that names neither file nor line"
+        ~id:fst
         [
           ( "No_literal",
             ( Source_patch.No_literal ("test/t.ml", 4, 2, 0),

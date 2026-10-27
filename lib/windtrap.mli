@@ -154,29 +154,30 @@ val cases :
   ?timeout:float ->
   ?retries:int ->
   ?label:('a -> string) ->
+  id:('a -> string) ->
   string ->
-  ('a -> string) ->
   'a list ->
   ('a -> unit) ->
   test
-(** [cases name id rows fn] is the table [name]: the test that checks [fn] on
+(** [cases name ~id rows fn] is the table [name]: the test that checks [fn] on
     every row of [rows]. A table is a {!prop} over [Gen.of_list rows] printed by
     [id], whose domain is finite and so {{!section-properties} checked whole}:
     every row runs, in order, and the test fails when [fn] raises on a row or a
     row records a failure. Every row refuted is reported, each as it was given,
     none shrunk, and [-v] says [holds on all N rows] of a table that passed.
 
-    {b Rows.} A row is identified by its id, [id row], which [--failed] records.
-    Two rows with one id, byte for byte, are duplicates, and the table then
-    fails with a message that names their positions and runs no row. [id] may
-    give a key of the row, as [fst] does for rows that start with a name, or
-    print the row whole: [Testable.to_string w] with a witness [w], or
-    [Printf.sprintf "%S"] for rows that are strings, which keeps an empty or
-    blank row visible. A row shows as [row 2 of 5: ID], its id cut to one line
-    of 80 bytes, and in full where the report prints a counterexample.
-    [label row], when given, shows beside the row's position, as in
-    [row 2 of 5, LABEL], and identifies nothing; an empty label shows as none. A
-    table with no row is {{!section-vacuity}vacuous}, since it checks nothing.
+    {b Rows.} [id] is the row's identity: [id row] identifies the row, and
+    [--failed] records it. Two rows with one id, byte for byte, are duplicates,
+    and the table then fails with a message that names their positions and runs
+    no row. [id] may give a key of the row, as [~id:fst] does for rows that
+    start with a name, or print the row whole: [~id:(Testable.to_string w)] with
+    a witness [w], or [~id:(Printf.sprintf "%S")] for rows that are strings,
+    which keeps an empty or blank row visible. A row shows as [row 2 of 5: ID],
+    its id cut to one line of 80 bytes, and in full where the report prints a
+    counterexample. [label row], when given, shows beside the row's position, as
+    in [row 2 of 5, LABEL], and identifies nothing; an empty label shows as
+    none. A table with no row is {{!section-vacuity}vacuous}, since it checks
+    nothing.
 
     {b Baselines.} Each row settles its baseline corrections alone, as a test of
     its own would: a row whose failures are all baseline failures keeps its

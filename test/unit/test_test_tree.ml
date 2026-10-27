@@ -151,7 +151,7 @@ let tags =
       test "slow is \"slow\"" (fun () -> equal string "slow" Tag.slow);
       test "prop is \"prop\"" (fun () -> equal string "prop" Tag.prop);
       cases "mem is true iff the name is in the set"
-        (fun ((name, tags), _) ->
+        ~id:(fun ((name, tags), _) ->
           strf "%s in [%s]" name (String.concat ", " tags))
         memberships
         (fun ((name, tags), mem) ->
@@ -159,10 +159,10 @@ let tags =
       cases
         "accepts is true iff the set holds every required tag and no dropped \
          one"
-        (fun (s, _) -> selection_name s)
+        ~id:(fun (s, _) -> selection_name s)
         selections accepts_row;
       cases "for a tag given to require and to drop, the later call decides"
-        (fun (s, _) -> selection_name s)
+        ~id:(fun (s, _) -> selection_name s)
         later_calls accepts_row;
       prop "accepts agrees with the last call that names each tag" selection
         last_call_decides;
@@ -190,7 +190,7 @@ let named name =
 let trees =
   group "Trees"
     [
-      cases "a name is any string, kept as given" fst names (fun (_, n) ->
+      cases "a name is any string, kept as given" ~id:fst names (fun (_, n) ->
           named n);
     ]
 
@@ -215,7 +215,7 @@ let declare c ?__POS__ ?timeout ?retries () =
       let t = Test_tree.test "t" ignore in
       Test_tree.group ?__POS__ ?timeout ?retries "g" [ t ]
   | Cases ->
-      Windtrap.cases ?__POS__ ?timeout ?retries "c" (Testable.to_string int)
+      Windtrap.cases ?__POS__ ?timeout ?retries "c" ~id:(Testable.to_string int)
         [ 0 ] ignore
   | Scoped ->
       let scope k = k () in
@@ -257,7 +257,7 @@ let inert () =
       Test_tree.test "test" (note "test body");
       Test_tree.slow @@ Test_tree.test "slow" (note "slow body");
       Windtrap.cases "cases"
-        (fun _ ->
+        ~id:(fun _ ->
           note "id" ();
           "")
         ~label:(fun _ ->
@@ -300,7 +300,7 @@ let test_here () = (__LINE__, Test_tree.test "t" ignore)
 let slow_here () = (__LINE__, Test_tree.slow @@ Test_tree.test "s" ignore)
 
 let cases_here () =
-  (__LINE__, Windtrap.cases "c" (Testable.to_string int) [ 0; 1 ] ignore)
+  (__LINE__, Windtrap.cases "c" ~id:(Testable.to_string int) [ 0; 1 ] ignore)
 
 let nested_here () =
   (__LINE__, Test_tree.group ~retries:1 "g" [ Test_tree.test "t" ignore ])
@@ -366,7 +366,7 @@ let no_site () =
 let one_test () =
   let tree =
     Windtrap.cases ~__POS__:("f.ml", 5, 0, 0) ~timeout:2.5 ~retries:3 "c"
-      (Testable.to_string int) [ 0; 1 ] ignore
+      ~id:(Testable.to_string int) [ 0; 1 ] ignore
   in
   equal (list string)
     [ "c: tags [], limit 2.5s, 3 retries" ]
@@ -518,26 +518,26 @@ let declaring =
         defaults;
       cases
         "every constructor refuses a timeout that is not finite and positive"
-        (fun (c, v) -> strf "%s, %g" (constructor_name c) v)
+        ~id:(fun (c, v) -> strf "%s, %g" (constructor_name c) v)
         bad_timeouts
         (fun (c, timeout) ->
           raises_match Exn.invalid_arg (fun () -> declare c ~timeout ()));
       cases "every constructor refuses negative retries"
-        (fun (c, n) -> strf "%s, %d" (constructor_name c) n)
+        ~id:(fun (c, n) -> strf "%s, %d" (constructor_name c) n)
         bad_retries
         (fun (c, retries) ->
           raises_match Exn.invalid_arg (fun () -> declare c ~retries ()));
       cases "every constructor accepts 0 retries and a finite positive timeout"
-        (fun (c, v) -> strf "%s, %g" (constructor_name c) v)
+        ~id:(fun (c, v) -> strf "%s, %g" (constructor_name c) v)
         good_timeouts accepted;
       cases
         "every constructor's own timeout and retries reach its test over those \
          of a group"
-        constructor_name constructors own_settings;
-      cases "every constructor's __POS__ is its site" constructor_name
+        ~id:constructor_name constructors own_settings;
+      cases "every constructor's __POS__ is its site" ~id:constructor_name
         constructors declared_site;
       cases "without __POS__, a site is the line that applies the constructor"
-        fst captured captured_site;
+        ~id:fst captured captured_site;
       test
         "without __POS__, a partial application's site is the line of either \
          application"
@@ -555,14 +555,14 @@ let declaring =
             (list (list string))
             [ [ "empty" ] ]
             (paths
-               [ Windtrap.cases "empty" (Testable.to_string int) [] ignore ]));
+               [ Windtrap.cases "empty" ~id:(Testable.to_string int) [] ignore ]));
       test "scoped stores a scope that calls the body with its resource"
         scope_calls_body;
       test "a partial application of scoped still takes the optional arguments"
         partial_scoped;
       cases
         "bracket runs teardown iff setup returned, on every outcome of the body"
-        fst outcomes (fun (_, (p, trace)) ->
+        ~id:fst outcomes (fun (_, (p, trace)) ->
           equal string trace (bracket_trace p));
       test "bracket raises the body's exception again with its backtrace"
         body_backtrace;
@@ -663,8 +663,8 @@ let annotations =
   group "Annotations"
     [
       test "an annotation leaves the site of its node alone" annotated_sites;
-      cases "tag and slow mark the tests of every constructor" constructor_name
-        constructors (fun c ->
+      cases "tag and slow mark the tests of every constructor"
+        ~id:constructor_name constructors (fun c ->
           let marked = Test_tree.slow @@ Test_tree.tag "x" (declare c ()) in
           equal (list string) [ "[slow, x]" ]
             (List.map
@@ -677,14 +677,14 @@ let annotations =
           equal string "[slow]"
             (tag_names
                (single (Test_tree.slow @@ Test_tree.test "t" ignore)).tags));
-      cases "focus marks the tests of every constructor" constructor_name
+      cases "focus marks the tests of every constructor" ~id:constructor_name
         constructors (fun c ->
           let focused = Test_tree.flatten [ Test_tree.focus @@ declare c () ] in
           equal (list bool) [ true ]
             (List.map (fun (c : Test_tree.case) -> c.focused) focused));
       test "a focus on a group reaches every test under it and no sibling"
         focus_reach;
-      cases "xfail marks a test with its reason, or with none" fst reasons
+      cases "xfail marks a test with its reason, or with none" ~id:fst reasons
         (fun (_, (reason, mark)) ->
           let c =
             single (Test_tree.xfail ?reason @@ Test_tree.test "t" ignore)
@@ -835,7 +835,7 @@ let flattening =
       test "a test's tags are its own and those of its ancestors" inherited_tags;
       cases
         "path_to_string joins the components with a space, U+203A and a space"
-        fst joined (fun (_, (path, s)) ->
+        ~id:fst joined (fun (_, (path, s)) ->
           equal string s (Test_tree.path_to_string path));
     ]
 

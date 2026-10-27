@@ -182,7 +182,7 @@ let write_refusal path =
 
 let by_mode claim ~files ~steps rows =
   cases claim
-    (fun (mode, _) -> mode_name mode)
+    ~id:(fun (mode, _) -> mode_name mode)
     rows
     (fun (mode, trace) ->
       let root = project files in
@@ -260,7 +260,7 @@ let modes =
 
 let compares claim rows =
   cases claim
-    (fun (name, _, _, _) -> name)
+    ~id:(fun (name, _, _, _) -> name)
     rows
     (fun (_, subject, actual, row) ->
       equal traced [ row ]
@@ -276,7 +276,7 @@ let subjects =
       cases
         "a file compares as lines, where CR LF and CR are LF, final newline \
          included"
-        (fun (name, _, _, _) -> name)
+        ~id:(fun (name, _, _, _) -> name)
         [
           ("CR LF on disk", "hello\r\nworld\r\n", "hello\nworld\n", "pass");
           ("CR on disk", "a\rb", "a\nb", "pass");
@@ -405,7 +405,7 @@ let mode_witness =
 let registries =
   group "Registries"
     [
-      cases "mode is the mode of create" mode_name
+      cases "mode is the mode of create" ~id:mode_name
         [ Baseline.Check; Corrected; Update ] (fun mode ->
           equal mode_witness mode
             (Baseline.mode (Baseline.create ~root:"/" ~cwd:"/" ~mode ())));
@@ -418,7 +418,7 @@ let registries =
       cases
         "a run whose cwd lies in a build context under the root reads dune's \
          copy"
-        Fun.id [ "_build/default"; "_build/.sandbox/3f/default" ]
+        ~id:Fun.id [ "_build/default"; "_build/.sandbox/3f/default" ]
         (fun context ->
           let root =
             project [ (help, "source\n"); (context ^ "/" ^ help, "copy\n") ]
@@ -526,7 +526,7 @@ let checking =
       cases
         "a path that cannot be proven under the root is Unresolvable in every \
          mode, and records nothing"
-        (fun (mode, (name, _, _, _)) -> strf "%s, %s" name (mode_name mode))
+        ~id:(fun (mode, (name, _, _, _)) -> strf "%s, %s" name (mode_name mode))
         (List.concat_map
            (fun mode -> List.map (fun subject -> (mode, subject)) unproven)
            [ Baseline.Check; Corrected; Update ])
@@ -550,7 +550,7 @@ let checking =
       cases
         "an accepted key compares with its accepted content alone, and another \
          content is a conflict that records nothing"
-        (fun (mode, _) -> mode_name mode)
+        ~id:(fun (mode, _) -> mode_name mode)
         [
           ( Baseline.Corrected,
             "file test/help.expected: mismatch \"hi\\n\" against \"old\\n\"" );
@@ -575,7 +575,7 @@ let checking =
                ]));
       cases
         "a check with ~correct:false fails as under Check, whatever the mode"
-        mode_name [ Baseline.Corrected; Update ] (fun mode ->
+        ~id:mode_name [ Baseline.Corrected; Update ] (fun mode ->
           equal traced
             [ "file x: mismatch \"v\\n\" against \"old\\n\""; "kept 0" ]
             (scenario ~mode
@@ -593,7 +593,7 @@ let checking =
       cases
         "a literal whose source cannot take its correction fails, refused, \
          whatever the mode, and records nothing"
-        (fun (name, _, _, _) -> name)
+        ~id:(fun (name, _, _, _) -> name)
         [
           ( "a drifted source under Corrected",
             Baseline.Corrected,
@@ -860,7 +860,7 @@ let writing =
       cases
         "a correction is Source_patch's rewrite of the literal, or insertion \
          of the node, to the produced text"
-        (fun (name, _, _, _) -> name)
+        ~id:(fun (name, _, _, _) -> name)
         [
           ("a flexible literal", source, old, "a\n  b");
           ("an exact literal", source, literal ~exact:true " old ", "a\n b");

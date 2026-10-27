@@ -34,7 +34,7 @@ let duplicates ids =
 let numbered positions =
   String.concat " and " (List.map (fun i -> string_of_int (i + 1)) positions)
 
-let check ?loc ?label id rows fn =
+let check ?loc ?label ~id rows fn =
   let rows = Array.of_list rows in
   let n = Array.length rows in
   if n = 0 then
@@ -127,7 +127,7 @@ let check ?loc ?label id rows fn =
       in
       Printexc.raise_with_backtrace (Failure.Check_failure f) backtrace
 
-let cases ?__POS__ ?timeout ?retries ?label name id rows fn =
+let cases ?__POS__ ?timeout ?retries ?label ~id name rows fn =
   let loc = Loc.resolve ?__POS__ () in
   Test_tree.test ?__POS__ ?timeout ?retries name (fun () ->
-      check ?loc ?label id rows fn)
+      check ?loc ?label ~id rows fn)

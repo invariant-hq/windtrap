@@ -22,7 +22,8 @@ spelling this page does not list is unchanged. The entries of
   test
 - `group ~setup ~teardown` → `fixture ?teardown create`
 - `~timeout` on every test of a group → `group ~timeout:3. "g" [ … ]`
-- `cases ty inputs name fn` → `cases name ty inputs fn`, one test whose
+- `cases ty inputs name fn` →
+  `cases name ~id:(Testable.to_string ty) inputs fn`, one test whose
   rows are identified by how `ty` prints them
 - `?here:[%here]`, `?pos:__POS__` → `~__POS__`, or nothing
 - `let helper ?pos x = equal ?pos …` →

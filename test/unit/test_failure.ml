@@ -49,7 +49,7 @@ let texts =
       cases
         "a text keeps the longest prefix of at most 65,536 bytes on a code \
          point"
-        fst
+        ~id:fst
         [
           ("the empty string", ("", "0 of 0 bytes, whole, a prefix"));
           ( "65,536 bytes",
@@ -144,7 +144,7 @@ let catching =
   group "Catching the user's code"
     [
       cases "catch classifies what its function raised"
-        (fun (n, _, _) -> n)
+        ~id:(fun (n, _, _) -> n)
         ((("a return", (fun () -> ()), "returned") :: raised)
         @ [
             ( "a timeout that cut a finally",
@@ -165,12 +165,12 @@ let catching =
           ])
         (fun (_, f, row) -> equal string row (catch_row f));
       cases "reraise raises again what catch returned"
-        (fun (n, _, _) -> n)
+        ~id:(fun (n, _, _) -> n)
         raised reraise_row;
       test "reraise continues the backtrace of an exception"
         reraise_keeps_the_backtrace;
       cases "exn_to_string drops Dune__exe__ where a name starts with it"
-        (fun (n, _, _) -> n)
+        ~id:(fun (n, _, _) -> n)
         [
           ("an executable's exception", Full, "Test_failure.Full");
           ( "a name inside another exception's printer",
@@ -188,7 +188,7 @@ let catching =
         ]
         (fun (_, e, s) -> equal string s (Failure.exn_to_string e));
       cases "caught_to_string is exn_to_string of the exception it classifies"
-        fst
+        ~id:fst
         [
           ("an exception", (`Exception (Full, Printexc.get_callstack 0), Full));
           ("an assertion", (`Assertion boom, Failure.Check_failure boom));
@@ -605,9 +605,9 @@ let constructors =
       cases
         "a constructor builds a body failure with no location, subtest or \
          output"
-        fst constructed (fun (_, f) ->
+        ~id:fst constructed (fun (_, f) ->
           equal string "body, no loc, no msg, no subtest, no output" (frame f));
-      cases "a constructor bounds every text it is given" fst
+      cases "a constructor bounds every text it is given" ~id:fst
         [
           ( "equality",
             ( Failure.equality ~msg:big ~expected:big ~actual:big (),
@@ -655,7 +655,7 @@ let constructors =
       cases
         "a constructor fills its payload and defaults its optional fields to \
          none"
-        fst
+        ~id:fst
         [
           ( "equality",
             ( Failure.equality ~expected:"1" ~actual:"2" (),
@@ -692,7 +692,7 @@ let constructors =
         (fun (_, (f, row)) -> equal string row (defaults f));
       test "law keeps its fields and its terms in the order given" law_fields;
       cases "containment checks found_at and resumed_at against the haystack"
-        fst
+        ~id:fst
         [
           ("found_at -1", ((Some (-1), None), "raises Invalid_argument"));
           ("found_at 0", ((Some 0, None), "accepted"));
@@ -708,7 +708,7 @@ let constructors =
       cases
         "an unanchored excerpt is 10 lines or 1 KiB, from the head or under \
          Suffix the end"
-        (fun (n, _, _, _) -> n)
+        ~id:(fun (n, _, _, _) -> n)
         unanchored
         (fun (_, demand, haystack, window) ->
           let offset, excerpt, _ = excerpt demand haystack in
@@ -823,7 +823,7 @@ let failed_term_unmarked () =
 let updating =
   group "Updating"
     [
-      cases "with_withheld marks a baseline failure in any state" fst
+      cases "with_withheld marks a baseline failure in any state" ~id:fst
         [
           ("missing", Failure.Missing { proposed = Failure.text "a" });
           ("mismatch", mismatch);
@@ -832,7 +832,8 @@ let updating =
         (fun (_, state) ->
           equal string "skipped"
             (withheld (Failure.with_withheld Skipped (baseline state))));
-      cases "a refused or conflicting mark holds whatever the attempt adds" fst
+      cases "a refused or conflicting mark holds whatever the attempt adds"
+        ~id:fst
         [
           ( "refused",
             (Failure.Refused { line = 3; reason = "why" }, "refused 3: why") );

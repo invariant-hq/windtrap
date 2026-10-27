@@ -227,7 +227,7 @@ let marked () =
   let tests =
     [
       slow @@ prop "law" Gen.int ignore;
-      tag "gpu" @@ cases "table" string_of_int [ 1 ] ignore;
+      tag "gpu" @@ cases "table" ~id:string_of_int [ 1 ] ignore;
       tag "gpu" @@ slow @@ stateful "program" [ noop ];
       slow @@ group "g" [ test "inner" ignore ];
     ]
@@ -311,7 +311,7 @@ let declaring =
     [
       test "prop adds the prop tag, under a group too" tagged_prop;
       test "slow and tag mark a test of any family, and a group" marked;
-      cases "a tag named by both --tag and --exclude-tag is excluded" fst
+      cases "a tag named by both --tag and --exclude-tag is excluded" ~id:fst
         both_flags (fun (_, r) -> equal text "untagged\n" r.out);
       test "a property and a stateful test inherit a group's retries" (fun () ->
           equal (pair int int) (3, 3)
@@ -386,7 +386,7 @@ let properties =
       test "collect, classify and cover label the cases of the running law"
         the_labels_reach_the_engine;
       cases "a label outside a property fails the test with Invalid_argument"
-        Fun.id
+        ~id:Fun.id
         [ "collect"; "classify"; "cover" ]
         a_label_outside_a_property;
       test "reject outside a property fails the test with the message"
@@ -446,9 +446,9 @@ let parity n = if n mod 2 = 0 then "even" else "odd"
 let tables =
   Recorded.execute
     [
-      cases "duplicates" parity [ 1; 2; 3 ] ignore;
+      cases "duplicates" ~id:parity [ 1; 2; 3 ] ignore;
       cases "keyed"
-        (fun n -> "n" ^ string_of_int n)
+        ~id:(fun n -> "n" ^ string_of_int n)
         [ 1; 2 ]
         (fun n -> equal int 1 n);
     ]
@@ -458,7 +458,7 @@ let tables =
 let stale_table =
   facade "stale"
     [
-      cases "rows" fst
+      cases "rows" ~id:fst
         [
           ("a", __POS_OF__ {| a |});
           ("b", __POS_OF__ {| stale |});
@@ -613,7 +613,7 @@ let checked_rows, accepted_rows, row_copy =
   write copy
     (read (Filename.concat (Filename.dirname Sys.executable_name) this_file));
   let table =
-    cases "rows" fst rows (fun (text, literal) -> expect text literal)
+    cases "rows" ~id:fst rows (fun (text, literal) -> expect text literal)
   in
   let run baseline =
     Recorded.execute ~env:(project [] root)
@@ -748,7 +748,7 @@ let baselines =
       cases
         "in a law, a mismatch refutes the case, which shrinks, and is never a \
          correction"
-        (fun (mode, _) ->
+        ~id:(fun (mode, _) ->
           match mode with
           | Baseline.Check -> "check"
           | Corrected -> "--corrected"
@@ -775,7 +775,7 @@ let baselines =
               ] )
             (Recorded.exit_code bracketed, written bracketed));
       cases "a correction dune will not promote is the one run that warns"
-        (fun (name, _, _) -> name)
+        ~id:(fun (name, _, _) -> name)
         [
           ("a correction beside a failure", 1, true);
           ("two corrections beside a failure", 1, true);
@@ -892,7 +892,7 @@ let an_operation_fails_a_release () =
 let the_running_test =
   group "The running test"
     [
-      cases "raises Invalid_argument outside a test" fst outside_a_test
+      cases "raises Invalid_argument outside a test" ~id:fst outside_a_test
         (fun (_, e) ->
           raises_match (Exn.invalid_arg ~sub:"no test is running") (fun () ->
               replay e));
@@ -1058,7 +1058,7 @@ let running =
   group "Running"
     [
       cases "run returns the exit code"
-        (fun (name, _, _) -> name)
+        ~id:(fun (name, _, _) -> name)
         codes
         (fun (_, code, r) -> equal int code r.code);
       test "run raises Invalid_argument while a run is executing" nested_run;
@@ -1067,7 +1067,7 @@ let running =
           equal string "" help.err);
       test "--version prints one line that names the version" version_line;
       cases "a usage error prints nothing on stdout and names the fault"
-        (fun (name, _, _) -> name)
+        ~id:(fun (name, _, _) -> name)
         usage_errors
         (fun (_, r, fault) ->
           equal string "" r.out;
@@ -1099,7 +1099,7 @@ let running =
 emptysuite: no tests ran: filter "zzznope" matched none of 2 tests.
 |});
       cases "the code of a selection that keeps no test"
-        (fun (name, _, _) -> name)
+        ~id:(fun (name, _, _) -> name)
         selection_codes
         (fun (_, code, r) -> equal int code r.code);
       test "a mirror's emptied selection says why and names no way out"
@@ -1124,7 +1124,7 @@ emptied: no tests ran: filter "zzznope" matched none of 1 test.
         (fun () ->
           equal int 2 blank_usage.code;
           contains ~sub:"usage: blank [OPTIONS] [PATTERN...]" blank_usage.err);
-      cases "flags that change what prints change no exit code" fst printing
+      cases "flags that change what prints change no exit code" ~id:fst printing
         (fun (_, code) -> equal int 1 code);
       test "a test of kept corrections still stops -x" (fun () ->
           contains ~sub:"1 not run" kept_stops.out);

@@ -209,14 +209,14 @@ type printer = Printer : string * (unit -> 'a Gen.t) * 'a * string -> printer
 
 let shrinks claim rows =
   cases claim
-    (fun (Shrinks (name, _, _, _)) -> name)
+    ~id:(fun (Shrinks (name, _, _, _)) -> name)
     rows
     (fun (Shrinks (_, gen, from, expected)) ->
       equal string expected (shrinks_to ~from (gen ())))
 
 let literals claim rows =
   cases claim
-    (fun (Literal (name, _, _)) -> name)
+    ~id:(fun (Literal (name, _, _)) -> name)
     rows
     (fun (Literal (_, gen, print)) ->
       let trees = List.init 60 (sample (gen ())) in
@@ -226,7 +226,7 @@ let literals claim rows =
 
 let renderings claim rows =
   cases claim
-    (fun (Rendered (name, _, _, _, _)) -> name)
+    ~id:(fun (Rendered (name, _, _, _, _)) -> name)
     rows
     (fun (Rendered (_, gen, accept, pick, expected)) ->
       let tree = find (gen ()) accept in
@@ -237,7 +237,7 @@ let renderings claim rows =
 
 let printers claim rows =
   cases claim
-    (fun (Printer (name, _, _, _)) -> name)
+    ~id:(fun (Printer (name, _, _, _)) -> name)
     rows
     (fun (Printer (_, gen, v, expected)) ->
       equal string expected (Gen_engine.render_value (gen ()) v))
@@ -906,12 +906,12 @@ let generators =
       cases
         "a malformed generator is built, and raises Invalid_argument when it \
          samples"
-        (fun (Malformed (name, _, _)) -> name)
+        ~id:(fun (Malformed (name, _, _)) -> name)
         malformed raises_when_sampled;
       cases
         "a sampled tree is a function of the generator and the state, whatever \
          the order its cells are forced in"
-        (fun (Any (name, _)) -> name)
+        ~id:(fun (Any (name, _)) -> name)
         pure forced_in_any_order;
       test "a recorded seed replays these values" replayed_values;
       test "a recorded seed replays these choices" replayed_choices;
@@ -1282,7 +1282,7 @@ let numbers =
       prop "int_range low high draws within [low;high]" bounds draws_within;
       cases
         "int_range low high draws within [low;high] when its origin is a bound"
-        (fun (low, high) -> strf "int_range %d %d" low high)
+        ~id:(fun (low, high) -> strf "int_range %d %d" low high)
         [ (5, 5); (-100, -10); (3, 9) ]
         origin_at_a_bound;
       prop
@@ -1306,7 +1306,7 @@ let numbers =
       test "small_int draws in [-9_999;9_999], either sign" small_int_range;
       test "nativeint draws over the whole native word" nativeint_word;
       cases "a number generator draws each of its corners"
-        (fun (Corners (name, _, _, _)) -> name)
+        ~id:(fun (Corners (name, _, _, _)) -> name)
         corners reaches_its_corners;
       test "one draw in ten is a corner" corner_share;
       test
@@ -1451,13 +1451,14 @@ let base =
   group "Unit, booleans, characters and strings"
     [
       cases "unit and constant consume no randomness"
-        (fun (Any (n, _), _) -> n)
+        ~id:(fun (Any (n, _), _) -> n)
         consumes draws_words;
       test
         "bool draws both values, true's one candidate is false, and false has \
          none"
         bool_values;
-      cases "char draws below 32 and above 127, as does the full char_range" fst
+      cases "char draws below 32 and above 127, as does the full char_range"
+        ~id:fst
         [
           ("char", fun () -> Gen.char);
           ("char_range '\\000' '\\255'", fun () -> Gen.char_range '\000' '\255');
@@ -1482,7 +1483,7 @@ let base =
         ~count:50 Gen.int64 uchar_nearer_a;
       cases
         "a search for a uchar past a code point stops at the next scalar value"
-        (fun (code, _) -> strf "past 0x%X" code)
+        ~id:(fun (code, _) -> strf "past 0x%X" code)
         [
           (0x7F, "Uchar.of_int 0x80");
           (0xD7FF, "Uchar.of_int 0xE000");
@@ -1898,7 +1899,7 @@ let choices =
   group "Constants, choices and filters"
     [
       cases "a generator of one value draws it, with no candidates"
-        (fun (One (n, _, _, _)) -> n)
+        ~id:(fun (One (n, _, _, _)) -> n)
         ones draws_one;
       test "of_list draws each value, and shrinks toward its head, by position"
         of_list_values;
@@ -1940,7 +1941,7 @@ let choices =
         "a choice has the first branch's printer iff every branch has one"
         choice_printers;
       cases "such_that discards when no draw satisfies its predicate"
-        (fun (Any (n, _)) -> n)
+        ~id:(fun (Any (n, _)) -> n)
         [
           Any ("such_that", fun () -> Gen.(such_that (fun _ -> false) nat));
           Any
@@ -1958,7 +1959,7 @@ let choices =
       cases
         "a search over such_that (<> \"aaa\") on 3 letters stops next to \
          \"aaa\""
-        (strf "state %d") [ 0; 1; 2; 3; 4 ] next_to_aaa;
+        ~id:(strf "state %d") [ 0; 1; 2; 3; 4 ] next_to_aaa;
       test
         "a search over a frequency of letters and of_list stops at one \
          character" (fun () ->
@@ -2115,7 +2116,7 @@ let selections =
         (List.map keeps selection_kept);
       cases
         "a selection from no value or one value draws it, with no candidates"
-        (fun (One (n, _, _, _)) -> n)
+        ~id:(fun (One (n, _, _, _)) -> n)
         [
           One ("permutation []", (fun () -> Gen.permutation []), list int, []);
           One
@@ -2595,23 +2596,23 @@ let rendering =
       cases
         "a raising printer renders a sample as <printer raised EXN>, a control \
          included"
-        (fun (n, _, _) -> n)
+        ~id:(fun (n, _, _) -> n)
         raised_rows
         (fun (_, exn, text) ->
           equal string text (shown (sample (raising exn) 0)));
       cases
         "render_value renders a printer's fault as <printer raised EXN> and \
          raises a control again"
-        (fun (n, _, _) -> n)
+        ~id:(fun (n, _, _) -> n)
         bare_rows
         (fun (_, exn, text) -> equal string text (bare exn));
       cases "Sys.Break and Out_of_memory escape a printer's guard"
-        Printexc.to_string [ Sys.Break; Out_of_memory ] (fun exn ->
+        ~id:Printexc.to_string [ Sys.Break; Out_of_memory ] (fun exn ->
           equal string (Printexc.to_string exn)
             (ended (fun () -> shown (sample (raising exn) 0))));
       test "render formats on every call, at the default margin" formats_again;
       cases "a sample renders as a non-empty text"
-        (fun (Any (n, _)) -> n)
+        ~id:(fun (Any (n, _)) -> n)
         [
           Any ("int", fun () -> Gen.int);
           Any ("list int", fun () -> Gen.(list int));
@@ -2628,7 +2629,7 @@ let rendering =
           not_equal string "" text;
           not_equal string placeholder text);
       cases "prints is false exactly where render gives the placeholder"
-        (fun (Any (n, _)) -> n)
+        ~id:(fun (Any (n, _)) -> n)
         prints_rows prints_iff_rendered;
       test "prints formats nothing" prints_formats_nothing;
     ]

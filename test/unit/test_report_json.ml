@@ -98,7 +98,7 @@ let () =
   exit
     (run "report_json"
        [
-         cases "a test states its verdict, its reason and its failures" fst
+         cases "a test states its verdict, its reason and its failures" ~id:fst
            verdicts (fun (_, (r, expected)) ->
              equal string expected (first_line r));
          test

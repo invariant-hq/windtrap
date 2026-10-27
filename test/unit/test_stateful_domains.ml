@@ -489,7 +489,7 @@ let drawing =
       cases
         "each branch holds at most its share of calls, and nothing after the \
          prefix makes a value"
-        (fun (d, n) -> strf "%d domains, %d each" d n)
+        ~id:(fun (d, n) -> strf "%d domains, %d each" d n)
         shape_rows
         (fun row -> shape row ());
       test "a branch and the suffix draw no command that has a ~pre"
@@ -693,12 +693,12 @@ let judge_group =
   group "The judge"
     [
       cases "judges outcome vectors over program order"
-        (fun (n, _, _, _) -> n)
+        ~id:(fun (n, _, _, _) -> n)
         judge_rows
         (fun (_, branches, suffix, expected) ->
           equal string expected (judged ~branches ~suffix ()));
       cases "judges only the orders that keep real time"
-        (fun (n, _, _, _, _) -> n)
+        ~id:(fun (n, _, _, _, _) -> n)
         real_time_rows
         (fun (_, precedes, branches, suffix, expected) ->
           equal string expected (judged ~precedes ~branches ~suffix ()));
@@ -1711,7 +1711,7 @@ let executor =
          ending, and the pool runs on"
         in_the_ending;
       cases "labels count along the order the judge accepts"
-        (fun (n, _, _) -> n)
+        ~id:(fun (n, _, _) -> n)
         labels
         (fun (_, cover_when, expected) ->
           equal string expected (met ~cover_when ()));

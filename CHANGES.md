@@ -8,18 +8,19 @@ for how to migrate from 0.2.0.
 
 ### Declaring tests
 
-- (breaking) `cases name id rows fn` is a table: one test, a property
+- (breaking) `cases name ~id rows fn` is a table: one test, a property
   over `Gen.of_list rows` checked whole, where 0.2.0's
   `cases ~name base inputs fn` made a group of one test per input. A row
-  is identified by `id row`, a string: `fst` gives a key of the row,
-  `Testable.to_string w` its printing under a witness, and
-  `Printf.sprintf "%S"` a string row quoted. Two rows with one id are
-  refused as duplicates, and the table fails before any row runs. Every
-  row runs, and every row refuted is reported as `row 2 of 5: b`, its id
-  cut to one line. `?label` shows a text beside the row's position and
-  identifies nothing. 0.2.0's `~name:f` becomes the positional `f`, and
-  keeps the names as the rows' identities. Because a table is one test, `-f` selects a table
-  and not one row, `-v` prints one line,
+  is identified by `id row`, a string: `~id:fst` gives a key of the row,
+  `~id:(Testable.to_string w)` its printing under a witness, and
+  `~id:(Printf.sprintf "%S")` a string row quoted. Two rows with one id
+  are refused as duplicates, and the table fails before any row runs.
+  Every row runs, and every row refuted is reported as `row 2 of 5: b`,
+  its id cut to one line. `?label` shows a text beside the row's
+  position and identifies nothing. 0.2.0's `~name:f` becomes `~id:f`, as
+  in `cases "parse" ~id:f inputs fn`, and keeps the names as the rows'
+  identities. Because a table is one test, `-f` selects a table and not
+  one row, `-v` prints one line,
   `PASS  t (holds on all 3 rows)`, `timeout` and `retries` cover the
   whole table, the summary counts a table once, and a table with no row
   is vacuous, since it checks nothing, where 0.2.0 declared no test.

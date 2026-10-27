@@ -27,7 +27,7 @@ let newlines =
     [
       cases
         "normalize_newlines replaces each CRLF, and each other CR, by one LF"
-        name3
+        ~id:name3
         [
           ("LF alone", "a\nb\n", "a\nb\n");
           ("CRLF", "a\r\nb\r\n", "a\nb\n");
@@ -40,7 +40,7 @@ let newlines =
         (fun (_, s, normalized) ->
           equal string normalized (Text.normalize_newlines s));
       cases "split_lines splits at each LF, a final LF ending the last line"
-        name3
+        ~id:name3
         [
           ("a final LF", "a\nb\n", [ "a"; "b" ]);
           ("no final LF", "a\nb", [ "a"; "b" ]);
@@ -244,17 +244,17 @@ let lengths_and_cuts =
   group "Lengths and cuts"
     [
       cases "length_utf8 counts code points as String.get_utf_8_uchar decodes"
-        name3 lengths (fun (_, s, n) -> equal int n (Text.length_utf8 s));
+        ~id:name3 lengths (fun (_, s, n) -> equal int n (Text.length_utf8 s));
       cases
         "truncate_utf8 n s is s when it fits, else n - 3 code points then ..."
-        name3 truncations (fun (_, (n, s), truncated) ->
+        ~id:name3 truncations (fun (_, (n, s), truncated) ->
           equal string truncated (Text.truncate_utf8 n s));
       prop "truncate_utf8 n s never has more than n code points"
         (Gen.pair (Gen.int_range 0 12) utf8)
         (fun (n, s) ->
           at_most int ~than:n (Text.length_utf8 (Text.truncate_utf8 n s)));
       cases "window keeps the part of a string at an end or around an offset"
-        name3 windows (fun (_, window_of, kept) ->
+        ~id:name3 windows (fun (_, window_of, kept) ->
           equal window kept (window_of ()));
       prop "window keeps a slice within the bound, cut on code points" anchored
         window_law;
@@ -271,11 +271,11 @@ let lengths_and_cuts =
             (Text.mark_truncated ~length:9 "ab"));
       cases
         "truncate_bytes_utf8 n s is s when it fits, else its marked head window"
-        name3 byte_truncations (fun (_, (n, s), truncated) ->
+        ~id:name3 byte_truncations (fun (_, (n, s), truncated) ->
           equal string truncated (Text.truncate_bytes_utf8 n s));
       cases
         "elide_middle keeps half of the bound from each end and counts the rest"
-        name3 elisions (fun (_, (n, show, s), elided) ->
+        ~id:name3 elisions (fun (_, (n, show, s), elided) ->
           equal string elided (Text.elide_middle n ~show s));
       test "elide_middle raises Invalid_argument for a negative bound"
         (fun () ->
@@ -336,19 +336,20 @@ let search =
   group "Search"
     [
       cases "first_occurrence is the offset of the first occurrence from start"
-        name3 occurrences (fun (_, (start, pattern, s), offset) ->
+        ~id:name3 occurrences (fun (_, (start, pattern, s), offset) ->
           equal (option int) offset (Text.first_occurrence ?start ~pattern s));
       prop "first_occurrence is the least offset from start where pattern is"
         searched (fun (start, pattern, s) ->
           equal (option int)
             (reference ~start ~pattern s)
             (Text.first_occurrence ~start ~pattern s));
-      cases "first_occurrence raises Invalid_argument for a start outside s" fst
+      cases "first_occurrence raises Invalid_argument for a start outside s"
+        ~id:fst
         [ ("a negative start", -1); ("a start past the end", 4) ]
         (fun (_, start) ->
           raises_match (Exn.invalid_arg ~sub:"start") (fun () ->
               Text.first_occurrence ~start ~pattern:"a" "abc"));
-      cases "contains_substring tells whether pattern occurs in s" name3
+      cases "contains_substring tells whether pattern occurs in s" ~id:name3
         containments (fun (_, (pattern, s), found) ->
           equal bool found (Text.contains_substring ~pattern s));
       prop "contains_substring is true iff first_occurrence finds the pattern"
@@ -377,7 +378,7 @@ let controls =
         "escape_controls writes each byte below 0x20 but TAB, and DEL, as \
          \\xNN, and passes every other"
         every_byte;
-      cases "escape_controls escapes each control byte of a string" name3
+      cases "escape_controls escapes each control byte of a string" ~id:name3
         [
           ("no control byte", "plain \t\xc3\xa9 \xff", "plain \t\xc3\xa9 \xff");
           ( "C0 bytes, LF and CR included, and DEL",
