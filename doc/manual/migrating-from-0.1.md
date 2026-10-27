@@ -111,8 +111,8 @@ spelling this page does not list is unchanged. The entries of
 - `expect_exact s`, `capture_exact fn s` →
   `expect_exact (output ()) @@ __POS_OF__ {|…|}`
 - `WINDTRAP_UPDATE=1 dune runtest` → a `(test)` stanza whose action runs
-  `%{test} --corrected` and `diff?`s each corrected file, then
-  `dune promote`; outside dune, `-u`
+  `%{test} --corrected` and `diff?`s each corrected file inside
+  `concurrent`, then `dune promote`; outside dune, `-u`
 - `run ~update ~snapshot_dir` → `-u` on the command line; a baseline's
   path is its call's
 - `WINDTRAP_SNAPSHOT_DIR`, `WINDTRAP_SNAPSHOT_DIFF_CONTEXT`,

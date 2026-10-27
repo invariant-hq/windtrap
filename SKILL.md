@@ -128,8 +128,9 @@ let () = exit (run "mylib" [ parse ])
   `skip ~reason ()`. `focus` is for a local session only; under CI a
   suite that holds one is refused.
 - A stanza whose suite holds `expect` or `expect_file` runs it with
-  `--corrected` and diffs each file that holds baselines, so that
-  `dune promote` accepts a change:
+  `--corrected` and diffs each file that holds baselines, the `diff?`
+  inside `concurrent` so that one `dune promote` accepts every stale
+  file:
 
 ```lisp
 (test
@@ -139,8 +140,9 @@ let () = exit (run "mylib" [ parse ])
  (action
   (progn
    (run %{test} --corrected)
-   (diff? test_mylib.ml test_mylib.ml.corrected)
-   (diff? help.expected help.expected.corrected))))
+   (concurrent
+    (diff? test_mylib.ml test_mylib.ml.corrected)
+    (diff? help.expected help.expected.corrected)))))
 ```
 
 `expect_file` reads its path from the project root, while the stanza's

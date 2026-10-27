@@ -116,10 +116,11 @@
  (action
   (progn
    (run %{test} --corrected)
-   (diff? test_cli.ml test_cli.ml.corrected)
-   (diff?
-    expected/test_cli/help.expected
-    expected/test_cli/help.expected.corrected))))
+   (concurrent
+    (diff? test_cli.ml test_cli.ml.corrected)
+    (diff?
+     expected/test_cli/help.expected
+     expected/test_cli/help.expected.corrected)))))
 
 (test
  (name test_run)
@@ -139,36 +140,37 @@
  (action
   (progn
    (run %{test} --corrected)
-   (diff?
-    expected/test_report_sections/baseline.expected
-    expected/test_report_sections/baseline.expected.corrected)
-   (diff?
-    expected/test_report_sections/containment.expected
-    expected/test_report_sections/containment.expected.corrected)
-   (diff?
-    expected/test_report_sections/coverage.expected
-    expected/test_report_sections/coverage.expected.corrected)
-   (diff?
-    expected/test_report_sections/entry.expected
-    expected/test_report_sections/entry.expected.corrected)
-   (diff?
-    expected/test_report_sections/equality.expected
-    expected/test_report_sections/equality.expected.corrected)
-   (diff?
-    expected/test_report_sections/law.expected
-    expected/test_report_sections/law.expected.corrected)
-   (diff?
-    expected/test_report_sections/mutation.expected
-    expected/test_report_sections/mutation.expected.corrected)
-   (diff?
-    expected/test_report_sections/print.expected
-    expected/test_report_sections/print.expected.corrected)
-   (diff?
-    expected/test_report_sections/property.expected
-    expected/test_report_sections/property.expected.corrected)
-   (diff?
-    expected/test_report_sections/raise.expected
-    expected/test_report_sections/raise.expected.corrected))))
+   (concurrent
+    (diff?
+     expected/test_report_sections/baseline.expected
+     expected/test_report_sections/baseline.expected.corrected)
+    (diff?
+     expected/test_report_sections/containment.expected
+     expected/test_report_sections/containment.expected.corrected)
+    (diff?
+     expected/test_report_sections/coverage.expected
+     expected/test_report_sections/coverage.expected.corrected)
+    (diff?
+     expected/test_report_sections/entry.expected
+     expected/test_report_sections/entry.expected.corrected)
+    (diff?
+     expected/test_report_sections/equality.expected
+     expected/test_report_sections/equality.expected.corrected)
+    (diff?
+     expected/test_report_sections/law.expected
+     expected/test_report_sections/law.expected.corrected)
+    (diff?
+     expected/test_report_sections/mutation.expected
+     expected/test_report_sections/mutation.expected.corrected)
+    (diff?
+     expected/test_report_sections/print.expected
+     expected/test_report_sections/print.expected.corrected)
+    (diff?
+     expected/test_report_sections/property.expected
+     expected/test_report_sections/property.expected.corrected)
+    (diff?
+     expected/test_report_sections/raise.expected
+     expected/test_report_sections/raise.expected.corrected)))))
 
 (test
  (name test_report)
@@ -179,33 +181,34 @@
  (action
   (progn
    (run %{test} --corrected)
-   (diff?
-    expected/test_report/annotation.expected
-    expected/test_report/annotation.expected.corrected)
-   (diff?
-    expected/test_report/compact.expected
-    expected/test_report/compact.expected.corrected)
-   (diff?
-    expected/test_report/compact-ansi.expected
-    expected/test_report/compact-ansi.expected.corrected)
-   (diff?
-    expected/test_report/endings.expected
-    expected/test_report/endings.expected.corrected)
-   (diff?
-    expected/test_report/mutation.expected
-    expected/test_report/mutation.expected.corrected)
-   (diff?
-    expected/test_report/rows.expected
-    expected/test_report/rows.expected.corrected)
-   (diff?
-    expected/test_report/timelines.expected
-    expected/test_report/timelines.expected.corrected)
-   (diff?
-    expected/test_report/verbose.expected
-    expected/test_report/verbose.expected.corrected)
-   (diff?
-    expected/test_report/verbose-ansi.expected
-    expected/test_report/verbose-ansi.expected.corrected))))
+   (concurrent
+    (diff?
+     expected/test_report/annotation.expected
+     expected/test_report/annotation.expected.corrected)
+    (diff?
+     expected/test_report/compact.expected
+     expected/test_report/compact.expected.corrected)
+    (diff?
+     expected/test_report/compact-ansi.expected
+     expected/test_report/compact-ansi.expected.corrected)
+    (diff?
+     expected/test_report/endings.expected
+     expected/test_report/endings.expected.corrected)
+    (diff?
+     expected/test_report/mutation.expected
+     expected/test_report/mutation.expected.corrected)
+    (diff?
+     expected/test_report/rows.expected
+     expected/test_report/rows.expected.corrected)
+    (diff?
+     expected/test_report/timelines.expected
+     expected/test_report/timelines.expected.corrected)
+    (diff?
+     expected/test_report/verbose.expected
+     expected/test_report/verbose.expected.corrected)
+    (diff?
+     expected/test_report/verbose-ansi.expected
+     expected/test_report/verbose-ansi.expected.corrected)))))
 
 (test
  (name test_report_junit)
@@ -216,12 +219,13 @@
  (action
   (progn
    (run %{test} --corrected)
-   (diff?
-    expected/test_report_junit/document.expected
-    expected/test_report_junit/document.expected.corrected)
-   (diff?
-    expected/test_report_junit/subtests.expected
-    expected/test_report_junit/subtests.expected.corrected))))
+   (concurrent
+    (diff?
+     expected/test_report_junit/document.expected
+     expected/test_report_junit/document.expected.corrected)
+    (diff?
+     expected/test_report_junit/subtests.expected
+     expected/test_report_junit/subtests.expected.corrected)))))
 
 (test
  (name test_report_json)

@@ -7,8 +7,9 @@
  (action
   (progn
    (run %{test} --corrected)
-   (diff? test_mytool.ml test_mytool.ml.corrected)
-   (diff? help.expected help.expected.corrected))))
+   (concurrent
+    (diff? test_mytool.ml test_mytool.ml.corrected)
+    (diff? help.expected help.expected.corrected)))))
 
 (library
  (enabled_if %{lib-available:ppx_windtrap})

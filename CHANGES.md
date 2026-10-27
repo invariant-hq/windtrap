@@ -87,6 +87,12 @@ for how to migrate from 0.2.0.
 
 ### Baselines
 
+- The recommended stanza wraps its `diff?` in `(concurrent …)`
+  (`lang dune 3.8`), so that dune holds the correction of every stale
+  file of a run and one `dune promote` takes them all. In the `progn`
+  that 0.2.0's manual showed, the first `diff?` that failed ended the
+  action, so N stale files took N runs and N promotions. The manual,
+  the examples and windtrap's own stanzas use it.
 - (breaking) `expect_file : ?__POS__:pos -> file:string -> string -> unit`
   labels the file, written `expect_file ~file:"golden/x.txt" actual`.
   0.2.0's two positional strings compiled swapped, and a swapped call

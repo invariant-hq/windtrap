@@ -155,9 +155,14 @@ let () = exit (run "mytool" [ messages ])
 The stanza runs the suite with `--corrected`, which writes the
 correction of a stale baseline beside its file as `<file>.corrected`.
 Each `diff?` then compares one file that holds baselines with its
-correction. `(deps …)` names every file an `expect_file` reads. The
-stanza spells a path from its own directory, as `help.expected`, where
-the call spells it from the project root.
+correction, and `concurrent` runs every `diff?` whatever the others
+find, so that dune holds the correction of each stale file and one
+`dune promote` takes them all (it needs `(lang dune 3.8)`). In a
+`progn` the first `diff?` that fails would end the action, and each
+further stale file would take another run and another promotion.
+`(deps …)` names every file an `expect_file` reads. The stanza spells a
+path from its own directory, as `help.expected`, where the call spells
+it from the project root.
 
 `test/dune`:
 
@@ -170,8 +175,9 @@ the call spells it from the project root.
  (action
   (progn
    (run %{test} --corrected)
-   (diff? test_mytool.ml test_mytool.ml.corrected)
-   (diff? help.expected help.expected.corrected))))
+   (concurrent
+    (diff? test_mytool.ml test_mytool.ml.corrected)
+    (diff? help.expected help.expected.corrected)))))
 ```
 
 With every baseline current, `dune runtest` prints the suite's line and
@@ -250,10 +256,10 @@ A file baseline that does not exist yet is the one exception: once the
 missing files are all that fail, the line creates them first,
 `accept: touch 'examples/05-baselines/help.expected' && dune runtest; dune promote …`.
 
-The stanza's action stops at its first `diff?` that fails, so dune holds
-at most one correction per stanza and run. When two files are stale, the
-second file's `accept:` line finds nothing to promote until the first is
-accepted and the tests run again.
+The `accept:` line names every file whose correction dune holds, which
+under the stanza above is every stale file of the run. A stanza whose
+`diff?` sit in the `progn` itself holds only the first stale file's:
+wrap them in `concurrent`.
 
 Under CI a stale baseline fails the run itself, whatever its mode. A
 `--corrected` run exits 0 on a mismatch only so that a `diff?` can hand

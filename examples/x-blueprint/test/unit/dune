@@ -24,4 +24,5 @@
  (action
   (progn
    (run %{test} --corrected)
-   (diff? test_stats.ml test_stats.ml.corrected))))
+   (concurrent
+    (diff? test_stats.ml test_stats.ml.corrected)))))
