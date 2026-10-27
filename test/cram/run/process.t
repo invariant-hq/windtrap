@@ -55,7 +55,7 @@ neither fork a worker nor reach its run in a new start of the program,
 so its tests run in the child. Where `timeout` exists (macOS has none),
 it bounds the run, so a recursion would fail rather than hang:
 
-  $ guard=$(command -v timeout > /dev/null && echo 'timeout 60')
+  $ guard=$(command -v timeout > /dev/null && echo 'timeout 60' || :)
   $ run PROCESS_SUITE=in_a_fork $guard ../process_main.exe
   child: 1 passed in DURATION.
   the child exited with code 0
