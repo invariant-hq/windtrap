@@ -248,8 +248,8 @@ type frame = {
   mutable temp_seq : int; (* the number of the next temporary path *)
   mutable bindings : binding list; (* one per name *)
   mutable cwd : (string * Loc.t option) option; (* left by the first chdir *)
-  mutable deadline : (Os.counter * float) option;
-      (* the attempt's start and limit, while its alarm is armed *)
+  mutable due : unit -> unit;
+      (* times the attempt out if its limit passed (see [with_timeout]) *)
 }
 
 let frame ~on_event run (case : Test_tree.case) =
@@ -274,7 +274,7 @@ let frame ~on_event run (case : Test_tree.case) =
     temp_seq = 0;
     bindings = [];
     cwd = None;
-    deadline = None;
+    due = ignore;
   }
 
 (* A failure without a location was raised in tail position, past
@@ -716,20 +716,14 @@ let interrupting = [ Sys.sigint; Sys.sigterm; Sys.sighup ]
    able to cut the observer mid-line. The alarm or a signal that arrives
    meanwhile is handled when it returns, in the attempt. What it raises
    would fail a test that it does not own, so it is dropped. A limit that
-   passed meanwhile arms the alarm again, to fire at once, so the attempt
-   times out where the alarm would have cut it, whether or not the held
-   alarm is still to come: its delivery once unblocked differs between
-   systems, and macos-latest left it pending past the end of the attempt. *)
+   passed meanwhile times the attempt out as the observer returns, from the
+   clock: the held alarm's delivery once unblocked differs between systems,
+   and macos-latest left it pending past the end of the attempt. *)
 let give_in_attempt frame event =
   Os.with_blocked (Sys.sigalrm :: interrupting) (fun () ->
       (try Capture.outside frame.run.capture (fun () -> frame.on_event event)
        with _ -> ());
-      match frame.deadline with
-      | Some (started, limit) when Os.count_s started >= limit ->
-          ignore
-            (Unix.setitimer Unix.ITIMER_REAL
-               { Unix.it_value = 1e-6; it_interval = 0. })
-      | Some _ | None -> ())
+      frame.due ())
 
 (* A fast law accepts thousands of candidates a second, and a terminal would
    draw each: after its start a search is given at most ten times a
@@ -1280,23 +1274,28 @@ let limit config (case : Test_tree.case) =
 (* The alarm fires once and a timeout is not fatal, so after a body that
    timed out [renew] bounds the teardown with what remains of the limit, or
    with a whole limit. The alarm can fire during the cleanup: [armed] makes
-   the handler inert, and [disarm] absorbs a timeout that interrupts it. An
-   arming raises once, [on_fire] first, whether its alarm comes late or
-   twice (see [give_in_attempt]). *)
-let with_timeout ?(on_fire = ignore) limit fn =
+   the handler inert, and [disarm] absorbs a timeout that interrupts it.
+   [due] raises the timeout from the clock, for code that held the alarm (see
+   [give_in_attempt]); an arming raises once, from its alarm or from [due],
+   whichever comes first. *)
+let with_timeout limit fn =
   match limit with
   | Some limit when not Sys.win32 -> (
       let armed = ref true and fired = ref false in
       let started = Os.counter () in
+      let ends =
+        ref limit
+        (* when the arming expires, from [started] *)
+      in
+      let expire () =
+        if !armed && not !fired then begin
+          fired := true;
+          raise (Failure.Control (`Timeout limit))
+        end
+      in
+      let due () = if Os.count_s started >= !ends then expire () in
       let previous =
-        Sys.signal Sys.sigalrm
-          (Sys.Signal_handle
-             (fun _ ->
-               if !armed && not !fired then begin
-                 fired := true;
-                 on_fire ();
-                 raise (Failure.Control (`Timeout limit))
-               end))
+        Sys.signal Sys.sigalrm (Sys.Signal_handle (fun _ -> expire ()))
       in
       let rec disarm () =
         match
@@ -1309,12 +1308,16 @@ let with_timeout ?(on_fire = ignore) limit fn =
       in
       let renew () =
         if !armed then (
-          let remaining = limit -. Os.count_s started in
+          let elapsed = Os.count_s started in
+          let alarm =
+            if limit -. elapsed > 0. then limit -. elapsed else limit
+          in
           fired := false;
-          set_alarm (if remaining > 0. then remaining else limit))
+          ends := elapsed +. alarm;
+          set_alarm alarm)
       in
       set_alarm limit;
-      match fn renew with
+      match fn renew due with
       | value ->
           disarm ();
           value
@@ -1322,7 +1325,7 @@ let with_timeout ?(on_fire = ignore) limit fn =
           let backtrace = Printexc.get_raw_backtrace () in
           disarm ();
           Printexc.raise_with_backtrace exn backtrace)
-  | Some _ | None -> fn ignore
+  | Some _ | None -> fn ignore ignore
 
 let add_caught frame phase : Failure.caught -> unit =
   let add = add_phase_failure frame phase in
@@ -1422,11 +1425,9 @@ let run_attempt frame (case : Test_tree.case) ~limit ~groups ~test_name =
   in
   let bounded () =
     with_isolated_random ~path:(case_path case) @@ fun () ->
-    with_timeout ~on_fire:(fun () -> frame.deadline <- None) limit
-    @@ fun renew ->
-    if not Sys.win32 then
-      frame.deadline <- Option.map (fun limit -> (Os.counter (), limit)) limit;
-    Fun.protect ~finally:(fun () -> frame.deadline <- None) @@ fun () ->
+    with_timeout limit @@ fun renew due ->
+    frame.due <- due;
+    Fun.protect ~finally:(fun () -> frame.due <- ignore) @@ fun () ->
     match Failure.catch (fun () -> phases renew) with
     | Ok () -> ()
     | Error (`Timeout _ as c) -> add_caught frame frame.phase c
