@@ -435,13 +435,22 @@ let re_executed =
           with
           | ( [ Some target; Some input; Some output; Some out; Some err ],
               Some earlier ) ->
+              (* The descriptors were inherited open across the exec; a
+                 process a test starts must not inherit them too, or the
+                 report pipe outlives the worker and the parent sees no
+                 end of file when it ends. *)
+              let own n =
+                let fd = fd_of_int n in
+                (try Unix.set_close_on_exec fd with Unix.Unix_error _ -> ());
+                fd
+              in
               Some
                 {
                   target;
-                  input = fd_of_int input;
-                  output = fd_of_int output;
-                  out = fd_of_int out;
-                  err = fd_of_int err;
+                  input = own input;
+                  output = own output;
+                  out = own out;
+                  err = own err;
                   earlier;
                   dir = String.concat ":" dir;
                 }
