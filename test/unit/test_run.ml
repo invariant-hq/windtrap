@@ -2527,6 +2527,26 @@ let held_limit =
   in
   (r, !slept)
 
+(* The same observer, which also disarms the alarm before it sleeps, as a
+   system that leaves the held alarm pending would: the attempt times out
+   from the clock as the observer returns. *)
+let lost_alarm =
+  let on_event = function
+    | Run.Shrinking _ ->
+        ignore
+          (Unix.setitimer Unix.ITIMER_REAL
+             { Unix.it_value = 0.; it_interval = 0. });
+        Unix.sleepf 0.3
+    | Run.Run_started _ | Run.Test_started _ | Run.Shrunk _
+    | Run.Test_finished _ | Run.Fixture_release _ | Run.Interrupted _ ->
+        ()
+  in
+  Recorded.execute ~on_event
+    ~config:(fun c ->
+      let seed = Result.get_ok (Seed.of_string "s1:0000000000000001") in
+      { c with timeout = Some 0.2; seed })
+    [ Run.prop "fails" (Gen.int_range 10 1000) (fun x -> is_true (x < 10)) ]
+
 let run_started_says_whether_properties_run () =
   equal (list string)
     [
@@ -2572,6 +2592,12 @@ let events =
           let r, slept = held_limit in
           is_true slept;
           equal string "timed out after 0.2s" (shrink_end r [ "fails" ]));
+      test
+        "a limit that passed while the observer ran times the attempt out when \
+         the alarm never comes" (fun () ->
+          needs_timeouts ();
+          equal string "timed out after 0.2s"
+            (shrink_end lost_alarm [ "fails" ]));
     ]
 
 (* Startup errors *)
