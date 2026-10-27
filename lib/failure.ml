@@ -49,8 +49,21 @@ type containment_demand =
   | Suffix
   | Ordered of { index : int; resumed_at : int }
 
+type multiset = {
+  missing : text;
+  missing_count : int;
+  extra : text;
+  extra_count : int;
+}
+
 type kind =
-  | Equality of { expected : text; actual : text; not_ : bool; diffable : bool }
+  | Equality of {
+      expected : text;
+      actual : text;
+      not_ : bool;
+      diffable : bool;
+      multiset : multiset option;
+    }
   | Containment of {
       needle : text;
       found_at : int option;
@@ -316,10 +329,27 @@ let make ?loc ?msg kind =
     caught = false;
   }
 
-let equality ?loc ?msg ?(not_ = false) ~expected ~actual () =
+let equality ?loc ?msg ?(not_ = false) ?multiset ~expected ~actual () =
+  let multiset =
+    Option.map
+      (fun (m : Multiset.explanation) ->
+        {
+          missing = text m.missing;
+          missing_count = m.missing_count;
+          extra = text m.extra;
+          extra_count = m.extra_count;
+        })
+      multiset
+  in
   make ?loc ?msg
     (Equality
-       { expected = text expected; actual = text actual; not_; diffable = true })
+       {
+         expected = text expected;
+         actual = text actual;
+         not_;
+         diffable = true;
+         multiset;
+       })
 
 (* An ordered search failed from its cursor: an occurrence before the cursor
    is the one that did not count. *)
@@ -365,6 +395,7 @@ let predicate ?loc ?msg ~claim value =
          actual = text value;
          not_ = false;
          diffable = false;
+         multiset = None;
        })
 
 let raised ?loc ?msg ?expected ?actual ?(predicate = false) ?backtrace

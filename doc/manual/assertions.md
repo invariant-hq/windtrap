@@ -230,8 +230,9 @@ shop: 2 tests
 
 `Testable.contramap f w` compares and prints a value as `w` does `f` of
 it. Here two items are equal when their names are. `slist w cmp`
-compares two lists in any order, and `pass` in place of a component
-ignores it, as in `pair string pass`.
+compares two lists as multisets, in any order, and its failure lists
+what is missing and what is extra rather than the two lists. `pass` in
+place of a component ignores it, as in `pair string pass`.
 
 `test/test_assertions.ml`:
 

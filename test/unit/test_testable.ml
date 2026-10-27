@@ -482,6 +482,7 @@ let container_equal =
   let open Testable in
   let loose = float 0.1 in
   let sorted = slist int Int.compare in
+  let by_key = slist (pair int string) (fun (a, _) (b, _) -> Int.compare a b) in
   let int3 = triple int int int and int4 = quad int int int int in
   [
     ("option, Some and Some", Equal (option int, Some 1, Some 1));
@@ -513,6 +514,12 @@ let container_equal =
     ( "slist, duplicates in another order",
       Equal (sorted, [ 1; 1; 2 ], [ 1; 2; 1 ]) );
     ("slist, another multiplicity", Differ (sorted, [ 1; 1; 2 ], [ 1; 2; 2 ]));
+    ( "slist, under an order coarser than the equality",
+      Equal (by_key, [ (1, "a"); (1, "b") ], [ (1, "b"); (1, "a") ]) );
+    ( "slist, two elements the coarse order ties and the equality tells apart",
+      Differ (by_key, [ (1, "a"); (1, "a") ], [ (1, "a"); (1, "b") ]) );
+    ( "slist, elements under their witness that the order puts apart",
+      Equal (slist loose Float.compare, [ 1.0; 2.0 ], [ 2.05; 0.95 ]) );
     ("pair, equal", Equal (pair int string, (1, "a"), (1, "a")));
     ("pair, first unequal", Differ (pair int string, (1, "a"), (2, "a")));
     ("pair, second unequal", Differ (pair int string, (1, "a"), (1, "b")));
@@ -549,6 +556,41 @@ let containers =
         container_equal;
       orderings "no container carries an order, whatever its components carry"
         container_orders;
+    ]
+
+(* Multisets *)
+
+module Multiset = Windtrap.Private.Multiset
+
+let differences =
+  [
+    ("equal multisets", (([ 2; 1; 2 ], [ 2; 2; 1 ]), "[] []"));
+    ("one missing", (([ 3; 1; 2 ], [ 1; 3 ]), "[2] []"));
+    ("one extra", (([ 1 ], [ 1; 1 ]), "[] [1]"));
+    ("both, in the order", (([ 5; 1; 9 ], [ 9; 4; 0 ]), "[1; 5] [0; 4]"));
+    ("from empty", (([], [ 2; 1 ]), "[] [1; 2]"));
+  ]
+
+let difference (expected, actual) =
+  let missing, extra =
+    Multiset.difference ~equal:Int.equal ~compare:Int.compare expected actual
+  in
+  let print l = Testable.to_string (list int) l in
+  print missing ^ " " ^ print extra
+
+(* Twenty thousand elements, two of them lost and one doubled: the
+   difference is the three, found without pairing each against each. *)
+let a_large_difference () =
+  let all = List.init 20_000 Fun.id in
+  let actual = 17 :: List.filter (fun n -> n <> 2463 && n <> 9000) all in
+  equal string "[2463; 9000] [17]" (difference (all, actual))
+
+let multisets =
+  group "Multisets"
+    [
+      cases "difference is what each side lacks, in the order" fst differences
+        (fun (_, (sides, row)) -> equal string row (difference sides));
+      test "difference shows a few elements among many" a_large_difference;
     ]
 
 (* Observed errors *)
@@ -610,4 +652,6 @@ let observed =
     ]
 
 let () =
-  exit (run "testable" [ witnesses; instances; floats; containers; observed ])
+  exit
+    (run "testable"
+       [ witnesses; instances; floats; containers; multisets; observed ])

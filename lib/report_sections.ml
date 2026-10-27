@@ -800,6 +800,21 @@ and facts ~seen ~excerpt = function
         if String.contains expected '\n' then
           line "both sides equal:" :: lines ~lead:"  " expected
         else [ line ("both sides equal: " ^ shown expected) ] )
+  | Failure.Equality { multiset = Some m; _ } ->
+      (* The difference alone: two long lists would show as a diff of their
+         reflowed printings, cut before it reached the elements that differ. *)
+      let side name style (t : Failure.text) =
+        let t = shown_text t in
+        if String.contains t '\n' then faint (name ^ ":") :: block style t
+        else [ field name @ [ styled style (shown t) ] ]
+      in
+      let head =
+        strf "multisets differ: %d missing, %d extra" m.missing_count
+          m.extra_count
+      in
+      ( head,
+        (line head :: side "missing" `Green m.missing)
+        @ side "extra" `Red m.extra )
   | Failure.Equality { expected = claim; actual = value; diffable = false; _ }
     ->
       (* A claim describes the expected value and is never diffed. *)

@@ -35,11 +35,16 @@ let message_diff = function
    a containment and the text of a backtrace. *)
 let payload (f : Failure.t) =
   match f.kind with
-  | Equality { expected; actual; not_; diffable } ->
-      strf "%s%s, expected %s, actual %s"
+  | Equality { expected; actual; not_; diffable; multiset } ->
+      strf "%s%s, expected %s, actual %s%s"
         (if not_ then "not " else "")
         (if diffable then "equality" else "predicate")
         expected.kept actual.kept
+        (match multiset with
+        | None -> ""
+        | Some m ->
+            strf ", %d missing %s, %d extra %s" m.missing_count m.missing.kept
+              m.extra_count m.extra.kept)
   | Containment { needle; found_at; haystack_length; demand = d; _ } ->
       strf "%s %S, %s in %d bytes" (demand d) needle.kept
         (match found_at with Some i -> strf "at %d" i | None -> "nowhere")
@@ -300,6 +305,15 @@ let equalities =
           ( "equal, through the witness's printer",
             (fun () -> Check.equal string "a" "b"),
             {|equality, expected "a", actual "b"|} );
+          ( "equal under slist, with what is missing and what is extra",
+            (fun () ->
+              Check.equal (slist int Int.compare) [ 3; 1; 2; 2 ] [ 4; 2; 1 ]),
+            "equality, expected [1; 2; 2; 3], actual [1; 2; 4], 2 missing [2; \
+             3], 1 extra [4]" );
+          ( "equal over a list of slists, with no difference of its own",
+            (fun () ->
+              Check.equal (list (slist int Int.compare)) [ [ 1 ] ] [ [ 2 ] ]),
+            "equality, expected [[1]], actual [[2]]" );
           ( "not_equal, the first value on both sides",
             (fun () -> Check.not_equal int 3 3),
             "not equality, expected 3, actual 3" );

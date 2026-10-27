@@ -126,14 +126,35 @@ type containment_demand =
           occurrence anywhere, so [None] says that the needle is not in the
           string, and [Some _] that it is there before [resumed_at]. *)
 
+type multiset = {
+  missing : text;
+      (** The elements of the expected side that the actual one lacks, printed
+          as a list. *)
+  missing_count : int;  (** Their number. *)
+  extra : text;
+      (** The elements of the actual side that the expected one lacks, printed
+          as a list. *)
+  extra_count : int;  (** Their number. *)
+}
+(** The type for the difference of two lists compared as multisets (see
+    {!Multiset.difference}). *)
+
 (** The type for failure payloads. *)
 type kind =
-  | Equality of { expected : text; actual : text; not_ : bool; diffable : bool }
+  | Equality of {
+      expected : text;
+      actual : text;
+      not_ : bool;
+      diffable : bool;
+      multiset : multiset option;
+    }
       (** Two sides that had to match did not. [expected] and [actual] are
           printed values, or descriptions of a constructor such as [Some _].
           Under [not_], a negated assertion, both must hold one rendering.
           [diffable] is [false] when [expected] is a claim in words
-          ({!predicate}). *)
+          ({!predicate}). [multiset] is the difference of two lists that the
+          witness compared as multisets, which a renderer shows in place of the
+          two sides. *)
   | Containment of {
       needle : text;
       found_at : int option;
@@ -473,12 +494,14 @@ val equality :
   ?loc:Loc.t ->
   ?msg:string ->
   ?not_:bool ->
+  ?multiset:Multiset.explanation ->
   expected:string ->
   actual:string ->
   unit ->
   t
 (** [equality ~expected ~actual ()] is a diffable {!Equality} failure over two
-    printed values. [not_] defaults to [false]. *)
+    printed values, with the difference [multiset] when given. [not_] defaults
+    to [false]. *)
 
 val containment :
   ?loc:Loc.t ->

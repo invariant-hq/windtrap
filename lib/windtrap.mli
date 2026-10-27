@@ -871,8 +871,21 @@ val array : 'a testable -> 'a array testable
 (** [array t] is {!list} for ['a array]. An array prints as [[|a; b; c|]]. *)
 
 val slist : 'a testable -> ('a -> 'a -> int) -> 'a list testable
-(** [slist t cmp] is [Testable.contramap (List.sort cmp) (list t)]. It compares
-    and prints lists as multisets, sorted with [cmp]. *)
+(** [slist t cmp] is the witness for lists as multisets under [t]'s equality:
+    two lists are equal when their elements pair off, each with an element of
+    the other list equal to it under [t]. A list prints as {!list} prints it
+    sorted with [cmp], and [slist] has no order.
+
+    [cmp] sorts both lists to find the pairs, and needs only to put equal
+    elements next to each other: it may be coarser than [t]'s equality, as an
+    order on one field of a record is. With an equality that is not an
+    equivalence, as a tolerance's, the pairs are sought in the order of [cmp],
+    so two lists can differ though another pairing would make them equal.
+
+    A failing {!equal} under [slist] shows what is missing and what is extra,
+    the elements of the expected list that the actual one lacks and those it has
+    beyond them, in place of the two lists:
+    [multisets differ: 2 missing, 1 extra]. *)
 
 val pair : 'a testable -> 'b testable -> ('a * 'b) testable
 (** [pair a b] is the witness for pairs, [a] for the first component and [b] for
@@ -2218,6 +2231,7 @@ module Private : sig
   module Gen_engine = Gen_engine
   module Lines = Lines
   module Loc = Loc
+  module Multiset = Multiset
   module Mutate_loop = Mutate_loop
   module Os = Os
   module Pp = Pp

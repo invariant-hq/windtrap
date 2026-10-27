@@ -46,7 +46,9 @@ type 'a testable = 'a Testable.t
 
 val equal : ?__POS__:pos -> ?msg:string -> 'a testable -> 'a -> 'a -> unit
 (** [equal] records a comparison under a tolerance as
-    {{!section-tolerances}tolerances} states. *)
+    {{!section-tolerances}tolerances} states. When [t] is a {!Testable.slist}
+    the payload holds the lists' difference, as {!Multiset.explained} gives it.
+*)
 
 val not_equal : ?__POS__:pos -> ?msg:string -> 'a testable -> 'a -> 'a -> unit
 (** The payload of [not_equal t a b] sets [not_] and holds the rendering of [a]

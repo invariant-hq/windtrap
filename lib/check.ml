@@ -9,10 +9,10 @@ type 'a testable = 'a Testable.t
 
 (* Each payload has one raising helper, which resolves the location within
    the verb's call, as [Loc.capture] requires. *)
-let fail_equality ?__POS__ ?msg ?not_ ~expected actual =
+let fail_equality ?__POS__ ?msg ?not_ ?multiset ~expected actual =
   Failure.refuse
-    (Failure.equality ?loc:(Loc.resolve ?__POS__ ()) ?msg ?not_ ~expected
-       ~actual ())
+    (Failure.equality ?loc:(Loc.resolve ?__POS__ ()) ?msg ?not_ ?multiset
+       ~expected ~actual ())
 
 let fail_predicate ?__POS__ ?msg ~claim value =
   Failure.refuse
@@ -108,12 +108,13 @@ let reset_tolerances () = locked (fun () -> Hashtbl.reset sites)
 (* Equalities *)
 
 let equal ?__POS__ ?msg t expected actual =
-  let holds, error =
-    Tolerance.observed (fun () -> Testable.equal t expected actual)
+  let (holds, error), multiset =
+    Multiset.explained expected actual (fun () ->
+        Tolerance.observed (fun () -> Testable.equal t expected actual))
   in
   Option.iter (note ?__POS__) error;
   if not holds then
-    fail_equality ?__POS__ ?msg
+    fail_equality ?__POS__ ?msg ?multiset
       ~expected:(Testable.to_string t expected)
       (Testable.to_string t actual)
 

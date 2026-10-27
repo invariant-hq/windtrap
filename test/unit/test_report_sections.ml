@@ -131,6 +131,17 @@ let long_headline = "expected " ^ repeat 71 "\u{00e9}" ^ "\u{2026}"
 let headline_rows =
   [
     ("equality", (unequal "true" "false", "expected true, got false"));
+    ( "a multiset's difference",
+      ( Failure.equality
+          ~multiset:
+            {
+              Windtrap.Private.Multiset.missing = "[2; 3]";
+              missing_count = 2;
+              extra = "[4]";
+              extra_count = 1;
+            }
+          ~expected:"[1; 2; 2; 3]" ~actual:"[1; 2; 4]" (),
+        "multisets differ: 2 missing, 1 extra" ) );
     ( "a negated equality",
       ( Failure.equality ~not_:true ~expected:"3" ~actual:"3" (),
         "both sides equal: 3" ) );
@@ -1267,6 +1278,27 @@ let absolute_source () =
              (Failure.message ~loc:{ Loc.file; line = 1; column = 0 } "m")))
        1)
 
+(* A multiset's failure shows its difference, and not the two lists. *)
+let multiset_lines () =
+  let f =
+    Failure.equality
+      ~multiset:
+        {
+          Windtrap.Private.Multiset.missing = "[2; 3]";
+          missing_count = 2;
+          extra = "[4]";
+          extra_count = 1;
+        }
+      ~expected:"[1; 2; 2; 3]" ~actual:"[1; 2; 4]" ()
+  in
+  expect (entry ~hints:false f)
+  @@ __POS_OF__
+       {|
+    multisets differ: 2 missing, 1 extra
+    missing   [2; 3]
+    extra     [4]
+  |}
+
 let under_dune () =
   let f =
     Failure.equality
@@ -1661,6 +1693,8 @@ let replay_row (_, (armed, invocation, tests, failures, expected)) =
 let failure_projections =
   group "Failure projections"
     [
+      test "a multiset's failure shows what is missing and what is extra"
+        multiset_lines;
       cases "a headline is one line of the failure's facts" fst headline_rows
         headline_row;
       test "a headline past 80 code points is cut and ends in an ellipsis"

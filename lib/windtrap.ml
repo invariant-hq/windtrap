@@ -291,6 +291,7 @@ module Private = struct
   module Gen_engine = Gen_engine
   module Lines = Lines
   module Loc = Loc
+  module Multiset = Multiset
   module Mutate_loop = Mutate_loop
   module Os = Os
   module Pp = Pp
