@@ -164,13 +164,14 @@ for how to migrate from 0.2.0.
   neighbours, and `-0.` when `low < 0. <= high`. A property that passed
   under 0.2.0 can fail on one of them, and a `replay:` line that 0.2.0
   printed for a property over a float draws other values.
-- (breaking) The integer generators draw small values and the edges of
-  powers of two first, and a draw repeats a value that its generator
-  drew earlier in the case with probability 1/8, so that collections
-  hold duplicates and pairs collide. A range of at most 256 values a
-  side stays uniform; a wider one is not: `Gen.int_range 3 1000` draws
-  a value of at most 100 three times in four, where 0.2.0 did 14% of
-  the time, and its bounds still come as corners. Every integer
+- (breaking) The whole integer types, `Gen.int`, `Gen.int32`,
+  `Gen.int64`, `Gen.nativeint` and a range over a type's own `min_int`
+  to `max_int`, draw small values and the edges of powers of two first,
+  about 58% of `Gen.int` within 256 of 0 where 0.2.0 drew 5.9%, and a
+  draw repeats a value that its generator drew earlier in the case with
+  probability 1/8, so that collections hold duplicates and pairs
+  collide. A range draws uniformly apart from its corners, as in 0.2.0:
+  `Gen.int_range 1 1000` draws above 200 75% of the time. Every integer
   generator of one type and range repeats the others' values,
   `Gen.nat` and `Gen.int_range 0 9999` included. `Gen.(pair int int)`
   draws an equal pair 13% of the time, where 0.2.0 drew 0.15%, and a
@@ -178,8 +179,9 @@ for how to migrate from 0.2.0.
   time, against 6.3%. On ETNA-style workloads (a search tree, a
   red-black tree, a simply typed lambda calculus) a planted bug fails
   after 22 cases on average, where 0.2.0's distributions needed 68,
-  and a bug that needs two equal keys after 6, against 147; a case
-  costs 1.1 to 1.9 times as much to draw. A seed draws other cases than
+  and a bug that needs two equal keys after 7 to 13, against about
+  150; a case
+  costs up to 1.9 times as much to draw. A seed draws other cases than
   before. A replay token holds the case's choices, which no
   distribution reads, so it still replays its case.
 - `-0.` shrinks to `0.`, and a range whose `high` is `-0.` shrinks

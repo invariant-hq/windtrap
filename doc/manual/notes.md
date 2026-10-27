@@ -95,8 +95,9 @@ shape that no tree of smaller variants holds: two inner lists merged
 into one, a node replaced by its subterm, a value drawn with `Gen.bind`
 from what an earlier draw decided. The generators only encode what they
 drew, so the sequence of choices decides how values shrink, and the
-distributions what a run draws: an integer comes small or at an edge of
-a power of two first, and a value may repeat an earlier value of its
+distributions what a run draws: an integer range is uniform, a whole
+integer type such as `Gen.int` comes small or at an edge of a power of
+two first, and a value may repeat an earlier value of its
 generator in the case, so that collections hold duplicates. A
 generator carries its printer too: a composite prints when its parts
 do, and a value computed by a function with no printer prints the input

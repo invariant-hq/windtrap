@@ -65,15 +65,18 @@ type 'a t
     the fraction bits reversed. A float of {!float_range} is clamped into the
     range, so its zeros parse to the origin.
 
-    An integer's draw, apart from its corners, is the distance to [o] on a side
-    chosen in proportion to its count of values, counted up to 257 for the side
-    above, which holds [o], and up to 256 for the side below, which starts one
-    past it. A side whose distances are at most 256 draws the distance
-    uniformly. A wider side reads one word, whose bits choose a bit length [k],
-    over 0..8 or over 0..the side's bit length with equal probability, and, one
-    time in four, an edge of [k] bits: 2{^ k-1} (1/4), 2{^ k} - 1 (1/2) or
-    2{^ k} (1/4), clipped to the side. Otherwise it draws the distance uniformly
-    among the values of [k] bits. *)
+    A range's draw, apart from its corners, is uniform over the range, as in
+    0.2: a bounded draw over its span, or, for a range of 2{^ 63} values or
+    more, whole words until one falls in it. The parse reads it, as any value,
+    by its side and distance. A whole type, whose range is its type's own
+    [min_int] to [max_int], draws instead the distance to [o] on a side chosen
+    in proportion to its count of values, counted up to 257 for the side above,
+    which holds [o], and up to 256 for the side below, which starts one past it.
+    Each side reads one word, whose bits choose a bit length [k], over 0..8 or
+    over 0..the side's bit length with equal probability, and, one time in four,
+    an edge of [k] bits: 2{^ k-1} (1/4), 2{^ k} - 1 (1/2) or 2{^ k} (1/4),
+    clipped to the side. Otherwise it draws the distance uniformly among the
+    values of [k] bits. *)
 
 val int : int t
 (** See the facade's [Gen.int]. *)

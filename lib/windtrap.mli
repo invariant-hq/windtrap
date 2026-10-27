@@ -1079,7 +1079,14 @@ module Gen : sig
       generator of one type and range is the same generator here, so
       [pair (int_range 0 9) (int_range 0 9)] repeats too, and [pair nat int]
       does not. The distribution each generator states is that of a draw that
-      repeats nothing. *)
+      repeats nothing.
+
+      A repeat applies at every level of a nested generator: a record built with
+      [let+ … and+], a pair or an element of an inner list repeats as a whole,
+      and so carries its fields along. So a field of a record, or an element of
+      an inner list, equals the same field of an earlier value more often than
+      1/8: it has a chance of 1/8 at its own generator and another at each
+      generator that encloses it. *)
 
   type 'a t = 'a Gen.t
   (** The type for generators of ['a] values. The equation is not part of the
@@ -1098,18 +1105,21 @@ module Gen : sig
       is not. The corners of a whole integer type are [0], [1], [-1] and the
       type's two extremes.
 
-      Otherwise a float draws as it states, and an integer draws small values
-      and the edges of powers of two first, since a program that fails almost
-      always fails in some simple case. It draws a side of the point closest to
-      [0] in proportion to the side's count of values up to 256. A side of at
-      most 256 values is uniform, so [int_range (-5) 5] and [int_range 0 255]
-      are. A wider side draws at least half of its values within 256 of that
-      point, and about one value in four at an edge of a power of two (2{^ k-1},
-      2{^ k} - 1 or 2{^ k} away from it); the others spread over the bit lengths
-      up to the side's. So a range wider than 256 values is not uniform:
-      [int_range 3 1000] draws a value of at most 100 three times in four, and
-      its bounds still come as corners. Of {!int}, about 58% of the values lie
-      in \[[-256];[256]\]. *)
+      Otherwise a float draws as it states, and an integer range draws
+      uniformly, since a range states the domain its values come from:
+      [int_range 1 1000] draws above 200 three times in four (75%), and at most
+      100 about one time in six (16%), its corners included.
+
+      A whole integer type, {!int}, {!int32}, {!int64}, {!nativeint} and a range
+      over the type's own [min_int] to [max_int], has no domain to spread over,
+      so it draws small values and the edges of powers of two first, since a
+      program that fails almost always fails in some simple case. It draws
+      either side of [0] about equally often, then at least half of its values
+      within 256 of [0], and about one value in four at an edge of a power of
+      two (2{^ k-1}, 2{^ k} - 1 or 2{^ k} away from it); the others spread over
+      the bit lengths up to the type's. Of {!int}, about 58% of the values lie
+      in \[[-256];[256]\]. A range one value short of the whole type is a range,
+      and draws uniformly. *)
 
   val int : int t
   (** [int] generates an integer over the whole [int] range. It shrinks toward

@@ -216,12 +216,15 @@ place (the key-value benchmark goes from 45% to 100% at the minimum).
 - **Drawing.** A primitive draws its value with its sampler and
   records the choices that encode it; it never draws a choice by
   itself. `Seed.split` is drawn at `bind`, `one_of`, `such_that` and a
-  sized `list`, as 0.2 drew it. The samplers are 0.2's but for the
-  integers: a range of at most 256 values a side is uniform, and a wider
-  side draws its distance to the origin by scale, a bit length uniform
-  over 0..8 or over the side's, one draw in four an edge of the scale,
-  so that small values and powers of two come first (the small scope
-  hypothesis; Hypothesis draws integers within 256 uniformly too).
+  sized `list`, as 0.2 drew it. The samplers are 0.2's but for the whole
+  integer types (`int`, `int32`, `int64`, `nativeint`, or a range over a
+  type's `min_int` to `max_int`): a range is uniform as in 0.2, and a
+  whole type draws its distance to the origin by scale, a bit length
+  uniform over 0..8 or over the type's, one draw in four an edge of the
+  scale, so that small values and powers of two come first (the small
+  scope hypothesis; Hypothesis draws integers within 256 uniformly too).
+  A range states the domain its values come from, so it keeps 0.2's
+  draw.
 - **Repetition.** A generating call of a generator called before in
   the case copies, with probability 1/8, the choices of one of those
   calls and parses the same value again, as a span of its own, so that

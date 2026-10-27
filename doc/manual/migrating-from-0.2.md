@@ -157,15 +157,16 @@ change a verdict.
   `keep it: ~examples:[ … ]` line, or `--replay TOKEN`: a token holds
   the case's choices, which no distribution reads, so it replays its
   case whatever the generators draw.
-- A property that relied on a wide integer range spreading its values
-  uniformly, as a `cover ~share` over `Gen.int_range 0 9999`, or on two
-  values of one generator differing → an integer comes small or at an
-  edge of a power of two first, and a draw repeats an earlier value of
-  its generator in the case one time in eight. Nearly nine values in
-  ten of `Gen.int_range 0 9999` are below 2500. State a share over a
-  range of at most 256 values, which stays uniform apart from its
-  corners, as `n < 50` over `Gen.int_range 0 199` for a quarter, and a
-  law that needs two distinct values with `assume (a <> b)`.
+- A property that relied on a whole integer type spreading its values
+  over the type, as a `cover` on `Gen.int`'s magnitude, or on two values
+  of one generator differing → `Gen.int`, `Gen.int32`, `Gen.int64` and
+  `Gen.nativeint` draw small values and the edges of powers of two
+  first, about 58% of `Gen.int` within 256 of 0, and a draw repeats an
+  earlier value of its generator in the case one time in eight. A range
+  draws uniformly apart from its corners, as in 0.2, so a `cover ~share`
+  over `Gen.int_range 0 9999` keeps its share. State the domain a law
+  needs as a range, and a law that needs two distinct values with
+  `assume (a <> b)`.
 
 ## Stateful testing
 
