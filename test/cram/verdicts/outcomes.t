@@ -190,10 +190,10 @@ the property drew more cases than its count to decide:
   ──────────────────────── failures ────────────────────────
     VACUOUS  rarely accepts
       test/cram/verdicts/verdict_main.ml:N
-      cover "accepted" ~share:0.2: 9.6% of 800 cases, at most 17.9%
+      cover "accepted" ~share:0.2: 8.9% of 800 cases, at most 17.0%
       scope: 800 cases passed
       labels (800 passing cases):
-          9.6%  accepted
+          8.9%  accepted
   ──────────────────────────────────────────────────────────
   
   1 vacuous in DURATION.

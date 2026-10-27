@@ -4,10 +4,10 @@
   --------------------------------------------------------------------------*)
 
 (* The distributions (stratified nat, float bit patterns) follow QCheck2's
-   tuning (https://github.com/c-cube/qcheck); the integers by scale and the
-   copies of earlier calls follow Hypothesis's providers and mutator, and
-   the float encoding is Hypothesis's (MacIver and Donaldson, ECOOP
-   2020). *)
+   tuning (https://github.com/c-cube/qcheck); the whole integer types by
+   scale and the copies of earlier calls follow Hypothesis's providers and
+   mutator, and the float encoding is Hypothesis's (MacIver and Donaldson,
+   ECOOP 2020). *)
 
 (* Renderings *)
 
@@ -247,6 +247,8 @@ module type Integer = sig
   val succ : t -> t
   val to_int64 : t -> int64
   val of_int64 : int64 -> t
+  val min_int : t
+  val max_int : t
   val tag : int (* the type, in an integer generator's key *)
 end
 
@@ -311,11 +313,11 @@ let ranked src ~low ~high ~origin encode sample =
     let distance = Option.map (fun x -> Int64.sub x origin) x in
     Int64.add origin (Choice.choice src ~bound:above distance)
 
-(* A distance to the origin by scale, so that small values and the edges of
-   each power of two come first, as the small scope hypothesis argues
-   (SmallCheck, Runciman et al. 2008: a program that fails almost always
-   fails in some simple case). A side whose extent is at most 256 draws it
-   uniformly, as Hypothesis's integers do inside 256 (providers.py,
+(* A whole type's distance to the origin by scale, so that small values and
+   the edges of each power of two come first, as the small scope hypothesis
+   argues (SmallCheck, Runciman et al. 2008: a program that fails almost
+   always fails in some simple case). A side whose extent is at most 256
+   draws it uniformly, as Hypothesis's integers do inside 256 (providers.py,
    INTEGERS_DISTRIBUTION). A wider one draws a bit length [k], uniform over
    0..8 or over 0..the extent's, with equal probability, then a distance of
    [k] bits, \[2^(k-1);2^k - 1\]: one draw in four an edge of the scale, its
@@ -384,6 +386,23 @@ let scaled ~low ~high ~origin state =
     let d, state = scaled_distance above state in
     (Int64.add origin d, state)
 
+(* A range's draw: uniform over \[[low];[high]\], since a range states the
+   domain its values come from. A span that [Seed.below] cannot bound takes
+   whole words, and at least half of them fall in the range. *)
+let uniform ~low ~high state =
+  let span = Int64.sub high low in
+  if Int64.compare span 0L >= 0 && Int64.compare span Int64.max_int < 0 then
+    let offset, state = Seed.below ~bound:(Int64.succ span) state in
+    (Int64.add low offset, state)
+  else
+    let rec draw state =
+      let bits, state = Seed.bits64 state in
+      if Int64.compare low bits <= 0 && Int64.compare bits high <= 0 then
+        (bits, state)
+      else draw state
+    in
+    draw state
+
 (* An integer generator; [check] validates the arguments inside the parse.
    Its key is its type and range, so two generators of one range share their
    pool: [int_range 0 9] built twice, or [pair int int], repeats values across
@@ -404,7 +423,8 @@ let integer (type n) (module N : Integer with type t = n) pp ?(check = ignore)
   }
 
 (* The range generator [name] of an integer type: its origin is the point
-   closest to [0], and [scaled] draws once [low <= high] holds. *)
+   closest to [0]. Once [low <= high] holds, the type's whole range draws by
+   [scaled] and any other range by [uniform]. *)
 let range (type n) (module N : Integer with type t = n) ~name pp low high =
   let origin = N.max low (N.min high N.zero) in
   (* The neighbours stay inside the range, where they cannot overflow. *)
@@ -417,11 +437,13 @@ let range (type n) (module N : Integer with type t = n) ~name pp low high =
   let check () =
     if N.compare high low < 0 then invalid_arg (name ^ ": high < low")
   in
+  let sample =
+    if N.compare low N.min_int = 0 && N.compare high N.max_int = 0 then
+      scaled ~origin:(N.to_int64 origin)
+    else uniform
+  in
   let draw state =
-    let v, state =
-      scaled ~low:(N.to_int64 low) ~high:(N.to_int64 high)
-        ~origin:(N.to_int64 origin) state
-    in
+    let v, state = sample ~low:(N.to_int64 low) ~high:(N.to_int64 high) state in
     (N.of_int64 v, state)
   in
   integer (module N) pp ~check ~low ~high ~origin (with_corners corners draw)

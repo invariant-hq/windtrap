@@ -521,9 +521,9 @@ let replayed_values () =
     int: 70368744177663
     nat: 254
     float: 3.626460398842157e-116
-    string_of: "kz"
-    list of small_int: [-5; 6; -6; -789]
-    option, one_of and frequency: (Some (false), 4, 1)
+    string_of: "emev"
+    list of small_int: [1809; 3; -7; 0; 2]
+    option, one_of and frequency: (Some (false), 9, 0)
     list of the default length: [false; false]
     |}
 
@@ -550,11 +550,12 @@ let replayed_choices () =
    samplers consume a frozen stream, so every row is exact and the tolerance
    is zero: a changed bin is a changed distribution.
 
-   What each one is for. An integer comes small or at an edge first, as the
-   small scope hypothesis argues (a program that fails almost always fails in
-   some simple case): a range of at most 256 values a side is uniform, a
-   wider one draws half its distances below 256 and one in four at an edge of
-   a power of two, and one draw in ten is a corner. [nat], [small_int] and
+   What each one is for. A whole integer type comes small or at an edge
+   first, as the small scope hypothesis argues (a program that fails almost
+   always fails in some simple case): a side of at most 256 values is
+   uniform, a wider one draws half its distances below 256 and one in four at
+   an edge of a power of two. A range is uniform, since it states the domain
+   its values come from. One draw in ten is a corner. [nat], [small_int] and
    the lengths of a collection keep their strata, which favour small values
    too, and a float spreads over its bit patterns. A call repeats an earlier
    value of its generator in the case one time in eight, so that a
@@ -723,17 +724,17 @@ let distributions () =
       mean -21.85, sd 1361, in [-9904;9967]
       bins 16 10 14 1553 372 10 12 13, 627 distinct, 07ca8332
     int_range -5 5
-      mean -0.079, sd 3.164, in [-5;5]
-      bins 384 162 171 207 391 166 170 349, 11 distinct, 4886fc8c
+      mean -0.0855, sd 3.182, in [-5;5]
+      bins 386 164 161 213 397 176 149 354, 11 distinct, 07f3ad10
     int_range 3 1000
-      mean 121.1, sd 233.4, in [3;1000]
-      bins 1531 195 77 33 47 18 8 91, 316 distinct, 2bbd8283
+      mean 488, sd 314.3, in [3;1000]
+      bins 354 225 241 209 207 250 227 287, 812 distinct, d173cf9c
     int32
       mean -6.509e+06, sd 4.982e+08, in [-2.147e+09;2.147e+09]
       bins 52 6 19 913 943 16 3 48, 816 distinct, 55c9feef
     int32_range -7l 9l
-      mean 0.796, sd 4.943, in [-7;9]
-      bins 261 226 233 277 241 203 211 348, 17 distinct, 5f033c22
+      mean 0.8395, sd 4.982, in [-7;9]
+      bins 258 239 206 301 223 213 185 375, 17 distinct, 2285489d
     int64
       mean -2.099e+15, sd 2.014e+18, in [-9.223e+18;9.223e+18]
       bins 47 2 6 368 1519 10 3 45, 950 distinct, 54e351cd
@@ -741,14 +742,14 @@ let distributions () =
       mean -2.099e+15, sd 2.014e+18, in [-9.223e+18;9.223e+18]
       bins 47 2 6 368 1519 10 3 45, 950 distinct, 54e351cd
     int64_range 0L 99L
-      mean 46.87, sd 30.94, in [0;99]
-      bins 375 221 230 236 215 253 200 270, 100 distinct, 2aed87c4
+      mean 48.84, sd 31.48, in [0;99]
+      bins 369 174 254 209 198 257 226 313, 100 distinct, 63f5c1cf
     nativeint
       mean -2.099e+15, sd 2.014e+18, in [-9.223e+18;9.223e+18]
       bins 47 2 6 368 1519 10 3 45, 950 distinct, b4ef4698
     nativeint_range -3n 3n
-      mean 0.006, sd 1.977, in [-3;3]
-      bins 280 265 301 0 312 285 273 284, 7 distinct, a6001900
+      mean 0.031, sd 2.05, in [-3;3]
+      bins 309 270 267 0 281 270 283 320, 7 distinct, de860e77
     float, by binary exponent
       mean -18.29, sd 614.6, in [-1073;1024]
       bins 278 211 227 235 310 239 234 266, 1818 distinct, 272e5780
@@ -783,14 +784,14 @@ let distributions () =
       mean 4.569, sd 7.892, in [0;62]
       bins 1729 192 12 20 13 11 13 10, 1494 distinct, 7e20cc36
     string_of ~size:(int_range 0 6) (char_range 'a' 'c')
-      mean 2.917, sd 2.055, in [0;6]
-      bins 311 338 266 0 249 255 289 292, 520 distinct, 1bed5ee9
+      mean 2.982, sd 2.115, in [0;6]
+      bins 319 344 229 0 243 237 283 345, 548 distinct, 8ed1b0fa
     bytes
       mean 4.569, sd 7.892, in [0;62]
       bins 1729 192 12 20 13 11 13 10, 1494 distinct, 424a05f7
     bytes_of ~size:(int_range 0 3) char
-      mean 1.466, sd 1.129, in [0;3]
-      bins 525 0 519 0 0 455 0 501, 1167 distinct, d09c1a8d
+      mean 1.473, sd 1.138, in [0;3]
+      bins 527 0 518 0 0 437 0 518, 1176 distinct, 06a1c990
     list bool
       mean 4.569, sd 7.892, in [0;62]
       bins 1729 192 12 20 13 11 13 10, 435 distinct, e8f90914
@@ -798,8 +799,8 @@ let distributions () =
       mean 4.569, sd 7.892, in [0;62]
       bins 1729 192 12 20 13 11 13 10, 1530 distinct, 5824e76b
     list ~size:(int_range 2 4) small_int, by sum
-      mean -12.74, sd 2412, in [-2.698e+04;1.648e+04]
-      bins 1 0 3 64 1480 388 59 5, 1929 distinct, 25eb6e22
+      mean -12.27, sd 2564, in [-2.975e+04;2.029e+04]
+      bins 2 3 3 58 1805 92 34 3, 1931 distinct, 16d09d8f
     array nat
       mean 4.569, sd 7.892, in [0;62]
       bins 1729 192 12 20 13 11 13 10, 1400 distinct, 79f06d49
@@ -834,11 +835,11 @@ let distributions () =
       mean 2.493, sd 1.718, in [0;5]
       bins 353 310 0 335 333 0 338 331, 681 distinct, 7f93fcda
     one_of [int_range 0 9; int_range 100 109]
-      mean 53.04, sd 50.04, in [0;109]
-      bins 1026 0 0 0 0 0 0 974, 20 distinct, d0c9e810
+      mean 53.07, sd 50.1, in [0;109]
+      bins 1026 0 0 0 0 0 0 974, 20 distinct, 6305e483
     frequency [1, 0..9; 3, 100..109; 0, 1000]
-      mean 78, sd 44.17, in [0;109]
-      bins 527 0 0 0 0 0 0 1473, 20 distinct, 408bf1f2
+      mean 78.02, sd 44.12, in [0;109]
+      bins 527 0 0 0 0 0 0 1473, 20 distinct, 7bab34ee
     such_that even nat
       mean 342.1, sd 1224, in [0;9840]
       bins 1916 16 11 10 10 12 12 13, 379 distinct, aae110f1
@@ -846,21 +847,22 @@ let distributions () =
       mean 368.4, sd 1272, in [1;9979]
       bins 1911 7 15 19 12 13 10 13, 486 distinct, 0907295b
     bind (int_range 0 20) (fun n -> int_range 0 n)
-      mean 4.764, sd 5.129, in [0;20]
-      bins 927 276 295 135 154 83 69 61, 21 distinct, 5cc06370
+      mean 4.774, sd 5.072, in [0;20]
+      bins 916 270 316 129 171 71 73 54, 21 distinct, 2f43b56f
     bind (list ~size:(int_range 1 4) nat) of_list
-      mean 330.6, sd 1146, in [0;9953]
-      bins 1920 10 17 11 12 12 8 10, 490 distinct, dff98ec0
+      mean 373.4, sd 1296, in [0;9787]
+      bins 1906 16 12 12 13 14 10 17, 482 distinct, 95c8a1d9
     with_pp nat
       mean 367.4, sd 1272, in [0;9978]
       bins 1911 7 15 19 12 13 10 13, 486 distinct, a76cc67c
     |}
 
 (* What the distributions do inside a case, over 10,000 cases each, counted
-   exactly. Under 0.2's uniform integers and independent draws these shares
-   were about 5.9%, 0.15%, 6.3%, 24% and 14%: a bug that needs a small
+   exactly. Under 0.2's uniform integers and independent draws the first four
+   shares were about 5.9%, 0.15%, 6.3% and 24%: a bug that needs a small
    integer, two equal ones or a repeated element was found through the
-   corners alone. *)
+   corners alone. A range stays as uniform as 0.2's: [int_range 3 1000]
+   draws above 200 about three times in four. *)
 let in_case () =
   let n = 10_000 in
   let row name values p =
@@ -888,6 +890,9 @@ let in_case () =
          row "int_range 3 1000, at most 100"
            (samples (Gen.int_range 3 1000) n)
            (fun x -> x <= 100);
+         row "int_range 3 1000, above 200"
+           (samples (Gen.int_range 3 1000) n)
+           (fun x -> x > 200);
        ])
   @@ __POS_OF__
        {|
@@ -895,7 +900,8 @@ let in_case () =
     pair int int, equal: 1352 of 10000
     list int of length 2 or more, a duplicate: 2788 of 6572
     list string of length 2 or more, a duplicate: 3068 of 6572
-    int_range 3 1000, at most 100: 7398 of 10000
+    int_range 3 1000, at most 100: 1578 of 10000
+    int_range 3 1000, above 200: 7586 of 10000
     |}
 
 let generators =
@@ -1214,16 +1220,16 @@ let sized_range (Sized (name, range, whole, w, zero)) =
         (fun (_, child) -> within w low high child)
         (edges ~limit:100 tree))
 
-(* [-2^62; Int64.max_int] counts more than 2^63 values, and a side's share
-   counts its values up to 256: 256 below [0] against 257 from it, so a
-   little under half the draws but the corners are negative, and two of the
-   five corners. *)
+(* [-2^62; Int64.max_int] counts more than 2^63 values, which [Seed.below]
+   cannot bound, and it is a range, not the whole type, so it draws uniformly:
+   a third of the draws but the corners are negative, and two of the five
+   corners. *)
 let wide_int64_range () =
   let values =
     samples (Gen.int64_range (Int64.div Int64.min_int 2L) Int64.max_int) 4_000
   in
   equal (float 0.02)
-    ((0.9 *. 256. /. 513.) +. (0.1 *. 2. /. 5.))
+    ((0.9 *. 1. /. 3.) +. (0.1 *. 2. /. 5.))
     (share values (fun v -> Int64.compare v 0L < 0))
 
 (* Half the finite bit patterns are negative, and half have a magnitude of at
@@ -1292,8 +1298,8 @@ let numbers =
       group "a range of int32, int64 or nativeint behaves as int_range"
         (List.map sized_range sized_ranges);
       test
-        "int64_range over more than 2^63 values draws each side by its values \
-         up to 256"
+        "int64_range over more than 2^63 values draws uniformly apart from its \
+         corners"
         wide_int64_range;
       literals
         "a number prints as an OCaml literal, a float as its shortest round \

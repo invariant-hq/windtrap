@@ -382,14 +382,14 @@ let table () =
   expect (String.concat "\n" (List.map row benchmarks))
   @@ __POS_OF__
        {|
-    bound5, minimum 2: 57% there, worst 5, 129 runs (max 664)
+    bound5, minimum 2: 37% there, worst 16, 157 runs (max 3508)
     large union list, minimum 6: 100% there, worst 6, 141 runs (max 216)
     nested lists, minimum 12: 100% there, worst 12, 102 runs (max 196)
     reverse, minimum 2: 100% there, worst 2, 32 runs (max 72)
     calculator, minimum 5: 100% there, worst 5, 87 runs (max 200)
     queue, capacity 2, minimum 6: 100% there, worst 6, 98 runs (max 118)
     queue, capacity 3, minimum 8: 100% there, worst 8, 135 runs (max 158)
-    key-value, minimum 4: 100% there, worst 4, 85 runs (max 263)
+    key-value, minimum 4: 100% there, worst 4, 86 runs (max 253)
     |}
 
 (* Stateful programs *)
@@ -732,7 +732,7 @@ let programs =
            {| element 500, minimum 2: 100% there, mean 2.00, worst 2, 105 runs (max 106), 100 tokens replay |};
       pinned guide_set
       @@ __POS_OF__
-           {| the guide's set, minimum 5: 84% there, mean 5.16, worst 6, 124 runs (max 161), 100 tokens replay |};
+           {| the guide's set, minimum 5: 84% there, mean 5.16, worst 6, 125 runs (max 179), 100 tokens replay |};
       pinned bank_transfer
       @@ __POS_OF__
            {| bank, minimum 6: 94% there, mean 6.06, worst 7, 147 runs (max 195), 100 tokens replay |};

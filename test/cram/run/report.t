@@ -200,10 +200,10 @@ scope for a test that ran no case. The durations are masked:
   [1]
   $ sed -E 's/"duration": [0-9.e-]+/"duration": D/g' scope.json
   {"version": 1, "suite": "fixture", "seed": "s1:0000000000000001", "tests": [
-    {"path": ["labels"], "verdict": "pass", "attempts": 1, "duration": D, "failures": [], "scope": {"cases": 200, "examples": 1, "count": 200, "discards": 38, "labels": [{"label": "even", "cases": 67}, {"label": "small", "cases": 138}], "cover": [{"label": "small", "cases": 138, "met": true}], "tolerances": []}},
+    {"path": ["labels"], "verdict": "pass", "attempts": 1, "duration": D, "failures": [], "scope": {"cases": 200, "examples": 1, "count": 200, "discards": 26, "labels": [{"label": "even", "cases": 77}, {"label": "small", "cases": 26}], "cover": [{"label": "small", "cases": 26, "met": true}], "tolerances": []}},
     {"path": ["rows"], "verdict": "pass", "attempts": 1, "duration": D, "failures": [], "scope": {"cases": 3, "examples": 0, "count": 3, "discards": 0, "rows": 3, "skipped": 0, "labels": [], "cover": [], "tolerances": []}},
     {"path": ["counter"], "verdict": "pass", "attempts": 1, "duration": D, "failures": [], "scope": {"cases": 20, "examples": 0, "count": 20, "discards": 0, "labels": [], "cover": [], "tolerances": []}},
-    {"path": ["shares"], "verdict": "pass", "attempts": 1, "duration": D, "failures": [], "scope": {"cases": 800, "examples": 0, "count": 800, "discards": 0, "labels": [{"label": "a quarter", "cases": 222}], "cover": [{"label": "a quarter", "cases": 222, "met": true, "share": {"demand": 0.2, "hits": 222, "cases": 800, "low": 0.19236219075473532, "high": 0.3824742879474897}}], "tolerances": []}},
+    {"path": ["shares"], "verdict": "pass", "attempts": 1, "duration": D, "failures": [], "scope": {"cases": 800, "examples": 0, "count": 800, "discards": 0, "labels": [{"label": "a quarter", "cases": 225}], "cover": [{"label": "a quarter", "cases": 225, "met": true, "share": {"demand": 0.2, "hits": 225, "cases": 800, "low": 0.1955750628738418, "high": 0.3864270931536267}}], "tolerances": []}},
     {"path": ["plain"], "verdict": "pass", "attempts": 1, "duration": D, "failures": [], "scope": {"tolerances": []}},
     {"path": ["close"], "verdict": "pass", "attempts": 1, "duration": D, "failures": [], "scope": {"tolerances": [{"file": "test/cram/run/suite_main.ml", "line": 139, "comparisons": 1, "error": 0.04999999999999716, "tolerance": 0.10005}, {"file": "test/cram/run/suite_main.ml", "line": 140, "comparisons": 1, "error": 3.000000026176508e-09, "tolerance": 1e-06}]}},
     {"path": ["far"], "verdict": "fail", "attempts": 1, "duration": D, "failures": [{"headline": "expected 1., got 1.5", "file": "test/cram/run/suite_main.ml", "line": 142}], "scope": {"tolerances": [{"file": "test/cram/run/suite_main.ml", "line": 142, "comparisons": 1, "error": 0.5, "tolerance": 1e-06}, {"file": "test/cram/run/suite_main.ml", "line": 143, "comparisons": 1, "error": 1.000000082740371e-09, "tolerance": 1e-06}]}},
@@ -218,16 +218,16 @@ Under -v the terminal says the same of each passing test, on its row:
 
   $ run env FACADE_FIXTURE=scope ./suite_main.exe --seed s1:0000000000000001 -v -f labels -f rows -f counter -f shares -f close -f near | sed -E 's/  [0-9.]+m?s/  DURATION/' | scrub
   fixture: 6 tests (seed SEED)
-    PASS  labels                                     DURATION (200 cases, 1 example, 38 discards)
+    PASS  labels                                     DURATION (200 cases, 1 example, 26 discards)
       labels (201 passing cases):
-         33.3%  even
-         68.7%  small
+         38.3%  even
+         12.9%  small
     PASS  rows                                       DURATION (holds on all 3 rows)
     PASS  counter                                    DURATION (20 cases)
     PASS  shares                                     DURATION (800 cases)
       labels (800 passing cases):
-         27.8%  a quarter
-      cover "a quarter" ~share:0.2: 27.8% of 800 cases, at least 19.2%
+         28.1%  a quarter
+      cover "a quarter" ~share:0.2: 28.1% of 800 cases, at least 19.6%
     PASS  close                                      DURATION
       tolerance at test/cram/run/suite_main.ml:139: largest error 0.05 of 0.1 allowed, over 1 comparison
       tolerance at test/cram/run/suite_main.ml:140: largest error 3e-09 of 1e-06 allowed, over 1 comparison
