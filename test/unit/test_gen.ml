@@ -572,7 +572,7 @@ let summarise (Summary (name, gen, project)) =
     (fun x ->
       let bin =
         if high = low then 0
-        else Float.to_int (8. *. (x -. low) /. (high -. low))
+        else Float.to_int (8. *. ((x -. low) /. (high -. low)))
       in
       bins.(Int.min 7 bin) <- bins.(Int.min 7 bin) + 1)
     xs;
@@ -754,7 +754,7 @@ let distributions () =
       bins 295 233 218 233 216 227 229 349, 1811 distinct, c445286b
     float_range 1e300 max_float
       mean inf, sd inf, in [1e+300;1.798e+308]
-      bins 2000 0 0 0 0 0 0 0, 1811 distinct, 5eec09c2
+      bins 359 233 218 233 216 227 229 285, 1811 distinct, 5eec09c2
     unit
       mean 0, sd 0, in [0;0]
       bins 2000 0 0 0 0 0 0 0, 1 distinct, eab2fc4d
