@@ -524,7 +524,7 @@ geo: 3 tests (seed s1:5b58964be30f69a8)
     examples/03-property-testing/test_geo.ml:85
       85 │ prop "reads back what it prints" gen_shape
 
-    counterexample (case 1, shrunk 5 steps): Rect (1, 0)
+    counterexample (case 1, shrunk 6 steps): Rect (1, 0)
     replay it: -f 'codec › reads back what it prints' --replay r1:AQEA:3e9ef408
     which failed with:
       round trip: g (f x) = x
@@ -633,11 +633,11 @@ geo: 3 tests (seed s1:5b58964be30f69a8)
     examples/03-property-testing/test_geo.ml:113
       113 │ prop "compare_drawing is a total order"
 
-    counterexample (case 0, shrunk 11 steps): (Rect (0, 0), Circle 0, Circle 0)
-    replay it: -f 'witness › compare_drawing is a total order' --replay r1:AAEAAAAAAAAAAA:aafd5fae
+    counterexample (case 0, shrunk 7 steps): (Circle 1, Circle 0, Circle 0)
+    replay it: -f 'witness › compare_drawing is a total order' --replay r1:AAABAAAAAAAA:1f5931c0
     which failed with:
       order (agrees with equal): cmp a b = 0 iff a = b
-      a        Rect (0, 0)
+      a        Circle 1
       b        Circle 0
       cmp a b  1
       a = b    true

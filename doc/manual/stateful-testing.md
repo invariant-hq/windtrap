@@ -161,7 +161,7 @@ $ dune exec examples/04-stateful-testing/test_bounded_queue.exe -- -v --seed s1:
 bounded_queue: 1 test (seed s1:c26eddaeb764a645)
   PASS  queue › behaves like a list                3.7ms (100 cases)
     labels (100 passing cases):
-       60.0%  reached capacity
+       57.0%  reached capacity
 1 passed in 4.9ms.
 ```
 
@@ -223,7 +223,7 @@ bounded_queue: 1 test (seed s1:c26eddaeb764a645)
     examples/04-stateful-testing/test_bounded_queue.ml:39
       39 │ let queues = group "queue" [ stateful "behaves like a list" commands ]
 
-    counterexample (case 0, shrunk 19 steps): 3 calls, last: push
+    counterexample (case 0, shrunk 11 steps): 3 calls, last: push
        #  reference before  call
        1                    let q1 = create 1
        2  []                push q1 0
@@ -380,20 +380,20 @@ lru: 1 test (seed s1:c26eddaeb764a645)
     examples/04-stateful-testing/test_lru.ml:41
       41 │ let caches = group "Lru" [ stateful "behaves like a list" commands ]
 
-    counterexample (case 34, shrunk 20 steps): 4 calls, last: find
+    counterexample (case 24, shrunk 17 steps): 4 calls, last: find
        #  reference before  call
        1                    let c1 = create 2
-       2  []                add c1 3 0
-       3  [(3, 0)]          add c1 0 0
-       4  [(0, 0); (3, 0)]  find c1 3
-    replay it: -f 'Lru › behaves like a list' --replay r1:AQABAQEAAwABAQAAAAECAAMA:9f59d852
+       2  []                add c1 2 0
+       3  [(2, 0)]          add c1 0 0
+       4  [(0, 0); (2, 0)]  find c1 2
+    replay it: -f 'Lru › behaves like a list' --replay r1:AQABAQEAAgABAQAAAAECAAIA:4c22d617
     which failed with:
       after call 4 of 4, on c1
-      expected  [(3, 0); (0, 0)]
+      expected  [(2, 0); (0, 0)]
                   ~       ~
-      actual    [(0, 0); (3, 0)]
+      actual    [(0, 0); (2, 0)]
                   ~       ~
-    scope: 34 cases passed
+    scope: 24 cases passed
 ──────────────────────────────────────────────────────────
 
 replay: dune exec examples/04-stateful-testing/planted/lru/test_lru.exe -- --seed s1:c26eddaeb764a645
@@ -403,9 +403,9 @@ replay: dune exec examples/04-stateful-testing/planted/lru/test_lru.exe -- --see
 `after call 4 of 4, on c1` names the call after which the invariant
 failed, and the value it failed on. Without the invariant, the program
 must also draw a call that shows the order after the `find`, such as
-`to_list`. Over 200 seeds, this test finds the bug on 145
+`to_list`. Over 200 seeds, this test finds the bug on 135
 without the invariant and on 198 with it, and the median case that
-finds it falls from 33 to 13.
+finds it falls from 32 to 13.
 
 The invariant runs on both sides after every call, and no row of the
 report shows it, so it must not change the state. `to_list` qualifies.
@@ -462,7 +462,7 @@ vec: 1 test (seed s1:3d27fa99e7f6ae87)
     examples/04-stateful-testing/test_vec.ml:33
       33 │ let vecs = group "Vec" [ stateful "behaves like a list" commands ]
 
-    counterexample (case 2, shrunk 35 steps): 5 calls, last: get
+    counterexample (case 25, shrunk 36 steps): 5 calls, last: get
        #  reference before  call
        1                    let v1 = create ()
        2  []                push v1 0
@@ -476,7 +476,7 @@ vec: 1 test (seed s1:3d27fa99e7f6ae87)
       call 5 of 5: get v1 1
       expected  1
       actual    0
-    scope: 2 cases passed
+    scope: 25 cases passed
 ──────────────────────────────────────────────────────────
 
 replay: dune exec examples/04-stateful-testing/planted/vec/test_vec.exe -- --seed s1:3d27fa99e7f6ae87
@@ -486,9 +486,9 @@ replay: dune exec examples/04-stateful-testing/planted/vec/test_vec.exe -- --see
 The element is drawn with the program as a place in its list, relative
 to the list's length, so deleting an earlier call keeps its place. It
 shrinks toward the head of the list, here to index 1, the first that
-fails. Over 200 seeds, this test finds the bug on 198, and on 195
+fails. Over 200 seeds, this test finds the bug on all 200, and on 188
 when `get` and `set` draw their index from `0` to `7`. The median case
-that finds it falls from 17 to 16.
+that finds it falls from 18 to 13.
 
 An element reads the nearest value of `t` before it in the signature,
 else the first one after it. A function that takes a key before its map
@@ -818,13 +818,13 @@ could lose one:
 
 ```
 $ dune exec examples/04-stateful-testing/planted/mpmc/test_mpmc.exe
-mpmc: 2 tests (seed s1:4974eb4158b03e43)
+mpmc: 2 tests (seed s1:2e824975c4f33a06)
 ──────────────────────── failures ────────────────────────
   FAIL  Mpmc › behaves like Queue from two domains
     examples/04-stateful-testing/test_mpmc.ml:20
       20 │ stateful ~domains:2 "behaves like Queue from two domains" commands;
 
-    counterexample (case 1, shrunk 28 steps): 4 calls, 2 in parallel
+    counterexample (case 1, shrunk 30 steps): 4 calls, 2 in parallel
        #  domain  call                result
        1          let q1 = create ()
        2  1       push q1 0           ()
@@ -839,7 +839,7 @@ mpmc: 2 tests (seed s1:4974eb4158b03e43)
     scope: 1 case passed
 ──────────────────────────────────────────────────────────
 
-replay: dune exec examples/04-stateful-testing/planted/mpmc/test_mpmc.exe -- --seed s1:4974eb4158b03e43
+replay: dune exec examples/04-stateful-testing/planted/mpmc/test_mpmc.exe -- --seed s1:2e824975c4f33a06
 1 passed, 1 failed in 32ms.
 ```
 
@@ -920,19 +920,19 @@ vault: 1 test (seed s1:c26eddaeb764a645)
     examples/04-stateful-testing/test_vault.ml:19
       19 │ let vaults = group "Vault" [ stateful "logs nothing of a pin" commands ]
 
-    counterexample (case 0, shrunk 30 steps): 3 calls, last: log
+    counterexample (case 0, shrunk 17 steps): 3 calls, last: log
        #  call
        1  let v1 = create ()
-       2  store v1 ((0, 1))
+       2  store v1 ((1, 0))
        3  log v1
-    replay it: -f 'Vault › logs nothing of a pin' --replay r1:AQABAQAAAQEDAAA:e8c77e80
+    replay it: -f 'Vault › logs nothing of a pin' --replay r1:AQABAQABAAEDAAA:8b8db207
     which failed at:
       examples/04-stateful-testing/test_vault.ml:16
         16 │ command "log" (vault ^-> returns (list string)) Vault.log Vault.log;
       call 3 of 3: log v1
-      expected  ["stored ...0"]
+      expected  ["stored ...1"]
                             ~
-      actual    ["stored ...1"]
+      actual    ["stored ...0"]
                             ~
 ──────────────────────────────────────────────────────────
 
