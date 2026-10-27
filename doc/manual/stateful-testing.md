@@ -161,7 +161,7 @@ $ dune exec examples/04-stateful-testing/test_bounded_queue.exe -- -v --seed s1:
 bounded_queue: 1 test (seed s1:c26eddaeb764a645)
   PASS  queue › behaves like a list                3.7ms (100 cases)
     labels (100 passing cases):
-       46.0%  reached capacity
+       60.0%  reached capacity
 1 passed in 4.9ms.
 ```
 
@@ -264,7 +264,7 @@ bounded_queue: 1 test (seed s1:c26eddaeb764a645)
     examples/04-stateful-testing/test_bounded_queue.ml:39
       39 │ let queues = group "queue" [ stateful "behaves like a list" commands ]
 
-    counterexample (case 0, shrunk 22 steps): 2 calls, last: pop
+    counterexample (case 0, shrunk 19 steps): 2 calls, last: pop
        #  reference before  call
        1                    let q1 = create 1
        2  []                pop q1
@@ -380,7 +380,7 @@ lru: 1 test (seed s1:c26eddaeb764a645)
     examples/04-stateful-testing/test_lru.ml:41
       41 │ let caches = group "Lru" [ stateful "behaves like a list" commands ]
 
-    counterexample (case 63, shrunk 20 steps): 4 calls, last: find
+    counterexample (case 34, shrunk 20 steps): 4 calls, last: find
        #  reference before  call
        1                    let c1 = create 2
        2  []                add c1 3 0
@@ -393,7 +393,7 @@ lru: 1 test (seed s1:c26eddaeb764a645)
                   ~       ~
       actual    [(0, 0); (3, 0)]
                   ~       ~
-    scope: 63 cases passed
+    scope: 34 cases passed
 ──────────────────────────────────────────────────────────
 
 replay: dune exec examples/04-stateful-testing/planted/lru/test_lru.exe -- --seed s1:c26eddaeb764a645
@@ -462,7 +462,7 @@ vec: 1 test (seed s1:3d27fa99e7f6ae87)
     examples/04-stateful-testing/test_vec.ml:33
       33 │ let vecs = group "Vec" [ stateful "behaves like a list" commands ]
 
-    counterexample (case 2, shrunk 38 steps): 5 calls, last: get
+    counterexample (case 2, shrunk 35 steps): 5 calls, last: get
        #  reference before  call
        1                    let v1 = create ()
        2  []                push v1 0
@@ -660,7 +660,7 @@ guard: 1 test (seed s1:c26eddaeb764a645)
     examples/04-stateful-testing/test_guard.ml:49
       49 │ let guards = group "Guard" [ stateful "keeps its policy" commands ]
 
-    counterexample (case 6, shrunk 6 steps): 3 calls, last: http_get
+    counterexample (case 3, shrunk 17 steps): 3 calls, last: http_get
        #  reference before        call                              result
        1                          let g1 = create ()
        2  clean                   read_file g1 ./secrets/api.key    Ran "read secrets/api.key"
@@ -671,7 +671,7 @@ guard: 1 test (seed s1:c26eddaeb764a645)
         44 │ command "http_get"
       call 3 of 3: http_get g1 https://example.com/
       http_get ran after ./secrets/api.key was read
-    scope: 6 cases passed
+    scope: 3 cases passed
 ──────────────────────────────────────────────────────────
 
 replay: dune exec examples/04-stateful-testing/planted/guard/test_guard.exe -- --seed s1:c26eddaeb764a645
@@ -920,23 +920,20 @@ vault: 1 test (seed s1:c26eddaeb764a645)
     examples/04-stateful-testing/test_vault.ml:19
       19 │ let vaults = group "Vault" [ stateful "logs nothing of a pin" commands ]
 
-    counterexample (case 1, shrunk 17 steps): 3 calls, last: log
+    counterexample (case 0, shrunk 30 steps): 3 calls, last: log
        #  call
        1  let v1 = create ()
-       2  store v1 ((1, 0))
+       2  store v1 ((0, 1))
        3  log v1
-    replay it: -f 'Vault › logs nothing of a pin' --replay r1:AQABAQABAAEDAAA:8b8db207
+    replay it: -f 'Vault › logs nothing of a pin' --replay r1:AQABAQAAAQEDAAA:e8c77e80
     which failed at:
       examples/04-stateful-testing/test_vault.ml:16
         16 │ command "log" (vault ^-> returns (list string)) Vault.log Vault.log;
       call 3 of 3: log v1
-      expected  ["stored ...1"]
+      expected  ["stored ...0"]
                             ~
-      actual    ["stored ...0"]
+      actual    ["stored ...1"]
                             ~
-    scope: 1 case passed
-    labels (1 passing case):
-      100.0%  the pins differ
 ──────────────────────────────────────────────────────────
 
 replay: dune exec examples/04-stateful-testing/planted/vault/test_vault.exe -- --seed s1:c26eddaeb764a645

@@ -213,15 +213,29 @@ sequence parses. A choice whose bound is `0` is recorded too, so a
 deletion that brings a bound to `0` leaves the choices after it in
 place (the key-value benchmark goes from 45% to 100% at the minimum).
 
-- **Drawing.** A primitive draws its value with 0.2's sampler and
+- **Drawing.** A primitive draws its value with its sampler and
   records the choices that encode it; it never draws a choice by
-  itself. The samplers consume the frozen stream exactly as 0.2's did,
-  `Seed.split` included at `bind`, `one_of`, `such_that` and a sized
-  `list`, so every state draws the value 0.2 drew from it, and the
-  distribution of every constructor is 0.2's by construction. The test
-  "every generator draws 0.2's distribution" (`test_gen.ml`) pins each
-  constructor's moments, histogram and a digest of its printings on
-  fixed states, recorded on 0.2: the tolerance is zero, since nothing
+  itself. `Seed.split` is drawn at `bind`, `one_of`, `such_that` and a
+  sized `list`, as 0.2 drew it. The samplers are 0.2's but for the
+  integers: a range of at most 256 values a side is uniform, and a wider
+  side draws its distance to the origin by scale, a bit length uniform
+  over 0..8 or over the side's, one draw in four an edge of the scale,
+  so that small values and powers of two come first (the small scope
+  hypothesis; Hypothesis draws integers within 256 uniformly too).
+- **Repetition.** A generating call of a generator called before in
+  the case copies, with probability 1/8, the choices of one of those
+  calls and parses the same value again, as a span of its own, so that
+  collections hold duplicates and pairs collide (Hypothesis copies a
+  span over another of its label after a run; here the copy happens
+  while drawing). The pools of a case are kept by the source, by the
+  generator's key: an integer generator's type and range, which every
+  generator of that range shares, or a key of its own. A copy replaces
+  the choices; the samplers still run, and a replay copies nothing, so
+  a token replays under any distribution. The tests "every generator
+  draws the distribution of its row" and "a case draws small integers
+  and repeats values" (`test_gen.ml`) pin each constructor's moments,
+  histogram and a digest of its printings, and the shares inside a
+  case, on fixed states: the tolerance is zero, since nothing
   approximates.
 - **Integers.** A value of a range with origin `o` (the point closest
   to `0`) is its distance to `o`, after a side choice (`0` above) when

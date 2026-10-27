@@ -524,7 +524,7 @@ geo: 3 tests (seed s1:5b58964be30f69a8)
     examples/03-property-testing/test_geo.ml:85
       85 │ prop "reads back what it prints" gen_shape
 
-    counterexample (case 0, shrunk 1 step): Rect (1, 0)
+    counterexample (case 1, shrunk 5 steps): Rect (1, 0)
     replay it: -f 'codec › reads back what it prints' --replay r1:AQEA:3e9ef408
     which failed with:
       round trip: g (f x) = x
@@ -533,6 +533,7 @@ geo: 3 tests (seed s1:5b58964be30f69a8)
                         ~
       x        Rect (1, 0)
                         ~
+    scope: 1 case passed
 
   FAIL  codec › prints what it reads
     examples/03-property-testing/test_geo.ml:87
@@ -632,7 +633,7 @@ geo: 3 tests (seed s1:5b58964be30f69a8)
     examples/03-property-testing/test_geo.ml:113
       113 │ prop "compare_drawing is a total order"
 
-    counterexample (case 0, shrunk 4 steps): (Rect (0, 0), Circle 0, Circle 0)
+    counterexample (case 0, shrunk 11 steps): (Rect (0, 0), Circle 0, Circle 0)
     replay it: -f 'witness › compare_drawing is a total order' --replay r1:AAEAAAAAAAAAAA:aafd5fae
     which failed with:
       order (agrees with equal): cmp a b = 0 iff a = b
@@ -863,25 +864,20 @@ let part_of =
     ]
 ```
 
-If the property gave the law its three drawings as drawn, no case would
-form a chain:
+If the property gave the law its three drawings as drawn, few cases
+would form a chain, and the law would check transitivity on those few
+alone:
 
 ```
-$ dune exec examples/03-property-testing/test_geo.exe -- --seed s1:5b58964be30f69a8 -f part_of
+$ dune exec examples/03-property-testing/test_geo.exe -- -v --seed s1:5b58964be30f69a8 -f part_of
 geo: 1 test (seed s1:5b58964be30f69a8)
-──────────────────────── failures ────────────────────────
-  VACUOUS  part_of › is a partial order
-    examples/03-property-testing/test_geo.ml:166
-      166 │ prop "is a partial order"
-
-    never covered: "partial order: a strict chain" (over 100 passing cases)
-    scope: 100 cases passed
-──────────────────────────────────────────────────────────
-
-1 vacuous in 4.8ms.
+  PASS  part_of › is a partial order               1.1ms (100 cases)
+    labels (100 passing cases):
+        1.0%  partial order: a strict chain
+1 passed in 3.3ms.
 ```
 
-A demand that no passing case met makes the property vacuous, with
+A demand that no passing case met would make the property vacuous, with
 `never covered:` and its label, the law's name followed by one of these:
 
 - `an unequal pair`: the witness's equality holds on every pair, as in

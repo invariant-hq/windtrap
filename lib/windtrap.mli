@@ -1068,7 +1068,17 @@ module Gen : sig
       generator first samples.
 
       {b Purity.} The functions given to {!map}, {!bind} and {!such_that} must
-      be pure, because the search for a counterexample runs them again. *)
+      be pure, because the search for a counterexample runs them again.
+
+      {b Repetition.} A draw may repeat a value that the same generator drew
+      earlier in the case, with probability 1/8, each earlier value equally
+      likely, so that a collection holds duplicates and two components collide:
+      [pair int int] draws an equal pair about one time in eight, and a list of
+      two or more [int]s a duplicate about two times in five. Every integer
+      generator of one type and range is the same generator here, so
+      [pair (int_range 0 9) (int_range 0 9)] repeats too, and [pair nat int]
+      does not. The distribution each generator states is that of a draw that
+      repeats nothing. *)
 
   type 'a t = 'a Gen.t
   (** The type for generators of ['a] values. The equation is not part of the
@@ -1080,12 +1090,25 @@ module Gen : sig
       and a finite float as the shortest decimal that round-trips.
 
       {!int}, {!int32}, {!int64}, {!nativeint}, {!float} and their ranges draw a
-      corner case with probability 0.1, each corner equally likely, and draw
-      uniformly otherwise. The corners of a range are its bounds, the point
-      closest to [0] and that point's neighbours inside the range ([Float.pred]
-      and [Float.succ] of a float), and [-0.] too for a float range whose [low]
-      is negative and whose [high] is not. The corners of a whole integer type
-      are [0], [1], [-1] and the type's two extremes. *)
+      corner case with probability 0.1, each corner equally likely. The corners
+      of a range are its bounds, the point closest to [0] and that point's
+      neighbours inside the range ([Float.pred] and [Float.succ] of a float),
+      and [-0.] too for a float range whose [low] is negative and whose [high]
+      is not. The corners of a whole integer type are [0], [1], [-1] and the
+      type's two extremes.
+
+      Otherwise a float draws as it states, and an integer draws small values
+      and the edges of powers of two first, since a program that fails almost
+      always fails in some simple case. It draws a side of the point closest to
+      [0] in proportion to the side's count of values up to 256. A side of at
+      most 256 values is uniform, so [int_range (-5) 5] and [int_range 0 255]
+      are. A wider side draws at least half of its values within 256 of that
+      point, and about one value in four at an edge of a power of two (2{^ k-1},
+      2{^ k} - 1 or 2{^ k} away from it); the others spread over the bit lengths
+      up to the side's. So a range wider than 256 values is not uniform:
+      [int_range 3 1000] draws a value of at most 100 three times in four, and
+      its bounds still come as corners. Of {!int}, about 58% of the values lie
+      in \[[-256];[256]\]. *)
 
   val int : int t
   (** [int] generates an integer over the whole [int] range. It shrinks toward

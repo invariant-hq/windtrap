@@ -163,6 +163,24 @@ for how to migrate from 0.2.0.
   neighbours, and `-0.` when `low < 0. <= high`. A property that passed
   under 0.2.0 can fail on one of them, and a `replay:` line that 0.2.0
   printed for a property over a float draws other values.
+- (breaking) The integer generators draw small values and the edges of
+  powers of two first, and a draw repeats a value that its generator
+  drew earlier in the case with probability 1/8, so that collections
+  hold duplicates and pairs collide. A range of at most 256 values a
+  side stays uniform; a wider one is not: `Gen.int_range 3 1000` draws
+  a value of at most 100 three times in four, where 0.2.0 did 14% of
+  the time, and its bounds still come as corners. Every integer
+  generator of one type and range repeats the others' values,
+  `Gen.nat` and `Gen.int_range 0 9999` included. `Gen.(pair int int)`
+  draws an equal pair 13% of the time, where 0.2.0 drew 0.15%, and a
+  `Gen.(list int)` of two or more elements holds a duplicate 42% of the
+  time, against 6.3%. On ETNA-style workloads (a search tree, a
+  red-black tree, a simply typed lambda calculus) a planted bug fails
+  after 22 cases on average, where 0.2.0's distributions needed 68,
+  and a bug that needs two equal keys after 6, against 147; a case
+  costs 1.1 to 1.9 times as much to draw. A seed draws other cases than
+  before. A replay token holds the case's choices, which no
+  distribution reads, so it still replays its case.
 - `-0.` shrinks to `0.`, and a range whose `high` is `-0.` shrinks
   toward `-0.`, where 0.2.0 shrank it toward `0.`.
 - `Gen.any_float` generates `nan`, `infinity` and `neg_infinity` beside
@@ -179,7 +197,7 @@ for how to migrate from 0.2.0.
   what a generator call read, deletes runs of choices and lowers each
   one, so a counterexample can merge two inner lists, replace a node by
   its subterm or shrink a `Gen.bind`, which 0.2.0's trees could not;
-  each generator keeps its distribution and its shrink target
+  each generator keeps its shrink target
   (doc/manual/property-testing.md#reading-a-counterexample).
 - A property whose generator has no more values than its count, as
   `Gen.bool` or `Gen.int_range 0 3` have, runs its law on every value

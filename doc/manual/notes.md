@@ -93,9 +93,11 @@ shrinks, every candidate is a value of the generator, and no shrinker
 is written by hand. Because a candidate is parsed afresh, it can take a
 shape that no tree of smaller variants holds: two inner lists merged
 into one, a node replaced by its subterm, a value drawn with `Gen.bind`
-from what an earlier draw decided. The generators draw the
-distributions of 0.2 and only encode what they drew, so a sequence of
-choices changes how values shrink, never which values a run draws. A
+from what an earlier draw decided. The generators only encode what they
+drew, so the sequence of choices decides how values shrink, and the
+distributions what a run draws: an integer comes small or at an edge of
+a power of two first, and a value may repeat an earlier value of its
+generator in the case, so that collections hold duplicates. A
 generator carries its printer too: a composite prints when its parts
 do, and a value computed by a function with no printer prints the input
 it was computed from. `Gen.with_pp` attaches a printer where none

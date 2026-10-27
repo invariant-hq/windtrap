@@ -148,11 +148,23 @@ change a verdict.
   a count and lowers none. Lower a property's `~count` in its
   declaration, or select fewer tests with `-f`.
 - A `--seed` or a `replay:` line that a 0.2 run printed → other cases:
-  generators parse choices, the float generators draw corner cases, and
+  generators parse choices, the integer generators draw small values
+  first and repeat values, the float generators draw corner cases, and
   a stateful test draws its commands with another probability. Run the
   failing test again under this version and use the `replay:` line it
   prints, or keep the counterexample in the source with the
-  `keep it: ~examples:[ … ]` line, or `--replay TOKEN`.
+  `keep it: ~examples:[ … ]` line, or `--replay TOKEN`: a token holds
+  the case's choices, which no distribution reads, so it replays its
+  case whatever the generators draw.
+- A property that relied on a wide integer range spreading its values
+  uniformly, as a `cover ~share` over `Gen.int_range 0 9999`, or on two
+  values of one generator differing → an integer comes small or at an
+  edge of a power of two first, and a draw repeats an earlier value of
+  its generator in the case one time in eight. Nearly nine values in
+  ten of `Gen.int_range 0 9999` are below 2500. State a share over a
+  range of at most 256 values, which stays uniform apart from its
+  corners, as `n < 50` over `Gen.int_range 0 199` for a quarter, and a
+  law that needs two distinct values with `assume (a <> b)`.
 
 ## Stateful testing
 

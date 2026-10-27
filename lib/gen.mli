@@ -29,12 +29,23 @@
     must the draw given to {!Engine.make}.
 
     {b Determinism.} A value is a function of the generator and the choices it
-    parses, and generating consumes the stream of a {!Seed.state} as 0.2's
-    rose-tree generators did: {!bind}, {!one_of}, {!such_that} and {!list} under
-    an explicit size draw their inner part from a state split off, so every
-    state draws the value 0.2 drew from it, given the facade's purity. The
-    values that a recorded seed replays depend on the words that each generator
-    draws and on their order. *)
+    parses, and a generated value a function of the generator and the
+    {!Seed.state} it starts from, given the facade's purity. {!bind}, {!one_of},
+    {!such_that} and {!list} under an explicit size draw their inner part from a
+    state split off, as 0.2's rose-tree generators did. The values that a
+    recorded seed replays depend on the words that each generator draws and on
+    their order, so a change of distribution changes them; the values that
+    recorded choices replay do not.
+
+    {b Repetition.} Each generator has a key: its type and range for an integer
+    generator, which every generator of that range shares, and its own for any
+    other. A generating call whose key earlier calls of the case read choices
+    under draws one word, which it does not record, and with probability 1/8
+    parses the choices of one of those calls again, each equally likely, so that
+    it repeats that call's value: its samplers still run, and the copied choices
+    replace what they drew. A call inside such a copy neither copies nor counts
+    as a call of its key. A replaying source copies nothing: the copied choices
+    are in its sequence. *)
 
 (* The facade ([module Gen] in windtrap.mli) states each value's contract for
    a test's author. The docs here state only what it does not: the choices a
@@ -52,7 +63,17 @@ type 'a t
     Hypothesis's lexicographic encoding: an integral magnitude below 2{^ 56}
     first, as itself, then the others by exponent, [0] up, then [-1] down, with
     the fraction bits reversed. A float of {!float_range} is clamped into the
-    range, so its zeros parse to the origin. *)
+    range, so its zeros parse to the origin.
+
+    An integer's draw, apart from its corners, is the distance to [o] on a side
+    chosen in proportion to its count of values, counted up to 257 for the side
+    above, which holds [o], and up to 256 for the side below, which starts one
+    past it. A side whose distances are at most 256 draws the distance
+    uniformly. A wider side reads one word, whose bits choose a bit length [k],
+    over 0..8 or over 0..the side's bit length with equal probability, and, one
+    time in four, an edge of [k] bits: 2{^ k-1} (1/4), 2{^ k} - 1 (1/2) or
+    2{^ k} (1/4), clipped to the side. Otherwise it draws the distance uniformly
+    among the values of [k] bits. *)
 
 val int : int t
 (** See the facade's [Gen.int]. *)
@@ -76,14 +97,13 @@ val int64 : int64 t
 (** See the facade's [Gen.int64]. *)
 
 val int64_range : int64 -> int64 -> int64 t
-(** [int64_range low high] draws a range of 2{^ 63} values or more as whole
-    words until one falls in it, as at least half of them do. *)
+(** See the facade's [Gen.int64_range]. *)
 
 val nativeint : nativeint t
 (** See the facade's [Gen.nativeint]. *)
 
 val nativeint_range : nativeint -> nativeint -> nativeint t
-(** [nativeint_range low high] draws as {!int64_range} does. *)
+(** See the facade's [Gen.nativeint_range]. *)
 
 val float : float t
 (** See the facade's [Gen.float]. *)
