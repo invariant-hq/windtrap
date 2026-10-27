@@ -148,7 +148,7 @@ let () = exit (run "mylib" [ parse ])
 stanza above in `test/dune`, the call is
 `expect_file ~file:"test/help.expected" (Mylib.help ())`. A path written from
 the stanza's directory names a file that does not exist: its failure
-says `no baseline`, and its `accept:` line cannot fix it.
+says `no baseline`, and no `accept:` line can fix it.
 
 In `windtrap.mli`: Declaring tests, Resources, Annotations, and `run`.
 
@@ -209,12 +209,13 @@ Read the whole block before editing anything. It holds:
   failed on the counterexample alone, so a `Printf` in the law shows
   the counterexample's intermediate values. `[setup]` or `[teardown]`
   before the location when the failure is in one.
-- A last command when it says something new: under dune, `accept:`
-  promotes a baseline's file; `reproduce:` arms a mutant.
+- A last command when it says something new: `replay it:` selects the
+  test alone and replays its counterexample; `reproduce:` arms a mutant.
 
-Two commands act on the whole run and sit right above the summary. Run
-by hand, a report whose failures include a stale baseline has one
-`accept:` line: it reruns the run's tests with `-u`. A report whose
+Two commands act on the whole run and sit right above the summary. A
+report whose failures include a stale baseline has one `accept:` line:
+under dune `dune promote` and the files, when dune holds the
+corrections; run by hand, the run's tests again with `-u`. A report whose
 failures include a property or a stateful test has one `replay:` line:
 it reruns the run's tests with the run's seed, so each failed test draws
 the values it failed on.
@@ -236,12 +237,12 @@ prints.
 
 ## Accepting a baseline
 
-- Under a stanza that runs `--corrected`, the block's `accept:` line
-  reads `dune promote FILE`. Run it right after the failing
-  `dune runtest`: dune forgets a correction at its next command, and
-  keeps none from a suite where another test failed. Dune holds one
-  correction per stanza per run, so with two stale files, promote, run
-  the tests, promote again.
+- Under a stanza that runs `--corrected`, the report's `accept:` line
+  reads `dune promote FILES`. Run it right after the failing
+  `dune runtest`: dune forgets a correction at its next command. Dune
+  keeps none from a suite where another test failed, and the report
+  then has no `accept:` line; its warning names the `-u` command that
+  accepts now.
 - Without such a stanza, the report's `accept:` line reruns the run's
   tests with `-u`, which rewrites every stale literal and file in place.
   Build again before the next run. `-u` is refused under CI.

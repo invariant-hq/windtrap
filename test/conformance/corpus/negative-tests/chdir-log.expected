@@ -7,11 +7,11 @@ conformance: 1 test
     expect: mismatch
     @@ -0,0 +1,1 @@
     + About to change dir
-    accept: dune promote test/conformance/corpus/negative-tests/chdir.ml
 ──────────────────────────────────────────────────────────
 
 corrections (1):
   wrote test/conformance/corpus/negative-tests/chdir.ml.corrected (1 expectation)
 
+accept: dune promote test/conformance/corpus/negative-tests/chdir.ml
 1 failed, 1 correction written in <duration>.
 --- stderr ---

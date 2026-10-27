@@ -317,8 +317,8 @@ let silent (_, r) =
 
 let observe = Report.observe ~seed:Fixtures.root ~selection:None
 
-let started ?(total = 4) ?(properties = false) () =
-  Run.Run_started { suite = "s"; total; selected = total; properties }
+let started ?(total = 4) ?(seeded = false) () =
+  Run.Run_started { suite = "s"; total; selected = total; seeded }
 
 let release =
   Failure.with_phase Failure.Release
@@ -611,26 +611,26 @@ let noteworthy_notice () =
 (* The observer *)
 
 let seed_rows =
-  let header ~properties () =
+  let header ~seeded () =
     rendered ~config:(config ~verbose:true ()) (fun r ->
-        observe r (started ~total:2 ~properties ()))
+        observe r (started ~total:2 ~seeded ()))
   in
-  let green ~properties () =
+  let green ~seeded () =
     rendered (fun r ->
-        observe r (started ~total:2 ~properties ());
+        observe r (started ~total:2 ~seeded ());
         List.iter (fun res -> observe r (Run.Test_finished res)) two_results;
         Report.finish r ~release_failures:[] ~results:two_results ~duration:0.06
           ())
   in
   [
     ( "a header over a property prints the seed",
-      (header ~properties:true, "s: 2 tests (seed " ^ seed ^ ")\n") );
+      (header ~seeded:true, "s: 2 tests (seed " ^ seed ^ ")\n") );
     ( "a header over no property prints none",
-      (header ~properties:false, "s: 2 tests\n") );
+      (header ~seeded:false, "s: 2 tests\n") );
     ( "a green property run ends on its seed",
-      (green ~properties:true, "s: 2 passed in 60ms (seed " ^ seed ^ ").\n") );
+      (green ~seeded:true, "s: 2 passed in 60ms (seed " ^ seed ^ ").\n") );
     ( "a green run without a property carries none",
-      (green ~properties:false, "s: 2 passed in 60ms.\n") );
+      (green ~seeded:false, "s: 2 passed in 60ms.\n") );
   ]
 
 let observe_interrupted () =
@@ -661,7 +661,7 @@ let observe_raises_nothing () =
          observe r (Run.Shrunk { path = [ "\027" ] });
          observe r
            (Run.Run_started
-              { suite = ""; total = 0; selected = 5; properties = true });
+              { suite = ""; total = 0; selected = 5; seeded = true });
          observe r (Run.Test_finished fail);
          observe r
            (Run.Interrupted
@@ -1350,12 +1350,12 @@ let refused_file () =
 
 (* The commands that end a report *)
 
-let ending ?(config = config ~invocation:exe ()) ?(interrupted = false) results
-    =
+let ending ?(config = config ~invocation:exe ()) ?(interrupted = false) ?held
+    results =
   rendered ~config (fun r ->
       if interrupted then
         Report.interrupted r ~running:None ~results ~duration:0.1 ()
-      else Report.finish r ~results ~release_failures:[] ~duration:0.1 ())
+      else Report.finish r ~results ~release_failures:[] ~duration:0.1 ?held ())
 
 let failing ?xfail name failures =
   result ?xfail [ name ] (Failure.Fail failures)
@@ -1426,15 +1426,28 @@ let armed_commands () =
     t;
   not_contains ~sub:"accept:" t
 
+(* No block promotes: the run promotes once on its summary, and only what
+   dune holds. *)
 let mirrors_commands () =
-  let t = ending ~config:{ (config ()) with Run.filter = [ "geo" ] } stale in
+  let config = { (config ()) with Run.filter = [ "geo" ] } in
+  let accepts held =
+    List.filter
+      (fun l -> String.starts_with ~prefix:"accept:" (String.trim l))
+      (lines (ending ~config ?held stale))
+  in
   contains
     ~sub:
       ("\nreplay: WINDTRAP_SEED=" ^ seed
      ^ " WINDTRAP_FILTER='geo' dune runtest\n")
-    t;
-  equal (pair int int) (2, 0)
-    (count ~sub:"    accept: " t, count ~sub:"accept:" t)
+    (ending ~config stale);
+  equal (list string)
+    [
+      "accept: touch 'test/help.expected' && dune runtest; dune promote \
+       test/test_cli.ml test/help.expected";
+    ]
+    (accepts (Some `Once_created));
+  equal (list string) [] (accepts (Some `Withheld));
+  equal (list string) [] (accepts None)
 
 let nothing_to_run_again_rows =
   [
@@ -1575,7 +1588,9 @@ let transcript_group =
             bail_accepts_its_test;
           test "a path in an accept line stays one line" bail_escapes_its_path;
           test "an armed run arms its replay and accepts nothing" armed_commands;
-          test "under a build action each block promotes its own file"
+          test
+            "under a build action the summary promotes every file dune holds, \
+             and no block does"
             mirrors_commands;
           cases "no accept and no replay" fst nothing_to_run_again_rows
             nothing_to_run_again;
@@ -1787,7 +1802,7 @@ let envelope_composed () =
   print_string (Report.group_start "mylib");
   observe r
     (Run.Run_started
-       { suite = "mylib"; total = 1; selected = 1; properties = false });
+       { suite = "mylib"; total = 1; selected = 1; seeded = false });
   observe r (Run.Test_finished bad);
   Report.finish r ~release_failures:[] ~results:[ bad ] ~duration:0.01
     ~before_summary:(fun () ->

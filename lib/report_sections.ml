@@ -253,22 +253,53 @@ let acceptable (f : Failure.t) =
   | Failure.Vacuous _ ->
       None
 
-(* Promotion fills a file and never creates one: a missing file must exist
-   before dune's [diff?] registers its correction. *)
-let promote_line (f : Failure.t) =
-  match acceptable f with
-  | None -> None
-  | Some (Failure.File path, true) ->
-      let file = Os.display_path path in
-      Some
-        (strf "accept: touch %s && dune runtest; dune promote %s"
-           (shell_quote file) (shell_word file))
-  | Some (Failure.File path, false) ->
-      Some ("accept: dune promote " ^ shell_word (Os.display_path path))
-  | Some (Failure.Literal _, _) -> (
-      match f.loc with
-      | Some loc -> Some ("accept: dune promote " ^ shell_word loc.Loc.file)
-      | None -> Some "accept: dune promote")
+let distinct lines =
+  List.rev
+    (List.fold_left
+       (fun acc line -> if List.mem line acc then acc else line :: acc)
+       [] lines)
+
+(* The file that holds a baseline: the file itself, or the source of a
+   literal, [None] when the literal has no location. *)
+let baseline_file (f : Failure.t) = function
+  | Failure.File path -> Some (Os.display_path path)
+  | Failure.Literal _ -> Option.map (fun (loc : Loc.t) -> loc.file) f.loc
+
+(* Dune registers the corrections of an action that exits 0 alone, and
+   promotion fills a file and never creates one: a missing file must exist,
+   and the run be made again, before [dune promote] can accept anything. *)
+let promotion ~held failures =
+  let baselines =
+    List.filter_map
+      (fun f ->
+        Option.map
+          (fun (baseline, missing) -> (baseline_file f baseline, missing))
+          (acceptable f))
+      failures
+  in
+  let files = distinct (List.map fst baselines) in
+  let promote =
+    if List.mem None files then "dune promote"
+    else
+      String.concat " "
+        ("dune promote" :: List.filter_map (Option.map shell_word) files)
+  in
+  match (held, files) with
+  | _, [] | `Withheld, _ -> None
+  | `Held, _ -> Some ("accept: " ^ promote)
+  | `Once_created, _ -> (
+      match
+        distinct
+          (List.filter_map
+             (fun (file, missing) -> if missing then file else None)
+             baselines)
+      with
+      | [] -> None
+      | missing ->
+          Some
+            (strf "accept: touch %s && dune runtest; %s"
+               (String.concat " " (List.map shell_quote missing))
+               promote))
 
 let withheld_fact (f : Failure.t) =
   let kept_none reason = Some ("no correction was kept: " ^ reason) in
@@ -297,21 +328,10 @@ let withheld_fact (f : Failure.t) =
   | Failure.Message _ | Failure.Vacuous _ ->
       None
 
-let hints ?armed ?(invocation = `Mirrors) failures =
-  let distinct lines =
-    List.rev
-      (List.fold_left
-         (fun acc line -> if List.mem line acc then acc else line :: acc)
-         [] lines)
-  in
+let hints ?armed failures =
   match armed with
   | Some _ -> []
-  | None -> (
-      distinct (List.filter_map withheld_fact failures)
-      @
-      match invocation with
-      | `Mirrors -> distinct (List.filter_map promote_line failures)
-      | `Exe _ -> [])
+  | None -> distinct (List.filter_map withheld_fact failures)
 
 (* A command that runs a run's tests again restates the run's selection.
    [--failed] reads the last-failed store under the run's [-o]. It has no
@@ -384,15 +404,20 @@ let command ?armed ?(force = false) ~invocation ~flags tests =
       ^ (if force then " --force" else "")
       ^ arm_mirror
 
-(* A build action's corrections are dune's to promote, file by file, and [-u]
-   has no mirror. *)
-let accept ?armed ?(invocation = `Mirrors) ~tests failures =
+(* A build action's corrections are dune's to promote, and [-u] has no
+   mirror. *)
+let accept_command ?armed ?(invocation = `Mirrors) ~tests failures =
   match (armed, invocation) with
   | Some _, _ | None, `Mirrors -> None
   | None, `Exe _ ->
       if not (List.exists (fun f -> Option.is_some (acceptable f)) failures)
       then None
-      else Some ("accept: " ^ command ~invocation ~flags:[ ("-u", "") ] tests)
+      else Some (command ~invocation ~flags:[ ("-u", "") ] tests)
+
+let accept ?armed ?invocation ~tests failures =
+  Option.map
+    (fun command -> "accept: " ^ command)
+    (accept_command ?armed ?invocation ~tests failures)
 
 (* The seed and the case count of a failure whose case was generated. A
    domain checked whole fails again under any seed. *)
@@ -750,7 +775,7 @@ let source_spans line text =
     plain (match String.trim text with "" -> "" | text -> " " ^ shown text);
   ]
 
-let rec entry ~seen ~excerpt ~inner (f : Failure.t) =
+let rec entry ?select ~seen ~excerpt ~inner (f : Failure.t) =
   let phase =
     match f.phase with
     | Failure.Body -> None
@@ -788,12 +813,12 @@ let rec entry ~seen ~excerpt ~inner (f : Failure.t) =
   let msg =
     match f.msg with Some msg -> lines ~lead:"" (shown_text msg) | None -> []
   in
-  let head, facts = facts ~seen ~excerpt f.kind in
+  let head, facts = facts ?select ~seen ~excerpt f.kind in
   (head, location @ source @ subtest @ caught @ msg @ facts)
 
 (* The facts of a kind in one clause, the head of a summary, then their
    lines: one case analysis gives both, so the two cannot disagree. *)
-and facts ~seen ~excerpt = function
+and facts ?select ~seen ~excerpt = function
   | Failure.Equality { not_ = true; expected; _ } ->
       let expected = shown_text expected in
       ( "both sides equal: " ^ expected,
@@ -1145,7 +1170,10 @@ and facts ~seen ~excerpt = function
             let value = String.concat " " value in
             [ line (strf "keep it: ~examples:[ %s ]" value) ]
         | (Failure.Value | Failure.Pre_image), Some token ->
-            [ line ("replay it: --replay " ^ token) ]
+            let select =
+              match select with Some words -> words ^ " " | None -> ""
+            in
+            [ line (strf "replay it: %s--replay %s" select token) ]
         | (Failure.Value | Failure.Pre_image), None -> []
       in
       (* A domain checked whole reports every value it refuted, each as the
@@ -1211,18 +1239,29 @@ and law_terms ~seen ~excerpt terms =
 
 type entry = { summary : string; lines : span list list }
 
-let entry ?(seen = false) ~excerpt f =
-  let head, lines = entry ~seen ~excerpt ~inner:false f in
+let entry ?(seen = false) ?select ~excerpt f =
+  let head, lines = entry ?select ~seen ~excerpt ~inner:false f in
   { summary = summary f head; lines }
+
+(* A pattern keeps every path that holds it, so the paths that hold the
+   test's own are excluded. *)
+let selecting ~paths path =
+  let holds p =
+    (not (String.equal p path)) && Text.contains_substring ~pattern:path p
+  in
+  String.concat " "
+    (("-f " ^ shell_word path)
+    :: List.map (fun p -> "-e " ^ shell_word p) (List.filter holds paths))
 
 let headline f = (entry ~excerpt:false f).summary
 
 (* A failure away from its block: its entry and its hint lines, unstyled. *)
-let unstyled_entry ?armed ?(invocation = `Mirrors) ~filter f =
-  let e = entry ~excerpt:false f in
+let unstyled_entry ?armed ?(invocation = `Mirrors) ?(paths = []) ~filter f =
+  let select = Option.map (selecting ~paths) filter in
+  let e = entry ?select ~excerpt:false f in
   let tests = `Filter filter in
   let hints =
-    hints ?armed ~invocation [ f ]
+    hints ?armed [ f ]
     @ Option.to_list (accept ?armed ~invocation ~tests [ f ])
     @ Option.to_list (replay ?armed ~invocation ~tests [ f ])
   in

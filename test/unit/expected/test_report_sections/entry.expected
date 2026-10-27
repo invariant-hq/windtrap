@@ -15,7 +15,6 @@
       + Usage: mytool [OPTIONS] COMMAND
       + Commands:
       +   run
-    accept: touch 'test/help.expected' && dune runtest; dune promote test/help.expected
 
 === a located literal
     test/test_users.ml:88
@@ -25,7 +24,6 @@
     - line two
     + line 2
       line three
-    accept: dune promote test/test_users.ml
 
 === a located message
     test/test_users.ml:88

@@ -188,8 +188,9 @@ mytool: 3 passed in 1.9ms.
 
 To see a stale expectation, change `processed` to `read` in
 `Mytool.report` and run the tests again. The block shows the baseline's
-lines with `-`, the produced lines with `+`, and the command that
-accepts the change. Dune then prints its own diff of the source file:
+lines with `-` and the produced lines with `+`, and the line above the
+summary is the command that accepts every correction of the run. Dune
+then prints its own diff of the source file:
 
 ```
 $ dune runtest
@@ -204,12 +205,12 @@ mytool: 3 tests
     - processed 42 rows
     + read 42 rows
       status: ok
-    accept: dune promote examples/05-baselines/test_mytool.ml
 ──────────────────────────────────────────────────────────
 
 corrections (1):
   wrote examples/05-baselines/test_mytool.ml.corrected (1 expectation)
 
+accept: dune promote examples/05-baselines/test_mytool.ml
 2 passed, 1 failed, 1 correction written in 2.2ms.
 File "examples/05-baselines/test_mytool.ml", line 1, characters 0-0:
 diff --git a/_build/default/examples/05-baselines/test_mytool.ml b/_build/default/examples/05-baselines/test_mytool.ml.corrected
@@ -237,8 +238,17 @@ correction dune holds. Review the change with `git diff`, and the next
 
 Dune forgets a correction at its next command, so run `dune promote`
 right after the failing `dune runtest`. It keeps one only from a run
-that exits 0, so another failing test of the suite withholds it, and the
-run says so on standard error.
+that exits 0, so another failing test of the suite withholds it: the
+report then prints no `accept:` line, and the run says on standard
+error what does accept it, fixing the failures first or `-u` now:
+
+```
+windtrap: warning: dune registers a correction for promotion only when the run that wrote it exits 0, so the failures above withhold the correction written here. Fix the failures, rerun, then 'dune promote'. To accept it now: dune exec examples/05-baselines/test_mytool.exe -- -u
+```
+
+A file baseline that does not exist yet is the one exception: once the
+missing files are all that fail, the line creates them first,
+`accept: touch 'examples/05-baselines/help.expected' && dune runtest; dune promote …`.
 
 The stanza's action stops at its first `diff?` that fails, so dune holds
 at most one correction per stanza and run. When two files are stale, the
@@ -296,12 +306,12 @@ corrections (1):
 Review the change with `git diff`. `-u` is refused under CI (see
 [Running tests](running-tests.md)).
 
-## Reading a block with no `accept:` line
+## Reading a correction that was not kept
 
 A test that also failed outside its expectations, or skipped, keeps no
 correction until that is fixed. Its block says `no correction was kept:`
-and why, in place of the `accept:` line. A correction the source cannot
-take, as when the file changed since the build, says
+and why, and no `accept:` line accepts it. A correction the source
+cannot take, as when the file changed since the build, says
 `correction refused (line N):` and the reason.
 
 ## Writing expect tests inside a library

@@ -30,7 +30,7 @@ let entry ?(ansi = false) ?(terminal = ansi) ?(excerpt = false) ?(hints = true)
       let tests = `Filter filter in
       List.map
         (fun h -> [ Sections.plain h ])
-        (Sections.hints ?armed ?invocation [ f ]
+        (Sections.hints ?armed [ f ]
         @ Option.to_list (Sections.accept ?armed ?invocation ~tests [ f ])
         @ Option.to_list (Sections.replay ?armed ?invocation ~tests [ f ]))
   in
@@ -566,16 +566,14 @@ let baseline_entries () =
   let proposal n = String.concat "" (List.init n (strf "line %d\n")) in
   let file = file_mismatch "p.expected" "a\n" "b\n" in
   [
-    ( "a missing file: the proposal under its count, then the command that \
-       creates the file and promotes it",
+    ( "a missing file: the proposal under its count, and no command, which the \
+       summary gives",
       entry Fixtures.snap_missing );
     ( "under a launcher, the command is -u for the block's test",
       entry ~invocation:(`Exe "./_build/default/qa/x/t.exe")
         ~filter:"cli \u{203a} cli help" Fixtures.snap_missing );
-    ( "a literal: its hunks with no head, then dune promote of its source file",
-      entry Fixtures.snap_mismatch );
-    ( "a file: dune promote of its path",
-      entry (file_mismatch "test/help.expected" "a\n" "b\n") );
+    ("a literal: its hunks with no head", entry Fixtures.snap_mismatch);
+    ("a file: its hunks", entry (file_mismatch "test/help.expected" "a\n" "b\n"));
     ( "a quote in the test's path is closed around",
       entry ~invocation:exe ~filter:"it's" Fixtures.snap_mismatch );
     ("expect names the flexible verb", entry (literal false "a\n" "b\n"));
@@ -1042,8 +1040,7 @@ let baseline_diff_bound () =
     entry
       (file_mismatch "p.expected" (side 'e' 300 ^ "\n") (side 'a' 300 ^ "\n"))
   in
-  ends_with
-    ~suffix:"(+401 more diff lines)\n    accept: dune promote p.expected\n" e
+  ends_with ~suffix:"(+401 more diff lines)\n" e
 
 let e n = repeat n "\u{00e9}"
 
@@ -1345,74 +1342,34 @@ let all_kinds =
 
 let hint_rows =
   [
-    ("a message has none", (None, `Mirrors, [ plain_failure ], []));
-    ( "a literal under a build action: dune promote of its source file",
-      ( None,
-        `Mirrors,
-        [ Fixtures.snap_mismatch ],
-        [ "accept: dune promote test/test_cli.ml" ] ) );
-    ( "a file under a build action: dune promote of its path",
-      ( None,
-        `Mirrors,
-        [ file_mismatch "test/help.expected" "a\n" "b\n" ],
-        [ "accept: dune promote test/help.expected" ] ) );
-    ( "a missing file under a build action: touch it first",
-      ( None,
-        `Mirrors,
-        [ Fixtures.snap_missing ],
-        [
-          "accept: touch 'test/help.expected' && dune runtest; dune promote \
-           test/help.expected";
-        ] ) );
-    ( "two files under a build action: two lines",
-      ( None,
-        `Mirrors,
-        [ Fixtures.snap_mismatch; Fixtures.snap_missing ],
-        [
-          "accept: dune promote test/test_cli.ml";
-          "accept: touch 'test/help.expected' && dune runtest; dune promote \
-           test/help.expected";
-        ] ) );
-    ( "equal lines print once",
-      ( None,
-        `Mirrors,
-        [ Fixtures.snap_mismatch; Fixtures.snap_mismatch ],
-        [ "accept: dune promote test/test_cli.ml" ] ) );
-    ("by hand, no command: the report accepts once", (None, exe, all_kinds, []));
+    ("a message has none", (None, [ plain_failure ], []));
+    ( "a baseline whose correction is kept has none: the report accepts once",
+      (None, all_kinds, []) );
     ( "an armed run's baseline failures have none",
-      ( Some armed,
-        `Mirrors,
-        [ Fixtures.snap_mismatch; Fixtures.snap_missing ],
-        [] ) );
+      (Some armed, [ Fixtures.snap_mismatch; Fixtures.snap_missing ], []) );
     ( "a withheld correction is a fact line, once, and nothing after it",
       ( None,
-        exe,
         [
           plain_failure;
           outside Fixtures.snap_mismatch;
           outside Fixtures.snap_missing;
         ],
         [ kept_none ] ) );
-    ( "a withheld correction under a build action: no command either",
-      (None, `Mirrors, [ outside Fixtures.snap_mismatch ], [ kept_none ]) );
     ( "a property beside it adds no line: the report replays it",
       ( None,
-        exe,
         [ Fixtures.prop_failure; outside Fixtures.snap_mismatch ],
         [ kept_none ] ) );
     ( "a skip beside the expectation has its own reason",
       ( None,
-        exe,
         [ Failure.with_withheld Failure.Skipped Fixtures.snap_mismatch ],
         [
           "no correction was kept: the test also skipped; skip before the \
            expectation or not at all, and rerun";
         ] ) );
     ( "a refused literal beside a kept one: its fact",
-      (None, exe, [ refused 4; Fixtures.snap_mismatch ], [ refused_fact 4 ]) );
+      (None, [ refused 4; Fixtures.snap_mismatch ], [ refused_fact 4 ]) );
     ( "each refused literal has its line, then a fact of the attempt",
       ( None,
-        exe,
         [
           plain_failure;
           outside (refused 4);
@@ -1422,7 +1379,6 @@ let hint_rows =
         [ refused_fact 4; refused_fact 9; kept_none ] ) );
     ( "a conflict has its own fact",
       ( None,
-        exe,
         [ Failure.with_withheld Failure.Conflict Fixtures.snap_mismatch ],
         [
           "no correction was kept: another check of this baseline produced a \
@@ -1430,7 +1386,6 @@ let hint_rows =
         ] ) );
     ( "an unresolvable path never had a correction",
       ( None,
-        exe,
         [
           outside
             (Failure.baseline (Failure.File "../x")
@@ -1438,17 +1393,50 @@ let hint_rows =
         ],
         [] ) );
     ( "an armed run says nothing of corrections",
-      (Some armed, exe, [ plain_failure; outside Fixtures.snap_mismatch ], [])
-    );
+      (Some armed, [ plain_failure; outside Fixtures.snap_mismatch ], []) );
   ]
+
+let hint_row (_, (armed, failures, expected)) =
+  equal (list string) expected (Sections.hints ?armed failures)
+
+let promotion_rows =
+  [
+    ( "a literal of a run that exits 0: dune promote of its source file",
+      ( `Held,
+        [ Fixtures.snap_mismatch ],
+        Some "accept: dune promote test/test_cli.ml" ) );
+    ( "a file of a run that exits 0: dune promote of its path",
+      ( `Held,
+        [ file_mismatch "test/help.expected" "a\n" "b\n" ],
+        Some "accept: dune promote test/help.expected" ) );
+    ( "two files: one command over both, each once",
+      ( `Held,
+        [
+          Fixtures.snap_mismatch;
+          file_mismatch "test/help.expected" "a\n" "b\n";
+          Fixtures.snap_mismatch;
+        ],
+        Some "accept: dune promote test/test_cli.ml test/help.expected" ) );
+    ( "a missing file that alone makes the run exit 1: touch it first",
+      ( `Once_created,
+        [ Fixtures.snap_missing; Fixtures.snap_mismatch ],
+        Some
+          "accept: touch 'test/help.expected' && dune runtest; dune promote \
+           test/help.expected test/test_cli.ml" ) );
+    ( "a run that other failures make exit 1: dune holds nothing",
+      (`Withheld, [ plain_failure; Fixtures.snap_mismatch ], None) );
+    ( "no baseline: none",
+      (`Held, [ plain_failure; Fixtures.prop_failure ], None) );
+    ( "a withheld correction: none",
+      (`Held, [ outside Fixtures.snap_mismatch ], None) );
+  ]
+
+let promotion_row (_, (held, failures, expected)) =
+  equal (option string) expected (Sections.promotion ~held failures)
 
 (* A row under [`Mirrors] leaves the invocation to its default. *)
 let default_or (invocation : Run.invocation) =
   match invocation with `Mirrors -> None | `Exe _ -> Some invocation
-
-let hint_row (_, (armed, invocation, failures, expected)) =
-  equal (list string) expected
-    (Sections.hints ?armed ?invocation:(default_or invocation) failures)
 
 let narrowed =
   {
@@ -1466,7 +1454,7 @@ let qa = `Exe "./_build/default/qa/x/t.exe"
 
 let accept_rows =
   [
-    ( "under a build action there is none: each block names its file",
+    ( "under a build action there is none: dune promote accepts",
       (None, `Mirrors, `Filter (Some "t"), all_kinds, None) );
     ( "none without a baseline",
       ( None,
@@ -1753,8 +1741,7 @@ let failure_projections =
                 "a diff prints 200 lines of hunks, then the count of the rest"
                 diff_bound;
               test "a diff of 200 lines of hunks prints whole" diff_at_bound;
-              test "a baseline's diff is bounded and keeps its accept"
-                baseline_diff_bound;
+              test "a baseline's diff is bounded" baseline_diff_bound;
               test
                 "a value over 800 bytes keeps 400 of each end, cut on code \
                  points"
@@ -1785,8 +1772,18 @@ let failure_projections =
                 occurrence_left_behind;
             ];
         ];
-      cases "hints are the block's fact lines and dune promote lines" fst
-        hint_rows hint_row;
+      cases "hints are the block's fact lines, and no command" fst hint_rows
+        hint_row;
+      cases
+        "promotion is one dune promote line, when dune holds the corrections"
+        fst promotion_rows promotion_row;
+      test "selecting a test excludes the paths that hold its own" (fun () ->
+          equal string
+            "-f 'a \u{203a} b' -e 'a \u{203a} b c' -e 'x a \u{203a} b'"
+            (Sections.selecting
+               ~paths:
+                 [ "a"; "a \u{203a} b"; "a \u{203a} b c"; "x a \u{203a} b" ]
+               "a \u{203a} b"));
       cases "accept is one -u line under a launcher" fst accept_rows accept_row;
       cases "replay reruns the tests with the values they drew" fst replay_rows
         replay_row;

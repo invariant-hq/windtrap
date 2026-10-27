@@ -22,7 +22,7 @@ generated case, no shrink.
   $ run ./suite_main.exe --case ten -f small > out
   [1]
   $ scrub < out
-  fixture: 1 test (seed SEED)
+  fixture: 1 test
   ──────────────────────── failures ────────────────────────
     FAIL  small
       test/cram/run/suite_main.ml:N
@@ -40,7 +40,7 @@ the case of zeros, here the empty list:
 
   $ : > empty
   $ run ./suite_main.exe --case empty -f small | scrub
-  fixture: 1 test (seed SEED)
+  fixture: 1 test
   replayed (1):
     small: the replayed case passed
   
@@ -65,7 +65,7 @@ A case that hangs times out at its limit, and is never read as a pass:
 
   $ printf '\007' > seven
   $ run ./suite_main.exe --case seven -f 'hangs on 7' --timeout 0.2 | scrub
-  fixture: 1 test (seed SEED)
+  fixture: 1 test
   ──────────────────────── failures ────────────────────────
     FAIL  hangs on 7
       test/cram/run/suite_main.ml:N
@@ -80,7 +80,7 @@ exits 0:
 
   $ printf '\003' > three
   $ run ./suite_main.exe --case three -f even -v | scrub
-  fixture: 1 test (seed SEED)
+  fixture: 1 test
     SKIP  even (--case three: the case was discarded, so nothing was checked)
   1 skipped in DURATION.
 
@@ -123,7 +123,7 @@ its failure printed, fails again on the same calls:
 
   $ run ./suite_main.exe -f counts > out
   [1]
-  $ token=$(sed -n 's/^ *replay it: --replay //p' out)
+  $ token=$(sed -n 's/^ *replay it: .*--replay //p' out)
   $ run env FACADE_FIXTURE=case_of ./suite_main.exe "$token" > counts.case
   $ run ./suite_main.exe --case counts.case -f counts > again
   [1]
@@ -132,4 +132,4 @@ its failure printed, fails again on the same calls:
   $ diff before after && echo same counterexample
   same counterexample
   $ grep 'replay it' again | sed "s/$token/TOKEN/"
-      replay it: --replay TOKEN
+      replay it: -f counts --replay TOKEN

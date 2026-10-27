@@ -198,7 +198,7 @@ let list_selection ~suite config tests =
 (* A mutation loop prints neither warning: its dry run is no run of the
    suite to commit, and its corrections are those of a [-u] or a
    [--corrected] run. *)
-let execute ~suite (config : Run.config) tests =
+let execute ~suite ~exe (config : Run.config) tests =
   let loop =
     match config.mutation with
     | Run.Loop _ -> true
@@ -222,7 +222,7 @@ let execute ~suite (config : Run.config) tests =
           (Baseline.writes (Run.baselines outcome.run))
       in
       (* dune registers a [.corrected] file only after an action that exits 0,
-         and the blocks' [accept:] lines were printed before the code was. *)
+         so the report offers no [dune promote] here; this says what works. *)
       let exit_code = Run.exit_code ran in
       let plural = if List.length written = 1 then "" else "s" in
       if config.baseline = Baseline.Corrected && written <> [] && exit_code = 1
@@ -235,14 +235,36 @@ let execute ~suite (config : Run.config) tests =
                 rerun outside CI, then 'dune promote'."
                plural
                (if plural = "" then "it" else "them"))
-        else
+        else begin
+          (* [-u] writes the kept corrections in place, whatever else
+             fails, from a run outside dune's sandbox. *)
+          let now =
+            let failures =
+              List.concat_map
+                (fun (r : Run.result) ->
+                  match r.outcome with
+                  | Failure.Fail failures when r.counted -> failures
+                  | Failure.Fail _ | Failure.Pass | Failure.Skip _ -> [])
+                (Run.results outcome.run)
+            in
+            match
+              Report_sections.accept_command ~invocation:exe
+                ~tests:(`Run config) failures
+            with
+            | Some command ->
+                Pp.str " To accept %s now: %s"
+                  (if plural = "" then "it" else "them")
+                  command
+            | None -> ""
+          in
           Os.warn
             (Pp.str
                "dune registers a correction for promotion only when the run \
                 that wrote it exits 0, so the failures above withhold the \
                 correction%s written here. Fix the failures, rerun, then 'dune \
-                promote'."
-               plural);
+                promote'.%s"
+               plural now)
+        end;
       exit_code
 
 let run_parent ~argv suite tests =
@@ -269,8 +291,10 @@ let run_parent ~argv suite tests =
       | Ok config when parsed.list_only -> list_selection ~suite config tests
       | Ok config ->
           let corrected = config.baseline = Baseline.Corrected in
-          let invocation = invocation ~corrected argv0 in
-          execute ~suite { config with invocation } tests)
+          execute ~suite
+            ~exe:(invocation ~corrected:false argv0)
+            { config with invocation = invocation ~corrected argv0 }
+            tests)
 
 let run ?(argv = Sys.argv) suite tests =
   (* [--help], [--version] and a usage error return before [Run.execute]

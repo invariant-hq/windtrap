@@ -150,7 +150,7 @@ withholds the correction:
     FAIL  Trailing › Nested › a nested test's node is indented under its head
     FAIL  Trailing › a body that raises checks nothing after it
   $ cat err
-  windtrap: warning: dune registers a correction for promotion only when the run that wrote it exits 0, so the failures above withhold the correction written here. Fix the failures, rerun, then 'dune promote'.
+  windtrap: warning: dune registers a correction for promotion only when the run that wrote it exits 0, so the failures above withhold the correction written here. Fix the failures, rerun, then 'dune promote'. To accept it now: ./inline/runner.exe -u
   $ diff -U0 inline/trailing.ml inline/trailing.ml.corrected | grep '^[-+] '
   -  print_string "goodbye\n"
   +  print_string "goodbye\n";

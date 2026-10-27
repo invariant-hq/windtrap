@@ -8,11 +8,11 @@ conformance: 4 tests
     @@ -1,1 +1,1 @@
     - bar
     + foo
-    accept: dune promote test/conformance/corpus/negative-tests/divergent/similar_distinct_outputs.ml
 ──────────────────────────────────────────────────────────
 
 corrections (1):
   wrote test/conformance/corpus/negative-tests/divergent/similar_distinct_outputs.ml.corrected (1 expectation)
 
+accept: dune promote test/conformance/corpus/negative-tests/divergent/similar_distinct_outputs.ml
 3 passed, 1 failed, 1 correction written in <duration>.
 --- stderr ---

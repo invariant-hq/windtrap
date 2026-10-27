@@ -176,7 +176,7 @@ geo: 1 test (seed s1:5b58964be30f69a8)
       27 │ prop "is read back by of_string" gen_shape (fun s ->
 
     counterexample (case 0, shrunk 1 step): Rect (1, 0)
-    replay it: --replay r1:AQEA:3e9ef408
+    replay it: -f 'to_string › is read back by of_string' --replay r1:AQEA:3e9ef408
     which failed at:
       examples/03-property-testing/test_geo.ml:28
         28 │ equal ~__POS__ (option shape) (Some s)
@@ -201,9 +201,13 @@ The line under a counterexample says how to keep it. Where its
 generators print OCaml values, as the generators of base types and
 their containers do, it is an entry to paste, `keep it: ~examples:[ 0 ]`.
 Where a printer of the test's own prints it, as `Gen.with_pp` gives one,
-windtrap cannot know the text is OCaml, and the line is a token,
-`replay it: --replay r1:AQEA:3e9ef408`. Passed with `-f` on the test,
-`--replay` checks that one case: the token holds the case's choices and
+windtrap cannot know the text is OCaml, and the line is a token behind
+the flags that select its test alone,
+`replay it: -f 'to_string › is read back by of_string' --replay r1:AQEA:3e9ef408`.
+Pasted after the test executable, `--replay` checks that one case: the
+`-f` keeps the one test, with an `-e` for each other test whose path
+holds its own, since a token given to another property is stale there.
+The token holds the case's choices and
 a digest of its printing, so it replays on any machine and under a
 renamed test, and a token whose generator now parses another value is
 reported stale rather than checking it. Nothing writes the source.
@@ -413,7 +417,7 @@ geo: 1 test (seed s1:5b58964be30f69a8)
       72 │ prop "is never negative"
 
     counterexample (case 6, shrunk 2 steps): Group [Circle 1]
-    replay it: --replay r1:AQEBAAE:a9de575d
+    replay it: -f 'total_area › is never negative' --replay r1:AQEBAAE:a9de575d
     which failed at:
       examples/03-property-testing/test_geo.ml:77
         77 │ (fun d -> at_least ~__POS__ float_exact ~than:0. (Geo.total_area d));
@@ -501,7 +505,7 @@ geo: 3 tests (seed s1:5b58964be30f69a8)
       85 │ prop "reads back what it prints" gen_shape
 
     counterexample (case 0, shrunk 1 step): Rect (1, 0)
-    replay it: --replay r1:AQEA:3e9ef408
+    replay it: -f 'codec › reads back what it prints' --replay r1:AQEA:3e9ef408
     which failed with:
       round trip: g (f x) = x
       f x      "rect 1 1"
@@ -609,7 +613,7 @@ geo: 3 tests (seed s1:5b58964be30f69a8)
       113 │ prop "compare_drawing is a total order"
 
     counterexample (case 0, shrunk 4 steps): (Rect (0, 0), Circle 0, Circle 0)
-    replay it: --replay r1:AAEAAAAAAAAAAA:aafd5fae
+    replay it: -f 'witness › compare_drawing is a total order' --replay r1:AAEAAAAAAAAAAA:aafd5fae
     which failed with:
       order (agrees with equal): cmp a b = 0 iff a = b
       a        Rect (0, 0)

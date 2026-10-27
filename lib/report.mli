@@ -25,9 +25,17 @@ type t
     counts the results and the blocks that it committed. *)
 
 val create :
-  out:Format.formatter -> ansi:bool -> ?terminal:bool -> Run.config -> t
+  out:Format.formatter ->
+  ansi:bool ->
+  ?terminal:bool ->
+  ?paths:string list ->
+  Run.config ->
+  t
 (** [create ~out ~ansi config] is a renderer that writes to [out].
     - [ansi] is whether styling is emitted.
+    - [paths] are the path strings of the suite's tests, from which the
+      [replay it:] line of a failure selects its test alone
+      ({!Report_sections.selecting}). Defaults to [[]].
     - [terminal] is whether [out] is a terminal that a reader watches. Defaults
       to [false]. Under [ansi] it is the [seen] of every
       {!Report_sections.val-entry}. It is also whether {!begin_test},
@@ -43,13 +51,14 @@ val create :
     Raises [Invalid_argument] if [config.slow_threshold] is negative or not
     finite. *)
 
-val terminal : Run.config -> t
-(** [terminal config] is the renderer of a run on [Format.std_formatter].
-    Styling is {!Os.resolve_color} of [config.color], of whether standard output
-    is a terminal, of {!Os.inside_dune} and of {!Os.term_dumb}. Its [terminal]
-    holds iff standard output is a terminal and the run is not under GitHub
-    Actions ({!Os.in_github_actions}). [terminal] thus reads the terminal status
-    of standard output and, through these functions, [INSIDE_DUNE], [TERM],
+val terminal : ?paths:string list -> Run.config -> t
+(** [terminal config] is the renderer of a run on [Format.std_formatter], with
+    [paths] as {!create} takes them. Styling is {!Os.resolve_color} of
+    [config.color], of whether standard output is a terminal, of
+    {!Os.inside_dune} and of {!Os.term_dumb}. Its [terminal] holds iff standard
+    output is a terminal and the run is not under GitHub Actions
+    ({!Os.in_github_actions}). [terminal] thus reads the terminal status of
+    standard output and, through these functions, [INSIDE_DUNE], [TERM],
     [NO_COLOR], [CI] and [GITHUB_ACTIONS]. *)
 
 (** {1:transcript The transcript}
@@ -192,6 +201,7 @@ val finish :
   duration:float ->
   ?baselines:Baseline.t ->
   ?stopped:string list ->
+  ?held:[ `Held | `Once_created | `Withheld ] ->
   ?before_summary:(unit -> unit) ->
   unit ->
   unit
@@ -209,12 +219,13 @@ val finish :
       compact run that has printed no header prints it before the first.
     - what [before_summary ()] writes. It runs after [out] is flushed and
       defaults to doing nothing.
-    - the {!Report_sections.accept} line and then the {!Report_sections.replay}
-      line of the failures of the counted failed results, each when it is
-      [Some _]. They act on the whole run, so no block carries them. Both are
-      over the run's selection ([`Run config]), save the [accept:] of a
-      [config.bail] run, which is over the path of its one counted failed
-      result.
+    - the {!Report_sections.promotion} line under [held], which defaults to
+      [`Withheld], then the {!Report_sections.accept} line and the
+      {!Report_sections.replay} line of the failures of the counted failed
+      results, each when it is [Some _]. They act on the whole run, so no block
+      carries them. The last two are over the run's selection ([`Run config]),
+      save the [accept:] of a [config.bail] run, which is over the path of its
+      one counted failed result.
     - with [stopped], the path of the test after which {!Run.stop} ended the
       run, the line
       [run stopped after <path>: a call on another domain outlived the test's
@@ -294,6 +305,7 @@ val group_end : string
 val annotations :
   ?invocation:Run.invocation ->
   ?armed:string ->
+  ?paths:string list ->
   release_failures:Failure.t list ->
   Run.result list ->
   string

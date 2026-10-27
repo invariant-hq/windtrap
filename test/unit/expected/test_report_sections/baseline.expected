@@ -1,11 +1,10 @@
-=== a missing file: the proposal under its count, then the command that creates the file and promotes it
+=== a missing file: the proposal under its count, and no command, which the summary gives
     test/test_cli.ml:9
     expect_file ~file:"test/help.expected": no baseline
     proposed (3 lines):
       + Usage: mytool [OPTIONS] COMMAND
       + Commands:
       +   run
-    accept: touch 'test/help.expected' && dune runtest; dune promote test/help.expected
 
 === under a launcher, the command is -u for the block's test
     test/test_cli.ml:9
@@ -16,7 +15,7 @@
       +   run
     accept: ./_build/default/qa/x/t.exe -u -f 'cli › cli help'
 
-=== a literal: its hunks with no head, then dune promote of its source file
+=== a literal: its hunks with no head
     test/test_cli.ml:14
     expect: mismatch
     @@ -1,3 +1,3 @@
@@ -24,14 +23,12 @@
     - line two
     + line 2
       line three
-    accept: dune promote test/test_cli.ml
 
-=== a file: dune promote of its path
+=== a file: its hunks
     expect_file ~file:"test/help.expected": mismatch
     @@ -1,1 +1,1 @@
     - a
     + b
-    accept: dune promote test/help.expected
 
 === a quote in the test's path is closed around
     test/test_cli.ml:14
@@ -48,19 +45,16 @@
     @@ -1,1 +1,1 @@
     - a
     + b
-    accept: dune promote
 
 === expect_exact names the exact verb
     expect_exact: mismatch
     @@ -1,1 +1,1 @@
     - a
     + b
-    accept: dune promote
 
 === a difference in a trailing newline is said in words
     expect_exact: mismatch
     values differ only by a trailing newline (on the actual side)
-    accept: dune promote
 
 === a trailing blank is marked under its - line
     expect_exact: mismatch
@@ -69,14 +63,12 @@
        ~
     + a
       b
-    accept: dune promote
 
 === a baseline's control bytes print escaped
     expect: mismatch
     @@ -1,1 +1,1 @@
     - \x1b[1mbold\x1b[0m
     + bold
-    accept: dune promote
 
 === an unresolvable file: the rule, the candidate, the remedy, no command
     expect_file ~file:"../n.expected": the path cannot be proven to lie under the project root
@@ -112,7 +104,6 @@
       + line 18
       + line 19
       … (+5 more lines)
-    accept: touch 'p.expected' && dune runtest; dune promote p.expected
 
 === a proposal of 20 lines prints whole
     expect: no baseline
@@ -137,24 +128,20 @@
       + line 17
       + line 18
       + line 19
-    accept: dune promote
 
 === a proposal of one line
     expect_file ~file:"p.expected": no baseline
     proposed (1 line):
       + only
-    accept: touch 'p.expected' && dune runtest; dune promote p.expected
 
 === under colour the + lines are red, their indentation plain
     expect_file ~file:"p.expected": no baseline
     proposed (1 line):
       «r|+ only»
-    accept: touch 'p.expected' && dune runtest; dune promote p.expected
 
 === two sides cut to the same kept bytes say what they agree on
     expect_file ~file:"p.expected": mismatch
     the sides agree on the 65536 bytes a failure keeps of each (expected 65537 bytes, actual 65537 bytes)
-    accept: dune promote p.expected
 
 === a withheld literal by hand: the reason, and nothing after it
     test/test_cli.ml:14

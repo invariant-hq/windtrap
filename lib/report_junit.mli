@@ -79,6 +79,7 @@
 val write :
   invocation:Run.invocation ->
   ?armed:string ->
+  ?paths:string list ->
   suite:string ->
   duration:float ->
   results:Run.result list ->
@@ -88,7 +89,8 @@ val write :
 (** [write ~invocation ?armed ~suite ~duration ~results ~release_failures
      target] writes the {{!section-document}document} of [results] and
     [release_failures] to the file that [target], the value of [--junit], names
-    for [suite].
+    for [suite]. [paths] are the suite's test paths, which a failure's
+    [replay it:] line excludes as {!Report_sections.unstyled_entry} does.
     - A [target] that ends in [.xml] is that file, as given. The test is that of
       [Filename.check_suffix], on the name alone. Every suite that reads the
       same value writes the same file, and the last one wins.

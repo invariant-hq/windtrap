@@ -1363,7 +1363,9 @@ let refusals =
           in
           equal string "exited 1" r.status;
           equal text "" r.out;
-          equal text "windtrap: no recorded failures match the current suite\n"
+          equal text
+            "windtrap: --failed has nothing to rerun: no run has recorded its \
+             failures here yet\n"
             r.err);
       test "a scope that leaves no mutant is refused, naming the scope"
         empty_scope;

@@ -86,7 +86,7 @@ type entry = {
 (** The type for the entry of a failure. The summary and the lines come from one
     case analysis of the failure, so they cannot disagree. *)
 
-val entry : ?seen:bool -> excerpt:bool -> Failure.t -> entry
+val entry : ?seen:bool -> ?select:string -> excerpt:bool -> Failure.t -> entry
 (** [entry ~excerpt f] is the entry of [f]. Its lines hold, in this order:
     - the location of [f], with its phase before it when [f.phase] is not
       {!Failure.Body}. The phase stands alone when [f] has no location.
@@ -126,9 +126,13 @@ val entry : ?seen:bool -> excerpt:bool -> Failure.t -> entry
 
     {b Property.} An explicit example is named by its one-based index, any other
     case by its zero-based index and, when it has some, by its shrink steps. A
-    [failed_again] of [Some false] adds a line that says the test is not
-    deterministic. The entry of the inner failure comes last. It is an entry as
-    above, nested, with no blank line after its source line and no hint lines.
+    counterexample with a token and no OCaml printing ends with the line
+    [replay it: SELECT --replay TOKEN], where [SELECT] is [select], the words
+    that select its test alone ({!selecting}), and the line is
+    [replay it: --replay TOKEN] without [select]. A [failed_again] of
+    [Some false] adds a line that says the test is not deterministic. The entry
+    of the inner failure comes last. It is an entry as above, nested, with no
+    blank line after its source line and no hint lines.
 
     {b Law.} The head is the law's name, its clause in parentheses when it has
     one, then [": "] and the equation. A row follows for each term, its name and
@@ -149,41 +153,66 @@ val entry : ?seen:bool -> excerpt:bool -> Failure.t -> entry
 val headline : Failure.t -> string
 (** [headline f] is the {!entry.summary} of [f]. *)
 
+val selecting : paths:string list -> string -> string
+(** [selecting ~paths path] is the command-line words that select the test at
+    [path] alone among the tests at [paths]: [-f PATH], then [-e P] for each
+    other path [P] of [paths] that holds [path], since a pattern keeps every
+    path that holds it. Each word is a {!shell_word}. *)
+
 val unstyled_entry :
   ?armed:string ->
   ?invocation:Run.invocation ->
+  ?paths:string list ->
   filter:string option ->
   Failure.t ->
   string * string list
 (** [unstyled_entry ~filter f] is the summary of [f] and the lines that a
     transport away from the report carries for it: its entry without excerpt,
-    then the lines of {!hints} for [f] alone, then its {!accept} and {!replay}
-    lines for the test at the path [filter], or for every test when it is
-    [None], each indented by four spaces and rendered without styling. *)
+    with the [select] of the test at [filter] among [paths] ({!selecting}), then
+    the lines of {!hints} for [f] alone, then its {!accept} and {!replay} lines
+    for the test at the path [filter], or for every test when it is [None], each
+    indented by four spaces and rendered without styling. *)
 
 val max_lines : int
 (** [max_lines] is [10], the bound on the two texts of a block that have no
     other. An {!type-entry} holds at most that many frames of a backtrace, and
     {!Report} at most that many lines of captured output in a failure block. *)
 
-val hints :
-  ?armed:string -> ?invocation:Run.invocation -> Failure.t list -> string list
+val hints : ?armed:string -> Failure.t list -> string list
 (** [hints failures] is the hint lines of a block whose entries are [failures],
-    unindented and unstyled. A hint line says what the block does not: a fact,
-    or a word and a command that runs as pasted.
+    unindented and unstyled. A hint line says what the block does not.
 
-    The lines open with one fact line per baseline failure whose correction is
+    The lines are one fact line per baseline failure whose correction is
     withheld ([withheld = Some _]), in their order, since no command accepts it.
-    Under [`Mirrors] one [accept:] follows for each other baseline failure that
-    is missing or mismatched: [dune promote] and the file that holds the
-    baseline. Under [`Exe _] none does: the report ends on one {!accept} for the
-    whole run. Equal lines print once, and the result is [[]] when no failure
-    has a line. A block has no [replay:] either: the report has one ({!replay}).
+    Equal lines print once, and the result is [[]] when no failure has a line. A
+    block has no [accept:] and no [replay:]: whether a correction can be
+    accepted depends on how the whole run ends, so the report ends on one line
+    for the run ({!promotion}, {!accept}, {!replay}).
 
-    - [invocation] is how the run was started ({!type:Run.invocation}) and
-      defaults to [`Mirrors].
-    - [armed] is the identifier of the armed mutant. The result is then [[]],
-      because the baseline failures of an armed run are the mutant's. *)
+    [armed] is the identifier of the armed mutant. The result is then [[]],
+    because the baseline failures of an armed run are the mutant's. *)
+
+val acceptable : Failure.t -> (Failure.baseline * bool) option
+(** [acceptable f] is the baseline of [f], with whether it is missing, when [f]
+    is a baseline failure that is missing or mismatched and whose correction is
+    kept ([withheld = None]). It is [None] for any other failure. *)
+
+val promotion :
+  held:[ `Held | `Once_created | `Withheld ] -> Failure.t list -> string option
+(** [promotion ~held failures] is the [accept:] line of a run under dune
+    ([`Mirrors]), unindented and unstyled: the [dune promote] command that takes
+    the corrections of [failures], over the files that hold their baselines (the
+    file of an [expect_file], the source of a literal) in order and each once,
+    or plain [dune promote] when a literal has no location. Dune registers a
+    correction only from an action that exits 0, so [held] says which the run's
+    are:
+    - [`Held]: the run exits 0, and the line is the command.
+    - [`Once_created]: what makes the run exit 1 is its missing baseline files
+      alone, which promotion cannot create, and the line is
+      [touch FILES && dune runtest; ] then the command.
+    - [`Withheld]: no promotion accepts them, and the result is [None].
+
+    It is [None] too when no failure is {!acceptable}. *)
 
 val accept :
   ?armed:string ->
@@ -205,6 +234,14 @@ val accept :
     - [invocation] defaults to [`Mirrors]. Under [`Exe cmd] the line is [cmd] as
       given, [-u] and then the flags of [tests].
     - [armed] is the identifier of the armed mutant. *)
+
+val accept_command :
+  ?armed:string ->
+  ?invocation:Run.invocation ->
+  tests:[ `Run of Run.config | `Filter of string option ] ->
+  Failure.t list ->
+  string option
+(** [accept_command ~tests failures] is the command of {!accept}'s line. *)
 
 val replay :
   ?armed:string ->

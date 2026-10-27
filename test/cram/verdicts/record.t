@@ -45,7 +45,7 @@ With no record at all, --failed has nothing to run and exits 2:
 
   $ run VERDICT_SUITE=record ./verdict_main.exe --failed
   --- stderr
-  windtrap: no recorded failures match the current suite
+  windtrap: --failed has nothing to rerun: no run has recorded its failures here yet
   [2]
 
 A record that is a directory changes no run, and --failed then finds
@@ -57,7 +57,7 @@ nothing:
   exit 0
   $ run VERDICT_SUITE=record ./verdict_main.exe --failed
   --- stderr
-  windtrap: no recorded failures match the current suite
+  windtrap: --failed has nothing to rerun: the record of the last run cannot be read
   [2]
   $ rm -r _logs
 
@@ -115,7 +115,7 @@ those executables', so no run reads it, or writes it:
   $ printf 'windtrap-last-failed 1\nfirst\n' > _logs/record/.last-failed
   $ run VERDICT_SUITE=record ./verdict_main.exe --failed
   --- stderr
-  windtrap: no recorded failures match the current suite
+  windtrap: --failed has nothing to rerun: no run has recorded its failures here yet
   [2]
   $ run VERDICT_SUITE=record ./verdict_main.exe > /dev/null; cat _logs/record/.last-failed
   windtrap-last-failed 1

@@ -2301,9 +2301,9 @@ let tables =
 (* Events *)
 
 let event_line = function
-  | Run.Run_started { suite; total; selected; properties } ->
+  | Run.Run_started { suite; total; selected; seeded } ->
       strf "run started: %s, %d of %d%s" suite selected total
-        (if properties then ", properties" else "")
+        (if seeded then ", seeded" else "")
   | Run.Test_started { path } -> "started " ^ path_string path
   | Run.Shrinking { path; steps } ->
       strf "shrinking %s, %d steps" (path_string path) steps
@@ -2335,20 +2335,28 @@ let property_flags =
   let suite =
     [ test "plain" ignore; tag Test_tree.Tag.prop @@ test "law" ignore ]
   in
-  let started filter =
+  let started (filter, replay) =
     let seen = ref "not started" in
     let on_event = function
-      | Run.Run_started { properties; selected; _ } ->
-          seen := strf "%d selected, properties: %b" selected properties
+      | Run.Run_started { seeded; selected; _ } ->
+          seen := strf "%d selected, seeded: %b" selected seeded
       | Run.Test_started _ | Run.Shrinking _ | Run.Shrunk _
       | Run.Test_finished _ | Run.Fixture_release _ | Run.Interrupted _ ->
           ()
     in
     ignore
-      (Recorded.execute ~on_event ~config:(fun c -> { c with filter }) suite);
+      (Recorded.execute ~on_event
+         ~config:(fun c -> { c with filter; replay })
+         suite);
     !seen
   in
-  List.map started [ []; [ "law" ]; [ "plain" ] ]
+  List.map started
+    [
+      ([], None);
+      ([ "law" ], None);
+      ([ "plain" ], None);
+      ([ "law" ], Some "r1:AA:00000000");
+    ]
 
 let observer_exit, observer_called =
   let called = ref false in
@@ -2517,9 +2525,10 @@ let held_limit =
 let run_started_says_whether_properties_run () =
   equal (list string)
     [
-      "2 selected, properties: true";
-      "1 selected, properties: true";
-      "1 selected, properties: false";
+      "2 selected, seeded: true";
+      "1 selected, seeded: true";
+      "1 selected, seeded: false";
+      "1 selected, seeded: false";
     ]
     property_flags
 
@@ -2528,7 +2537,9 @@ let events =
     [
       test "events come in the order of execution, releases after the last"
         events_come_in_order;
-      test "Run_started says whether a selected test is a property"
+      test
+        "Run_started says whether a selected property draws from the seed, \
+         which a replay does not"
         run_started_says_whether_properties_run;
       test "an exit in an observer is that observer's exception" (fun () ->
           is_true observer_called;
@@ -2566,7 +2577,14 @@ let refusal = function
       let site = function Some l -> Loc.to_string l | None -> "unknown" in
       "focused in CI: " ^ String.concat ", " (List.map site sites)
   | Run.Update_refused_in_ci -> "update refused in CI"
-  | Run.No_recorded_failures -> "no recorded failures"
+  | Run.No_recorded_failures why -> (
+      "no recorded failures, "
+      ^
+      match why with
+      | Run.Never_recorded -> "never recorded"
+      | Run.Last_run_passed -> "the last run passed"
+      | Run.Unreadable_record -> "unreadable"
+      | Run.Undeclared_tests -> "undeclared")
   | Run.In_process_selects n -> strf "%d selected in-process" n
   | Run.Case_selects n -> strf "%d selected under --case" n
   | Run.Mutation_refused reason -> "mutation refused: " ^ reason
@@ -2658,7 +2676,7 @@ let exit_codes_of_refusals =
     ("duplicates", Run.Duplicate_paths [ "a" ], 1);
     ("a focus under CI", Run.Focused_in_ci [], 1);
     ("-u under CI", Run.Update_refused_in_ci, 1);
-    ("an empty store", Run.No_recorded_failures, 2);
+    ("an empty store", Run.No_recorded_failures Run.Last_run_passed, 2);
     ("--in-process over two tests", Run.In_process_selects 2, 2);
     ("--case over two tests", Run.Case_selects 2, 2);
   ]
@@ -2701,9 +2719,28 @@ let startup_errors =
           expect (Run.startup_message Run.Update_refused_in_ci)
           @@ __POS_OF__
                {| baseline update refused: CI is set. -u rewrites baselines in place, which is a developer's edit; under CI run with --corrected and accept with dune promote. |});
-      test "the message of an empty store" (fun () ->
-          expect (Run.startup_message Run.No_recorded_failures)
-          @@ __POS_OF__ {| no recorded failures match the current suite |});
+      cases "the message of --failed with nothing to rerun says why" fst
+        [
+          ( "no store",
+            ( Run.Never_recorded,
+              "--failed has nothing to rerun: no run has recorded its failures \
+               here yet" ) );
+          ( "an empty store",
+            ( Run.Last_run_passed,
+              "--failed has nothing to rerun: the last run passed, so no \
+               failure is recorded" ) );
+          ( "a store that cannot be read",
+            ( Run.Unreadable_record,
+              "--failed has nothing to rerun: the record of the last run \
+               cannot be read" ) );
+          ( "a store of tests the suite no longer has",
+            ( Run.Undeclared_tests,
+              "--failed has nothing to rerun: the recorded failures name no \
+               test of this suite" ) );
+        ]
+        (fun (_, (why, message)) ->
+          equal string message
+            (Run.startup_message (Run.No_recorded_failures why)));
       test "the message of --case over two tests" (fun () ->
           expect (Run.startup_message (Run.Case_selects 2))
           @@ __POS_OF__
@@ -4208,7 +4245,7 @@ let unreadable_store =
 let a_store_that_cannot_be_read_reads_as_empty () =
   if Sys.win32 then skip ~reason:"a directory does not open as a file here" ();
   equal (list string)
-    [ "exit 0: a"; "refused: no recorded failures" ]
+    [ "exit 0: a"; "refused: no recorded failures, unreadable" ]
     (List.map ran unreadable_store)
 
 let failed_runs_the_recorded_failures () =
@@ -4217,7 +4254,7 @@ let failed_runs_the_recorded_failures () =
       "exit 1: steady, shaky";
       "exit 1: shaky";
       "exit 0: shaky";
-      "refused: no recorded failures";
+      "refused: no recorded failures, the last run passed";
     ]
     (List.map ran round_trip)
 
@@ -4233,7 +4270,11 @@ let store =
       test "a run of the whole suite drops the paths that no longer exist"
         (fun () ->
           equal (list string)
-            [ "exit 1: old"; "exit 0: new"; "refused: no recorded failures" ]
+            [
+              "exit 1: old";
+              "exit 0: new";
+              "refused: no recorded failures, the last run passed";
+            ]
             (List.map ran dead_entries));
       test "an expected failure is never recorded" (fun () ->
           equal (list string)
@@ -4244,20 +4285,21 @@ let store =
             [ "exit 1: xp"; "exit 1: xp" ]
             (List.map ran unexpected_in_store));
       test "--failed without a store is refused" (fun () ->
-          equal string "refused: no recorded failures" (ran no_store));
+          equal string "refused: no recorded failures, never recorded"
+            (ran no_store));
       test "the store is <log_dir>/<sanitized suite>/.last-failed-<exe>"
         the_store_is_under_the_sanitized_suite;
       test "0.2.0's record of the suite is neither read nor written" (fun () ->
           let runs, legacy = legacy_store in
           equal (list string)
-            [ "refused: no recorded failures"; "exit 0: t, u" ]
+            [ "refused: no recorded failures, never recorded"; "exit 0: t, u" ]
             (List.map ran runs);
           equal (option string) (Some "windtrap-last-failed 1\nt\n") legacy);
       test
         "a store that is not recognised reads as empty, one not written is \
          ignored" (fun () ->
           equal (list string)
-            [ "refused: no recorded failures"; "exit 1: t" ]
+            [ "refused: no recorded failures, unreadable"; "exit 1: t" ]
             (List.map ran unrecognised_store));
       test "a store that cannot be read reads as empty"
         a_store_that_cannot_be_read_reads_as_empty;

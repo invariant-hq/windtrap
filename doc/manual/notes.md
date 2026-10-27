@@ -272,11 +272,13 @@ says about itself, a refusal, a warning or a usage error, goes to
 standard error behind `windtrap:`, so a log keeps the two apart.
 
 A block ends with a command only when the command says something the
-block does not: the file that `accept:` promotes under dune, the mutant
-in `reproduce:`. A command that reruns the tests belongs to the run, not
-to a block, so a report states it once, above the summary. By hand, one
-`accept:` line reruns the run's tests with `-u`, and one `replay:` line
-reruns them with the run's seed, each failed test on the values it drew.
+block does not: the test and token of `replay it:`, the mutant in
+`reproduce:`. A command that acts on the run belongs to the run, not to
+a block, so a report states it once, above the summary, when it knows
+how the run ended: one `accept:` line, `dune promote` and the files
+under dune when dune holds the corrections, the run's tests with `-u`
+by hand, and one `replay:` line that reruns them with the run's seed,
+each failed test on the values it drew.
 Running the tests again is the ordinary next step and needs no line.
 
 ## Three exit codes

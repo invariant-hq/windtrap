@@ -1818,7 +1818,7 @@ let proposal =
                 102 │ prop "Version.compare is a total order"
 
               counterexample (case 1, shrunk 1 step): (0.0, 0.0, 0.0)
-              replay it: --replay r1:AAAAAAAAAAAA:32ff63f8
+              replay it: -f 'version › Version.compare is a total order' --replay r1:AAAAAAAAAAAA:32ff63f8
               which failed with:
                 order (agrees with equal): cmp a (r a) = 0 iff a = r a
                 a            0.0

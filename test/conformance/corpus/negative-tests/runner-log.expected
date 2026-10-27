@@ -10,7 +10,6 @@ conformance: 35 tests
     -   foobarbaz
     -   
     + foobarbaz
-    accept: dune promote test/conformance/corpus/negative-tests/exact.ml
 
   FAIL  Exact › line_13
     test/conformance/corpus/negative-tests/exact.ml:15
@@ -22,7 +21,6 @@ conformance: 35 tests
     -     foobarbaz
     -   
     + foobarbaz
-    accept: dune promote test/conformance/corpus/negative-tests/exact.ml
 
   FAIL  Exact › line_22
     test/conformance/corpus/negative-tests/exact.ml:24
@@ -32,7 +30,6 @@ conformance: 35 tests
     @@ -1,1 +1,1 @@
     -  foobarbaz 
     + foobarbaz
-    accept: dune promote test/conformance/corpus/negative-tests/exact.ml
 
   FAIL  Flexible › line_13
     test/conformance/corpus/negative-tests/flexible.ml:15
@@ -41,7 +38,6 @@ conformance: 35 tests
     expect: mismatch
     @@ -0,0 +1,1 @@
     + hello
-    accept: dune promote test/conformance/corpus/negative-tests/flexible.ml
 
   FAIL  Flexible › line_18
     test/conformance/corpus/negative-tests/flexible.ml:20
@@ -50,7 +46,6 @@ conformance: 35 tests
     expect: mismatch
     @@ -0,0 +1,1 @@
     + hello
-    accept: dune promote test/conformance/corpus/negative-tests/flexible.ml
 
   FAIL  Flexible › line_25
     test/conformance/corpus/negative-tests/flexible.ml:27
@@ -59,7 +54,6 @@ conformance: 35 tests
     expect: mismatch
     @@ -0,0 +1,1 @@
     + hello
-    accept: dune promote test/conformance/corpus/negative-tests/flexible.ml
 
   FAIL  Flexible › line_32
     test/conformance/corpus/negative-tests/flexible.ml:34
@@ -69,7 +63,6 @@ conformance: 35 tests
     @@ -1,1 +1,1 @@
     - WRONG
     + hello
-    accept: dune promote test/conformance/corpus/negative-tests/flexible.ml
 
   FAIL  Flexible › line_39
     test/conformance/corpus/negative-tests/flexible.ml:41
@@ -79,7 +72,6 @@ conformance: 35 tests
     @@ -1,1 +1,1 @@
     - WRONG
     + hello
-    accept: dune promote test/conformance/corpus/negative-tests/flexible.ml
 
   FAIL  Flexible › line_46
     test/conformance/corpus/negative-tests/flexible.ml:48
@@ -89,7 +81,6 @@ conformance: 35 tests
     @@ -1,1 +1,1 @@
     - WRONG
     + hello
-    accept: dune promote test/conformance/corpus/negative-tests/flexible.ml
 
   FAIL  Flexible › line_53
     test/conformance/corpus/negative-tests/flexible.ml:55
@@ -99,7 +90,6 @@ conformance: 35 tests
     @@ -1,1 +1,1 @@
     - WRONG
     + hello
-    accept: dune promote test/conformance/corpus/negative-tests/flexible.ml
 
   FAIL  Flexible › line_63
     test/conformance/corpus/negative-tests/flexible.ml:65
@@ -109,7 +99,6 @@ conformance: 35 tests
     @@ -0,0 +1,2 @@
     + one1
     + two
-    accept: dune promote test/conformance/corpus/negative-tests/flexible.ml
 
   FAIL  Flexible › line_68
     test/conformance/corpus/negative-tests/flexible.ml:70
@@ -119,7 +108,6 @@ conformance: 35 tests
     @@ -0,0 +1,2 @@
     + one2
     + two
-    accept: dune promote test/conformance/corpus/negative-tests/flexible.ml
 
   FAIL  Flexible › line_75
     test/conformance/corpus/negative-tests/flexible.ml:77
@@ -129,7 +117,6 @@ conformance: 35 tests
     @@ -0,0 +1,2 @@
     + one3
     + two
-    accept: dune promote test/conformance/corpus/negative-tests/flexible.ml
 
   FAIL  Flexible › line_82
     test/conformance/corpus/negative-tests/flexible.ml:84
@@ -140,7 +127,6 @@ conformance: 35 tests
     - WRONG
     + one4
     + two
-    accept: dune promote test/conformance/corpus/negative-tests/flexible.ml
 
   FAIL  Flexible › line_89
     test/conformance/corpus/negative-tests/flexible.ml:91
@@ -151,7 +137,6 @@ conformance: 35 tests
     - WRONG
     + one5
     + two
-    accept: dune promote test/conformance/corpus/negative-tests/flexible.ml
 
   FAIL  Flexible › line_96
     test/conformance/corpus/negative-tests/flexible.ml:98
@@ -162,7 +147,6 @@ conformance: 35 tests
     - WRONG
     + one6
     + two
-    accept: dune promote test/conformance/corpus/negative-tests/flexible.ml
 
   FAIL  Flexible › line_104
     test/conformance/corpus/negative-tests/flexible.ml:106
@@ -174,7 +158,6 @@ conformance: 35 tests
     - THING
     + one8
     + two
-    accept: dune promote test/conformance/corpus/negative-tests/flexible.ml
 
   FAIL  Flexible › line_112
     test/conformance/corpus/negative-tests/flexible.ml:114
@@ -186,7 +169,6 @@ conformance: 35 tests
     - THING
     + one9
     + two
-    accept: dune promote test/conformance/corpus/negative-tests/flexible.ml
 
   FAIL  Flexible › line_121
     test/conformance/corpus/negative-tests/flexible.ml:123
@@ -198,7 +180,6 @@ conformance: 35 tests
     -    THING
     + one10
     + two
-    accept: dune promote test/conformance/corpus/negative-tests/flexible.ml
 
   FAIL  Flexible › line_130
     test/conformance/corpus/negative-tests/flexible.ml:132
@@ -210,7 +191,6 @@ conformance: 35 tests
     - THING
     + one11
     + two
-    accept: dune promote test/conformance/corpus/negative-tests/flexible.ml
 
   FAIL  Missing › line_5
     test/conformance/corpus/negative-tests/missing.ml:7
@@ -220,7 +200,6 @@ conformance: 35 tests
     proposed (2 lines):
       + hello
       + goodbye
-    accept: dune promote test/conformance/corpus/negative-tests/missing.ml
 
   FAIL  Missing › line_12
     test/conformance/corpus/negative-tests/missing.ml:15
@@ -230,7 +209,6 @@ conformance: 35 tests
     @@ -0,0 +1,2 @@
     + hello
     + goodbye
-    accept: dune promote test/conformance/corpus/negative-tests/missing.ml
 
   FAIL  Normal_strings › short quoted string
     test/conformance/corpus/negative-tests/normal_strings.ml:3
@@ -240,7 +218,6 @@ conformance: 35 tests
     @@ -0,0 +1,2 @@
     + foo
     + bar
-    accept: dune promote test/conformance/corpus/negative-tests/normal_strings.ml
 
   FAIL  Normal_strings › long quoted string
     test/conformance/corpus/negative-tests/normal_strings.ml:15
@@ -253,7 +230,6 @@ conformance: 35 tests
     + XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
     + XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
     + XXXXXXXXXXXXXXXXXXXX XXXXXXXXXXXXXXXXXXX
-    accept: dune promote test/conformance/corpus/negative-tests/normal_strings.ml
 
   FAIL  Normal_strings › quoted strings with leading spaces
     test/conformance/corpus/negative-tests/normal_strings.ml:26
@@ -275,7 +251,6 @@ conformance: 35 tests
     +   loooooooooooooooooooooooooooooooooooooooooooooooooooooooooooong
     +     and
     + prosper
-    accept: dune promote test/conformance/corpus/negative-tests/normal_strings.ml
 
   FAIL  Semicolon › line_1
     test/conformance/corpus/negative-tests/semicolon.ml:3
@@ -285,7 +260,6 @@ conformance: 35 tests
     @@ -1,1 +1,1 @@
     - two
     + one
-    accept: dune promote test/conformance/corpus/negative-tests/semicolon.ml
 
   FAIL  Spacing › line_3
     test/conformance/corpus/negative-tests/spacing.ml:6
@@ -320,7 +294,6 @@ conformance: 35 tests
     +  one
     + blah
     +  three
-    accept: dune promote test/conformance/corpus/negative-tests/spacing.ml
 
   FAIL  String_extension_syntax › correction for expect node
     test/conformance/corpus/negative-tests/string_extension_syntax.ml:6
@@ -333,7 +306,6 @@ conformance: 35 tests
     + 1
     + 2
     + 3
-    accept: dune promote test/conformance/corpus/negative-tests/string_extension_syntax.ml
 
   FAIL  String_extension_syntax › correction for expect exact node
     test/conformance/corpus/negative-tests/string_extension_syntax.ml:14
@@ -346,7 +318,6 @@ conformance: 35 tests
     + 1
     + 2
     + 3
-    accept: dune promote test/conformance/corpus/negative-tests/string_extension_syntax.ml
 
   FAIL  String_padding › line_1
     test/conformance/corpus/negative-tests/string_padding.ml:3
@@ -356,7 +327,6 @@ conformance: 35 tests
     @@ -1,1 +1,1 @@
     - goodbye
     + hello
-    accept: dune promote test/conformance/corpus/negative-tests/string_padding.ml
 
   FAIL  Trailing › line_5
     test/conformance/corpus/negative-tests/trailing.ml:8
@@ -365,7 +335,6 @@ conformance: 35 tests
     expect: no baseline
     proposed (1 line):
       + goodbye
-    accept: dune promote test/conformance/corpus/negative-tests/trailing.ml
 
   FAIL  Trailing › line_11
     test/conformance/corpus/negative-tests/trailing.ml:14
@@ -374,7 +343,6 @@ conformance: 35 tests
     expect: no baseline
     proposed (1 line):
       + bar
-    accept: dune promote test/conformance/corpus/negative-tests/trailing.ml
 
   FAIL  Unidiomatic_syntax › line_1
     test/conformance/corpus/negative-tests/unidiomatic_syntax.ml:4
@@ -384,7 +352,6 @@ conformance: 35 tests
     @@ -1,1 +1,1 @@
     - Good night, moon.
     + Hello, world.
-    accept: dune promote test/conformance/corpus/negative-tests/unidiomatic_syntax.ml
 ──────────────────────────────────────────────────────────
 
 corrections (10):
@@ -399,5 +366,6 @@ corrections (10):
   wrote test/conformance/corpus/negative-tests/trailing.ml.corrected (2 expectations)
   wrote test/conformance/corpus/negative-tests/unidiomatic_syntax.ml.corrected (1 expectation)
 
+accept: dune promote test/conformance/corpus/negative-tests/exact.ml test/conformance/corpus/negative-tests/flexible.ml test/conformance/corpus/negative-tests/missing.ml test/conformance/corpus/negative-tests/normal_strings.ml test/conformance/corpus/negative-tests/semicolon.ml test/conformance/corpus/negative-tests/spacing.ml test/conformance/corpus/negative-tests/string_extension_syntax.ml test/conformance/corpus/negative-tests/string_padding.ml test/conformance/corpus/negative-tests/trailing.ml test/conformance/corpus/negative-tests/unidiomatic_syntax.ml
 2 passed, 33 failed, 10 corrections written in <duration>.
 --- stderr ---

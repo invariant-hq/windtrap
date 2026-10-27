@@ -205,7 +205,7 @@ type event =
       suite : string;
       total : int;
       selected : int;
-      properties : bool;
+      seeded : bool;
     }
   | Test_started of { path : string list }
   | Shrinking of { path : string list; steps : int }
@@ -898,11 +898,17 @@ let prop ?__POS__ ?timeout ?count ?max_discard ?examples ?summary name gen law =
 
 (* Startup errors *)
 
+type nothing_recorded =
+  | Never_recorded
+  | Last_run_passed
+  | Unreadable_record
+  | Undeclared_tests
+
 type startup_error =
   | Duplicate_paths of string list
   | Focused_in_ci of Loc.t option list
   | Update_refused_in_ci
-  | No_recorded_failures
+  | No_recorded_failures of nothing_recorded
   | In_process_selects of int
   | Case_selects of int
   | Mutation_refused of string
@@ -922,7 +928,14 @@ let startup_message = function
       "baseline update refused: CI is set. -u rewrites baselines in place, \
        which is a developer's edit; under CI run with --corrected and accept \
        with dune promote."
-  | No_recorded_failures -> "no recorded failures match the current suite"
+  | No_recorded_failures why -> (
+      "--failed has nothing to rerun: "
+      ^
+      match why with
+      | Never_recorded -> "no run has recorded its failures here yet"
+      | Last_run_passed -> "the last run passed, so no failure is recorded"
+      | Unreadable_record -> "the record of the last run cannot be read"
+      | Undeclared_tests -> "the recorded failures name no test of this suite")
   | In_process_selects n ->
       Pp.str
         "--in-process runs one test, and the selection holds %d; narrow it \
@@ -975,11 +988,11 @@ let entry_of_line line =
    cases named: [[]] for the whole test, which a line naming it alone
    makes it. A directory opens as a file on POSIX systems, and the first
    read raises [Sys_error], so a read is guarded as the opening is. *)
-let read_store path =
+let read_record path =
   let entries ic =
     match input_line ic with
-    | exception End_of_file -> []
-    | magic when not (String.equal magic store_magic) -> []
+    | exception End_of_file -> None
+    | magic when not (String.equal magic store_magic) -> None
     | _ ->
         let cases = Hashtbl.create 16 in
         let add path case =
@@ -1006,11 +1019,18 @@ let read_store path =
                   add path case;
                   lines order)
         in
-        List.map (fun path -> (path, Hashtbl.find cases path)) (lines [])
+        Some (List.map (fun path -> (path, Hashtbl.find cases path)) (lines []))
   in
-  match In_channel.with_open_bin path entries with
-  | entries -> entries
-  | exception Sys_error _ -> []
+  if not (Sys.file_exists path) then `Absent
+  else
+    match In_channel.with_open_bin path entries with
+    | Some entries -> `Read entries
+    | None | (exception Sys_error _) -> `Unreadable
+
+let read_store path =
+  match read_record path with
+  | `Read entries -> entries
+  | `Absent | `Unreadable -> []
 
 let write_store path entries =
   let buffer = Buffer.create 256 in
@@ -1149,13 +1169,14 @@ let startup (config : config) ~suite ~in_ci ~focus_sites paths =
   in
   if not config.failed_only then Ok None
   else
-    match
-      List.filter
-        (fun (path, _) -> List.mem path paths)
-        (read_store (store_path config ~suite))
-    with
-    | [] -> Error No_recorded_failures
-    | entries -> Ok (Some entries)
+    match read_record (store_path config ~suite) with
+    | `Absent -> Error (No_recorded_failures Never_recorded)
+    | `Unreadable -> Error (No_recorded_failures Unreadable_record)
+    | `Read [] -> Error (No_recorded_failures Last_run_passed)
+    | `Read entries -> (
+        match List.filter (fun (path, _) -> List.mem path paths) entries with
+        | [] -> Error (No_recorded_failures Undeclared_tests)
+        | entries -> Ok (Some entries))
 
 type selection = {
   cases : Test_tree.case list;
@@ -1777,11 +1798,23 @@ let with_interrupts ~interrupt run fn =
 
 (* Executing *)
 
-let run_started ~suite (selection : selection) =
-  let properties =
+(* A property replays, and draws nothing from the seed, under [--replay] and
+   [--case], and under [--failed] when every case the store records of it is
+   a counterexample's token. *)
+let run_started (config : config) ~suite (selection : selection) =
+  let replays (case : Test_tree.case) =
+    Option.is_some config.replay
+    || Option.is_some config.case_file
+    ||
+    match List.assoc_opt (case_path case) selection.recorded with
+    | Some (_ :: _ as cases) ->
+        List.for_all (function Replay _ -> true | Row _ -> false) cases
+    | Some [] | None -> false
+  in
+  let seeded =
     List.exists
       (fun (case : Test_tree.case) ->
-        Test_tree.Tag.mem Test_tree.Tag.prop case.tags)
+        Test_tree.Tag.mem Test_tree.Tag.prop case.tags && not (replays case))
       selection.cases
   in
   Run_started
@@ -1789,7 +1822,7 @@ let run_started ~suite (selection : selection) =
       suite;
       total = selection.total;
       selected = List.length selection.cases;
-      properties;
+      seeded;
     }
 
 (* [drive] runs [selected] in order, up to the first counted failure under
@@ -1865,7 +1898,7 @@ let execute ?(on_event = ignore) config ~suite tests =
   with_context (In_run run) @@ fun () ->
   let interrupt = interrupt ~on_event run ~started in
   with_interrupts ~interrupt run @@ fun () ->
-  on_event (run_started ~suite selection);
+  on_event (run_started config ~suite selection);
   let uncorrected = drive ~on_event ~interrupt run selection.cases in
   Option.iter interrupt run.interrupted;
   let release_failures =
@@ -1886,7 +1919,7 @@ let list_selection config ~suite tests =
 (* Exit codes *)
 
 let exit_code = function
-  | Error (No_recorded_failures | In_process_selects _ | Case_selects _) -> 2
+  | Error (No_recorded_failures _ | In_process_selects _ | Case_selects _) -> 2
   | Error
       ( Duplicate_paths _ | Focused_in_ci _ | Update_refused_in_ci
       | Mutation_refused _ ) ->

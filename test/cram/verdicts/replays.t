@@ -50,7 +50,7 @@ A case run on two domains runs as many times as the search runs one, 50,
 and its schedule is not replayed:
 
   $ run VERDICT_SUITE=replayed ./verdict_main.exe --failed
-  replayed: 2 tests (seed SEED)
+  replayed: 2 tests
   replayed (2):
     counts: the replayed case passed
     counts from two domains: its schedule is not replayed: the case passed 50 times
@@ -67,14 +67,14 @@ does, and --failed then has nothing to run:
   windtrap-last-failed 2
   $ run VERDICT_SUITE=replayed ./verdict_main.exe --failed
   --- stderr
-  windtrap: no recorded failures match the current suite
+  windtrap: --failed has nothing to rerun: the last run passed, so no failure is recorded
   [2]
 
 --replay of the two-domain case says the same, and so does its row
 under -v:
 
   $ run VERDICT_SUITE=replayed ./verdict_main.exe -v -f 'two domains' --replay "$token" | sed -E 's/ +[0-9.]+m?s \(/ DURATION (/'
-  replayed: 1 test (seed SEED)
+  replayed: 1 test
     PASS  counts from two domains DURATION (its schedule is not replayed: the case passed 50 times)
   
   replayed (1):

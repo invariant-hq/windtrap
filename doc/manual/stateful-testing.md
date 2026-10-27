@@ -228,7 +228,7 @@ bounded_queue: 1 test (seed s1:c26eddaeb764a645)
        1                    let q1 = create 1
        2  []                push q1 0
        3  [0]               push q1 0
-    replay it: --replay r1:AQAAAQEAAAEBAAAA:37cd7300
+    replay it: -f 'queue › behaves like a list' --replay r1:AQAAAQEAAAEBAAAA:37cd7300
     which failed at:
       examples/04-stateful-testing/test_bounded_queue.ml:31
         31 │ command "push"
@@ -268,7 +268,7 @@ bounded_queue: 1 test (seed s1:c26eddaeb764a645)
        #  reference before  call
        1                    let q1 = create 1
        2  []                pop q1
-    replay it: --replay r1:AQAAAQIAAA:550b9a30
+    replay it: -f 'queue › behaves like a list' --replay r1:AQAAAQIAAA:550b9a30
     which failed at:
       examples/04-stateful-testing/test_bounded_queue.ml:34
         34 │ command "pop" (queue ^-> returns int) Model.pop Bounded_queue.pop;
@@ -386,7 +386,7 @@ lru: 1 test (seed s1:c26eddaeb764a645)
        2  []                add c1 3 0
        3  [(3, 0)]          add c1 0 0
        4  [(0, 0); (3, 0)]  find c1 3
-    replay it: --replay r1:AQABAQEAAwABAQAAAAECAAMA:9f59d852
+    replay it: -f 'Lru › behaves like a list' --replay r1:AQABAQEAAwABAQAAAAECAAMA:9f59d852
     which failed with:
       after call 4 of 4, on c1
       expected  [(3, 0); (0, 0)]
@@ -469,7 +469,7 @@ vec: 1 test (seed s1:3d27fa99e7f6ae87)
        3  [0]               push v1 1
        4  [0; 1]            push v1 0
        5  [0; 1; 0]         get v1 1
-    replay it: --replay r1:AQABAQAAAQEAAQEBAAABAgDWqtWqAQA:b30bb875
+    replay it: -f 'Vec › behaves like a list' --replay r1:AQABAQAAAQEAAQEBAAABAgDWqtWqAQA:b30bb875
     which failed at:
       examples/04-stateful-testing/test_vec.ml:26
         26 │ command "get" (vec ^-> index ^-> returns int) Model.get Vec.get;
@@ -665,7 +665,7 @@ guard: 1 test (seed s1:c26eddaeb764a645)
        1                          let g1 = create ()
        2  clean                   read_file g1 ./secrets/api.key    Ran "read secrets/api.key"
        3  read ./secrets/api.key  http_get g1 https://example.com/  Ran "200 https://example.com/"
-    replay it: --replay r1:AQABAQACAQIAAAA:87b9f323
+    replay it: -f 'Guard › keeps its policy' --replay r1:AQABAQACAQIAAAA:87b9f323
     which failed at:
       examples/04-stateful-testing/test_guard.ml:44
         44 │ command "http_get"
@@ -830,7 +830,7 @@ mpmc: 2 tests (seed s1:4974eb4158b03e43)
        2  1       push q1 0           ()
        3  2       push q1 0           ()
        4          length q1           1
-    replay it: --replay r1:AQAAAQIBAAABAwEAAAEBAwAA:92e0beb6
+    replay it: -f 'Mpmc › behaves like Queue from two domains' --replay r1:AQAAAQIBAAABAwEAAAEBAwAA:92e0beb6
     which failed with:
       no order of the calls gives these results
       the closest order, 2 then 3, differs at call 4: length q1
@@ -925,7 +925,7 @@ vault: 1 test (seed s1:c26eddaeb764a645)
        1  let v1 = create ()
        2  store v1 ((1, 0))
        3  log v1
-    replay it: --replay r1:AQABAQABAAEDAAA:8b8db207
+    replay it: -f 'Vault › logs nothing of a pin' --replay r1:AQABAQABAAEDAAA:8b8db207
     which failed at:
       examples/04-stateful-testing/test_vault.ml:16
         16 │ command "log" (vault ^-> returns (list string)) Vault.log Vault.log;

@@ -8,11 +8,11 @@ conformance: 1 test
     @@ -1,1 +1,1 @@
     - 4
     + 3
-    accept: dune promote test/conformance/corpus/negative-tests/for-mdx/foo.ml
 ──────────────────────────────────────────────────────────
 
 corrections (1):
   wrote test/conformance/corpus/negative-tests/for-mdx/foo.ml.corrected (1 expectation)
 
+accept: dune promote test/conformance/corpus/negative-tests/for-mdx/foo.ml
 1 failed, 1 correction written in <duration>.
 --- stderr ---

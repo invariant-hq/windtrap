@@ -72,11 +72,11 @@ conformance: 1 test
     @@ -1,1 +1,1 @@
     - goodbye
     + hello
-    accept: dune promote test/conformance/corpus/explicit-strict-false/negative-test/nine.ml
 ──────────────────────────────────────────────────────────
 
 corrections (1):
   wrote test/conformance/corpus/explicit-strict-false/negative-test/nine.ml.corrected (9 expectations)
 
+accept: dune promote test/conformance/corpus/explicit-strict-false/negative-test/nine.ml
 1 failed, 1 correction written in <duration>.
 --- stderr ---

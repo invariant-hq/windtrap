@@ -46,7 +46,6 @@ conformance: 6 tests
     @@ -0,0 +1,2 @@
     + a
     + \x0db
-    accept: dune promote test/conformance/corpus/negative-tests/escaped_strings.ml
 
   FAIL  Escaped_strings › escaped tab
     test/conformance/corpus/negative-tests/escaped_strings.ml:18
@@ -94,7 +93,6 @@ conformance: 6 tests
     @@ -0,0 +1,2 @@
     + a
     + 	b
-    accept: dune promote test/conformance/corpus/negative-tests/escaped_strings.ml
 
   FAIL  Escaped_strings › escaped quote
     test/conformance/corpus/negative-tests/escaped_strings.ml:33
@@ -110,7 +108,6 @@ conformance: 6 tests
     expect_exact: mismatch
     @@ -0,0 +1,1 @@
     + a"b
-    accept: dune promote test/conformance/corpus/negative-tests/escaped_strings.ml
 
   FAIL  Escaped_strings › escaped trailing carriage return
     test/conformance/corpus/negative-tests/escaped_strings.ml:40
@@ -144,7 +141,6 @@ conformance: 6 tests
     @@ -0,0 +1,2 @@
     + a\x0d
     + b\x0d
-    accept: dune promote test/conformance/corpus/negative-tests/escaped_strings.ml
 
   FAIL  Escaped_strings › unescaped carriage return --- empty expect
     test/conformance/corpus/negative-tests/escaped_strings.ml:51
@@ -162,7 +158,6 @@ conformance: 6 tests
     @@ -0,0 +1,2 @@
     + a\x0d
     + b
-    accept: dune promote test/conformance/corpus/negative-tests/escaped_strings.ml
 
   FAIL  Escaped_strings › unescaped carriage return --- populated expect
     test/conformance/corpus/negative-tests/escaped_strings.ml:63
@@ -173,11 +168,11 @@ conformance: 6 tests
     - a
     + a\x0d
       b
-    accept: dune promote test/conformance/corpus/negative-tests/escaped_strings.ml
 ──────────────────────────────────────────────────────────
 
 corrections (1):
   wrote test/conformance/corpus/negative-tests/escaped_strings.ml.corrected (21 expectations)
 
+accept: dune promote test/conformance/corpus/negative-tests/escaped_strings.ml
 6 failed, 1 correction written in <duration>.
 --- stderr ---

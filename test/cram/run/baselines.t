@@ -54,7 +54,7 @@ once, on standard error, after its report:
   $ run ./suite_main.exe -e math --corrected > out 2> err
   [1]
   $ cat err
-  windtrap: warning: dune registers a correction for promotion only when the run that wrote it exits 0, so the failures above withhold the correction written here. Fix the failures, rerun, then 'dune promote'.
+  windtrap: warning: dune registers a correction for promotion only when the run that wrote it exits 0, so the failures above withhold the correction written here. Fix the failures, rerun, then 'dune promote'. To accept it now: ./suite_main.exe -u -e 'math'
   $ cat test/cram/run/greeting.expected.corrected
   hello from the fixture
   $ rm test/cram/run/greeting.expected.corrected

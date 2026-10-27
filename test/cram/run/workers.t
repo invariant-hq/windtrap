@@ -46,7 +46,7 @@ check is a conflict, which keeps no correction, under --corrected:
     FAIL  a
     FAIL  b
   1 passed, 2 failed, 1 correction written in DURATION.
-  windtrap: warning: dune registers a correction for promotion only when the run that wrote it exits 0, so the failures above withhold the correction written here. Fix the failures, rerun, then 'dune promote'.
+  windtrap: warning: dune registers a correction for promotion only when the run that wrote it exits 0, so the failures above withhold the correction written here. Fix the failures, rerun, then 'dune promote'. To accept it now: ../workers_main.exe -u
   h.expected: h old
   k.expected: k old
   -  let check s = expect s @@ __POS_OF__ {|old|} in
@@ -141,7 +141,7 @@ Corrections spread across many tests, under every mode:
     FAIL  o order
     FAIL  z corrects s4
   2 passed, 1 expected failure, 17 failed (7 subtest failures), 3 corrections written in DURATION.
-  windtrap: warning: dune registers a correction for promotion only when the run that wrote it exits 0, so the failures above withhold the corrections written here. Fix the failures, rerun, then 'dune promote'.
+  windtrap: warning: dune registers a correction for promotion only when the run that wrote it exits 0, so the failures above withhold the corrections written here. Fix the failures, rerun, then 'dune promote'. To accept them now: ../workers_main.exe -u
   h.expected: h old
   k.expected: k old
   h.expected.corrected: h new
@@ -205,7 +205,7 @@ the parent's process, leaves the same, at -j 1 as at -j 8:
   exit 1
     FAIL  rows
   1 failed (5 subtest failures), 2 corrections written in DURATION.
-  windtrap: warning: dune registers a correction for promotion only when the run that wrote it exits 0, so the failures above withhold the corrections written here. Fix the failures, rerun, then 'dune promote'.
+  windtrap: warning: dune registers a correction for promotion only when the run that wrote it exits 0, so the failures above withhold the corrections written here. Fix the failures, rerun, then 'dune promote'. To accept them now: ../workers_main.exe -u
   h.expected: h old
   k.expected: k old
   t.expected: t old
@@ -245,7 +245,7 @@ leaves that literal as it was:
     FAIL  rows
     FAIL  a law checks s6
   1 passed, 3 failed (5 subtest failures), 2 corrections written in DURATION.
-  windtrap: warning: dune registers a correction for promotion only when the run that wrote it exits 0, so the failures above withhold the corrections written here. Fix the failures, rerun, then 'dune promote'.
+  windtrap: warning: dune registers a correction for promotion only when the run that wrote it exits 0, so the failures above withhold the corrections written here. Fix the failures, rerun, then 'dune promote'. To accept them now: ../workers_main.exe -u
   h.expected: h old
   k.expected: k old
   t.expected: t old

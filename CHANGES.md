@@ -178,7 +178,10 @@ for how to migrate from 0.2.0.
   the drawn constructor or generator.
 - A failing property prints the line that keeps its counterexample:
   `keep it: ~examples:[ … ]` where its generators print OCaml, and
-  otherwise `replay it: --replay TOKEN`
+  otherwise `replay it: -f PATH --replay TOKEN`, with the `-f` that
+  selects its test alone and an `-e` for each other test whose path
+  holds it, so the line pasted after the executable checks that case
+  and runs no other test
   (doc/manual/property-testing.md#keeping-a-counterexample-as-a-regression).
 
 - (breaking) An `expect`, `expect_exact` or `expect_file` in the law of
@@ -249,7 +252,7 @@ for how to migrate from 0.2.0.
   each later call on the value it took, so a program with several
   values of one type shrinks to its minimum more often (the guide's set:
   88% of seeds, where 0.2.0 reached 66%). A failing program prints
-  `replay it: --replay TOKEN`, which checks that program alone.
+  `replay it: -f PATH --replay TOKEN`, which checks that program alone.
 - A command list whose programs are no more than the count, over few
   steps, has every program checked once, as a finite domain is.
 - On several domains the labels of the calls after the prefix count
@@ -266,6 +269,22 @@ for how to migrate from 0.2.0.
 
 ### Running
 
+- The report says nothing false and prints only commands that work.
+  Under dune no block prints `accept:`; the report ends on one
+  `accept: dune promote FILES` over every file whose correction dune
+  holds, printed only when the run exits 0, or, when the run's missing
+  baseline files are all that fail it, `accept: touch FILES &&
+  dune runtest; dune promote FILES`. A run whose other failures make
+  dune withhold its corrections prints no `accept:`, and its warning
+  names the `-u` command that accepts them now. A failing table counts
+  a row that recorded a failure as not passed, and names those that
+  failed on a baseline, as `scope: 0 of 3 rows passed, 3 failed on a
+  baseline`, where it read `3 of 3 rows passed`. A run whose every
+  selected property replays, under `--replay`, `--case` or `--failed`
+  with recorded tokens, prints no seed on its header line, since it
+  draws nothing. `--failed` with nothing to rerun says why: the last
+  run passed, no run has recorded failures, the record cannot be read,
+  or it names no test of the suite.
 - A replay is judged for no vacuity, and a replayed case that passes
   says so. `--replay`, and `--failed` with a recorded counterexample,
   check that case alone and draw nothing, yet a stateful test judged it

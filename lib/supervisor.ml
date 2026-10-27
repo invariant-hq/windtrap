@@ -641,7 +641,7 @@ let supervise ?(on_event = ignore) ~on_reach (config : Run.config) ~suite tests
     end
   in
   Os.with_signals interrupting interrupt @@ fun () ->
-  on_event (Run.run_started ~suite selection);
+  on_event (Run.run_started config ~suite selection);
   let cases = Array.of_list selection.cases in
   let n = Array.length cases in
   (* Under --stream the tests write to the real descriptors, one at a time. *)

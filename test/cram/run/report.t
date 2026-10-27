@@ -169,7 +169,7 @@ and the line reruns them on their cases:
   $ eval "run env FACADE_FIXTURE=properties $(sed -n 's/^replay: //p' out)" > again 2>&1
   [1]
   $ head -1 again | scrub
-  fixture: 2 tests (seed SEED)
+  fixture: 2 tests
   $ grep 'counterexample' out | sed 's/.*: //' > before
   $ grep 'counterexample' again | sed 's/.*: //' > after
   $ diff before after && echo same counterexamples

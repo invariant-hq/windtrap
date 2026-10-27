@@ -165,7 +165,9 @@ storage: 1 test
 ```
 
 `-l --failed` lists the tests `--failed` would run, and `--failed` with
-nothing recorded runs nothing and exits `2` (see the command-line
+nothing recorded runs nothing, says why, as
+`--failed has nothing to rerun: the last run passed, so no failure is recorded`,
+and exits `2` (see the command-line
 section of `lib/windtrap.mli` for how a run updates the record). A run
 never fails because it cannot read or write the record, and a record it
 cannot read counts as empty.

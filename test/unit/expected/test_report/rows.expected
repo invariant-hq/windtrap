@@ -16,7 +16,6 @@
       + Usage: mytool [OPTIONS] COMMAND
       + Commands:
       +   run
-    accept: touch 'test/help.expected' && dune runtest; dune promote test/help.expected
 
 
 === and shares the parenthesis with the armed qualifier

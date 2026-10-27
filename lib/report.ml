@@ -50,6 +50,7 @@ type t = {
   live : bool;
   config : Run.config;
   armed : string option;
+  paths : string list; (* the suite's, which a [replay it:] line excludes *)
   mutable header : header option; (* [None] until [header] runs *)
   mutable header_printed : bool;
   mutable seen : int; (* results received *)
@@ -61,7 +62,7 @@ type t = {
   mutable survivors : int; (* survivor blocks committed *)
 }
 
-let create ~out ~ansi ?(terminal = false) (config : Run.config) =
+let create ~out ~ansi ?(terminal = false) ?(paths = []) (config : Run.config) =
   if not (Float.is_finite config.slow_threshold && config.slow_threshold >= 0.)
   then invalid_arg "Report.create: slow_threshold not finite and non-negative";
   {
@@ -75,6 +76,7 @@ let create ~out ~ansi ?(terminal = false) (config : Run.config) =
       (match config.mutation with
       | Run.Armed id -> Some id
       | Run.No_mutation | Run.Loop _ -> None);
+    paths;
     header = None;
     header_printed = false;
     seen = 0;
@@ -86,7 +88,7 @@ let create ~out ~ansi ?(terminal = false) (config : Run.config) =
 
 (* Under GitHub Actions the live line is off even on a terminal: its erase
    sequences would land verbatim in the log. *)
-let terminal (config : Run.config) =
+let terminal ?paths (config : Run.config) =
   let tty = Os.is_tty_stdout () in
   let ansi =
     Os.resolve_color config.color ~tty ~inside_dune:(Os.inside_dune ())
@@ -94,7 +96,7 @@ let terminal (config : Run.config) =
   in
   create ~out:Format.std_formatter ~ansi
     ~terminal:(tty && not (Os.in_github_actions ()))
-    config
+    ?paths config
 
 (* The transcript *)
 
@@ -309,7 +311,39 @@ let replay_fact (s : Property.stats) =
    skipped, with the first one's reason, then the examples and the
    discards. A verdict says what held, and a failure what passed before
    it. A verdict on replayed cases alone says that they passed. *)
-let ran ~verdict (r : Run.result) (s : Property.stats) =
+(* A table's row whose law returned is a case of the property that passed,
+   though it may have recorded a failure, as a stale baseline: the rows the
+   test refuted, by either, are the ones that did not pass, and those that
+   failed on a baseline are named. *)
+let table_rows (r : Run.result) failures ~drawn n =
+  let refuted =
+    List.sort_uniq String.compare
+      (List.filter_map
+         (function Run.Row id -> Some id | Run.Replay _ -> None)
+         r.refuted)
+  in
+  let skipped =
+    match r.skipped_rows with Some { count; _ } -> count | None -> 0
+  in
+  let passed =
+    if refuted = [] then drawn else n - skipped - List.length refuted
+  in
+  let on_baseline =
+    List.sort_uniq String.compare
+      (List.filter_map
+         (fun (f : Failure.t) ->
+           match (f.kind, f.subtest) with
+           | Failure.Baseline _, _ :: row :: _ -> Some row
+           | _ -> None)
+         failures)
+  in
+  strf "%d of %d row%s passed" passed n (plural n)
+  ::
+  (match List.length on_baseline with
+  | 0 -> []
+  | k -> [ strf "%d failed on a baseline" k ])
+
+let ran ?(failures = []) ~verdict (r : Run.result) (s : Property.stats) =
   if verdict && s.replayed > 0 then [ replay_fact s ]
   else
     let some ?(passed = "") n what =
@@ -323,6 +357,7 @@ let ran ~verdict (r : Run.result) (s : Property.stats) =
           [ strf "holds on all %d %s%s" n unit (plural n) ]
       | Some n, Some _ when verdict ->
           [ strf "holds on %d of %d %s%s" drawn n unit (plural n) ]
+      | Some n, _ when r.table -> table_rows r failures ~drawn n
       | Some n, _ -> [ strf "%d of %d %s%s passed" drawn n unit (plural n) ]
       | None, _ -> some ~passed drawn "case")
     @ (match r.skipped_rows with
@@ -358,21 +393,24 @@ let captured_output (tail : Failure.tail) =
         ])
       (Option.to_list tail.log_path)
 
-let entry_lines ~seen f =
+let entry_lines ~seen ?select f =
   List.map (Sections.indented indent)
-    (Sections.entry ~seen ~excerpt:true f).lines
+    (Sections.entry ~seen ?select ~excerpt:true f).lines
 
 (* Sibling subtests, or a body and its teardown, fail independently: each
    failure has its entry, and the hints are the whole test's. *)
 let block_lines t ~seen ~hints (r : Run.result) failures =
+  let select =
+    Sections.selecting ~paths:t.paths (Test_tree.path_to_string r.path)
+  in
   List.concat
     (List.mapi
-       (fun i f -> (if i > 0 then [ [] ] else []) @ entry_lines ~seen f)
+       (fun i f -> (if i > 0 then [ [] ] else []) @ entry_lines ~seen ~select f)
        failures)
   @ (match r.prop_stats with
     | None -> []
     | Some s ->
-        (match ran ~verdict:false r s with
+        (match ran ~failures ~verdict:false r s with
           | [] -> []
           | facts ->
               [
@@ -390,7 +428,7 @@ let block_lines t ~seen ~hints (r : Run.result) failures =
   if hints then
     List.map
       (fun hint -> [ plain (indent ^ hint) ])
-      (Sections.hints ?armed:t.armed ~invocation:t.config.invocation failures)
+      (Sections.hints ?armed:t.armed failures)
   else []
 
 (* A counted failure's block. Under verbose its title is the test's row. *)
@@ -779,7 +817,7 @@ let rec drop n = function _ :: rest when n > 0 -> drop (n - 1) rest | l -> l
    ended. An interrupted run's would run the tests the signal kept from
    running, and [-u] would accept baselines the report does not show. *)
 let close t ~commands ~results ~release_failures ~duration ?baselines ?stopped
-    ?(before_summary = ignore) () =
+    ?(held = `Withheld) ?(before_summary = ignore) () =
   sync t;
   clear_live t;
   let count s = List.length (List.filter (fun r -> status r = s) results) in
@@ -870,10 +908,16 @@ let close t ~commands ~results ~release_failures ~duration ?baselines ?stopped
           `Filter (Some (Test_tree.path_to_string r.path))
       | _ -> run
     in
+    let promotion =
+      match (armed, invocation) with
+      | None, `Mirrors -> Sections.promotion ~held failures
+      | Some _, _ | None, `Exe _ -> None
+    in
     List.iter
       (fun line -> put t [ plain line ])
-      (Option.to_list
-         (Sections.accept ?armed ~invocation ~tests:accepted failures)
+      (Option.to_list promotion
+      @ Option.to_list
+          (Sections.accept ?armed ~invocation ~tests:accepted failures)
       @ Option.to_list (Sections.replay ?armed ~invocation ~tests:run failures)
       )
   end;
@@ -931,9 +975,9 @@ let interrupted t ?before_summary ?releasing ?starting ~running ~results
     ?before_summary ()
 
 let observe t ~seed ~selection = function
-  | Run.Run_started { suite; total; selected; properties } ->
+  | Run.Run_started { suite; total; selected; seeded } ->
       header t ~suite ~tests:selected ~declared:total ?selection
-        ~seed:(if properties then Some seed else None)
+        ~seed:(if seeded then Some seed else None)
         ()
   | Run.Test_started { path } | Run.Shrunk { path } -> begin_test t ~path
   | Run.Shrinking { path; steps } -> shrinking t ~path ~steps
@@ -966,7 +1010,7 @@ let escape_property s = encode ~property:true (Text.escape_controls s)
 let group_start name = strf "::group::%s\n" (escape_data name)
 let group_end = "::endgroup::\n"
 
-let annotation ?(invocation = `Mirrors) ?armed ~path (f : Failure.t) =
+let annotation ?(invocation = `Mirrors) ?armed ?paths ~path (f : Failure.t) =
   let path = Test_tree.path_to_string path in
   let location =
     match f.loc with
@@ -975,14 +1019,14 @@ let annotation ?(invocation = `Mirrors) ?armed ~path (f : Failure.t) =
     | None -> ""
   in
   let _, lines =
-    Sections.unstyled_entry ~filter:(Some path) ~invocation ?armed f
+    Sections.unstyled_entry ~filter:(Some path) ~invocation ?armed ?paths f
   in
   strf "::error %stitle=%s::%s\n" location
     (escape_property ("Test failure: " ^ path))
     (escape_data (String.concat "\n" lines))
 
-let annotations ?invocation ?armed ~release_failures results =
-  let annotate path f = annotation ?invocation ?armed ~path f in
+let annotations ?invocation ?armed ?paths ~release_failures results =
+  let annotate path f = annotation ?invocation ?armed ?paths ~path f in
   let counted (r : Run.result) =
     if status r = `Failed then List.map (annotate r.path) (failures r) else []
   in
@@ -1067,6 +1111,28 @@ let mutation_interrupted t ~testing m =
 
 (* Running *)
 
+(* Whether dune holds the corrections of a run: all of them when it exits 0,
+   and once its missing files exist when they are all that make it exit 1. *)
+let held (outcome : Run.outcome) =
+  let refused =
+    List.exists
+      (function Baseline.Refused _ -> true | Baseline.Written _ -> false)
+      (Baseline.writes (Run.baselines outcome.run))
+  in
+  let failures =
+    List.concat_map
+      (fun (r : Run.result) -> if r.counted then failures r else [])
+      (Run.results outcome.run)
+  in
+  if Run.exit_code (Ok outcome) = 0 then `Held
+  else if
+    (not outcome.failed_in_ci)
+    && outcome.release_failures = []
+    && (not refused)
+    && List.for_all (fun f -> Option.is_some (Sections.acceptable f)) failures
+  then `Once_created
+  else `Withheld
+
 type executor =
   ?on_event:(Run.event -> unit) ->
   Run.config ->
@@ -1078,7 +1144,12 @@ let run
     ?(execute : executor =
       fun ?on_event config -> Supervisor.execute ?on_event config)
     ?(on_event = fun (_ : Run.event) -> ()) ~suite (config : Run.config) tests =
-  let renderer = terminal config in
+  let paths =
+    List.map
+      (fun (c : Test_tree.case) -> Test_tree.path_to_string c.path)
+      (Test_tree.flatten tests)
+  in
+  let renderer = terminal ~paths config in
   let transcript =
     observe renderer ~seed:config.seed
       ~selection:
@@ -1092,7 +1163,7 @@ let run
     if config.github then begin
       print_string group_end;
       print_string
-        (annotations ~invocation:config.invocation ?armed:renderer.armed
+        (annotations ~invocation:config.invocation ?armed:renderer.armed ~paths
            ~release_failures results)
     end
   in
@@ -1120,13 +1191,13 @@ let run
       let release_failures = outcome.release_failures in
       finish renderer ~results ~release_failures ~duration:outcome.duration
         ~baselines:(Run.baselines outcome.run)
-        ?stopped:(Run.stopped outcome.run)
+        ~held:(held outcome) ?stopped:(Run.stopped outcome.run)
         ~before_summary:(close_envelope ~release_failures results)
         ();
       (* Last, so the file is written from the rows the terminal has shown. *)
       Option.iter
         (Report_junit.write ~invocation:config.invocation ?armed:renderer.armed
-           ~suite ~duration:outcome.duration ~results ~release_failures)
+           ~paths ~suite ~duration:outcome.duration ~results ~release_failures)
         config.junit;
       Option.iter
         (Report_json.write ~suite ~seed:config.seed

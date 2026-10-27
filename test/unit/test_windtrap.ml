@@ -453,9 +453,39 @@ let tables =
         (fun n -> equal int 1 n);
     ]
 
+(* Two rows whose law returns but whose literal is stale, and one that
+   holds: the stale rows did not pass. *)
+let stale_table =
+  facade "stale"
+    [
+      cases "rows" fst
+        [
+          ("a", __POS_OF__ {| a |});
+          ("b", __POS_OF__ {| stale |});
+          ("c", __POS_OF__ {| stale |});
+        ]
+        (fun (text, literal) -> expect text literal);
+    ]
+
+(* A property that fails, beside another whose path holds its own. *)
+let replayable =
+  facade "replay"
+    [
+      prop "law" (Gen.with_pp Format.pp_print_int Gen.int) (fun _ ->
+          is_true false);
+      prop "law kept" Gen.int ignore;
+    ]
+
 let tables_group =
   group "Tables"
     [
+      test "a row that only failed on a baseline is not counted as passed"
+        (fun () ->
+          contains ~sub:"scope: 1 of 3 rows passed, 2 failed on a baseline"
+            stale_table.out);
+      test "replay it selects the property alone" (fun () ->
+          contains ~sub:"replay it: -f law -e 'law kept' --replay r1:"
+            replayable.out);
       test "two rows with one id are duplicates, and no row runs" (fun () ->
           contains ~sub:"duplicate rows: rows 1 and 3 have the id odd"
             (message (failure tables [ "duplicates" ])));
@@ -693,7 +723,7 @@ let u_writes_the_produced_bytes () =
 let one_warning () =
   expect_exact (promoted "a correction beside a failure").err
   @@ __POS_OF__
-       {|windtrap: warning: dune registers a correction for promotion only when the run that wrote it exits 0, so the failures above withhold the correction written here. Fix the failures, rerun, then 'dune promote'.
+       {|windtrap: warning: dune registers a correction for promotion only when the run that wrote it exits 0, so the failures above withhold the correction written here. Fix the failures, rerun, then 'dune promote'. To accept it now: promotion -u
 |}
 
 let the_warning_agrees_in_number () =

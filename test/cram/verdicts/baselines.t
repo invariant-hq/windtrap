@@ -76,14 +76,15 @@ its correction and exits 1:
   $ rm test/cram/verdicts/inline/hello.ml.corrected
 
 A file baseline that is missing under --corrected gets no correction
-and fails the run, under CI:
+and fails the run, under CI, where no one promotes, so nothing offers to
+accept it:
 
   $ brief CI=true VERDICT_SUITE=baseline_file ./verdict_main.exe --corrected
     FAIL  reads a missing file
   1 failed in DURATION.
   [1]
   $ grep 'accept:' out
-      accept: touch 'test/cram/verdicts/never.expected' && dune runtest; dune promote test/cram/verdicts/never.expected
+  [1]
   $ test -e test/cram/verdicts/never.expected || echo 'nothing written'
   nothing written
 

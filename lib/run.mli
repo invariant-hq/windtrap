@@ -583,12 +583,15 @@ type event =
       suite : string;
       total : int;
       selected : int;
-      properties : bool;
+      seeded : bool;
     }
       (** The startup checks passed, and [selected] of the [total] tests of
           [suite] are about to run. It is the first event, given once, for an
-          empty selection too. [properties] is [true] iff a selected test
-          carries {!Test_tree.Tag.prop}. *)
+          empty selection too. [seeded] is [true] iff a selected test carries
+          {!Test_tree.Tag.prop} and draws its cases from [config.seed]: a
+          property draws nothing under [config.replay] or [config.case_file],
+          nor under [config.failed_only] when every case the store records of
+          it is a {!Replay}. *)
   | Test_started of { path : string list }
       (** The test at [path] is about to run. It is given once per test, before
           its first attempt and before anything of the test runs. *)
@@ -634,6 +637,16 @@ and starting = { seconds : float; output : string }
 (** The type for the refusals of a run, decided before any test executes. The
     checks run in the order of the constructors and the first that fails is
     returned. *)
+(** The type for why [--failed] has nothing to rerun. *)
+type nothing_recorded =
+  | Never_recorded  (** No last-failed store exists for the suite. *)
+  | Last_run_passed
+      (** The store holds no entry: the last run that wrote it failed nothing.
+      *)
+  | Unreadable_record
+      (** The store cannot be read, or does not start with its magic line. *)
+  | Undeclared_tests  (** The store names no declared test. *)
+
 type startup_error =
   | Duplicate_paths of string list
       (** Two tests have one path. The payload is the path strings concerned,
@@ -646,11 +659,11 @@ type startup_error =
   | Update_refused_in_ci
       (** [config.baseline] is {!Baseline.Update} and [CI] is set. Nothing lifts
           it. *)
-  | No_recorded_failures
+  | No_recorded_failures of nothing_recorded
       (** [config.failed_only] is set, and the last-failed store names no
-          declared test. The store is read against the declared paths, so a
-          filter that keeps none of the recorded tests gives an empty selection
-          and not this error. *)
+          declared test, for the reason given. The store is read against the
+          declared paths, so a filter that keeps none of the recorded tests
+          gives an empty selection and not this error. *)
   | In_process_selects of int
       (** [config.in_process] is set and the selection holds this many tests,
           more than one. *)
@@ -986,9 +999,9 @@ val select :
     {{!section-selection}selection} of {!execute}, and turns the recording of
     backtraces on. It registers no exit guard. Raises as {!execute} does. *)
 
-val run_started : suite:string -> selection -> event
-(** [run_started ~suite selection] is the {!Run_started} event of a run over
-    [selection]. *)
+val run_started : config -> suite:string -> selection -> event
+(** [run_started config ~suite selection] is the {!Run_started} event of a run
+    over [selection]. *)
 
 type attempt
 (** The type for an attempt as data: its failures, the baseline checks it left
