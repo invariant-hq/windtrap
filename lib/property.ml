@@ -133,10 +133,13 @@ let tolerance = 0.9
 let wilson ~hits ~cases z =
   let n = float_of_int cases and p = float_of_int hits /. float_of_int cases in
   let z2 = z *. z in
-  (p
-  +. (z2 /. (2. *. n))
-  +. (z *. Float.sqrt ((p *. (1. -. p) /. n) +. (z2 /. (4. *. n *. n)))))
-  /. (1. +. (z2 /. n))
+  (* The product is opaque so that no backend fuses it into the sum, as
+     arm64's multiply-add would, and the bound is the same everywhere. *)
+  let spread =
+    Sys.opaque_identity
+      (z *. Float.sqrt ((p *. (1. -. p) /. n) +. (z2 /. (4. *. n *. n))))
+  in
+  (p +. (z2 /. (2. *. n)) +. spread) /. (1. +. (z2 /. n))
 
 type decision = Met | Unmet | Undecided
 
