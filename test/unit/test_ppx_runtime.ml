@@ -468,8 +468,7 @@ let runner_protocol =
         the_logs_are_keyed_by_the_partition;
       test "a JUnit directory gets a file per partition"
         a_junit_directory_has_a_file_per_partition;
-      cases "outside the runner mode exit exits 0 and prints nothing"
-        (Testable.contramap fst Testable.text)
+      cases "outside the runner mode exit exits 0 and prints nothing" fst
         [
           ("init never called", never_initialised);
           ("-list-partitions by hand", listed_by_hand);
@@ -519,8 +518,7 @@ let a_forked_child_is_silent () =
 let guard =
   group "The undriven guard"
     [
-      cases "registrations that nothing drives exit 2, nothing on stdout"
-        (Testable.contramap fst Testable.text)
+      cases "registrations that nothing drives exit 2, nothing on stdout" fst
         [ ("one file", undriven); ("several files", undriven_files) ]
         (fun (_, c) ->
           let c = ended c in
@@ -529,8 +527,7 @@ let guard =
           contains ~sub:"of no library (a.ml)" (ended undriven).err);
       test "the diagnostic names the files of no library once, sorted"
         the_diagnostic_names_the_files;
-      cases "a main that drained the registry exits as it chose, silently"
-        (Testable.contramap fst Testable.text)
+      cases "a main that drained the registry exits as it chose, silently" fst
         [ ("collect returned", drained); ("collect raised", drain_raised) ]
         (fun (_, c) ->
           let c = ended c in

@@ -344,8 +344,7 @@ let collections =
       prop "an Unreached verdict leaves the verdict it is merged with unchanged"
         small_collection unreached_is_neutral;
       cases "add checks no identifier, and load refuses the file save writes"
-        (Testable.contramap fst Testable.text)
-        unchecked_ids unchecked;
+        fst unchecked_ids unchecked;
     ]
 
 (* Verdict files *)
@@ -646,13 +645,10 @@ tested
       cases
         "save raises Invalid_argument on a malformed identity and writes \
          nothing"
-        (Testable.contramap fst Testable.text)
-        bad_identities refused_identity;
+        fst bad_identities refused_identity;
       cases "load refuses another first line as Unknown_format, naming the path"
-        (Testable.contramap fst Testable.text)
-        headers unknown_format;
-      cases "load refuses malformed data as Corrupt, naming the path"
-        (Testable.contramap fst Testable.text)
+        fst headers unknown_format;
+      cases "load refuses malformed data as Corrupt, naming the path" fst
         corrupt_files corrupt;
       test "a Corrupt reason names the field and its fault" corrupt_reasons;
       test "load of a missing file is Unreadable, naming the path" (fun () ->

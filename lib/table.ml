@@ -5,7 +5,7 @@
 
 let strf = Printf.sprintf
 
-(* A row shows in one line, its printing cut in the middle past this many
+(* A row shows in one line, its id cut in the middle past this many
    bytes and its label past [label_bytes], as the report cuts a label. *)
 let shown_bytes = 80
 let label_bytes = 60
@@ -14,44 +14,45 @@ let one_line n s = Text.elide_middle n ~show:Text.escape_controls s
 let refuse ?loc message =
   raise (Failure.Check_failure (Failure.message ?loc message))
 
-(* The printings that more than one row has, each with the positions of its
+(* The ids that more than one row has, each with the positions of its
    rows, in the order of their first row. *)
-let duplicates printed =
-  let rows = Hashtbl.create (Array.length printed) in
+let duplicates ids =
+  let rows = Hashtbl.create (Array.length ids) in
   Array.iteri
     (fun i text ->
       let seen = Option.value ~default:[] (Hashtbl.find_opt rows text) in
       Hashtbl.replace rows text (i :: seen))
-    printed;
+    ids;
   List.filter_map
     (fun (i, text) ->
       match List.rev (Hashtbl.find rows text) with
       | first :: (_ :: _ as others) when first = i ->
           Some (text, first :: others)
       | _ -> None)
-    (List.mapi (fun i text -> (i, text)) (Array.to_list printed))
+    (List.mapi (fun i text -> (i, text)) (Array.to_list ids))
 
 let numbered positions =
   String.concat " and " (List.map (fun i -> string_of_int (i + 1)) positions)
 
-let check ?loc ?label w rows fn =
+let check ?loc ?label id rows fn =
   let rows = Array.of_list rows in
   let n = Array.length rows in
   if n = 0 then
     raise
       (Failure.Check_failure
          (Failure.vacuous ?loc "the table has no row, so it checks nothing"));
-  let printed = Array.map (Testable.to_string w) rows in
-  (match duplicates printed with
+  let ids = Array.map id rows in
+  (match duplicates ids with
   | [] -> ()
   | duplicates ->
       let duplicate (text, positions) =
-        strf "rows %s print %s" (numbered positions) (one_line shown_bytes text)
+        strf "rows %s have the id %s" (numbered positions)
+          (one_line shown_bytes text)
       in
       refuse ?loc
         (strf
-           "duplicate rows: %s; a row is identified by its printed value, so \
-            no two rows may print alike"
+           "duplicate rows: %s; a row is identified by its id, so no two rows \
+            may share one"
            (String.concat ", " (List.map duplicate duplicates))));
   (* Under --failed the table reruns the rows it recorded. A recorded row
      that it no longer has, or a counterexample, which no table records, is
@@ -60,7 +61,7 @@ let check ?loc ?label w rows fn =
     match Run.recorded () with
     | [] -> None
     | cases ->
-        let has id = Array.exists (String.equal id) printed in
+        let has id = Array.exists (String.equal id) ids in
         let stale =
           List.filter_map
             (function
@@ -80,7 +81,7 @@ let check ?loc ?label w rows fn =
           (function
             | Run.Row id -> Hashtbl.replace failed id () | Replay _ -> ())
           cases;
-        Some (fun i -> Hashtbl.mem failed printed.(i))
+        Some (fun i -> Hashtbl.mem failed ids.(i))
   in
   let labels =
     Array.map
@@ -97,16 +98,14 @@ let check ?loc ?label w rows fn =
   in
   let tag i =
     strf "row %d of %d%s: %s" (i + 1) n (labelled i)
-      (one_line shown_bytes printed.(i))
+      (one_line shown_bytes ids.(i))
   in
-  (* The domain is the rows' positions, each printed as its row, so the
+  (* The domain is the rows' positions, each ids as its row's id, so the
      engine checks every row once, in order, and reports each it refutes. *)
   let gen =
-    Gen.of_list
-      ~pp:(fun ppf i -> Testable.pp w ppf rows.(i))
-      (List.init n Fun.id)
+    Gen.of_list ~pp:(fun ppf i -> Pp.string ppf ids.(i)) (List.init n Fun.id)
   in
-  let law i = Run.row ~tag:(tag i) ~id:printed.(i) (fun () -> fn rows.(i)) in
+  let law i = Run.row ~tag:(tag i) ~id:ids.(i) (fun () -> fn rows.(i)) in
   let as_row (f : Failure.t) =
     match f.kind with
     | Property ({ case_index; _ } as p) ->
@@ -128,7 +127,7 @@ let check ?loc ?label w rows fn =
       in
       Printexc.raise_with_backtrace (Failure.Check_failure f) backtrace
 
-let cases ?__POS__ ?tags ?timeout ?retries ?label name w rows fn =
+let cases ?__POS__ ?tags ?timeout ?retries ?label name id rows fn =
   let loc = Loc.resolve ?__POS__ () in
   Test_tree.test ?__POS__ ?tags ?timeout ?retries name (fun () ->
-      check ?loc ?label w rows fn)
+      check ?loc ?label id rows fn)

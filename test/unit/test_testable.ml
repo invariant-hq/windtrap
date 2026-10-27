@@ -16,13 +16,13 @@ type printing = Prints : 'a Testable.t * 'a * string -> printing
 type ordering = Orders : 'a Testable.t * 'a * 'a * string -> ordering
 
 let equalities claim rows =
-  cases claim (Testable.contramap fst Testable.text) rows (function
+  cases claim fst rows (function
     | _, Equal (w, a, b) -> equal bool true (Testable.equal w a b)
     | _, Differ (w, a, b) -> equal bool false (Testable.equal w a b))
 
 let printings claim rows =
-  cases claim (Testable.contramap fst Testable.text) rows (function
-      | _, Prints (w, v, s) -> equal string s (Testable.to_string w v))
+  cases claim fst rows (function _, Prints (w, v, s) ->
+      equal string s (Testable.to_string w v))
 
 let sign c = if c < 0 then "below" else if c > 0 then "above" else "same"
 
@@ -33,8 +33,8 @@ let order w a b =
   | Some cmp -> String.concat ", " (List.map sign [ cmp a b; cmp b a; cmp a a ])
 
 let orderings claim rows =
-  cases claim (Testable.contramap fst Testable.text) rows (function
-      | _, Orders (w, a, b, row) -> equal string row (order w a b))
+  cases claim fst rows (function _, Orders (w, a, b, row) ->
+      equal string row (order w a b))
 
 let ordered = "below, above, same"
 
@@ -145,8 +145,7 @@ let witnesses =
       orderings "a witness carries the order it was made with" made_orders;
       test "an equality verb applies the equality to the expected value first"
         expected_first;
-      cases "an exception from the equality or the printer escapes the verb"
-        (Testable.contramap fst Testable.text)
+      cases "an exception from the equality or the printer escapes the verb" fst
         [
           ("the equality", fun () -> equal raising_equal 1 1);
           ("the printer of a failing verb", fun () -> equal raising_pp 1 2);
@@ -406,20 +405,17 @@ let floats =
       equalities
         "float_exact compares bit for bit, every nan equal to every nan"
         exact_rows;
-      cases "float eps holds when a = b or |a -. b| <= eps, never on nan"
-        (Testable.contramap fst Testable.text)
+      cases "float eps holds when a = b or |a -. b| <= eps, never on nan" fst
         eps_rows within_eps;
       cases
         "float_rel holds when a = b, within abs, or within rel of the larger \
          magnitude, never on nan"
-        (Testable.contramap fst Testable.text)
-        rel_rows within_rel;
+        fst rel_rows within_rel;
       printings
         "a float witness prints the shortest decimal that round-trips, and the \
          names of the others"
         float_prints;
-      cases "float_exact prints two unequal floats apart"
-        (Testable.contramap fst Testable.text)
+      cases "float_exact prints two unequal floats apart" fst
         [ ("0.3 and 0.1 +. 0.2", (0.3, 0.1 +. 0.2)); ("0. and -0.", (0., -0.)) ]
         (fun (_, pair) -> apart Testable.float_exact pair);
       prop "float_exact prints a float apart from the next one" Gen.float
@@ -441,12 +437,10 @@ let floats =
         exact_is_an_order;
       test "float_exact's equality is an equivalence over the same floats"
         exact_is_an_equivalence;
-      cases "float refuses an eps that is not strictly positive"
-        (Testable.contramap fst Testable.text)
+      cases "float refuses an eps that is not strictly positive" fst
         [ ("0.", 0.); ("-0.", -0.); ("-1e-9", -1e-9); ("nan", Float.nan) ]
         (fun (_, eps) -> refuses "float_exact" (fun () -> Testable.float eps));
-      cases "float_rel refuses a negative or nan bound, and two zero bounds"
-        (Testable.contramap fst Testable.text)
+      cases "float_rel refuses a negative or nan bound, and two zero bounds" fst
         [
           ("a negative rel", ("~rel", -0.1, 0.1));
           ("a negative abs", ("~abs", 0.1, -0.1));
@@ -607,8 +601,8 @@ let observed =
   group "Observed errors"
     [
       cases "a comparison under a tolerance measures its error and its bound"
-        (Testable.contramap fst Testable.text) observed_rows
-        (fun (_, (c, row)) -> equal string row (observation c));
+        fst observed_rows (fun (_, (c, row)) ->
+          equal string row (observation c));
       test "a container's comparisons keep the closest to its bound"
         observed_in_containers;
       test "an observation within another keeps its comparisons" observed_nested;

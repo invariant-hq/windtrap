@@ -241,4 +241,4 @@ Two rows that print alike are refused as duplicates, and no row runs:
   1 failed in DURATION.
   [1]
   $ grep 'duplicate rows' out
-      duplicate rows: rows 1 and 3 print "a"; a row is identified by its printed value, so no two rows may print alike
+      duplicate rows: rows 1 and 3 have the id "a"; a row is identified by its id, so no two rows may share one

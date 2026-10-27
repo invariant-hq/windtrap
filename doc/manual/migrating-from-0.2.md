@@ -12,14 +12,12 @@ signature of `cases`, `judges` in place of `chooses`, and the type of
 
 ## Declaring tests
 
-- `cases ~name:f "parse" inputs fn` →
-  `cases "parse" (Testable.contramap f text) inputs fn`. A table names
-  its rows by how its witness prints them, so the function that named
-  them becomes a witness, and a witness of the rows themselves, as
-  `cases "rev" (list int) inputs fn`, needs no name at all. A text shown
-  beside a row and identifying nothing is `~label:f`. In a module that
-  binds a `text` of its own, a font's or a unit's, the witness is
-  `Testable.contramap f Windtrap.text`.
+- `cases ~name:f "parse" inputs fn` → `cases "parse" f inputs fn`. The
+  function that named a row's test moves to the second positional
+  argument, and the name it gives is the row's identity. A table over
+  the rows' own values identifies them by their printing, as
+  `cases "rev" (Testable.to_string (list int)) inputs fn`. A text shown
+  beside a row and identifying nothing is `~label:f`.
 
   ```ocaml
   (* 0.2 *)
@@ -27,8 +25,8 @@ signature of `cases`, `judges` in place of `chooses`, and the type of
       equal int n (int_of_string s))
 
   (* now *)
-  cases "parses" (Testable.contramap fst text) [ ("1", 1); ("10", 10) ]
-    (fun (s, n) -> equal int n (int_of_string s))
+  cases "parses" fst [ ("1", 1); ("10", 10) ] (fun (s, n) ->
+      equal int n (int_of_string s))
   ```
 - A table is one test, not a group of one test per row:
   - `-f 'parses › 10'`, which selected one row → `-f parses`, which
@@ -51,7 +49,7 @@ signature of `cases`, `judges` in place of `chooses`, and the type of
     value, which the function receives:
 
     ```ocaml
-    cases "renders" (Testable.contramap fst text) docs (fun (key, doc) ->
+    cases "renders" fst docs (fun (key, doc) ->
         expect_file (render doc) ("golden/" ^ key ^ ".txt"))
     ```
   - `skip` in a row, which skipped that row's test → skips that row
@@ -61,7 +59,7 @@ signature of `cases`, `judges` in place of `chooses`, and the type of
     table with rows that skipped says
     `holds on 2 of 3 rows, 1 skipped: REASON`, with the first row's
     reason.
-- `cases "t" w [] fn`, which declared no test → a vacuous test that
+- `cases "t" f [] fn`, which declared no test → a vacuous test that
   fails; remove the table or give it rows.
 
 ## Assertions

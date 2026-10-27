@@ -1661,20 +1661,17 @@ let replay_row (_, (armed, invocation, tests, failures, expected)) =
 let failure_projections =
   group "Failure projections"
     [
-      cases "a headline is one line of the failure's facts"
-        (Testable.contramap fst Testable.text)
-        headline_rows headline_row;
+      cases "a headline is one line of the failure's facts" fst headline_rows
+        headline_row;
       test "a headline past 80 code points is cut and ends in an ellipsis"
         headline_cut;
       test "a headline turns TAB, CR and LF into spaces and keeps other bytes"
         headline_whitespace;
       cases "is_subtest_failure holds iff the failure was recorded in a subtest"
-        (Testable.contramap fst Testable.text) subtest_rows
-        (fun (_, (f, expected)) ->
+        fst subtest_rows (fun (_, (f, expected)) ->
           equal bool expected (Sections.is_subtest_failure f));
-      cases "labeled_msg is the subtest's label, then the message"
-        (Testable.contramap fst Testable.text) labeled_rows
-        (fun (_, (f, expected)) ->
+      cases "labeled_msg is the subtest's label, then the message" fst
+        labeled_rows (fun (_, (f, expected)) ->
           equal (option string) expected (Sections.labeled_msg f));
       group "entry"
         [
@@ -1693,19 +1690,14 @@ let failure_projections =
           test "an entry's lines print as their gallery" (fun () ->
               gallery "entry" (entry_entries ()));
           cases "on a terminal, colour replaces the ~ lines and nothing else"
-            (Testable.contramap fst Testable.text)
-            refinement_pairs colour_replaces_marks;
-          cases "the ~ lines print under colour where colour cannot show"
-            (Testable.contramap fst Testable.text)
+            fst refinement_pairs colour_replaces_marks;
+          cases "the ~ lines print under colour where colour cannot show" fst
             plain_rows colour_keeps_marks;
-          cases "no ~ line prints where it would not align"
-            (Testable.contramap fst Testable.text)
-            unaligned_rows no_mark;
-          cases "a plain entry holds no control byte but LF and TAB"
-            (Testable.contramap fst Testable.text)
+          cases "no ~ line prints where it would not align" fst unaligned_rows
+            no_mark;
+          cases "a plain entry holds no control byte but LF and TAB" fst
             hostile_rows no_control;
-          cases "a payload's sequence never runs under colour"
-            (Testable.contramap fst Testable.text)
+          cases "a payload's sequence never runs under colour" fst
             never_runs_rows never_runs;
           test "equality compares the raw bytes and the payload keeps them"
             raw_bytes;
@@ -1759,15 +1751,11 @@ let failure_projections =
                 occurrence_left_behind;
             ];
         ];
-      cases "hints are the block's fact lines and dune promote lines"
-        (Testable.contramap fst Testable.text)
+      cases "hints are the block's fact lines and dune promote lines" fst
         hint_rows hint_row;
-      cases "accept is one -u line under a launcher"
-        (Testable.contramap fst Testable.text)
-        accept_rows accept_row;
-      cases "replay reruns the tests with the values they drew"
-        (Testable.contramap fst Testable.text)
-        replay_rows replay_row;
+      cases "accept is one -u line under a launcher" fst accept_rows accept_row;
+      cases "replay reruns the tests with the values they drew" fst replay_rows
+        replay_row;
     ]
 
 (* Names and command words *)
@@ -1797,11 +1785,9 @@ let names =
     [
       test "release_title is fixture release" (fun () ->
           equal string "fixture release" Sections.release_title);
-      cases "shell_word" (Testable.contramap fst Testable.text) shell_rows
-        (fun (_, (s, expected)) ->
+      cases "shell_word" fst shell_rows (fun (_, (s, expected)) ->
           equal string expected (Sections.shell_word s));
-      cases "dune_exec" (Testable.contramap fst Testable.text) dune_exec_rows
-        (fun (_, (mutate, path, expected)) ->
+      cases "dune_exec" fst dune_exec_rows (fun (_, (mutate, path, expected)) ->
           let command = function `Exe cmd -> Some cmd | `Mirrors -> None in
           equal string expected
             (require_match command (Sections.dune_exec ~mutate path)));
@@ -1891,8 +1877,7 @@ let vocabulary =
       test "render leaves an empty styled span bare" (fun () ->
           equal string ""
             (Sections.render ~ansi:true [ Sections.styled `Faint "" ]));
-      cases "render writes each style's sequence"
-        (Testable.contramap fst Testable.text) style_rows
+      cases "render writes each style's sequence" fst style_rows
         (fun (_, (style, code)) ->
           equal string
             ("\027[" ^ code ^ "mx\027[0m")
@@ -2182,19 +2167,16 @@ let coverage_group =
           equal float_exact 100. (Sections.percent ~visited:0 ~total:0));
       test "percent is unrounded" (fun () ->
           equal (float 1e-9) (200. /. 3.) (Sections.percent ~visited:2 ~total:3));
-      cases "coverage_line colours the percentage and the gate"
-        (Testable.contramap fst Testable.text)
+      cases "coverage_line colours the percentage and the gate" fst
         outcome_colour_rows outcome_colour;
       test "coverage reports print as their gallery" (fun () ->
           gallery "coverage" (coverage_entries ()));
-      cases "the outcome is the last line in every mode"
-        (Testable.contramap fst Testable.text) outcome_rows
+      cases "the outcome is the last line in every mode" fst outcome_rows
         (fun (_, (mode, min, c, expected)) ->
           equal string expected (last_line (coverage ~mode ?min c)));
       test "the outcome prints once, the gate with it" outcome_once;
-      cases "a row shows eight ranges, then the count of the rest"
-        (Testable.contramap fst Testable.text) range_rows
-        (fun (_, (n, name, expected)) ->
+      cases "a row shows eight ranges, then the count of the rest" fst
+        range_rows (fun (_, (n, name, expected)) ->
           equal string expected (range_row n name));
     ]
 
@@ -2745,17 +2727,15 @@ let mutation_group =
         diagnostics;
       test "survivor blocks and reports print as their gallery" (fun () ->
           gallery "mutation" (mutation_entries ()));
-      cases "the reproduce command arms the first survivor"
-        (Testable.contramap fst Testable.text)
-        reproduce_rows reproduce_row;
+      cases "the reproduce command arms the first survivor" fst reproduce_rows
+        reproduce_row;
       test "a not-evaluated mutant's arm command under a build action"
         arm_mirror;
       cases "the outcome line"
-        (Testable.contramap (fun (name, _, _) -> name) Testable.text)
+        (fun (name, _, _) -> name)
         summary_rows
         (fun (_, summary, expected) -> equal string expected (summary ()));
-      cases "the sentence counts the reaching tests and their executables"
-        (Testable.contramap fst Testable.text)
+      cases "the sentence counts the reaching tests and their executables" fst
         sentence_rows sentence;
       test "the reaching tests' names are padded to the widest" padded_names;
       test "the executable column appears when a reaching test names one"

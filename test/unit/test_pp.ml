@@ -11,7 +11,7 @@ type printing = Prints : string * 'a Pp.t * 'a * string -> printing
 
 let prints claim rows =
   cases claim
-    (Testable.contramap (fun (Prints (name, _, _, _)) -> name) Testable.text)
+    (fun (Prints (name, _, _, _)) -> name)
     rows
     (fun (Prints (_, pp, v, printed)) ->
       equal string printed (Pp.to_string pp v))
@@ -222,7 +222,7 @@ let exact_floats =
   group "Exact floats"
     [
       cases "two floats that %F prints alike print apart"
-        (Testable.contramap (fun (claim, _, _) -> claim) Testable.text)
+        (fun (claim, _, _) -> claim)
         alike_under_F
         (fun (_, a, b) ->
           equal string (Printf.sprintf "%F" a) (Printf.sprintf "%F" b);

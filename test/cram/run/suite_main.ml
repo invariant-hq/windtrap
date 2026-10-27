@@ -126,7 +126,7 @@ let scope =
         assume (n mod 10 <> 0);
         classify "even" (n mod 2 = 0);
         cover "small" (n < 100));
-    cases "rows" int [ 1; 2; 3 ] (fun n -> is_true (n > 0));
+    cases "rows" (Testable.to_string int) [ 1; 2; 3 ] (fun n -> is_true (n > 0));
     stateful ~count:20 "counter"
       [ command "incr" (Gen.unit @-> returns unit) ignore ignore ];
     prop "shares" (Gen.int_range 0 9999) (fun n ->

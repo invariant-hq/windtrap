@@ -84,7 +84,7 @@ let codec =
     [
       prop "reads back what it prints" gen_shape
         (Law.round_trip shape string Geo.to_string read);
-      cases "prints what it reads" string
+      cases "prints what it reads" (Printf.sprintf "%S")
         [ "circle 1"; "rect 2 0.5" ]
         (Law.round_trip string shape read Geo.to_string);
       test "reads back a unit circle" (fun () ->

@@ -57,8 +57,7 @@ let spread () =
     test "c2 agrees on s3" (fun () ->
         between ();
         s3 "s3\r\nnew");
-    cases "row"
-      (Testable.contramap fst Testable.text)
+    cases "row" fst
       [ ("x", __POS_OF__ {| row x old |}); ("y", __POS_OF__ {| row y old |}) ]
       (fun (n, lit) -> expect ("row " ^ n ^ " new") lit);
     test "d fails outside" (fun () ->
@@ -99,7 +98,7 @@ let spread () =
 let rows () =
   let file = "test/cram/run/t.expected" in
   cases "rows"
-    (Testable.contramap (fun (n, _, _) -> n) Testable.text)
+    (fun (n, _, _) -> n)
     [
       ("a", __POS_OF__ {| a old |}, false);
       ("b", __POS_OF__ {| b old |}, true);

@@ -98,9 +98,9 @@ let () =
   exit
     (run "report_json"
        [
-         cases "a test states its verdict, its reason and its failures"
-           (Testable.contramap fst Testable.text) verdicts
-           (fun (_, (r, expected)) -> equal string expected (first_line r));
+         cases "a test states its verdict, its reason and its failures" fst
+           verdicts (fun (_, (r, expected)) ->
+             equal string expected (first_line r));
          test
            "strings escape what JSON needs, malformed UTF-8 is U+FFFD and a \
             float not finite is null"

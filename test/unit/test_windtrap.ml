@@ -283,9 +283,8 @@ let declaring =
   group "Declaring tests"
     [
       test "prop adds the prop tag, under a group too" tagged_prop;
-      cases "a tag named by both --tag and --exclude-tag is excluded"
-        (Testable.contramap fst Testable.text) both_flags (fun (_, r) ->
-          equal text "untagged\n" r.out);
+      cases "a tag named by both --tag and --exclude-tag is excluded" fst
+        both_flags (fun (_, r) -> equal text "untagged\n" r.out);
       test "a property and a stateful test inherit a group's retries" (fun () ->
           equal (pair int int) (3, 3)
             ( (row_at retried [ "g"; "p" ]).attempts,
@@ -359,7 +358,7 @@ let properties =
       test "collect, classify and cover label the cases of the running law"
         the_labels_reach_the_engine;
       cases "a label outside a property fails the test with Invalid_argument"
-        Testable.text
+        Fun.id
         [ "collect"; "classify"; "cover" ]
         a_label_outside_a_property;
       test "reject outside a property fails the test with the message"
@@ -410,6 +409,30 @@ let stateful_tests =
             (summary (failure programs [ "summary" ])));
       test "~count:0 draws no case and opens no system" (fun () ->
           equal (pair int int) (0, 0) ((stats programs [ "none" ]).cases, opened));
+    ]
+
+(* Tables *)
+
+let parity n = if n mod 2 = 0 then "even" else "odd"
+
+let tables =
+  Recorded.execute
+    [
+      cases "duplicates" parity [ 1; 2; 3 ] ignore;
+      cases "keyed"
+        (fun n -> "n" ^ string_of_int n)
+        [ 1; 2 ]
+        (fun n -> equal int 1 n);
+    ]
+
+let tables_group =
+  group "Tables"
+    [
+      test "two rows with one id are duplicates, and no row runs" (fun () ->
+          contains ~sub:"duplicate rows: rows 1 and 3 have the id odd"
+            (message (failure tables [ "duplicates" ])));
+      test "a refuted row is reported by its id" (fun () ->
+          equal string "n2" (rendered (failure tables [ "keyed" ])));
     ]
 
 (* Baselines *)
@@ -532,8 +555,7 @@ let checked_rows, accepted_rows, row_copy =
   write copy
     (read (Filename.concat (Filename.dirname Sys.executable_name) this_file));
   let table =
-    cases "rows" (Testable.contramap fst Testable.text) rows
-      (fun (text, literal) -> expect text literal)
+    cases "rows" fst rows (fun (text, literal) -> expect text literal)
   in
   let run baseline =
     Recorded.execute ~env:(project [] root)
@@ -665,13 +687,11 @@ let baselines =
       cases
         "in a law, a mismatch refutes the case, which shrinks, and is never a \
          correction"
-        (Testable.contramap
-           (fun (mode, _) ->
-             match mode with
-             | Baseline.Check -> "check"
-             | Corrected -> "--corrected"
-             | Update -> "-u")
-           Testable.text)
+        (fun (mode, _) ->
+          match mode with
+          | Baseline.Check -> "check"
+          | Corrected -> "--corrected"
+          | Update -> "-u")
         in_law_runs a_law's_mismatch_refutes_its_case;
       test "expect_file locates its failure at the __POS__ given" (fun () ->
           let loc = require_some (failure placed_file [ "placed" ]).loc in
@@ -694,7 +714,7 @@ let baselines =
               ] )
             (Recorded.exit_code bracketed, written bracketed));
       cases "a correction dune will not promote is the one run that warns"
-        (Testable.contramap (fun (name, _, _) -> name) Testable.text)
+        (fun (name, _, _) -> name)
         [
           ("a correction beside a failure", 1, true);
           ("two corrections beside a failure", 1, true);
@@ -811,8 +831,8 @@ let an_operation_fails_a_release () =
 let the_running_test =
   group "The running test"
     [
-      cases "raises Invalid_argument outside a test"
-        (Testable.contramap fst Testable.text) outside_a_test (fun (_, e) ->
+      cases "raises Invalid_argument outside a test" fst outside_a_test
+        (fun (_, e) ->
           raises_match (Exn.invalid_arg ~substring:"no test is running")
             (fun () -> replay e));
       test "outside a test setenv, chdir and subtest change nothing" (fun () ->
@@ -977,7 +997,7 @@ let running =
   group "Running"
     [
       cases "run returns the exit code"
-        (Testable.contramap (fun (name, _, _) -> name) Testable.text)
+        (fun (name, _, _) -> name)
         codes
         (fun (_, code, r) -> equal int code r.code);
       test "run raises Invalid_argument while a run is executing" nested_run;
@@ -986,7 +1006,7 @@ let running =
           equal string "" help.err);
       test "--version prints one line that names the version" version_line;
       cases "a usage error prints nothing on stdout and names the fault"
-        (Testable.contramap (fun (name, _, _) -> name) Testable.text)
+        (fun (name, _, _) -> name)
         usage_errors
         (fun (_, r, fault) ->
           equal string "" r.out;
@@ -1018,7 +1038,7 @@ let running =
 emptysuite: no tests ran: filter "zzznope" matched none of 2 tests.
 |});
       cases "the code of a selection that keeps no test"
-        (Testable.contramap (fun (name, _, _) -> name) Testable.text)
+        (fun (name, _, _) -> name)
         selection_codes
         (fun (_, code, r) -> equal int code r.code);
       test "a mirror's emptied selection says why and names no way out"
@@ -1043,9 +1063,8 @@ emptied: no tests ran: filter "zzznope" matched none of 1 test.
         (fun () ->
           equal int 2 blank_usage.code;
           contains ~sub:"usage: blank [OPTIONS] [PATTERN...]" blank_usage.err);
-      cases "flags that change what prints change no exit code"
-        (Testable.contramap fst Testable.text) printing (fun (_, code) ->
-          equal int 1 code);
+      cases "flags that change what prints change no exit code" fst printing
+        (fun (_, code) -> equal int 1 code);
       test "a test of kept corrections still stops -x" (fun () ->
           contains ~sub:"1 not run" kept_stops.out);
       test "a test of kept corrections enters the last failed tests" (fun () ->
@@ -1062,6 +1081,7 @@ let () =
          declaring;
          properties;
          stateful_tests;
+         tables_group;
          baselines;
          captured_output;
          the_running_test;

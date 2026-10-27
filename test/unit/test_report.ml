@@ -127,8 +127,7 @@ let renderer =
     [
       cases
         "create refuses a slow threshold that is not finite and non-negative"
-        (Testable.contramap fst Testable.text)
-        refused_thresholds refused_threshold;
+        fst refused_thresholds refused_threshold;
       test "terminal styles standard output as --color says, with no live line"
         terminal_styles;
     ]
@@ -1496,47 +1495,40 @@ let transcript_group =
           gallery "timelines" (timeline_entries ()));
       test "the verbose rows print as their gallery" (fun () ->
           gallery "rows" (row_entries ()));
-      cases "header"
-        (Testable.contramap fst Testable.text)
-        header_rows header_row;
+      cases "header" fst header_rows header_row;
       test "the replay line carries the seed the header printed" seed_restated;
-      cases "a duration prints in one form in a row and in the summary"
-        (Testable.contramap fst Testable.text)
+      cases "a duration prints in one form in a row and in the summary" fst
         duration_rows duration_row;
       test "a duration's unit is chosen after rounding" unit_after_rounding;
-      cases "the live line is off" (Testable.contramap fst Testable.text)
-        off_live_rows (fun (_, draw) -> equal string "" (draw ()));
+      cases "the live line is off" fst off_live_rows (fun (_, draw) ->
+          equal string "" (draw ()));
       test "the live line is cut to 80 columns" live_line_cut;
       test "a search's live line is cut in its path, never in its count"
         shrinking_line_cut;
       cases
         "a compact run prints nothing of a result that is no counted failure"
-        (Testable.contramap fst Testable.text)
-        silent_rows silent;
-      cases "note" (Testable.contramap fst Testable.text) note_rows
-        (fun (_, run) ->
+        fst silent_rows silent;
+      cases "note" fst note_rows (fun (_, run) ->
           let t, expected = run () in
           equal string expected t);
       test "a compact transcript never carries a notice" noteworthy_notice;
-      cases "observe prints the seed iff a selected test is a property"
-        (Testable.contramap fst Testable.text) seed_rows
-        (fun (_, (t, expected)) -> equal string expected (t ()));
+      cases "observe prints the seed iff a selected test is a property" fst
+        seed_rows (fun (_, (t, expected)) -> equal string expected (t ()));
       test "observe maps Interrupted to interrupted" observe_interrupted;
       test "observe raises nothing of its own" observe_raises_nothing;
-      cases "--stream changes no line of the transcript"
-        (Testable.contramap fst Testable.text) stream_rows
+      cases "--stream changes no line of the transcript" fst stream_rows
         (fun (_, (results, verbose, expected)) ->
           equal text expected (streamed ~verbose results));
       test "under --stream a test's bytes come before the report's"
         stream_drains;
       group "The selection"
         [
-          cases "selection_description" (Testable.contramap fst Testable.text)
-            selection_rows (fun (_, (focused, config, expected)) ->
+          cases "selection_description" fst selection_rows
+            (fun (_, (focused, config, expected)) ->
               equal (option string) expected
                 (Report.selection_description ~focused config));
-          cases "empty_selection_reason" (Testable.contramap fst Testable.text)
-            reason_rows (fun (_, (declared, selection, expected)) ->
+          cases "empty_selection_reason" fst reason_rows
+            (fun (_, (declared, selection, expected)) ->
               equal (option string) expected
                 (Report.empty_selection_reason ~declared ~selection));
         ];
@@ -1544,10 +1536,9 @@ let transcript_group =
         [
           test "the endings print as their gallery" (fun () ->
               gallery "endings" (endings_entries ()));
-          cases "an empty run says why" (Testable.contramap fst Testable.text)
-            empty_rows (fun (_, (t, expected)) -> equal text expected (t ()));
-          cases "the summary is the last line"
-            (Testable.contramap fst Testable.text) summary_rows (fun (_, run) ->
+          cases "an empty run says why" fst empty_rows
+            (fun (_, (t, expected)) -> equal text expected (t ()));
+          cases "the summary is the last line" fst summary_rows (fun (_, run) ->
               let t, expected = run () in
               equal string expected (last_line t));
           test "a stopped run names the test that stopped it above the summary"
@@ -1569,8 +1560,7 @@ let transcript_group =
                     (stop, summary)
               | _ -> fail t);
           cases "the slow section lists the results at or over the threshold"
-            (Testable.contramap fst Testable.text)
-            slow_section_rows slow_section;
+            fst slow_section_rows slow_section;
           test "corrections: one written row per file, in path order"
             corrections_written;
           test "corrections: an accepted file's row" accepted_file;
@@ -1587,9 +1577,8 @@ let transcript_group =
           test "an armed run arms its replay and accepts nothing" armed_commands;
           test "under a build action each block promotes its own file"
             mirrors_commands;
-          cases "no accept and no replay"
-            (Testable.contramap fst Testable.text)
-            nothing_to_run_again_rows nothing_to_run_again;
+          cases "no accept and no replay" fst nothing_to_run_again_rows
+            nothing_to_run_again;
           test "an interrupted run says on stderr what it stopped"
             interrupted_says;
         ];
@@ -1855,25 +1844,20 @@ let group_rows =
 let github =
   group "The GitHub Actions envelope"
     [
-      cases "the fold's commands" (Testable.contramap fst Testable.text)
-        group_rows (fun (_, (c, expected)) -> equal string expected c);
+      cases "the fold's commands" fst group_rows (fun (_, (c, expected)) ->
+          equal string expected c);
       test "an annotation prints as its baseline" (fun () ->
           expect_file
             (annotation
                ~path:[ "users"; "sessions after login" ]
                Fixtures.eq_failure ())
             (baseline "annotation"));
-      cases "an annotation holds"
-        (Testable.contramap fst Testable.text)
-        annotation_rows annotation_row;
-      cases "an annotation leaves out"
-        (Testable.contramap fst Testable.text)
-        annotation_absent_rows annotation_absent;
-      cases "one command line per counted failure entry"
-        (Testable.contramap fst Testable.text)
-        command_lines_rows command_lines;
-      cases "no annotation" (Testable.contramap fst Testable.text)
-        empty_annotation_rows (fun (_, results) ->
+      cases "an annotation holds" fst annotation_rows annotation_row;
+      cases "an annotation leaves out" fst annotation_absent_rows
+        annotation_absent;
+      cases "one command line per counted failure entry" fst command_lines_rows
+        command_lines;
+      cases "no annotation" fst empty_annotation_rows (fun (_, results) ->
           equal string "" (annotations results ()));
       test "an annotation with no command ends on its facts" (fun () ->
           equal string "::error title=Test failure%3A bad::    boom\n"
@@ -1882,8 +1866,7 @@ let github =
         withheld_annotation;
       test "the fold closes before the annotations, the summary last"
         envelope_composed;
-      cases "the fold closes after the last section"
-        (Testable.contramap fst Testable.text) fold_rows
+      cases "the fold closes after the last section" fst fold_rows
         (fun (_, (results, expected)) -> equal text expected (folded results));
     ]
 
@@ -2098,13 +2081,12 @@ let interrupted_loop (_, (testing, expected)) =
 let mutation =
   group "Mutation lines"
     [
-      cases "an armed run's announcement and verdicts"
-        (Testable.contramap fst Testable.text)
-        verdict_rows unflushed;
+      cases "an armed run's announcement and verdicts" fst verdict_rows
+        unflushed;
       test "a loop's lines print as their gallery" (fun () ->
           gallery "mutation" (mutation_entries ()));
-      cases "the loop's live line is off" (Testable.contramap fst Testable.text)
-        live_off_rows (fun (_, (ansi, terminal)) ->
+      cases "the loop's live line is off" fst live_off_rows
+        (fun (_, (ansi, terminal)) ->
           equal string ""
             (rendered ~ansi ~terminal (fun r ->
                  Report.mutation_testing r ~index:1 ~total:2
@@ -2112,8 +2094,7 @@ let mutation =
       test
         "mutation_refused erases the live line and flushes before its message"
         refused_after_live;
-      cases "mutation_interrupted says what it stopped, then closes"
-        (Testable.contramap fst Testable.text)
+      cases "mutation_interrupted says what it stopped, then closes" fst
         interrupted_rows interrupted_loop;
     ]
 

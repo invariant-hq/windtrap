@@ -194,9 +194,7 @@ let config ?env args =
 
 let mirror_rows name rows =
   cases name
-    (Testable.contramap
-       (fun (var, value, _) -> strf "%s=%S" var value)
-       Testable.text)
+    (fun (var, value, _) -> strf "%s=%S" var value)
     rows
     (fun (var, value, row) ->
       equal string row (resolved ~env:[ (var, value) ] []))
@@ -245,9 +243,7 @@ let mirrors =
       cases
         "a mirror refuses what its flag refuses, naming the variable and the \
          value as typed, in the flag's words"
-        (Testable.contramap
-           (fun (var, _, value) -> strf "%s=%S" var value)
-           Testable.text)
+        (fun (var, _, value) -> strf "%s=%S" var value)
         [
           ("WINDTRAP_SHARD", "--shard", "9/2");
           ("WINDTRAP_TIMEOUT", "--timeout", "-5");
@@ -418,7 +414,7 @@ let errors =
       cases
         "an unknown long flag's message suggests the nearest long flag when \
          one is near"
-        (Testable.contramap fst Testable.text)
+        fst
         [
           ("--fliter", Some "--filter");
           ("--colour", Some "--color");
@@ -447,7 +443,7 @@ let errors =
 
 let parse_rows name rows =
   cases name
-    (Testable.contramap (fun (args, _) -> joined args) Testable.text)
+    (fun (args, _) -> joined args)
     rows
     (fun (args, row) -> equal string row (parsed args))
 
@@ -615,9 +611,7 @@ let parsing =
       cases
         "a flag refuses a value outside its field's description, naming the \
          value as typed"
-        (Testable.contramap
-           (fun (flag, value) -> strf "%s %S" flag value)
-           Testable.text)
+        (fun (flag, value) -> strf "%s %S" flag value)
         [
           ("--shard", "0/4");
           ("--shard", "5/4");
@@ -689,12 +683,10 @@ let parsing =
 
 let resolve_rows name rows =
   cases name
-    (Testable.contramap
-       (fun (env, args, _) ->
-         match List.map fst env @ args with
-         | [] -> "no variable and no flag"
-         | words -> String.concat " " words)
-       Testable.text)
+    (fun (env, args, _) ->
+      match List.map fst env @ args with
+      | [] -> "no variable and no flag"
+      | words -> String.concat " " words)
     rows
     (fun (env, args, row) -> equal string row (resolved ~env args))
 
@@ -835,7 +827,7 @@ let resolution =
       cases
         "baseline is Update under update, else Corrected under corrected, else \
          Check"
-        (Testable.contramap fst Testable.text)
+        fst
         [
           ("update", ([ "-u" ], "baseline update"));
           ("corrected", ([ "--corrected" ], "baseline corrected"));
@@ -933,9 +925,7 @@ let resolution =
           equal string "mutation loop [lib/]"
             (resolved ~env:[ ("WINDTRAP_MUTATE", "1") ] [ "--mutate=lib/" ]));
       cases "the seed is the command line's, else WINDTRAP_SEED's"
-        (Testable.contramap
-           (fun (env, args, _) -> joined (List.map snd env @ args))
-           Testable.text)
+        (fun (env, args, _) -> joined (List.map snd env @ args))
         [
           ( [ ("WINDTRAP_SEED", "s1:00000000000000aa") ],
             [],
@@ -948,9 +938,7 @@ let resolution =
       test "without a seed in any layer, each call draws another" (fun () ->
           not_equal string (seed_of [] []) (seed_of [] []));
       cases "color_mode reads WINDTRAP_COLOR by the parser of --color"
-        (Testable.contramap
-           (fun (value, _) -> Option.fold ~none:"unset" ~some:(strf "%S") value)
-           Testable.text)
+        (fun (value, _) -> Option.fold ~none:"unset" ~some:(strf "%S") value)
         [
           (None, "auto");
           (Some "", "auto");

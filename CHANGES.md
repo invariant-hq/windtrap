@@ -8,17 +8,16 @@ for how to migrate from 0.2.0.
 
 ### Declaring tests
 
-- (breaking) `cases name w rows fn` is a table: one test, a property
+- (breaking) `cases name id rows fn` is a table: one test, a property
   over `Gen.of_list rows` checked whole, where 0.2.0's
   `cases ~name base inputs fn` made a group of one test per input. A row
-  is identified by its printed value under the witness `w`, so no name
-  need be invented and kept unique; `Testable.contramap fst string`
-  identifies a row by a key. Two rows that print alike are refused as
-  duplicates, and the table fails before any row runs. Every row runs
-  and every row refuted is reported, as `row 2 of 5: "b"`, its printing
-  cut to one line in a label. `?label` shows a text beside the row's
-  position and identifies nothing. To migrate, `~name:f` becomes the
-  witness `(Testable.contramap f text)`, which keeps the names as the
+  is identified by `id row`: `fst` identifies a row by a key, and
+  `Testable.to_string w` by its printing under a witness. Two rows with
+  one id are refused as duplicates, and the table fails before any row
+  runs. Every row runs and every row refuted is reported, as
+  `row 2 of 5: b`, its id cut to one line in a label. `?label` shows a
+  text beside the row's position and identifies nothing. To migrate,
+  `~name:f` becomes the positional `f`, which keeps the names as the
   rows' identities. Because a table is one test, `-f` selects a table
   and not one row, `-v` prints one line,
   `PASS  t (holds on all 3 rows)`, `timeout` and `retries` cover the
@@ -338,7 +337,7 @@ for how to migrate from 0.2.0.
   beside it exit 2. The field of a replay token between `r1:` and its
   digest is the file's bytes in base64url.
 - `--failed` reruns the cases that failed, not only the tests: a table
-  its rows that failed, by their printed value, and a property or a
+  its rows that failed, by their id, and a property or a
   stateful test each counterexample it recorded, by its token, as
   `--replay` checks one, drawing nothing. A test whose failure belongs
   to no case, as a timeout's or a failing example's, reruns whole. A

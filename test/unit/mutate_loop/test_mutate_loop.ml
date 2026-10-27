@@ -395,7 +395,7 @@ let running =
   group "Running"
     [
       cases "a run not asked to mutate is the ordinary run"
-        (Testable.contramap (fun (name, _) -> name) Testable.text)
+        (fun (name, _) -> name)
         [
           ("no variable", []);
           ("WINDTRAP_MUTATE=off", [ ("WINDTRAP_MUTATE", "off") ]);
@@ -999,9 +999,7 @@ let limits =
     [
       cases
         "the runaway budget is eight evaluations per measured one, plus 1000"
-        (Testable.contramap
-           (fun (k, over) -> strf "%d measured, budget %+d" k over)
-           Testable.text)
+        (fun (k, over) -> strf "%d measured, budget %+d" k over)
         [ (5, 0); (5, 1); (50, 0); (50, 1) ]
         budget;
       test "a mutant that never terminates is killed by its hit budget" runaway;
@@ -1201,7 +1199,7 @@ let verdict_file =
       cases
         "every narrowing of the suite saves no verdict, and its file names the \
          suite as not tested"
-        (Testable.contramap (String.concat " ") Testable.text)
+        (String.concat " ")
         [
           [ "-e"; "nothing-matches" ];
           [ "--exclude-tag"; "nothing" ];
@@ -1897,8 +1895,7 @@ let signals =
         "a signal stops the loop, reports what it found, and kills by that \
          signal"
         stopped;
-      cases "SIGTERM and SIGHUP stop it as SIGINT does"
-        (Testable.contramap signal_name Testable.text)
+      cases "SIGTERM and SIGHUP stop it as SIGINT does" signal_name
         [ Sys.sigterm; Sys.sighup ] (fun signal ->
           let r, _, _ = interrupted_by signal in
           equal string ("killed by " ^ signal_name signal) r.status;

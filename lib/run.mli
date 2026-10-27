@@ -375,7 +375,7 @@ val fixture : ?teardown:('a -> unit) -> (unit -> 'a) -> unit -> 'a
 (** The type for a case within a test, as the
     {{!section-store}last-failed store} names it. *)
 type case_id =
-  | Row of string  (** A row of a table, by its printed value. *)
+  | Row of string  (** A row of a table, by its id. *)
   | Replay of string
       (** A counterexample of a property, by its replay token. *)
 
@@ -894,12 +894,12 @@ val exit_code : (outcome, startup_error) Stdlib.result -> int
     The file opens on the line [windtrap-last-failed 2], then holds one line per
     entry: the test's path through [String.escaped], alone for the whole test,
     or followed by a tab, [row] or [replay], a tab, and the case through
-    [String.escaped], a row's printed value or a counterexample's token. A test
-    with several cases has a line for each, and a line that names it alone makes
-    it whole. A case of a kind this version does not know names its test whole.
-    The format is not stable, and a file that is not recognised reads as empty,
-    as one that cannot be read does. One that cannot be written keeps its
-    content. The record of 0.2.0 is [<log_dir>/<suite>/.last-failed]. *)
+    [String.escaped], a row's id or a counterexample's token. A test with
+    several cases has a line for each, and a line that names it alone makes it
+    whole. A case of a kind this version does not know names its test whole. The
+    format is not stable, and a file that is not recognised reads as empty, as
+    one that cannot be read does. One that cannot be written keeps its content.
+    The record of 0.2.0 is [<log_dir>/<suite>/.last-failed]. *)
 
 (** {2:exits Exits and backtraces}
 

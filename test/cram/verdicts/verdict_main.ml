@@ -85,7 +85,7 @@ let rerun () =
       (Option.value ~default:"" (Sys.getenv_opt "VERDICT_FAILING"))
   in
   [
-    cases "rows" string
+    cases "rows" (Printf.sprintf "%S")
       ~label:(fun row -> if row = "b" then "the second" else "")
       [ "a"; "b"; "c"; "d" ]
       (fun row ->
@@ -236,7 +236,8 @@ let suite = function
   | "record_renamed" -> [ test "first" ignore; test "renamed" ignore ]
   | "rerun" -> rerun ()
   | "replayed" -> replayed ()
-  | "rerun_dup" -> [ cases "rows" string [ "a"; "b"; "a" ] ignore ]
+  | "rerun_dup" ->
+      [ cases "rows" (Printf.sprintf "%S") [ "a"; "b"; "a" ] ignore ]
   | "prop_discard" ->
       [
         prop "assumes" Gen.int (fun _ -> assume false);
@@ -271,23 +272,27 @@ let suite = function
               ignore ignore;
           ];
       ]
-  | "table_zero" -> [ cases "rows" Testable.text [] ignore ]
-  | "table_zero_plus" -> [ cases "rows" Testable.text [] ignore; passes ]
+  | "table_zero" -> [ cases "rows" Fun.id [] ignore ]
+  | "table_zero_plus" -> [ cases "rows" Fun.id [] ignore; passes ]
   | "table_skip" ->
       let skips_row_2 r = if r = 2 then skip ~reason:"row 2 skips" () in
       [
-        cases "skip in the middle" int [ 1; 2; 3 ] (fun r ->
+        cases "skip in the middle" (Testable.to_string int) [ 1; 2; 3 ]
+          (fun r ->
             skips_row_2 r;
             equal int 0 (r mod 3));
-        cases "skip first, failure later" int [ 2; 4 ] (fun r ->
+        cases "skip first, failure later" (Testable.to_string int) [ 2; 4 ]
+          (fun r ->
             skips_row_2 r;
             equal int 0 r);
-        cases "failure first, skip later" int [ 4; 2 ] (fun r ->
+        cases "failure first, skip later" (Testable.to_string int) [ 4; 2 ]
+          (fun r ->
             skips_row_2 r;
             equal int 0 r);
-        cases "every row skips" int [ 2; 3 ] (fun r ->
+        cases "every row skips" (Testable.to_string int) [ 2; 3 ] (fun r ->
             skip ~reason:(Printf.sprintf "row %d skips" r) ());
-        cases "the other rows hold" int [ 1; 2; 3 ] skips_row_2;
+        cases "the other rows hold" (Testable.to_string int) [ 1; 2; 3 ]
+          skips_row_2;
       ]
   | "baseline_literal" ->
       [ test "never recorded" (fun () -> expect "hello" @@ __POS_OF__ {||}) ]

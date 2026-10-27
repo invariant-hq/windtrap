@@ -306,14 +306,12 @@ let laws =
                    raise Stack_overflow))
           in
           equal string "raise Stack overflow" (inner_row p.inner));
-      cases "a control or a fatal exception escapes run"
-        (Testable.contramap fst Testable.text) escapes (fun (_, (e, run)) ->
-          equal string (Printexc.to_string e) (escaped run));
-      cases "a timeout before any case failed is a Fail naming the case"
-        (Testable.contramap fst Testable.text) timeouts (fun (_, (run, row)) ->
+      cases "a control or a fatal exception escapes run" fst escapes
+        (fun (_, (e, run)) -> equal string (Printexc.to_string e) (escaped run));
+      cases "a timeout before any case failed is a Fail naming the case" fst
+        timeouts (fun (_, (run, row)) ->
           equal string row (outcome_row (run ())));
-      cases "an inner raise carries the backtrace iff one is recorded"
-        (Testable.contramap fst Testable.text)
+      cases "an inner raise carries the backtrace iff one is recorded" fst
         [
           ("recorded", (true, "a backtrace"));
           ("not recorded", (false, "no backtrace"));
@@ -326,8 +324,7 @@ let laws =
 let discarding =
   group "Discarding"
     [
-      cases "assume and reject raise Failure.Control `Discard"
-        (Testable.contramap fst Testable.text)
+      cases "assume and reject raise Failure.Control `Discard" fst
         [
           ("assume true", ((fun () -> Property.assume true), "returned"));
           ("assume false", ((fun () -> Property.assume false), "discard"));
@@ -520,14 +517,11 @@ let labelling =
       test "a failing case and the shrink search commit no label"
         failing_cases_commit_nothing;
       test "a context used after its run changes no other run" late_context;
-      cases "a share demand decides by a sequential test, or exactly"
-        (Testable.contramap fst Testable.text) shares (fun (_, (run, row)) ->
-          equal string row (run ()));
-      cases "a share outside (0;1] is refused"
-        (Testable.contramap fst Testable.text)
-        refused_shares refused_share;
-      cases "a cover demand registers when reached and is judged at the end"
-        (Testable.contramap fst Testable.text) covers (fun (_, (run, row)) ->
+      cases "a share demand decides by a sequential test, or exactly" fst shares
+        (fun (_, (run, row)) -> equal string row (run ()));
+      cases "a share outside (0;1] is refused" fst refused_shares refused_share;
+      cases "a cover demand registers when reached and is judged at the end" fst
+        covers (fun (_, (run, row)) ->
           let o = run () in
           equal string row (strf "%s; %s" (verdict o) (coverage_row (stats o))));
     ]
@@ -583,7 +577,7 @@ let outcomes =
   group "Outcomes"
     [
       cases "a Fail is located at loc"
-        (Testable.contramap (fun (n, _, _) -> n) Testable.text)
+        (fun (n, _, _) -> n)
         located
         (fun (_, gen, law) ->
           let f = failed (Property.run ~loc ~root ~path:"located" gen law) in
@@ -596,8 +590,7 @@ let outcomes =
           equal string
             ("labelled: expected 0, actual " ^ p.rendered)
             (inner_row p.inner));
-      cases "count is the count of the configuration only"
-        (Testable.contramap fst Testable.text)
+      cases "count is the count of the configuration only" fst
         [
           ("`Config 7", (Some (`Config 7), Some 7));
           ("`Declared 7", (Some (`Declared 7), None));
@@ -609,13 +602,11 @@ let outcomes =
                 Check.fail "always")
           in
           equal (option int) expected (counterexample o).count);
-      cases "summary is the summary of the reported value"
-        (Testable.contramap fst Testable.text) summarized
+      cases "summary is the summary of the reported value" fst summarized
         (fun (_, (run, expected)) ->
           equal (option string) expected (counterexample (run ())).summary);
-      cases "a replay descends the same path whatever the configuration"
-        (Testable.contramap fst Testable.text) configurations
-        (fun (_, (count, max_discard)) ->
+      cases "a replay descends the same path whatever the configuration" fst
+        configurations (fun (_, (count, max_discard)) ->
           equal string
             (replayed (`Config 100) None)
             (replayed count max_discard));
@@ -670,8 +661,7 @@ let examples =
       test "the examples run first, in order, and count in cases" examples_first;
       test "a failing example ends the run, unshrunk, at its position"
         failing_example;
-      cases "a failing example renders through the generator's printer"
-        (Testable.contramap fst Testable.text)
+      cases "a failing example renders through the generator's printer" fst
         [
           ("a printer", (Gen.int, "2"));
           ("no printer", (Gen.map Fun.id Gen.int, placeholder));
@@ -794,8 +784,7 @@ let generated =
           in
           equal string "no case, 0 cases, 0 discards" (verdict o);
           equal (list int) [] (seen ()));
-      cases "a run that passes no case is vacuous, whatever its count"
-        (Testable.contramap fst Testable.text)
+      cases "a run that passes no case is vacuous, whatever its count" fst
         [
           ( "a domain checked whole whose every value discards",
             ( (fun () ->
@@ -815,8 +804,7 @@ let generated =
               "no case, 0 cases, 0 discards" ) );
         ]
         (fun (_, (run, row)) -> equal string row (verdict (run ())));
-      cases "a count or max_discard below 0 raises Invalid_argument"
-        (Testable.contramap fst Testable.text)
+      cases "a count or max_discard below 0 raises Invalid_argument" fst
         [
           ( "count",
             fun () ->
@@ -837,11 +825,10 @@ let generated =
           in
           equal string "fail, 0 cases, 0 discards" (verdict o));
       cases "the run gives up once more than max_discard cases are discarded"
-        (Testable.contramap fst Testable.text) give_ups (fun (_, (run, row)) ->
+        fst give_ups (fun (_, (run, row)) ->
           equal string row (verdict (run ())));
       test "discards within max_discard leave the run to pass" mixed_discards;
-      cases "a discard spends its index" (Testable.contramap fst Testable.text)
-        spenders (fun (name, discarding) ->
+      cases "a discard spends its index" fst spenders (fun (name, discarding) ->
           let before = if name = "by the generator" then 1 else 0 in
           equal int 1 (spent_index ~before discarding));
       test "a generation that discards discards the case" generator_discards;
@@ -853,8 +840,7 @@ let generated =
           in
           equal string "gave up, 0 cases, 7 discards" (verdict o);
           equal (list int) [] (seen ()));
-      cases "a generator's fault fails the case unshrunk"
-        (Testable.contramap fst Testable.text) raising_generators
+      cases "a generator's fault fails the case unshrunk" fst raising_generators
         (fun (_, (gen, inner)) ->
           let o = Property.run ~root ~path:"raising gen" gen (fun _ _ -> ()) in
           equal string
@@ -1026,8 +1012,7 @@ let shrinking =
       test "the search descends to a node with no failing candidate" minimal;
       cases
         "a candidate is accepted iff it fails in the class of the first failure"
-        (Testable.contramap fst Testable.text) candidates
-        (fun (_, (first, candidate, row)) ->
+        fst candidates (fun (_, (first, candidate, row)) ->
           equal string row (search first candidate));
       test "a law that runs each case 50 times probes 200 cases with the budget"
         (fun () ->
@@ -1055,13 +1040,12 @@ let shrinking =
                  if not (all_ones values) then Property.reject ();
                  raise Not_found)));
       test "a quad of int64 converges within 256 steps" quad;
-      cases "a timeout in the search ends it at the last accepted node"
-        (Testable.contramap fst Testable.text) timed_out_searches
-        (fun (_, (run, row)) -> equal string row (outcome_row (run ())));
+      cases "a timeout in the search ends it at the last accepted node" fst
+        timed_out_searches (fun (_, (run, row)) ->
+          equal string row (outcome_row (run ())));
       test "a timeout while formatting does not leave run" formatting_timeout;
-      cases "the counterexample renders as its value or its pre-image"
-        (Testable.contramap fst Testable.text) renderings
-        (fun (_, (path, gen, row)) ->
+      cases "the counterexample renders as its value or its pre-image" fst
+        renderings (fun (_, (path, gen, row)) ->
           let o =
             Property.run ~root ~path gen (fun _ x -> Check.is_true (x < 10))
           in
@@ -1240,8 +1224,7 @@ let progress =
                 "run 10";
               ] )
             (told descent));
-      cases "shrinking is not told of a failure that has no candidate"
-        (Testable.contramap fst Testable.text)
+      cases "shrinking is not told of a failure that has no candidate" fst
         [
           ("a failing example", fun () -> told ~examples:[ 42 ] descent);
           ( "a case whose sample has none",
@@ -1380,13 +1363,13 @@ let printing =
               Some "held 0" )
             (emptied (once ())));
       cases "one parse again serves the printing and the run again"
-        (Testable.contramap (fun (n, _) -> n) Testable.text)
+        (fun (n, _) -> n)
         [ ("printed and run", None); ("printed, not run", Some 2) ]
         (fun (_, runs) -> equal int 2 (samples ?runs ()));
       cases
         "a failing example prints as it was given, before its run, or as its \
          record"
-        (Testable.contramap (fun (n, _) -> n) Testable.text)
+        (fun (n, _) -> n)
         [
           ("drawn printing", (false, ("42", Some "held 42")));
           ("a record of the run", (true, ("left 0", Some "left 0")));
@@ -1417,8 +1400,7 @@ let printing =
                   ~examples:[ [| 1; 1; 0 |] ]
                   Gen.(array (int_range 0 9))
                   sorts_in_place)));
-      cases "a control that an example's printer raises acts as the law's"
-        (Testable.contramap fst Testable.text)
+      cases "a control that an example's printer raises acts as the law's" fst
         [
           ( "a timeout",
             ( `Timeout 0.25,
@@ -1510,8 +1492,8 @@ let past_discards () =
 let running_again =
   group "Running again"
     [
-      cases "the counterexample runs once more after the search"
-        (Testable.contramap fst Testable.text) reruns (fun (_, (law, again)) ->
+      cases "the counterexample runs once more after the search" fst reruns
+        (fun (_, (law, again)) ->
           equal ran_again_row
             (converged_at_10, again, [ 40; 0; 0; 20; 10; 5; 7; 8; 9; 10 ])
             (ran_again descent law));

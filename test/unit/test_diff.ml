@@ -245,8 +245,7 @@ let hunk_ties () =
 let line_hunks =
   group "Line hunks"
     [
-      cases "hunks gives each changed region as a unified hunk"
-        (Testable.contramap fst Testable.text)
+      cases "hunks gives each changed region as a unified hunk" fst
         [
           ( "a line replaced",
             (None, "a\nb\n", "a\nc\n", [ "@@ -1,2 +1,2 @@| a|-b|+c" ]) );
@@ -264,7 +263,7 @@ let line_hunks =
         ]
         hunks_row;
       cases "two lines are equal when their bytes are, trailing blanks included"
-        (Testable.contramap fst Testable.text)
+        fst
         [
           ( "a trailing space",
             (None, "a \n", "a\n", [ "@@ -1,1 +1,1 @@|-a |+a" ]) );
@@ -272,8 +271,7 @@ let line_hunks =
             (None, "a\n", "a\t\n", [ "@@ -1,1 +1,1 @@|-a|+a\t" ]) );
         ]
         hunks_row;
-      cases "a side with no line in a hunk starts at its next line"
-        (Testable.contramap fst Testable.text)
+      cases "a side with no line in a hunk starts at its next line" fst
         [
           ( "an insertion into the empty text",
             (None, "", "a\nb\n", [ "@@ -1,0 +1,2 @@|+a|+b" ]) );
@@ -286,8 +284,7 @@ let line_hunks =
               [ "@@ -1,1 +1,0 @@|-x"; "@@ -3,1 +2,1 @@|-b|+c" ] ) );
         ]
         hunks_row;
-      cases "context unchanged lines surround a region, 3 by default"
-        (Testable.contramap fst Testable.text)
+      cases "context unchanged lines surround a region, 3 by default" fst
         [
           ( "the default",
             ( None,
@@ -304,7 +301,7 @@ let line_hunks =
         ]
         hunks_row;
       cases "two regions at most 2 * context unchanged lines apart are one hunk"
-        (Testable.contramap fst Testable.text)
+        fst
         [
           ( "one line apart",
             ( Some 1,
@@ -334,8 +331,7 @@ let line_hunks =
               ] ) );
         ]
         hunks_row;
-      cases "hunks is [] iff the texts split into equal lines"
-        (Testable.contramap fst Testable.text)
+      cases "hunks is [] iff the texts split into equal lines" fst
         [
           ("equal texts", ("a\nb\n", "a\nb\n"));
           ("the empty texts", ("", ""));
@@ -348,7 +344,7 @@ let line_hunks =
       cases
         "a region is minimal up to 2000 lines and 1000 edits, and whole past \
          either"
-        (Testable.contramap fst Testable.text)
+        fst
         [
           ( "2000 lines",
             ( ends_region 1_000 1_000,
@@ -551,7 +547,7 @@ let character_refinement =
   group "Character refinement"
     [
       cases "refine marks the code points a minimal script changes"
-        (Testable.contramap (fun (n, _) -> n) Testable.text)
+        (fun (n, _) -> n)
         [
           ("equal strings", ("abc", "abc", "expected [], actual []"));
           ("the empty strings", ("", "", "expected [], actual []"));
@@ -577,7 +573,7 @@ let character_refinement =
         ]
         refined_row;
       cases "refine is None when the marks cover half or more of a side"
-        (Testable.contramap (fun (n, _) -> n) Testable.text)
+        (fun (n, _) -> n)
         [
           ("13 against 14", ("13", "14", "none"));
           ("no common code point", ("abc", "xyz", "none"));
@@ -592,7 +588,7 @@ let character_refinement =
         ]
         refined_row;
       cases "refine is None when (ma + 1) * (mb + 1) is above 4000000"
-        (Testable.contramap (fun (n, _) -> n) Testable.text)
+        (fun (n, _) -> n)
         [
           ( "2000 by 2000 cells",
             let e, a = cells 1_999 1_999 in

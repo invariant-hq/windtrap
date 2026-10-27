@@ -35,10 +35,10 @@ a test is added above another, while a name changes only when its author
 renames it. For the same reason a suite in which two tests share a path
 is refused. A row of a table is a case of its test, not a test, and is
 identified the same way, by what it is and not where it sits: by its
-printed value. A row named by its index would lose its record each time
-a row is inserted before it, and a row named by a string of its own had
-to be invented and kept unique; two rows that print alike are refused,
-as two tests of one path are.
+id, a string the table computes from the row, a key of it or its
+printing. A row named by its index would lose its record each time a
+row is inserted before it. Two rows with one id are refused, as two
+tests of one path are.
 
 ## A witness is a printer and an equality
 

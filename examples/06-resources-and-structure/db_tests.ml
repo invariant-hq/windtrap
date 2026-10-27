@@ -20,7 +20,8 @@ let database =
       with_db "an insert adds one row" (fun db ->
           Db.insert db "alice";
           equal int 1 (Db.count db));
-      cases "a name is stored" string [ "alice"; "bob"; "carol" ] (fun name ->
+      cases "a name is stored" (Printf.sprintf "%S") [ "alice"; "bob"; "carol" ]
+        (fun name ->
           let db = Db.connect () in
           Db.insert db name;
           is_true (Db.mem db name));

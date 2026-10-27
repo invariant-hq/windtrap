@@ -172,7 +172,8 @@ let database =
       with_db "an insert adds one row" (fun db ->
           Db.insert db "alice";
           equal int 1 (Db.count db));
-      cases "a name is stored" string [ "alice"; "bob"; "carol" ] (fun name ->
+      cases "a name is stored" (Printf.sprintf "%S") [ "alice"; "bob"; "carol" ]
+        (fun name ->
           let db = Db.connect () in
           Db.insert db name;
           is_true (Db.mem db name));
@@ -188,7 +189,7 @@ body's.
 
 ## Checking a table of inputs
 
-`cases name w rows fn` is a table: one test that runs `fn` on every row
+`cases name id rows fn` is a table: one test that runs `fn` on every row
 of `rows`, in order, as `a name is stored` above. It is a property whose
 domain is the rows, so it is checked whole: a row that fails does not
 stop the others, the report gives every row that failed, each as it was
@@ -201,12 +202,13 @@ storage: 1 test
 1 passed in 1.3ms.
 ```
 
-A row is identified by how the witness `w` prints it, here `string`'s
-`"bob"`. A failure names it by its position and that printing, as in
-`row 2 of 3: "bob"`, cut to one line when it is long. Two rows that
-print alike are refused, since nothing could tell them apart. A witness
-can print a key of the row instead of all of it:
-`Testable.contramap fst string` identifies `("bob", 3)` as `"bob"`.
+A row is identified by `id row`, here `Printf.sprintf "%S"`'s `"bob"`,
+quoted so that an empty or blank row still shows. A failure names it by
+its position and that id, as in `row 2 of 3: "bob"`, cut to one line
+when it is long. Two rows with one id are refused, since nothing could
+tell them apart. The id can be a key of the row instead of all of it:
+`fst` identifies `("bob", 3)` as `bob`, and `Testable.to_string w`
+prints a whole row as the witness `w` does.
 `~label` gives a row a text shown beside its position, `row 2 of 3, the
 second`, which identifies nothing.
 
