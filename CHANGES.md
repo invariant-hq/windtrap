@@ -11,26 +11,26 @@ for how to migrate from 0.2.0.
 - (breaking) `cases name id rows fn` is a table: one test, a property
   over `Gen.of_list rows` checked whole, where 0.2.0's
   `cases ~name base inputs fn` made a group of one test per input. A row
-  is identified by `id row`: `fst` identifies a row by a key, and
-  `Testable.to_string w` by its printing under a witness. Two rows with
-  one id are refused as duplicates, and the table fails before any row
-  runs. Every row runs and every row refuted is reported, as
-  `row 2 of 5: b`, its id cut to one line in a label. `?label` shows a
-  text beside the row's position and identifies nothing. To migrate,
-  `~name:f` becomes the positional `f`, which keeps the names as the
-  rows' identities. Because a table is one test, `-f` selects a table
+  is identified by `id row`, a string: `fst` gives a key of the row,
+  `Testable.to_string w` its printing under a witness, and
+  `Printf.sprintf "%S"` a string row quoted. Two rows with one id are
+  refused as duplicates, and the table fails before any row runs. Every
+  row runs, and every row refuted is reported as `row 2 of 5: b`, its id
+  cut to one line. `?label` shows a text beside the row's position and
+  identifies nothing. 0.2.0's `~name:f` becomes the positional `f`, and
+  keeps the names as the rows' identities. Because a table is one test, `-f` selects a table
   and not one row, `-v` prints one line,
   `PASS  t (holds on all 3 rows)`, `timeout` and `retries` cover the
   whole table, the summary counts a table once, and a table with no row
   is vacuous, since it checks nothing, where 0.2.0 declared no test.
 - (breaking) `slow : test -> test` and `tag : string -> test -> test`
-  are annotations, as `focus` and `xfail` are: they mark any test, a
-  property, a table or a stateful test included, or every test under a
+  are annotations, as `focus` and `xfail` are. They mark any test, a
+  property, a table and a stateful test included, or every test under a
   group, written `slow @@ test "n" f` and `tag "gpu" @@ group "g" ts`.
   `slow` is `tag "slow"`, the tag the runner leaves out of `slow tests`.
-  `?tags` is removed from every constructor, so a tag has one spelling,
-  and 0.2.0's `slow name fn`, the only constructor twin of `test`, is
-  `slow @@ test name fn`.
+  0.2.0's `slow name fn`, the one constructor twin of `test`, is
+  `slow @@ test name fn`. `?tags` is removed from every constructor, so
+  a tag has one spelling.
 - Each row of a table keeps or withholds its baseline corrections as a
   test of its own would, in the order of the rows and at every `-j`: a
   row that also fails another way keeps none, and the next rows are
@@ -55,8 +55,14 @@ for how to migrate from 0.2.0.
 - (breaking) `starts_with ~prefix` and `ends_with ~suffix` take the
   labels of `String.starts_with` and `String.ends_with`, where 0.2.0
   took `~affix`. `Exn.invalid_arg`, `Exn.failure` and `Exn.sys_error`
-  take `?sub`, the label `contains` gives the text to find, where 0.2.0
-  took `?substring`.
+  take `?sub`, the label of `contains`, where 0.2.0 took `?substring`.
+- `slist t cmp` compares two lists as multisets under `t`'s equality,
+  as its doc said: `cmp` only sorts them to find the pairs. Under a
+  `cmp` coarser than the equality, 0.2.0 found two equal multisets in
+  another order unequal. A failing `equal` under `slist` shows what is
+  missing and what is extra, `multisets differ: 2 missing, 1 extra`, in
+  place of a diff of the two lists that a large collection cut at
+  64 KiB before the elements that differed.
 - `equal` under `float eps` or `float_rel`, alone or inside a container
   witness, records at its call site the largest error it saw against
   the bound it allowed, and the report states it, as
@@ -94,10 +100,10 @@ for how to migrate from 0.2.0.
   action, so N stale files took N runs and N promotions. The manual,
   the examples and windtrap's own stanzas use it.
 - (breaking) `expect_file : ?__POS__:pos -> file:string -> string -> unit`
-  labels the file, written `expect_file ~file:"golden/x.txt" actual`.
+  labels the file, written `expect_file ~file:"golden/x.txt" text`.
   0.2.0's two positional strings compiled swapped, and a swapped call
-  read the text as a path. A report names the baseline as
-  `expect_file ~file:"golden/x.txt"`.
+  read the text as a path. A report names the baseline as the call
+  writes it, `expect_file ~file:"golden/x.txt"`.
 - Under `CI` a baseline mismatch fails the run's exit code in every
   mode. A `--corrected` run exits 0 when its only failures are
   mismatches whose corrections it wrote, so that a `diff?` can hand them

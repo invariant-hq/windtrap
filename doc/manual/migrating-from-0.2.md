@@ -6,18 +6,22 @@ what it writes now. A change this page does not list keeps a 0.2 suite
 compiling and passing as before. The entries of
 [`CHANGES.md`](../../CHANGES.md) after `0.2.0` list every change.
 
-Three changes break every suite that uses them at compile time: the
-signature of `cases`, `judges` in place of `chooses`, and the type of
-`cover`. The others compile and can change a verdict.
+Six changes break every suite that uses them at compile time: the
+signature of `cases`, `slow` and `tag` as annotations, the labels of
+`starts_with`, `ends_with` and `Exn`, the labelled file of
+`expect_file`, `judges` in place of `chooses`, and the type of `cover`.
+Each fails with a type error at the call. The others compile and can
+change a verdict.
 
 ## Declaring tests
 
 - `cases ~name:f "parse" inputs fn` → `cases "parse" f inputs fn`. The
-  function that named a row's test moves to the second positional
-  argument, and the name it gives is the row's identity. A table over
-  the rows' own values identifies them by their printing, as
-  `cases "rev" (Testable.to_string (list int)) inputs fn`. A text shown
-  beside a row and identifying nothing is `~label:f`.
+  function that named a row's test is the second positional argument.
+  The name it gives is the row's identity. A table over the rows' own
+  values identifies them by their printing,
+  `cases "rev" (Testable.to_string (list int)) inputs fn`, and a table of
+  strings by the quoted string, `cases "t" (Printf.sprintf "%S") …`. A
+  text shown beside a row and identifying nothing is `~label:f`.
 
   ```ocaml
   (* 0.2 *)
@@ -28,16 +32,16 @@ signature of `cases`, `judges` in place of `chooses`, and the type of
   cases "parses" fst [ ("1", 1); ("10", 10) ] (fun (s, n) ->
       equal int n (int_of_string s))
   ```
-- `slow "n" f` → `slow @@ test "n" f`, with its optional arguments on
+- `slow "n" f` → `slow @@ test "n" f`. The optional arguments go on
   `test`: `slow ~timeout:60. "n" f` → `slow @@ test ~timeout:60. "n" f`.
   `slow` marks any test or group, as `focus` and `xfail` do. A choice
-  between the two constructors, `(if heavy then slow else test) "n" f`,
-  becomes a choice of mark, `(if heavy then slow else Fun.id) @@ test "n" f`.
+  of constructor, `(if heavy then slow else test) "n" f`, is a choice of
+  mark: `(if heavy then slow else Fun.id) @@ test "n" f`.
 - `~tags:[ "gpu" ]` on `test`, `group`, `slow`, `cases`, `bracket`,
   `scoped`, `prop` or `stateful` → `tag "gpu" @@ …` around the
-  declaration, one `tag` per tag, and `~tags:[ "slow" ]` → `slow @@ …`.
-  A helper that took `?tags` only to pass it on drops it, and its
-  caller tags the helper's result.
+  declaration, one `tag` per tag. `~tags:[ "slow" ]` → `slow @@ …`. A
+  helper that took `?tags` only to pass it on drops it, and its caller
+  tags the helper's result.
 - A table is one test, not a group of one test per row:
   - `-f 'parses › 10'`, which selected one row → `-f parses`, which
     selects the table; `--failed` then reruns only the rows that
@@ -75,10 +79,16 @@ signature of `cases`, `judges` in place of `chooses`, and the type of
 ## Assertions
 
 - `starts_with ~affix:p s` → `starts_with ~prefix:p s`, and
-  `ends_with ~affix:x s` → `ends_with ~suffix:x s`, the labels of
-  `String.starts_with` and `String.ends_with`.
+  `ends_with ~affix:x s` → `ends_with ~suffix:x s`. These are the labels
+  of `String.starts_with` and `String.ends_with`.
 - `Exn.invalid_arg ~substring:m`, `Exn.failure ~substring:m` and
   `Exn.sys_error ~substring:m` → `~sub:m`, the label of `contains`.
+  `?substring:None` → `?sub:None`, and a punned `~substring` →
+  `~sub:substring`.
+- `equal (slist t cmp)` over two equal multisets in another order,
+  under a `cmp` coarser than `t`'s equality, which failed in 0.2 →
+  passes. `slist` compares multisets under `t`'s equality, and `cmp`
+  only sorts. A `not_equal` under such an `slist` can fail now.
 - A failing verb inside a catch-all, `(try equal int 1 (f ()) with _ ->
   ())`, which passed in 0.2 → the test fails, and the block says
   `failed, then caught`. A library that ignores what its callbacks
@@ -96,7 +106,7 @@ signature of `cases`, `judges` in place of `chooses`, and the type of
 
 - `expect_file text "golden/x.txt"` →
   `expect_file ~file:"golden/x.txt" text`. The file is labelled, so the
-  two strings cannot be swapped, and
+  two strings cannot be swapped.
   `render doc |> expect_file ~file:"golden/x.txt"` reads in order.
 - A stanza that runs `--corrected` with no `diff?` for a file that holds
   a baseline, which passed under `CI` when that file was stale → the
