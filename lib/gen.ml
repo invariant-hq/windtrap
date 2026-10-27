@@ -668,8 +668,12 @@ let float_range low high =
     in
     (* [high -. low] can round up past the span, and the sum then past
        [high]; it never falls below [low], whose addend is non-negative. A
-       sum equal to [high] takes [high]'s sign, as [-0. +. 0.] is [0.]. *)
-    let value = low +. (unit_interval *. (high -. low)) in
+       sum equal to [high] takes [high]'s sign, as [-0. +. 0.] is [0.]. The
+       product is opaque so that no backend fuses it into the sum: arm64's
+       fused multiply-add rounds once where x86 rounds twice, and a seed
+       would draw other floats there. *)
+    let scaled = Sys.opaque_identity (unit_interval *. (high -. low)) in
+    let value = low +. scaled in
     ((if value >= high then high else value), state)
   in
   let signs =
