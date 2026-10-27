@@ -41,7 +41,11 @@ raises `Parse_error` when the string is empty or not a number.
 
 ## The first suite
 
-A suite is one executable, declared by a `(test)` stanza.
+A suite is one executable, declared by a `(test)` stanza. Its two
+`env_var` deps make dune run the suite again when `WINDTRAP_SEED` or
+`WINDTRAP_PROP_COUNT` changes, as `WINDTRAP_SEED=… dune runtest` does to
+replay a seed: without them dune skips a test whose inputs it has seen
+pass, and the variable reaches nothing.
 
 `test/dune`:
 
@@ -49,7 +53,10 @@ A suite is one executable, declared by a `(test)` stanza.
 (test
  (name test_mylib)
  (modules test_mylib calc)
- (libraries windtrap))
+ (libraries windtrap)
+ (deps
+  (env_var WINDTRAP_SEED)
+  (env_var WINDTRAP_PROP_COUNT)))
 ```
 
 The suite declares its tests and runs them.
@@ -150,4 +157,5 @@ manual has one page per kind of test and per workflow.
   its code with `let%test`, and the resources a test acquires.
 
 The [index](../../README.md#documentation) lists every page with its
-kind, and `lib/windtrap.mli` is the reference.
+kind, and `lib/windtrap.mli` is the reference, with `Windtrap.Testable`'s
+constructors in `lib/testable.mli`.

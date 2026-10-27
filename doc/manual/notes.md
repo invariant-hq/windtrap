@@ -2,7 +2,8 @@
 
 This page explains why windtrap is shaped as it is. Each section states
 one decision and the reasons for it. The how-to pages show how to use
-what the decisions give, and `lib/windtrap.mli` is the reference.
+what the decisions give, and `lib/windtrap.mli` is the reference, with
+`Windtrap.Testable`'s constructors in `lib/testable.mli`.
 
 ## A suite is an executable, and `run` returns its exit code
 

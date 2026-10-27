@@ -43,10 +43,11 @@ mylib: 3 passed in 1.0ms (seed s1:b02192cebcec40d2).
 
 ### Unit tests
 
-`test` and `group` declare a suite, and `run` runs it. Assertions such
-as `equal`, `less`, `contains`, `raises` and `require_some` take a
-witness, for example `int` or `list string`, and a failure prints the
-values it compared.
+`test` and `group` declare a suite, and `run` runs it. The assertions
+that compare values, such as `equal`, `not_equal`, `less` and `mem`,
+take a witness, for example `int` or `list string`, which prints and
+compares them; `contains`, `raises` and `require_some` take none. A
+failure prints the values it compared.
 
 ```ocaml
 test "splits on commas" (fun () ->
@@ -128,8 +129,10 @@ The manual, [`doc/manual/`](doc/manual/), has one page per need:
   - [Migrating from 0.2](doc/manual/migrating-from-0.2.md): each breaking change since 0.2 and what a suite writes now.
   - [Migrating from 0.1](doc/manual/migrating-from-0.1.md): each 0.1 spelling and its replacement.
 - Explanation: [Design notes](doc/manual/notes.md), why windtrap is shaped as it is.
-- Reference: [`lib/windtrap.mli`](lib/windtrap.mli), and
-  [`ppx/ppx_windtrap.mli`](ppx/ppx_windtrap.mli) for the inline test forms.
+- Reference: [`lib/windtrap.mli`](lib/windtrap.mli),
+  [`lib/testable.mli`](lib/testable.mli) for the witness constructors of
+  `Windtrap.Testable`, and [`ppx/ppx_windtrap.mli`](ppx/ppx_windtrap.mli)
+  for the inline test forms.
 
 Questions are welcome on the [OCaml forum](https://discuss.ocaml.org/).
 

@@ -4,7 +4,9 @@ This page shows how to check a value inside a test body: compare it with
 an expected one, bound it, search it, unwrap it, or expect an exception.
 Each section shows what the verb prints when its claim fails. The
 reference for every verb and witness is
-[`lib/windtrap.mli`](../../lib/windtrap.mli).
+[`lib/windtrap.mli`](../../lib/windtrap.mli), and for the constructors
+and accessors of `Windtrap.Testable`, which that file names without
+listing, [`lib/testable.mli`](../../lib/testable.mli).
 
 The snippets test `Shop`, a module of shopping carts.
 
@@ -176,7 +178,8 @@ A container witness takes the witnesses of its components, as in
 `list string`, `option item` or `pair string int`. For a type of your
 own, `Testable.make` builds the witness from a printer and an equality,
 and `Testable.with_compare` adds an order, which the ordering verbs
-need. `Windtrap.Testable` has the other constructors. `Law.equivalence`
+need. `Windtrap.Testable` has the other constructors, listed in
+[`lib/testable.mli`](../../lib/testable.mli). `Law.equivalence`
 and `Law.order` check a witness's equality and order, and `Law` states
 the other textbook laws (see
 [Stating a textbook law](property-testing.md#stating-a-textbook-law)).
@@ -597,10 +600,11 @@ value, never one verb caught to try another.
 Every verb but `fail` and `failf` takes `~msg`, a line the failure
 prints above the values. In a loop it names the iteration that failed,
 and the loop stops there. `cases`, in
-[Resources and structure](resources-and-structure.md), makes one test
-per input instead, and
+[Resources and structure](resources-and-structure.md), is a table: one
+test that runs every input, goes on past a failing one and reports each
+that failed by its id, and
 [`subtest`](resources-and-structure.md#naming-the-parts-of-one-test)
-keeps the loop going and names each failing part.
+keeps a loop going and names each failing part.
 `fail` and `failf` fail the test with a message of their own, in a
 branch the test must not reach, and `skip` ends the test as skipped.
 

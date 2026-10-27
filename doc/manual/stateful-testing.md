@@ -970,7 +970,7 @@ of the forms on this page:
 | never X after Y, once Y, X since Y | a reference that remembers what it needs of the past, and judges |
 | a monitor | a reference whose commands end in `judges` |
 | eventually, at quiescence | a drawn command that brings the system to rest, then observes it |
-| a scenario that a program must reach | a `cover` in the reference function of the call that observes it |
+| a scenario that a program must reach | a `cover` of its condition in the reference function of the call that observes it, called on every call |
 | noninterference, determinism | the system as its own reference, run twice |
 
 A `cover` demands its scenario on presence, and

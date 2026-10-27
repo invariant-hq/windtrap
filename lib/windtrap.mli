@@ -70,7 +70,9 @@ type 'a printer = Format.formatter -> 'a -> unit
 (** The type for value printers. *)
 
 module Testable = Testable
-(** Witness constructors and accessors. *)
+(** Witness constructors and accessors: [make], [with_compare], [structural],
+    [of_equal], [contramap], [pp], [equal], [compare] and [to_string], with the
+    witnesses below. Their reference is [lib/testable.mli]. *)
 
 type 'a testable = 'a Testable.t
 (** The type for witnesses of ['a] values: a printer, an equality and an
@@ -825,10 +827,13 @@ val nativeint : nativeint testable
     {!float_exact}, every NaN equals every NaN and [0.] differs from [-0.]. *)
 
 val float_exact : float testable
-(** [float_exact] compares floats bit for bit. It prints the shortest decimal
-    that round-trips to the value, [0.1 +. 0.2] as [0.30000000000000004], and
-    the infinities and NaN as [infinity], [neg_infinity] and [nan]. Two unequal
-    floats never print alike. *)
+(** [float_exact] compares floats by their bits, except that every NaN equals
+    every NaN whatever its payload and sign: two floats are equal iff both are
+    NaN or [Int64.bits_of_float] gives them one value, so [0.] differs from
+    [-0.]. It prints the shortest decimal that round-trips to the value,
+    [0.1 +. 0.2] as [0.30000000000000004], and the infinities and NaN as
+    [infinity], [neg_infinity] and [nan]. Two unequal floats never print alike.
+*)
 
 val float : float -> float testable
 (** [float eps] compares with absolute tolerance [eps]. [a] and [b] are equal
@@ -1405,10 +1410,20 @@ val cover : ?share:float -> string -> bool -> unit
     [cover "accepted" ~share:0.2: 4.0% of 400 cases, at most 9.1%]. Extending
     the cases costs their time, and a share near its demand takes the most.
 
-    The demand registers when [cover] is called, whatever [cond], so a [cover]
-    the law does not always reach may register nothing. It is judged when the
-    property has run all its cases. Raises [Invalid_argument] unless
-    [0. < p <= 1.], and raises as {!collect} does. *)
+    A demand is a statement about the case, and registers when [cover] is
+    called, whatever [cond]. So compute [cond] and call [cover] on every case,
+    before any branch:
+    {[
+    let r = Codec.decode s in
+    cover "decoded" (Result.is_ok r);
+    match r with Ok v -> equal string s (Codec.encode v) | Error _ -> ()
+    ]}
+    and not in the branch it describes, [| Ok v -> cover "decoded" true; …],
+    which registers nothing when no case reaches the branch, the one run the
+    demand exists to catch, so that the property passes though it checked
+    nothing. The demand is judged when the property has run all its cases.
+    Raises [Invalid_argument] unless [0. < p <= 1.], and raises as {!collect}
+    does. *)
 
 (** {1:stateful_tests Stateful tests}
 

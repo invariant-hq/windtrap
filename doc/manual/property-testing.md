@@ -339,13 +339,33 @@ geo: 1 test (seed s1:5b58964be30f69a8)
 1 passed in 5.2ms.
 ```
 
-A `cover` belongs where its scenario is observed. In a stateful test,
-a scenario that a bug needs matters only when a later call reads it, so
-its `cover` goes in the reference function of that call. In a cache's
-model, a `cover` in `to_list` that marks a list that a hit reordered
-counts only the cases where a call listed the reordered cache; the same
-`cover` in `find` also counts cases where no call looked. The demand is
-on presence, so a correct system can fail it by chance: a scenario that
+A demand is a statement about the case, so its condition is computed
+and `cover` called on every case, before any branch, as `"rect"` is
+above. A `cover` inside the branch it describes registers nothing when
+no case reaches the branch, which is the one run the demand exists to
+catch, and the property passes though it checked nothing:
+
+```ocaml
+(* Wrong: when no case decodes, nothing is demanded. *)
+match Codec.decode s with
+| Ok v ->
+    cover "decoded" true;
+    equal string s (Codec.encode v)
+| Error _ -> ()
+
+(* Right: every case states whether it decoded. *)
+let r = Codec.decode s in
+cover "decoded" (Result.is_ok r);
+match r with Ok v -> equal string s (Codec.encode v) | Error _ -> ()
+```
+
+In a stateful test, a scenario that a bug needs matters only when a
+later call reads it, so its `cover` goes in the reference function of
+that call, which states the condition each time the call runs. In a
+cache's model, a `cover` in `to_list` of whether a hit reordered the
+list counts only the cases where a call listed the reordered cache; the
+same `cover` in `find` also counts cases where no call looked. The
+demand is on presence, so a correct system can fail it by chance: a scenario that
 each case reaches with probability `p` is reached by none of `count`
 cases with probability `(1 - p)^count`. At the default count of 100,
 that is 37% for `p = 1/100` and 0.6% for `p = 1/20`, so a demand fits a
