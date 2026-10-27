@@ -10,7 +10,7 @@
 
 === a located file baseline
     test/test_users.ml:88
-    expect_file "test/help.expected": no baseline
+    expect_file ~file:"test/help.expected": no baseline
     proposed (3 lines):
       + Usage: mytool [OPTIONS] COMMAND
       + Commands:

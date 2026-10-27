@@ -163,8 +163,8 @@ let headline_rows =
       ( unequal "a\nb" "a\nb\n",
         "values differ only by a trailing newline (on the actual side)" ) );
     ( "a missing file baseline",
-      (Fixtures.snap_missing, {|expect_file "test/help.expected": no baseline|})
-    );
+      ( Fixtures.snap_missing,
+        {|expect_file ~file:"test/help.expected": no baseline|} ) );
     ("a literal mismatch", (Fixtures.snap_mismatch, "expect: mismatch"));
     ( "an exact literal mismatch",
       ( Failure.baseline
@@ -175,7 +175,7 @@ let headline_rows =
     ( "an unresolvable path",
       ( Failure.baseline (Failure.File "../x")
           (Failure.Unresolvable { candidate = "/tmp/x" }),
-        {|expect_file "../x": cannot resolve the path under the project root|}
+        {|expect_file ~file:"../x": cannot resolve the path under the project root|}
       ) );
     ( "a property",
       ( Fixtures.prop_failure,

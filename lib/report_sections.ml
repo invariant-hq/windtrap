@@ -151,7 +151,7 @@ let law_head ~law ~clause =
 let baseline_subject = function
   | Failure.Literal { exact = false } -> "expect"
   | Failure.Literal { exact = true } -> "expect_exact"
-  | Failure.File path -> strf "expect_file \"%s\"" (Os.display_path path)
+  | Failure.File path -> strf "expect_file ~file:\"%s\"" (Os.display_path path)
 
 let needle_word = function
   | Failure.Prefix -> "prefix"

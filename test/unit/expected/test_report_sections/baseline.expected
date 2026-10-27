@@ -1,6 +1,6 @@
 === a missing file: the proposal under its count, then the command that creates the file and promotes it
     test/test_cli.ml:9
-    expect_file "test/help.expected": no baseline
+    expect_file ~file:"test/help.expected": no baseline
     proposed (3 lines):
       + Usage: mytool [OPTIONS] COMMAND
       + Commands:
@@ -9,7 +9,7 @@
 
 === under a launcher, the command is -u for the block's test
     test/test_cli.ml:9
-    expect_file "test/help.expected": no baseline
+    expect_file ~file:"test/help.expected": no baseline
     proposed (3 lines):
       + Usage: mytool [OPTIONS] COMMAND
       + Commands:
@@ -27,7 +27,7 @@
     accept: dune promote test/test_cli.ml
 
 === a file: dune promote of its path
-    expect_file "test/help.expected": mismatch
+    expect_file ~file:"test/help.expected": mismatch
     @@ -1,1 +1,1 @@
     - a
     + b
@@ -79,7 +79,7 @@
     accept: dune promote
 
 === an unresolvable file: the rule, the candidate, the remedy, no command
-    expect_file "../n.expected": the path cannot be proven to lie under the project root
+    expect_file ~file:"../n.expected": the path cannot be proven to lie under the project root
     unverified path: some/candidate
     (set WINDTRAP_PROJECT_ROOT to the directory the path is relative to)
 
@@ -89,7 +89,7 @@
     (set WINDTRAP_PROJECT_ROOT to the directory the path is relative to)
 
 === a proposal of 25 lines prints 20 and the count of the rest
-    expect_file "p.expected": no baseline
+    expect_file ~file:"p.expected": no baseline
     proposed (25 lines):
       + line 0
       + line 1
@@ -140,19 +140,19 @@
     accept: dune promote
 
 === a proposal of one line
-    expect_file "p.expected": no baseline
+    expect_file ~file:"p.expected": no baseline
     proposed (1 line):
       + only
     accept: touch 'p.expected' && dune runtest; dune promote p.expected
 
 === under colour the + lines are red, their indentation plain
-    expect_file "p.expected": no baseline
+    expect_file ~file:"p.expected": no baseline
     proposed (1 line):
       «r|+ only»
     accept: touch 'p.expected' && dune runtest; dune promote p.expected
 
 === two sides cut to the same kept bytes say what they agree on
-    expect_file "p.expected": mismatch
+    expect_file ~file:"p.expected": mismatch
     the sides agree on the 65536 bytes a failure keeps of each (expected 65537 bytes, actual 65537 bytes)
     accept: dune promote p.expected
 
@@ -167,7 +167,7 @@
     no correction was kept: the test also failed outside its expectations; fix that failure and rerun
 
 === a withheld file by hand: the reason, and nothing after it
-    expect_file "p.expected": mismatch
+    expect_file ~file:"p.expected": mismatch
     @@ -1,1 +1,1 @@
     - a
     + b
@@ -184,7 +184,7 @@
     no correction was kept: the test also failed outside its expectations; fix that failure and rerun
 
 === a withheld file under a build action: nothing to promote
-    expect_file "p.expected": mismatch
+    expect_file ~file:"p.expected": mismatch
     @@ -1,1 +1,1 @@
     - a
     + b
@@ -192,7 +192,7 @@
 
 === a withheld missing file: its proposal, and no file to touch
     test/test_cli.ml:9
-    expect_file "test/help.expected": no baseline
+    expect_file ~file:"test/help.expected": no baseline
     proposed (3 lines):
       + Usage: mytool [OPTIONS] COMMAND
       + Commands:

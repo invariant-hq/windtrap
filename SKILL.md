@@ -146,7 +146,7 @@ let () = exit (run "mylib" [ parse ])
 `expect_file` reads its path from the project root, while the stanza's
 `deps` and `diff?` name the file from the stanza's directory: for the
 stanza above in `test/dune`, the call is
-`expect_file (Mylib.help ()) "test/help.expected"`. A path written from
+`expect_file ~file:"test/help.expected" (Mylib.help ())`. A path written from
 the stanza's directory names a file that does not exist: its failure
 says `no baseline`, and its `accept:` line cannot fix it.
 

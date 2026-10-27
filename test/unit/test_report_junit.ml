@@ -355,14 +355,14 @@ let small_run () =
         Render_fixtures.timed_result;
       ]
   in
-  expect_file doc "test/unit/expected/test_report_junit/document.expected";
+  expect_file ~file:"test/unit/expected/test_report_junit/document.expected" doc;
   is_ok ~pp:Format.pp_print_string (read doc)
 
 let subtest_run () =
   let doc =
     junit ~suite:"mylib" ~duration:0.7 [ Render_fixtures.subtest_result ]
   in
-  expect_file doc "test/unit/expected/test_report_junit/subtests.expected"
+  expect_file ~file:"test/unit/expected/test_report_junit/subtests.expected" doc
 
 let root_and_suite () =
   let doc =

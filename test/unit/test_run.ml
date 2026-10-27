@@ -3548,7 +3548,7 @@ let help_runs =
   let file = Filename.concat root "src/help.expected" in
   let suite =
     [
-      test "t1" (fun () -> expect_file "hello\n" "src/help.expected");
+      test "t1" (fun () -> expect_file ~file:"src/help.expected" "hello\n");
       test "t2" ignore;
     ]
   in
@@ -3626,21 +3626,23 @@ let gated =
       [
         test "dirty" (fun () ->
             Run.subtest "expectation" (fun () ->
-                expect_file "x\n" "src/a.expected");
+                expect_file ~file:"src/a.expected" "x\n");
             fail "boom");
       ]
   in
   let dirty = summary dirty [ "src/a.expected.corrected" ] in
   let escaping =
     correcting ~root Baseline.Corrected
-      [ test "escapes" (fun () -> expect_file "x\n" "../outside.expected") ]
+      [
+        test "escapes" (fun () -> expect_file ~file:"../outside.expected" "x\n");
+      ]
   in
   let escaping = summary escaping [] in
   let divergent =
     correcting ~root Baseline.Corrected
       [
-        test "a" (fun () -> expect_file "one\n" "src/d.expected");
-        test "b" (fun () -> expect_file "two\n" "src/d.expected");
+        test "a" (fun () -> expect_file ~file:"src/d.expected" "one\n");
+        test "b" (fun () -> expect_file ~file:"src/d.expected" "two\n");
       ]
   in
   let divergent = summary divergent [ "src/d.expected.corrected" ] in
@@ -3763,11 +3765,11 @@ let excused =
   in
   let known =
     xfail ~reason:"issue #42"
-    @@ test "known" (fun () -> expect_file "buggy\n" "src/known.expected")
+    @@ test "known" (fun () -> expect_file ~file:"src/known.expected" "buggy\n")
   in
   let undecided =
     test "undecided" (fun () ->
-        expect_file "partial\n" "src/undecided.expected";
+        expect_file ~file:"src/undecided.expected" "partial\n";
         skip ~reason:"not here" ())
   in
   let summary r =
@@ -3793,7 +3795,8 @@ let release_beside_a_correction =
   let r =
     correcting ~root Baseline.Corrected
       [
-        test "corrects" (fun () -> expect_file "hello\n" "src/help.expected");
+        test "corrects" (fun () ->
+            expect_file ~file:"src/help.expected" "hello\n");
         test "acquires" fx;
       ]
   in

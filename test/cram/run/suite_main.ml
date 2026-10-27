@@ -29,7 +29,8 @@ let default =
     slow @@ test "crawls" (fun () -> is_true true);
     (* The baseline the sessions plant, at a path both files agree on. *)
     test "greeting" (fun () ->
-        expect_file "hello from the fixture\n" "test/cram/run/greeting.expected");
+        expect_file ~file:"test/cram/run/greeting.expected"
+          "hello from the fixture\n");
   ]
 
 let focused =
@@ -79,7 +80,8 @@ let streamed =
 let masked =
   [
     test "masked" (fun () ->
-        expect_file "fresh from the fixture\n" "test/cram/run/masked.expected";
+        expect_file ~file:"test/cram/run/masked.expected"
+          "fresh from the fixture\n";
         equal ~msg:"deliberate" int 1 2);
   ]
 
@@ -113,7 +115,8 @@ let accepts =
     test "holds" (fun () -> expect "same" @@ __POS_OF__ "same");
     test "stale literal" (fun () -> expect "fresh" @@ __POS_OF__ "stale");
     test "stale file" (fun () ->
-        expect_file "fresh from the fixture\n" "test/cram/run/accepts.expected");
+        expect_file ~file:"test/cram/run/accepts.expected"
+          "fresh from the fixture\n");
     prop "small" Gen.int (fun n -> is_true (abs n < 1000));
   ]
 
@@ -224,7 +227,7 @@ let leaving =
   [
     test "corrects" (fun () ->
         reads_env ();
-        expect_file "new\n" "c.expected");
+        expect_file ~file:"c.expected" "new\n");
     test "fails" (fun () -> equal ~msg:"deliberate" int 1 2);
     bracket ~setup:ignore
       ~teardown:(fun () -> touch "teardown ran")

@@ -60,7 +60,7 @@ signature of `cases`, `judges` in place of `chooses`, and the type of
 
     ```ocaml
     cases "renders" fst docs (fun (key, doc) ->
-        expect_file (render doc) ("golden/" ^ key ^ ".txt"))
+        expect_file ~file:("golden/" ^ key ^ ".txt") (render doc))
     ```
   - `skip` in a row, which skipped that row's test → skips that row
     alone, as before, and the table goes on with the next. The summary
@@ -94,6 +94,10 @@ signature of `cases`, `judges` in place of `chooses`, and the type of
 
 ## Baselines
 
+- `expect_file text "golden/x.txt"` →
+  `expect_file ~file:"golden/x.txt" text`. The file is labelled, so the
+  two strings cannot be swapped, and
+  `render doc |> expect_file ~file:"golden/x.txt"` reads in order.
 - A stanza that runs `--corrected` with no `diff?` for a file that holds
   a baseline, which passed under `CI` when that file was stale → the
   run exits 1 under `CI`, and writes the correction still. Add the

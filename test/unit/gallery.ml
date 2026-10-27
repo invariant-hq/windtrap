@@ -81,4 +81,4 @@ let check path entries =
     in
     "=== " ^ title ^ "\n" ^ rendering
   in
-  expect_file (marked (String.concat "\n" (List.map entry entries))) path
+  expect_file ~file:path (marked (String.concat "\n" (List.map entry entries)))

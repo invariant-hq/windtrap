@@ -977,9 +977,8 @@ let help =
       test
         "help is the page of every flag, then of every setting no flag spells"
         (fun () ->
-          expect_file
-            (Cli.help ~prog:"/some/path/mytests.exe")
-            "test/unit/expected/test_cli/help.expected");
+          expect_file ~file:"test/unit/expected/test_cli/help.expected"
+            (Cli.help ~prog:"/some/path/mytests.exe"));
       test "every line of help fits 80 columns" (fun () ->
           at_most int ~than:80 (longest_line (Cli.help ~prog:"mytests.exe")));
       test "help ends with a newline" (fun () ->

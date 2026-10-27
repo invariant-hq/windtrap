@@ -18,7 +18,7 @@ mylib: 12 tests (seed s1:7be1d2c904aa31f5)
 
   «r|FAIL»  «b|cli › cli help»
     «d|test/test_cli.ml:9»
-    expect_file "test/help.expected": no baseline
+    expect_file ~file:"test/help.expected": no baseline
     proposed (3 lines):
       «r|+ Usage: mytool [OPTIONS] COMMAND»
       «r|+ Commands:»

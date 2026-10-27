@@ -511,7 +511,7 @@ let relative_file =
     [
       test "moved" (fun () ->
           chdir (temp_dir ());
-          expect_file "v\n" "rel.expected");
+          expect_file ~file:"rel.expected" "v\n");
     ]
 
 let bracketed, bracket_root =
@@ -521,7 +521,7 @@ let bracketed, bracket_root =
       ~config:(fun c -> { c with baseline = Baseline.Update })
       [
         bracket ~setup:ignore ~teardown:ignore "bracketed" (fun () ->
-            expect_file "content\n" "src/bracketed.expected");
+            expect_file ~file:"src/bracketed.expected" "content\n");
       ]
   in
   (r, root)
@@ -541,11 +541,11 @@ let promotion =
   let stale name =
     let file = name ^ ".expected" in
     write (Filename.concat root file) "old\n";
-    test name (fun () -> expect_file "new\n" file)
+    test name (fun () -> expect_file ~file "new\n")
   in
   let masked =
     test "masked" (fun () ->
-        expect_file "new\n" "masked.expected";
+        expect_file ~file:"masked.expected" "new\n";
         equal int 1 2)
   in
   let run flags tests =
@@ -661,7 +661,8 @@ let placed_file =
   Recorded.execute ~env:(project [] root)
     [
       test "placed" (fun () ->
-          expect_file ~__POS__:("elsewhere.ml", 7, 2, 9) "v" "placed.expected");
+          expect_file ~__POS__:("elsewhere.ml", 7, 2, 9) ~file:"placed.expected"
+            "v");
     ]
 
 (* A file whose last line ends in a newline that the produced text lacks,
@@ -670,7 +671,9 @@ let lost_newline =
   let root = Scratch.dir "windtrap-newline-" in
   let file = Filename.concat root "n.expected" in
   write file "a\nb\n";
-  let tests = [ test "drops it" (fun () -> expect_file "a\nb" "n.expected") ] in
+  let tests =
+    [ test "drops it" (fun () -> expect_file ~file:"n.expected" "a\nb") ]
+  in
   let env = project [] root in
   let checked = facade ~env "newline" tests in
   let accepted = facade ~env ~flags:[ "-u" ] "newline" tests in
@@ -806,7 +809,7 @@ let outside_a_test =
     ("output", escape output);
     ("expect", escape (fun () -> expect "x" (__POS__, "x")));
     ("expect_exact", escape (fun () -> expect_exact "x" (__POS__, "x")));
-    ("expect_file", escape (fun () -> expect_file "x" "x.expected"));
+    ("expect_file", escape (fun () -> expect_file ~file:"x.expected" "x"));
     ("collect", escape (fun () -> collect "label"));
     ("classify", escape (fun () -> classify "label" true));
     ("cover", escape (fun () -> cover "label" true));
@@ -998,7 +1001,7 @@ let kept_stops, kept_entered =
   write (Filename.concat root "c.expected") "old\n";
   let tests =
     [
-      test "corrects" (fun () -> expect_file "new\n" "c.expected");
+      test "corrects" (fun () -> expect_file ~file:"c.expected" "new\n");
       test "later" ignore;
     ]
   in

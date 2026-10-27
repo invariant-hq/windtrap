@@ -349,7 +349,7 @@ let probe_block =
 let baseline =
   [
     test "sub's answer, against its file" (fun () ->
-        expect_file (string_of_int (Subject.sub 10 4)) "sub.expected");
+        expect_file ~file:"sub.expected" (string_of_int (Subject.sub 10 4)));
   ]
 
 let released =

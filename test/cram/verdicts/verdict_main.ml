@@ -299,7 +299,7 @@ let suite = function
   | "baseline_file" ->
       [
         test "reads a missing file" (fun () ->
-            expect_file "hello\n" "test/cram/verdicts/never.expected");
+            expect_file ~file:"test/cram/verdicts/never.expected" "hello\n");
       ]
   | "baseline_in_law" ->
       [

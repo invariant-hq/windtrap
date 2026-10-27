@@ -105,7 +105,7 @@ spelling this page does not list is unchanged. The entries of
 - `snapshot_pp pp v` →
   `expect (Format.asprintf "%a" pp v) @@ __POS_OF__ {|…|}`
 - a `__snapshots__/<file>/<key>.snap` file → an `.expected` file that a
-  call names, `expect_file s "test/name.expected"`
+  call names, `expect_file ~file:"test/name.expected" s`
 - `expect s`, `capture fn s` → `expect (output ()) @@ __POS_OF__ {|…|}`,
   or a `let%expect_test`
 - `expect_exact s`, `capture_exact fn s` →

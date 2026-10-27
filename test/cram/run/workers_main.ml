@@ -70,17 +70,17 @@ let spread () =
     test "g labelled" (fun () -> subtest "inner" (fun () -> s1 "s1 g"));
     test "h1 corrects a file" (fun () ->
         nap 0.03;
-        expect_file "h new" file);
+        expect_file ~file "h new");
     test "h2 conflicts on the file" (fun () ->
         between ();
-        expect_file "h newer" file);
+        expect_file ~file "h newer");
     test "m missing file" (fun () ->
-        expect_file "m\n" "test/cram/run/missing.expected");
+        expect_file ~file:"test/cram/run/missing.expected" "m\n");
     test "k1 slow, one spelling" (fun () ->
         nap 0.05;
-        expect_file "k one" "test/cram/run/k.expected");
+        expect_file ~file:"test/cram/run/k.expected" "k one");
     test "k2 other spelling" (fun () ->
-        expect_file "k two" "test/cram/run/./k.expected");
+        expect_file ~file:"test/cram/run/./k.expected" "k two");
     test ~retries:2 "r retried conflict" (fun () -> s1 "s1 r");
     test "o order" (fun () ->
         subtest "first" (fun () -> fail "first broke");
@@ -107,7 +107,7 @@ let rows () =
     ]
     (fun (n, lit, broken) ->
       expect (n ^ " new") lit;
-      if n = "b" || n = "c" then expect_file ("t " ^ n) file;
+      if n = "b" || n = "c" then expect_file ~file ("t " ^ n);
       if broken then fail (n ^ " broke"))
 
 let table () =
@@ -120,7 +120,7 @@ let table () =
         if n >= 10 then expect (string_of_int n) @@ __POS_OF__ {| s6 old |});
     test "agrees on the file" (fun () ->
         between ();
-        expect_file "t c" "test/cram/run/t.expected");
+        expect_file ~file:"test/cram/run/t.expected" "t c");
   ]
 
 let () =

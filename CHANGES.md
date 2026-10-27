@@ -87,6 +87,11 @@ for how to migrate from 0.2.0.
 
 ### Baselines
 
+- (breaking) `expect_file : ?__POS__:pos -> file:string -> string -> unit`
+  labels the file, written `expect_file ~file:"golden/x.txt" actual`.
+  0.2.0's two positional strings compiled swapped, and a swapped call
+  read the text as a path. A report names the baseline as
+  `expect_file ~file:"golden/x.txt"`.
 - Under `CI` a baseline mismatch fails the run's exit code in every
   mode. A `--corrected` run exits 0 when its only failures are
   mismatches whose corrections it wrote, so that a `diff?` can hand them

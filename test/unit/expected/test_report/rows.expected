@@ -11,7 +11,7 @@
 === a missing baseline qualifies the row after its duration
   FAIL  help                                       0.2ms (no baseline)
     test/test_cli.ml:9
-    expect_file "test/help.expected": no baseline
+    expect_file ~file:"test/help.expected": no baseline
     proposed (3 lines):
       + Usage: mytool [OPTIONS] COMMAND
       + Commands:
@@ -22,7 +22,7 @@
 === and shares the parenthesis with the armed qualifier
   FAIL  help                                       0.2ms (no baseline, mutant armed)
     test/test_cli.ml:9
-    expect_file "test/help.expected": no baseline
+    expect_file ~file:"test/help.expected": no baseline
     proposed (3 lines):
       + Usage: mytool [OPTIONS] COMMAND
       + Commands:

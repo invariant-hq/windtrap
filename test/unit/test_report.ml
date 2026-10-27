@@ -155,12 +155,12 @@ let baseline name = "test/unit/expected/test_report/" ^ name ^ ".expected"
 let plain_golden ~verbose name () =
   let t = transcript ~verbose () in
   not_contains ~sub:"\027" t;
-  expect_file t (baseline name)
+  expect_file ~file:(baseline name) t
 
 let coloured_golden ~verbose name () =
   let t = transcript ~ansi:true ~verbose () in
   contains ~sub:"\027[" t;
-  expect_file (Gallery.marked t) (baseline name)
+  expect_file ~file:(baseline name) (Gallery.marked t)
 
 let header_rows =
   [
@@ -1847,11 +1847,10 @@ let github =
       cases "the fold's commands" fst group_rows (fun (_, (c, expected)) ->
           equal string expected c);
       test "an annotation prints as its baseline" (fun () ->
-          expect_file
+          expect_file ~file:(baseline "annotation")
             (annotation
                ~path:[ "users"; "sessions after login" ]
-               Fixtures.eq_failure ())
-            (baseline "annotation"));
+               Fixtures.eq_failure ()));
       cases "an annotation holds" fst annotation_rows annotation_row;
       cases "an annotation leaves out" fst annotation_absent_rows
         annotation_absent;
