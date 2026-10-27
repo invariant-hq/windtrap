@@ -51,7 +51,7 @@ fail to decode. The law that holds passes on each, and the one over
 lists passes or fails on each, never refused:
 
   $ i=0; while [ $i -lt 20 ]; do
-  >   head -c $((i * 53)) /dev/urandom > random
+  >   dd if=/dev/urandom of=random bs=53 count=$i 2> /dev/null
   >   run ./suite_main.exe --case random -f anything > /dev/null 2>&1; echo "anything $?"
   >   run ./suite_main.exe --case random -f small > out 2>&1; echo "small $?"
   >   grep -l 'windtrap:' out
