@@ -1414,7 +1414,7 @@ let printing =
       test "a bytes counterexample that its law fills prints as it was drawn"
         (fun () ->
           equal string
-            "fail, 1 cases, 0 discards; case 1, 1 steps, converged: \
+            "fail, 2 cases, 0 discards; case 2, 10 steps, converged: \
              Bytes.of_string \"z\"; message z"
             (outcome_row
                (Property.run ~root ~path:"fills"

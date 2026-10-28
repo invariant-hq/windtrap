@@ -160,8 +160,8 @@ change a verdict.
   declaration, or select fewer tests with `-f`.
 - A `--seed` or a `replay:` line that a 0.2 run printed → other cases:
   generators parse choices, the integer generators draw small values
-  first and repeat values, the float generators draw corner cases, a
-  list without `~size` can be up to 255 long, and a
+  first and repeat values, the float and character generators draw
+  corner cases, a list without `~size` can be up to 255 long, and a
   stateful test draws its commands with another probability. Run the
   failing test again under this version and use the `replay:` line it
   prints, or keep the counterexample in the source with the
@@ -173,6 +173,11 @@ change a verdict.
   64-entry buffer → lengths reach 255, one list in 133 at 64 or more.
   Give the generator the `~size` the law needs, as
   `list ~size:(int_range 0 63) x`.
+- A property over `Gen.char` or `Gen.string` whose `cover` or law counted
+  on a byte being rare, as a NUL or `'\255'`, → each of `'\000'`,
+  `'\127'`, `'\128'`, `'\255'`, `'a'`, `` '`' `` and `'b'` comes 1.8% of
+  the time. State the alphabet the law needs, as
+  `string_of (char_range ' ' '~')`.
 - A property that relied on a whole integer type spreading its values
   over the type, as a `cover` on `Gen.int`'s magnitude, or on two values
   of one generator differing → `Gen.int`, `Gen.int32`, `Gen.int64` and

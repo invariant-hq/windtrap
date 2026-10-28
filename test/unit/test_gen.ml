@@ -521,7 +521,7 @@ let replayed_values () =
     int: 70368744177663
     nat: 254
     float: 3.626460398842157e-116
-    string_of: "emev"
+    string_of: "vvqw"
     list of small_int: [1809; 3; -7; 0; 2]
     option, one_of and frequency: (Some (false), 9, 0)
     list of the default length: [false; false]
@@ -555,7 +555,10 @@ let replayed_choices () =
    always fails in some simple case): a side of at most 256 values is
    uniform, a wider one draws half its distances below 256 and one in four at
    an edge of a power of two. A range is uniform, since it states the domain
-   its values come from. One draw in ten is a corner. [nat]
+   its values come from. One draw in ten is a corner, a character's
+   included: the bytes either side of the sign bit, NUL and ['\255'] beside
+   the range's bounds and ['a'], since those are the bytes a decoder or a C
+   stub gets wrong, and a uniform byte meets a given one once in 256. [nat]
    and [small_int] keep their strata, which favour small values too. The
    lengths of a collection keep theirs, small for cost and for small
    counterexamples, with a stratum of 1% below 256 so that no length below
@@ -775,26 +778,26 @@ let distributions () =
       mean 0.487, sd 0.4998, in [0;1]
       bins 1026 0 0 0 0 0 0 974, 2 distinct, 32f22f55
     char
-      mean 127.8, sd 73.5, in [0;255]
-      bins 242 257 238 253 271 238 254 247, 256 distinct, 575f596d
+      mean 126.5, sd 72.68, in [0;255]
+      bins 238 227 226 347 257 236 228 241, 256 distinct, 16bae263
     char_range 'a' 'f'
-      mean 99.49, sd 1.718, in [97;102]
-      bins 353 310 0 335 333 0 338 331, 6 distinct, b8ea10cd
+      mean 99.49, sd 1.746, in [97;102]
+      bins 345 363 0 297 313 0 322 360, 6 distinct, 797cb93f
     uchar
       mean 1.468e+05, sd 2.865e+05, in [0;1.114e+06]
       bins 1571 66 68 47 65 55 57 71, 1421 distinct, cb3a7ad8
     string
       mean 5.273, sd 14.52, in [0;247]
-      bins 1948 40 2 3 0 2 3 2, 1494 distinct, e4e4b612
+      bins 1948 40 2 3 0 2 3 2, 1464 distinct, 74591377
     string_of ~size:(int_range 0 6) (char_range 'a' 'c')
       mean 2.982, sd 2.115, in [0;6]
-      bins 319 344 229 0 243 237 283 345, 548 distinct, 8ed1b0fa
+      bins 319 344 229 0 243 237 283 345, 547 distinct, b1f5c2e2
     bytes
       mean 5.273, sd 14.52, in [0;247]
-      bins 1948 40 2 3 0 2 3 2, 1494 distinct, 5ae3e739
+      bins 1948 40 2 3 0 2 3 2, 1464 distinct, 291700f9
     bytes_of ~size:(int_range 0 3) char
       mean 1.473, sd 1.138, in [0;3]
-      bins 527 0 518 0 0 437 0 518, 1176 distinct, 06a1c990
+      bins 527 0 518 0 0 437 0 518, 1160 distinct, 61423407
     list bool
       mean 5.273, sd 14.52, in [0;247]
       bins 1948 40 2 3 0 2 3 2, 436 distinct, f576ce6c
@@ -820,8 +823,8 @@ let distributions () =
       mean 368.7, sd 1771, in [-9776;9976]
       bins 13 5 16 1315 537 43 37 34, 1611 distinct, c16849cb
     triple bool nat char, by sum
-      mean 505.6, sd 1310, in [1;1.021e+04]
-      bins 1912 13 11 13 12 12 13 14, 1903 distinct, bf76dc1c
+      mean 502.7, sd 1313, in [1;1.01e+04]
+      bins 1912 12 11 12 12 11 15 15, 1878 distinct, 8ebdfa4d
     quad bool bool bool bool, by trues
       mean 1.97, sd 1.105, in [0;4]
       bins 180 0 536 0 626 0 481 177, 16 distinct, b67e6d70
@@ -902,7 +905,7 @@ let in_case () =
     int within 256: 5819 of 10000
     pair int int, equal: 1352 of 10000
     list int of length 2 or more, a duplicate: 2792 of 6573
-    list string of length 2 or more, a duplicate: 3076 of 6573
+    list string of length 2 or more, a duplicate: 3083 of 6573
     int_range 3 1000, at most 100: 1578 of 10000
     int_range 3 1000, above 200: 7586 of 10000
     |}

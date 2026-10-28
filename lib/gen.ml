@@ -761,10 +761,30 @@ let char_range low high =
   let origin =
     Int.max (Char.code low) (Int.min (Char.code high) (Char.code 'a'))
   in
-  let sample state =
+  let uniform state =
     let count = Char.code high - Char.code low + 1 in
     let offset, state = Seed.below ~bound:(Int64.of_int count) state in
     (Char.chr (Char.code low + Int64.to_int offset), state)
+  in
+  (* The integers' corners, and the bytes either side of the sign bit, which
+     C stubs and decoders get wrong, wherever they are inside. *)
+  let sample =
+    if Char.compare high low < 0 then uniform
+    else
+      let origin = Char.chr origin in
+      let inside c = Char.compare low c <= 0 && Char.compare c high <= 0 in
+      let corners =
+        List.sort_uniq Char.compare
+          ([ low; high; origin ]
+          @ (if Char.compare origin low > 0 then
+               [ Char.chr (Char.code origin - 1) ]
+             else [])
+          @ (if Char.compare origin high < 0 then
+               [ Char.chr (Char.code origin + 1) ]
+             else [])
+          @ List.filter inside [ '\127'; '\128' ])
+      in
+      with_corners corners uniform
   in
   {
     pp = Some pp_char;

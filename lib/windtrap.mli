@@ -1205,15 +1205,24 @@ module Gen : sig
       to [false]. *)
 
   val char : char t
-  (** [char] generates a byte uniformly: each of the 256 characters, ['\x00']
-      and the bytes above 127 included. It shrinks toward ['a'], and prints with
+  (** [char] is [char_range '\x00' '\xff']: every byte, ['\x00'] and the bytes
+      above 127 included, with no lean toward text. Its corners are ['\x00'],
+      ['\x7f'], ['\x80'], ['\xff'], ['a'], ['`'] and ['b'], each drawn 1.8% of
+      the time, against 0.35% for any other byte, so a default [string] holds a
+      NUL about one time in thirteen. Printable ASCII is 38% of the draws and
+      the bytes above 127 are 48%. It shrinks toward ['a'], and prints with
       [%C]. *)
 
   val char_range : char -> char -> char t
   (** [char_range low high] generates a character in \[[low];[high]\], in byte
-      order, uniformly. It shrinks toward the character of the range closest to
-      ['a']: [char_range 'A' 'Z'] toward ['Z'], [char_range '0' '9'] toward
-      ['9']. Sampling raises [Invalid_argument] if [high < low]. *)
+      order. It draws a corner with probability 0.1, each corner equally likely,
+      as an integer range does: [low], [high], the character of the range
+      closest to ['a'] and that character's neighbours inside the range, and
+      ['\x7f'] and ['\x80'] when they are inside, the two sides of the sign bit
+      that C code and decoders get wrong. Otherwise it draws uniformly. It
+      shrinks toward the character of the range closest to ['a']:
+      [char_range 'A' 'Z'] toward ['Z'], [char_range '0' '9'] toward ['9'].
+      Sampling raises [Invalid_argument] if [high < low]. *)
 
   val uchar : Uchar.t t
   (** [uchar] generates a Unicode scalar value, never a surrogate. Its UTF-8

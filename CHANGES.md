@@ -173,6 +173,14 @@ for how to migrate from 0.2.0.
   mean length is 5.7, against 4.7, and a `Gen.(list (list int))` holds
   32 integers on average, against 22. A seed draws other cases than
   before; a replay token still replays its case.
+- `Gen.char` and `Gen.char_range` draw a corner with probability 0.1, as
+  the integer ranges do: the bounds, the character closest to `'a'` and
+  its neighbours, and `'\127'` and `'\128'` when inside. `Gen.char`
+  draws each of `'\000'`, `'\127'`, `'\128'`, `'\255'`, `'a'`, `` '`' ``
+  and `'b'` 1.8% of the time, against 0.35% for another byte, so a
+  default `Gen.string` holds a NUL in 7.7% of the cases, against 1.8%.
+  It still draws every byte and leans toward no alphabet; a test of text
+  states its own (doc/manual/property-testing.md#generating-strings-and-alphabets).
 - `Gen.uchar` draws a Unicode scalar value, each UTF-8 length equally
   likely, and prints as `Uchar.of_int 0xE9`.
 - `Gen.float` and `Gen.float_range` draw a corner case with probability

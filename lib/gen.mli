@@ -127,7 +127,8 @@ val bool : bool t
 (** See the facade's [Gen.bool]. *)
 
 val char : char t
-(** [char] shrinks as an integer over the byte code. *)
+(** [char] shrinks as an integer over the byte code, and samples its corners as
+    the integers do (see the facade's [Gen.char_range]). *)
 
 val char_range : char -> char -> char t
 (** See the facade's [Gen.char_range]. *)
