@@ -29,7 +29,11 @@ the coverage and mutation backends, pinned to `windtrap` with
 - [ ] Instrumented smoke run:
       `dune runtest --force --instrument-with ppx_windtrap.coverage` still
       green with no change in outcomes, counts or exit codes, then
-      `dune exec windtrap -- coverage` reports the tree.
+      `dune exec windtrap -- coverage` reports the tree. Dune 3.24
+      reports a dependency cycle for a session that depends on
+      `(package windtrap)` under the backend (`test/cram/run/dune`), so
+      on that dune the run sets `SKIP_PACKAGE_SESSIONS=true`, as CI's
+      coverage job does.
 - [ ] Docs current: `doc/manual/` pages against `lib/windtrap.mli`
       (the `.mli` is the truth), the migration page against the surface,
       the README against reality.
