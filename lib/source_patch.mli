@@ -13,7 +13,9 @@
 
     The comparison form and the layout of a corrected literal are those of
     ppx_expect, so a correction is byte for byte the one that ppx_expect writes.
-    Every function is pure, and none raises. *)
+    Every function is pure, and none raises.
+
+    @canonical Windtrap.Private.Source_patch *)
 
 (** {1:flexible Flexible text} *)
 

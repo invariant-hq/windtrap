@@ -8,7 +8,9 @@
 
     A file is named as the instrumenter records it, relative to the root of the
     project, and as [git diff] spells it from the root of its repository; a
-    leading [./] is dropped, and nothing else is normalised. *)
+    leading [./] is dropped, and nothing else is normalised.
+
+    @canonical Windtrap.Private.Lines *)
 
 type t
 (** The type for line sets: for each file, a set of 1-based lines. *)

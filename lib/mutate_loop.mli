@@ -8,11 +8,13 @@
     {!execute_and_report} is the one call through which a run becomes a mutation
     run, and the entry point of a suite makes it in place of {!Report.run}. The
     process that makes it runs no test, a mutant's least of all: the dry run,
-    the probe, the mutants and [--arm] run in worker processes ({!Supervisor}).
+    the probe, the mutants and [--arm] run in worker processes ([Supervisor]).
 
     The module decides which mutants survived, in which order and with which
     reaching tests. What a run tests or arms arrives on [config.mutation]
-    ({!Run.type-mutation}), which {!Cli} resolves. *)
+    ({!Run.type-mutation}), which {!Cli} resolves.
+
+    @canonical Windtrap.Private.Mutate_loop *)
 
 (** {1:running Running} *)
 
@@ -47,15 +49,15 @@ val execute_and_report :
       when one prefix is a prefix of its recorded file ([String.starts_with]),
       and when it lies on those lines, if any. A mutant out of scope is neither
       tested nor recorded.
-    + It runs the dry run, which is {!Report.run} with {!Supervisor.execute}
-      over [config] with [junit] cleared, its workers telling it which tests
-      evaluate each mutant. Every other field is that of [config], [baseline]
-      included, so the dry run of a [--mutate -u] run accepts what a [-u] run
-      accepts. A site that no test reached and that was evaluated outside every
-      test, at module initialization or in a fixture release, is evaluated
-      outside tests ({!Windtrap_runtime.Verdicts.Outside_tests}). A site that
-      only tests marked xfail evaluated is unreached.
-    + It runs the jobs ({!Supervisor.fresh}), each in a worker of its own, which
+    + It runs the dry run, which is {!Report.run} with [Supervisor.execute] over
+      [config] with [junit] cleared, its workers telling it which tests evaluate
+      each mutant. Every other field is that of [config], [baseline] included,
+      so the dry run of a [--mutate -u] run accepts what a [-u] run accepts. A
+      site that no test reached and that was evaluated outside every test, at
+      module initialization or in a fixture release, is evaluated outside tests
+      ({!Windtrap_runtime.Verdicts.Outside_tests}). A site that only tests
+      marked xfail evaluated is unreached.
+    + It runs the jobs ([Supervisor.fresh]), each in a worker of its own, which
       ran no test before it: the determinism probe, which is the tests that the
       dry run executed, unarmed, and then one job per reached mutant, in the
       order of the catalogue, with the mutant armed and its reaching tests up to
@@ -146,7 +148,7 @@ val execute_and_report :
     Under {!Run.Armed} the identifier is read by
     {!Windtrap_runtime.Mutate.id_of_string} and armed by
     {!Windtrap_runtime.Mutate.arm}, here and in each worker of an ordinary
-    {!Supervisor.execute} run.
+    [Supervisor.execute] run.
     - An identifier that is malformed, ambiguous, or
       {!Windtrap_runtime.Mutate.Unmatched} within a file that this executable
       catalogues is [Error (Run.Mutation_refused _)], with the sentence of
@@ -187,7 +189,7 @@ val execute_and_report :
 
 (** {1:effects Effects}
 
-    Beyond the effects of {!Report.run} and {!Supervisor.fresh}, the loop reads
+    Beyond the effects of {!Report.run} and [Supervisor.fresh], the loop reads
     the verdict file of its executable and writes it. For the source line of a
     survivor it reads the recorded file of the mutant, under {!Os.project_root}
     first and then as given. *)

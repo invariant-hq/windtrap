@@ -18,7 +18,9 @@
     and starts from an empty baseline registry. The operations of
     {{!section-body}the running test} reach the record through
     {{!section-ambient}one ambient slot}. Nothing here is thread-safe, and an
-    operation called from another domain raises there (see {!current_frame}). *)
+    operation called from another domain raises there (see {!current_frame}).
+
+    @canonical Windtrap.Private.Run *)
 
 (** {1:config Configuration} *)
 
@@ -99,7 +101,7 @@ type config = {
           state of the run is {!Capture.disabled}. *)
   jobs : int;
       (** [-j]: the number of worker processes of a supervised run, at least [1]
-          (see {!Supervisor}). {!execute} does not read it. *)
+          (see [Supervisor]). {!execute} does not read it. *)
   in_process : bool;
       (** [--in-process]: the run is {!execute}'s, in the calling process, and
           its selection must hold one test at most (see {!In_process_selects}).
@@ -425,9 +427,9 @@ type result = {
           its count too. *)
   tolerances : Check.tolerance list;
       (** What each site of [equal] under a tolerance saw in the last attempt
-          ({!Check.tolerances}), read in the process that ran it, so a worker's
-          reach its parent with the row. [[]] for a test that compared under no
-          tolerance, and for a row the parent made of a lost worker. *)
+          ({!Check.val-tolerances}), read in the process that ran it, so a
+          worker's reach its parent with the row. [[]] for a test that compared
+          under no tolerance, and for a row the parent made of a lost worker. *)
   refuted : case_id list;
       (** For a row that counts as failed, the cases that its last attempt
           refuted, when each of its failures belongs to one: the rows of a table
@@ -473,7 +475,7 @@ val property :
     Raises as {!current_frame} does.
 
     [config.replay] is the token that the engine replays. Otherwise, under
-    [config.failed_only], the {!recorded} counterexamples of the test are
+    [config.failed_only], the {!val-recorded} counterexamples of the test are
     replayed in its place, one engine run each: a failure of each but the last
     is added to the frame, and the last one's outcome is the property's, with
     the replays that passed before it counted in its [cases] and [replayed]. A
@@ -512,16 +514,16 @@ val row : tag:string -> id:string -> (unit -> unit) -> unit
     otherwise each such failure is withheld ({!Failure.with_withheld}), as
     {!Failure.Skipped} when [fn] raised a skip or a discard. A run that makes
     its checks as they come settles the row as it ends; a worker that leaves its
-    checks to the parent sends the row's bounds with the attempt, and {!verdict}
-    settles it there. A failure added while it runs is labelled as {!subtest}
-    labels one, with [tag] as the innermost name. A row is chosen, not drawn, so
-    [fn] runs with no property context, as a test's body does: {!prop_context}
-    is [None], a {!subtest} adds its failure, and a law demands nothing. A skip
-    that [fn] raises, a {!subtest}'s or a fixture's included, ends the row alone
-    when the row added no failure: [row] returns, and the row counts in
-    {!result.skipped_rows}. Anything else that [fn] raises is raised again. The
-    row counts in {!result.refuted} when it added a failure or [fn] raised a
-    fault. Raises as {!current_frame} does. *)
+    checks to the parent sends the row's bounds with the attempt, and
+    {!val-verdict} settles it there. A failure added while it runs is labelled
+    as {!subtest} labels one, with [tag] as the innermost name. A row is chosen,
+    not drawn, so [fn] runs with no property context, as a test's body does:
+    {!prop_context} is [None], a {!subtest} adds its failure, and a law demands
+    nothing. A skip that [fn] raises, a {!subtest}'s or a fixture's included,
+    ends the row alone when the row added no failure: [row] returns, and the row
+    counts in {!result.skipped_rows}. Anything else that [fn] raises is raised
+    again. The row counts in {!result.refuted} when it added a failure or [fn]
+    raised a fault. Raises as {!current_frame} does. *)
 
 val without_labels : (unit -> 'a) -> 'a
 (** [without_labels fn] is [fn ()] with the labels of the running law going to a
@@ -590,8 +592,8 @@ type event =
           empty selection too. [seeded] is [true] iff a selected test carries
           {!Test_tree.Tag.prop} and draws its cases from [config.seed]: a
           property draws nothing under [config.replay] or [config.case_file],
-          nor under [config.failed_only] when every case the store records of
-          it is a {!Replay}. *)
+          nor under [config.failed_only] when every case the store records of it
+          is a {!Replay}. *)
   | Test_started of { path : string list }
       (** The test at [path] is about to run. It is given once per test, before
           its first attempt and before anything of the test runs. *)
@@ -634,9 +636,6 @@ and starting = { seconds : float; output : string }
 
 (** {1:startup Startup errors} *)
 
-(** The type for the refusals of a run, decided before any test executes. The
-    checks run in the order of the constructors and the first that fails is
-    returned. *)
 (** The type for why [--failed] has nothing to rerun. *)
 type nothing_recorded =
   | Never_recorded  (** No last-failed store exists for the suite. *)
@@ -647,6 +646,9 @@ type nothing_recorded =
       (** The store cannot be read, or does not start with its magic line. *)
   | Undeclared_tests  (** The store names no declared test. *)
 
+(** The type for the refusals of a run, decided before any test executes. The
+    checks run in the order of the constructors and the first that fails is
+    returned. *)
 type startup_error =
   | Duplicate_paths of string list
       (** Two tests have one path. The payload is the path strings concerned,
@@ -918,7 +920,7 @@ val exit_code : (outcome, startup_error) Stdlib.result -> int
 
     {!execute} and {!list_selection} turn the recording of backtraces on
     ([Printexc.record_backtrace]) and leave it on. They register an [at_exit]
-    function, the exit guard. A supervised run ({!Supervisor}) registers none: a
+    function, the exit guard. A supervised run ([Supervisor]) registers none: a
     worker that code under test exits ends, and its parent records it. The guard
     serves the runs that stay in one process: [--in-process], Windows, and a
     process that can start no worker ([Supervisor.execute]).
@@ -963,7 +965,7 @@ val exit_code : (outcome, startup_error) Stdlib.result -> int
 
 (** {1:supervision Serving a supervisor}
 
-    A supervised run ({!Supervisor}) splits {!execute} across processes. Its
+    A supervised run ([Supervisor]) splits {!execute} across processes. Its
     parent selects, reports, keeps the store, writes the corrections and decides
     the exit code, with the functions below. Each worker process runs {!serve}:
     the attempts, frames, fixtures and signals above, unchanged, one case per
@@ -987,8 +989,8 @@ val limit : config -> Test_tree.case -> float option
 (** [limit config case] is the limit of each attempt of [case], in seconds: its
     own, or else [config.timeout], or else [None] under [config.in_process], the
     debugger's run, and [config.default_timeout] otherwise. {!execute} sets it
-    as the alarm of each attempt, and {!Supervisor} kills a worker past three
-    times it (see {!Supervisor.execute}). *)
+    as the alarm of each attempt, and [Supervisor] kills a worker past three
+    times it (see [Supervisor.execute]). *)
 
 val select :
   config ->
@@ -1105,7 +1107,7 @@ val verdict : t -> Test_tree.case -> attempt -> verdict
 val adjudicate : t -> Test_tree.case -> served -> result * bool
 (** [adjudicate t case served] is the row of [case] and whether its failures all
     carry kept corrections: [served]'s, or rebuilt from its {!served.deferred}
-    attempt by {!verdict}. *)
+    attempt by {!val-verdict}. *)
 
 val lost : t -> Test_tree.case -> Failure.t -> duration:float -> result
 (** [lost t case failure ~duration] is the row of a case whose worker died: it

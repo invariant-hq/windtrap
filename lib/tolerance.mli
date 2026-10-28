@@ -14,7 +14,9 @@
     measures nothing. A witness without a tolerance measures nothing.
 
     {!Check.equal} reads the measure through {!observed} and records it for the
-    report (see {!Check.tolerances}). *)
+    report (see {!Check.val-tolerances}).
+
+    @canonical Windtrap.Private.Tolerance *)
 
 type error = {
   error : float;  (** The error of the comparison, [|a -. b|]. *)

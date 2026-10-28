@@ -7,7 +7,9 @@
     the file that it is written to.
 
     {!write} is the entry point, which {!Report.run} calls under [--junit] only.
-    Nothing of the document reaches the terminal. *)
+    Nothing of the document reaches the terminal.
+
+    @canonical Windtrap.Private.Report_junit *)
 
 (** {1:document The document}
 

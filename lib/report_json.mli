@@ -7,7 +7,9 @@
     verdict, as one JSON document, and the file that it is written to.
 
     {!write} is the entry point, which {!Report.run} calls under [--json] only.
-    Nothing of the document reaches the terminal. *)
+    Nothing of the document reaches the terminal.
+
+    @canonical Windtrap.Private.Report_json *)
 
 (** {1:document The document}
 
@@ -52,9 +54,9 @@
     [{"file": ..., "line": ..., "comparisons": ..., "error": ..., "tolerance":
      ...}] per site of [equal] that compared under a tolerance, ordered by site,
     with the error of the comparison that came closest to its bound and that
-    bound ({!Check.tolerances}); [file] and [line] are absent where the site has
-    no location. A plain test's scope is so [{"tolerances": []}]. The scope of a
-    property, a table or a stateful test holds before it:
+    bound ({!Check.val-tolerances}); [file] and [line] are absent where the site
+    has no location. A plain test's scope is so [{"tolerances": []}]. The scope
+    of a property, a table or a stateful test holds before it:
     - [cases], the generated cases that passed, or the values of a domain
       checked whole, and [examples], the examples that passed;
     - [count], the cases that the property demanded, after [--prop-count];

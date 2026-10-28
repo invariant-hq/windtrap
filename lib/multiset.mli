@@ -8,7 +8,9 @@
     {!Testable.slist} compares two lists with {!difference} and, when they
     differ, offers what is missing and what is extra to the {!explained} that
     {!Check.equal} runs, so a failure shows the difference and not two whole
-    lists. *)
+    lists.
+
+    @canonical Windtrap.Private.Multiset *)
 
 val difference :
   equal:('a -> 'a -> bool) ->

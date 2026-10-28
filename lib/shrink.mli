@@ -10,7 +10,9 @@
     failing case and parses the edit again. It keeps an edit when the case still
     fails and the sequence the parse read is shortlex smaller: shorter, or as
     long and smaller at its first difference, each choice compared unsigned.
-    Each kept edit is a strictly smaller sequence, so the search ends. *)
+    Each kept edit is a strictly smaller sequence, so the search ends.
+
+    @canonical Windtrap.Private.Shrink *)
 
 type case = {
   choices : int64 array;

@@ -21,7 +21,9 @@
     output of the last attempt.
 
     The module keeps no state outside a {!t}, but descriptors 1 and 2 and the
-    buffers that a drain flushes belong to the process. *)
+    buffers that a drain flushes belong to the process.
+
+    @canonical Windtrap.Private.Capture *)
 
 (** {1:state Capture state} *)
 

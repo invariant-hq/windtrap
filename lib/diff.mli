@@ -12,7 +12,9 @@
 
     Both functions are pure. Past a size bound {!val:hunks} gives a region whole
     and {!refine} is [None]. Both results show the degradation, so a bound never
-    makes two different inputs look equal. *)
+    makes two different inputs look equal.
+
+    @canonical Windtrap.Private.Diff *)
 
 (** {1:hunks Line hunks} *)
 

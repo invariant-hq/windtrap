@@ -30,7 +30,9 @@
       through {!run} then.
 
     Nothing in this module is global. Labels go through the {!context} that
-    {!run} gives to the law. *)
+    {!run} gives to the law.
+
+    @canonical Windtrap.Private.Property *)
 
 (** {1:discarding Discarding}
 
@@ -131,8 +133,8 @@ val cover : ?share:float -> context -> string -> bool -> unit
     least [p] is unmet, and one whose true value is below [0.9 *. p] is met,
     with probability below 6·10{^ -9} per label, the Wilson interval being an
     approximation. A true share between [0.9 *. p] and [p] may go either way.
-    The {!share} of each status states the bounds the deciding look established.
-*)
+    The {!type-share} of each status states the bounds the deciding look
+    established. *)
 
 (** {1:outcomes Outcomes} *)
 

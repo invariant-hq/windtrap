@@ -22,7 +22,9 @@
     change to one of them needs another prefix. Under the same prefix the change
     is silent, and a recorded token then replays other values. What a generator
     makes of the stream is no part of the four, so a recorded token replays the
-    same values within one version of the library only. *)
+    same values within one version of the library only.
+
+    @canonical Windtrap.Private.Seed *)
 
 (** {1:seeds Seeds and tokens} *)
 

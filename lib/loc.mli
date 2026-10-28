@@ -9,7 +9,9 @@
     passed on, or else from a best-effort walk of the call stack
     ({!val-capture}). {!resolve} is that rule. When neither gives one there is
     none. The walk reads debug information, so a program built without [-g] gets
-    a location from an explicit position only. *)
+    a location from an explicit position only.
+
+    @canonical Windtrap.Private.Loc *)
 
 (** {1:locations Locations} *)
 

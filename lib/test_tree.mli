@@ -23,7 +23,9 @@
     The declaration site of a node is [Loc.resolve ?__POS__ ()], fixed when its
     constructor is applied. A capture cannot see through the frame of a helper
     that wraps a constructor, so a function of the library that wraps one must
-    take [?__POS__] and pass it on. *)
+    take [?__POS__] and pass it on.
+
+    @canonical Windtrap.Private.Test_tree *)
 
 (** {1:tags Tags}
 

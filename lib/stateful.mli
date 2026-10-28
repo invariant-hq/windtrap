@@ -42,7 +42,9 @@
     a suffix. The branches' calls run at once, on worker domains, and {!execute}
     judges their outcomes against the orders of the calls replayed on the
     reference (see {!judge}). Only the prefix has one reference state, so only
-    the prefix makes values, asks a [pre] and takes elements. *)
+    the prefix makes values, asks a [pre] and takes elements.
+
+    @canonical Windtrap.Private.Stateful *)
 
 (* The facade ([{1:stateful_tests}] in windtrap.mli) states each value's
    contract for a test's author. The docs here state only what it does not: how
@@ -76,7 +78,7 @@ type ('r, 's, 'p) fn
 
 val ( @-> ) : 'a Gen.t -> ('r, 's, 'p) fn -> ('a -> 'r, 'a -> 's, 'a -> 'p) fn
 (** See the facade's [( @-> )]. The record prints the argument as its sample
-    renders (see {!Gen.Engine.render}). *)
+    renders (see [Gen.Engine.render]). *)
 
 val ( ^-> ) :
   ('ra, 'sa) abstract -> ('r, 's, 'p) fn -> ('ra -> 'r, 'sa -> 's, 'ra -> 'p) fn
@@ -282,10 +284,10 @@ val execute : ?workers:Workers.t -> program -> record
       the failure reads as a call's does on one domain.
 
     {b Real time.} Each call records when its system began and returned, on the
-    monotonic clock ({!Os.counter}), read on the domain that runs it: no domain
-    writes anything shared to take a stamp. Only a call that returned strictly
-    before another began orders the two, so calls that overlap, or that the
-    clock's resolution cannot tell apart, may come in either order. Without
+    monotonic clock ({!Os.val-counter}), read on the domain that runs it: no
+    domain writes anything shared to take a stamp. Only a call that returned
+    strictly before another began orders the two, so calls that overlap, or that
+    the clock's resolution cannot tell apart, may come in either order. Without
     [workers] the branches run one after the other, and real time leaves them
     that one order.
 

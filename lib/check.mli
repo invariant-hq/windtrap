@@ -18,7 +18,9 @@
     no location. Only {!raises}, {!raises_match} and {!eventually} catch an
     exception, and only from the function that they run: what the equality, the
     order or the printer of a witness, a [?pp], a predicate or an [extract]
-    raises escapes the verb as it is. *)
+    raises escapes the verb as it is.
+
+    @canonical Windtrap.Private.Check *)
 
 (* The facade ([{1:assertions}] in windtrap.mli) states each verb's contract
    for a test's author. The docs here state only what it does not: the payload
@@ -242,7 +244,7 @@ val skip : ?reason:string -> unit -> 'a
     each site, how close its values came to its tolerance, and a tolerance far
     looser than the errors it saw says the test is weaker than it reads. The
     calls of every domain count, and a site is the location of the call, [None]
-    where none resolves (see {!tolerances}). *)
+    where none resolves (see {!val-tolerances}). *)
 
 type tolerance = {
   site : Loc.t option;  (** The call site of {!equal}. *)

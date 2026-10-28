@@ -29,7 +29,9 @@
     the domain that spawned the pool did, and it flushes its own
     [Format.std_formatter] and [Format.err_formatter] after each job, so its
     output reaches the standard streams while the run that gave the job is still
-    open. *)
+    open.
+
+    @canonical Windtrap.Private.Workers *)
 
 type t
 (** The type for pools of worker domains. *)

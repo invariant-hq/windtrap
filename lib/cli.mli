@@ -42,7 +42,9 @@
     [-x] serve a loop of runs by hand, which is a command line's, and a listing
     is not a run. [-u] and [--corrected] accept baselines, and a build action
     must never accept one because of a variable in its environment. [-h] and
-    [-V] only print. *)
+    [-V] only print.
+
+    @canonical Windtrap.Private.Cli *)
 
 (** {1:parsed Parsed flags} *)
 

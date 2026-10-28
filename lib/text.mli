@@ -9,7 +9,9 @@
     Every function is pure, and {!elide_middle} is as pure as the [show] that it
     is given. Lengths are in code points. No function knows grapheme clusters or
     display widths, so a combining sequence or a wide character occupies a
-    number of columns on a screen that {!length_utf8} does not give. *)
+    number of columns on a screen that {!length_utf8} does not give.
+
+    @canonical Windtrap.Private.Text *)
 
 (** {1:newlines Newlines} *)
 

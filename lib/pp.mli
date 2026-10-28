@@ -10,7 +10,9 @@
     The module holds what the library prints with and is no general printing
     toolbox, so an addition must come with its caller. No value writes to a
     standard channel, because the sink is always an argument, and no value
-    writes an escape sequence. *)
+    writes an escape sequence.
+
+    @canonical Windtrap.Private.Pp *)
 
 (** {1:types Types} *)
 

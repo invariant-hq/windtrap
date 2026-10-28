@@ -12,7 +12,9 @@
 
     A failure holds no styling and no command. What a failure holds is the text
     that cannot be made again after the failure site: printed values, messages
-    and a backtrace, each a bounded {!type-text}. *)
+    and a backtrace, each a bounded {!type-text}.
+
+    @canonical Windtrap.Private.Failure *)
 
 (** {1:texts Texts} *)
 
@@ -647,7 +649,7 @@ val tail_bytes : int
 (** {1:outcomes Per-test outcomes} *)
 
 (** The type for the outcome of a test, and of the release of a fixture. It does
-    not say whether the test counts as failed, which {!Run.result} does. *)
+    not say whether the test counts as failed, which {!Run.type-result} does. *)
 type outcome =
   | Pass
   | Fail of t list

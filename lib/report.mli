@@ -16,7 +16,9 @@
     Nothing here alters a status, a count or the scheduling of a run. The
     entries of a failure block and the sections of a mutation report are
     {!Report_sections}', the JUnit document is {!Report_junit}'s and the JSON
-    document {!Report_json}'s. *)
+    document {!Report_json}'s.
+
+    @canonical Windtrap.Private.Report *)
 
 (** {1:renderer The renderer} *)
 
@@ -139,8 +141,8 @@ val result : t -> Run.result -> unit
     - one {!Report_sections.val-entry} per failure of [r], with its source line.
     - what a property ran ([scope: 37 cases passed, 3 discards]), its label
       table and the share each met {!Property.cover} share established.
-    - one line per site of [equal] under a tolerance ({!Check.tolerances}), its
-      largest error against the bound it allowed.
+    - one line per site of [equal] under a tolerance ({!Check.val-tolerances}),
+      its largest error against the bound it allowed.
     - the captured output of the first failure of [r] that carries a
       {!type:Failure.tail}.
     - {!Report_sections.hints} for the whole test. The {!Report_sections.accept}
@@ -410,8 +412,8 @@ type executor =
   suite:string ->
   Test_tree.t list ->
   (Run.outcome, Run.startup_error) result
-(** The type for the functions that execute a run: {!Supervisor.execute}, with
-    or without its [on_reach], and {!Run.execute}. *)
+(** The type for the functions that execute a run: [Supervisor.execute], with or
+    without its [on_reach], and {!Run.execute}. *)
 
 val run :
   ?execute:executor ->
@@ -421,7 +423,7 @@ val run :
   Test_tree.t list ->
   (Run.outcome, Run.startup_error) result
 (** [run ~suite config tests] is [execute config ~suite tests] with the whole
-    report of the run written. [execute] defaults to {!Supervisor.execute}; the
+    report of the run written. [execute] defaults to [Supervisor.execute]; the
     mutation loop's dry run and an [--arm] run pass it an [on_reach] that counts
     the mutants each test evaluates. It proceeds in this order:
     + It builds [terminal config] and, when [config.github] is set, opens the

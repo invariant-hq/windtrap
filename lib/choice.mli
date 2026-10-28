@@ -15,7 +15,9 @@
     A source records, beside the choices, the spans of choices that one
     generator call read and the {e dependents}: choices that count past earlier
     positions, which a deletion of those positions must lower (see
-    {!counts_past}). The reducer ({!Shrink}) reads both. *)
+    {!counts_past}). The reducer ({!Shrink}) reads both.
+
+    @canonical Windtrap.Private.Choice *)
 
 type t
 (** The type for the source of one parse. It is mutable and used once. *)
@@ -144,7 +146,7 @@ val copying : t -> bool
 val copy : t -> span -> (unit -> 'a) -> 'a
 (** [copy src span f] is [f ()], whose choices read those [src] recorded inside
     [span], in order, instead of what they draw, as long as they last. [span] is
-    a span of an earlier call, inside {!pool}'s record. *)
+    a span of an earlier call, inside {!type-pool}'s record. *)
 
 type pool = { mutable spans : span array; mutable count : int }
 (** The type for the spans that the calls of one generator read in a case, the

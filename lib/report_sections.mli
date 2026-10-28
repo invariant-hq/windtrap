@@ -26,7 +26,9 @@
     {!Os.display_path}. Both read {!Os.project_root}, hence the environment and
     the working directory.
 
-    A cap is a constant of [report_sections.ml], named here beside its value. *)
+    A cap is a constant of [report_sections.ml], named here beside its value.
+
+    @canonical Windtrap.Private.Report_sections *)
 
 (** {1:spans Spans} *)
 
@@ -252,11 +254,11 @@ val replay :
 (** [replay ~tests failures] is the [replay:] line that runs the [tests] again
     with the values that [failures] drew, unindented and unstyled. It is [None]
     when no failure drew any: none is a {!Failure.Property} failure, or a
-    {!Failure.Timeout} of a property's case, whose case was generated. The line
-    carries the armed mutant, the seed of the first such failure (a run has one
-    root) and, when a failure's [count] is [Some _] (see {!type:Failure.kind}),
-    the largest such count. A test draws its values from the seed and its path,
-    so each failed test draws what it failed on.
+    {!Failure.kind.Timeout} of a property's case, whose case was generated. The
+    line carries the armed mutant, the seed of the first such failure (a run has
+    one root) and, when a failure's [count] is [Some _] (see
+    {!type:Failure.kind}), the largest such count. A test draws its values from
+    the seed and its path, so each failed test draws what it failed on.
 
     - [tests] selects what runs. [`Run config] is the tests of the run that
       [config] configured: the line restates its [-f], [-e], [--tag],
@@ -311,8 +313,8 @@ val table :
   margin:string -> columns:column list -> span list list -> span list list
 (** [table ~margin ~columns rows] is [rows] laid out as {!Rows} prints them, one
     line per row, before its trailing spaces are stripped. A column's width is
-    measured as {!width} measures a span, so a cell that holds a control byte
-    keeps its column. *)
+    measured as {!val-width} measures a span, so a cell that holds a control
+    byte keeps its column. *)
 
 type excerpt = {
   source : string;  (** The text of the file. *)

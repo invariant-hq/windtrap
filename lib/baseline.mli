@@ -16,7 +16,9 @@
     A file baseline is lines of text. Both sides of its comparison are made
     canonical: CR and CRLF line endings become LF. The final newline is compared
     as any other, so a text that lacks one differs from a file that ends with
-    one. A file written holds the produced text as it is. *)
+    one. A file written holds the produced text as it is.
+
+    @canonical Windtrap.Private.Baseline *)
 
 (** {1:modes Modes} *)
 

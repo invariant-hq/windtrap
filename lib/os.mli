@@ -6,7 +6,9 @@
 
 (** Operating-system access: the monotonic clock, the process environment,
     atomic file writes, the paths that a run resolves and prints, standard
-    error, and signals. *)
+    error, and signals.
+
+    @canonical Windtrap.Private.Os *)
 
 (** {1:clock Monotonic clock}
 
