@@ -2151,7 +2151,7 @@ let properties =
       test "a property that gave up says how many cases it discarded" (fun () ->
           expect (message (failure props [ "gives up" ]))
           @@ __POS_OF__
-               {| property gave up: 201 discards exhausted the generation budget (0 cases passed) |});
+               {| property gave up: 1001 discards exhausted the generation budget (0 cases passed) |});
       test "a property that missed a label names it" (fun () ->
           expect (message (failure props [ "misses a label" ]))
           @@ __POS_OF__ {| never covered: "never" (over 100 passing cases) |});

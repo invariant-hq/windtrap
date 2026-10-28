@@ -142,6 +142,12 @@ for how to migrate from 0.2.0.
   and the summary counts it apart from the failures, as `1 vacuous`.
   A property of `~count:0` with no example passed in 0.2.0 and fails
   now; the others failed as plain failures.
+- A property gives up after ten discards per case, `~max_discard`'s
+  default of ten times the effective count, where 0.2.0 gave up after
+  two. A law that keeps between an eighth and two fifths of its cases
+  passes now, where under 0.2.0 it gave up by chance on some seeds, one
+  run in seven at an acceptance of 0.36; one that discards every case
+  gives up after 1,001 discards at the default count, against 201.
 - The captured output in the block of a failing property or stateful
   test is that of the run that failed on the counterexample, where
   0.2.0 showed the last lines of the whole search, which end on the

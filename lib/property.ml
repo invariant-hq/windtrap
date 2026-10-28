@@ -447,9 +447,14 @@ let run ?loc ?count ?max_discard ?(examples = []) ?(summary = Fun.const None)
   in
   if count < 0 then invalid_arg "Property.run: count must be non-negative";
   if runs < 1 then invalid_arg "Property.run: runs must be positive";
+  (* Ten discards per case, QuickCheck's ratio: the budget stops a run that
+     cannot reach its count, and passing still takes [count] cases, so a loose
+     budget costs only the time before a vacuous verdict. Two per case gave
+     up by chance on honest filters: at an acceptance of 0.36, one run in
+     seven. *)
   let max_discard =
     match max_discard with
-    | None -> if count > max_int / 2 then max_int else 2 * count
+    | None -> if count > max_int / 10 then max_int else 10 * count
     | Some limit when limit < 0 ->
         invalid_arg "Property.run: max_discard must be non-negative"
     | Some limit -> limit

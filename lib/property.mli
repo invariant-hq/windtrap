@@ -288,7 +288,7 @@ val run :
       [100]. A [`Config n] count comes from the configuration of the run. A
       [`Declared n] count is the test's own and replays by itself.
     - [max_discard] is the number of discarded cases past which the run gives
-      up. Defaults to [2 * count], clamped to [max_int].
+      up. Defaults to [10 * count], clamped to [max_int].
     - [examples] are the inputs that run before any generated case. Defaults to
       [[]].
     - [summary v] is the [summary] of the failure whose counterexample is [v],

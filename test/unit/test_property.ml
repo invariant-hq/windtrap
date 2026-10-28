@@ -422,7 +422,7 @@ let covers =
       ( run ~count:5 (fun ctx _ ->
             Property.cover ctx "discarded" true;
             Property.reject ()),
-        "gave up, 0 cases, 11 discards; discarded 0 unsatisfied" ) );
+        "gave up, 0 cases, 51 discards; discarded 0 unsatisfied" ) );
     ( "a cover reached in a failing case",
       ( run (fun ctx _ ->
             Property.cover ctx "failed" true;
@@ -690,8 +690,8 @@ let give_ups =
   let discard _ _ = Property.reject () in
   let not_one _ x = Property.assume (x <> 1) in
   [
-    ( "the default is twice the count",
-      (run ~count:10 Gen.int discard, "gave up, 0 cases, 21 discards") );
+    ( "the default is ten times the count",
+      (run ~count:10 Gen.int discard, "gave up, 0 cases, 101 discards") );
     ( "an explicit max_discard",
       ( run ~count:5 ~max_discard:7 (Gen.int_range 0 9) discard,
         "gave up, 0 cases, 8 discards" ) );
@@ -711,6 +711,25 @@ let give_ups =
       ( run ~count:0 ~max_discard:0 ~examples:[ 1 ] (Gen.constant 0) not_one,
         "gave up, 0 cases, 1 discards" ) );
   ]
+
+(* A law that keeps about 30% of its cases: [int_range 1 1000] is above 700
+   in 0.9 x 3/10 of the draws and in a third of its corners 1, 2 and 1000.
+   It discards about 233 cases for its 100, which the default budget of
+   1,000 covers. A budget of twice the count would give up on most seeds
+   (88% at an acceptance of 0.3), this one included. *)
+let low_acceptance () =
+  let path = "thirty percent" in
+  let gen = Gen.int_range 1 1000 in
+  let keep x = x > 700 in
+  let run ?max_discard () =
+    verdict
+      (Property.run ~root ~path ?max_discard gen (fun _ x ->
+           Property.assume (keep x)))
+  in
+  let discards = discarded gen ~path ~keep 100 in
+  equal string (strf "pass, 100 cases, %d discards" discards) (run ());
+  is_true (discards > 200);
+  equal string "gave up, 73 cases, 201 discards" (run ~max_discard:200 ())
 
 let mixed_discards () =
   let path = "mixed discards" in
@@ -822,7 +841,7 @@ let generated =
       test "the default max_discard is clamped to max_int" (fun () ->
           let o =
             Property.run ~root ~path:"huge count"
-              ~count:(`Declared ((max_int / 2) + 1))
+              ~count:(`Declared ((max_int / 10) + 1))
               (Gen.constant 0)
               (fun _ _ -> Check.fail "first")
           in
@@ -831,6 +850,8 @@ let generated =
         ~id:fst give_ups (fun (_, (run, row)) ->
           equal string row (verdict (run ())));
       test "discards within max_discard leave the run to pass" mixed_discards;
+      test "a law that keeps 30% of its cases passes within the default"
+        low_acceptance;
       cases "a discard spends its index" ~id:fst spenders
         (fun (name, discarding) ->
           let before = if name = "by the generator" then 1 else 0 in
@@ -842,7 +863,7 @@ let generated =
           let o =
             Property.run ~root ~path:"never" ~count:(`Declared 3) never law
           in
-          equal string "gave up, 0 cases, 7 discards" (verdict o);
+          equal string "gave up, 0 cases, 31 discards" (verdict o);
           equal (list int) [] (seen ()));
       cases "a generator's fault fails the case unshrunk" ~id:fst
         raising_generators (fun (_, (gen, inner)) ->

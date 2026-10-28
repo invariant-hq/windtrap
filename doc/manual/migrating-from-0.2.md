@@ -144,6 +144,10 @@ change a verdict.
   shrinks to one counterexample, and no correction is written. Compare
   against a value the law computes, `equal t (model x) (system x)`, or
   move the `expect` to a test of its own over chosen values.
+- `~max_discard` raised to keep an honest filter from giving up at
+  0.2's budget of two discards per case → no longer needed: the default
+  is ten per case. Drop it, or keep it where a slow law should give up
+  sooner than after `10 * count` discards.
 - `--prop-count 10` (`WINDTRAP_PROP_COUNT=10`) to cut every property
   short → no effect on a property that runs more: `--prop-count` raises
   a count and lowers none. Lower a property's `~count` in its

@@ -148,7 +148,7 @@ verdict that fails, whether it assumes, filters or rejects:
     VACUOUS  rejects
   3 vacuous in DURATION.
   [1]
-  $ grep -c 'property gave up: 201 discards exhausted the generation budget (0 cases passed)' out
+  $ grep -c 'property gave up: 1001 discards exhausted the generation budget (0 cases passed)' out
   3
 
 Every value of a domain checked whole discarded is vacuous too, though

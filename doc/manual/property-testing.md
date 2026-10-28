@@ -276,7 +276,9 @@ geo: 1 test (seed s1:3cc0be06278f6fb2)
 
 `assume cond` discards a case the law does not apply to (see
 `Windtrap.assume`). A property that discards more than `~max_discard`
-cases is vacuous, with `property gave up:` and its counts. A
+cases is vacuous, with `property gave up:` and its counts. The default
+is ten discards per case: a law that keeps one case in three passes,
+and one that keeps fewer than one in ten gives up. A
 precondition on the value's structure belongs in the generator, built in
 or with `Gen.such_that`. `classify` and `collect` label a case, and
 `cover` makes the property vacuous when no passing case carries its

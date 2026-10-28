@@ -1375,8 +1375,11 @@ val prop :
       every property. With [0] the examples run alone, whatever [--prop-count]
       says, and a property with none is {{!section-vacuity}vacuous}.
     - [max_discard] is the number of discarded cases (see {!assume}) past which
-      the property gives up, and is {{!section-vacuity}vacuous}. Defaults to
-      twice the effective [count]. No flag sets it.
+      the property gives up, and is {{!section-vacuity}vacuous}. Defaults to ten
+      times the effective [count], QuickCheck's ratio: a law that keeps one case
+      in three passes, and one that keeps fewer than one in ten gives up. The
+      budget only stops a run that cannot reach its count, since a pass still
+      needs [count] cases. No flag sets it.
     - [examples] are inputs that the law runs on before any generated case. They
       are not shrunk and do not depend on the seed.
     - [timeout] covers generation and shrinking together. When it expires before
