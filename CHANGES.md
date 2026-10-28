@@ -2,9 +2,51 @@
 
 ## Unreleased
 
+Windtrap 0.3.0 runs its tests in worker processes, fails a test that
+checks less than it claims, and draws values that find more bugs. Six
+spellings change, each a type error at the call: `cases`, `slow` and
+`tag`, the labels of `starts_with`, `ends_with` and `Exn`, the file of
+`expect_file`, `judges` in place of `chooses`, and the type of `cover`.
 See
 [`doc/manual/migrating-from-0.2.md`](https://github.com/invariant-hq/windtrap/blob/main/doc/manual/migrating-from-0.2.md)
-for how to migrate from 0.2.0.
+for each breaking change and what a suite writes now.
+
+Outside Windows and `--in-process`, the process that calls `run` runs
+no test: workers run them, and a test that calls `exit`, segfaults or
+loops past its limit fails by name while the run goes on. Every attempt
+has a limit, ten minutes unless `~timeout` or `--timeout` says
+otherwise, so a hang fails its test rather than the build, and `-j N`
+runs the tests in `N` workers at once.
+
+A test that refuted nothing and checked less than it claims is
+vacuous, a verdict that fails and exits `1`: a property whose cases
+were all discarded, an unmet `cover`, a stateful command never called,
+a table with no row, and `~count:0` with no example. Its block is tagged
+`VACUOUS` above the line that says why, where 0.2.0 passed the last of
+these and failed the others as plain failures.
+
+A table is one test checked whole, every row run and every refuted row
+reported, and `slow` and `tag` mark any declared test or group, as
+`focus` and `xfail` do:
+
+```ocaml
+cases "parses" ~id:fst [ ("1", 1); ("10", 10) ] (fun (s, n) -> equal int n (int_of_string s))
+slow @@ tag "gpu" @@ test "trains" train
+```
+
+The generators draw small and edge integers first and repeat earlier
+values, draw corner floats and characters, and draw collections up to
+255 long; on planted bugs in search trees and a lambda calculus a
+failure comes after 22 cases on average, against 68. Shrinking works
+on the choices a generator read, so it can shrink through `Gen.bind`,
+and a failure prints `keep it: ~examples:[ … ]` to keep its
+counterexample. A 0.2.0 seed draws other cases; a replay token still
+replays its case.
+
+A failing verb records its failure before it raises, so a catch-all in
+the code under test no longer hides it, and the block says
+`failed, then caught`. `eventually ~within f` is the way to retry a
+claim until it holds.
 
 ### Declaring tests
 
