@@ -36,7 +36,7 @@ A run with nothing to report prints one line:
 
 ```
 $ dune runtest
-mylib: 3 passed in 1.0ms (seed s1:b02192cebcec40d2).
+lru: 3 passed in 1.0ms (seed s1:b02192cebcec40d2).
 ```
 
 ## Features

@@ -220,7 +220,7 @@ accept: dune promote examples/05-baselines/test_mytool.ml
 2 passed, 1 failed, 1 correction written in 2.2ms.
 File "examples/05-baselines/test_mytool.ml", line 1, characters 0-0:
 diff --git a/_build/default/examples/05-baselines/test_mytool.ml b/_build/default/examples/05-baselines/test_mytool.ml.corrected
-index 015a41c..0339f35 100644
+index 0251ed5..4ccaf5c 100644
 --- a/_build/default/examples/05-baselines/test_mytool.ml
 +++ b/_build/default/examples/05-baselines/test_mytool.ml.corrected
 @@ -3,7 +3,7 @@ open Windtrap

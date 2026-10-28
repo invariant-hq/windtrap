@@ -63,7 +63,9 @@ let () =
          codec;
          witness;
          combine;
+         turn;
          scaling;
+         part_of;
        ])
 ```
 
@@ -398,8 +400,8 @@ names the likely cause.
 Weight the nodes above depth zero, or most cases are a single leaf, and
 bound a list of children with `~size`, whose length is otherwise drawn
 for a list of values, not a branching factor. With `one_of` between a
-leaf and a node and a depth from `int_range 0 3`, 62% of the drawings
-are a single shape. With the weights and depths below, 42% are: a depth
+leaf and a node and a depth from `int_range 0 3`, 63% of the drawings
+are a single shape. With the weights and depths below, 41% are: a depth
 of zero comes a fifth of the time, and a quarter of the nodes above it
 are leaves, which keeps the small drawings that a counterexample shrinks
 to. The drawings hold 6.6 nodes on average, and at most 341. `Geo`

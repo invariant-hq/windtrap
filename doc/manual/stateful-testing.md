@@ -718,8 +718,9 @@ each request is answered. The program goes on after a `drain`, so one
 program can check the obligation in its middle as well as at its end.
 The command finds a bug only when a program draws it after the state
 that triggers the bug. A server that drops the request that arrives
-while three are waiting is found on 148 of 200 seeds at the default
-count, and on 196 at `~count:300`.
+while three are waiting fails only in a program that sends four
+requests before a `drain`, so some seeds miss it at the default count,
+and a larger `~count`, which draws more programs, misses it on fewer.
 
 ## Releasing what a program made
 
