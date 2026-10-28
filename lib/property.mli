@@ -384,7 +384,8 @@ val run :
     A [gen] that discards discards the case, and one that raises any other
     control raises it through [run]. A fault of [gen] fails the case unshrunk,
     with [<generator raised before producing a value>] as its counterexample and
-    the fault as its [inner].
+    the fault as its [inner]. The [inner] of a [Stack_overflow] has a [msg] that
+    names the likely cause, a recursive generator whose depth does not decrease.
 
     {b Shrinking.} A generated case that fails is shrunk by {!Shrink.shrink}
     over the choices it read. A candidate is kept when [law] fails on it in the

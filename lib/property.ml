@@ -436,6 +436,25 @@ let inner_failure : Failure.fault -> Failure.t = function
   | `Exception (Oracle_failure failure, _) -> failure
   | fault -> Failure.of_fault fault
 
+(* A generator that overflows the stack is most often a recursive one whose
+   depth does not decrease: the report says so above the exception. It is a
+   hint and not a ceiling on the choices a case reads, because no ceiling
+   both stays far above legitimate cases and stops such a draw first: a
+   runaway tree read 10^6 choices in 5 to 30 s and 0.4 to 1.4 GB, and one
+   overflowed the stack after 274 s without reaching 10^7. *)
+let drawing_fault : Failure.fault -> Failure.fault = function
+  | `Exception (Stack_overflow, _) as fault ->
+      `Assertion
+        {
+          (Failure.of_fault fault) with
+          msg =
+            Some
+              (Failure.text
+                 "the generator overflowed the stack: a recursive generator \
+                  whose depth does not decrease?");
+        }
+  | fault -> fault
+
 let run ?loc ?count ?max_discard ?(examples = []) ?(summary = Fun.const None)
     ?(runs = 1) ?(output = Fun.const None) ?(shrinking = ignore) ?replay
     ?(replayed_by = "--replay") ?case ?only ~root ~path gen law =
@@ -576,7 +595,8 @@ let run ?loc ?count ?max_discard ?(examples = []) ?(summary = Fun.const None)
           generate ~target ~max_discard ~passed (index + 1)
       | Error (#Failure.fault as fault) ->
           fail ~case_index:index ~examples:false
-            ~rendered:"<generator raised before producing a value>" fault
+            ~rendered:"<generator raised before producing a value>"
+            (drawing_fault fault)
       | Error (`Timeout limit) ->
           timed_out ~case_index:index ~examples:false limit
       | Error (#Failure.control as control) -> Failure.reraise control
@@ -756,7 +776,8 @@ let run ?loc ?count ?max_discard ?(examples = []) ?(summary = Fun.const None)
     | Error `Discard -> discarded ()
     | Error (#Failure.fault as fault) ->
         fail ~case_index:0 ~examples:true
-          ~rendered:"<generator raised before producing a value>" fault
+          ~rendered:"<generator raised before producing a value>"
+          (drawing_fault fault)
     | Error (#Failure.control as control) -> Failure.reraise control
     | Ok node -> (
         match check law (Gen.Engine.value node) with

@@ -148,6 +148,11 @@ for how to migrate from 0.2.0.
   passes now, where under 0.2.0 it gave up by chance on some seeds, one
   run in seven at an acceptance of 0.36; one that discards every case
   gives up after 1,001 discards at the default count, against 201.
+- A generator that overflows the stack fails its case as before, and
+  the report says above the exception
+  `the generator overflowed the stack: a recursive generator whose depth does not decrease?`,
+  the likely cause
+  (doc/manual/property-testing.md#generating-a-recursive-type).
 - The captured output in the block of a failing property or stateful
   test is that of the run that failed on the counterexample, where
   0.2.0 showed the last lines of the whole search, which end on the

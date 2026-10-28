@@ -1071,6 +1071,15 @@ module Gen : sig
       {b Purity.} The functions given to {!map}, {!bind} and {!such_that} must
       be pure, because the search for a counterexample runs them again.
 
+      {b Recursion.} A generator of a recursive type takes a depth, draws a leaf
+      at depth [0] and passes [depth - 1] to each recursive call, and the test
+      draws the depth, as [let* depth = int_range 0 4 in tree depth]. A
+      probability of drawing a leaf does not bound a tree by itself: at one
+      expected child per node the mean size of a tree is infinite, and above one
+      a draw runs until the stack or the memory gives out. A generator that
+      overflows the stack fails its case, and the report names that likely
+      cause.
+
       {b Repetition.} A draw may repeat a value that the same generator drew
       earlier in the case, with probability 1/8, each earlier value equally
       likely, so that a collection holds duplicates and two components collide:

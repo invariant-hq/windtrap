@@ -148,6 +148,12 @@ change a verdict.
   0.2's budget of two discards per case → no longer needed: the default
   is ten per case. Drop it, or keep it where a slow law should give up
   sooner than after `10 * count` discards.
+- A recursive generator that draws a leaf with some probability and
+  recurses otherwise, with no depth, which overflowed the stack on some
+  seeds → the same failure, whose report now names the likely cause. Give the
+  generator a depth, draw a leaf at `0` and pass `depth - 1` to every
+  recursive call
+  (doc/manual/property-testing.md#generating-a-recursive-type).
 - `--prop-count 10` (`WINDTRAP_PROP_COUNT=10`) to cut every property
   short → no effect on a property that runs more: `--prop-count` raises
   a count and lowers none. Lower a property's `~count` in its

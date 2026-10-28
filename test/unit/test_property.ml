@@ -788,6 +788,10 @@ let raising_generators =
   let raising e = Gen_engine.make (fun _ -> raise e) in
   [
     ("Not_found", (raising Not_found, "raise Not_found"));
+    ( "a Stack_overflow, with the likely cause",
+      ( raising Stack_overflow,
+        "the generator overflowed the stack: a recursive generator whose depth \
+         does not decrease?: raise Stack overflow" ) );
     ( "an assertion",
       ( raising (Failure.Check_failure (Failure.message "from the generator")),
         "message from the generator" ) );
