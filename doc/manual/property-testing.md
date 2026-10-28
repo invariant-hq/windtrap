@@ -376,10 +376,34 @@ needs a larger `~count` or a generator that reaches it more often.
 
 ## Generating a recursive type
 
-A generator of a recursive type takes a depth and draws a leaf at depth
-zero. `let*` draws the depth first, from a small range. `~size` bounds the
-length of a list, which is otherwise below 64 and about 5 on average.
-`Geo` groups shapes in drawings.
+A generator of a recursive type takes a depth, draws a leaf at depth
+zero, and passes `depth - 1` to every recursive call. `let*` draws the
+depth first, from a small range, so the depth bounds every tree the
+property sees, and the test states it.
+
+The depth is what bounds the tree; a probability of drawing a leaf does
+not. Without it, each node draws its children afresh, which is a
+branching process: what decides its size is the number of children a
+node has on average. Below one, the trees stay small. At exactly one, as
+a leaf drawn half the time beside a node of two children, every tree is
+finite but their mean size is infinite: of a thousand such trees the
+median has 3 nodes and the largest 1.4 million, and drawing it took 8
+seconds. Above one, a tree is infinite with a positive probability, and
+the draw runs until the stack or the memory gives out, after a minute or
+more. The generator below without its depth would be such a case: three
+nodes in four, with two children each on average, is 1.5 children per
+node. The report of a generator that overflowed the stack says so, and
+names the likely cause.
+
+Weight the nodes above depth zero, or most cases are a single leaf, and
+bound a list of children with `~size`, whose length is otherwise drawn
+for a list of values, not a branching factor. With `one_of` between a
+leaf and a node and a depth from `int_range 0 3`, 62% of the drawings
+are a single shape. With the weights and depths below, 42% are: a depth
+of zero comes a fifth of the time, and a quarter of the nodes above it
+are leaves, which keeps the small drawings that a counterexample shrinks
+to. The drawings hold 6.6 nodes on average, and at most 341. `Geo`
+groups shapes in drawings.
 
 `test/geo.ml`:
 
@@ -404,15 +428,17 @@ let rec total_area = function
 
 ```ocaml
 let rec gen_drawing depth =
-  if depth = 0 then Gen.map (fun s -> Geo.Shape s) gen_shape
+  let shape = Gen.map (fun s -> Geo.Shape s) gen_shape in
+  if depth = 0 then shape
   else
     Gen.(
-      one_of
+      frequency
         [
-          map (fun s -> Geo.Shape s) gen_shape;
-          map
-            (fun ds -> Geo.Group ds)
-            (list ~size:(int_range 0 4) (gen_drawing (depth - 1)));
+          (1, shape);
+          ( 3,
+            map
+              (fun ds -> Geo.Group ds)
+              (list ~size:(int_range 0 4) (gen_drawing (depth - 1))) );
         ])
 
 let total_area =
@@ -421,7 +447,7 @@ let total_area =
       prop "is never negative"
         Gen.(
           with_pp Geo.pp_drawing
-            (let* depth = int_range 0 3 in
+            (let* depth = int_range 0 4 in
              gen_drawing depth))
         (fun d -> at_least ~__POS__ float_exact ~than:0. (Geo.total_area d));
     ]
@@ -435,22 +461,69 @@ $ dune exec examples/03-property-testing/test_geo.exe -- --seed s1:5b58964be30f6
 geo: 1 test (seed s1:5b58964be30f69a8)
 ──────────────────────── failures ────────────────────────
   FAIL  total_area › is never negative
-    examples/03-property-testing/test_geo.ml:72
-      72 │ prop "is never negative"
+    examples/03-property-testing/test_geo.ml:74
+      74 │ prop "is never negative"
 
-    counterexample (case 6, shrunk 2 steps): Group [Circle 1]
+    counterexample (case 18, shrunk 8 steps): Group [Circle 1]
     replay it: -f 'total_area › is never negative' --replay r1:AQEBAAE:a9de575d
     which failed at:
-      examples/03-property-testing/test_geo.ml:77
-        77 │ (fun d -> at_least ~__POS__ float_exact ~than:0. (Geo.total_area d));
+      examples/03-property-testing/test_geo.ml:79
+        79 │ (fun d -> at_least ~__POS__ float_exact ~than:0. (Geo.total_area d));
       expected  at least 0.
       actual    -3.141592653589793
-    scope: 6 cases passed
+    scope: 18 cases passed
 ──────────────────────────────────────────────────────────
 
 replay: dune exec examples/03-property-testing/test_geo.exe -- --seed s1:5b58964be30f69a8 -f 'total_area'
 1 failed in 1.5ms.
 ```
+
+## Generating strings and alphabets
+
+`Gen.string` draws every byte, which is the claim of a law over any
+`string`: a decoder, a parser or a binary format that must accept or
+refuse whatever it is given, a hash, a buffer. Code over text claims
+less, and its generator should state its alphabet, or most of its cases
+are bytes it never meets: half of `Gen.char`'s draws are above `'\127'`.
+Among them `Gen.char` draws the bytes that byte code gets wrong as
+corners, `'\000'`, `'\127'`, `'\128'` and `'\255'`, each 1.8% of the
+time.
+
+Printable ASCII is a range:
+
+```ocaml
+let printable = Gen.(string_of (char_range ' ' '~'))
+```
+
+The characters that a format gives a role, its delimiters, quotes and
+escapes, are rare in a range of 95 characters, and they are where its
+bugs are. `frequency` draws them often, beside the range:
+
+```ocaml
+let csv_field =
+  Gen.(
+    string_of
+      (frequency [ (8, char_range ' ' '~'); (1, of_list [ ','; '"'; '\n' ]) ]))
+```
+
+Valid UTF-8 is a list of scalar values, encoded: `Gen.uchar` draws
+each length of encoding equally, and its corners include the bounds of
+each length and the surrogates' edges.
+
+```ocaml
+let utf_8 =
+  Gen.(
+    map
+      (fun us ->
+        let b = Buffer.create 16 in
+        List.iter (Buffer.add_utf_8_uchar b) us;
+        Buffer.contents b)
+      (list uchar))
+```
+
+A string with no `~size` is drawn at the length of a list (see
+`Windtrap.Gen.list`). `~size` states a scale where one matters, as
+`string_of ~size:(int_range 0 1000) char` does.
 
 ## Drawing from a list of generators
 
@@ -523,8 +596,8 @@ $ dune exec examples/03-property-testing/test_geo.exe -- --seed s1:5b58964be30f6
 geo: 3 tests (seed s1:5b58964be30f69a8)
 ──────────────────────── failures ────────────────────────
   FAIL  codec › reads back what it prints
-    examples/03-property-testing/test_geo.ml:85
-      85 │ prop "reads back what it prints" gen_shape
+    examples/03-property-testing/test_geo.ml:87
+      87 │ prop "reads back what it prints" gen_shape
 
     counterexample (case 1, shrunk 6 steps): Rect (1, 0)
     replay it: -f 'codec › reads back what it prints' --replay r1:AQEA:3e9ef408
@@ -538,8 +611,8 @@ geo: 3 tests (seed s1:5b58964be30f69a8)
     scope: 1 case passed
 
   FAIL  codec › prints what it reads
-    examples/03-property-testing/test_geo.ml:87
-      87 │ cases "prints what it reads" ~id:(Printf.sprintf "%S")
+    examples/03-property-testing/test_geo.ml:89
+      89 │ cases "prints what it reads" ~id:(Printf.sprintf "%S")
 
     counterexample (row 2 of 2): "rect 2 0.5"
     which failed with:
@@ -592,7 +665,7 @@ let drawing =
 let any_drawing =
   Gen.(
     with_pp Geo.pp_drawing
-      (let* depth = int_range 0 3 in
+      (let* depth = int_range 0 4 in
        gen_drawing depth))
 
 let regroup d = Geo.Group [ d ]
@@ -620,8 +693,8 @@ $ dune exec examples/03-property-testing/test_geo.exe -- --seed s1:5b58964be30f6
 geo: 3 tests (seed s1:5b58964be30f69a8)
 ──────────────────────── failures ────────────────────────
   VACUOUS  witness › equal_drawing is an equivalence
-    examples/03-property-testing/test_geo.ml:110
-      110 │ prop "equal_drawing is an equivalence"
+    examples/03-property-testing/test_geo.ml:112
+      112 │ prop "equal_drawing is an equivalence"
 
     never covered: "equivalence: an unequal pair" (over 100 passing cases)
     scope: 100 cases passed
@@ -632,10 +705,10 @@ geo: 3 tests (seed s1:5b58964be30f69a8)
       equivalence: r a differs from a  100
 
   FAIL  witness › compare_drawing is a total order
-    examples/03-property-testing/test_geo.ml:113
-      113 │ prop "compare_drawing is a total order"
+    examples/03-property-testing/test_geo.ml:115
+      115 │ prop "compare_drawing is a total order"
 
-    counterexample (case 0, shrunk 7 steps): (Circle 1, Circle 0, Circle 0)
+    counterexample (case 0, shrunk 8 steps): (Circle 1, Circle 0, Circle 0)
     replay it: -f 'witness › compare_drawing is a total order' --replay r1:AAABAAAAAAAA:1f5931c0
     which failed with:
       order (agrees with equal): cmp a b = 0 iff a = b
@@ -734,8 +807,8 @@ $ dune exec examples/03-property-testing/test_geo.exe -- --seed s1:5b58964be30f6
 geo: 3 tests (seed s1:5b58964be30f69a8)
 ──────────────────────── failures ────────────────────────
   FAIL  turn › has undo as its inverse
-    examples/03-property-testing/test_geo.ml:143
-      143 │ prop "has undo as its inverse" turns
+    examples/03-property-testing/test_geo.ml:145
+      145 │ prop "has undo as its inverse" turns
 
     counterexample (value 1 of 4): 0
     which failed with:
@@ -875,7 +948,7 @@ $ dune exec examples/03-property-testing/test_geo.exe -- -v --seed s1:5b58964be3
 geo: 1 test (seed s1:5b58964be30f69a8)
   PASS  part_of › is a partial order               1.1ms (100 cases)
     labels (100 passing cases):
-        1.0%  partial order: a strict chain
+        5.0%  partial order: a strict chain
 1 passed in 3.3ms.
 ```
 

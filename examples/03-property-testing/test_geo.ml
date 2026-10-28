@@ -55,15 +55,17 @@ let inverse =
     ]
 
 let rec gen_drawing depth =
-  if depth = 0 then Gen.map (fun s -> Geo.Shape s) gen_shape
+  let shape = Gen.map (fun s -> Geo.Shape s) gen_shape in
+  if depth = 0 then shape
   else
     Gen.(
-      one_of
+      frequency
         [
-          map (fun s -> Geo.Shape s) gen_shape;
-          map
-            (fun ds -> Geo.Group ds)
-            (list ~size:(int_range 0 4) (gen_drawing (depth - 1)));
+          (1, shape);
+          ( 3,
+            map
+              (fun ds -> Geo.Group ds)
+              (list ~size:(int_range 0 4) (gen_drawing (depth - 1))) );
         ])
 
 let total_area =
@@ -72,7 +74,7 @@ let total_area =
       prop "is never negative"
         Gen.(
           with_pp Geo.pp_drawing
-            (let* depth = int_range 0 3 in
+            (let* depth = int_range 0 4 in
              gen_drawing depth))
         (fun d -> at_least ~__POS__ float_exact ~than:0. (Geo.total_area d));
     ]
@@ -99,7 +101,7 @@ let drawing =
 let any_drawing =
   Gen.(
     with_pp Geo.pp_drawing
-      (let* depth = int_range 0 3 in
+      (let* depth = int_range 0 4 in
        gen_drawing depth))
 
 let regroup d = Geo.Group [ d ]
