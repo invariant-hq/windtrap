@@ -1,6 +1,6 @@
 ---
 name: windtrap-testing
-description: Guides writing OCaml test suites with windtrap 0.2, the decisions only - which kind of test for which need, the shape of a suite, the commands to run, how to read a failure and accept a baseline, and when to reach for properties, stateful tests, coverage and mutation testing - with the section of windtrap.mli that holds each mechanism. Use when writing tests, adding a test suite, fixing a failing test, reviewing tests, or setting up coverage or mutation testing in a project that uses windtrap. Triggers on phrases like "write tests for this", "add a test suite", "test this function", "property test this", "expect test", "snapshot test", "why is this test failing", "check coverage", "run mutation testing", or "review these tests".
+description: Guides writing OCaml test suites with windtrap 0.3, the decisions only - which kind of test for which need, the shape of a suite, the commands to run, how to read a failure and accept a baseline, and when to reach for properties, stateful tests, coverage and mutation testing - with the section of windtrap.mli that holds each mechanism. Use when writing tests, adding a test suite, fixing a failing test, reviewing tests, or setting up coverage or mutation testing in a project that uses windtrap. Triggers on phrases like "write tests for this", "add a test suite", "test this function", "property test this", "expect test", "snapshot test", "why is this test failing", "check coverage", "run mutation testing", or "review these tests".
 ---
 
 # Testing with windtrap
@@ -13,11 +13,11 @@ contract, and each section below names the sections of it to read.
 `windtrap.mli` is installed with the library: read it in
 `$(ocamlfind query windtrap)/windtrap.mli`, in the opam switch's
 `lib/windtrap/`, or with `odig doc windtrap`. Its sections are, in
-order: Declaring tests (with Resources and Annotations), Assertions
-(with Laws), Witnesses, Properties (with `Gen` and Discarding and
-labelling cases), Stateful tests, Baselines, Captured output, The
-running test, Running (with Exit codes and Command line and
-environment). A name this file does not explain is explained there.
+order: Types, Declaring tests (with Resources and Annotations),
+Assertions (with Laws, Polling, and Failing and skipping), Witnesses,
+Properties (with Vacuity, `Gen`, and Discarding and labelling cases),
+Stateful tests, Baselines, Captured output, The running test, Running
+(with Exit codes, Command line and environment, and The process). A name this file does not explain is explained there.
 
 ## Before writing a test
 
@@ -109,6 +109,12 @@ let () = exit (run "mylib" [ parse ])
   top-level function that the group lists by name.
 - `run` returns the exit code, and `let () = run …` does not compile.
 - A test left out of the list does not run. `-l` lists what runs.
+- A table of chosen inputs is `cases name ~id rows fn`, one test whose
+  rows are identified by `~id`: `~id:fst` for rows that start with a
+  name, `~id:(Testable.to_string w)` to print the row whole.
+- A mark wraps a declared test or group: `slow @@ test …`,
+  `tag "gpu" @@ group …`, as `focus` and `xfail` do. `--tag` and
+  `--exclude-tag` select on the tags.
 - Tests of a library's internals are `let%test` or `let%expect_test`
   next to the code, in a library with `(inline_tests)` and
   `(preprocess (pps ppx_windtrap))`; a `let%test` body asserts with the
@@ -189,7 +195,10 @@ and `--help` on any suite.
 
 Read the whole block before editing anything. It holds:
 
-- `FAIL` and the test's path, then its location and source line. An
+- `FAIL`, or `VACUOUS` for a test that checked less than it claims (a
+  property that gave up, an unmet `cover`, a command never called, a
+  table with no row), and the test's path, then its location and source
+  line. A vacuous test exits `1` as a failure does. An
   assertion in tail position reports the test's declaration line; add
   `~__POS__` to the assertion for its own line. An assertion that ends a
   `let%test` or `let%expect_test` body reports its own line.
@@ -211,8 +220,10 @@ Read the whole block before editing anything. It holds:
   failed on the counterexample alone, so a `Printf` in the law shows
   the counterexample's intermediate values. `[setup]` or `[teardown]`
   before the location when the failure is in one.
-- A last command when it says something new: `replay it:` selects the
-  test alone and replays its counterexample; `reproduce:` arms a mutant.
+- A last command when it says something new: `keep it:` is the
+  `~examples` entry that keeps a counterexample the generators print as
+  OCaml; otherwise `replay it:` selects the test alone and replays its
+  counterexample; `reproduce:` arms a mutant.
 
 Two commands act on the whole run and sit right above the summary. A
 report whose failures include a stale baseline has one `accept:` line:
@@ -290,7 +301,7 @@ In `windtrap.mli`: Baselines, Captured output.
   value has several spellings, pass `~respell`, a function that returns
   an equal value built differently. An equality that is always true
   passes every `equal` that uses it.
-- A law's `never covered:` failure says no drawn case exercised the
+- A law's `never covered:` verdict says no drawn case exercised the
   law. Fix the generator, the respelling or the witness, never the law.
 - Draw the sizes of generated values from `Gen.nat` or a range, and a
   number the law computes with from `Gen.small_int`, so that the law
@@ -299,8 +310,8 @@ In `windtrap.mli`: Baselines, Captured output.
   bound, one past either end, and the extremes of `int` with their
   neighbours, where the stdlib's `Dynarray.blit ~src_pos:max_int` and
   `String.take_last (min_int + 3)` went wrong. `Gen.int` draws
-  `min_int` but none of its neighbours, so with `n` the largest valid
-  value:
+  `min_int` and `max_int` as corners but neither's neighbour, so with
+  `n` the largest valid value:
 
   ```ocaml
   Gen.frequency
@@ -348,8 +359,8 @@ In `windtrap.mli`: Baselines, Captured output.
   needs no `~pre`: the raise is compared. Put a `cover` in the reference
   for a state that matters, such as a full queue. A command that no
   program can call, because its `~pre` never holds or no command makes a
-  type it takes, fails the test with a `never called:` message that
-  names it.
+  type it takes, makes the test vacuous, with a `never called:` line
+  that names it.
 - Observe after every call: give the abstract type an `~invariant`
   that compares the two sides through functions that do not change the
   state, such as `to_list` or `length`, never an LRU's `find`. A bug
@@ -381,7 +392,8 @@ In `windtrap.mli`: Baselines, Captured output.
   `stateful` and `stateful ~domains:2`. The second runs the middle of
   each program on two domains at once and fails when no order of the
   calls explains what the system returned. There a command that makes a
-  value or has a `~pre` runs only before the parallel calls, so an
+  value, has a `~pre` or takes an element of an `among` type runs only
+  before the parallel calls, so an
   operation meant to be called concurrently must be total. Its failure
   does not replay its schedule; a structure known to be unsafe is
   `xfail @@ stateful ~domains:2 …`.
@@ -435,7 +447,8 @@ ran and did not notice. Resolve each one:
 
 A filtered run exits 0 whatever it finds and saves no verdict. The
 project's answer merges every suite's verdicts, and exits 1 when a
-mutant survived every suite that reached it:
+mutant survived every suite that reached it, or when a suite could not
+be mutation-tested, which it names under `not mutation-tested`:
 
 ```
 WINDTRAP_MUTATE=1 dune runtest --force --instrument-with ppx_windtrap.mutate
