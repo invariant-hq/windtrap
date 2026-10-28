@@ -34,9 +34,10 @@ cases "parses" ~id:fst [ ("1", 1); ("10", 10) ] (fun (s, n) -> equal int n (int_
 slow @@ tag "gpu" @@ test "trains" train
 ```
 
-The generators draw small and edge integers first and repeat earlier
-values, draw corner floats and characters, and draw collections up to
-255 long; on planted bugs in search trees and a lambda calculus a
+The whole integer types draw small and edge values first, a range
+stays uniform apart from its corners, a draw may repeat an earlier
+value of its generator, floats and characters draw their corners, and
+collections reach 255 elements; on planted bugs in search trees and a lambda calculus a
 failure comes after 22 cases on average, against 68. Shrinking works
 on the choices a generator read, so it can shrink through `Gen.bind`,
 and a failure prints `keep it: ~examples:[ … ]` to keep its
