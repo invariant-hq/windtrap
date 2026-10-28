@@ -742,6 +742,15 @@ type never = Failed of Failure.t | Discarded
 (* A call on the way to a record: bound, with how its system ended once it
    ran, an outcome or what is none, and when it began and returned. [number]
    is its row's number once the row is recorded. *)
+(* When a call's system began or returned: the monotonic clock, read on the
+   domain that runs it, and that domain's own count of its readings. Two
+   readings of one domain are ordered by the count, which a coarse clock
+   cannot tie (macos-latest's gave two calls run one after the other the
+   same instant); readings of two domains, by the clock alone, since taking
+   anything shared would synchronise the domains under test. *)
+type reading = { clock : Os.counter; domain : int; count : int }
+type stamp = { began : reading; returned : reading }
+
 type pending =
   | Pending : {
       step : int;
@@ -752,7 +761,7 @@ type pending =
       reference : sides -> unit -> 'r;
       system : unit -> 's;
       mutable ended : ('s outcome, never) result option;
-      mutable ran : (Os.counter * Os.counter) option;
+      mutable ran : stamp option;
     }
       -> pending
 
@@ -1146,13 +1155,21 @@ let add_row run (Pending p) =
 
 let has_run (Pending p) = Option.is_some p.ended
 
-(* Runs a pending call's system and records how it ended and when, on the
-   monotonic clock, which no domain writes; [false] when it raised what is no
-   outcome. Every control but a discard leaves. *)
+(* The domain's own count of the readings it took, which no other domain
+   reads or writes. *)
+let readings = Domain.DLS.new_key (fun () -> ref 0)
+
+let reading () =
+  let count = Domain.DLS.get readings in
+  incr count;
+  { clock = Os.counter (); domain = (Domain.self () :> int); count = !count }
+
+(* Runs a pending call's system and records how it ended and when; [false]
+   when it raised what is no outcome. Every control but a discard leaves. *)
 let run_system (Pending p) =
-  let began = Os.counter () in
+  let began = reading () in
   let ended = side p.system in
-  p.ran <- Some (began, Os.counter ());
+  p.ran <- Some { began; returned = reading () };
   p.ended <- Some ended;
   match ended with
   | Ok outcome ->
@@ -1521,7 +1538,9 @@ let run_parallel ~workers ~stuck run program =
   List.iter (fun (Pending p) -> ran.(p.number) <- p.ran) pendings;
   let precedes a b =
     match (ran.(a), ran.(b)) with
-    | Some (_, returned), Some (began, _) -> Os.earlier returned began
+    | Some { returned; _ }, Some { began; _ } ->
+        if returned.domain = began.domain then returned.count < began.count
+        else Os.earlier returned.clock began.clock
     | _ -> false
   in
   let verdict =

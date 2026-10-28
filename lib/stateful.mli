@@ -287,9 +287,10 @@ val execute : ?workers:Workers.t -> program -> record
     monotonic clock ({!Os.val-counter}), read on the domain that runs it: no
     domain writes anything shared to take a stamp. Only a call that returned
     strictly before another began orders the two, so calls that overlap, or that
-    the clock's resolution cannot tell apart, may come in either order. Without
-    [workers] the branches run one after the other, and real time leaves them
-    that one order.
+    the clock's resolution cannot tell apart, may come in either order. Two
+    calls of one domain are ordered by that domain's own count of its stamps,
+    which no resolution ties. Without [workers] the branches run one after the
+    other on the test's domain, and real time leaves them that one order.
 
     A replay of the prefix that gives one of its calls another outcome than the
     run's breaks the reference, [reference of call 2 of 5: get m1], with the
