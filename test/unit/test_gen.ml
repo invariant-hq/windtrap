@@ -555,13 +555,16 @@ let replayed_choices () =
    always fails in some simple case): a side of at most 256 values is
    uniform, a wider one draws half its distances below 256 and one in four at
    an edge of a power of two. A range is uniform, since it states the domain
-   its values come from. One draw in ten is a corner. [nat], [small_int] and
-   the lengths of a collection keep their strata, which favour small values
-   too, and a float spreads over its bit patterns. A call repeats an earlier
-   value of its generator in the case one time in eight, so that a
-   collection holds duplicates and two components collide; [in_case] below
-   pins what that does inside a case, which a summary of one value cannot
-   see. *)
+   its values come from. One draw in ten is a corner. [nat]
+   and [small_int] keep their strata, which favour small values too. The
+   lengths of a collection keep theirs, small for cost and for small
+   counterexamples, with a stratum of 1% below 256 so that no length below
+   it is out of reach (a cap at 63 made a law that fails only on longer
+   lists pass at any count). A float spreads over its bit patterns. A call
+   repeats an earlier value of its generator in the case one time in eight,
+   so that a collection holds duplicates and two components collide;
+   [in_case] below pins what that does inside a case, which a summary of one
+   value cannot see. *)
 type summary =
   | Summary : string * (unit -> 'a Gen.t) * ('a -> float) -> summary
 
@@ -781,29 +784,29 @@ let distributions () =
       mean 1.468e+05, sd 2.865e+05, in [0;1.114e+06]
       bins 1571 66 68 47 65 55 57 71, 1421 distinct, cb3a7ad8
     string
-      mean 4.569, sd 7.892, in [0;62]
-      bins 1729 192 12 20 13 11 13 10, 1494 distinct, 7e20cc36
+      mean 5.273, sd 14.52, in [0;247]
+      bins 1948 40 2 3 0 2 3 2, 1494 distinct, e4e4b612
     string_of ~size:(int_range 0 6) (char_range 'a' 'c')
       mean 2.982, sd 2.115, in [0;6]
       bins 319 344 229 0 243 237 283 345, 548 distinct, 8ed1b0fa
     bytes
-      mean 4.569, sd 7.892, in [0;62]
-      bins 1729 192 12 20 13 11 13 10, 1494 distinct, 424a05f7
+      mean 5.273, sd 14.52, in [0;247]
+      bins 1948 40 2 3 0 2 3 2, 1494 distinct, 5ae3e739
     bytes_of ~size:(int_range 0 3) char
       mean 1.473, sd 1.138, in [0;3]
       bins 527 0 518 0 0 437 0 518, 1176 distinct, 06a1c990
     list bool
-      mean 4.569, sd 7.892, in [0;62]
-      bins 1729 192 12 20 13 11 13 10, 435 distinct, e8f90914
+      mean 5.273, sd 14.52, in [0;247]
+      bins 1948 40 2 3 0 2 3 2, 436 distinct, f576ce6c
     list (list nat)
-      mean 4.569, sd 7.892, in [0;62]
-      bins 1729 192 12 20 13 11 13 10, 1530 distinct, 5824e76b
+      mean 5.273, sd 14.52, in [0;247]
+      bins 1948 40 2 3 0 2 3 2, 1530 distinct, 6f39241a
     list ~size:(int_range 2 4) small_int, by sum
       mean -12.27, sd 2564, in [-2.975e+04;2.029e+04]
       bins 2 3 3 58 1805 92 34 3, 1931 distinct, 16d09d8f
     array nat
-      mean 4.569, sd 7.892, in [0;62]
-      bins 1729 192 12 20 13 11 13 10, 1400 distinct, 79f06d49
+      mean 5.273, sd 14.52, in [0;247]
+      bins 1948 40 2 3 0 2 3 2, 1400 distinct, 5d114e81
     option nat
       mean 341.7, sd 1278, in [-1;9967]
       bins 1921 10 8 13 10 11 12 15, 461 distinct, 7fbb0318
@@ -898,8 +901,8 @@ let in_case () =
        {|
     int within 256: 5819 of 10000
     pair int int, equal: 1352 of 10000
-    list int of length 2 or more, a duplicate: 2788 of 6572
-    list string of length 2 or more, a duplicate: 3068 of 6572
+    list int of length 2 or more, a duplicate: 2792 of 6573
+    list string of length 2 or more, a duplicate: 3076 of 6573
     int_range 3 1000, at most 100: 1578 of 10000
     int_range 3 1000, above 200: 7586 of 10000
     |}
@@ -1651,17 +1654,21 @@ let container_printers =
 
 (* Each candidate is labelled against the drawn list: shorter, or the count of
    elements it changed. *)
-(* The strata of [nat] over the bounds 4, 8, 16 and 64, overlapping as
-   [nat]'s do. *)
+(* The strata 50%, 25%, 20%, 4% and 1% below 4, 8, 16, 64 and 256,
+   overlapping as [nat]'s do. The last is for the laws that fail only on a
+   long collection: 0.75% of the lists are 64 or longer, which a cap at 63
+   would make unreachable at any count. *)
 let default_length () =
   let lengths = List.map List.length (samples Gen.(list unit) 20_000) in
   let band (low, high) = share lengths (fun n -> low <= n && n < high) in
-  less int ~than:64 (greatest lengths);
+  less int ~than:256 (greatest lengths);
+  at_least int ~than:128 (greatest lengths);
   equal
     (list (float 0.015))
-    [ 0.678125; 0.178125; 0.10625; 0.0375 ]
+    [ 0.67765625; 0.17765625; 0.1053125; 0.031875 ]
     (List.map band [ (0, 4); (4, 8); (8, 16); (16, 64) ]);
-  equal (float 0.3) 4.7
+  equal (float 0.003) 0.0075 (band (64, 256));
+  equal (float 0.3) 5.66
     (float_of_int (List.fold_left ( + ) 0 lengths) /. 20_000.)
 
 let constructor_shares () =
@@ -1702,8 +1709,8 @@ let containers =
         "a container shrinks to its shortest length, its parts to their origins"
         container_shrink;
       test
-        "the default length is below 64, 50%, 25%, 20% and 5% below 4, 8, 16 \
-         and 64, about 5 on average"
+        "the default length is below 256, 50%, 25%, 20%, 4% and 1% below 4, 8, \
+         16, 64 and 256, about 5.7 on average"
         default_length;
       test
         "option, result and either draw None at 0.15, Error at 0.25 and Left \

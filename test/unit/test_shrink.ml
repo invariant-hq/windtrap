@@ -382,10 +382,10 @@ let table () =
   expect (String.concat "\n" (List.map row benchmarks))
   @@ __POS_OF__
        {|
-    bound5, minimum 2: 37% there, worst 16, 157 runs (max 3508)
-    large union list, minimum 6: 100% there, worst 6, 141 runs (max 216)
-    nested lists, minimum 12: 100% there, worst 12, 102 runs (max 196)
-    reverse, minimum 2: 100% there, worst 2, 32 runs (max 72)
+    bound5, minimum 2: 36% there, worst 20, 157 runs (max 3508)
+    large union list, minimum 6: 100% there, worst 6, 141 runs (max 292)
+    nested lists, minimum 12: 100% there, worst 12, 102 runs (max 316)
+    reverse, minimum 2: 100% there, worst 2, 32 runs (max 256)
     calculator, minimum 5: 100% there, worst 5, 87 runs (max 200)
     queue, capacity 2, minimum 6: 100% there, worst 6, 98 runs (max 118)
     queue, capacity 3, minimum 8: 100% there, worst 8, 135 runs (max 158)

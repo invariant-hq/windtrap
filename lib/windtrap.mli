@@ -1248,9 +1248,12 @@ module Gen : sig
       [size]. It prints as [[a; b; c]].
 
       Without [size], the length is below [4] in 50% of the draws, below [8] in
-      25%, below [16] in 20% and below [64] in 5%, uniformly within each
-      stratum. The mean is about 5, so a [list (list int)] holds about 22
-      integers and a case draws in microseconds.
+      25%, below [16] in 20%, below [64] in 4% and below [256] in 1%, uniformly
+      within each stratum. The mean is about 5.7, so a [list (list int)] holds
+      about 32 integers and a case draws in microseconds. A length of 64 or more
+      comes once in 133 lists, so a law that fails only on a long list is found
+      by a longer run, and none is out of reach below 256. [~size] states the
+      scale a law needs, as [~size:(int_range 0 1000)] does.
 
       A list shrinks toward [[]]: a candidate drops elements, shrinks them or,
       in a list of lists, merges two lists, in an order that is not part of the

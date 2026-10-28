@@ -156,8 +156,10 @@ val list : ?size:int t -> 'a t -> 'a list t
 (** [list ?size gen] draws its elements in order.
 
     Without [size], a "one more" choice ([1]) comes before each element, the two
-    one span, and a [0] ends the list, so a deleted span deletes an element.
-    With an explicit [size], the length is [size]'s value and the elements
+    one span, and a [0] ends the list, so a deleted span deletes an element. A
+    generating source samples the length it aims for from the facade's strata,
+    and records only the choices, so a replay reads a list whatever the strata
+    are. With an explicit [size], the length is [size]'s value and the elements
     follow. *)
 
 val array : ?size:int t -> 'a t -> 'a array t

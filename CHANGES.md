@@ -166,6 +166,13 @@ for how to migrate from 0.2.0.
 - `Gen.int32_range`, `Gen.int64_range` and `Gen.nativeint_range`
   generate in a range of their type as `Gen.int_range` does, with the
   same corners and shrinking; 0.2.0 had removed the first two.
+- A list, array, string or bytes drawn without `~size` can be up to 255
+  long, where 0.2.0 stopped at 63: a fifth stratum draws below 256 in 1%
+  of the lists, so a length of 64 or more comes once in 133 lists and a
+  law that fails only on long collections is found by a longer run. The
+  mean length is 5.7, against 4.7, and a `Gen.(list (list int))` holds
+  32 integers on average, against 22. A seed draws other cases than
+  before; a replay token still replays its case.
 - `Gen.uchar` draws a Unicode scalar value, each UTF-8 length equally
   likely, and prints as `Uchar.of_int 0xE9`.
 - `Gen.float` and `Gen.float_range` draw a corner case with probability

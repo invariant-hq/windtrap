@@ -453,20 +453,31 @@ let int_range low high =
 
 let int = int_range min_int max_int
 
-(* 50% below [b0], 25% below [b1], 20% below [b2], 5% below [b3]. *)
-let draw_strata (b0, b1, b2, b3) state =
+(* A stratum with its percent, then a value below its bound, uniformly:
+   [strata] lists [(percent, bound)], the percents summing to 100. *)
+let draw_strata strata state =
   let stratum, state = Seed.below ~bound:100L state in
-  let bound =
-    if stratum < 50L then b0
-    else if stratum < 75L then b1
-    else if stratum < 95L then b2
-    else b3
+  let rec pick below = function
+    | [ (_, bound) ] -> bound
+    | (percent, bound) :: rest ->
+        let below = Int64.add below percent in
+        if stratum < below then bound else pick below rest
+    | [] -> invalid_arg "Gen.draw_strata"
   in
-  let value, state = Seed.below ~bound state in
+  let value, state = Seed.below ~bound:(pick 0L strata) state in
   (Int64.to_int value, state)
 
-let draw_nat = draw_strata (10L, 100L, 1_000L, 10_000L)
-let draw_length = draw_strata (4L, 8L, 16L, 64L)
+let draw_nat =
+  draw_strata [ (50L, 10L); (25L, 100L); (20L, 1_000L); (5L, 10_000L) ]
+
+(* A length is small, since a case's cost grows with it and a small case is
+   the one a bug is found and shrunk in, but not capped below 256: a law
+   that fails only on a collection of 64 or more elements is reached one
+   list in 133, so a longer run finds it, where a cap made it unreachable at
+   any count. *)
+let draw_length =
+  draw_strata [ (50L, 4L); (25L, 8L); (20L, 16L); (4L, 64L); (1L, 256L) ]
+
 let nat = integer (module Int_) Pp.int ~low:0 ~high:9_999 ~origin:0 draw_nat
 
 let small_int =

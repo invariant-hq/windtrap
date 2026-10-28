@@ -160,13 +160,19 @@ change a verdict.
   declaration, or select fewer tests with `-f`.
 - A `--seed` or a `replay:` line that a 0.2 run printed → other cases:
   generators parse choices, the integer generators draw small values
-  first and repeat values, the float generators draw corner cases, and
-  a stateful test draws its commands with another probability. Run the
+  first and repeat values, the float generators draw corner cases, a
+  list without `~size` can be up to 255 long, and a
+  stateful test draws its commands with another probability. Run the
   failing test again under this version and use the `replay:` line it
   prints, or keep the counterexample in the source with the
   `keep it: ~examples:[ … ]` line, or `--replay TOKEN`: a token holds
   the case's choices, which no distribution reads, so it replays its
   case whatever the generators draw.
+- A law that assumed a list, string or array drawn without `~size` is
+  shorter than 64, as one quadratic in the length or one that indexes a
+  64-entry buffer → lengths reach 255, one list in 133 at 64 or more.
+  Give the generator the `~size` the law needs, as
+  `list ~size:(int_range 0 63) x`.
 - A property that relied on a whole integer type spreading its values
   over the type, as a `cover` on `Gen.int`'s magnitude, or on two values
   of one generator differing → `Gen.int`, `Gen.int32`, `Gen.int64` and
