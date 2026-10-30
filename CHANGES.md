@@ -1,571 +1,335 @@
 # Changelog
 
-## Unreleased
+## v0.3.0 2026-10-30
 
-Windtrap 0.3.0 runs its tests in worker processes, fails a test that
-checks less than it claims, and draws values that find more bugs. Six
-spellings change, each a type error at the call: `cases`, `slow` and
-`tag`, the labels of `starts_with`, `ends_with` and `Exn`, the file of
-`expect_file`, `judges` in place of `chooses`, and the type of `cover`.
-See
-[`doc/manual/migrating-from-0.2.md`](https://github.com/invariant-hq/windtrap/blob/main/doc/manual/migrating-from-0.2.md)
-for each breaking change and what a suite writes now.
+Windtrap 0.3.0 changes how property tests shrink and where tests run,
+with few changes to the interface.
 
-Outside Windows and `--in-process`, the process that calls `run` runs
-no test: workers run them, and a test that calls `exit`, segfaults or
-loops past its limit fails by name while the run goes on. Every attempt
-has a limit, ten minutes unless `~timeout` or `--timeout` says
-otherwise, so a hang fails its test rather than the build, and `-j N`
-runs the tests in `N` workers at once.
+Generators now read a sequence of random choices, and shrinking reduces
+that sequence and runs the generator again, as Hypothesis does
+([MacIver and Donaldson, ECOOP 2020](https://drops.dagstuhl.de/storage/00lipics/lipics-vol166-ecoop2020/LIPIcs.ECOOP.2020.13/LIPIcs.ECOOP.2020.13.pdf)).
+0.2.0 shrank each value through a tree of smaller candidates, which
+cannot shrink across `Gen.bind` or change a value's shape. On benchmarks
+that need such a change, 0.3.0 reaches the smallest counterexample on
+every seed, where 0.2.0 reached it on 15% (a calculator's expressions)
+and 47% (nested lists).
 
-A test that refuted nothing and checked less than it claims is
-vacuous, a verdict that fails and exits `1`: a property whose cases
-were all discarded, an unmet `cover`, a stateful command never called,
-a table with no row, and `~count:0` with no example. Its block is tagged
-`VACUOUS` above the line that says why, where 0.2.0 passed the last of
-these and failed the others as plain failures.
+Outside Windows, each test now runs in a worker process, so a test that
+crashes, calls `exit` or hangs fails by name and the run goes on. A
+worker starts the test executable again, so module initialisation runs
+once per worker start. On raven's suites a run took about 3% longer than
+under 0.2.0, except where a suite opens a GPU at initialisation and pays
+for it in each new worker.
 
-A table is one test checked whole, every row run and every refuted row
-reported, and `slow` and `tag` mark any declared test or group, as
-`focus` and `xfail` do:
+### Highlights
 
-```ocaml
-cases "parses" ~id:fst [ ("1", 1); ("10", 10) ] (fun (s, n) -> equal int n (int_of_string s))
-slow @@ tag "gpu" @@ test "trains" train
-```
+**A crash or a hang fails one test, not the run.** In 0.2.0 a test that
+segfaulted or ran out of memory ended the run with no summary, and a
+test that never returned kept the build waiting forever. Outside
+Windows, tests now run in worker processes, so such a test fails by
+name and the run goes on, and every test stops after ten minutes unless
+`~timeout` or `--timeout` sets another limit. `-j N` runs the tests in
+`N` workers at once.
 
-The whole integer types draw small and edge values first, a range
-stays uniform apart from its corners, a draw may repeat an earlier
-value of its generator, floats and characters draw their corners, and
-collections reach 255 elements; on planted bugs in search trees and a lambda calculus a
-failure comes after 22 cases on average, against 68. Shrinking works
-on the choices a generator read, so it can shrink through `Gen.bind`,
-and a failure prints `keep it: ~examples:[ … ]` to keep its
-counterexample. A 0.2.0 seed draws other cases; a replay token still
-replays its case.
+**A failure inside a catch-all is no longer lost.** In 0.2.0 an `equal`
+that failed inside `try … with _ -> ()`, or inside a library that
+ignores what its callbacks raise, passed the test. A failing verb now
+records its failure before it raises, and the block says
+`failed, then caught`. To retry a claim until it holds, use
+`eventually ~within f`.
 
-A failing verb records its failure before it raises, so a catch-all in
-the code under test no longer hides it, and the block says
-`failed, then caught`. `eventually ~within f` is the way to retry a
-claim until it holds.
+**A verdict says what it checked.** In 0.2.0 a property with
+`~count:0` and no examples passed, and a passing test never said how
+much it had run. Now a test that checks nothing fails as `VACUOUS`, with
+a line that says why, as do a property whose every case was discarded,
+an unmet `cover`, a stateful command never called and a table with no
+row. Under `-v` a passing test says what it ran, as
+`(100 cases, 2 examples, 14 discards)` or `holds on all 3 rows`, and a
+float comparison reports the largest error it saw against its
+tolerance; `--json` writes all of it.
+
+**Property tests find bugs sooner and shrink them further.** Shrinking
+now works on the choices a generator made, so it can shrink through
+`Gen.bind` and rewrite a value's structure. On benchmarks that need such
+a rewrite it reaches the smallest counterexample on every seed, where
+0.2.0 reached it on 15% (a calculator's expressions) and 47% (nested
+lists). Generators draw edge cases and repeated values more often, and
+the whole integer types draw small values first, so on planted bugs in
+search trees and a lambda calculus a failure comes after 22 cases on
+average, against 68. A failure prints a `keep it: ~examples:[ … ]` line
+to paste into the test.
+
+**Stateful tests on several domains check linearizability.** In 0.2.0
+the judge accepted any order of the parallel calls that kept each
+domain's program order, so a structure that was only sequentially
+consistent passed. Now a call that returned before another began must
+come first.
+
+**Mutation testing and coverage can judge one change.** Given the output
+of `git diff -U0`, `--mutate --diff FILE` tests only the mutants on the
+changed lines, and `windtrap coverage --diff FILE` reports only their
+points. Mutant verdicts no longer change from run to run, and a mutant
+that no run could judge is reported as unknown, never as a survivor.
 
 ### Declaring tests
 
-- (breaking) `cases name ~id rows fn` is a table: one test, a property
-  over `Gen.of_list rows` checked whole, where 0.2.0's
-  `cases ~name base inputs fn` made a group of one test per input. A row
-  is identified by `id row`, a string: `~id:fst` gives a key of the row,
-  `~id:(Testable.to_string w)` its printing under a witness, and
-  `~id:(Printf.sprintf "%S")` a string row quoted. Two rows with one id
-  are refused as duplicates, and the table fails before any row runs.
-  Every row runs, and every row refuted is reported as `row 2 of 5: b`,
-  its id cut to one line. `?label` shows a text beside the row's
-  position and identifies nothing. 0.2.0's `~name:f` becomes `~id:f`, as
-  in `cases "parse" ~id:f inputs fn`, and keeps the names as the rows'
-  identities. Because a table is one test, `-f` selects a table and not
-  one row, `-v` prints one line,
-  `PASS  t (holds on all 3 rows)`, `timeout` and `retries` cover the
-  whole table, the summary counts a table once, and a table with no row
-  is vacuous, since it checks nothing, where 0.2.0 declared no test.
+- (breaking) `cases name ~id rows fn` is one test that runs every row
+  and reports each refuted one, as `row 2 of 5: b`, where 0.2.0's
+  `cases ~name base inputs fn` declared one test per row; `-f`, `-v`,
+  `~timeout`, `~retries` and the summary see one test
+  (doc/manual/resources-and-structure.md#checking-a-table-of-inputs).
+- A row is identified by `~id row`, and two rows with one id fail the
+  table before any row runs; `?label` shows a text beside a row and
+  identifies nothing.
+- A `skip` in a row skips that row alone, and a table skips only when
+  every row skipped; `-v` says `holds on 2 of 3 rows, 1 skipped: no GPU`.
+- A row keeps or withholds its baseline corrections, and refuses
+  `collect`, `classify` and `cover`, as a test of its own did in 0.2.0.
 - (breaking) `slow : test -> test` and `tag : string -> test -> test`
-  are annotations, as `focus` and `xfail` are. They mark any test, a
-  property, a table and a stateful test included, or every test under a
-  group, written `slow @@ test "n" f` and `tag "gpu" @@ group "g" ts`.
-  `slow` is `tag "slow"`, the tag the runner leaves out of `slow tests`.
-  0.2.0's `slow name fn`, the one constructor twin of `test`, is
-  `slow @@ test name fn`. `?tags` is removed from every constructor, so
-  a tag has one spelling.
-- Each row of a table keeps or withholds its baseline corrections as a
-  test of its own would, in the order of the rows and at every `-j`: a
-  row that also fails another way keeps none, and the next rows are
-  compared with the baselines it left as they were. A failure that a
-  row records names the row, as a subtest's failure names the subtest.
-- A row of a table runs outside its property's labels, as a test's body
-  does: a law demands nothing of a row, and `collect`, `classify` and
-  `cover` refuse there as in 0.2.0's rows.
-- A `skip` in a row of a table skips that row alone, as 0.2.0's skip of
-  a row's test did, and the table goes on with the next row. The table
-  fails if a row failed, passes if no row failed and one passed, and
-  skips only when every row skipped, with the first row's reason. A
-  passing table with rows that skipped says so under `-v`, as
-  `holds on 2 of 3 rows, 1 skipped: no GPU`, a failing table's block as
-  `scope: 1 of 3 rows passed, 1 skipped: no GPU`, and `--json`'s scope
-  counts them in `skipped`. Before, the first row that skipped ended
-  the table as a skip, dropping the failures of the rows before it and
-  running none after it.
+  mark any test or group, as `focus` and `xfail` do, and `?tags` is
+  removed from every constructor; `slow name fn` is
+  `slow @@ test name fn`.
 
 ### Assertions
 
-- (breaking) `starts_with ~prefix` and `ends_with ~suffix` take the
-  labels of `String.starts_with` and `String.ends_with`, where 0.2.0
-  took `~affix`. `Exn.invalid_arg`, `Exn.failure` and `Exn.sys_error`
-  take `?sub`, the label of `contains`, where 0.2.0 took `?substring`.
-- `slist t cmp` compares two lists as multisets under `t`'s equality,
-  as its doc said: `cmp` only sorts them to find the pairs. Under a
-  `cmp` coarser than the equality, 0.2.0 found two equal multisets in
-  another order unequal. A failing `equal` under `slist` shows what is
-  missing and what is extra, `multisets differ: 2 missing, 1 extra`, in
-  place of a diff of the two lists that a large collection cut at
-  64 KiB before the elements that differed.
-- `equal` under `float eps` or `float_rel`, alone or inside a container
-  witness, records at its call site the largest error it saw against
-  the bound it allowed, and the report states it, as
-  `tolerance at test/t.ml:12: largest error 3e-12 of 1e-06 allowed, over 40 comparisons`,
-  in a failure's block, under `-v` and in `--json`'s scope, so a
-  tolerance far looser than the errors shows. A worker's record reaches
-  the parent with its test's row.
-- (breaking) A failing verb records its failure in the running test
-  before it raises, so the test fails even when code catches the
-  exception, as a library that ignores what its callbacks raise does,
-  and the block says `failed, then caught`. In 0.2.0 a catch-all around
-  a failing verb passed the test. A verb on a domain the test spawned
-  records on the test too, whether or not the domain's exception reaches
-  it, and so does a refused `expect`, `output` or `temp_dir` there. In
-  the law of a property the failure is the case's, which shrinks; a
-  retried test's next attempt starts with nothing recorded.
-- `output ()` called on a domain the test spawned reads what that domain
-  printed through `Format`: it flushed the main domain's formatters,
-  which the spawned domain must not touch, and missed its own.
-- `eventually ~within f` calls `f` until a call returns, at most
-  `within` seconds, and fails with the last call's failure: the one way
-  to catch a failing verb on purpose, for a claim that comes to hold.
-- `uchar` is the witness for `Uchar.t`, printed in the Unicode notation,
-  as `U+00E9`.
+- (breaking) `starts_with ~prefix`, `ends_with ~suffix` and the `?sub`
+  of `Exn.invalid_arg`, `Exn.failure` and `Exn.sys_error` replace
+  `~affix` and `?substring`, as in `String.starts_with`,
+  `String.ends_with` and `contains`.
+- (breaking) A failing verb records its failure in the test before it
+  raises, so a catch-all around it, in the test or on a domain the test
+  spawned, no longer passes the test; the block says
+  `failed, then caught`.
+- `eventually ~within f` calls `f` until a call returns, for at most
+  `within` seconds, and fails with the last call's failure
+  (doc/manual/assertions.md#checking-inside-a-callback-or-until-a-claim-holds).
+- `slist t cmp` compares two lists as multisets under `t`'s equality and
+  uses `cmp` only to sort, where 0.2.0 found equal multisets unequal
+  under a coarser `cmp`; a failure says
+  `multisets differ: 2 missing, 1 extra` in place of a diff.
+- `equal` under `float eps` or `float_rel` records the largest error it
+  saw, which a failing block, `-v` and `--json` state, as
+  `tolerance at test/t.ml:12: largest error 3e-12 of 1e-06 allowed, over 40 comparisons`.
+- `output ()` on a domain the test spawned reads what that domain
+  printed through `Format`.
+- `uchar` is the witness for `Uchar.t`, printed as `U+00E9`.
 - `float_exact`, `float eps`, `float_rel` and the float generators
   print `infinity`, `neg_infinity` and `nan`, where 0.2.0 printed
   `inf`, `-inf` and, under some C libraries, `-nan`.
 
-### Baselines
-
-- The recommended stanza wraps its `diff?` in `(concurrent …)`
-  (`lang dune 3.8`), so that dune holds the correction of every stale
-  file of a run and one `dune promote` takes them all. In the `progn`
-  that 0.2.0's manual showed, the first `diff?` that failed ended the
-  action, so N stale files took N runs and N promotions. The manual,
-  the examples and windtrap's own stanzas use it.
-- (breaking) `expect_file : ?__POS__:pos -> file:string -> string -> unit`
-  labels the file, written `expect_file ~file:"golden/x.txt" text`.
-  0.2.0's two positional strings compiled swapped, and a swapped call
-  read the text as a path. A report names the baseline as the call
-  writes it, `expect_file ~file:"golden/x.txt"`.
-- Under `CI` a baseline mismatch fails the run's exit code in every
-  mode. A `--corrected` run exits 0 when its only failures are
-  mismatches whose corrections it wrote, so that a `diff?` can hand them
-  to `dune promote`; where no one promotes, that exit 0 passed a stale
-  baseline whenever the stanza lacked the file's `diff?`. The run still
-  writes the correction, and says on standard error why it exits 1.
-  Outside CI nothing changes.
-- (breaking) `expect_file` compares the final newline: a text that
-  lacks the file's final newline, or ends with one the file lacks, is a
-  mismatch, and when it is the only difference the block says
-  `values differ only by a trailing newline (on the expected side)`, as
-  `expect_exact`'s does. 0.2.0 gave both sides a final newline, so a
-  printer that dropped its last newline passed every file pin. CR and
-  CR LF still read as LF. `-u` and `--corrected` write the produced
-  text byte for byte, where 0.2.0 wrote it with LF line endings and a
-  final newline.
-
 ### Property testing
 
-- (breaking) `cover ~share:p label cond` demands that a share `p` of
-  the cases carry `label`, judged as QuickCheck's `checkCoverage` judges
-  it: the property doubles its cases, up to 1024 times its count, until
-  the Wilson interval of the share at 1 − 10⁻⁹ puts it at `0.9 *. p` or
-  above, or below `p`, and the report states the bound it established,
-  as `cover "accepted" ~share:0.2: 27.9% of 800 cases, at least 19.3%`.
-  An unmet or undecided share makes the property vacuous. A domain
-  checked whole is judged exactly. `cover`'s type is now
-  `?share:float -> string -> bool -> unit`, so code that passes `cover`
-  where a `string -> bool -> unit` is expected no longer compiles.
 - (breaking) A test that refuted nothing and checked less than it
-  claims is vacuous, a verdict of its own that fails and exits `1`:
-  every case of a property discarded, a table with no row, no case and
-  no example run, an unmet `cover`, and a stateful command never
-  called. Its block is tagged `VACUOUS` above one line that says why,
-  and the summary counts it apart from the failures, as `1 vacuous`.
-  A property of `~count:0` with no example passed in 0.2.0 and fails
-  now; the others failed as plain failures.
-- A property gives up after ten discards per case, `~max_discard`'s
-  default of ten times the effective count, where 0.2.0 gave up after
-  two. A law that keeps between an eighth and two fifths of its cases
-  passes now, where under 0.2.0 it gave up by chance on some seeds, one
-  run in seven at an acceptance of 0.36; one that discards every case
-  gives up after 1,001 discards at the default count, against 201.
-- A generator that overflows the stack fails its case as before, and
-  the report says above the exception
-  `the generator overflowed the stack: a recursive generator whose depth does not decrease?`,
-  the likely cause
-  (doc/manual/property-testing.md#generating-a-recursive-type).
-- The captured output in the block of a failing property or stateful
-  test is that of the run that failed on the counterexample, where
-  0.2.0 showed the last lines of the whole search, which end on the
-  last candidate tried.
-- A counterexample prints as it was drawn, and a failing example as it
-  was given, where 0.2.0 printed them as the law left them, so that a
-  law that fills its `bytes` in place printed bytes it passes on.
-- After the search the law runs once more on the counterexample, and
-  when that run does not fail the block says
-  `the test did not fail again on this counterexample; it is not deterministic`.
-- `Gen.int32_range`, `Gen.int64_range` and `Gen.nativeint_range`
-  generate in a range of their type as `Gen.int_range` does, with the
-  same corners and shrinking; 0.2.0 had removed the first two.
-- A list, array, string or bytes drawn without `~size` can be up to 255
-  long, where 0.2.0 stopped at 63: a fifth stratum draws below 256 in 1%
-  of the lists, so a length of 64 or more comes once in 133 lists and a
-  law that fails only on long collections is found by a longer run. The
-  mean length is 5.7, against 4.7, and a `Gen.(list (list int))` holds
-  32 integers on average, against 22. A seed draws other cases than
-  before; a replay token still replays its case.
-- `Gen.char` and `Gen.char_range` draw a corner with probability 0.1, as
-  the integer ranges do: the bounds, the character closest to `'a'` and
-  its neighbours, and `'\127'` and `'\128'` when inside. `Gen.char`
-  draws each of `'\000'`, `'\127'`, `'\128'`, `'\255'`, `'a'`, `` '`' ``
-  and `'b'` 1.8% of the time, against 0.35% for another byte, so a
-  default `Gen.string` holds a NUL in 7.7% of the cases, against 1.8%.
-  It still draws every byte and leans toward no alphabet; a test of text
-  states its own (doc/manual/property-testing.md#generating-strings-and-alphabets).
-- `Gen.uchar` draws a Unicode scalar value, each UTF-8 length equally
-  likely, and prints as `Uchar.of_int 0xE9`.
-- `Gen.float` and `Gen.float_range` draw a corner case with probability
-  0.1: for `Gen.float`, `0.`, `-0.`, `1.`, `-1.` and, of each sign, the
-  least subnormal, the least normal and the greatest finite float; for
-  a range, its bounds, its point closest to 0 and that point's
-  neighbours, and `-0.` when `low < 0. <= high`. A property that passed
-  under 0.2.0 can fail on one of them, and a `replay:` line that 0.2.0
-  printed for a property over a float draws other values.
-- (breaking) The whole integer types, `Gen.int`, `Gen.int32`,
-  `Gen.int64`, `Gen.nativeint` and a range over a type's own `min_int`
-  to `max_int`, draw small values and the edges of powers of two first,
-  about 58% of `Gen.int` within 256 of 0 where 0.2.0 drew 5.9%, and a
-  draw repeats a value that its generator drew earlier in the case with
-  probability 1/8, so that collections hold duplicates and pairs
-  collide. A range draws uniformly apart from its corners, as in 0.2.0:
-  `Gen.int_range 1 1000` draws above 200 75% of the time. Every integer
-  generator of one type and range repeats the others' values,
-  `Gen.nat` and `Gen.int_range 0 9999` included. `Gen.(pair int int)`
-  draws an equal pair 13% of the time, where 0.2.0 drew 0.15%, and a
-  `Gen.(list int)` of two or more elements holds a duplicate 42% of the
-  time, against 6.3%. On ETNA-style workloads (a search tree, a
-  red-black tree, a simply typed lambda calculus) a planted bug fails
-  after 22 cases on average, where 0.2.0's distributions needed 68,
-  and a bug that needs two equal keys after 7 to 13, against about
-  150; a case
-  costs up to 1.9 times as much to draw. A seed draws other cases than
-  before. A replay token holds the case's choices, which no
-  distribution reads, so it still replays its case.
-- `-0.` shrinks to `0.`, and a range whose `high` is `-0.` shrinks
-  toward `-0.`, where 0.2.0 shrank it toward `0.`.
-- `Gen.any_float` generates `nan`, `infinity` and `neg_infinity` beside
-  the finite floats.
-- `Gen.permutation ~pp values` generates `values` shuffled and shrinks
-  toward their given order, and `Gen.subsequence ~pp values` generates
-  some elements of `values` in their order and shrinks toward `[]`.
-- On a terminal, the line that names the running test says when a
-  property or stateful test is shrinking a counterexample, and how many
-  steps the search has taken, as
-  `[3/10] lists › rev: shrinking, 12 steps…`, where 0.2.0 named the test
-  alone while it searched.
-- Generators parse a sequence of bounded choices, and shrinking deletes
-  what a generator call read, deletes runs of choices and lowers each
-  one, so a counterexample can merge two inner lists, replace a node by
-  its subterm or shrink a `Gen.bind`, which 0.2.0's trees could not;
-  each generator keeps its shrink target
-  (doc/manual/property-testing.md#reading-a-counterexample).
-- A property whose generator has no more values than its count, as
-  `Gen.bool` or `Gen.int_range 0 3` have, runs its law on every value
-  once instead of sampling: `-v` says `holds on all N values`, and a
-  failure reports every value refuted, none shrunk.
-- `Gen.result`, `Gen.either` and `Gen.frequency` shrink toward `Ok`,
-  `Left` and the first generator of positive weight, where 0.2.0 kept
-  the drawn constructor or generator.
-- A failing property prints the line that keeps its counterexample:
-  `keep it: ~examples:[ … ]` where its generators print OCaml, and
-  otherwise `replay it: -f PATH --replay TOKEN`, with the `-f` that
-  selects its test alone and an `-e` for each other test whose path
-  holds it, so the line pasted after the executable checks that case
-  and runs no other test
-  (doc/manual/property-testing.md#keeping-a-counterexample-as-a-regression).
-
+  claims is vacuous, a failing verdict tagged `VACUOUS` and counted
+  apart in the summary: a property whose every case was discarded, an
+  unmet `cover`, a stateful command never called, a table with no row,
+  and `~count:0` with no example, which passed in 0.2.0.
+- (breaking) `cover ~share:p label cond` demands that a share `p` of the
+  cases carry `label`, judged as QuickCheck's `checkCoverage` judges it,
+  and states the bound it established, as
+  `cover "accepted" ~share:0.2: 27.9% of 800 cases, at least 19.3%`;
+  `cover`'s type is `?share:float -> string -> bool -> unit`
+  (doc/manual/property-testing.md#discarding-and-labelling-cases).
 - (breaking) An `expect`, `expect_exact` or `expect_file` in the law of
-  a property or a stateful test fails its case as any failing verb does:
-  the case shrinks, the report shows the one counterexample with its
-  mismatch, and no correction is written for the baseline, under
-  `--corrected` and `-u` alike, since no one text holds for every value;
-  the mismatch says so in one line. In 0.2.0 each failing case recorded
-  its mismatch on the test and passed, so a run reported every case's
-  mismatch, never shrank, and could offer a correction.
+  a property or a stateful test fails its case as any verb does, so the
+  case shrinks and no correction is written, where 0.2.0 recorded every
+  case's mismatch and passed the case.
+- (breaking) The whole integer types, `Gen.int`, `Gen.int32`,
+  `Gen.int64`, `Gen.nativeint` and a range over a type's `min_int` to
+  `max_int`, draw small values and the edges of powers of two first,
+  and a draw repeats an earlier value of its generator one time in
+  eight; on ETNA-style workloads a planted bug fails after 22 cases on
+  average, against 68, and a case costs up to 1.9 times as much to draw.
+- `Gen.float` and `Gen.float_range` draw a corner case one time in ten,
+  such as `-0.`, the least subnormal, the greatest finite float or a range's
+  bounds; a property that passed under 0.2.0 can fail on one.
+- `Gen.char` and `Gen.char_range` draw a corner one time in ten, as the
+  integer ranges do, so a default `Gen.string` holds a NUL in 7.7% of
+  the cases, against 1.8%
+  (doc/manual/property-testing.md#generating-strings-and-alphabets).
+- A list, array, string or bytes drawn without `~size` can be up to 255
+  long, where 0.2.0 stopped at 63; one in 133 is 64 or longer.
+- A seed or a `replay:` line that 0.2.0 printed draws other cases; a
+  replay token holds the case's choices and still replays its case.
+- Shrinking works on the choices a generator read, so it shrinks
+  through `Gen.bind` and can merge two inner lists or replace a node by
+  its subterm, which 0.2.0's trees could not
+  (doc/manual/property-testing.md#reading-a-counterexample).
+- `Gen.result`, `Gen.either` and `Gen.frequency` shrink toward `Ok`,
+  `Left` and the first generator of positive weight, and `-0.` shrinks
+  to `0.`.
+- A failing property prints the line that keeps its counterexample,
+  `keep it: ~examples:[ … ]` when its generators print OCaml and
+  `replay it: -f PATH --replay TOKEN` otherwise
+  (doc/manual/property-testing.md#keeping-a-counterexample-as-a-regression).
+- A property whose generator has no more values than its count runs its
+  law once on each, and `-v` says `holds on all N values`; a failure
+  reports every value refuted, none shrunk.
+- After the search the law runs once more on the counterexample, and
+  when it passes the block says
+  `the test did not fail again on this counterexample; it is not deterministic`.
+- A failing block shows the output captured on the counterexample, and
+  prints the counterexample as it was drawn, where 0.2.0 showed the
+  search's last output and the value as the law left it.
+- `~max_discard` defaults to ten discards per case, where 0.2.0 allowed
+  two, so a law that keeps an eighth of its cases no longer gives up by
+  chance.
+- A generator that overflows the stack still fails its case, and the
+  report names the likely cause
+  (doc/manual/property-testing.md#generating-a-recursive-type).
+- On a terminal the live line says when a test is shrinking, as
+  `[3/10] lists › rev: shrinking, 12 steps…`.
+- `Gen.uchar` draws a Unicode scalar value, each UTF-8 length equally
+  likely, and `Gen.any_float` draws `nan`, `infinity` and `neg_infinity`
+  beside the finite floats.
+- `Gen.int32_range`, `Gen.int64_range` and `Gen.nativeint_range`
+  generate in a range of their type, as `Gen.int_range` does.
+- `Gen.permutation ~pp values` shuffles `values` and shrinks toward
+  their order, and `Gen.subsequence ~pp values` keeps some of them in
+  order and shrinks toward `[]`.
 
 ### Stateful testing
 
-- A counterexample's table of calls is laid out by the report's table,
-  on the text as it prints: a cell that holds a control byte prints it
-  escaped and keeps the columns after it straight, and no row ends in
-  blanks, where 0.2.0 padded a cell by its raw bytes and kept a last
-  cell's trailing blanks.
-- (breaking) `judges w` replaces `chooses w`: the reference receives the
-  system's outcome, `Ok v` or `Error e`, and rules on it. Returning
-  accepts it; a verb's failure, `Assert_failure`, `Match_failure` or the
-  system's own exception raised again rejects it; any other exception
-  breaks the reference, so a judge's own bug is reported as the test's,
-  where `chooses` blamed the system (see
-  [Judging calls against a rule](https://github.com/invariant-hq/windtrap/blob/main/doc/manual/stateful-testing.md#judging-calls-against-a-rule)).
-  To migrate, a reference that returned the outcome it received returns
-  `()` instead, one that returned another outcome to reject it fails
-  with a verb such as `equal` or `mem`, and `Error e -> raise e` now
-  rejects the exception. An operation whose outcome the reference
-  predicts except in one corner the API leaves open becomes two
-  commands: a `returns` command whose `~pre` excludes the corner, and a
-  `judges` command whose `~pre` holds only there.
-- `among w t candidates` is the abstract type of the elements that a
-  value of `t` lists, such as an array's indices or a map's keys; a call
-  takes one with `^->`, from the nearest value of `t` before it in the
-  signature, else the first after it, and the element is taken from the
-  value's reference side when the call runs, so a `get` reads an index
-  that its array has (see
-  [Taking an argument from what a value lists](https://github.com/invariant-hq/windtrap/blob/main/doc/manual/stateful-testing.md#taking-an-argument-from-what-a-value-lists)).
-- The subset of commands that a case draws from holds each command with
-  probability 3/4, where 0.2.0 held it with probability 1/2, so more
-  cases hold the commands that a bug needs together: over 200 seeds, a
-  planted recency bug in an LRU cache is found on 142 instead of 82.
-  Stateful suites run about 10% slower, and a `replay:` line that 0.2.0
-  printed draws other programs.
-- A failing program on one domain prints a `result` column, the
-  system's outcome of each call, when it holds a judging call; a table
-  without one is unchanged.
-- On several domains, a judge that breaks while an order is replayed
-  names the order, as
-  `reference of call 2 of 3, in the order 2 then 3: pop q1`.
-- An element prints as its witness prints it, and an element that
-  `candidates` could not give prints as `_`, as in
-  `reference of call 2 of 2: get d1 _`.
-- When a command that takes an element was never called, the
-  `never called:` hint names the listing:
-  `a call runs only where its arguments resolve, its value lists an element and its ~pre holds`.
-- `stateful` raises `Invalid_argument`, before any case, when a command
-  makes an element or takes one without a value of its type, as in
-  `Windtrap.stateful: get takes an element of 'd' without a value of 'd'; an element is listed by a value its call takes`.
-- On several domains a command that takes an element runs only before
-  the parallel calls, and the refusal of a command list with no call to
-  run after the prefix reads
-  `every command makes a value, has a ~pre or takes an element`.
-- A program is parsed from a sequence of choices, as every generator
-  is, and shrinks as a property's value does: a counterexample can turn
-  one command into an earlier one of the list, and a deletion keeps
-  each later call on the value it took, so a program with several
-  values of one type shrinks to its minimum more often (the guide's set:
-  88% of seeds, where 0.2.0 reached 66%). A failing program prints
-  `replay it: -f PATH --replay TOKEN`, which checks that program alone.
-- A command list whose programs are no more than the count, over few
-  steps, has every program checked once, as a finite domain is.
-- On several domains the labels of the calls after the prefix count
-  along the order the judge accepted in each run of a case, where
-  0.2.0 counted the first run's.
+- (breaking) `judges w` replaces `chooses w`, and its reference rules on
+  the system's outcome instead of returning the one it accepts; an
+  exception other than a verb's failure or the system's own is reported
+  as a bug of the reference
+  (doc/manual/stateful-testing.md#judging-calls-against-a-rule).
 - (breaking) On several domains the judge accepts only the orders that
-  keep real time: a call whose system returned before another's began
-  comes first, as each call's monotonic-clock readings show, so the test
-  checks linearizability where 0.2.0 checked program order alone. A
-  write that returned before a read on another domain began must be
-  seen by it. The readings write nothing shared, so they leave the
-  schedules as they were, and a run on one domain, as under `--mutate`,
-  leaves its branches one order.
+  keep real time, so the test checks linearizability, where 0.2.0
+  checked program order alone.
+- `among w t candidates` is the type of the elements that a value of `t`
+  lists, such as an array's indices, and a call that takes one reads it
+  from that value when it runs
+  (doc/manual/stateful-testing.md#taking-an-argument-from-what-a-value-lists).
+- A case draws each command with probability 3/4, where 0.2.0 drew it
+  with 1/2, so a planted recency bug in an LRU cache is found on 142 of
+  200 seeds instead of 82; stateful suites run about 10% slower.
+- A program shrinks as a property's value does, and a failing program
+  prints a `replay it:` line; the guide's set shrinks to its minimum on
+  88% of seeds, against 66%.
+- A command list with no more programs than the count has each program
+  checked once, as a finite domain is.
+- A counterexample's table of calls escapes control bytes, keeps its
+  columns straight and ends no row in blanks.
+- On several domains the labels of the parallel calls count along the
+  order the judge accepted in each run, where 0.2.0 counted the first
+  run's.
 
-### Running
+### Baselines and expect tests
 
-- The report says nothing false and prints only commands that work.
-  Under dune no block prints `accept:`; the report ends on one
-  `accept: dune promote FILES` over every file whose correction dune
-  holds, printed only when the run exits 0, or, when the run's missing
-  baseline files are all that fail it, `accept: touch FILES &&
-  dune runtest; dune promote FILES`. A run whose other failures make
-  dune withhold its corrections prints no `accept:`, and its warning
-  names the `-u` command that accepts them now. A failing table counts
-  a row that recorded a failure as not passed, and names those that
-  failed on a baseline, as `scope: 0 of 3 rows passed, 3 failed on a
-  baseline`, where it read `3 of 3 rows passed`. A run whose every
-  selected property replays, under `--replay`, `--case` or `--failed`
-  with recorded tokens, prints no seed on its header line, since it
-  draws nothing. `--failed` with nothing to rerun says why: the last
-  run passed, no run has recorded failures, the record cannot be read,
-  or it names no test of the suite.
-- A replay is judged for no vacuity, and a replayed case that passes
-  says so. `--replay`, and `--failed` with a recorded counterexample,
-  check that case alone and draw nothing, yet a stateful test judged it
-  for the commands it never called and failed it as VACUOUS: on a fixed
-  bug under `--failed`, which kept the test in the record, and in four
-  replays of five of a passing two-domain case. A run of replayed or
-  stored cases alone now judges no vacuity, neither a command never
-  called nor a `cover` demand, and passes. The `-v` row and a
-  `replayed (N):` section above the summary say
-  `the replayed case passed`, or, for a case run on several domains,
-  `its schedule is not replayed: the case passed 50 times`: such a
-  replay runs its case as many times as the search runs each program,
-  and stops at the first run that fails. A case that now passes leaves
-  the last-failed record, as any passing test does. A case that
-  `--case` reads from bytes passes the same way. `--json`'s scope gives
-  `replayed`, and no `cover` for such a run.
+- (breaking) `expect_file ~file:"golden/x.txt" text` labels the file,
+  whose two positional strings compiled swapped in 0.2.0; a report
+  names the baseline as the call writes it.
+- (breaking) `expect_file` compares the final newline, which 0.2.0 gave
+  both sides, and `-u` and `--corrected` write the text byte for byte;
+  the block says
+  `values differ only by a trailing newline (on the expected side)`.
+- Under `CI` a baseline mismatch fails the run in every mode; a
+  `--corrected` run still writes the correction and says on standard
+  error why it exits 1.
+- The manual's dune stanza wraps its `diff?` actions in
+  `(concurrent …)` (`lang dune 3.8`), so one `dune promote` takes every
+  stale file of a run, where 0.2.0's `progn` stopped at the first
+  (doc/manual/baselines.md#running-expectations-under-dune).
 
-- `--json PATH` (`WINDTRAP_JSON`) also writes the results as one JSON
-  document, versioned, a test per line, closed by the summary's counts.
-  Each test carries its verdict (`pass`, `fail`, `vacuous`, `skip`,
-  `xfail`), the reason of a vacuous test or a skip, its failures and
-  its scope: what a property, a table or a stateful test ran (its
-  cases, examples, count, discards, the values or rows of a domain
-  checked whole, a table's rows that skipped, its labels and its
-  `cover` demands). A `PATH` that
-  ends in `.json` is the file, and any other a directory with one file
-  per suite, as for `--junit`.
-- Under `-v` a passing property's row says what it ran, as
-  `PASS  sorts  1.2ms (100 cases, 2 examples, 14 discards)`, and a
-  table's says `holds on all 3 rows`; a failing property's block says
-  what passed before it failed, as `scope: 37 cases passed, 3 discards`.
-- The process that calls `run` runs no test. Worker processes run the
-  tests, and it decides each verdict from what a worker reports, how it
-  ends and how long it takes. A test that calls `exit` or `Unix._exit`,
-  segfaults, raises `Out_of_memory` or `Sys.Break`, or loops in C past
-  its limit fails, saying which, and the run goes on. In 0.2.0
-  `Unix._exit` and an `at_exit` handler could end a failed run with 0, a
-  catch-all around `exit` passed the test, and a segfault or
-  `Out_of_memory` ended the run with no summary.
-- A worker is the test executable started again with the same command
-  line, so a test sees what a fresh start of the program builds, as in
-  0.2.0: a device, a connection or a pool opened at declaration is the
-  worker's own. Module initialisation runs again in each worker, one
-  that replaces a retired worker included, so expensive work at
-  declaration is paid once per worker start; make it `lazy` or a
-  `fixture`. What it prints appears once, and a worker that ends before
-  its first test fails that test with how it ended and what it printed.
-  On Linux a worker starts the executable the run started as, even once
-  dune replaced the file. A later `run` in the same process, and a `run`
-  in a forked child, fork their workers.
-- (breaking) A suite must declare the same tests each time the program
-  starts. A declaration whose tests come from the clock, a random
-  generator or a directory listing that changes gives a worker another
-  suite than its parent, and the tests that worker was to run fail,
+### Running tests
+
+- Tests run in worker processes, never in the process that calls `run`,
+  so a test that calls `exit`, segfaults, raises `Out_of_memory` or
+  loops in C past its limit fails, saying which, and the run goes on;
+  in 0.2.0 some of these passed a test, ended a failed run with 0 or
+  ended it with no summary
+  (doc/manual/running-tests.md#running-tests-in-worker-processes).
+- A worker starts the test executable again, so module initialisation
+  runs once per worker start and what a declaration opens is the
+  worker's own; make expensive declarations `lazy` or a `fixture`.
+- (breaking) A suite declares the same tests at each start of the
+  program; a worker that declares others fails the tests it was to run,
   saying so.
-- A test still running three limits after it started, per attempt, is
-  killed with its worker and times out; the alarm still bounds the body
-  first, so its teardown runs.
-- (breaking) Every attempt has a limit: a test that declares no
-  `~timeout`, in a run given no `--timeout`, times out after ten
-  minutes, where 0.2.0 let it run forever, so a hang fails by name
-  rather than end the build with none. `~timeout` and `--timeout`
-  replace the default, and `--in-process` has none. The runner therefore
-  owns `SIGALRM` during every test outside `--in-process`. On Windows no
-  limit is enforced, as before.
-- `-j N` (`WINDTRAP_JOBS`) runs the tests in `N` workers at once. The
-  default is one, as in 0.2.0, and the report, the exit code and the
-  corrections do not depend on it.
-- `--in-process` runs one selected test in the calling process, for a
-  debugger.
-- A worker retires after a test that spawned a domain, so the domain
-  cannot run into the next test, and a worker's process group and
-  temporary directory go with it.
-- An `at_exit` handler that a test registers runs as its worker ends;
-  one that raises fails the run and names the test.
-- `--replay TOKEN` (`WINDTRAP_REPLAY`) checks each selected property on
-  the one case of a token that a failure printed; a token whose
-  generator now parses another value fails as stale and checks nothing.
-- `--case PATH` checks the one property or stateful test that `-f`
-  selects on the one case that the bytes of `PATH` decode to, the
-  token's choices in unsigned LEB128, read so that every file is a case:
-  a short file reads 0 past its end, an empty one is the case of zeros.
-  A failure is reported as a replayed case's and exits 1, a hang times
-  out at the test's limit, and a case that the law or its generator
-  discards skips the test, since it checks nothing. A selection of
-  another number of tests than one, an unreadable file and `--replay`
-  beside it exit 2. The field of a replay token between `r1:` and its
-  digest is the file's bytes in base64url.
-- `--failed` reruns the cases that failed, not only the tests: a table
-  its rows that failed, by their id, and a property or a
-  stateful test each counterexample it recorded, by its token, as
-  `--replay` checks one, drawing nothing. A test whose failure belongs
-  to no case, as a timeout's or a failing example's, reruns whole. A
-  recorded row the table no longer has, or a token now stale, fails the
-  test and names it, rather than pass on what remains. The record's
-  format is versioned (`windtrap-last-failed 2`).
+- (breaking) Every attempt has a limit, ten minutes unless `~timeout` or
+  `--timeout` sets one, where 0.2.0 let a test run forever; the runner
+  owns `SIGALRM` during every test outside `--in-process`, and Windows
+  enforces no limit.
+- A test still running three limits after it started is killed with its
+  worker and times out.
+- `-j N` (`WINDTRAP_JOBS`) runs the tests in `N` workers at once; the
+  default is one, and the report, the exit code and the corrections do
+  not depend on it.
+- `--in-process` runs one selected test in the calling process, with no
+  limit, for a debugger.
+- A worker retires after a test that spawned a domain, and an `at_exit`
+  handler that a test registers runs as its worker ends; one that
+  raises fails the run and names the test.
+- `--replay TOKEN` (`WINDTRAP_REPLAY`) checks the selected property or
+  stateful test on the case a failure printed, judging no vacuity; a
+  token its generator now parses differently fails as stale.
+- `--case PATH` checks the property or stateful test that `-f` selects
+  on the case that the bytes of `PATH` decode to, and every file decodes
+  to a case.
+- `--failed` reruns the cases that failed, a table's rows and each
+  recorded counterexample, drawing nothing; a test whose failure
+  belongs to no case reruns whole.
 - (breaking) The record that `--failed` reads is kept per executable and
-  suite, as `<log_dir>/<suite>/.last-failed-<digest>`, so two
-  executables that name their suites alike no longer erase each other's
-  record, and `dune runtest` and `dune exec` of one executable still
-  share one. The record that 0.2.0 wrote, keyed by the suite alone, may
-  be another executable's and is never read: the first `--failed` after
-  upgrading finds no record, until one run has written it.
+  suite, so two executables with one suite name no longer erase each
+  other's; the first `--failed` after upgrading finds no record.
+- `--failed` with nothing to rerun says why: the last run passed, no run
+  recorded failures, the record cannot be read, or it names no test of
+  the suite.
+- `--json PATH` (`WINDTRAP_JSON`) writes the results as one versioned
+  JSON document, a test per line with its verdict, failures and scope;
+  a `PATH` not ending in `.json` is a directory, as for `--junit`.
+- Under `-v` a passing property says what it ran, as
+  `PASS  sorts  1.2ms (100 cases, 2 examples, 14 discards)`, and a
+  failing one's block says what passed before it failed, as
+  `scope: 37 cases passed, 3 discards`.
+- Under dune no block prints `accept:`, and the report ends on one
+  `accept: dune promote FILES`, printed only when the run exits 0; when
+  dune withholds the corrections, the warning names the `-u` command
+  that accepts them (doc/manual/baselines.md#accepting-a-change).
 - A selection that keeps no test prints its `list:` line above the
-  summary, so the summary is the last line of every report, as `tail -1`
-  expects; 0.2.0 printed the hint after it.
+  summary, so the summary is the last line of every report.
 - (breaking) `--prop-count N` (`WINDTRAP_PROP_COUNT`) raises the count of
   every property below `N`, a declared `~count` included, and lowers
-  none, so a long run scales every property and a short one no longer
-  cuts the default of 100; `~count:0` still runs the examples alone.
+  none.
 
 ### Coverage
 
-- The right operand of `||` that is a call of `raise`, `raise_notrace`,
-  `failwith`, `invalid_arg` or `exit` has no point, where 0.2.0 gave it
-  one for being true, which it never is: `n > 0 || failwith "negative"`
-  read uncovered even when a test ran both of its paths.
-- A call of `invalid_arg` or `exit` has no point for its return, which
-  never comes, as a call of `raise` or `failwith` has none:
-  `if n < 1 then invalid_arg "n < 1";` read uncovered even when a test
-  ran it.
-- A call through `@@` or `|>` of a function that never returns has no
-  point for its return, as a direct call has none:
-  `if n < 1 then failwith @@ msg;` read uncovered even when a test ran
-  it.
+- `invalid_arg` and `exit` join `raise` and `failwith` as calls with no
+  point for their return, direct or through `@@` or `|>`, and such a
+  call as the right operand of `||` has no point for being true; code
+  such as `n > 0 || failwith "negative"` no longer reads uncovered when
+  a test ran it.
 - `windtrap coverage --lines FILE:A-B,...` and `--diff FILE`, the output
-  of `git diff -U0`, report the points that start on those lines alone,
-  as `windtrap mutants` reports the mutants on them.
-- A coverage report with no point says `coverage: no point to measure
-  (0/0 points)`, where it said `100.0%`; a `--min` over no point is met.
+  of `git diff -U0`, report the points on those lines alone
+  (doc/manual/coverage.md#measuring-a-changes-coverage).
+- A report with no point says `coverage: no point to measure (0/0 points)`,
+  where it said `100.0%`, and a `--min` over no point is met.
 
 ### Mutation testing
 
-- `--mutate` takes `--lines FILE:A-B,...` and `--diff FILE`, the output
-  of `git diff -U0`, and tests the mutants on those lines alone, where
-  0.2.0 could narrow it only to whole files by prefix: a change is
-  judged by the mutants of its own lines (see
-  [Testing a change's mutants](https://github.com/invariant-hq/windtrap/blob/main/doc/manual/mutation.md#testing-a-changes-mutants)).
-  `windtrap mutants` takes the same two flags, and reports, and fails
-  on, the mutants of those lines alone. Their mirrors are
-  `WINDTRAP_LINES` and `WINDTRAP_DIFF`.
-- (breaking) A mutant that no run could judge is unknown, with the
-  reason, and never a survivor. Under 0.2.0 a suite that `--mutate`
-  refused wrote no verdict file, and `windtrap mutants` read the
-  mutants it reached elsewhere as survivors; a child that crashed or
-  passed its deadline counted as killing its mutant. A refused suite now
-  writes its verdict file as refused, with the reason, and
-  `windtrap mutants` names it under `not mutation-tested` and exits 1,
-  since the merge is then not the project's; an unknown mutant does not
-  fail the merge.
+- `--mutate` and `windtrap mutants` take `--lines FILE:A-B,...` and
+  `--diff FILE` (`WINDTRAP_LINES`, `WINDTRAP_DIFF`) and judge the
+  mutants on those lines alone; lines with no mutation site run the
+  suite unmutated and say so
+  (doc/manual/mutation.md#testing-a-changes-mutants).
+- (breaking) A mutant that no run could judge is unknown, with its
+  reason, where 0.2.0 read it as a survivor, or as killed when its
+  child crashed; a refused suite's verdict file says so, and
+  `windtrap mutants` names it under `not mutation-tested` and exits 1.
 - Under `--mutate` and `--arm` the root seed is fixed unless `--seed`
-  gives one, so the same binary draws the same cases on every run and a
-  mutant that only some cases kill keeps its verdict, where 0.2.0's
-  verdicts changed from run to run.
-- The dry run, the probe and each mutant run in workers started as a
-  run's workers are, each mutant in a fresh worker of its own, up to
-  `-j` at once; 0.2.0 forked each mutant from the state the dry run
-  left, one at a time. So a mutant's verdict does not depend on what
-  earlier tests cached, a suite that spawns a domain, before `run` or in
-  a test, is mutation-tested, where 0.2.0 refused it, and the report
-  and the verdict file are the same at every `-j`.
-- Under `--mutate`, lines that hold no mutation site, from `--lines` or
-  an empty `--diff`, run the suite without mutation and say so, with
-  its own exit code: a change to comments leaves nothing to mutate.
-  Lines of no instrumented file are refused, as a typo would be.
-
+  gives one, so a verdict no longer changes from run to run.
+- Each mutant runs in a fresh worker, up to `-j` at once, so its verdict
+  does not depend on what earlier tests cached, and a suite that spawns
+  a domain is mutation-tested, where 0.2.0 refused it.
 - A surviving or unknown mutant's block opens on its location in the
-  compiler's format, `File "lib/calc.ml", line 9, characters 12-17:`,
-  which editors and dune jump to. The verdict file records where each
-  mutant ends and its version is now `windtrap-mutants-v5`; a file of
-  an earlier version is refused, as before.
-- Three rewrites join the catalogue: `del` drops the statement `e1` of
-  `e1; e2`, `int` nudges an integer literal (`1` to `0`, `n` to `n + 1`)
-  and `bool` flips a boolean outside a condition. They skip code where a
-  survivor asks for no test worth writing: a resource release (`close`,
-  `close_out` and kin), an operand of `+` or `-`, a `create` capacity,
-  the comparison constant whose nudge is the comparison's own boundary
-  move, `~cloexec`, and any literal or statement that runs at module
-  initialization.
+  compiler's format, which editors jump to; the verdict file is
+  `windtrap-mutants-v5`, and an earlier one is refused.
+- Three rewrites join the catalogue: `del` drops `e1` from `e1; e2`,
+  `int` nudges an integer literal and `bool` flips a boolean outside a
+  condition, each skipping code where a survivor asks for no test worth
+  writing
+  (doc/manual/mutation.md#what-is-mutated).
 
 ## v0.2.0 2026-09-26
 

@@ -44,10 +44,15 @@ testing, Packages and libraries. An empty area is omitted.
 
 ## At release
 
-The entry gets highlights, directly under its heading and above the
-areas: three to six paragraphs, each one change that matters to most
-users, in two or three sentences, with a two-line example where one
-helps. The areas below keep every line. Migration notes for a breaking
-release live in the manual (`doc/manual/migrating-from-<previous>.md`),
-and the first paragraph links them; the changelog is not a migration
-guide.
+The entry opens on one short paragraph saying what got better, in the
+user's terms. It lists no breaking change: each one is a `(breaking)`
+line under its area. Migration notes for a breaking release live in the
+manual (`doc/manual/migrating-from-<previous>.md`); the changelog is not
+a migration guide.
+
+A `### Highlights` section follows, above the areas: three to six
+paragraphs, each one change that matters to most users. A paragraph
+opens on a bold sentence that states the gain ("A crash or a hang fails
+one test, not the run."), then says what the previous release did and
+what happens now, in two to four sentences. The areas below keep every
+line.
