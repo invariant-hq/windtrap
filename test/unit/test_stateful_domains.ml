@@ -1441,6 +1441,8 @@ let first_raise () =
    each block a worker allocates, and what it raises is raised in the worker
    at that allocation, as an asynchronous exception is. *)
 let profiled ~on_worker n fn =
+  if Sys.ocaml_release.major = 5 && Sys.ocaml_release.minor < 3 then
+    skip ~reason:"Gc.Memprof samples no allocation before OCaml 5.3" ();
   let caller = Domain.self () in
   let sampled (allocation : Gc.Memprof.allocation) =
     if Domain.self () <> caller then on_worker allocation.callstack;
