@@ -116,7 +116,8 @@ type 'v bench = {
 type any = Bench : 'v bench -> any
 
 (* The final size and the law runs after the first failure, the last run on
-   the counterexample excluded, of the case that seed [seed] finds. *)
+   the counterexample excluded, of the case that seed [seed] finds. A
+   failure that is not the law's, as a timeout, fails the test. *)
 let measure (type v) (b : v bench) seed =
   let runs = ref 0 and first = ref 0 and last = ref None in
   let law _ (v : v) =
@@ -133,6 +134,7 @@ let measure (type v) (b : v bench) seed =
       let again = if p.failed_again = Some true then 1 else 0 in
       let final = Option.get !last in
       Some (b.size final, !runs - !first - again)
+  | Fail { failure; _ } -> Failure.refuse failure
   | _ -> None
 
 let median values =
@@ -650,7 +652,8 @@ let union_find_program =
 
 (* The record of the counterexample that seed [seed] finds, the law runs
    after the first failure, the run again excluded, and whether its token,
-   replayed alone, fails with the same record. *)
+   replayed alone, fails with the same record. A failure that is not the
+   law's, as a timeout, fails the test. *)
 let run_program p seed =
   let runs = ref 0 and first = ref 0 in
   let law _ program =
@@ -670,6 +673,7 @@ let run_program p seed =
   let found = function
     | Property.Fail { failure = { Failure.kind = Property f; _ }; _ } ->
         Some (f.rendered.kept, f.token, f.failed_again = Some true)
+    | Property.Fail { failure; _ } -> Failure.refuse failure
     | _ -> None
   in
   let root = Int64.of_int ((seed * 7919) + 13) in
@@ -708,6 +712,11 @@ let program_row p =
     (List.fold_left max 0 runs)
     replayed
 
+(* A benchmark runs 100 searches of up to 10,000 cases, which takes over
+   ten minutes on a slow machine (riscv64, eight workers on three cores),
+   past the default limit. *)
+let limit = 3600.
+
 (* Each program pins its own row, so that the rows run in parallel under
    the stanza's [-j]. gap-stateful-refs.md's reducer reached the same on
    every case, at most six runs apart, but the guide's set: 88%, mean 5.12.
@@ -716,7 +725,7 @@ let program_row p =
 let pinned p row = test p.name (fun () -> expect (program_row p) row)
 
 let programs =
-  group "stateful programs reach the spikes' minima"
+  group ~timeout:limit "stateful programs reach the spikes' minima"
     [
       pinned queue_2
       @@ __POS_OF__
@@ -746,7 +755,7 @@ let () =
     (run "shrink"
        [
          reducer;
-         test "the benchmarks of shrinking.md reach the prototype's minima"
-           table;
+         test ~timeout:limit
+           "the benchmarks of shrinking.md reach the prototype's minima" table;
          programs;
        ])
