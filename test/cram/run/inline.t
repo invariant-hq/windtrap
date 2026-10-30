@@ -7,10 +7,13 @@ session pins what only a process shows: the exit status, the stream,
 the files a run leaves, the tests a runner runs and the line that the
 call stack gives a failure.
 
-A run's environment is stated, and its logs stay in this directory:
+A run's environment is stated, and its logs stay in this directory. It
+keeps the source root that dune exports to the runners it starts, which
+places a correction when the tree lies inside another's _build:
 
   $ run() {
   >   env -i PATH="$PATH" TMPDIR="${TMPDIR:-/tmp}" WINDTRAP_COLOR=never WINDTRAP_SLOW_THRESHOLD=0 \
+  >       ${DUNE_SOURCEROOT:+"DUNE_SOURCEROOT=$DUNE_SOURCEROOT"} \
   >       WINDTRAP_OUTPUT="$PWD/_logs" "$@" > out 2> err
   > }
   $ partition() {
