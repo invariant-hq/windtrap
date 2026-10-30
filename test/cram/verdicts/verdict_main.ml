@@ -325,8 +325,9 @@ let suite = function
         test "writes at address 0" (fun () -> poke 0);
         test "comes after" ignore;
       ]
-  | "c_loop" -> [ test ~timeout:0.05 "loops in C" (fun () -> spin 300); passes ]
-  | "c_loop_default" -> [ test "loops in C" (fun () -> spin 300); passes ]
+  | "c_loop" ->
+      [ test ~timeout:0.05 "loops in C" (fun () -> spin 4000); passes ]
+  | "c_loop_default" -> [ test "loops in C" (fun () -> spin 4000); passes ]
   | other -> invalid_arg ("verdict_main: unknown VERDICT_SUITE " ^ other)
 
 let name = function "shared_a" | "shared_b" -> "shared" | name -> name

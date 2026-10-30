@@ -73,22 +73,22 @@ loop has run to its end:
       timed out after 0.05s
 
 A test that declares no limit, in a run given no --timeout, has the
-default limit of ten minutes. VERDICT_DEFAULT_LIMIT puts a twentieth of
-a second in its place: the loop is killed with its worker past three
-times that, and the test times out by the default:
+default limit of ten minutes. VERDICT_DEFAULT_LIMIT puts half a second
+in its place: the loop is killed with its worker past three times that,
+and the test times out by the default:
 
-  $ brief VERDICT_SUITE=c_loop_default VERDICT_DEFAULT_LIMIT=0.05 ./verdict_main.exe
+  $ brief VERDICT_SUITE=c_loop_default VERDICT_DEFAULT_LIMIT=0.5 ./verdict_main.exe
     FAIL  loops in C
   1 passed, 1 failed in DURATION.
   [1]
   $ grep 'the C loop ran to its end' out || echo 'not reached'
   not reached
   $ grep 'timed out' out | scrub
-      timed out after 0.05s
+      timed out after 0.5s
 
 --in-process has no default limit, so the loop runs to its end and the
 test passes:
 
-  $ run VERDICT_SUITE=c_loop_default VERDICT_DEFAULT_LIMIT=0.05 ./verdict_main.exe --in-process -s -f 'loops in C'
+  $ run VERDICT_SUITE=c_loop_default VERDICT_DEFAULT_LIMIT=0.5 ./verdict_main.exe --in-process -s -f 'loops in C'
   the C loop ran to its end
   c_loop_default: 1 passed in DURATION.
