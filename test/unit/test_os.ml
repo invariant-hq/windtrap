@@ -562,6 +562,25 @@ let root =
         ]
         relative_inside_dune;
       cases
+        "below DUNE_SOURCEROOT, the build directory is the first _build \
+         component under it"
+        ~id:fst
+        [
+          ( "a tree unpacked into another's _build",
+            ( "/w/_build/p",
+              "/w/_build/p/_build/default",
+              ("/w/_build/p", "/w/_build/p/_build") ) );
+          ( "a source root with a trailing /",
+            ( "/w/_build/p/",
+              "/w/_build/p/_build/default",
+              ("/w/_build/p", "/w/_build/p/_build") ) );
+          ( "a context outside the source root",
+            ("/elsewhere", "/w/_build/p/_build/default", ("/w", "/w/_build")) );
+        ]
+        (fun (_, (source_root, value, (root, build))) ->
+          setenv "DUNE_SOURCEROOT" (Some source_root);
+          equal (pair string string) (root, logs build) (under (Some value)));
+      cases
         "an INSIDE_DUNE that names no build directory leaves it to the \
          executable"
         ~id:shown
@@ -703,6 +722,10 @@ let reconstruction =
         ]
         (fun (dir, context) ->
           equal (option string) context (Os.build_root dir));
+      test "build_root searches below DUNE_SOURCEROOT" (fun () ->
+          setenv "DUNE_SOURCEROOT" (Some "/w/_build/p");
+          equal (option string) (Some "/w/_build/p/_build/default")
+            (Os.build_root "/w/_build/p/_build/default/test"));
     ]
 
 (* Display paths *)

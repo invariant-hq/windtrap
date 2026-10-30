@@ -45,8 +45,20 @@ end
 let slashed path = String.map (function '\\' -> '/' | c -> c) path
 
 module Child = struct
+  (* [DUNE_SOURCEROOT] reaches every process a dune action starts, and decides
+     where a child finds its build directory. *)
   let inherited =
-    [ "PATH"; "HOME"; "TMPDIR"; "TEMP"; "TMP"; "SYSTEMROOT"; "LANG"; "LC_ALL" ]
+    [
+      "PATH";
+      "HOME";
+      "TMPDIR";
+      "TEMP";
+      "TMP";
+      "SYSTEMROOT";
+      "LANG";
+      "LC_ALL";
+      "DUNE_SOURCEROOT";
+    ]
 
   let environment bindings =
     let from_parent =

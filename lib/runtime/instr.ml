@@ -62,15 +62,25 @@ let components path =
   | [] -> assert false
 
 (* The rule of [Os.build_dir_of_path], restated because the runtime links no
-   core: the build directory and the components below it. *)
-let split_build components =
+   core: the build directory and the components below it, searched for below
+   [DUNE_SOURCEROOT] when [comps] lie under it. *)
+let split_build comps =
   let rec split above = function
     | [] -> None
     | name :: below when String.starts_with ~prefix:"_build" name ->
         Some (join (List.rev (name :: above)), below)
     | name :: below -> split (name :: above) below
   in
-  split [] components
+  let rec below_root above root rest =
+    match (root, rest) with
+    | [], _ -> split above rest
+    | r :: root, name :: rest when String.equal r name ->
+        below_root (name :: above) root rest
+    | _ -> split [] comps
+  in
+  match Sys.getenv_opt "DUNE_SOURCEROOT" with
+  | Some "" | None -> split [] comps
+  | Some root -> below_root [] (components root) comps
 
 let build_dir ~path = Option.map fst (split_build (components path))
 

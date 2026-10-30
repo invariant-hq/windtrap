@@ -177,7 +177,10 @@ let atomic_write ?(perm = 0o666) ~path contents =
 let normalize_sep path = String.map (function '\\' -> '/' | c -> c) path
 
 (* The components of [path] before its first build directory, that
-   directory, and the components after it. *)
+   directory, and the components after it. The search starts below the
+   source root that dune exports as [DUNE_SOURCEROOT] when [path] lies under
+   it: a tree that dune-release unpacks into another's [_build] holds a
+   [_build] component above its own. *)
 let split_at_build_dir path =
   let rec split before = function
     | [] -> None
@@ -185,7 +188,18 @@ let split_at_build_dir path =
         Some (List.rev before, c, after)
     | c :: after -> split (c :: before) after
   in
-  split [] (String.split_on_char '/' (normalize_sep path))
+  let components p = String.split_on_char '/' (normalize_sep p) in
+  let whole = components path in
+  let rec below_root before root rest =
+    match (root, rest) with
+    | ([] | [ "" ]), _ -> split before rest
+    | r :: root, c :: rest when String.equal r c ->
+        below_root (c :: before) root rest
+    | _ -> split [] whole
+  in
+  match getenv "DUNE_SOURCEROOT" with
+  | Some root -> below_root [] (components root) whole
+  | None -> split [] whole
 
 let build_dir_of_path path =
   Option.map

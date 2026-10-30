@@ -146,6 +146,17 @@ let build_paths =
           equal (option string) dir (Instr.build_dir ~path));
       test "a relative path is made absolute against the current directory"
         relative_path;
+      test
+        "below DUNE_SOURCEROOT, the build directory is the first _build \
+         component under it" (fun () ->
+          setenv "DUNE_SOURCEROOT" (Some "/w/_build/p");
+          let exe = "/w/_build/p/_build/default/test/a.exe" in
+          equal (option string) (Some "/w/_build/p/_build")
+            (Instr.build_dir ~path:exe);
+          equal string "default/test/a.exe" (Instr.exe_identity ~exe);
+          equal string
+            (in_build ~build:"/w/_build/p/_build" "default/test/a.exe")
+            (Instr.output_file format ~exe));
       cases "exe_identity is the path below the build directory, normalized"
         ~id:fst normalized (fun (exe, identity) ->
           equal string identity (Instr.exe_identity ~exe));

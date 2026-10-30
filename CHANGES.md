@@ -292,6 +292,10 @@ that no run could judge is reported as unknown, never as a survivor.
 - (breaking) `--prop-count N` (`WINDTRAP_PROP_COUNT`) raises the count of
   every property below `N`, a declared `~count` included, and lowers
   none.
+- A project built inside another's `_build`, as `dune-release distrib`
+  builds one, finds its own build directory below `DUNE_SOURCEROOT`;
+  0.2.0 took the outer `_build`, so its inline tests wrote no correction
+  and its paths kept `_build/default`.
 
 ### Coverage
 
