@@ -115,9 +115,15 @@ type 'v bench = {
 
 type any = Bench : 'v bench -> any
 
+(* [cut ending] is [true] when the test's limit stopped a shrink search. *)
+let cut : Failure.shrink_end -> bool = function
+  | Timed_out _ -> true
+  | Converged | Budget_spent -> false
+
 (* The final size and the law runs after the first failure, the last run on
    the counterexample excluded, of the case that seed [seed] finds. A
-   failure that is not the law's, as a timeout, fails the test. *)
+   failure that is not the law's, or whose shrinking the limit cut, fails the
+   test. *)
 let measure (type v) (b : v bench) seed =
   let runs = ref 0 and first = ref 0 and last = ref None in
   let law _ (v : v) =
@@ -130,7 +136,8 @@ let measure (type v) (b : v bench) seed =
   in
   let root = Int64.of_int ((seed * 7919) + 13) in
   match Property.run ~count:(`Declared 10_000) ~root ~path:b.name b.gen law with
-  | Fail { failure = { Failure.kind = Property p; _ }; _ } ->
+  | Fail { failure = { Failure.kind = Property p; _ }; _ }
+    when not (cut p.shrink_end) ->
       let again = if p.failed_again = Some true then 1 else 0 in
       let final = Option.get !last in
       Some (b.size final, !runs - !first - again)
@@ -653,7 +660,7 @@ let union_find_program =
 (* The record of the counterexample that seed [seed] finds, the law runs
    after the first failure, the run again excluded, and whether its token,
    replayed alone, fails with the same record. A failure that is not the
-   law's, as a timeout, fails the test. *)
+   law's, or whose shrinking the limit cut, fails the test. *)
 let run_program p seed =
   let runs = ref 0 and first = ref 0 in
   let law _ program =
@@ -671,7 +678,8 @@ let run_program p seed =
   in
   (* The counterexample's record, its token and whether it failed again. *)
   let found = function
-    | Property.Fail { failure = { Failure.kind = Property f; _ }; _ } ->
+    | Property.Fail { failure = { Failure.kind = Property f; _ }; _ }
+      when not (cut f.shrink_end) ->
         Some (f.rendered.kept, f.token, f.failed_again = Some true)
     | Property.Fail { failure; _ } -> Failure.refuse failure
     | _ -> None
