@@ -38,6 +38,7 @@
 
 (cram
  (applies_to process)
+ (package windtrap)
  (enabled_if
   (<> %{os_type} Win32))
  (deps process_main.exe process_main.bc ../../../lib/dllwindtrap_stubs.so))
