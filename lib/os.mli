@@ -32,6 +32,13 @@ val earlier : counter -> counter -> bool
 (** [earlier a b] is [true] iff [a] is a point before [b]. Two points read on
     different domains compare as the platform's clock orders them. *)
 
+external spin_ns : unit -> (int[@untagged])
+  = "ocaml_windtrap_clock_spin_ns_byte" "ocaml_windtrap_clock_spin_ns"
+[@@noalloc]
+(** [spin_ns ()] is the same monotonic clock in nanoseconds from an arbitrary
+    origin, read without allocating, raising or polling, as a bounded spin
+    needs. It is positive, and [0] where the clock fails. *)
+
 (** {1:env Environment variables}
 
     Every reader reads the environment on each call, and nothing is cached. A

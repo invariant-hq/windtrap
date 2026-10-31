@@ -18,7 +18,10 @@
     the job it holds, if any. Only one that lands while the domain starts,
     before its loop, as a memory profiler's callback may raise, ends the worker,
     and {!run} then waits for it as for a job that never ends. Between runs a
-    worker waits in a blocking section; it spins only at the start of a run.
+    worker waits in a blocking section. At the start of a run it spins for 20
+    microseconds while the other workers take their jobs, then waits for them in
+    a blocking section too, so a worker that shares its processor with a late
+    one leaves it to that one.
 
     {b Signals.} A worker is born blocking [SIGALRM], [SIGINT], [SIGTERM] and
     [SIGHUP], except on Windows, and so is every domain it spawns. The runtime

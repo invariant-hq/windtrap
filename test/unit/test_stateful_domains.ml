@@ -1492,6 +1492,44 @@ let allocates_nothing_but_flush () =
   equal (list string) []
     (List.filter (fun s -> not (mentions ~sub:"format.ml" s)) !stacks)
 
+(* The first blocks a worker allocates in a run are the job it takes, and
+   the worker that takes it last takes it [delay] after the other, held at
+   its first block, so the other waits at the start for longer than it
+   spins. What a worker allocates after taking its job and before starting
+   it is the barrier's: a block there is a point where an asynchronous
+   exception could land between a worker's arrival and the wake of the
+   others. *)
+let starts_without_allocating () =
+  let delay = 0.05 in
+  let lock = Mutex.create () and stacks = ref [] in
+  let taken = Array.init 2 (fun _ -> Atomic.make (-1)) in
+  let started = Array.init 2 (fun _ -> Atomic.make false) in
+  let takers = Atomic.make 0 and ids = Array.make 2 (-1) in
+  let held () = if Atomic.fetch_and_add takers 1 = 1 then Unix.sleepf delay in
+  let on_worker stack =
+    let self = (Domain.self () :> int) in
+    let i = if ids.(0) = self then 0 else 1 in
+    if Atomic.compare_and_set taken.(i) self (-1) then held ()
+    else if Atomic.get taken.(i) = -1 && not (Atomic.get started.(i)) then
+      let s = Printexc.raw_backtrace_to_string stack in
+      Mutex.protect lock (fun () -> stacks := s :: !stacks)
+  in
+  Array.iter (fun s -> Atomic.set s true) started;
+  profiled ~on_worker 2 @@ fun workers ->
+  run_all workers
+    (Array.init 2 (fun i () -> ids.(i) <- (Domain.self () :> int)));
+  for _ = 1 to 2 do
+    Atomic.set takers 0;
+    Array.iteri
+      (fun i s ->
+        Atomic.set s false;
+        Atomic.set taken.(i) ids.(i))
+      started;
+    run_all workers (Array.init 2 (fun i () -> Atomic.set started.(i) true))
+  done;
+  equal (list string) []
+    (List.filter (fun s -> not (mentions ~sub:"Workers.take" s)) !stacks)
+
 exception Injected
 
 (* [shot] is raised once, at the first block a worker allocates while it
@@ -1539,6 +1577,77 @@ let in_the_ending () =
   Atomic.set target (-1);
   equal (pair string bool) ("raised Injected", false) (ending, Atomic.get shot);
   run_all workers (Array.make 2 ignore)
+
+(* The processor time of the calling thread, in seconds, as Linux counts
+   it in nanoseconds. *)
+let schedstat = "/proc/thread-self/schedstat"
+
+let thread_time () =
+  let line = In_channel.with_open_text schedstat In_channel.input_line in
+  Scanf.sscanf (Option.get line) "%d" (fun ns -> Float.of_int ns /. 1e9)
+
+(* In each round of a pool of [n] the worker that takes its job last takes
+   it [delay] after the others, held in the profiler's callback at the
+   block it allocates as it takes it, as a worker that waits for a
+   processor is held. Workers take their jobs one at a time, so the others'
+   callbacks have returned. The processor time of each of the others from
+   the end of its previous job to the start of this one is that of its wait
+   for the last: a worker that spun through the wait has most of [delay],
+   one that slept a few milliseconds at most. The last one's job counts the
+   others' jobs that start within [patience] of its own: those its arrival
+   woke. *)
+let waits_asleep n =
+  if not (Sys.file_exists schedstat) then
+    skip ~reason:"no per-thread processor time to read" ();
+  let delay = 0.2 and patience = 1.0 in
+  let armed = Array.init n (fun _ -> Atomic.make (-1)) in
+  let takers = Atomic.make 0 and last = Atomic.make (-1) in
+  let on_worker _ =
+    let self = (Domain.self () :> int) in
+    if Array.exists (fun a -> Atomic.compare_and_set a self (-1)) armed then
+      if Atomic.fetch_and_add takers 1 = n - 1 then begin
+        Atomic.set last self;
+        Unix.sleepf delay
+      end
+  in
+  profiled ~on_worker n @@ fun workers ->
+  let ids = Array.make n (-1) in
+  let started = Array.make n Float.nan and finished = Array.make n Float.nan in
+  let began = Atomic.make 0 and woken = Atomic.make 0 in
+  let await_others () =
+    let until = Unix.gettimeofday () +. patience in
+    while Atomic.get began < n - 1 && Unix.gettimeofday () < until do
+      Unix.sleepf 0.001
+    done;
+    Atomic.set woken (Atomic.get began)
+  in
+  let job i () =
+    started.(i) <- thread_time ();
+    let self = (Domain.self () :> int) in
+    ids.(i) <- self;
+    if self = Atomic.get last then await_others () else Atomic.incr began;
+    finished.(i) <- thread_time ()
+  in
+  run_all workers (Array.init n job);
+  let round () =
+    let before = Array.copy finished in
+    Atomic.set takers 0;
+    Atomic.set began 0;
+    Array.iteri (fun i a -> Atomic.set a ids.(i)) armed;
+    run_all workers (Array.init n job);
+    equal int ~msg:"jobs started while the last one's ran" (n - 1)
+      (Atomic.get woken);
+    List.filter_map
+      (fun i ->
+        if ids.(i) = Atomic.get last then None
+        else Some (started.(i) -. before.(i)))
+      (List.init n Fun.id)
+  in
+  let waited = List.concat (List.init 2 (fun _ -> round ())) in
+  equal int (2 * (n - 1)) (List.length waited);
+  List.iter
+    (less float_exact ~msg:"processor time of the wait" ~than:0.02)
+    waited
 
 (* [first] waits, on a worker, until [second] has run, so the one order
    that explains its outcome runs [second] first, which the judge tries
@@ -1705,6 +1814,10 @@ let executor =
          formatters' flush, so no asynchronous exception lands between them"
         allocates_nothing_but_flush;
       test ~timeout:10.
+        "from taking its job to starting it a worker allocates nothing, though \
+         it waits for a late one"
+        starts_without_allocating;
+      test ~timeout:10.
         "an asynchronous exception in a worker's loop ends no job, and the \
          pool runs on"
         in_the_loop;
@@ -1712,6 +1825,10 @@ let executor =
         "an asynchronous exception as a worker ends its job is the job's \
          ending, and the pool runs on"
         in_the_ending;
+      cases ~timeout:10.
+        "workers that wait for a late one at the start of a run sleep after a \
+         short spin, and the late one's arrival wakes them"
+        ~id:(strf "%d workers") [ 2; 3 ] waits_asleep;
       cases "labels count along the order the judge accepts"
         ~id:(fun (n, _, _) -> n)
         labels

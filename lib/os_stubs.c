@@ -4,12 +4,12 @@
    SPDX-License-Identifier: ISC
   ---------------------------------------------------------------------------*/
 
-/* The two primitives Os needs from C: a monotonic clock (derived from
-   mtime; only elapsed_ns is exposed) and unsetenv, the unbinding half
-   Unix lacks (binding to "" is not unbinding: Sys.getenv_opt then
-   answers Some ""). On Windows unsetenv is the empty assignment _putenv
-   documents as deletion. Os.setenv has already rejected the names POSIX
-   rejects, so a failure here is an allocation failure.
+/* The primitives Os needs from C: a monotonic clock (derived from mtime;
+   only elapsed_ns and the spin clock are exposed) and unsetenv, the
+   unbinding half Unix lacks (binding to "" is not unbinding:
+   Sys.getenv_opt then answers Some ""). On Windows unsetenv is the empty
+   assignment _putenv documents as deletion. Os.setenv has already rejected
+   the names POSIX rejects, so a failure here is an allocation failure.
 
    On Darwin and Linux the clock is the one that goes on while the machine
    is suspended (mach_continuous_time, CLOCK_BOOTTIME). */
@@ -72,6 +72,13 @@ CAMLprim value ocaml_windtrap_clock_elapsed_ns (value unit)
   return caml_copy_int64 (((now - start) * scale.numer) / scale.denom);
 }
 
+/* The scale is set by the first call of elapsed_ns, as Os initializes. */
+static intnat ocaml_windtrap_clock_raw_ns (void)
+{
+  if (scale.denom == 0) return 0;
+  return (intnat) ((mach_continuous_time () * scale.numer) / scale.denom);
+}
+
 /* POSIX */
 
 #elif defined(WINDTRAP_CLOCK_POSIX)
@@ -102,6 +109,17 @@ CAMLprim value ocaml_windtrap_clock_elapsed_ns (value unit)
   return caml_copy_int64 ((uint64_t)(now.tv_sec - start.tv_sec) *
                           (uint64_t)1000000000 +
                           (uint64_t)(now.tv_nsec - start.tv_nsec));
+}
+
+static intnat ocaml_windtrap_clock_raw_ns (void)
+{
+  struct timespec now;
+#if defined(WINDTRAP_CLOCK_LINUX)
+  if (clock_gettime (CLOCK_BOOTTIME, &now)) return 0;
+#else
+  if (clock_gettime (CLOCK_MONOTONIC, &now)) return 0;
+#endif
+  return (intnat) now.tv_sec * 1000000000 + (intnat) now.tv_nsec;
 }
 
 /* Windows */
@@ -141,6 +159,16 @@ CAMLprim value ocaml_windtrap_clock_elapsed_ns (value unit)
   return caml_copy_int64(ret);
 }
 
+/* The frequency is set by the first call of elapsed_ns, as Os
+   initializes. */
+static intnat ocaml_windtrap_clock_raw_ns (void)
+{
+  LARGE_INTEGER now;
+  if (performance_frequency == 0.0 || !QueryPerformanceCounter(&now))
+    return 0;
+  return (intnat) (now.QuadPart * performance_frequency);
+}
+
 /* Unsupported */
 
 #else
@@ -150,7 +178,24 @@ CAMLprim value ocaml_windtrap_clock_elapsed_ns (value unit)
 CAMLprim value ocaml_windtrap_clock_elapsed_ns (value unit)
 { WINDTRAP_CLOCK_RAISE_SYS_ERROR ("unsupported platform"); }
 
+static intnat ocaml_windtrap_clock_raw_ns (void) { return 0; }
+
 #endif
+
+/* The clock of a bounded spin, from an arbitrary origin. It is noalloc,
+   so it neither allocates nor raises: it is 0 where the clock fails, which
+   a spin takes as its end. */
+
+CAMLprim intnat ocaml_windtrap_clock_spin_ns (value unit)
+{
+  (void) unit;
+  return ocaml_windtrap_clock_raw_ns ();
+}
+
+CAMLprim value ocaml_windtrap_clock_spin_ns_byte (value unit)
+{
+  return Val_long (ocaml_windtrap_clock_spin_ns (unit));
+}
 
 /* Environment */
 

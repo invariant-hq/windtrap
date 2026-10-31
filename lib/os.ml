@@ -20,6 +20,10 @@ let count start = Int64.sub (elapsed_ns ()) start
 let count_s start = Int64.to_float (count start) /. 1e9
 let earlier a b = Int64.compare a b < 0
 
+external spin_ns : unit -> (int[@untagged])
+  = "ocaml_windtrap_clock_spin_ns_byte" "ocaml_windtrap_clock_spin_ns"
+[@@noalloc]
+
 (* Environment variables *)
 
 (* An empty value counts as unset: [VAR= cmd] then reads as unset, and a

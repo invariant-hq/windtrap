@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+### Stateful testing
+
+- `stateful ~domains` no longer spins for a time slice per run when its
+  workers share a processor, as on a loaded machine or under `taskset`:
+  a worker that waits for another at the start of a run sleeps after a
+  short spin, and a 50-case test of a counter on one core takes 0.11 s
+  instead of 6.8 s.
+
 ## v0.3.0 2026-10-30
 
 Windtrap 0.3.0 changes how property tests shrink and where tests run,
