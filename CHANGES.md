@@ -1,6 +1,11 @@
 # Changelog
 
-## Unreleased
+## v0.3.1 2026-11-01
+
+Windtrap 0.3.1 fixes two bugs that failed tests that were not at fault:
+a test that timed out could leave a mutex locked for every later test in
+its worker, and `stateful ~domains` ran about sixty times slower when
+its workers shared a processor, enough to reach a test's limit.
 
 ### Stateful testing
 
