@@ -119,9 +119,11 @@ run exits 2:
 A case file holds what a replay token holds: the token's field between
 r1: and the digest is the file's bytes in base64url. So the file of a
 real counterexample, here the stateful test's, decoded from the token
-its failure printed, fails again on the same calls:
+its failure printed, fails again on the same calls. The run that finds
+it has a seed: on about one seed in two hundred, none of the 100
+programs reaches the lost increment.
 
-  $ run ./suite_main.exe -f counts > out
+  $ run ./suite_main.exe --seed s1:0000000000000001 -f counts > out
   [1]
   $ token=$(sed -n 's/^ *replay it: .*--replay //p' out)
   $ run env FACADE_FIXTURE=case_of ./suite_main.exe "$token" > counts.case
