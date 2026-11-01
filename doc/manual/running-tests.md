@@ -290,7 +290,9 @@ worker reports, how it ends and how long it takes. A test that calls
 `exit` or `Unix._exit`, crashes, raises `Out_of_memory` or outlives its
 limit in C code fails, saying which, and the run goes on in a new
 worker. A test that spawns a domain retires its worker after it, so the
-domain cannot run into the next test.
+domain cannot run into the next test. A test that timed out retires its
+worker too, since the timeout stopped its code wherever it stood: a
+mutex it held then stays locked in that worker, not in the next test's.
 
 A worker is the test executable started again, with the same command
 line. Its module initialisation runs again, so a test sees what a fresh

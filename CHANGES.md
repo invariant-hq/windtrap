@@ -10,6 +10,14 @@
   short spin, and a 50-case test of a counter on one core takes 0.11 s
   instead of 6.8 s.
 
+### Running tests
+
+- A test that timed out no longer fails the tests after it in its
+  worker: it retires the worker, as a test that spawns a domain does,
+  so a mutex it held when its timeout stopped it is not still locked
+  in the next test. The documentation of timeouts says where the
+  timeout's exception can arrive and that the limit is wall-clock time.
+
 ## v0.3.0 2026-10-30
 
 Windtrap 0.3.0 changes how property tests shrink and where tests run,

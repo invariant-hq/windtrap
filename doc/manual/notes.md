@@ -338,7 +338,9 @@ a forked child runs its tests in the child.
 Tests run one at a time in one worker by default, as they did in one
 process, so a fixture is acquired once and process state never races;
 `-j N` is an opt-in. A test that spawns a domain retires its worker,
-since the domain could run into the next test. One gap is left: a domain
+since the domain could run into the next test. A test that timed out
+retires its worker as well: its timeout stopped it at no point of its
+choosing, and the state it left belongs to no later test. One gap is left: a domain
 that outlives its test dies with that test's worker, so an exit it would
 call later is never made, and no test records it.
 

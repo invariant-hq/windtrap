@@ -49,6 +49,21 @@ ones:
   declaring the suite
   own_pid: 11 passed in DURATION.
 
+A test that timed out retires its worker. The timeout stopped its code
+where it stood, here holding a mutex made as the module initialised, so
+the test after it runs in a new worker, where the mutex is free:
+
+  $ run PROCESS_SUITE=timed_out ../process_main.exe
+  timed_out: 2 tests
+  ──────────────────────── failures ────────────────────────
+    FAIL  times out holding the mutex
+      test/cram/run/process_main.ml:N
+      timed out after 0.2s
+  ──────────────────────────────────────────────────────────
+  
+  1 passed, 1 failed in DURATION.
+  [1]
+
 A run that only a child forked during initialisation reaches, after the
 child spawned a domain, gives its verdict and returns. The child can
 neither fork a worker nor reach its run in a new start of the program,

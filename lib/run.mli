@@ -1043,7 +1043,8 @@ type report =
   | Done of { served : served; stopped : bool; retire : bool }
       (** The case ended. [stopped] is {!stop}'s, and [retire] says that the
           worker must not run another case: the case spawned a domain, which may
-          still run, or raised [Out_of_memory] or [Sys.Break]. *)
+          still run, a limit of the case expired, which stopped its code where
+          it stood, or the case raised [Out_of_memory] or [Sys.Break]. *)
   | Released of Failure.t list
       (** The fixtures are released, with these release failures. *)
   | Exited  (** Code under test called [exit] in the case that runs. *)

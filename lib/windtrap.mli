@@ -106,7 +106,8 @@ type 'a testable = 'a Testable.t
 
     {b Timeouts.} The limit covers setup, body and teardown. Setup and body
     share the window, and a teardown gets what is left of it. When they spent it
-    all, the teardown gets a fresh window.
+    all, the teardown gets a fresh window. The limit is wall-clock time, so the
+    time a test waits for a processor on a loaded machine counts towards it.
 
     Every attempt has a limit, ten minutes unless [timeout] or [--timeout] says
     otherwise, so a test that hangs fails by name rather than hold the run until
@@ -117,12 +118,23 @@ type 'a testable = 'a Testable.t
     that timed out. The runner owns [SIGALRM] while a test with a limit runs,
     which outside [--in-process] is every test. A domain that the test spawned
     may take the signal: the timeout is then raised on that domain, and ends the
-    test only when it reaches the test's domain, as through [Domain.join]. The
-    alarm cannot interrupt a C call that does not return to OCaml: a test still
-    running three limits after it started, for each of its attempts, is killed
-    with its worker process (see {!run}), and times out. On Windows, where the
-    tests run in the calling process and no alarm exists, no limit has an
-    effect, the default included: a test that hangs there hangs the run.
+    test only when it reaches the test's domain, as through [Domain.join].
+
+    The timeout is an exception that the alarm's handler raises at the next
+    point where the test's OCaml code polls: an allocation, a loop or a call, or
+    the return from a blocking call such as a contended [Mutex.lock]. It can
+    land between taking a resource and the handler that would release it: after
+    [Mutex.lock m] and before [Fun.protect ~finally:(fun () -> Mutex.unlock m)],
+    it leaves [m] locked. [Mutex.protect m f], since OCaml 5.1, releases [m]
+    whatever exception arrives. A test that timed out retires its worker after
+    its last attempt (see {!run}), so what it left locked stays with that
+    worker; its own retries run in the same worker.
+
+    The alarm cannot interrupt a C call that does not return to OCaml: a test
+    still running three limits after it started, for each of its attempts, is
+    killed with its worker process (see {!run}), and times out. On Windows,
+    where the tests run in the calling process and no alarm exists, no limit has
+    an effect, the default included: a test that hangs there hangs the run.
 
     {b Retries.} Each attempt is a fresh setup, body, teardown and capture. A
     skip is never retried. An {!xfail} test is retried on an unexpected pass,
@@ -2264,7 +2276,10 @@ val run : ?argv:string array -> string -> test list -> int
     group is killed and its temporary directory removed, so the children it
     started and the files it left go with it; its {!fixture}s are not released.
     A test that spawns a domain retires its worker after it, which releases the
-    fixtures: the domain cannot run into the next test.
+    fixtures: the domain cannot run into the next test. So does a test that
+    timed out, since its timeout stopped its code where it stood, and the state
+    that code left half changed, a mutex it held included, must not reach the
+    next test.
 
     An [at_exit] function that a test registers runs as its worker ends, and the
     code it exits with is the worker's. One that raises fails the run as a

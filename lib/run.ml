@@ -170,6 +170,9 @@ type t = {
       (* a signal that arrived in the runner's own code, acted on at the next
          boundary *)
   mutable stopped : string list option; (* the test after which the run stops *)
+  mutable timed_out : bool;
+      (* a limit expired since the last case began: its code stopped where it
+         stood, and may have left the process's state half changed *)
   recorded : (string, case_id list) Hashtbl.t;
       (* under --failed: the cases of each test that the store names *)
 }
@@ -187,6 +190,7 @@ let create config ~capture ~baselines =
     rev_results = [];
     interrupted = None;
     stopped = None;
+    timed_out = false;
     recorded = Hashtbl.create 8;
   }
 
@@ -1277,8 +1281,8 @@ let limit config (case : Test_tree.case) =
    the handler inert, and [disarm] absorbs a timeout that interrupts it.
    [due] raises the timeout from the clock, for code that held the alarm (see
    [give_in_attempt]); an arming raises once, from its alarm or from [due],
-   whichever comes first. *)
-let with_timeout limit fn =
+   whichever comes first, and calls [expired] as it does. *)
+let with_timeout ~expired limit fn =
   match limit with
   | Some limit when not Sys.win32 -> (
       let armed = ref true and fired = ref false in
@@ -1290,6 +1294,7 @@ let with_timeout limit fn =
       let expire () =
         if !armed && not !fired then begin
           fired := true;
+          expired ();
           raise (Failure.Control (`Timeout limit))
         end
       in
@@ -1425,7 +1430,8 @@ let run_attempt frame (case : Test_tree.case) ~limit ~groups ~test_name =
   in
   let bounded () =
     with_isolated_random ~path:(case_path case) @@ fun () ->
-    with_timeout limit @@ fun renew due ->
+    with_timeout ~expired:(fun () -> frame.run.timed_out <- true) limit
+    @@ fun renew due ->
     frame.due <- due;
     Fun.protect ~finally:(fun () -> frame.due <- ignore) @@ fun () ->
     match Failure.catch (fun () -> phases renew) with
@@ -2134,6 +2140,7 @@ let serve config ~suite tests ~temp_dir ~own_exits ~send ~receive ~last =
     | Case path -> (
         let case = Hashtbl.find cases path in
         let started = Os.counter () in
+        run.timed_out <- false;
         match run_case ~on_event run case with
         | served ->
             last_case := Some case;
@@ -2141,7 +2148,11 @@ let serve config ~suite tests ~temp_dir ~own_exits ~send ~receive ~last =
                registered, which run next. *)
             at_exit (fun () -> registrant := Some case);
             let stopped = Option.is_some run.stopped in
-            send (Done { served; stopped; retire = !spawned });
+            (* A timeout stops the test's code where it stood, as with a
+               lock taken and not yet released, so the next case gets a
+               fresh worker. *)
+            let retire = !spawned || run.timed_out in
+            send (Done { served; stopped; retire });
             loop ()
         | exception Finished -> ()
         | exception ((Out_of_memory | Sys.Break) as exn) ->

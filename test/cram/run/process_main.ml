@@ -28,6 +28,26 @@ let own_pid () =
     ]
   @ List.init 5 (fun i -> test (strf "reads it after, %d" i) own)
 
+(* A mutex made as the module initialises, and a test that times out
+   holding it, as a timeout that lands between [Mutex.lock] and the
+   protection of its unlock leaves it. The test after it takes the mutex
+   in a worker that replaced the one that timed out. *)
+let gate = Mutex.create ()
+
+let timed_out () =
+  [
+    test ~timeout:0.2 "times out holding the mutex" (fun () ->
+        Mutex.lock gate;
+        while true do
+          ignore (Sys.opaque_identity (ref 0))
+        done;
+        Mutex.unlock gate);
+    test "takes the mutex" (fun () ->
+        Mutex.lock gate;
+        Mutex.unlock gate;
+        own ());
+  ]
+
 let status = function
   | Unix.WEXITED n -> strf "exited with code %d" n
   | Unix.WSIGNALED s -> strf "killed by signal %d" s
@@ -131,6 +151,7 @@ let () =
   let tests =
     match suite with
     | "own_pid" -> own_pid ()
+    | "timed_out" -> timed_out ()
     | "in_a_fork" -> in_a_fork ()
     | "second_run" -> second_run ()
     | "listing" -> listing ()
