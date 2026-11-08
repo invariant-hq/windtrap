@@ -240,17 +240,11 @@ lcov.info` writes the tracefile:
 
 ```
 $ dune exec windtrap -- coverage --json
-{ "summary": { "visited": 27, "total": 29, "percentage": 93.10 },
-  "files": [
-    { "path": "calc.ml", "visited": 7, "total": 9,
-      "percentage": 77.78,
-      "uncovered_lines": [6,7] },
-    { "path": "half_a.ml", "visited": 9, "total": 9,
-      "percentage": 100.00,
-      "uncovered_lines": [] },
-    { "path": "half_b.ml", "visited": 11, "total": 11,
-      "percentage": 100.00,
-      "uncovered_lines": [] } ] }
+{"summary": {"visited": 27, "total": 29, "percentage": 93.10344827586206}, "files": [
+  {"path": "calc.ml", "visited": 7, "total": 9, "percentage": 77.77777777777777, "uncovered_lines": [6, 7]},
+  {"path": "half_a.ml", "visited": 9, "total": 9, "percentage": 100, "uncovered_lines": []},
+  {"path": "half_b.ml", "visited": 11, "total": 11, "percentage": 100, "uncovered_lines": []}
+]}
 $ dune exec windtrap -- coverage --lcov
 TN:
 SF:calc.ml

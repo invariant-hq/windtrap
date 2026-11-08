@@ -10,6 +10,7 @@ module Os = Windtrap.Private.Os
 module Cli = Windtrap.Private.Cli
 module Pp = Windtrap.Private.Pp
 module Lines = Windtrap.Private.Lines
+module Json = Windtrap.Private.Json
 
 let strf = Printf.sprintf
 let ( let* ) = Result.bind
@@ -239,39 +240,29 @@ let min_gate o ({ visited; total } : Coverage.summary) =
 let percentage ({ visited; total } : Coverage.summary) =
   Sections.percent ~visited ~total
 
-let json_string s =
-  let b = Buffer.create (String.length s + 2) in
-  Buffer.add_char b '"';
-  String.iter
-    (function
-      | ('"' | '\\') as c ->
-          Buffer.add_char b '\\';
-          Buffer.add_char b c
-      | '\n' -> Buffer.add_string b "\\n"
-      | '\r' -> Buffer.add_string b "\\r"
-      | '\t' -> Buffer.add_string b "\\t"
-      | c when c < ' ' -> Buffer.add_string b (strf "\\u%04x" (Char.code c))
-      | c -> Buffer.add_char b c)
-    s;
-  Buffer.add_char b '"';
-  Buffer.contents b
-
+(* One file per line, as the run's document holds one test per line. *)
 let json (summary : Coverage.summary) reports =
-  let file (r : Coverage.file_report) =
-    strf
-      "\n\
-      \    { \"path\": %s, \"visited\": %d, \"total\": %d,\n\
-      \      \"percentage\": %.2f,\n\
-      \      \"uncovered_lines\": [%s] }"
-      (json_string r.file) r.summary.visited r.summary.total
-      (percentage r.summary)
-      (String.concat "," (List.map string_of_int r.uncovered_lines))
+  let counts (s : Coverage.summary) =
+    Json.
+      [
+        ("visited", Int s.visited);
+        ("total", Int s.total);
+        ("percentage", Float (percentage s));
+      ]
   in
-  strf
-    "{ \"summary\": { \"visited\": %d, \"total\": %d, \"percentage\": %.2f },\n\
-    \  \"files\": [%s ] }\n"
-    summary.visited summary.total (percentage summary)
-    (String.concat "," (List.map file reports))
+  let file (r : Coverage.file_report) =
+    Json.(
+      to_string
+        (Object
+           ((("path", String r.file) :: counts r.summary)
+           @ [
+               ( "uncovered_lines",
+                 List (List.map (fun line -> Int line) r.uncovered_lines) );
+             ])))
+  in
+  strf "{\"summary\": %s, \"files\": [%s\n]}\n"
+    (Json.to_string (Object (counts summary)))
+    (String.concat "," (List.map (fun r -> "\n  " ^ file r) reports))
 
 (* A tracefile has no escape syntax, so the name is written as recorded. *)
 let lcov_record (r : Coverage.file_report) =

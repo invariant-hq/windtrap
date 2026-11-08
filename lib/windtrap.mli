@@ -2315,6 +2315,7 @@ module Private : sig
   module Diff = Diff
   module Failure = Failure
   module Gen_engine = Gen_engine
+  module Json = Json
   module Lines = Lines
   module Loc = Loc
   module Multiset = Multiset

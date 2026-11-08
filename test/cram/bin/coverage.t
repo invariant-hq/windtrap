@@ -171,47 +171,35 @@ The documents
 --json writes the report as one document on standard output:
 
   $ run windtrap coverage --json
-  { "summary": { "visited": 3, "total": 5, "percentage": 60.00 },
-    "files": [
-      { "path": "lib/bar.ml", "visited": 1, "total": 2,
-        "percentage": 50.00,
-        "uncovered_lines": [2] },
-      { "path": "lib/foo.ml", "visited": 2, "total": 3,
-        "percentage": 66.67,
-        "uncovered_lines": [3] } ] }
+  {"summary": {"visited": 3, "total": 5, "percentage": 60}, "files": [
+    {"path": "lib/bar.ml", "visited": 1, "total": 2, "percentage": 50, "uncovered_lines": [2]},
+    {"path": "lib/foo.ml", "visited": 2, "total": 3, "percentage": 66.66666666666667, "uncovered_lines": [3]}
+  ]}
 
-A file with no point is at 100.00, and a merge of no point too. A file
+A file with no point is at 100, and a merge of no point too. A file
 without its source, or with a stale one, lists no line:
 
   $ cd "$scratch/edges" && run windtrap coverage --json && cd "$scratch/proj"
-  { "summary": { "visited": 1, "total": 3, "percentage": 33.33 },
-    "files": [
-      { "path": "lib/Z.ml", "visited": 0, "total": 0,
-        "percentage": 100.00,
-        "uncovered_lines": [] },
-      { "path": "lib/a.ml", "visited": 0, "total": 1,
-        "percentage": 0.00,
-        "uncovered_lines": [] },
-      { "path": "lib/s.ml", "visited": 1, "total": 2,
-        "percentage": 50.00,
-        "uncovered_lines": [] } ] }
+  {"summary": {"visited": 1, "total": 3, "percentage": 33.333333333333336}, "files": [
+    {"path": "lib/Z.ml", "visited": 0, "total": 0, "percentage": 100, "uncovered_lines": []},
+    {"path": "lib/a.ml", "visited": 0, "total": 1, "percentage": 0, "uncovered_lines": []},
+    {"path": "lib/s.ml", "visited": 1, "total": 2, "percentage": 50, "uncovered_lines": []}
+  ]}
   $ mkdir "$scratch/no-point" && cd "$scratch/no-point"
   $ mkdata coverage _build/_coverage/none.coverage lib/Z.ml=
   $ run windtrap coverage --json | head -n 1
-  { "summary": { "visited": 0, "total": 0, "percentage": 100.00 },
+  {"summary": {"visited": 0, "total": 0, "percentage": 100}, "files": [
   $ cd "$scratch/proj"
 
-A recorded name is escaped as JSON needs, and every other byte is written
-as it is:
+A recorded name is escaped as JSON needs, and each byte sequence that is
+not UTF-8 is U+FFFD, so the document is valid JSON whatever the name holds:
 
   $ mkdir "$scratch/escape" && cd "$scratch/escape"
-  $ mkdata coverage _build/_coverage/names.coverage 'lib/q\"b\\s\tt\r\nx\001\127\195\169.ml=0'
+  $ mkdata coverage _build/_coverage/names.coverage 'lib/q\"b\\s\tt\r\nx\001\127\195\169\255.ml=0'
   $ run windtrap coverage --json
-  { "summary": { "visited": 0, "total": 1, "percentage": 0.00 },
-    "files": [
-      { "path": "lib/q\"b\\s\tt\r\nx\u0001é.ml", "visited": 0, "total": 1,
-        "percentage": 0.00,
-        "uncovered_lines": [] } ] }
+  {"summary": {"visited": 0, "total": 1, "percentage": 0}, "files": [
+    {"path": "lib/q\"b\\s\tt\r\nx\u0001\u007fé�.ml", "visited": 0, "total": 1, "percentage": 0, "uncovered_lines": []}
+  ]}
   $ cd "$scratch/proj"
 
 --lcov writes an LCOV tracefile: each file's lines with their visits, in
@@ -399,11 +387,9 @@ and add up, and --expect still asks of the whole merge:
   windtrap: lib/baz.ml: expected source has no coverage data (not instrumented, or linked into no test executable that ran)
   [1]
   $ run windtrap coverage --json --lines=lib/bar.ml:1-2
-  { "summary": { "visited": 1, "total": 2, "percentage": 50.00 },
-    "files": [
-      { "path": "lib/bar.ml", "visited": 1, "total": 2,
-        "percentage": 50.00,
-        "uncovered_lines": [2] } ] }
+  {"summary": {"visited": 1, "total": 2, "percentage": 50}, "files": [
+    {"path": "lib/bar.ml", "visited": 1, "total": 2, "percentage": 50, "uncovered_lines": [2]}
+  ]}
   $ run windtrap coverage --lines=lib/none.ml:1
   coverage: no point to measure (0/0 points)
 

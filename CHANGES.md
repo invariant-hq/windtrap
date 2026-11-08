@@ -47,6 +47,14 @@
   reads as one with no mutant; `Windtrap_runtime.Mutate.site.dismissed`
   and `Mutate.mutant.dismissed` are removed.
 
+### Coverage
+
+- `windtrap coverage --json` writes each byte sequence of a recorded name
+  that is not UTF-8 as U+FFFD, so the document is always valid JSON.
+- (breaking) `windtrap coverage --json` writes each percentage unrounded,
+  the number `--min` compares, as the shortest decimal that reads back
+  (`66.66666666666667`, `100`), and each file on a line of its own.
+
 ## v0.3.1 2026-11-01
 
 Windtrap 0.3.1 fixes two bugs that failed tests that were not at fault:

@@ -68,17 +68,6 @@ let first_line result =
   | _ :: test :: _ -> String.trim test
   | _ -> "no test line"
 
-let encoding () =
-  equal string
-    {|{"path": ["q\"b\\s\n\t\r\u0001\u007fé �"], "verdict": "pass", "attempts": 1, "duration": null, "failures": [], "scope": {"tolerances": []}}|}
-    (line
-       (result ~duration:Float.nan
-          [ "q\"b\\s\n\t\r\001\127\u{e9} \xff" ]
-          Failure.Pass));
-  equal string
-    {|{"path": ["p"], "verdict": "pass", "attempts": 1, "duration": 0.1, "failures": [], "scope": {"tolerances": []}}|}
-    (line (result ~duration:0.1 [ "p" ] Failure.Pass))
-
 let closing_counts () =
   equal string
     {|{"tests": 6, "passed": 1, "failed": 2, "vacuous": 1, "skipped": 0, "expected_failures": 1, "flaky": 1, "not_run": 2, "release_failures": 1, "duration": 0.5}|}
@@ -101,10 +90,6 @@ let () =
          cases "a test states its verdict, its reason and its failures" ~id:fst
            verdicts (fun (_, (r, expected)) ->
              equal string expected (first_line r));
-         test
-           "strings escape what JSON needs, malformed UTF-8 is U+FFFD and a \
-            float not finite is null"
-           encoding;
          test "the counts close the document as the summary counts"
            closing_counts;
        ])

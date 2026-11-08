@@ -94,7 +94,10 @@
       recorded at instrumentation, then ["visited"], ["total"], ["percentage"]
       and ["uncovered_lines"].
 
-    A percentage is a number with two decimals, [100.00] for no point.
+    The document is written by {!Windtrap.Private.Json.to_string}, each file on
+    a line of its own, so it is valid JSON in UTF-8 whatever bytes a recorded
+    name holds: a byte sequence that is not UTF-8 becomes U+FFFD. A percentage
+    is the unrounded one that [--min] compares, [100] for no point.
     ["uncovered_lines"] is the ascending array of the one-based lines that an
     unvisited point touches. It is empty for a file whose source the runtime
     does not find or judges stale ({!Windtrap_runtime.Coverage.file_reports}).
