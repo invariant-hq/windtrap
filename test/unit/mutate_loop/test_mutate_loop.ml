@@ -21,6 +21,7 @@ let suite_exe = Filename.concat exe_dir "suite_main.exe"
 let plain_exe = Filename.concat exe_dir "plain_main.exe"
 let runaway_exe = Filename.concat exe_dir "runaway/runaway_main.exe"
 let swallow_exe = Filename.concat exe_dir "runaway/swallow_main.exe"
+let oom_exe = Filename.concat exe_dir "oom/oom_main.exe"
 let inline_exe = Filename.concat exe_dir "inline/runner_main.exe"
 let partitions_exe = Filename.concat exe_dir "partitions/runner_main.exe"
 
@@ -75,18 +76,22 @@ let ended = function
   | Unix.WSIGNALED signal -> "killed by " ^ signal_name signal
   | Unix.WSTOPPED signal -> "stopped by " ^ signal_name signal
 
-(* A deadline is the dry run's own duration and more. *)
-let seconds_masked reason =
-  match String.rindex_opt reason ' ' with
-  | Some i
-    when String.ends_with ~suffix:"s" reason
-         && String.starts_with ~prefix:"its run passed its deadline" reason ->
-      String.sub reason 0 (i + 1) ^ "<time>"
-  | Some _ | None -> reason
+(* A deadline is the dry run's own duration and more, and a memory ceiling
+   its workers' size. *)
+let limit_masked reason =
+  let masked ~prefix ~as_ =
+    if String.starts_with ~prefix reason then Some (prefix ^ as_) else None
+  in
+  match
+    ( masked ~prefix:"its run passed its deadline of " ~as_:"<time>",
+      masked ~prefix:"its run passed its memory ceiling of " ~as_:"<size>" )
+  with
+  | Some reason, _ | None, Some reason -> reason
+  | None, None -> reason
 
 let verdict = function
   | Verdicts.Killed -> "killed"
-  | Verdicts.Unknown reason -> "unknown: " ^ seconds_masked reason
+  | Verdicts.Unknown reason -> "unknown: " ^ limit_masked reason
   | Verdicts.Survived { first; others } ->
       "survived by "
       ^ String.concat ", "
@@ -154,6 +159,7 @@ let file_of exe =
     match Filename.basename exe with
     | "runaway_main.exe" -> "spin"
     | "swallow_main.exe" -> "swallow"
+    | "oom_main.exe" -> "grow"
     | "plain_main.exe" -> "plain"
     | "runner_main.exe" -> "inline_armed"
     | _ -> "calc"
@@ -1023,6 +1029,53 @@ let swallowed () =
     (option (list string))
     (Some [ "runaway/spinner.ml:15 killed" ]) (rows r)
 
+(* The fixture's mutant grows a list and evaluates no site again, so no hit
+   budget ends it: the memory ceiling does, a tick or two after it passes
+   it. Should the ceiling not, the list stops at some 1.2 GB and the mutant
+   reads killed. *)
+let memory_ceiling () =
+  ignore (spawn ~exe:oom_exe []);
+  let began = Unix.gettimeofday () in
+  let r = spawn ~exe:oom_exe [ mutate ] in
+  let elapsed = Unix.gettimeofday () -. began in
+  equal string "exited 0" r.status;
+  equal text "" r.err;
+  equal
+    (option (list string))
+    (Some
+       [
+         "oom/grower.ml:12 unknown: its run passed its memory ceiling of <size>";
+         "oom/grower.ml:12 killed";
+       ])
+    (rows r);
+  contains ~sub:"its run passed its memory ceiling of " r.out;
+  contains ~sub:" MB\n" r.out;
+  less float_exact ~than:5.0 elapsed
+
+(* A dry-run test waits for a child that holds 300 MB, and the mutant's
+   test then grows by itself: the ceiling is eight times the worker's own
+   peak, far below the child's size, and stops it. *)
+let subprocess_ceiling () =
+  let r = spawn ~env:[ suite "subprocess" ] [ mutate ] in
+  equal string "exited 0" r.status;
+  equal text "" r.err;
+  equal
+    (option (list string))
+    (Some
+       [
+         "subject.ml:15 unknown: its run passed its memory ceiling of <size>";
+         "subject.ml:18 unreached";
+         "subject.ml:21 unreached";
+         "subject.ml:27 unreached";
+       ])
+    (rows r);
+  let prefix = "its run passed its memory ceiling of " in
+  let at = Option.get (index_of ~sub:prefix r.out) + String.length prefix in
+  let mb =
+    int_of_string (String.sub r.out at (String.index_from r.out at ' ' - at))
+  in
+  less int ~than:300 mb
+
 (* [block]'s child blocks on a pipe read until its deadline, after starting
    a grandchild that ignores SIGTERM. *)
 type blocked = { run : ran; grandchildren : int list; elapsed : float }
@@ -1107,7 +1160,22 @@ let probe_deadline () =
          [ mutate ])
   in
   equal string "exited 1" r.status;
-  contains ~sub:"the determinism probe exceeded its deadline" r.err;
+  contains ~sub:"the determinism probe's run passed its deadline of " r.err;
+  contains ~sub:"not a number" r.err
+
+(* The fixture grows only on its second run, so only the probe's memory
+   ceiling can end it; should it not, the list stops at some 1.2 GB and the
+   probe agrees. *)
+let probe_ceiling () =
+  let marker = Filename.concat (temp_dir ()) "marker" in
+  let r =
+    spawn
+      ~env:[ suite "probe_grow"; ("MUTATE_PROBE_MARKER", marker) ]
+      [ mutate ]
+  in
+  equal string "exited 1" r.status;
+  contains ~sub:"the determinism probe's run passed its memory ceiling of "
+    r.err;
   contains ~sub:"not a number" r.err
 
 let limits =
@@ -1133,6 +1201,14 @@ let limits =
       test "a slow but finite test is never killed by the clock" slow;
       test "a probe past its deadline is refused as non-determinism"
         probe_deadline;
+      test "a mutant whose worker grows past its memory ceiling is unknown"
+        memory_ceiling;
+      test "a probe past its memory ceiling is refused as non-determinism"
+        probe_ceiling;
+      test
+        "the memory ceiling is the dry-run workers' own peak, not that of the \
+         processes their tests wait for"
+        subprocess_ceiling;
       test
         "a deadline is timed on the monotonic clock, so a system clock set \
          ahead kills no child"
@@ -2260,6 +2336,7 @@ let () =
           inline_exe;
           runaway_exe;
           swallow_exe;
+          oom_exe;
           plain_exe;
           partitions_exe;
         ])

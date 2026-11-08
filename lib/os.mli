@@ -6,7 +6,7 @@
 
 (** Operating-system access: the monotonic clock, the process environment,
     atomic file writes, the paths that a run resolves and prints, standard
-    error, and signals.
+    error, memory, and signals.
 
     @canonical Windtrap.Private.Os *)
 
@@ -324,6 +324,21 @@ val say : string -> unit
 val warn : string -> unit
 (** [warn message] is [say ("warning: " ^ message)]. It is for something that
     the run survives, with its outcome and its exit code unchanged. *)
+
+(** {1:memory Memory}
+
+    A resident size is the memory of a process that is in RAM, in bytes: its
+    own, shared pages included, and none of the processes it started. *)
+
+external resident : int -> int = "ocaml_windtrap_resident"
+(** [resident pid] is the resident size of the process [pid] now, or [0] where
+    it cannot be read: the process is gone or a zombie, or the platform is
+    neither Linux nor macOS. A live process is never [0]. *)
+
+external resident_peak : unit -> int = "ocaml_windtrap_resident_peak"
+(** [resident_peak ()] is the largest resident size that this process reached so
+    far ([getrusage]'s [RUSAGE_SELF]), what it inherited from a fork or kept
+    across an [exec] included, or [0] on Windows. *)
 
 (** {1:signals Signals} *)
 

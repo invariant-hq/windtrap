@@ -34,6 +34,17 @@ let () =
           output_string oc (string_of_int (Unix.getpid ()) ^ "\n");
           close_out oc)
 
+(* The child of the [subprocess] fixture: the executable started again,
+   which holds some 300 MB and ends, running no test. *)
+let child_size = 300 * 1024 * 1024
+
+let () =
+  match Sys.getenv_opt "MUTATE_BIG_CHILD" with
+  | None | Some "" -> ()
+  | Some _ ->
+      ignore (Sys.opaque_identity (Bytes.make child_size 'x'));
+      Unix._exit 0
+
 let strong =
   [
     test "sub of two positives" (fun () -> equal int 6 (Subject.sub 10 4));
@@ -177,7 +188,14 @@ let fatal =
      where it is re-run: the dry run leaves the marker, the probe's
      unarmed re-run finds it and hangs. No mutant is armed in a probe,
      so only its own deadline can end it, and what an expiry proves is
-     non-determinism. *)
+     non-determinism.
+   - [probe_grow] grows by some 1.2 GB where [probe_block] blocks, so only
+     the probe's memory ceiling can end it.
+   - [subprocess] starts the executable again as a child that holds some
+     300 MB, and waits for it; armed, the test then grows a list of some
+     1.2 GB itself. A ceiling taken from the worker's own peak stops it; one
+     that counted the child would be eight times its size, the list would
+     end, and the mutant would read killed. *)
 
 let hang () =
   (match Sys.getenv_opt "MUTATE_GRANDCHILD_PIDFILE" with
@@ -321,6 +339,42 @@ let slow =
 (* The probe says it started, beside the dry run's marker, before it
    blocks: a harness that signals the loop then knows the probe is the
    child that runs. *)
+let probe_grow =
+  [
+    test "grows on its second run" (fun () ->
+        is_true (Subject.sub 10 4 < 100);
+        match Sys.getenv_opt "MUTATE_PROBE_MARKER" with
+        | None | Some "" -> ()
+        | Some path ->
+            if Sys.file_exists path then begin
+              let rec grow n acc =
+                if n = 0 then acc else grow (n - 1) (n :: acc)
+              in
+              is_true (List.length (grow 50_000_000 []) > 0)
+            end
+            else close_out (open_out path));
+  ]
+
+let big_child () =
+  let env = Array.append [| "MUTATE_BIG_CHILD=1" |] (Unix.environment ()) in
+  let pid =
+    Unix.create_process_env Sys.executable_name [| Sys.executable_name |] env
+      Unix.stdin Unix.stdout Unix.stderr
+  in
+  match Unix.waitpid [] pid with
+  | _, Unix.WEXITED 0 -> ()
+  | _ -> fail "the child that holds 300 MB failed"
+
+let subprocess =
+  [
+    test "waits for a large child, and grows when armed" (fun () ->
+        big_child ();
+        if Subject.sub 10 4 <> 6 then begin
+          let rec grow n acc = if n = 0 then acc else grow (n - 1) (n :: acc) in
+          is_true (List.length (grow 50_000_000 []) = 0)
+        end);
+  ]
+
 let probe_block =
   [
     test "blocks on its second run" (fun () ->
@@ -558,6 +612,8 @@ let () =
   | "slow" -> exit @@ run "calc" [ group "slow" slow ]
   | "late" -> exit @@ run "calc" [ group "late" late ]
   | "probe_block" -> exit @@ run "calc" [ group "probe" probe_block ]
+  | "probe_grow" -> exit @@ run "calc" [ group "probe" probe_grow ]
+  | "subprocess" -> exit @@ run "calc" [ group "subprocess" subprocess ]
   | "baseline" -> exit @@ run "calc" [ group "baseline" baseline ]
   | "release" -> exit @@ run "calc" [ group "release" release ]
   | "budget" -> exit @@ run "calc" [ group "budget" budget ]

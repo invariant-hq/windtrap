@@ -16,8 +16,9 @@ let ( let* ) = Result.bind
 
 (* What a worker sends: that a new start of the executable reached its run
    and serves, a report of [Run.serve], the mutants each window evaluated
-   and whether its armed site ran away there, and as it ends the coverage
-   counts it hands over. *)
+   and whether its armed site ran away there, and as it ends, under
+   mutation, its own peak resident size and the coverage counts it hands
+   over. *)
 type to_parent =
   | Serving
   | Report of Run.report
@@ -26,6 +27,7 @@ type to_parent =
       sites : (Mutate.id * int) list;
       runaway : bool;
     }
+  | Peak of int
   | Counts of Coverage.t
 
 (* A frame is a 4-byte length and a [Marshal]led value. Nothing that crosses
@@ -139,7 +141,11 @@ let serve (config : Run.config) ~armed ~suite tests ~temp_dir ~own_exits ~input
      its failure. *)
   let reached test sites ~runaway = send (Reached { test; sites; runaway }) in
   let last () =
-    (if mutating config then try window ~send:reached None with _ -> ());
+    (if mutating config then
+       try
+         window ~send:reached None;
+         send (Peak (Os.resident_peak ()))
+       with _ -> ());
     let counts = Coverage.take () in
     if Coverage.files counts <> [] then try send (Counts counts) with _ -> ()
   in
@@ -644,8 +650,8 @@ let counted_failure (r : Run.result) =
   r.counted
   && match r.outcome with Failure.Fail _ -> true | Pass | Skip _ -> false
 
-let supervise ?(on_event = ignore) ~on_reach ~on_failure (config : Run.config)
-    ~suite tests ~spawn =
+let supervise ?(on_event = ignore) ~on_reach ~on_failure ~on_peak
+    (config : Run.config) ~suite tests ~spawn =
   let started = Os.counter () in
   let* selection = Run.select config ~suite tests in
   let run = Run.supervising config ~suite in
@@ -819,6 +825,7 @@ let supervise ?(on_event = ignore) ~on_reach ~on_failure (config : Run.config)
   let take w = function
     | Report report -> common w report
     | Counts counts -> Coverage.absorb counts
+    | Peak bytes -> on_peak bytes
     | Reached { test; sites; _ } -> windowed w test sites
     | Serving -> serves w
   in
@@ -931,6 +938,7 @@ let supervise ?(on_event = ignore) ~on_reach ~on_failure (config : Run.config)
         match reap w with Some status -> died w status | None -> ())
     | Serving, _ -> serves w
     | Counts counts, _ -> Coverage.absorb counts
+    | Peak bytes, _ -> on_peak bytes
     | Reached { test; sites; _ }, _ -> windowed w test sites
     | Report (Judge attempt), Some job ->
         job.asked <- Some (attempt, Os.counter ())
@@ -1151,8 +1159,8 @@ let supervise ?(on_event = ignore) ~on_reach ~on_failure (config : Run.config)
 (* The parent's own evaluations, at module initialization, are outside
    every test. *)
 let execute ?(on_reach = fun _ _ -> ())
-    ?(on_failure = fun _ ~evaluated:_ ~lost:_ -> ()) ?(on_event = ignore)
-    (config : Run.config) ~suite tests =
+    ?(on_failure = fun _ ~evaluated:_ ~lost:_ -> ()) ?(on_peak = ignore)
+    ?(on_event = ignore) (config : Run.config) ~suite tests =
   let spawning = if Sys.win32 then `None else spawning () in
   if config.in_process || spawning = `None then (
     (* This process is the run's one worker. It releases its fixtures once,
@@ -1182,6 +1190,7 @@ let execute ?(on_reach = fun _ _ -> ())
           (fun _ -> on_failure None ~evaluated:!evaluated ~lost:false)
           outcome.release_failures)
       ran;
+    if mutating config then on_peak (Os.resident_peak ());
     ran)
   else
     let spawn () =
@@ -1191,7 +1200,8 @@ let execute ?(on_reach = fun _ _ -> ())
     in
     if mutating config then
       window ~send:(fun test sites ~runaway:_ -> on_reach test sites) None;
-    supervise ~on_event ~on_reach ~on_failure config ~suite tests ~spawn
+    supervise ~on_event ~on_reach ~on_failure ~on_peak config ~suite tests
+      ~spawn
 
 (* Fresh workers *)
 
@@ -1200,11 +1210,13 @@ let can_spawn () = (not Sys.win32) && spawning () <> `None
 type job = {
   cases : string list;
   deadline : float;
-  bail : bool;
+  ceiling : int;
   armed : (Mutate.id * int) option;
 }
 
-type ended = Ran | Lost of string | Expired
+type ended = Ran | Lost of string
+
+let seconds s = if s < 10. then strf "%.1fs" s else strf "%.0fs" s
 
 type ran = {
   results : (Run.result * bool) list;
@@ -1314,7 +1326,7 @@ let fresh (config : Run.config) ~suite tests jobs ~on_ran ~on_signal =
            mutant's, and the next reaching test may still kill it. A runaway
            kills, whatever the test made of it. *)
         if
-          st.job.bail
+          Option.is_some st.job.armed
           && (st.runaway || (st.w.evaluated && counted_failure served.result))
         then st.pending <- [];
         if retire then begin
@@ -1334,12 +1346,13 @@ let fresh (config : Run.config) ~suite tests jobs ~on_ran ~on_signal =
         if evaluates (Option.map fst st.job.armed) sites then
           st.w.evaluated <- true;
         if runaway then st.runaway <- true
-    | Report (Event _ | Judge _) | Counts _ -> ()
+    | Report (Event _ | Judge _) | Peak _ | Counts _ -> ()
   in
-  let expired st =
+  (* Past a limit the worker goes with its process group. *)
+  let stop st how =
     kill st.w;
     ignore (reap st.w);
-    settle st Expired
+    settle st (Lost how)
   in
   let rec deliver () =
     if !delivered < n then
@@ -1352,6 +1365,10 @@ let fresh (config : Run.config) ~suite tests jobs ~on_ran ~on_signal =
           deliver ()
   in
   let remaining st = st.job.deadline -. Os.count_s st.started in
+  (* The parent wakes at least this often, and reads each worker's resident
+     size at every wake, so a worker passes its ceiling by what it takes
+     between two wakes, a tick while the parent waits. *)
+  let tick = 0.1 in
   (* A worker found dead may have left reports in its pipe, which say more
      than its status: they are read first. *)
   let rec dead st =
@@ -1373,7 +1390,7 @@ let fresh (config : Run.config) ~suite tests jobs ~on_ran ~on_signal =
         let wait =
           List.fold_left
             (fun acc st -> Float.min acc (Float.max 0. (remaining st)))
-            1. running'
+            tick running'
         in
         let ready =
           match
@@ -1385,7 +1402,12 @@ let fresh (config : Run.config) ~suite tests jobs ~on_ran ~on_signal =
         List.iter
           (fun st ->
             if Option.is_none !signal then
-              if remaining st <= 0. then expired st
+              if remaining st <= 0. then
+                stop st ("passed its deadline of " ^ seconds st.job.deadline)
+              else if Os.resident st.w.pid > st.job.ceiling then
+                stop st
+                  (strf "passed its memory ceiling of %d MB"
+                     (st.job.ceiling / 1_048_576))
               else if List.mem st.w.reports ready then handle st
               else if ready = [] then
                 match reap ~flags:[ Unix.WNOHANG ] st.w with

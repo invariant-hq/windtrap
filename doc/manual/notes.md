@@ -483,9 +483,10 @@ survivor. A suite that could not be mutation-tested still writes its
 file, which says why and holds its mutants as unknown. Left out of the
 merge, it would let the other suites' survivors stand for mutants it
 might have killed, and the merge names it and fails. A mutant whose own
-run ended early, by a crash, an exit or its deadline, is listed with the
-reason and does not fail the merge: the run ended on the mutant, so a
-gate on it would hold a project to a mutant the tests already notice.
+run ended early, by a crash, an exit, its deadline or its memory
+ceiling, is listed with the reason and does not fail the merge: the run
+ended on the mutant, so a gate on it would hold a project to a mutant
+the tests already notice.
 
 ## A known bug tests no mutant
 

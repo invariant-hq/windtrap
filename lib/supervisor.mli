@@ -74,6 +74,7 @@ val execute :
   ?on_reach:
     (string list option -> (Windtrap_runtime.Mutate.id * int) list -> unit) ->
   ?on_failure:(string list option -> evaluated:bool -> lost:bool -> unit) ->
+  ?on_peak:(int -> unit) ->
   ?on_event:(Run.event -> unit) ->
   Run.config ->
   suite:string ->
@@ -100,7 +101,14 @@ val execute :
     and it releases its fixtures once, after its last test. [lost] is whether
     the failure is its worker's end: a test's worker died, called [exit] or was
     killed past its limit, or a worker died while releasing. Defaults to
-    ignoring them. *)
+    ignoring them.
+
+    Under mutation, [on_peak bytes] receives the largest resident size that a
+    worker reached ({!Os.resident_peak}), its own and none of its subprocesses',
+    as the worker ends on its own, after its last report: a worker that a crash,
+    a signal, [Unix._exit] or the kill past a limit ends gives none. When this
+    process runs the tests itself, it is that worker, and its peak is given once
+    the run is over. Defaults to ignoring them. *)
 
 (** {1:fresh Fresh workers}
 
@@ -114,16 +122,21 @@ type job = {
   deadline : float;
       (** The seconds the job may take from its first worker's start, after
           which its process group is killed. *)
-  bail : bool;
-      (** Whether the job stops at its first counted failure in a worker that
-          had evaluated the armed site by then, and after the first case that
-          ends once a window held the armed site's runaway. *)
+  ceiling : int;
+      (** The resident size, in bytes ({!Os.resident}), that a worker of the job
+          may hold, above which its process group is killed. The parent reads it
+          at every wake of its wait, which is at least every tenth of a second,
+          so a worker passes it by what it takes between two reads. It is the
+          worker's own: the processes that its tests start are not counted, and
+          only the deadline bounds them. *)
   armed : (Windtrap_runtime.Mutate.id * int) option;
       (** The mutant that each of its workers arms before its first case, with
           its budget ([Windtrap_runtime.Mutate.arm]). Each worker arms it
           afresh, with the whole budget and its count from zero, so a job whose
           case retires a worker may evaluate the site up to the budget in each
-          of its workers. *)
+          of its workers. A job with a mutant stops at its first counted failure
+          in a worker that had evaluated the armed site by then, and after the
+          first case that ends once a window held the site's runaway. *)
 }
 (** The type for a job: some cases of the suite, run in one fresh worker. *)
 
@@ -131,10 +144,12 @@ type job = {
 type ended =
   | Ran  (** It ran its cases, up to its stop, and released its fixtures. *)
   | Lost of string
-      (** Its worker ended first, which the phrase says, such as
-          ["was killed by SIGSEGV"] or
-          ["ended when code under test called exit"]. *)
-  | Expired  (** It passed its deadline. *)
+      (** Its worker ended first, or was killed past a limit of the job, which
+          the phrase says: ["was killed by SIGSEGV"],
+          ["ended when code under test called exit"],
+          ["passed its deadline of 2.1s"] or
+          ["passed its memory ceiling of 320 MB"], the megabyte being [2{^20}]
+          bytes. *)
 
 type ran = {
   results : (Run.result * bool) list;
@@ -175,10 +190,10 @@ val fresh :
     {!Baseline.Check}, no [stream] and no JUnit file, its capture logs under its
     temporary directory, and [/dev/null] as its standard output and error. The
     parent sends the job's cases one at a time, and [Finish] after the last, or
-    after the first counted failure under [bail]. A worker that retires leaves
-    the rest of the job to a fresh worker, which arms the mutant again. Coverage
-    counted by a worker is dropped, since a mutant changed what the program
-    does.
+    after the first case at which the job stops ([armed]). A worker that retires
+    leaves the rest of the job to a fresh worker, which arms the mutant again.
+    Coverage counted by a worker is dropped, since a mutant changed what the
+    program does.
 
     While it runs, the parent handles [SIGINT], [SIGTERM], [SIGHUP] and
     [SIGPIPE], and tells [on_signal] of each as it arrives, in the handler,

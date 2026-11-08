@@ -255,6 +255,17 @@ the withheld-correction warning:
   the dry run, is killed, whatever the code under test makes of the
   exception that the site then raises.
 
+The probe and each mutant also run under two limits taken from the dry
+run. One is a deadline: the dry run's wall clock, plus ten times what
+its tests took, and at least a second more. The other is a memory
+ceiling: eight times the largest resident size that a worker of the dry
+run reached, its own. windtrap reads a worker's resident size ten times
+a second. The processes that its tests start count neither in the dry
+run's size nor against the ceiling: only the deadline bounds them. A
+worker past a
+limit is killed with its process group: its mutant is unknown, and a
+probe past one refuses the run.
+
 Every pass runs in worker processes, under `--in-process` too, and the
 probe and each mutant in a worker of its own, started as a run's workers are (see [Running
 tests](running-tests.md#running-tests-in-worker-processes)): none starts
@@ -276,8 +287,8 @@ by the worker it happened in.
 
 A failure that kills stands, whatever else the mutant's run does. A
 mutant no run could judge is unknown, and so is no survivor: its worker
-ended before its tests did, because it crashed or exited or passed a
-deadline taken from the dry run; or each of its failures came
+ended before its tests did, because it crashed or exited or passed its
+deadline or its memory ceiling; or each of its failures came
 before its worker evaluated the site, as when a test fails without an
 earlier test that the mutant's run leaves out; or its tests passed
 without evaluating the site, as when such a test decided whether the

@@ -89,7 +89,8 @@ val execute_and_report :
       {!Windtrap_runtime.Mutate.Runaway} and whatever else the job did.
     - Otherwise it is {!Windtrap_runtime.Verdicts.Unknown} when its job ended
       before its tests did: its worker was killed by a signal or exited, code
-      under test calling [exit] included, or it passed its deadline.
+      under test calling [exit] included, or it passed its deadline or its
+      memory ceiling.
     - Otherwise it is unknown too when its job counted failures, and the reason
       names the first; and when its tests passed and none evaluated the armed
       site, as when the dry run reached the site in a test only because of what
@@ -103,12 +104,26 @@ val execute_and_report :
     no mutant and kills none. The dry run and the probe run it, no mutant's job
     runs it, and no survivor names it.
 
-    {b Limits.} Nothing bounds a whole run. A job that passes its deadline has
-    its process group killed, and the loop goes on. The deadline is the time
-    that the dry run took, read on the monotonic clock ({!Os.val-counter}), plus
-    a share for the tests of the job. The share is ten times
-    ([deadline_multiplier]) what the dry run measured for those tests, and at
-    least one second. The probe's tests are every executed test.
+    {b Limits.} Nothing bounds a whole run. A job that passes its deadline or
+    its memory ceiling has its process group killed, and the loop goes on. The
+    deadline is the time that the dry run took, read on the monotonic clock
+    ({!Os.val-counter}), plus a share for the tests of the job. The share is ten
+    times ([deadline_multiplier]) what the dry run measured for those tests, and
+    at least one second. The probe's tests are every executed test.
+
+    The memory ceiling of every job, the probe's included, is eight times
+    ([excess]) the largest resident size that a worker of the dry run reached,
+    its own peak, which each worker reports as it ends ({!Os.resident_peak}): a
+    job may take eight times what its tests took. A worker that ends otherwise
+    fails its test, so in a green dry run only one that a test marked xfail
+    ended reports none, and the ceiling is the largest of those reported; with
+    none reported there is no ceiling. The parent reads the resident size of
+    each worker of a job ({!Os.resident}) at least every tenth of a second, so a
+    worker passes the ceiling by what it allocates between two reads before it
+    is killed. Both sizes are the worker's own: the processes that its tests
+    start count neither in the dry run's peak nor against the ceiling, and only
+    the deadline bounds them. Each suite's loop measures its own dry run, so the
+    suites of one executable do not share a ceiling.
 
     The runaway budget of a job ({!Windtrap_runtime.Mutate.arm}) is
     [(hits * 8) + 1000] ([budget_of]) for a site that the job's tests evaluated
@@ -163,7 +178,8 @@ val execute_and_report :
       site of a file of the catalogue that they name. The loop then says so on
       standard error and is [Ok] of its dry run, with no verdict file.
     - The probe disagrees with the dry run, and the sentence names the tests
-      that failed in it, or its worker ended early or passed its deadline. *)
+      that failed in it, or its worker ended early or passed its deadline or its
+      memory ceiling. *)
 
 (** {1:armed The armed run}
 

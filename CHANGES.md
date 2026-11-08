@@ -30,6 +30,15 @@
   reads it as a rejected input does, where it read as a survivor;
   `Windtrap_runtime.Mutate.reached` has `runaway`, which says so of a
   window (doc/manual/mutation.md#what-a-mutation-run-runs).
+- A mutant whose worker holds more than eight times the memory of the
+  dry run's largest worker is killed with its process group and is
+  unknown, `passed its memory ceiling of N MB`, and a probe past it
+  refuses the run, so a mutant that allocates without end no longer
+  exhausts the machine before its deadline
+  (doc/manual/mutation.md#what-a-mutation-run-runs).
+- A probe past its deadline is refused as `the determinism probe's run
+  passed its deadline of 2.1s, where the dry run's did not`, naming the
+  deadline.
 - A mutation build counts every evaluation of a site on any number of
   domains, and its guard allocates nothing: a test that spawns domains
   no longer leaves reached mutants never reached, the runaway budget

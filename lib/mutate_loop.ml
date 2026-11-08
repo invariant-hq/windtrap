@@ -239,8 +239,14 @@ let deadline ~wall ~durations paths =
   let scheduled = List.fold_left (fun acc path -> acc +. took path) 0. paths in
   wall +. Float.max 1. (deadline_multiplier *. scheduled)
 
+(* What a job may take, against what its tests took in the dry run. *)
+let excess = 8
+
 let budget_of hits =
-  if hits > (max_int - 1000) / 8 then max_int else (hits * 8) + 1000
+  if hits > (max_int - 1000) / excess then max_int else (hits * excess) + 1000
+
+(* No worker that reported its peak leaves nothing to bound by. *)
+let ceiling ~peak = if peak = 0 then max_int else excess * peak
 
 let counted_failure (r : Run.result) =
   r.counted
@@ -262,11 +268,7 @@ let probe ~dry_run (ran : Supervisor.ran) =
   let failed = List.filter counted_failure results in
   let ran_skipped = List.length (List.filter is_skip results) in
   match ran.ended with
-  | Supervisor.Expired ->
-      Error
-        ("the determinism probe exceeded its deadline: the dry run completed \
-          and its unarmed re-run did not. " ^ not_a_number)
-  | Lost how ->
+  | Supervisor.Lost how ->
       Error
         (strf "the determinism probe's run %s, where the dry run's did not. %s"
            how not_a_number)
@@ -294,8 +296,6 @@ let probe ~dry_run (ran : Supervisor.ran) =
                ^ ")")
            not_a_number)
 
-let seconds s = if s < 10. then strf "%.1fs" s else strf "%.0fs" s
-
 (* The verdict of a mutant's tests, for the loop and [--arm] alike
    (Verdicts): a window in which the armed site ran away kills, whatever the
    code under test made of the exception, a failure kills only in a worker
@@ -322,11 +322,10 @@ let judge ~runaway ~ended ~failures ~tested =
    worker releases after its last row, so a flag is a test's evaluation. The
    unexpected pass of a test marked xfail counts as a failure of the run and
    kills no mutant. *)
-let verdict ~deadline paths (ran : Supervisor.ran) =
+let verdict paths (ran : Supervisor.ran) =
   let ended =
     match ran.ended with
     | Supervisor.Ran -> None
-    | Expired -> Some ("its run passed its deadline of " ^ seconds deadline)
     | Lost how -> Some ("its run " ^ how)
   in
   let failures =
@@ -453,20 +452,19 @@ type ended =
   | Finished of string option
 
 (* The budget counts the job's evaluations, not the dry run's. *)
-let jobs_of ~deadline ~dry_run reached =
-  let job ~bail ~armed paths =
+let jobs_of ~deadline ~ceiling ~dry_run reached =
+  let job ~armed paths =
     {
       Supervisor.cases = List.map Test_tree.path_to_string paths;
       deadline = deadline paths;
-      bail;
+      ceiling;
       armed;
     }
   in
-  job ~bail:false ~armed:None
-    (List.map (fun (r : Run.result) -> r.path) dry_run)
+  job ~armed:None (List.map (fun (r : Run.result) -> r.path) dry_run)
   :: List.map
        (fun ((mutant : Mutate.mutant), site) ->
-         job ~bail:true
+         job
            ~armed:(Some (mutant.id, budget_of site.hits))
            (List.rev site.tests))
        reached
@@ -475,7 +473,7 @@ let jobs_of ~deadline ~dry_run reached =
    mutant in catalogue order, up to [-j] at once; they are given in that
    order. *)
 let test_mutants renderer ~suite (config : Run.config) tests ~dry_run ~wall
-    ~save reached =
+    ~ceiling ~save reached =
   let durations = Hashtbl.create 256 in
   List.iter
     (fun (r : Run.result) -> Hashtbl.replace durations r.path r.duration)
@@ -504,8 +502,7 @@ let test_mutants renderer ~suite (config : Run.config) tests ~dry_run ~wall
     else
       let mutant, site = mutants.(index - 1) in
       let paths = List.rev site.tests in
-      found_verdict renderer config ~locations found mutant
-        (verdict ~deadline:(deadline paths) paths ran);
+      found_verdict renderer config ~locations found mutant (verdict paths ran);
       testing index
   in
   (* Signals are handled until the verdict file is written, so a loop that
@@ -514,7 +511,7 @@ let test_mutants renderer ~suite (config : Run.config) tests ~dry_run ~wall
     with_interrupts @@ fun () ->
     match
       Supervisor.fresh config ~suite tests
-        (jobs_of ~deadline ~dry_run reached)
+        (jobs_of ~deadline ~ceiling ~dry_run reached)
         ~on_ran ~on_signal:record
     with
     | exception Refused message -> Refused_by message
@@ -574,10 +571,12 @@ let loop renderer ~scope ~suite ~repeated (config : Run.config) tests =
        domain in a test instead"
   else
     let on_reach = observe reach ~xfail:(xfail_paths tests) in
+    let peak = ref 0 in
+    let on_peak bytes = peak := max !peak bytes in
     match
       Report.run
         ~execute:(fun ?on_event config ->
-          Supervisor.execute ~on_reach ?on_event config)
+          Supervisor.execute ~on_reach ~on_peak ?on_event config)
         ~suite
         { config with junit = None }
         tests
@@ -624,8 +623,8 @@ let loop renderer ~scope ~suite ~repeated (config : Run.config) tests =
               in
               let wall = Float.max 0.01 (Os.count_s started) in
               match
-                test_mutants renderer ~suite config tests ~dry_run ~wall ~save
-                  reached
+                test_mutants renderer ~suite config tests ~dry_run ~wall
+                  ~ceiling:(ceiling ~peak:!peak) ~save reached
               with
               | exception Sys_error _ when !signal = Some Sys.sigpipe ->
                   Os.die_by Sys.sigpipe
@@ -706,7 +705,8 @@ let armed renderer ~spec ~suite (config : Run.config) tests =
       in
       let result =
         Report.run
-          ~execute:(Supervisor.execute ~on_reach ~on_failure)
+          ~execute:(fun ?on_event config ->
+            Supervisor.execute ~on_reach ~on_failure ?on_event config)
           ~suite config tests
       in
       let xfail_failed (outcome : Run.outcome) =

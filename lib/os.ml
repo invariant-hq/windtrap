@@ -417,6 +417,11 @@ let say message =
 
 let warn message = say ("warning: " ^ message)
 
+(* Memory *)
+
+external resident : int -> int = "ocaml_windtrap_resident"
+external resident_peak : unit -> int = "ocaml_windtrap_resident_peak"
+
 (* Signals *)
 
 (* The runtime blocks a signal while its handler runs: unblocked, one that the

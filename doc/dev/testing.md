@@ -354,21 +354,19 @@ arming it against the whole suite, with `--arm <id>` from the footer or
 `WINDTRAP_MUTATE_ARM=<id>` in front of the tree-wide command. Every
 mutant's worker runs under a deadline derived from the dry run (its wall
 clock, plus ten times the measured timings of the tests that child runs,
-floored at one second) and under the runtime's per-site hit-count
-budget. A child that passes its deadline is killed with its process
-group and its mutant is unknown, since a run that could not finish
-decided nothing; a child whose armed site passes the budget kills its
-mutant, whatever its test makes of the exception. Neither bounds a child's memory: a
-mutant that keeps what each iteration of an endless loop allocates can
-grow by gigabytes before its deadline. Seven mutants of `lib/gen.ml`,
-`lib/choice.ml` and `lib/stateful.ml` do, so the whole tree fits under
-a 12G cap only with each process's data bounded:
+floored at one second), under a memory ceiling of eight times the
+largest resident size a dry-run worker reached, its own and not its
+subprocesses', and under the runtime's
+per-site hit-count budget. A child that passes its deadline or its
+ceiling is killed with its process group and its mutant is unknown,
+since a run that could not finish decided nothing; a child whose armed
+site passes the budget kills its mutant, whatever its test makes of the
+exception. Mutants of `lib/gen.ml`, `lib/choice.ml` and
+`lib/stateful.ml` keep what each iteration of an endless loop
+allocates, and the ceiling stops each at its suite's, from 73 MB in
+the examples' stateful suites to 375 MB in `test_shrink`. The tree-wide
+run then peaks near 2.2 GB, so it needs no bound of its own.
 
-```
-(ulimit -d 2500000; WINDTRAP_MUTATE=1 dune runtest --force --instrument-with ppx_windtrap.mutate)
-```
-
-`ulimit -v` bounds the address space instead and fails a domain test.
 Mutation needs worker processes and declines by name on Windows.
 
 ## The conformance corpus

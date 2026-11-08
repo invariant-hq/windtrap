@@ -5,11 +5,12 @@
   ---------------------------------------------------------------------------*/
 
 /* The primitives Os needs from C: a monotonic clock (derived from mtime;
-   only elapsed_ns and the spin clock are exposed) and unsetenv, the
+   only elapsed_ns and the spin clock are exposed), unsetenv, the
    unbinding half Unix lacks (binding to "" is not unbinding:
-   Sys.getenv_opt then answers Some ""). On Windows unsetenv is the empty
-   assignment _putenv documents as deletion. Os.setenv has already rejected
-   the names POSIX rejects, so a failure here is an allocation failure.
+   Sys.getenv_opt then answers Some ""), and two readings of resident
+   memory. On Windows unsetenv is the empty assignment _putenv documents
+   as deletion. Os.setenv has already rejected the names POSIX rejects, so
+   a failure here is an allocation failure.
 
    On Darwin and Linux the clock is the one that goes on while the machine
    is suspended (mach_continuous_time, CLOCK_BOOTTIME). */
@@ -224,4 +225,58 @@ CAMLprim value ocaml_windtrap_unsetenv (value name)
     caml_raise_sys_error (caml_copy_string ("Windtrap.Os: unsetenv () failed"));
 
   CAMLreturn (Val_unit);
+}
+
+/* Resident memory, in bytes, 0 where it cannot be read. A process's own
+   resident size comes from /proc/<pid>/statm on Linux (its second field,
+   in pages) and from proc_pid_rusage on macOS. getrusage's ru_maxrss is in
+   KiB on Linux and the BSDs, and in bytes on macOS. */
+
+#if defined(__APPLE__) && defined(__MACH__)
+#include <libproc.h>
+#include <sys/resource.h>
+#elif !defined(_WIN32)
+#include <stdio.h>
+#include <sys/resource.h>
+#include <unistd.h>
+#endif
+
+CAMLprim value ocaml_windtrap_resident (value pid)
+{
+#if defined(__APPLE__) && defined(__MACH__)
+  struct rusage_info_v0 info;
+  if (proc_pid_rusage (Int_val (pid), RUSAGE_INFO_V0,
+                       (rusage_info_t *) &info) != 0)
+    return Val_long (0);
+  return Val_long ((intnat) info.ri_resident_size);
+#elif defined(__linux__)
+  char path[64];
+  long size, resident;
+  FILE *statm;
+  snprintf (path, sizeof path, "/proc/%d/statm", Int_val (pid));
+  statm = fopen (path, "r");
+  if (statm == NULL) return Val_long (0);
+  if (fscanf (statm, "%ld %ld", &size, &resident) != 2) resident = 0;
+  fclose (statm);
+  return Val_long ((intnat) resident * (intnat) sysconf (_SC_PAGESIZE));
+#else
+  (void) pid;
+  return Val_long (0);
+#endif
+}
+
+CAMLprim value ocaml_windtrap_resident_peak (value unit)
+{
+  (void) unit;
+#if defined(_WIN32)
+  return Val_long (0);
+#else
+  struct rusage usage;
+  if (getrusage (RUSAGE_SELF, &usage) != 0) return Val_long (0);
+#if defined(__APPLE__) && defined(__MACH__)
+  return Val_long ((intnat) usage.ru_maxrss);
+#else
+  return Val_long ((intnat) usage.ru_maxrss * 1024);
+#endif
+#endif
 }

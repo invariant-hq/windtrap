@@ -43,12 +43,12 @@ type verdict =
           ({!Mutate.Runaway}), whatever the code under test made of it. *)
   | Unknown of string
       (** No verdict, and the string says why: a worker ended before its tests
-          did, by a crash, an exit or its deadline, and no failure killed; its
-          only failures came in workers that had not evaluated the armed site;
-          its tests passed and never evaluated it, as when the dry run cached
-          the result of the site in a table or a forced lazy value; or the suite
-          could not be mutation-tested, as when its dry run is red, it is not
-          deterministic or its selection narrows it. *)
+          did, by a crash, an exit, its deadline or its memory ceiling, and no
+          failure killed; its only failures came in workers that had not
+          evaluated the armed site; its tests passed and never evaluated it, as
+          when the dry run cached the result of the site in a table or a forced
+          lazy value; or the suite could not be mutation-tested, as when its dry
+          run is red, it is not deterministic or its selection narrows it. *)
   | Survived of { first : reaching_test; others : reaching_test list }
       (** Every reaching test passed, and the armed site was evaluated. [first]
           and [others] are the reaching tests, sorted and without duplicates,
