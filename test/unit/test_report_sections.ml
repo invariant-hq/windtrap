@@ -2224,11 +2224,11 @@ let calc_source =
       (41, "let pred n = n - 1");
     ]
 
-let witness ?suite ?file test line =
+let witness ?label ?file test line =
   {
     Sections.test;
     loc = Option.map (fun file -> { Loc.file; line; column = 0 }) file;
-    suite;
+    label;
   }
 
 (* The mutant [id] names, spanning [before] on its line. *)
@@ -2295,7 +2295,7 @@ let hung =
 
 let property_refused =
   {
-    Sections.suite = "test_property.exe (property)";
+    Sections.label = "test_property.exe (property)";
     reason = "the suite is not deterministic: the probe failed 2 tests";
     mutants = 27;
   }
@@ -2322,10 +2322,10 @@ let eq_survivor =
         "lib/eval.ml:60:24:eq" 60 "eval env b = Int 0" "eval env b <> Int 0";
     witnesses =
       [
-        witness ~suite:"test_eval.exe (eval)" "division \u{203a} divides" 0;
-        witness ~suite:"test_eval.exe (eval)"
+        witness ~label:"test_eval.exe (eval)" "division \u{203a} divides" 0;
+        witness ~label:"test_eval.exe (eval)"
           "division \u{203a} rounds toward zero" 0;
-        witness ~suite:"test_printer.exe (printer)"
+        witness ~label:"test_printer.exe (printer)"
           "round trip \u{203a} arithmetic" 0;
       ];
   }
@@ -2340,7 +2340,7 @@ let not_survivor =
         "lib/parser.ml:102:9:not" 102 "at_end p" "not (at_end p)";
     witnesses =
       [
-        witness ~suite:"test_parser.exe (parser)"
+        witness ~label:"test_parser.exe (parser)"
           "errors \u{203a} unexpected end of input" 0;
       ];
   }
@@ -2408,7 +2408,7 @@ let mutation_entries () =
              add_survivor with
              Sections.witnesses =
                [
-                 witness ~suite:"a.exe (a)" "with a suite" 0;
+                 witness ~label:"a.exe (a)" "with a suite" 0;
                  witness "without one" 0;
                ];
            }) );
@@ -2585,7 +2585,7 @@ let block witnesses =
 
 let calc_one = witness ~file:"test/test_calc.ml" "calc \u{203a} sub to zero" 19
 let eval_one = witness ~file:"test/test_eval.ml" "eval \u{203a} Sub node" 31
-let named = { calc_one with Sections.suite = Some "test_calc.exe (calc)" }
+let named = { calc_one with Sections.label = Some "test_calc.exe (calc)" }
 
 let sentence_rows =
   [
@@ -2593,10 +2593,10 @@ let sentence_rows =
     ( "two tests",
       ([ calc_one; eval_one ], "    2 tests ran this line and none failed:") );
     ( "one suite is tests alone",
-      ( [ named; { eval_one with Sections.suite = Some "test_calc.exe (calc)" } ],
+      ( [ named; { eval_one with Sections.label = Some "test_calc.exe (calc)" } ],
         "    2 tests ran this line and none failed:" ) );
     ( "several suites are counted",
-      ( [ named; { eval_one with Sections.suite = Some "test_eval.exe (eval)" } ],
+      ( [ named; { eval_one with Sections.label = Some "test_eval.exe (eval)" } ],
         "    2 tests in 2 suites ran this line and none failed:" ) );
   ]
 

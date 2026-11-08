@@ -349,9 +349,8 @@ val mutation_armed : t -> id:string -> before:string -> after:string -> unit
 *)
 
 val mutation_killed : t -> unit
-(** [mutation_killed t] prints the verdict of an armed run in which a test
-    failed, tests marked xfail aside, or a fixture release failed, in a worker
-    that had evaluated the armed site by then. *)
+(** [mutation_killed t] prints [mutant killed.], the verdict of an armed run
+    that killed its mutant. *)
 
 val mutation_survived : t -> hits:int -> xfail_failed:bool -> unit
 (** [mutation_survived t ~hits ~xfail_failed] prints the verdict of an armed run
@@ -361,9 +360,8 @@ val mutation_survived : t -> hits:int -> xfail_failed:bool -> unit
     the line says that only such tests failed. *)
 
 val mutation_unknown : t -> string -> unit
-(** [mutation_unknown t reason] prints the verdict of an armed run that judged
-    nothing, and [reason] says why: its tests passed and none evaluated the
-    armed site, or every failure came in a worker that had not evaluated it. *)
+(** [mutation_unknown t reason] prints [mutant unknown: <reason>.], the verdict
+    of an armed run that judged nothing, with [reason] as given. *)
 
 val mutation_not_reached : t -> unit
 (** [mutation_not_reached t] prints the verdict of an armed run in which only
@@ -371,8 +369,8 @@ val mutation_not_reached : t -> unit
 
 (** {2:loop The report of a loop}
 
-    A client must call {!mutation_testing} before each child,
-    {!mutation_survivor} when a child ends on a survivor, and {!mutation_finish}
+    A client must call {!mutation_testing} before each mutant's job,
+    {!mutation_survivor} when a job ends on a survivor, and {!mutation_finish}
     once, last. {!mutation_refused} and {!mutation_interrupted} are the two
     other ways in which a report ends. *)
 
@@ -402,9 +400,9 @@ val mutation_refused : t -> string -> unit
 val mutation_interrupted :
   t -> testing:string option -> Report_sections.mutation -> unit
 (** [mutation_interrupted t ~testing m] ends the report of a loop that a signal
-    is stopping. It says on standard error what was interrupted: the child of
-    the mutant [testing], or the determinism probe when [testing] is [None]. It
-    then calls {!mutation_finish} over [m]. *)
+    is stopping. It says on standard error what was interrupted: the job of the
+    mutant [testing], or the determinism probe when [testing] is [None]. It then
+    calls {!mutation_finish} over [m]. *)
 
 (** {1:running Running} *)
 
@@ -458,7 +456,7 @@ val run :
 
     The whole report goes through [Format.std_formatter] and the standard
     descriptors. A caller that forks must therefore first flush both standard
-    formatters and both descriptors, or the child prints the buffered bytes
+    formatters and both descriptors, or the fork prints the buffered bytes
     again. Beyond what {!Run.execute} does, [run] reads the environment
     ({!terminal}) and writes standard output, standard error, the JUnit file and
     the JSON file. Each block also reads the source file of a located failure

@@ -1527,7 +1527,7 @@ let coverage_report ~mode ~min (c : coverage) =
 
 (* Mutation *)
 
-type witness = { test : string; loc : Loc.t option; suite : string option }
+type witness = { test : string; loc : Loc.t option; label : string option }
 
 type mutant = {
   id : string;
@@ -1551,7 +1551,7 @@ let diagnostic (m : mutant) =
     m.col m.end_col
 
 type unknown = { mutant : mutant; reason : string; invocation : Run.invocation }
-type refused = { suite : string; reason : string; mutants : int }
+type refused = { label : string; reason : string; mutants : int }
 type scope = Suite | Selected of int | Suites of int
 
 type mutation = {
@@ -1599,7 +1599,7 @@ let survivor_block ~suite_width (s : survivor) =
         let suites =
           List.length
             (List.sort_uniq String.compare
-               (List.filter_map (fun (w : witness) -> w.suite) witnesses))
+               (List.filter_map (fun (w : witness) -> w.label) witnesses))
         in
         let sentence =
           if n = 1 then "1 test ran this line and did not fail:"
@@ -1621,7 +1621,7 @@ let survivor_block ~suite_width (s : survivor) =
           | Some _ ->
               ( [ left "" suite_width; left "  " None; left "  " None ],
                 fun (w : witness) ->
-                  plain (Option.value w.suite ~default:"") :: test w )
+                  plain (Option.value w.label ~default:"") :: test w )
         in
         [
           Line [];
@@ -1706,7 +1706,7 @@ let refused_section = function
         Line
           [
             plain "  ";
-            styled `Bold r.suite;
+            styled `Bold r.label;
             plain
               (strf "  %s unknown: %s" (counted r.mutants "mutant") r.reason);
           ]
@@ -1798,7 +1798,7 @@ let mutation_report ~invocation (m : mutation) =
   let suites =
     List.concat_map
       (fun (s : survivor) ->
-        List.filter_map (fun (w : witness) -> w.suite) s.witnesses)
+        List.filter_map (fun (w : witness) -> w.label) s.witnesses)
       m.survivors
   in
   let suite_width =

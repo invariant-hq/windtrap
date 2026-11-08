@@ -399,7 +399,7 @@ let found_verdict renderer (config : Run.config) ~locations found mutant verdict
         {
           test;
           loc = Option.join (Hashtbl.find_opt locations test);
-          suite = None;
+          label = None;
         }
       in
       let survivor : Report_sections.survivor =

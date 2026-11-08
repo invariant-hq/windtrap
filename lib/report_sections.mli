@@ -421,10 +421,9 @@ type witness = {
       (** The path of the test, as {!Test_tree.path_to_string} spells it. *)
   loc : Loc.t option;
       (** Where the test is declared, when the producer knows it. *)
-  suite : string option;
-      (** The suite that ran the test, as a merge labels it: its executable,
-          then its name in parentheses. It is [None] in the report of one suite,
-          which has no such column. *)
+  label : string option;
+      (** The suite that ran the test, as the merge labels it. It is [None] in
+          the report of one suite, which has no such column. *)
 }
 (** The type for a reaching test of a survivor: a test that evaluated the
     mutated site and did not fail when it changed. *)
@@ -473,7 +472,7 @@ type unknown = {
 (** The type for a reached mutant that no run judged, which is no survivor. *)
 
 type refused = {
-  suite : string;  (** The suite, as a merge labels it. *)
+  label : string;  (** The suite, as the merge labels it. *)
   reason : string;  (** Why it could not test its mutants. *)
   mutants : int;  (** The mutants that its file holds as unknown. *)
 }

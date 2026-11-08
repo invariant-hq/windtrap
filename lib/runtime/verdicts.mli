@@ -6,8 +6,8 @@
 (** Mutation verdicts: what a run made of each mutant, and the [.mutants] file
     that carries the verdicts of one suite to the merge.
 
-    The mutation loop writes one verdict file for each suite of each test
-    executable. [windtrap mutants] loads the files of a project and combines
+    The mutation loop writes what it made of a suite's mutants to the suite's
+    verdict file. [windtrap mutants] loads the files of a project and combines
     them with {!merge}, under which a mutant that is killed anywhere is killed.
     Nothing here runs when the module loads or when the process exits. *)
 
@@ -94,11 +94,11 @@ val add : t -> record -> t
 (** [add t r] is [t] with [r] recorded. A {!Survived} verdict is sorted on its
     way in. When [t] already holds a record under [r.id], the smaller
     [(before, after, end_line, end_col)] in lexicographic order is kept, and the
-    two verdicts combine into the verdict of a mutant that one executable saw
-    one way and another the other way. It is {!Killed} if either is. Otherwise
-    it is {!Unknown} if either is, with the smaller reason in [String.compare]
-    order when both are, then {!Survived} with the reaching tests of both if
-    either is, then {!Outside_tests} if either is, and {!Unreached} if both are.
+    two verdicts combine into the verdict of a mutant that one suite saw one way
+    and another the other way. It is {!Killed} if either is. Otherwise it is
+    {!Unknown} if either is, with the smaller reason in [String.compare] order
+    when both are, then {!Survived} with the reaching tests of both if either
+    is, then {!Outside_tests} if either is, and {!Unreached} if both are.
 
     [add] checks nothing of [r.id] or of the end. It accepts an empty [file], a
     [line] below [1], a negative [col], an end before the start and a [rewrite]
@@ -116,11 +116,6 @@ val merge : t -> t -> t
     order gives one answer. *)
 
 (** {1:files Verdict files}
-
-    A suite of an executable has one verdict file, at {!output_file}, which
-    records the suite's name. The suites of one executable, such as the
-    partitions of an inline-test library, have one file each, so the run of one
-    never replaces what another found.
 
     The first line of a file is the magic line [windtrap-mutants-v6], which
     carries the version of the format. A file with another first line is
@@ -153,10 +148,11 @@ val writer_identity : exe:string -> identity option
 
 val output_file : exe:string -> suite:string -> string
 (** [output_file ~exe ~suite] is [<dir>/<hash>.mutants], the verdict file of the
-    suite named [suite] of the executable at [exe]. [<dir>] is
-    [Instr.output_dir format ~exe] and [<hash>] the hexadecimal MD5 of [suite].
-    An executable that is renamed or moved, and a suite that is renamed, leave
-    their previous file behind. *)
+    suite named [suite] of the executable at [exe], so the suites of one
+    executable, such as the partitions of an inline-test library, never replace
+    what another found. [<dir>] is [Instr.output_dir format ~exe] and [<hash>]
+    the hexadecimal MD5 of [suite]. An executable that is renamed or moved, and
+    a suite that is renamed, leave their previous file behind. *)
 
 type file = {
   verdicts : t;  (** The records of the file. *)

@@ -203,8 +203,8 @@ let merge ~source files =
       mutant = mutant r;
       witnesses =
         List.map
-          (fun (suite, test) ->
-            { Sections.test; loc = None; suite = Some suite })
+          (fun (label, test) ->
+            { Sections.test; loc = None; label = Some label })
           (List.sort_uniq compare witnesses);
     }
   in
@@ -263,7 +263,7 @@ let merge ~source files =
         Option.map
           (fun reason ->
             {
-              Sections.suite = f.label;
+              Sections.label = f.label;
               reason;
               mutants = List.length (List.filter (( == ) f) untested);
             })
@@ -287,7 +287,7 @@ let merge ~source files =
           List.find_map
             (fun (f, survived) ->
               if
-                Option.equal String.equal w.suite (Some f.label)
+                Option.equal String.equal w.label (Some f.label)
                 && Ids.mem mutant.id survived
               then Some f.invocation
               else None)

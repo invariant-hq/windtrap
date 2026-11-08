@@ -1078,7 +1078,7 @@ let mutation_not_reached t =
 let mutation_testing t ~index ~total ~id =
   progress t (strf "[%d/%d] %s\u{2026}" index total id)
 
-(* A survivor's block is committed when its child ends, so a loop that dies
+(* A survivor's block is committed when its job ends, so a loop that dies
    has printed what it found. *)
 let mutation_survivor t survivor =
   print t

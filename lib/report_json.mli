@@ -78,10 +78,8 @@
       bounds that the last look established ({!Property.type-share}), [low] and
       [high] equal where the share is exact.
 
-    {b Encoding.} Each value is written by {!Json.to_string}, so the document is
-    always valid JSON in UTF-8: a malformed UTF-8 sequence in a name or a
-    message becomes U+FFFD, a float is the shortest decimal that reads back to
-    it, and a float that is not finite is [null].
+    {b Encoding.} The document is written by {!Json.to_string}, so it is valid
+    JSON in UTF-8.
 
     {b Determinism.} The document holds no clock but the durations, no host name
     and no timestamp. Its paths are printed against {!Os.project_root}. *)

@@ -162,7 +162,7 @@ val arm : ?budget:int -> id -> (mutant, arm_error) result
     evaluation [n + 1] raises {!Runaway}. There is no bound by default. The
     bound is compared with the count of each registration on its own. The count
     is the one since the last {!reset_reach}, and not since this call, so a
-    caller that inherited counts, as a forked child does, must call
+    caller that inherited counts, as a forked worker does, must call
     {!reset_reach} after [arm].
 
     Raises [Invalid_argument] if [budget] is not positive, and nothing is
@@ -186,17 +186,19 @@ exception Runaway of { id : id; hits : int; budget : int }
     initialization is, and a drain between two tests what no test evaluated, as
     the release of a fixture.
 
-    {b Domains.} Each evaluation is counted by exactly one drain, and the OCaml
-    memory model (the OCaml manual, "Memory model: the hard bits") says which:
-    an evaluation that happens before a drain is counted by it or by an earlier
-    one, and one that a drain happens before is counted by a later one. The
-    order is that of the domain that drains, and the one that [Domain.spawn] and
-    [Domain.join], an atomic, a mutex or a condition create between domains. So
-    the window of a test that joins the domains it spawns, or waits for the pool
-    it hands work to, counts every evaluation that test made and no other
-    test's. A domain still running when the test's window closes has what it
-    evaluates afterwards counted in a later window, or lost with its process if
-    that ends first. *)
+    {b Domains.} Any domain may evaluate sites, and each evaluation is counted
+    by at most one drain. The OCaml memory model (the OCaml manual, "Memory
+    model: the hard bits") says which: an evaluation that happens before a drain
+    is counted by it or by an earlier one, and one that a drain happens before
+    is counted by a later one. The order is that of the domain that drains, and
+    the one that [Domain.spawn] and [Domain.join], an atomic, a mutex or a
+    condition create between domains. So the window of a test that joins the
+    domains it spawns, or waits for the pool it hands work to, counts every
+    evaluation that test made and no other test's. A domain still running when
+    the test's window closes has what it evaluates afterwards counted in a later
+    window, or lost with its worker if that ends first. Drains and
+    {!reset_reach} must run on one domain at a time, or two drains could count
+    one window twice. *)
 
 type reached = {
   mutant : mutant;  (** The mutant that was evaluated. *)
