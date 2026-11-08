@@ -44,6 +44,10 @@ type mark = { x : float; y : float }
 
 let below (p : Point.t) = if p < { x = 0; y = 10 } then 1 else 0
 
+(* [none] puts [if armed then None else Some e] around [Some e], so the
+   annotation still reaches [Some]'s record literal through the [if]. *)
+let origin () : Point.t option = Some { x = 0; y = 0 }
+
 (* [=] and [<>] bind the whole comparison rather than its operands, so
    the application - and the expected types it gives them - survives
    untouched. *)

@@ -1189,6 +1189,17 @@ file whose every site is dismissed expands to its source as written.
        then __windtrap_mut_9_l + __windtrap_mut_9_r
        else __windtrap_mut_9_l - __windtrap_mut_9_r)
 
+  $ mut --impl ./fixture_lost_none.ml | ../elide.exe
+  mutation sites of "./fixture_lost_none.ml" in Windtrap_mut_________fixture_lost_none___ml:
+    0: 7:18-7:25 "sub" "x + 1" -> "x - 1"
+  exception None 
+  let wrap x =
+    Some
+      (let (__windtrap_mut_0_l, __windtrap_mut_0_r) = (x, 1) in
+       if Windtrap_mut_________fixture_lost_none___ml.___windtrap_armed___ 0
+       then __windtrap_mut_0_l - __windtrap_mut_0_r
+       else __windtrap_mut_0_l + __windtrap_mut_0_r)
+
   $ mut --impl ./fixture_neg.ml | ../elide.exe
   mutation sites of "./fixture_neg.ml" in Windtrap_mut_________fixture_neg___ml:
     0: 8:23-8:27 "not" "flag" -> "not flag"
@@ -1337,6 +1348,77 @@ file whose every site is dismissed expands to its source as written.
       if Windtrap_mut_________fixture_nesting___ml.___windtrap_armed___ 9
       then 1
       else 0
+
+  $ mut --impl ./fixture_none.ml | ../elide.exe
+  mutation sites of "./fixture_none.ml" in Windtrap_mut_________fixture_none___ml:
+    0: 6:27-6:33 "none" "Some x" -> "None"
+    1: 6:18-6:21 "not" "p x" -> "not (p x)"
+    2: 7:15-7:28 "none" "Some (Some x)" -> "None"
+    3: 7:20-7:28 "none" "Some x" -> "None"
+    4: 8:13-8:24 "none" "Some (x, 1)" -> "None"
+    5: 8:22-8:23 "int" "1" -> "0"
+    6: 14:41-14:42 "int" "0" -> "1"
+    7: 24:26-24:34 "none" "Some n" -> "None"
+    8: 28:48-28:54 "none" "Some x" -> "None"
+  let find p x =
+    if
+      let __windtrap_mut_1_p = p x in
+      (if Windtrap_mut_________fixture_none___ml.___windtrap_armed___ 1
+       then Stdlib.not __windtrap_mut_1_p
+       else __windtrap_mut_1_p)
+    then
+      (if Windtrap_mut_________fixture_none___ml.___windtrap_armed___ 0
+       then Stdlib.Option.None
+       else Some x)
+    else None
+  let nested x =
+    if Windtrap_mut_________fixture_none___ml.___windtrap_armed___ 2
+    then Stdlib.Option.None
+    else
+      Some
+        (if Windtrap_mut_________fixture_none___ml.___windtrap_armed___ 3
+         then Stdlib.Option.None
+         else Some x)
+  let pair x =
+    if Windtrap_mut_________fixture_none___ml.___windtrap_armed___ 4
+    then Stdlib.Option.None
+    else
+      Some
+        (x,
+          (if Windtrap_mut_________fixture_none___ml.___windtrap_armed___ 5
+           then 0
+           else 1))
+  let qualified x = Option.Some x
+  let get =
+    function
+    | Some x -> x
+    | None ->
+        if Windtrap_mut_________fixture_none___ml.___windtrap_armed___ 6
+        then 1
+        else 0
+  let default = Some 1
+  type node =
+    | Node of node option 
+    | Later of node option Lazy.t 
+  let loop () = let rec n = Some (Node n) in n
+  let later () =
+    let rec n =
+      Later
+        (lazy
+           (if Windtrap_mut_________fixture_none___ml.___windtrap_armed___ 7
+            then Stdlib.Option.None
+            else Some n)) in
+    n
+  let last l =
+    let rec last =
+      function
+      | [] -> None
+      | x::[] ->
+          if Windtrap_mut_________fixture_none___ml.___windtrap_armed___ 8
+          then Stdlib.Option.None
+          else Some x
+      | _::rest -> last rest in
+    last l
 
   $ mut --impl ./fixture_off.ml | ../elide.exe
   mutation sites of "./fixture_off.ml" in Windtrap_mut_________fixture_off___ml:

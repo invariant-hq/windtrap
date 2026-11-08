@@ -55,6 +55,11 @@
   the number `--min` compares, as the shortest decimal that reads back
   (`66.66666666666667`, `100`), and each file on a line of its own.
 
+### Mutation testing
+
+- `none` is a new rewrite: `Some e` becomes `None`, which asks whether a
+  test reads the optional result (doc/manual/mutation.md#what-is-mutated).
+
 ## v0.3.1 2026-11-01
 
 Windtrap 0.3.1 fixes two bugs that failed tests that were not at fault:

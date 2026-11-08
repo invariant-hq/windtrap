@@ -137,6 +137,25 @@ let kept_families structure =
   let lost = scan#structure structure [] in
   fun family -> not (List.mem family lost)
 
+(* [none] keeps its sites only where [Some] and [None] are Stdlib's, since
+   its guard types [Some e] beside [Stdlib.Option.None]: a file that declares
+   a constructor of either name, in a variant, an extension or an exception,
+   loses it. As for an operator, what an [open] brings in is not seen. *)
+let keeps_none structure =
+  let declares name declared = declared || name = "Some" || name = "None" in
+  let scan =
+    object
+      inherit [bool] Ast_traverse.fold as super
+
+      method! constructor_declaration cd declared =
+        super#constructor_declaration cd (declares cd.pcd_name.txt declared)
+
+      method! extension_constructor ec declared =
+        super#extension_constructor ec (declares ec.pext_name.txt declared)
+    end
+  in
+  not (scan#structure structure false)
+
 (* Mutants *)
 
 (* [Condition] is an [if] or [while] condition or an arm's guard, and
@@ -191,7 +210,7 @@ let render e =
 type guard =
   | Neg
   | Operator of application * operator_guard
-  | Literal of expression (* [int] and [bool], by this constant *)
+  | Constant of expression (* [int], [bool] and [none], by this constant *)
   | Delete (* [del], whose guard [descend] builds *)
 
 and operator_guard =
@@ -433,10 +452,11 @@ let branch ~loc ~module_name ~index e app left right =
 
 (* [lazy] of a trivial syntactic value compiles as already forced, and a
    guard under it would change that. Coverage's predicate, verbatim. No guard
-   weakens the generalization of a binding: every site but a literal is an
-   application, a condition or a statement, and the guard of a literal is an
-   [if] whose two arms are constants, which the type-checker counts as a
-   syntactic value, as it does a sequence whose last expression is one. *)
+   weakens the generalization of a binding: every site but a literal and a
+   [Some e] is an application, a condition or a statement, and the guard of a
+   literal is an [if] whose two arms are constants, which the type-checker
+   counts as a syntactic value, as it does a sequence whose last expression is
+   one, and an [if] of [None] and [Some e] when [e] is one. *)
 let rec is_trivial_syntactic_value e =
   match e.pexp_desc with
   | Pexp_function _ | Pexp_poly _ | Pexp_ident _ | Pexp_constant _
@@ -464,7 +484,7 @@ type site = {
   after : string;
 }
 
-class instrumenter ~keeps ~module_name =
+class instrumenter ~keeps ~keeps_none ~module_name =
   object (self)
     inherit Ast_traverse.map as super
 
@@ -483,6 +503,10 @@ class instrumenter ~keeps ~module_name =
     (* Whether the code being rewritten runs when the module is initialized:
        outside every function, [lazy], method and functor. *)
     val mutable at_load = true
+
+    (* Whether the code being rewritten is the right side of a [let rec]
+       binding, outside its functions, [lazy] and objects. *)
+    val mutable recursive = false
     method sites = List.rev sites
     method pins = pins
 
@@ -516,13 +540,16 @@ class instrumenter ~keeps ~module_name =
           Some index
       end
 
-    (* The mutant of a literal, when no arid rule drops it. Neither rewrite
+    (* The mutant that replaces [e] by a constant, when no arid rule drops it:
+       [int] and [bool] on a literal, [none] on [Some e]. None of the three
        has a site that runs when the module is initialized, before any test,
        where no run can judge it. [int] skips a constant whose nudge is ROR's
        own boundary move, an operand of [+] or [-], which AOR moves, and a
        [create] argument. [bool] flips a literal outside a boolean context,
-       where [neg] already acts, and skips an OS flag. *)
-    method private literal context e =
+       where [neg] already acts, and skips an OS flag. [none] skips the right
+       side of a [let rec], whose value must stay a constructor: an [if]
+       there is refused by the compiler. *)
+    method private replacement context e =
       let is_child arg = arg == e in
       let applied =
         Option.bind parent (fun (p, c) ->
@@ -557,7 +584,7 @@ class instrumenter ~keeps ~module_name =
                 in
                 Some
                   {
-                    guard = Literal replacement;
+                    guard = Constant replacement;
                     rewrite = "int";
                     after = render replacement;
                   })
@@ -583,31 +610,51 @@ class instrumenter ~keeps ~module_name =
               pexp_construct ~loc { txt = Lident flipped; loc } None
             in
             Some
-              { guard = Literal replacement; rewrite = "bool"; after = flipped }
+              {
+                guard = Constant replacement;
+                rewrite = "bool";
+                after = flipped;
+              }
+      | Pexp_construct ({ txt = Lident "Some"; _ }, Some _)
+        when keeps_none && not (at_load || recursive) ->
+          let none = [%expr Stdlib.Option.None] in
+          Some { guard = Constant none; rewrite = "none"; after = "None" }
       | _ -> None
 
     (* [chained] marks the left operand of a site that applies the same
        operator: a chain of one operator carries one mutant, and reading it
        from the tree keeps a bracket from changing the count. A dismissal
-       leaves [e] as written. [parent] and [at_load] hold for the children of
-       [e] while they are rewritten. *)
+       leaves [e] as written. [parent], [at_load] and [recursive] hold for
+       the children of [e] while they are rewritten. *)
     method private mutate ?chained context e =
-      let outer = (parent, at_load) in
+      let outer_parent = parent
+      and outer_at_load = at_load
+      and outer_recursive = recursive in
       let mutant =
         match mutant ~keeps context e with
         | Some mutant -> Some mutant
-        | None -> self#literal context e
+        | None -> self#replacement context e
       in
       parent <- Some (e, context);
       (match e.pexp_desc with
       | Pexp_function _ | Pexp_lazy _ | Pexp_poly _ | Pexp_object _
       | Pexp_newtype _ ->
-          at_load <- false
+          at_load <- false;
+          recursive <- false
       | _ -> ());
       let rewritten = self#rewrite ?chained context e mutant in
-      parent <- fst outer;
-      at_load <- snd outer;
+      parent <- outer_parent;
+      at_load <- outer_at_load;
+      recursive <- outer_recursive;
       rewritten
+
+    (* The bindings of a [let rec], whose right sides are [recursive]. *)
+    method private recursive_bindings bindings =
+      let outer = recursive in
+      recursive <- true;
+      let bindings = List.map self#value_binding bindings in
+      recursive <- outer;
+      bindings
 
     method private rewrite ?(chained = false) context e mutant =
       let off = off_reason e.pexp_attributes in
@@ -629,14 +676,15 @@ class instrumenter ~keeps ~module_name =
       let loc = { e.pexp_loc with loc_ghost = true } in
       match mutant.guard with
       | Delete -> e (* [descend] guards a statement *)
-      | Literal replacement -> (
+      | Constant replacement -> (
+          let value = self#descend e in
           match index with
-          | None -> e
+          | None -> value
           | Some index ->
               [%expr
                 if [%e armed ~loc ~module_name index] then
                   [%e { replacement with pexp_loc = loc }]
-                else [%e e]])
+                else [%e value]])
       | Neg -> (
           let value = self#descend e in
           match index with
@@ -730,6 +778,12 @@ class instrumenter ~keeps ~module_name =
                     ())]
               in
               { e with pexp_desc = Pexp_sequence (dropped, rest') })
+      | Pexp_let (Recursive, bindings, body) ->
+          let bindings = self#recursive_bindings bindings in
+          {
+            e with
+            pexp_desc = Pexp_let (Recursive, bindings, self#expression body);
+          }
       | Pexp_apply (operator, [ (Nolabel, left); (Nolabel, right) ])
         when is_connective ~keeps e ->
           {
@@ -773,7 +827,16 @@ class instrumenter ~keeps ~module_name =
     method! class_expr ce =
       let outer = at_load in
       at_load <- false;
-      let ce = super#class_expr ce in
+      let ce =
+        match ce.pcl_desc with
+        | Pcl_let (Recursive, bindings, body) ->
+            let bindings = self#recursive_bindings bindings in
+            {
+              ce with
+              pcl_desc = Pcl_let (Recursive, bindings, self#class_expr body);
+            }
+        | _ -> super#class_expr ce
+      in
       at_load <- outer;
       ce
 
@@ -795,14 +858,15 @@ class instrumenter ~keeps ~module_name =
           | Exclude_file -> err_misplaced attribute "exclude_file");
           si
       | Pstr_value (rec_flag, bindings) when not suppressed ->
+          let outer = recursive in
+          if rec_flag = Recursive then recursive <- true;
           let binding b =
             if is_off b.pvb_attributes then b
             else { b with pvb_expr = self#expression b.pvb_expr }
           in
-          {
-            si with
-            pstr_desc = Pstr_value (rec_flag, List.map binding bindings);
-          }
+          let bindings = List.map binding bindings in
+          recursive <- outer;
+          { si with pstr_desc = Pstr_value (rec_flag, bindings) }
       | _ -> super#structure_item si
 
     method! structure items =
@@ -892,7 +956,8 @@ let transform_impl_file ctxt ast =
   else
     let module_name = generated_module_name file in
     let instrumenter =
-      new instrumenter ~keeps:(kept_families ast) ~module_name
+      new instrumenter
+        ~keeps:(kept_families ast) ~keeps_none:(keeps_none ast) ~module_name
     in
     let instrumented = instrumenter#structure ast in
     match instrumenter#sites with

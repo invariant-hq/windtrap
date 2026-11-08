@@ -220,6 +220,18 @@ let neg_while limit =
 
 let neg_guard a = match a with _ when note "g" a -> "t" | _ -> "f"
 
+(* {1 [none]: the argument runs once}
+
+   [none] puts [if armed then None else Some e] around [Some e], so its
+   argument must run exactly once disarmed, and the [Some] inside it is a
+   site of its own. *)
+
+let none_some a =
+  match Some (Some (note "a" a)) with
+  | Some (Some v) -> string_of_int v
+  | Some None -> "inner"
+  | None -> "outer"
+
 (* {1 Laziness}
 
    [lazy_thunk]'s body carries two [ari] sites, so it is not a trivial
@@ -275,12 +287,14 @@ let lazy_witness () =
    ['a] of [bool * ('a -> 'a)], which no relaxation generalizes, weak.
    The binding sits in a functor, whose body runs when it is applied, so
    [bool] mutates it; at the top level it would run at load and carry no
-   site. Nothing here applies it; the check is the module coercion in
+   site. [some]'s guard is an [if] of two syntactic values, [None] and
+   [Some []], so ['a list option] generalizes too. Nothing here applies it; the check is the module coercion in
    test_mutate_semantics.ml, which compares this copy's inferred
    signature against the twin's and fails to compile the day the two
    disagree. *)
 module Generalizes (_ : sig end) = struct
   let pair = (true, fun x -> x)
+  let some = Some []
 end
 
 (* {1 Tail position, measured}
@@ -438,4 +452,5 @@ let witnesses : (string * (unit -> string)) list =
     ("neg in an if condition, false", fun () -> show (neg_if false));
     ("neg in a while condition", fun () -> show (neg_while 3));
     ("neg in a when guard", fun () -> show (neg_guard true));
+    ("none runs its argument once", fun () -> show (none_some 3));
   ]

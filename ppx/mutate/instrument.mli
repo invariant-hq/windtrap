@@ -43,7 +43,16 @@
     [external], bears the name of the operator. What an [open] brings into scope
     is not seen. When such an operator does not fit an arm, the file fails to
     compile under instrumentation, with the error at the expression in the
-    source, and [[@@@mutate exclude_file]] is the way out. *)
+    source, and [[@@@mutate exclude_file]] is the way out.
+
+    [none]'s armed arm is [Stdlib.Option.None] and its disarmed arm the original
+    [Some e], which must then be Stdlib's [Some] for the two arms to share a
+    type. A file that declares a constructor named [Some] or [None], in a
+    variant, an extension or an exception, thus has no [none] site. A [Some]
+    that an [open] brings into scope is not seen: the guard types the expression
+    as Stdlib's option, so the file fails to compile under instrumentation
+    wherever the context expects the opened type, and [[@mutate off]] on the
+    expression or [[@@@mutate exclude_file]] is the way out. *)
 
 (** {1:sites Sites}
 
@@ -77,10 +86,17 @@
       suffix other than [l], [L] or [n] are no sites.
     - [bool] flips [true] and [false], under the name [bool], outside a boolean
       context, where [neg] already acts.
+    - [none] replaces an application of the constructor [Some] by [None], under
+      the name [none]: [Some e] becomes [None]. A qualified [M.Some e] is no
+      site, and neither is a pattern.
 
     The guard of [int] and of [bool] is [if armed then n' else n], an [if] whose
     two arms are constants, which the type-checker counts as a syntactic value,
-    so a binding that generalizes still does.
+    so a binding that generalizes still does. The guard of [none] is
+    [if armed then Stdlib.Option.None else Some e], whose [e] is rewritten in
+    its turn, and which is a syntactic value when [e] is one. The context types
+    its [None] first, and [Some e] then gets the type that the context expects,
+    as the original did.
 
     A boolean context is the condition of an [if] or of a [while], the guard of
     an arm, or a direct operand of [&&] or [||] in a file that keeps the [con]
@@ -109,10 +125,13 @@
       [x <= c] and [x > c], and the mirror for a constant on the left. In
       [x < 0] the [0] is no site, since [x < 1] is [x <= 0], and in [x >= 1] the
       [1] is one.
-    - [del], [int] and [bool] skip code that runs when the module is
+    - [del], [int], [bool] and [none] skip code that runs when the module is
       initialized, before any test, so that no run can judge its mutant: code
       outside every function, [lazy], method, class and functor body, as in a
       top-level [let limit = 64] or [let () = setup (); main ()].
+    - [none] skips the right side of a [let rec] binding, outside the functions,
+      [lazy] and objects in it, as in [let rec n = Some (Node n)]: the compiler
+      refuses an [if] where the recursive value must be a constructor.
     - [bool] skips the argument of a [~cloexec] or [?cloexec] label, an OS flag.
 
     These rules read the syntax alone, as [ari]'s chains do. *)
@@ -155,7 +174,7 @@
       identifier, which must name one site.
 
     The code that runs when a module is initialized is mutated like any other,
-    but for the sites of [del], [int] and [bool], so a top-level
+    but for the sites of [del], [int], [bool] and [none], so a top-level
     [let origin = 1 + 2] carries a site. The [--mutate] loop lists a site that
     ran outside tests alone as evaluated outside tests. *)
 

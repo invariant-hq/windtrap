@@ -1,6 +1,6 @@
 (library
  (name windtrap_mutate_forced)
- (modules forced no_guard oracle shadowed)
+ (modules forced no_guard oracle shadowed tristate)
  (flags
   (:standard -w +a-70 -warn-error +a))
  (preprocess

@@ -40,8 +40,8 @@ let ari_sub a b = a - b
 let ari_fadd a b = a +. b
 let ari_fsub a b = a -. b
 
-(* [del], whose armed statement does not run, [int] up and down, and
-   [bool]. *)
+(* [del], whose armed statement does not run, [int] up and down, [bool],
+   and [none]. *)
 let dropped = ref 0
 
 let del_count () =
@@ -52,6 +52,7 @@ let del_count () =
 let int_up () = 41
 let int_down () = 1L
 let bool_flip () = Some true
+let none_drop x = Some (x + 1)
 
 (* Evaluation order, multiplicity and short-circuiting. [note] records
    that it ran and returns its argument, so a trace says exactly which

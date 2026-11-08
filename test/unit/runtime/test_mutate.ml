@@ -192,12 +192,12 @@ let reasons () =
     "": no ':' separator
     "add": no ':' separator
     "lib/calc.ml": no ':' separator
-    "lib/calc.ml:9": unknown rewrite "9" (expected one of not, lt, le, gt, ge, eq, neq, add, sub, fadd, fsub, and, or, del, int, bool)
-    "a.ml:1:": unknown rewrite "" (expected one of not, lt, le, gt, ge, eq, neq, add, sub, fadd, fsub, and, or, del, int, bool)
-    "lib/calc.ml:9:12:frobnicate": unknown rewrite "frobnicate" (expected one of not, lt, le, gt, ge, eq, neq, add, sub, fadd, fsub, and, or, del, int, bool)
-    "lib/calc.ml:9:12:plus": unknown rewrite "plus" (expected one of not, lt, le, gt, ge, eq, neq, add, sub, fadd, fsub, and, or, del, int, bool)
-    "lib/calc.ml:9:12:LT": unknown rewrite "LT" (expected one of not, lt, le, gt, ge, eq, neq, add, sub, fadd, fsub, and, or, del, int, bool)
-    "lib/calc.ml:9:12:drop": unknown rewrite "drop" (expected one of not, lt, le, gt, ge, eq, neq, add, sub, fadd, fsub, and, or, del, int, bool)
+    "lib/calc.ml:9": unknown rewrite "9" (expected one of not, lt, le, gt, ge, eq, neq, add, sub, fadd, fsub, and, or, del, int, bool, none)
+    "a.ml:1:": unknown rewrite "" (expected one of not, lt, le, gt, ge, eq, neq, add, sub, fadd, fsub, and, or, del, int, bool, none)
+    "lib/calc.ml:9:12:frobnicate": unknown rewrite "frobnicate" (expected one of not, lt, le, gt, ge, eq, neq, add, sub, fadd, fsub, and, or, del, int, bool, none)
+    "lib/calc.ml:9:12:plus": unknown rewrite "plus" (expected one of not, lt, le, gt, ge, eq, neq, add, sub, fadd, fsub, and, or, del, int, bool, none)
+    "lib/calc.ml:9:12:LT": unknown rewrite "LT" (expected one of not, lt, le, gt, ge, eq, neq, add, sub, fadd, fsub, and, or, del, int, bool, none)
+    "lib/calc.ml:9:12:drop": unknown rewrite "drop" (expected one of not, lt, le, gt, ge, eq, neq, add, sub, fadd, fsub, and, or, del, int, bool, none)
     ":add": no position before the rewrite
     "x:add": no position before the rewrite
     "lib/calc.ml:9:add": no line number
@@ -238,6 +238,7 @@ let identifiers =
               "del";
               "int";
               "bool";
+              "none";
             ]
             Mutate.rewrites);
       cases "id_to_string is <file>:<line>:<col>:<rewrite>" ~id:snd spellings
@@ -535,7 +536,7 @@ let arm_error_messages () =
        ])
   @@ __POS_OF__
        {|
-    "lib/calc.ml:9" is not a mutant identifier: unknown rewrite "9" (expected one of not, lt, le, gt, ge, eq, neq, add, sub, fadd, fsub, and, or, del, int, bool); expected <file>:<line>:<col>:<rewrite>
+    "lib/calc.ml:9" is not a mutant identifier: unknown rewrite "9" (expected one of not, lt, le, gt, ge, eq, neq, add, sub, fadd, fsub, and, or, del, int, bool, none); expected <file>:<line>:<col>:<rewrite>
     t/absent.ml:1:0:lt: not this executable's mutant; it catalogues no site in t/absent.ml (if you expected one, is the library under test instrumented with ppx_windtrap.mutate? an expression that [@mutate off] dismisses has none)
     t/seven.ml:99:0:or: no such mutation site (an expression that [@mutate off] dismisses has none); t/seven.ml has these:
         t/seven.ml:1:0:or

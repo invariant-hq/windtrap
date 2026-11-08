@@ -105,6 +105,10 @@ let originals =
       "true",
       fun () ->
         Option.fold ~none:"none" ~some:Bool.to_string (Oracle.bool_flip ()) );
+    ( "none_drop 2",
+      "3",
+      fun () ->
+        Option.fold ~none:"none" ~some:Int.to_string (Oracle.none_drop 2) );
     ( "the operands of cmp_order",
       "r,l",
       fun () -> traced (fun () -> Oracle.cmp_order 1 2) );
@@ -160,6 +164,12 @@ let originals =
       "1",
       fun () -> Int.to_string (Expected_type.is_green Expected_type.Color.Green)
     );
+    ( "origin",
+      "0,0",
+      fun () ->
+        Option.fold ~none:"none"
+          ~some:(fun (p : Expected_type.Point.t) -> strf "%d,%d" p.x p.y)
+          (Expected_type.origin ()) );
     ( "a dismissed site's cap 20",
       "20",
       fun () -> Int.to_string (No_guard.cap 20) );
@@ -234,6 +244,10 @@ let armings =
       (fun () ->
         [ Option.fold ~none:"none" ~some:Bool.to_string (Oracle.bool_flip ()) ])
       [ "false" ];
+    oracle "none" "Some (x + 1)"
+      (fun () ->
+        [ Option.fold ~none:"none" ~some:Int.to_string (Oracle.none_drop 2) ])
+      [ "none" ];
     (* Armed, the two encodings that bind their operands still evaluate each
        once, right to left, and the connective runs its right operand when the
        rewrite says so. *)
@@ -298,6 +312,19 @@ let armings =
       before = "p < { x = 0; y = 10 }";
       observe = (fun () -> ints [ Expected_type.below (point 10) ]);
       mutated = [ "1" ];
+    };
+    {
+      file = "expected_type.ml";
+      rewrite = "none";
+      before = "Some { x = 0; y = 0 }";
+      observe =
+        (fun () ->
+          [
+            Option.fold ~none:"none"
+              ~some:(fun _ -> "some")
+              (Expected_type.origin ());
+          ]);
+      mutated = [ "none" ];
     };
   ]
 

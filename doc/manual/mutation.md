@@ -473,6 +473,8 @@ identifier names the rewrite:
   `n` becomes `n + 1`, in the type of its suffix.
 - `bool` flips `true` or `false`, outside a condition and the operands
   of `&&` and `||`, where `not` already acts.
+- `none` replaces `Some e` by `None`. It asks whether a test observes
+  the optional result, as `bool` does a boolean one.
 
 Some code carries no mutant, because no test should pin it or none can
 run it. `del` leaves a resource release alone: a call of `close`,
@@ -482,10 +484,11 @@ already; an argument of a function whose name ends in `create`, as the
 capacity of `Hashtbl.create 16`; the constant of a comparison in a
 condition when the nudge is the comparison's own boundary move, as the
 `0` of `x < 0`, since `x < 1` is `x <= 0`. `bool` leaves alone the
-argument of `~cloexec`. None of the three has a mutant in code that runs
-when the module is initialized, before any test, as in a top-level
-`let limit = 64` or `let () = setup (); main ()`, since no run can
-judge it.
+argument of `~cloexec`. `none` leaves alone the right side of a
+`let rec`, as `let rec n = Some (Node n)`, outside the functions in it.
+None of the four has a mutant in code that runs when the module is
+initialized, before any test, as in a top-level `let limit = 64` or
+`let () = setup (); main ()`, since no run can judge it.
 
 A comparison outside a condition, as in `let ok = a < b`, carries no
 mutant, and neither does an `assert`. In a chain of one operator, as
@@ -493,7 +496,10 @@ mutant, and neither does an `assert`. In a chain of one operator, as
 (`let%test`, `let%expect_test` and `module%test` with its helpers)
 carry no mutant, and the rest of their file is mutated. A file that
 rebinds an operator loses the rewrites of its family: the four
-arithmetic operators, the six comparisons or the two connectives.
+arithmetic operators, the six comparisons or the two connectives; one
+that declares a constructor named `Some` or `None` loses `none`. A
+`Some` that an `open` brings in is not seen and can fail the
+instrumented build, which `[@mutate off]` on the expression fixes.
 
 ## Where the verdicts are
 

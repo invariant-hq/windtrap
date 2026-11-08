@@ -448,8 +448,9 @@ mutants is a literal in the binary and cannot go stale against the code.
 
 A survivor is a request for a test, so a mutant is worth compiling only
 where its survivor would be one worth writing. Dropping a statement asks
-whether a test sees its effect, and a nudged literal whether a test pins
-the decision it encodes; a string literal is mostly message text, and a
+whether a test sees its effect, a nudged literal whether a test pins
+the decision it encodes, and a `Some` made `None` whether a test reads
+the optional result; a string literal is mostly message text, and a
 removed match case mostly a fast path, so neither is a rewrite. The same
 reason leaves some code without a mutant: a resource release, whose loss
 no test observes, a capacity, which no test should pin, a nudge that

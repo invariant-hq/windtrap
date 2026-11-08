@@ -13,9 +13,9 @@
    which the [con] guard constrains its binder with - and then writes one
    expression per operator, so the guards are actually emitted here.
 
-   It compiles only because the instrumenter writes [Stdlib.not] and
-   [(… : Stdlib.Bool.t)]. Dropping either qualification fails this
-   module and nothing else in the tree. There is no [Stdlib.bool]: the
+   It compiles only because the instrumenter writes [Stdlib.not],
+   [(… : Stdlib.Bool.t)] and [Stdlib.Option.None]. Dropping any of the
+   qualifications fails this module and nothing else in the tree. There is no [Stdlib.bool]: the
    predefined types are not re-exported from [Stdlib], which is why the
    constraint names the alias module.
 
@@ -43,3 +43,11 @@ let below a b = if a < b then 1 else 0
 (* [ari]: the one arm that names an unqualified operator, which is why it
    is gated on the file not rebinding one. *)
 let sum a b = a + b
+
+(* [none]: the armed arm is [Stdlib.Option.None], which the [None] that
+   this [open] brings in does not capture. The rewriter does not see an
+   [open], so the file keeps [none]; a [None] declared here would lose it. *)
+open! Tristate
+
+let partial = Partial
+let wrap x = Some x

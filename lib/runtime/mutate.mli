@@ -34,9 +34,10 @@ val rewrites : string list
     ["not"], the comparisons ["lt"], ["le"], ["gt"], ["ge"], ["eq"] and ["neq"],
     the arithmetic ["add"], ["sub"], ["fadd"] and ["fsub"], the connectives
     ["and"] and ["or"], then ["del"], which drops a statement, ["int"], which
-    nudges an integer literal, and ["bool"], which flips a boolean one. A name
-    is that of the replacement, never that of the operator in the source, but
-    for the last three, which name what they change. *)
+    nudges an integer literal, ["bool"], which flips a boolean one, and
+    ["none"], which replaces [Some e] by [None]. A name is that of the
+    replacement, never that of the operator in the source, but for ["del"],
+    ["int"] and ["bool"], which name what they change. *)
 
 val id_to_string : id -> string
 (** [id_to_string id] is [<file>:<line>:<col>:<rewrite>], as

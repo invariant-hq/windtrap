@@ -60,3 +60,12 @@ type point = { line : int; col : int }
 
 let point line col = { line; col }
 let describe p = p.line + p.col
+
+(* The right side of a [let rec] must stay a constructor, which a guard
+   would turn into an [if] the compiler refuses: [none] leaves this [Some]
+   alone. *)
+type node = Node of node option
+
+let cycle () =
+  let rec n = Some (Node n) in
+  n
