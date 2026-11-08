@@ -450,13 +450,13 @@ let rewrites () =
 let population =
   group "Population"
     [
-      test "the fixture catalogues subject.ml's five sites in source order"
-        (fun () ->
+      test
+        "the fixture catalogues subject.ml's four sites in source order, and \
+         not the dismissed one" (fun () ->
           equal (list string)
-            [ "15 add"; "18 sub"; "21 sub"; "27 add"; "33 sub" ]
+            [ "15 add"; "18 sub"; "21 sub"; "27 add" ]
             (rewrites ()));
-      test "a scope keeps every mutant under it, and dismissal drops one"
-        (fun () ->
+      test "a scope keeps every mutant under it" (fun () ->
           let r = Lazy.force green in
           equal (option (list string)) (Some green_rows) (rows r);
           equal string green_outcome (outcome r.out));
@@ -1272,10 +1272,16 @@ let no_site_on_lines () =
   in
   equal
     (list (triple string text bool))
-    [ ("exited 0", note, false); ("exited 0", note, false) ]
+    [
+      ("exited 0", note, false);
+      ("exited 0", note, false);
+      ("exited 0", note, false);
+    ]
     [
       quiet [ "--lines=test/unit/mutate_loop/subject.ml:14" ];
       quiet [ "--diff"; empty ];
+      (* The line of [Subject.dismissed], whose one expression is dismissed. *)
+      quiet [ "--lines=test/unit/mutate_loop/subject.ml:33" ];
     ];
   let typo = spawn [ mutate; "--lines=test/unit/mutate_loop/subjet.ml:15" ] in
   equal string "exited 1" typo.status;
@@ -1408,8 +1414,9 @@ let verdict_file =
          git diff"
         line_scope;
       test
-        "lines with no mutation site run the suite without mutation, and lines \
-         of no instrumented file are refused"
+        "lines with no mutation site, a dismissed expression's included, run \
+         the suite without mutation, and lines of no instrumented file are \
+         refused"
         no_site_on_lines;
       test "a --failed run writes no verdict file" failed_run;
       test "a run with an active focus writes no verdict file" (fun () ->
@@ -1469,7 +1476,8 @@ let environment =
             (r.status, masked (String.trim r.out));
           equal text
             "windtrap: WINDTRAP_MUTATE is set, but this executable links no \
-             instrumented module, so the suite runs without mutation\n"
+             instrumented module with a mutation site, so the suite runs \
+             without mutation\n"
             r.err);
     ]
 
@@ -1635,6 +1643,20 @@ let stale () =
   contains ~sub:(site 15) r.err;
   not_contains ~sub:"calc: " r.out
 
+(* The expression of [Subject.dismissed], which [@mutate off] dismisses: no
+   site, though the source spells one. *)
+let dismissed_armed () =
+  let id = Mutate.id_to_string { (site_id 15) with line = 33; col = 20 } in
+  let r = spawn [ "--arm"; id ] in
+  equal string "exited 1" r.status;
+  contains
+    ~sub:
+      (id
+     ^ ": no such mutation site (an expression that [@mutate off] dismisses \
+        has none)")
+    r.err;
+  not_contains ~sub:"calc: " r.out
+
 (* One identifier handed to two executables built from disjoint sources,
    as [WINDTRAP_MUTATE_ARM=<id> dune runtest] hands it to every executable
    of a project. *)
@@ -1715,6 +1737,10 @@ let armed =
           equal (list string) [ "junit.xml" ] (Lazy.force armed_baseline).beside);
       test "an identifier stale within a file this build catalogues is refused"
         stale;
+      test
+        "an identifier of a dismissed expression is no site, refused before \
+         anything runs"
+        dismissed_armed;
       test "an identifier this executable holds no site of runs it green"
         uncatalogued;
       test "the same identifier arms the executable that holds it" (fun () ->

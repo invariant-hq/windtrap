@@ -164,15 +164,13 @@
     The attribute is named [mutate] and follows the grammar of the [coverage]
     attribute of the coverage rewriter. Its payload is [off], [on] or
     [exclude_file], and [off] alone takes a reason, as one string literal:
-    [[@mutate off "reason"]]. The reason is for the reader of the source. No
-    report prints it, and it is read back through
-    [Windtrap_runtime.Mutate.catalogue] alone.
+    [[@mutate off "reason"]]. The reason is for the reader of the source, and
+    the rewriter drops it.
     - [[@mutate off]] on an expression leaves the expression as written, with
-      everything inside it. When the expression is itself a site, the site is
-      recorded in the table as dismissed, with the reason, or with [""] when
-      none is given. It takes an index and no guard. When the expression is no
-      site, as a [match], nothing is recorded. The sites inside the expression
-      are never recorded.
+      everything inside it, and records no site for it or inside it, so the
+      catalogue has no mutant there and [--arm] finds none. A dismissed
+      expression that is a site keeps its identifier, so a copy of it, as a
+      deriver makes, is no site either.
     - [[@@mutate off]] leaves as written a value binding at the top level of a
       structure, and a module binding, recursive or not. On a [let … in] binding
       and on any other structure item it is ignored and its payload is not
@@ -185,8 +183,8 @@
     - [[@@@mutate exclude_file]] among the top-level items of a file excludes
       the file.
 
-    The last three record no site, and the reason of a [[@@mutate off]] or of a
-    [[@@@mutate off]] is accepted and dropped.
+    None of them records a site, and the reason of a [[@@mutate off]] or of a
+    [[@@@mutate off]] is accepted and dropped too.
 
     [[@mutate off]] dismisses every mutant of its expression, and keeps that
     meaning in any later version that gives an expression more mutants. A
@@ -271,9 +269,7 @@ val transform_impl_file :
     - [ast] has a top-level [[@@@mutate exclude_file]].
     - The input name is [//toplevel//] or [(stdin)], or its base name is
       [.ocamlinit] or [topfind].
-    - No site was recorded. A dismissed site is a recorded one, so a file whose
-      every site is dismissed is registered, by a module that no guard refers
-      to.
+    - No site was recorded, as in a file whose every site is dismissed.
 
     The rewriter reads the [mutate] attributes of the expressions that it
     traverses, of the value bindings at the top level of a structure and of

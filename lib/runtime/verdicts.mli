@@ -80,8 +80,7 @@ type record = {
     produced it. *)
 
 val record_of_mutant : Mutate.mutant -> verdict -> record
-(** [record_of_mutant m v] is the record of [m] with the verdict [v].
-    [m.dismissed] is dropped. *)
+(** [record_of_mutant m v] is the record of [m] with the verdict [v]. *)
 
 type t
 (** The type for verdict collections: finite maps from {!Mutate.type-id} to

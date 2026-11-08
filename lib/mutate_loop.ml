@@ -42,7 +42,6 @@ type no_mutant =
   | Uninstrumented
   | Out_of_scope
   | No_site_on_lines (* the lines name no line, or none with a site *)
-  | All_dismissed
 
 (* Lines that name no line, or only lines of instrumented files with no site
    on them, describe the change, not a mistake: a change to comments or
@@ -52,9 +51,6 @@ let population ~scope =
   let catalogue = Mutate.catalogue () in
   let scoped =
     List.filter (fun (m : Mutate.mutant) -> in_scope ~scope m.id) catalogue
-  in
-  let undismissed =
-    List.filter (fun (m : Mutate.mutant) -> Option.is_none m.dismissed) scoped
   in
   let names_a_file lines =
     Lines.is_empty lines
@@ -66,14 +62,13 @@ let population ~scope =
         && in_scope ~scope:{ scope with lines = None } m.id)
       catalogue
   in
-  match (catalogue, scoped, undismissed) with
-  | [], _, _ when scope = Run.every_mutant -> Error Uninstrumented
-  | _ :: _, [], _
-    when Option.fold ~none:false ~some:names_a_file scope.Run.lines ->
+  match (catalogue, scoped) with
+  | [], _ when scope = Run.every_mutant -> Error Uninstrumented
+  | _ :: _, [] when Option.fold ~none:false ~some:names_a_file scope.Run.lines
+    ->
       Error No_site_on_lines
-  | _, [], _ -> Error Out_of_scope
-  | _, _, [] -> Error All_dismissed
-  | _, _, population -> Ok population
+  | _, [] -> Error Out_of_scope
+  | _, population -> Ok population
 
 let no_site_on_lines =
   "the selected lines hold no mutation site, so nothing on them is \
@@ -84,9 +79,9 @@ let no_site_on_lines =
    fine must not be blamed for it. *)
 let refusal ~scope = function
   | Uninstrumented ->
-      "this executable links no instrumented module, so there is nothing to \
-       mutate: instrument the library under test with ppx_windtrap.mutate and \
-       re-run"
+      "this executable links no instrumented module with a mutation site, so \
+       there is nothing to mutate: instrument the library under test with \
+       ppx_windtrap.mutate and re-run"
   | Out_of_scope ->
       strf
         "%s leaves no mutant in this executable's catalogue: no instrumented \
@@ -98,22 +93,18 @@ let refusal ~scope = function
         (if scope.lines = None then "prefix" else "scope")
         (if scope.lines = None then "files have" else "lines hold")
   | No_site_on_lines -> no_site_on_lines
-  | All_dismissed ->
-      "every mutant this run could test is dismissed by [@mutate off]; there \
-       is nothing to test"
 
 let unmutated ~scope reason =
   let why =
     match reason with
-    | Uninstrumented -> "this executable links no instrumented module"
+    | Uninstrumented ->
+        "this executable links no instrumented module with a mutation site"
     | Out_of_scope ->
         strf "no mutant of this executable's catalogue is %s"
           (spelled scope
              ~prefixes:(fun ps -> "under " ^ String.concat "," ps)
              ~lines:(fun l -> "on " ^ l))
     | No_site_on_lines -> no_site_on_lines
-    | All_dismissed ->
-        "every mutant of this executable is dismissed by [@mutate off]"
   in
   strf "WINDTRAP_MUTATE is set, but %s, so the suite runs without mutation" why
 

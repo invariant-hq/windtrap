@@ -38,6 +38,11 @@
 - (breaking) `Windtrap_runtime.Verdicts.output_file` and `Verdicts.save`
   take `~suite`, `Verdicts.file` holds it, and
   `Windtrap_runtime.Instr.output_file` is removed.
+- (breaking) An expression that `[@mutate off]` dismisses has no mutant:
+  `--arm` refuses its identifier as no mutation site where it armed a
+  mutant that never ran, and a scope whose every mutant is dismissed
+  reads as one with no mutant; `Windtrap_runtime.Mutate.site.dismissed`
+  and `Mutate.mutant.dismissed` are removed.
 
 ## v0.3.1 2026-11-01
 

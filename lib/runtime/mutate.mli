@@ -50,8 +50,10 @@ val compare_id : id -> id -> int
 (** {1:catalogue Sites and the catalogue}
 
     Generated code is the only caller of {!register}. Generated code names the
-    labels of {!register} and the eight fields of {!type-site}, in their order,
-    so a record that drifts is a compile error in every instrumented file. *)
+    labels of {!register} and the seven fields of {!type-site}, in their order,
+    so a record that drifts is a compile error in every instrumented file. An
+    expression that [[@mutate off]] dismisses has no site, so the catalogue
+    holds only mutants that can be armed. *)
 
 type site = {
   line : int;
@@ -63,10 +65,6 @@ type site = {
   rewrite : string;  (** The name of the replacement, from {!rewrites}. *)
   before : string;  (** The original expression, printed from the parsetree. *)
   after : string;  (** The armed expression, printed from the parsetree. *)
-  dismissed : string option;
-      (** [Some reason] when the expression carries [[@mutate off]]. The site is
-          then catalogued and carries no guard, so a caller must leave it out of
-          what it tests and counts. *)
 }
 (** The type for mutation sites: one entry of the site table of a file. *)
 
@@ -89,7 +87,7 @@ val register : file:string -> sites:site array -> int -> bool
     When [file] is registered again with an equal table, as when one source is
     compiled into two modules, the two registrations arm together, and
     {!val-catalogue} and {!drain} report each mutant once. Two tables are equal
-    when their sites agree on the eight fields. A table that differs from an
+    when their sites agree on the seven fields. A table that differs from an
     earlier one for [file] is dropped. One line then goes to standard error,
     behind [windtrap: warning:], when the module loads and whatever the flags of
     a run. The guard that is returned answers [false] at every index, counts
@@ -106,14 +104,13 @@ type mutant = {
   end_col : int;  (** The [end_col] of its site. *)
   before : string;  (** The original expression, printed from the parsetree. *)
   after : string;  (** The armed expression, printed from the parsetree. *)
-  dismissed : string option;  (** The reason of [[@mutate off]], if any. *)
 }
 (** The type for catalogued mutants: a {!type-site} with its file. *)
 
 val catalogue : unit -> mutant list
-(** [catalogue ()] is every mutant registered in this executable, the dismissed
-    ones included, ordered by {!compare_id} on [id] and without duplicates. It
-    is complete once module initialization is over. *)
+(** [catalogue ()] is every mutant registered in this executable, ordered by
+    {!compare_id} on [id] and without duplicates. It is complete once module
+    initialization is over. *)
 
 (** {1:arming Arming}
 
@@ -126,11 +123,14 @@ type arm_error =
       (** [spec] is not a mutant identifier, and [reason] says why. Only
           {!id_of_string} produces it. *)
   | Uncatalogued of { id : id }
-      (** This executable catalogues no site of [id.file]. Nothing is armed. *)
+      (** This executable catalogues no site of [id.file], as when it links no
+          instrumented module of that file or [[@mutate off]] dismisses every
+          expression of it that a rewrite applies to. Nothing is armed. *)
   | Unmatched of { id : id; candidates : mutant list }
       (** [id.file] is catalogued here, and none of its sites matches the line,
-          the column and the rewrite of [id]. [candidates] is the mutants of
-          that file, ordered by {!compare_id} on [id] and never empty. *)
+          the column and the rewrite of [id], as for an expression that
+          [[@mutate off]] dismisses. [candidates] is the mutants of that file,
+          ordered by {!compare_id} on [id] and never empty. *)
   | Ambiguous of { id : id; candidates : mutant list }
       (** [id] matches several sites of one file. [candidates] has one entry for
           each, and the entries are equal as identifiers. *)
@@ -155,8 +155,7 @@ val arm : ?budget:int -> id -> (mutant, arm_error) result
     {!Uncatalogued}, {!Unmatched} or {!Ambiguous} error. The mutant that was
     armed before is disarmed first, whether or not [id] resolves. From then on
     the guard of the site answers [true], in every module that registered an
-    equal table for its file. [arm] does not read [dismissed]. Arming a
-    dismissed mutant succeeds, and no guard ever evaluates its site.
+    equal table for its file.
 
     [budget] bounds the evaluations of the armed site. With a budget of [n],
     evaluation [n + 1] raises {!Runaway}. There is no bound by default. The

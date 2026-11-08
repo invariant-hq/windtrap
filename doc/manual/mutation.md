@@ -309,8 +309,9 @@ on standard error, when a pass fails or no mutant is left to test.
 A mutant that no test can tell from the original is equivalent. `abs`
 returns `n` when `n >= 0`, and the mutant `n > 0` differs at zero only,
 where both branches return 0. To dismiss it, put `[@mutate off
-"reason"]` on the expression, as `calc.ml` does; the site is then
-neither tested nor counted. It dismisses every mutant of the
+"reason"]` on the expression, as `calc.ml` does; the expression then
+has no mutant, so it is neither tested nor counted, and `--arm` refuses
+its identifier as no mutation site. It dismisses every mutant of the
 expression, in this version and in any later one that gives the
 expression more mutants. `[@@mutate off]` dismisses a binding,
 `[@@@mutate off]` and `[@@@mutate on]` the structure items between

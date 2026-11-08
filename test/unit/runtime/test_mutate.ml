@@ -15,7 +15,7 @@ module Child = Windtrap_test_support.Child
 let strf = Printf.sprintf
 let id file line col rewrite = { Mutate.file; line; col; rewrite }
 
-let site ?dismissed ?(before = "b") ?(after = "a") line col rewrite =
+let site ?(before = "b") ?(after = "a") line col rewrite =
   {
     Mutate.line;
     col;
@@ -24,7 +24,6 @@ let site ?dismissed ?(before = "b") ?(after = "a") line col rewrite =
     rewrite;
     before;
     after;
-    dismissed;
   }
 
 let register_only ~file ~sites =
@@ -34,12 +33,7 @@ let register_only ~file ~sites =
 (* Rows *)
 
 let mutant_row (m : Mutate.mutant) =
-  let off =
-    match m.dismissed with
-    | None -> ""
-    | Some reason -> " (off: " ^ reason ^ ")"
-  in
-  strf "%s %s -> %s%s" (Mutate.id_to_string m.id) m.before m.after off
+  strf "%s %s -> %s" (Mutate.id_to_string m.id) m.before m.after
 
 let ids mutants =
   String.concat ", "
@@ -312,14 +306,13 @@ let empty_file_name () =
           (Mutate.id_of_string (Mutate.id_to_string m.id))))
 
 let catalogue_order () =
-  register_only ~file:"t/cat_b.ml"
-    ~sites:[| site 9 2 "or"; site 1 2 "and" ~dismissed:"equivalent" |];
+  register_only ~file:"t/cat_b.ml" ~sites:[| site 9 2 "or"; site 1 2 "and" |];
   register_only ~file:"t/cat_a.ml"
     ~sites:[| site 4 0 "sub" ~before:"a - b" ~after:"a + b" |];
   equal (list string)
     [
       "t/cat_a.ml:4:0:sub a - b -> a + b";
-      "t/cat_b.ml:1:2:and b -> a (off: equivalent)";
+      "t/cat_b.ml:1:2:and b -> a";
       "t/cat_b.ml:9:2:or b -> a";
     ]
     (List.map mutant_row (catalogued "t/cat_a.ml" @ catalogued "t/cat_b.ml"))
@@ -366,8 +359,8 @@ let sites_and_catalogue =
       test "the empty file name is registered, and its identifier is refused"
         empty_file_name;
       test
-        "the catalogue holds every registered mutant, with its renderings and \
-         dismissal, in identifier order"
+        "the catalogue holds every registered mutant, with its renderings, in \
+         identifier order"
         catalogue_order;
       test "duplicate sites of one table are catalogued once" (fun () ->
           register_only ~file:"t/dup_cat.ml"
@@ -543,8 +536,8 @@ let arm_error_messages () =
   @@ __POS_OF__
        {|
     "lib/calc.ml:9" is not a mutant identifier: unknown rewrite "9" (expected one of not, lt, le, gt, ge, eq, neq, add, sub, fadd, fsub, and, or, del, int, bool); expected <file>:<line>:<col>:<rewrite>
-    t/absent.ml:1:0:lt: not this executable's mutant; it catalogues no site in t/absent.ml (if you expected one, is the library under test instrumented with ppx_windtrap.mutate?)
-    t/seven.ml:99:0:or: no such mutation site; t/seven.ml has these:
+    t/absent.ml:1:0:lt: not this executable's mutant; it catalogues no site in t/absent.ml (if you expected one, is the library under test instrumented with ppx_windtrap.mutate? an expression that [@mutate off] dismisses has none)
+    t/seven.ml:99:0:or: no such mutation site (an expression that [@mutate off] dismisses has none); t/seven.ml has these:
         t/seven.ml:1:0:or
         t/seven.ml:2:0:or
         t/seven.ml:3:0:or
@@ -599,12 +592,6 @@ let arming =
         (disarming ambiguous);
       test "arm is the mutant, and only its site's guard answers true"
         (disarming arms_one_site);
-      test "a dismissed mutant arms"
-        (disarming (fun () ->
-             register_only ~file:"t/off.ml"
-               ~sites:[| site 2 1 "add" ~dismissed:"equivalent" |];
-             equal string "armed t/off.ml:2:1:add b -> a (off: equivalent)"
-               (armed (Mutate.arm (id "t/off.ml" 2 1 "add")))));
       test "arm arms the site in every registration of an equal table"
         (disarming arms_every_registration);
       test "arm disarms the armed mutant first, even when it refuses"

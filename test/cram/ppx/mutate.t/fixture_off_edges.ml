@@ -1,15 +1,15 @@
 (* The edges of the dismissal grammar: the positions where a well-formed
-   [mutate] attribute is silently ignored, the expression dismissal that
-   catalogues nothing, and a reason string that has to survive being
-   re-emitted as an OCaml literal.
+   [mutate] attribute is silently ignored, the expression dismissal of an
+   expression that is no site, and a reason string with bytes a literal
+   would have to escape.
 
    These are pinned because they are silent. A user who writes one of the
    ignored spellings gets no diagnostic and no dismissal, and would learn
    about it from a survivor they thought they had dismissed. *)
 
-(* Read: an expression dismissal on an expression that IS a site. The
-   reason is re-emitted into the site table as a string literal, so a
-   quote, a backslash and a newline in it must come back out escaped. *)
+(* Read: an expression dismissal on an expression that IS a site. It
+   records no site, and its reason, which holds a quote, a backslash and
+   a newline, is read and dropped. *)
 let quoted want =
   if
     (want > 16)

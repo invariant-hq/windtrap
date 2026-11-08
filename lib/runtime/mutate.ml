@@ -55,7 +55,6 @@ type site = {
   rewrite : string;
   before : string;
   after : string;
-  dismissed : string option;
 }
 
 type mutant = {
@@ -64,7 +63,6 @@ type mutant = {
   end_col : int;
   before : string;
   after : string;
-  dismissed : string option;
 }
 
 let compare_mutant a b = compare_id a.id b.id
@@ -101,7 +99,6 @@ let site_mutant entry i =
     end_col = s.end_col;
     before = s.before;
     after = s.after;
-    dismissed = s.dismissed;
   }
 
 let err_site ~file i fmt =
@@ -132,7 +129,6 @@ let sites_equal a b =
     && String.equal a.rewrite b.rewrite
     && String.equal a.before b.before
     && String.equal a.after b.after
-    && Option.equal String.equal a.dismissed b.dismissed
   in
   Array.length a = Array.length b && Array.for_all2 site_equal a b
 
@@ -200,11 +196,14 @@ let pp_arm_error ppf = function
       Format.fprintf ppf
         "%a: not this executable's mutant; it catalogues no site in %s (if you \
          expected one, is the library under test instrumented with \
-         ppx_windtrap.mutate?)"
+         ppx_windtrap.mutate? an expression that [@mutate off] dismisses has \
+         none)"
         pp_id id id.file
   | Unmatched { id; candidates } ->
-      Format.fprintf ppf "%a: no such mutation site; %s has these:%a" pp_id id
-        id.file pp_candidates candidates
+      Format.fprintf ppf
+        "%a: no such mutation site (an expression that [@mutate off] dismisses \
+         has none); %s has these:%a"
+        pp_id id id.file pp_candidates candidates
   | Ambiguous { id; candidates } ->
       Format.fprintf ppf
         "%a: names %d mutation sites, so no identifier can tell them apart (a \

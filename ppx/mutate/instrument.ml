@@ -462,17 +462,17 @@ type site = {
   rewrite : string;
   before : string;
   after : string;
-  dismissed : string option;
 }
 
 class instrumenter ~keeps ~module_name =
   object (self)
     inherit Ast_traverse.map as super
 
-    (* The identifier of every recorded site, so its length is the next
-       index. *)
+    (* The identifier of every site, a dismissed one included, so that a copy
+       of a dismissed expression is no site either. *)
     val seen = Hashtbl.create 64
     val mutable sites = [] (* newest first *)
+    val mutable recorded = 0 (* the length of [sites], the next index *)
     val mutable pins = false (* a guard names [operands] *)
     val mutable suppressed = false (* inside a [[@@@mutate off]] region *)
 
@@ -487,30 +487,33 @@ class instrumenter ~keeps ~module_name =
     method pins = pins
 
     (* [site e mutant ~dismissed] records the site of [e] and is its index.
-       It is [None], with nothing recorded, for generated code and for a site
-       whose identifier another one has, as a deriver's copy does. *)
+       It is [None], with nothing recorded, for generated code, for a site
+       whose identifier another one has, as a deriver's copy does, and for a
+       dismissed site, which takes its identifier and nothing else. *)
     method private site e (mutant : mutant) ~dismissed =
       let start = e.pexp_loc.loc_start and stop = e.pexp_loc.loc_end in
       let line = start.pos_lnum and col = start.pos_cnum - start.pos_bol in
       let key = (line, col, mutant.rewrite) in
       if e.pexp_loc.loc_ghost || Hashtbl.mem seen key then None
       else begin
-        let index = Hashtbl.length seen in
         Hashtbl.add seen key ();
-        let site =
-          {
-            line;
-            col;
-            end_line = stop.pos_lnum;
-            end_col = stop.pos_cnum - stop.pos_bol;
-            rewrite = mutant.rewrite;
-            before = render e;
-            after = mutant.after;
-            dismissed;
-          }
-        in
-        sites <- site :: sites;
-        Some index
+        if dismissed then None
+        else
+          let index = recorded in
+          recorded <- recorded + 1;
+          let site =
+            {
+              line;
+              col;
+              end_line = stop.pos_lnum;
+              end_col = stop.pos_cnum - stop.pos_bol;
+              rewrite = mutant.rewrite;
+              before = render e;
+              after = mutant.after;
+            }
+          in
+          sites <- site :: sites;
+          Some index
       end
 
     (* The mutant of a literal, when no arid rule drops it. Neither rewrite
@@ -612,14 +615,13 @@ class instrumenter ~keeps ~module_name =
       else
         match (off, mutant) with
         | Some _, None -> e
-        | Some reason, Some mutant ->
-            if not chained then
-              ignore (self#site e mutant ~dismissed:(Some reason));
+        | Some _, Some mutant ->
+            if not chained then ignore (self#site e mutant ~dismissed:true);
             e
         | None, None -> self#descend e
         | None, Some mutant ->
             let index =
-              if chained then None else self#site e mutant ~dismissed:None
+              if chained then None else self#site e mutant ~dismissed:false
             in
             self#guard e mutant index
 
@@ -712,9 +714,7 @@ class instrumenter ~keeps ~module_name =
             if not deletable then None
             else
               let mutant = { guard = Delete; rewrite = "del"; after = "()" } in
-              match self#site first mutant ~dismissed:off with
-              | Some _ when Option.is_some off -> None
-              | index -> index
+              self#site first mutant ~dismissed:(Option.is_some off)
           in
           let first' = self#expression first in
           let rest' = self#expression rest in
@@ -825,8 +825,7 @@ class instrumenter ~keeps ~module_name =
    its fields without type-directed disambiguation: the runtime declares these
    labels on three records, and warning 42 is fatal under [-w +a -warn-error
    +a]. The type equation turns a runtime record that drifted into a compile
-   error. Because of its labels the module is never opened, and a file whose
-   every site is dismissed has no unused [open].
+   error. Because of its labels the module is never opened.
 
    [register] allocates the arrays of the file, so indices are file-local, and
    the stop comments hide the module from odoc. The module stands above the
@@ -834,12 +833,7 @@ class instrumenter ~keeps ~module_name =
    guard cannot. *)
 let runtime_initialization ~file ~module_name ~sites ~pins =
   let loc = { (Location.in_file file) with loc_ghost = true } in
-  let site { line; col; end_line; end_col; rewrite; before; after; dismissed } =
-    let dismissed =
-      match dismissed with
-      | None -> [%expr None]
-      | Some reason -> [%expr Some [%e estring ~loc reason]]
-    in
+  let site { line; col; end_line; end_col; rewrite; before; after } =
     [%expr
       {
         line = [%e eint ~loc line];
@@ -849,7 +843,6 @@ let runtime_initialization ~file ~module_name ~sites ~pins =
         rewrite = [%e estring ~loc rewrite];
         before = [%e estring ~loc before];
         after = [%e estring ~loc after];
-        dismissed = [%e dismissed];
       }]
   in
   let site_type =
@@ -862,7 +855,6 @@ let runtime_initialization ~file ~module_name ~sites ~pins =
         rewrite : string;
         before : string;
         after : string;
-        dismissed : string option;
       }]
   in
   let operands = [%stri type 'a operands = 'a * 'a] in

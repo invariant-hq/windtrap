@@ -42,13 +42,13 @@ val execute_and_report :
 
     The loop proceeds in this order.
     + It fixes the population, which is the catalogue of the executable
-      ({!val:Windtrap_runtime.Mutate.catalogue}) narrowed to the scope, without
-      the mutants that [[@mutate off]] dismisses. The scope ({!Run.scope}) is
-      the list of source-path prefixes that [--mutate] gave, and the lines of
-      [--lines] or [--diff]. A mutant is in scope when the list is empty, or
-      when one prefix is a prefix of its recorded file ([String.starts_with]),
-      and when it lies on those lines, if any. A mutant out of scope is neither
-      tested nor recorded.
+      ({!val:Windtrap_runtime.Mutate.catalogue}), where an expression that
+      [[@mutate off]] dismisses has no mutant, narrowed to the scope. The scope
+      ({!Run.scope}) is the list of source-path prefixes that [--mutate] gave,
+      and the lines of [--lines] or [--diff]. A mutant is in scope when the list
+      is empty, or when one prefix is a prefix of its recorded file
+      ([String.starts_with]), and when it lies on those lines, if any. A mutant
+      out of scope is neither tested nor recorded.
     + It runs the dry run, which is {!Report.run} with [Supervisor.execute] over
       [config] with [junit] cleared and [in_process] unset, its workers telling
       it which tests evaluate each mutant. Every other field is that of

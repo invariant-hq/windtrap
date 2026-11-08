@@ -41,12 +41,6 @@ let point = function
       | _ -> None)
   | _ -> None
 
-let dismissal = function
-  | [%expr None] -> Some ""
-  | [%expr Some [%e? reason]] ->
-      Option.map (strf ", dismissed %s") (string reason)
-  | _ -> None
-
 let site = function
   | [%expr
       {
@@ -57,25 +51,22 @@ let site = function
         rewrite = [%e? rewrite];
         before = [%e? before];
         after = [%e? after];
-        dismissed = [%e? dismissed];
       }] -> (
       match
         ( (integer line, integer col),
           (integer end_line, integer end_col),
           string rewrite,
           string before,
-          string after,
-          dismissal dismissed )
+          string after )
       with
       | ( (Some line, Some col),
           (Some end_line, Some end_col),
           Some rewrite,
           Some before,
-          Some after,
-          Some dismissed ) ->
+          Some after ) ->
           Some
-            (strf "%s:%s-%s:%s %s %s -> %s%s" line col end_line end_col rewrite
-               before after dismissed)
+            (strf "%s:%s-%s:%s %s %s -> %s" line col end_line end_col rewrite
+               before after)
       | _ -> None)
   | _ -> None
 
@@ -128,7 +119,6 @@ let mutation ~name = function
         rewrite : string;
         before : string;
         after : string;
-        dismissed : string option;
       }]
     :: rest -> (
       let helper, rest =

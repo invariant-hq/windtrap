@@ -19,8 +19,7 @@ in full. The file is mutated under its own name:
         end_col: int ;
         rewrite: string ;
         before: string ;
-        after: string ;
-        dismissed: string option }
+        after: string }
       type 'a operands = ('a * 'a)
       let ___windtrap_armed___ =
         Windtrap_runtime.Mutate.register ~file:"./fixture_input_name.ml"
@@ -31,8 +30,7 @@ in full. The file is mutated under its own name:
                      end_col = 35;
                      rewrite = "int";
                      before = "0";
-                     after = "1";
-                     dismissed = None
+                     after = "1"
                    };{
                        line = 5;
                        col = 27;
@@ -40,8 +38,7 @@ in full. The file is mutated under its own name:
                        end_col = 28;
                        rewrite = "int";
                        before = "1";
-                       after = "0";
-                       dismissed = None
+                       after = "0"
                      };{
                          line = 5;
                          col = 16;
@@ -49,8 +46,7 @@ in full. The file is mutated under its own name:
                          end_col = 21;
                          rewrite = "ge";
                          before = "n > 0";
-                         after = "n >= 0";
-                         dismissed = None
+                         after = "n >= 0"
                        };{
                            line = 5;
                            col = 20;
@@ -58,8 +54,7 @@ in full. The file is mutated under its own name:
                            end_col = 21;
                            rewrite = "int";
                            before = "0";
-                           after = "1";
-                           dismissed = None
+                           after = "1"
                          }|]
     end
   [@@@ocaml.text "/*"]
@@ -85,13 +80,11 @@ in full. The file is mutated under its own name:
       else 0
 
 Every other expansion shows that module condensed by elide.exe to its
-file and its sites: where each starts and ends, the rewrite, the text
-before and after, and the reason of a dismissed site.
+file and its sites: where each starts and ends, the rewrite, and the
+text before and after. A dismissed expression records no site, so a
+file whose every site is dismissed expands to its source as written.
 
   $ mut --impl ./fixture_all_dismissed.ml | ../elide.exe
-  mutation sites of "./fixture_all_dismissed.ml" in Windtrap_mut_________fixture_all_dismissed___ml:
-    0: 9:7-9:38 "int" "16" -> "17", dismissed "a capacity"
-    1: 8:5-8:16 "ge" "want > 16" -> "want >= 16", dismissed "both arms yield 16 at the boundary"
   let cap want =
     if ((want > 16)[@mutate off "both arms yield 16 at the boundary"])
     then want
@@ -146,10 +139,9 @@ before and after, and the reason of a dismissed site.
     0: 7:2-7:18 "del" "log := (x :: (!log))" -> "()"
     1: 11:10-11:11 "int" "1" -> "0"
     2: 12:4-12:15 "del" "print_int i" -> "()"
-    3: 25:2-25:62 "del" "print_string \"x\"" -> "()", dismissed "the output is not checked"
-    4: 30:2-30:8 "del" "a || b" -> "()"
-    5: 30:2-30:8 "and" "a || b" -> "a && b"
-    6: 40:2-40:25 "del" "output_string oc \"done\"" -> "()"
+    3: 30:2-30:8 "del" "a || b" -> "()"
+    4: 30:2-30:8 "and" "a || b" -> "a && b"
+    5: 40:2-40:25 "del" "output_string oc \"done\"" -> "()"
   let log = ref []
   let push x =
     if Windtrap_mut_________fixture_del___ml.___windtrap_armed___ 0
@@ -171,20 +163,20 @@ before and after, and the reason of a dismissed site.
   let quiet x =
     ((print_string "x")[@mutate off "the output is not checked"]); x
   let either a b =
-    if Windtrap_mut_________fixture_del___ml.___windtrap_armed___ 4
+    if Windtrap_mut_________fixture_del___ml.___windtrap_armed___ 3
     then ()
     else
-      ((let __windtrap_mut_5_p = a in
+      ((let __windtrap_mut_4_p = a in
         if
-          Stdlib.(=) (__windtrap_mut_5_p : Stdlib.Bool.t)
-            (Windtrap_mut_________fixture_del___ml.___windtrap_armed___ 5)
+          Stdlib.(=) (__windtrap_mut_4_p : Stdlib.Bool.t)
+            (Windtrap_mut_________fixture_del___ml.___windtrap_armed___ 4)
         then b
-        else __windtrap_mut_5_p);
+        else __windtrap_mut_4_p);
        ());
     ()
   let () = print_string "loaded"; print_newline ()
   let finish oc ic fd dir =
-    if Windtrap_mut_________fixture_del___ml.___windtrap_armed___ 6
+    if Windtrap_mut_________fixture_del___ml.___windtrap_armed___ 5
     then ()
     else (output_string oc "done"; ());
     close_out oc;
@@ -1349,11 +1341,9 @@ before and after, and the reason of a dismissed site.
   $ mut --impl ./fixture_off.ml | ../elide.exe
   mutation sites of "./fixture_off.ml" in Windtrap_mut_________fixture_off___ml:
     0: 10:7-10:9 "int" "16" -> "17"
-    1: 9:5-9:16 "ge" "want > 16" -> "want >= 16", dismissed "both arms yield 16 at the boundary"
-    2: 12:54-12:55 "int" "0" -> "1"
-    3: 12:47-12:48 "int" "1" -> "0"
-    4: 12:19-12:27 "or" "a && b" -> "a || b", dismissed ""
-    5: 26:18-26:23 "sub" "a + b" -> "a - b"
+    1: 12:54-12:55 "int" "0" -> "1"
+    2: 12:47-12:48 "int" "1" -> "0"
+    3: 26:18-26:23 "sub" "a + b" -> "a - b"
   let cap want =
     if ((want > 16)[@mutate off "both arms yield 16 at the boundary"])
     then want
@@ -1364,11 +1354,11 @@ before and after, and the reason of a dismissed site.
   let plain a b =
     if ((a && b)[@mutate off])
     then
-      (if Windtrap_mut_________fixture_off___ml.___windtrap_armed___ 3
+      (if Windtrap_mut_________fixture_off___ml.___windtrap_armed___ 2
        then 0
        else 1)
     else
-      if Windtrap_mut_________fixture_off___ml.___windtrap_armed___ 2
+      if Windtrap_mut_________fixture_off___ml.___windtrap_armed___ 1
       then 1
       else 0
   let sum a b = a + b[@@mutate off]
@@ -1377,17 +1367,16 @@ before and after, and the reason of a dismissed site.
   let suppressed a b = a + b
   [@@@mutate on]
   let visible a b =
-    let (__windtrap_mut_5_l, __windtrap_mut_5_r) = (a, b) in
-    if Windtrap_mut_________fixture_off___ml.___windtrap_armed___ 5
-    then __windtrap_mut_5_l - __windtrap_mut_5_r
-    else __windtrap_mut_5_l + __windtrap_mut_5_r
+    let (__windtrap_mut_3_l, __windtrap_mut_3_r) = (a, b) in
+    if Windtrap_mut_________fixture_off___ml.___windtrap_armed___ 3
+    then __windtrap_mut_3_l - __windtrap_mut_3_r
+    else __windtrap_mut_3_l + __windtrap_mut_3_r
 
   $ mut --impl ./fixture_off_edges.ml | ../elide.exe
   mutation sites of "./fixture_off_edges.ml" in Windtrap_mut_________fixture_off_edges___ml:
     0: 19:7-19:9 "int" "16" -> "17"
-    1: 15:4-15:15 "ge" "want > 16" -> "want >= 16", dismissed "a \"quoted\" reason,\nspanning lines \\ containing a backslash"
-    2: 30:10-30:15 "sub" "a + b" -> "a - b"
-    3: 39:16-39:21 "sub" "a + b" -> "a - b"
+    1: 30:10-30:15 "sub" "a + b" -> "a - b"
+    2: 39:16-39:21 "sub" "a + b" -> "a - b"
   let quoted want =
     if ((want > 16)
       [@mutate
@@ -1401,17 +1390,17 @@ before and after, and the reason of a dismissed site.
     [@mutate off "not a site"])
   let local a b =
     let s =
-      let (__windtrap_mut_2_l, __windtrap_mut_2_r) = (a, b) in
-      if Windtrap_mut_________fixture_off_edges___ml.___windtrap_armed___ 2
-      then __windtrap_mut_2_l - __windtrap_mut_2_r
-      else __windtrap_mut_2_l + __windtrap_mut_2_r[@@mutate off "ignored here"] in
+      let (__windtrap_mut_1_l, __windtrap_mut_1_r) = (a, b) in
+      if Windtrap_mut_________fixture_off_edges___ml.___windtrap_armed___ 1
+      then __windtrap_mut_1_l - __windtrap_mut_1_r
+      else __windtrap_mut_1_l + __windtrap_mut_1_r[@@mutate off "ignored here"] in
     s
   type t = int[@@mutate off]
   let after a b =
-    let (__windtrap_mut_3_l, __windtrap_mut_3_r) = (a, b) in
-    if Windtrap_mut_________fixture_off_edges___ml.___windtrap_armed___ 3
-    then __windtrap_mut_3_l - __windtrap_mut_3_r
-    else __windtrap_mut_3_l + __windtrap_mut_3_r
+    let (__windtrap_mut_2_l, __windtrap_mut_2_r) = (a, b) in
+    if Windtrap_mut_________fixture_off_edges___ml.___windtrap_armed___ 2
+    then __windtrap_mut_2_l - __windtrap_mut_2_r
+    else __windtrap_mut_2_l + __windtrap_mut_2_r
 
   $ mut --impl ./fixture_off_structure.ml | ../elide.exe
   mutation sites of "./fixture_off_structure.ml" in Windtrap_mut_________fixture_off_structure___ml:

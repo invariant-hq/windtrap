@@ -219,7 +219,6 @@ let record_of_mutant () =
       end_col = 7;
       before = "a - b";
       after = "a + b";
-      dismissed = Some "equivalent";
     }
   in
   equal string {|"lib/calc.ml":4:2:sub (to 4:7) "a - b" -> "a + b": killed|}
@@ -295,9 +294,7 @@ let unchecked (_, bad) =
 let collections =
   group "Collections"
     [
-      test
-        "record_of_mutant keeps the identifier and renderings, not the \
-         dismissal"
+      test "record_of_mutant keeps the identifier and renderings"
         record_of_mutant;
       test "empty holds no record" (fun () ->
           equal (list string) [] (rows Verdicts.empty));

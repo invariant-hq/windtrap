@@ -51,12 +51,12 @@ let weak =
     test "widen is not 99" (fun () -> is_true (Subject.widen 1 2 <> 99));
   ]
 
-(* Reaches the [@mutate off] site and pins nothing about it. Only the
-   dismissal keeps it out of the survivor blocks and out of the
+(* Reaches the [@mutate off] expression and pins nothing about it. Only
+   the dismissal keeps it out of the survivor blocks and out of the
    denominator. *)
 let dismissed =
   [
-    test "the dismissed site is run and not pinned" (fun () ->
+    test "the dismissed expression is run and not pinned" (fun () ->
         is_true (Subject.dismissed 1 2 <> 99));
   ]
 
@@ -213,7 +213,7 @@ let block =
      mutant the loop never gets to: [sub] survives, [widen]'s child
      blocks until a signal to the parent ends it, [orphan] is reached and
      left untested.
-   - [pinned] kills every mutant of the catalogue that is not dismissed:
+   - [pinned] kills every mutant of the catalogue:
      a loop with nothing to report but its outcome line, which is then
      the one write a reader that left at the gate can fail. *)
 

@@ -22,7 +22,6 @@ let guard =
           rewrite = "lt";
           before = "a < b";
           after = "not (b < a)";
-          dismissed = None;
         };
         {
           Mutate.line = 7;
@@ -32,7 +31,6 @@ let guard =
           rewrite = "add";
           before = "a + b";
           after = "a - b";
-          dismissed = None;
         };
       |]
 

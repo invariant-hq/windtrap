@@ -1,9 +1,9 @@
 (* [[@mutate off]] in all four spellings. An expression-level dismissal
-   leaves the expression exactly as written and records the site it
-   suppressed, with its reason, in the catalogue; the three coarser
-   spellings suppress without recording, because there is nothing to
-   dismiss individually where a whole binding, region or file is out of
-   scope. *)
+   leaves the expression exactly as written and records no site for it,
+   so the catalogue has no mutant there and the indices of the sites
+   after it close up; the three coarser spellings record nothing either,
+   for a whole binding, region or file, and their reasons are dropped
+   alike. *)
 
 let cap want =
   if (want > 16) [@mutate off "both arms yield 16 at the boundary"] then want
