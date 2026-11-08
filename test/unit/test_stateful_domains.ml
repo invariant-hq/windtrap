@@ -1569,6 +1569,199 @@ let in_the_ending () =
   equal (pair string bool) ("raised Injected", false) (ending, Atomic.get shot);
   run_all workers (Array.make 2 ignore)
 
+(* [shot] is raised in the first take of a worker, as the pool's first run
+   starts: the worker holds no job yet, so the take ends none, and the run
+   returns. *)
+let in_the_first_take () =
+  let shot = Atomic.make true in
+  let on_worker stack =
+    if
+      mentions ~sub:"Workers.take" (Printexc.raw_backtrace_to_string stack)
+      && Atomic.compare_and_set shot true false
+    then raise Injected
+  in
+  profiled ~on_worker 2 @@ fun workers ->
+  let ending =
+    match run_all workers (Array.make 2 ignore) with
+    | () -> "returned"
+    | exception Injected -> "raised Injected"
+  in
+  equal (pair string bool) ("returned", false) (ending, Atomic.get shot);
+  run_all workers (Array.make 2 ignore)
+
+(* In each of two runs the second worker to allocate is held at its first
+   block, as a worker that waits for a processor is: in the pool's first
+   run as its domain starts, in the next as it takes its job, after the
+   other has taken its own. [late] is set as the run is published and
+   cleared as the held worker is let go, [delay] after the publication,
+   which a hold that starts with the domain may precede. No job starts
+   while the held worker is late. *)
+let held_back () =
+  let delay = 0.05 in
+  let published = Atomic.make false and late = Atomic.make false in
+  let first = Atomic.make (-1) and armed = Atomic.make true in
+  let hold () =
+    let until = Unix.gettimeofday () +. 1. in
+    while (not (Atomic.get published)) && Unix.gettimeofday () < until do
+      Unix.sleepf 0.001
+    done;
+    Unix.sleepf delay;
+    Atomic.set late false
+  in
+  let on_worker _ =
+    let self = (Domain.self () :> int) in
+    if
+      (not (Atomic.compare_and_set first (-1) self))
+      && Atomic.get first <> self
+      && Atomic.compare_and_set armed true false
+    then hold ()
+  in
+  profiled ~on_worker 2 @@ fun workers ->
+  let early = Atomic.make 0 in
+  let job () = if Atomic.get late then Atomic.incr early in
+  let held_run () =
+    Atomic.set late true;
+    Atomic.set published true;
+    run_all workers [| job; job |];
+    Atomic.set published false
+  in
+  held_run ();
+  Atomic.set first (-1);
+  Atomic.set armed true;
+  held_run ();
+  equal (pair int bool) ~msg:"jobs started while a worker was late, and holds"
+    (0, false)
+    (Atomic.get early, Atomic.get armed)
+
+let invalid fn =
+  match fn () with
+  | _ -> "returned"
+  | exception Invalid_argument message -> message
+
+(* A pool of one worker is a pool, and one of none is refused. *)
+let sizes () =
+  equal string "Workers.spawn: no worker" (invalid (fun () -> Workers.spawn 0));
+  with_pool 1 @@ fun workers ->
+  let ran = Atomic.make false in
+  run_all workers [| (fun () -> Atomic.set ran true) |];
+  is_true ~msg:"the one worker ran its job" (Atomic.get ran)
+
+(* Too few jobs or too many are refused before any runs, and the pool runs
+   on. *)
+let one_job_each () =
+  with_pool 2 @@ fun workers ->
+  let ran = Atomic.make 0 in
+  let job () = Atomic.incr ran in
+  equal (list string)
+    [ "Workers.run: one job per worker"; "Workers.run: one job per worker" ]
+    (List.map
+       (fun n -> invalid (fun () -> run_all workers (Array.make n job)))
+       [ 1; 3 ]);
+  equal int ~msg:"jobs the refused runs ran" 0 (Atomic.get ran);
+  run_all workers (Array.make 2 job);
+  equal int 2 (Atomic.get ran)
+
+(* Each worker's domain counts its exit after a pause, so a join that
+   returned before a domain ended reads fewer than every worker. *)
+let joined () =
+  let exited = Atomic.make 0 in
+  let workers = Workers.spawn 2 in
+  let job () =
+    Domain.at_exit (fun () ->
+        Unix.sleepf 0.05;
+        Atomic.incr exited)
+  in
+  run_all workers [| job; job |];
+  Workers.join workers;
+  equal int 2 (Atomic.get exited)
+
+(* A job prints through its worker's own formatters, which buffer: the text
+   is in the test's output once the run returns, before the pool is
+   joined. *)
+let flushed () =
+  with_pool 2 @@ fun workers ->
+  ignore (output ());
+  run_all workers
+    [|
+      (fun () -> Format.printf "out from a worker");
+      (fun () -> Format.eprintf "err from a worker");
+    |];
+  let text = output () in
+  contains ~sub:"out from a worker" text;
+  contains ~sub:"err from a worker" text
+
+exception Interrupted
+
+(* [interrupting n fn] is [with_pool n fn] under a handler of SIGUSR1 that
+   raises [Interrupted]. The pool is spawned while the test's domain blocks
+   the signal, so its workers block it, and the handler runs on the test's
+   domain alone, in its wait for a run. *)
+let interrupting n fn =
+  if Sys.win32 then skip ~reason:"Windows has no SIGUSR1" ();
+  let handler = Sys.Signal_handle (fun _ -> raise Interrupted) in
+  let found = Sys.signal Sys.sigusr1 handler in
+  Fun.protect ~finally:(fun () -> Sys.set_signal Sys.sigusr1 found) @@ fun () ->
+  let mask = Unix.sigprocmask Unix.SIG_BLOCK [ Sys.sigusr1 ] in
+  let workers =
+    Fun.protect
+      ~finally:(fun () -> ignore (Unix.sigprocmask Unix.SIG_SETMASK mask))
+      (fun () -> Workers.spawn n)
+  in
+  Fun.protect ~finally:(fun () -> Workers.join workers) (fun () -> fn workers)
+
+let interrupt () = Unix.kill (Unix.getpid ()) Sys.sigusr1
+
+(* Job 0 interrupts the caller's wait and ends later, within its grace:
+   [run] raises the interruption once the job has ended, and the pool runs
+   on. *)
+let interrupted () =
+  interrupting 2 @@ fun workers ->
+  let ended = Atomic.make false in
+  let job i () =
+    if i = 0 then begin
+      interrupt ();
+      Unix.sleepf 0.05;
+      Atomic.set ended true
+    end
+  in
+  let grace = function Interrupted -> 10. | _ -> 0. in
+  let ending =
+    match Workers.run workers ~grace (Array.init 2 job) with
+    | () -> "returned"
+    | exception Interrupted -> "raised Interrupted"
+  in
+  equal (pair string bool)
+    ("raised Interrupted", true)
+    (ending, Atomic.get ended);
+  run_all workers (Array.make 2 ignore)
+
+(* Job 0 interrupts the caller's wait and runs until released, past a grace
+   of nothing: the pool is stuck, and refuses the next run, though the job
+   is released by then. *)
+let stuck () =
+  let release = Atomic.make false in
+  Fun.protect ~finally:(fun () -> Atomic.set release true) @@ fun () ->
+  interrupting 2 @@ fun workers ->
+  let job i () =
+    if i = 0 then begin
+      interrupt ();
+      while not (Atomic.get release) do
+        Unix.sleepf 0.001
+      done
+    end
+  in
+  let ending =
+    match Workers.run workers ~grace:(Fun.const 0.) (Array.init 2 job) with
+    | () -> "returned"
+    | exception Workers.Stuck (Interrupted, _) -> "stuck on Interrupted"
+    | exception e -> Printexc.to_string e
+  in
+  Atomic.set release true;
+  let again = invalid (fun () -> run_all workers (Array.make 2 ignore)) in
+  equal (pair string string)
+    ("stuck on Interrupted", "Workers.run: a worker is stuck")
+    (ending, again)
+
 (* The processor time of the calling thread, in seconds, as Linux counts
    it in nanoseconds. *)
 let schedstat = "/proc/thread-self/schedstat"
@@ -1814,6 +2007,30 @@ let executor =
         "an asynchronous exception as a worker ends its job is the job's \
          ending, and the pool runs on"
         in_the_ending;
+      test ~timeout:10.
+        "an asynchronous exception in a worker's first take ends no job, and \
+         the first run returns"
+        in_the_first_take;
+      test ~timeout:10.
+        "no job starts before every worker has taken its own, in the first run \
+         and the next"
+        held_back;
+      test "a pool of one worker runs, and one of none is refused" sizes;
+      test "Workers.run refuses too few jobs or too many, and runs none"
+        one_job_each;
+      test "Workers.join returns once every worker's domain has ended" joined;
+      test
+        "what a job prints through its worker's formatters is out when the run \
+         returns"
+        flushed;
+      test ~timeout:10.
+        "a handler that raises during a run's wait is raised again once the \
+         jobs end within the grace"
+        interrupted;
+      test ~timeout:10.
+        "a job that runs past the grace leaves the pool stuck, and the next \
+         run is refused"
+        stuck;
       cases ~timeout:10.
         "workers that wait for a late one at the start of a run sleep after a \
          short spin, and the late one's arrival wakes them"
