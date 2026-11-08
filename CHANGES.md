@@ -33,6 +33,9 @@
   survivors (doc/manual/mutation.md#where-the-verdicts-are).
 - `windtrap mutants` names each suite by its executable and its name, as
   `test_calc.exe (calc)`, and counts suites where it counted executables.
+- A verdict file of an earlier version is no run's to replace any more,
+  so the merge refuses it, naming it, until it is deleted; delete
+  `_build/_mutants` once, as `dune clean` does.
 - (breaking) Under `--mutate`, a second `Windtrap.run` of one suite name
   in a process is refused; give each run a name of its own.
 - (breaking) `Windtrap_runtime.Verdicts.output_file` and `Verdicts.save`
