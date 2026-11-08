@@ -329,15 +329,22 @@ val warn : string -> unit
 
 val with_signals : int list -> (int -> unit) -> (unit -> 'a) -> 'a
 (** [with_signals signals handle fn] is [fn ()] with [handle] as the handler of
-    [signals], except a signal that the process was started with ignored, which
-    stays ignored, as under [nohup]. The previous dispositions are put back when
+    [signals], except a signal that the process ignores, which stays ignored
+    throughout, as under [nohup]. The previous dispositions are put back when
     [fn] returns or raises. On Windows it is [fn ()] and handles nothing.
-    - [handle] runs with every signal of [signals] but [SIGPIPE] back at its
+    - [handle] runs with every signal it handles but [SIGPIPE] back at its
       default disposition and unblocked, so that a second one takes its default
       action at once. [SIGPIPE] keeps [handle], so every write to a reader that
       left fails.
-    - In a process forked inside [fn], [handle] does not run. [signals] go back
-      to their default disposition and the process is sent the signal again. *)
+    - In a process forked inside [fn], [handle] does not run. The signals it
+      handles go back to their default disposition and the process is sent the
+      signal again. *)
+
+val catch : int list -> (int -> unit) -> unit
+(** [catch signals handle] makes [handle] the handler of each of [signals] that
+    the process does not ignore. Inside {!with_signals}, it is how [handle]
+    makes a second signal do other than its default action: what {!with_signals}
+    handles is put back when it ends. On Windows it does nothing. *)
 
 val with_blocked : int list -> (unit -> 'a) -> 'a
 (** [with_blocked signals fn] is [fn ()] with [signals] blocked in the calling

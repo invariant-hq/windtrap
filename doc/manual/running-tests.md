@@ -277,7 +277,9 @@ still running three limits after it started, in C code the alarm cannot
 reach, is killed with its worker and times out too. An interrupt does not
 lift that kill: after Ctrl-C, or the SIGTERM of a `timeout` around the
 run, a test held in C is killed at the same time, and the run then dies
-by the signal. A second signal ends the run at once.
+by the signal. A second signal ends the run at once. A signal the run
+was started ignoring, as under `nohup`, stays ignored, before the first
+signal and after it.
 
 `--in-process` has no default limit, since a debugger may hold a test as
 long as it likes; a limit that `~timeout` or `--timeout` gives still

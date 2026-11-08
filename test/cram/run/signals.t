@@ -108,6 +108,18 @@ A second signal, while the first one's releases run, kills at once:
   running after SIGTERM
   killed by SIGINT
 
+A signal the process ignores stays ignored after the first one, in a run
+of workers and in a run in its own process:
+
+  $ run FACADE_FIXTURE=lingering ./send_signal.exe --ignore HUP TERM,HUP@releasing,INT@releasing ./suite_main.exe
+  running after SIGTERM
+  running after SIGHUP
+  killed by SIGINT
+  $ run FACADE_FIXTURE=lingering ./send_signal.exe --ignore HUP TERM,HUP@releasing,INT@releasing ./suite_main.exe --in-process
+  running after SIGTERM
+  running after SIGHUP
+  killed by SIGINT
+
 A test that polls ends on the signal, and the releases of its fixtures
 run to their end, here half a second, in what is left of its limits:
 

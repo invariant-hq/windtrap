@@ -11,6 +11,9 @@
   (doc/manual/running-tests.md#bounding-a-test-in-time).
 - A second signal ends the run at once with its workers, each killed
   with its process group.
+- A signal the run was started ignoring, as under `nohup`, stays ignored
+  after another signal: a `SIGHUP` no longer kills a `nohup` run that a
+  `SIGTERM` is stopping.
 
 ### Coverage
 

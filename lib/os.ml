@@ -425,39 +425,6 @@ let default_signals signals =
   List.iter (fun signal -> Sys.set_signal signal Sys.Signal_default) signals;
   ignore (Unix.sigprocmask Unix.SIG_UNBLOCK signals)
 
-let with_signals signals handle fn =
-  if Sys.win32 then fn ()
-  else begin
-    let owner = Unix.getpid () in
-    let handle signal =
-      if Unix.getpid () <> owner then begin
-        default_signals signals;
-        Unix.kill (Unix.getpid ()) signal
-      end
-      else begin
-        default_signals (List.filter (fun s -> s <> Sys.sigpipe) signals);
-        handle signal
-      end
-    in
-    let previous =
-      List.map
-        (fun signal -> (signal, Sys.signal signal (Sys.Signal_handle handle)))
-        signals
-    in
-    List.iter
-      (fun (signal, behavior) ->
-        match behavior with
-        | Sys.Signal_ignore -> Sys.set_signal signal behavior
-        | Sys.Signal_default | Sys.Signal_handle _ -> ())
-      previous;
-    Fun.protect
-      ~finally:(fun () ->
-        List.iter
-          (fun (signal, behavior) -> Sys.set_signal signal behavior)
-          previous)
-      fn
-  end
-
 (* The runtime runs a pending handler after the mask changes, inside the
    [sigprocmask] that changes it. The mask is read before it changes, so a
    handler that raises as [signals] are blocked still has it put back. *)
@@ -479,6 +446,56 @@ let with_blocked signals fn =
         let backtrace = Printexc.get_raw_backtrace () in
         (try restore () with _ -> ());
         Printexc.raise_with_backtrace exn backtrace
+
+(* [Sys.signal] is the only way to read a disposition: it is set, and put
+   back where the process ignores the signal, with [signals] blocked, so
+   that an ignored one that arrives meanwhile is dropped. The result is
+   every previous disposition, ignored ones included. *)
+let handle_unignored signals handle =
+  List.map
+    (fun signal ->
+      let previous = Sys.signal signal (Sys.Signal_handle handle) in
+      (match previous with
+      | Sys.Signal_ignore -> Sys.set_signal signal Sys.Signal_ignore
+      | Sys.Signal_default | Sys.Signal_handle _ -> ());
+      (signal, previous))
+    signals
+
+let catch signals handle =
+  if not Sys.win32 then
+    with_blocked signals (fun () -> ignore (handle_unignored signals handle))
+
+let with_signals signals handle fn =
+  if Sys.win32 then fn ()
+  else begin
+    let owner = Unix.getpid () in
+    let previous = ref [] in
+    let handle signal =
+      let handled =
+        List.filter_map
+          (fun (s, behavior) ->
+            match behavior with
+            | Sys.Signal_ignore -> None
+            | Sys.Signal_default | Sys.Signal_handle _ -> Some s)
+          !previous
+      in
+      if Unix.getpid () <> owner then begin
+        default_signals handled;
+        Unix.kill (Unix.getpid ()) signal
+      end
+      else begin
+        default_signals (List.filter (fun s -> s <> Sys.sigpipe) handled);
+        handle signal
+      end
+    in
+    with_blocked signals (fun () -> previous := handle_unignored signals handle);
+    Fun.protect
+      ~finally:(fun () ->
+        List.iter
+          (fun (signal, behavior) -> Sys.set_signal signal behavior)
+          !previous)
+      fn
+  end
 
 let die_by signal =
   default_signals [ signal ];

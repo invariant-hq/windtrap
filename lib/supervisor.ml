@@ -674,9 +674,7 @@ let supervise ?(on_event = ignore) ~on_reach ~on_failure (config : Run.config)
     if Option.is_none !signal then begin
       signal := Some s;
       forward ();
-      List.iter
-        (fun s -> Sys.set_signal s (Sys.Signal_handle at_once))
-        interrupting
+      Os.catch interrupting at_once
     end
   in
   Os.with_signals interrupting interrupt @@ fun () ->
