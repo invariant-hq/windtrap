@@ -120,10 +120,12 @@ let sleep t generation =
     done
   with
   | () ->
-      count_asleep t (-1);
+      count_asleep t (-1)
+      [@mutate off "[asleep] may count too many: the wake is then spurious"];
       Mutex.unlock t.gate
   | exception exn ->
-      count_asleep t (-1);
+      count_asleep t (-1)
+      [@mutate off "[asleep] may count too many: the wake is then spurious"];
       Mutex.unlock t.gate;
       raise exn
 
@@ -131,9 +133,12 @@ let sleep t generation =
 let rec pass t generation start =
   if not (all_marked t.arrived generation) then begin
     let now = Os.spin_ns () in
-    if now <= 0 || now - start >= spin_ns then sleep t generation
+    if
+      (now <= 0) [@mutate off "the clock reads 0 or more, and 0 when it fails"]
+      || now - start >= spin_ns
+    then sleep t generation
     else begin
-      Domain.cpu_relax ();
+      Domain.cpu_relax () [@mutate off "a hint to the processor"];
       pass t generation start
     end
   end
@@ -214,7 +219,10 @@ let spawn n =
       arrived = Array.init n (fun _ -> Atomic.make 0);
       gate = Mutex.create ();
       opened = Condition.create ();
-      asleep = Atomic.make 0;
+      asleep =
+        Atomic.make
+          (0
+          [@mutate off "[asleep] may count too many: the wake is then spurious"]);
       ended = Array.init n (fun _ -> Atomic.make 0);
       endings = Array.make n Done;
       domains = [];
@@ -250,8 +258,8 @@ let pause = 0.000_2
 let wait done_ =
   let rec step spun =
     if not (done_ ()) then
-      if spun < spins then begin
-        Domain.cpu_relax ();
+      if (spun < spins) [@mutate off "one spin more is not seen"] then begin
+        Domain.cpu_relax () [@mutate off "a hint to the processor"];
         step (spun + 1)
       end
       else begin
@@ -259,12 +267,16 @@ let wait done_ =
         step spun
       end
   in
-  step 0
+  step (0 [@mutate off "one spin fewer is not seen"])
 
 (* Nothing a handler raises during the grace ends it early. *)
 let rec wait_until ~started ~grace done_ =
   match
-    while (not (done_ ())) && Os.count_s started < grace do
+    while
+      (not (done_ ()))
+      && (Os.count_s started < grace)
+         [@mutate off "an instant equal to the grace is not seen"]
+    do
       Unix.sleepf pause
     done
   with
@@ -278,7 +290,10 @@ let run t ~grace jobs =
   if Array.length jobs <> size t then
     invalid_arg "Workers.run: one job per worker";
   if t.stuck then invalid_arg "Workers.run: a worker is stuck";
-  let generation = t.generation + 1 in
+  let generation =
+    (t.generation + 1)
+    [@mutate off "a generation need only differ from the last"]
+  in
   let done_ () = all_marked t.ended generation in
   Mutex.lock t.mutex;
   match
