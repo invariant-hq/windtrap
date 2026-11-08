@@ -16,13 +16,11 @@ let ( let* ) = Result.bind
 
 (* What a worker sends: that a new start of the executable reached its run
    and serves, a report of [Run.serve], the mutants each window evaluated,
-   that it has evaluated its armed site, once, after the window that did, and
-   as it ends the coverage counts it hands over. *)
+   and as it ends the coverage counts it hands over. *)
 type to_parent =
   | Serving
   | Report of Run.report
   | Reached of { test : string list option; sites : (Mutate.id * int) list }
-  | Evaluated
   | Counts of Coverage.t
 
 (* A frame is a 4-byte length and a [Marshal]led value. Nothing that crosses
@@ -95,8 +93,13 @@ let armed_spec (config : Run.config) =
   | Run.Armed spec -> Result.to_option (Mutate.id_of_string spec)
   | Run.No_mutation | Run.Loop _ -> None
 
-let evaluates id sites =
-  List.exists (fun (site, _) -> Mutate.compare_id site id = 0) sites
+(* Whether a window holds the armed site: a worker, or this process when it
+   runs the tests itself, has evaluated it once one of its windows does. *)
+let evaluates armed sites =
+  match armed with
+  | Some id ->
+      List.exists (fun (site, _) -> Mutate.compare_id site id = 0) sites
+  | None -> false
 
 (* The worker is a session of its own, so a terminal's signal reaches the
    parent alone, which forwards it, and the parent kills the group. *)
@@ -111,12 +114,10 @@ let serve (config : Run.config) ~armed ~suite tests ~temp_dir ~own_exits ~input
   (* A job's mutant, or an [--arm] run's, which a re-executed worker arms
      anew; a mutant of the catalogue always arms. Evaluations count from
      here. *)
-  let armed =
-    match (armed, armed_spec config) with
-    | Some (id, budget), _ -> Result.to_option (Mutate.arm ~budget id)
-    | None, Some id -> Result.to_option (Mutate.arm id)
-    | None, None -> None
-  in
+  (match (armed, armed_spec config) with
+  | Some (id, budget), _ -> ignore (Mutate.arm ~budget id)
+  | None, Some id -> ignore (Mutate.arm id)
+  | None, None -> ());
   if mutating config then Mutate.reset_reach ();
   (* A domain the test left running can call exit while the test's domain
      sends, and two frames must not interleave. *)
@@ -125,20 +126,12 @@ let serve (config : Run.config) ~armed ~suite tests ~temp_dir ~own_exits ~input
     let frame = frame value in
     Mutex.protect lock (fun () -> write_all output frame 0 (Bytes.length frame))
   in
-  (* The parent judges each failure by whether its worker had evaluated the
-     armed site when it sent it, so the window of a test is drained before
-     its [Done], as its [Test_finished] does unless the test ended the case
-     with [Out_of_memory] or [Sys.Break], and that of a release or an exit
-     before its failure. *)
-  let evaluated = ref false in
-  let reached test sites =
-    send (Reached { test; sites });
-    match armed with
-    | Some (m : Mutate.mutant) when (not !evaluated) && evaluates m.id sites ->
-        evaluated := true;
-        send Evaluated
-    | Some _ | None -> ()
-  in
+  (* The parent judges each failure by whether the windows sent before it
+     held the armed site, so the window of a test is drained before its
+     [Done], as its [Test_finished] does unless the test ended the case with
+     [Out_of_memory] or [Sys.Break], and that of a release or an exit before
+     its failure. *)
+  let reached test sites = send (Reached { test; sites }) in
   let last () =
     (if mutating config then try window ~send:reached None with _ -> ());
     let counts = Coverage.take () in
@@ -179,7 +172,7 @@ type worker = {
   mutable job : case_job option;
   mutable releasing : string option; (* the fixture it announced last *)
   mutable exited : bool; (* it said that code under test called exit *)
-  mutable evaluated : bool; (* it said that it evaluated its armed site *)
+  mutable evaluated : bool; (* a window it sent held its armed site *)
   mutable signalled : bool; (* the parent sent it the run's signal *)
   mutable hung_up : bool; (* [requests] is closed *)
   mutable status : Unix.process_status option; (* once it is reaped *)
@@ -686,6 +679,11 @@ let supervise ?(on_event = ignore) ~on_reach ~on_failure (config : Run.config)
     on_failure None ~evaluated:w.evaluated;
     rev_release_failures := failure :: !rev_release_failures
   in
+  let armed = armed_spec config in
+  let windowed w test sites =
+    if evaluates armed sites then w.evaluated <- true;
+    on_reach test sites
+  in
   let give event =
     on_event event;
     Capture.drain ()
@@ -798,10 +796,7 @@ let supervise ?(on_event = ignore) ~on_reach ~on_failure (config : Run.config)
         Coverage.absorb counts;
         drain w
     | Reached { test; sites } ->
-        on_reach test sites;
-        drain w
-    | Evaluated ->
-        w.evaluated <- true;
+        windowed w test sites;
         drain w
     | Serving -> drain w
     | exception Closed -> ()
@@ -906,8 +901,7 @@ let supervise ?(on_event = ignore) ~on_reach ~on_failure (config : Run.config)
               Option.map (fun d -> d +. Os.count_s job.started) job.deadline)
           job
     | Counts counts, _ -> Coverage.absorb counts
-    | Reached { test; sites }, _ -> on_reach test sites
-    | Evaluated, _ -> w.evaluated <- true
+    | Reached { test; sites }, _ -> windowed w test sites
     | Report (Judge attempt), Some job ->
         job.asked <- Some (attempt, Os.counter ())
     | Report (Done { served; stopped; retire }), Some job ->
@@ -1071,9 +1065,7 @@ let execute ?(on_reach = fun _ _ -> ()) ?(on_failure = fun _ ~evaluated:_ -> ())
     let armed = armed_spec config
     and evaluated = ref false in
     let on_reach test sites =
-      (match armed with
-      | Some id when evaluates id sites -> evaluated := true
-      | Some _ | None -> ());
+      if evaluates armed sites then evaluated := true;
       on_reach test sites
     in
     let on_event (event : Run.event) =
@@ -1233,8 +1225,10 @@ let fresh (config : Run.config) ~suite tests jobs ~on_ran ~on_signal =
         st.rev_failures <- (failure, st.w.evaluated) :: st.rev_failures
     | Report Exited -> st.w.exited <- true
     | Serving -> st.w.serving <- true
-    | Evaluated -> st.w.evaluated <- true
-    | Report (Event _ | Judge _) | Reached _ | Counts _ -> ()
+    | Reached { sites; _ } ->
+        if evaluates (Option.map fst st.job.armed) sites then
+          st.w.evaluated <- true
+    | Report (Event _ | Judge _) | Counts _ -> ()
   in
   let expired st =
     kill st.w;

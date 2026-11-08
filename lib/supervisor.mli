@@ -59,11 +59,10 @@
     opening when the test starts. What it evaluates outside every test, in a
     fixture release, and what the parent evaluated as its modules initialised,
     belong to no test. A worker that arms a mutant arms it as it starts, and its
-    evaluations count from there. It also tells its parent, once, that it has
-    evaluated the armed site, after the window that did and before any later
-    report: so the parent knows, of each failure a worker reports, whether that
-    worker had evaluated the site by then, a release's own evaluations included.
-    Until then a worker computes the unmutated program. *)
+    evaluations count from there. It sends each window before any later report,
+    a release's before the release's failures, so the parent reads from a
+    worker's windows whether it had evaluated the armed site when it reports a
+    failure. *)
 
 val execute :
   ?on_reach:
