@@ -1908,8 +1908,8 @@ let verdict_rows =
         "mutant survived: the site was evaluated 2 times and only xfail tests \
          failed.\n" ) );
     ( "unknown, with its reason",
-      ( (fun r -> Report.mutation_unknown r "no selected test ran the site"),
-        "mutant unknown: no selected test ran the site.\n" ) );
+      ( (fun r -> Report.mutation_unknown r "no test evaluated the armed site"),
+        "mutant unknown: no test evaluated the armed site.\n" ) );
     ( "not reached, only xfail tests ran the site",
       ( (fun r -> Report.mutation_not_reached r),
         "mutant not reached: only xfail tests ran the site.\n" ) );

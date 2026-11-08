@@ -17,15 +17,16 @@
     run could not decide is {!Unknown}, which outranks a survivor, so a mutant
     that no run judged never reads as survived.
 
-    A run judges a mutant only where it evaluated it. Until the armed site is
-    evaluated, a process computes the unmutated program, so a test that fails
-    there fails for another reason, and a test that passes there tested nothing.
-    A kill therefore needs a failure in a process that had evaluated the armed
-    site by then, and a survivor needs the site evaluated. Shi, Bell and
-    Marinov, "Mitigating the Effects of Flaky Tests on Mutation Testing" (ISSTA
-    2019, §3.2), make the same rule with the test as the unit; here the unit is
-    the process, since a test can fail on what an earlier test of its process
-    built with the mutant, a fixture or a cached value. *)
+    A run judges a mutant only where it evaluated it. The tests of an armed
+    mutant run in a worker: a worker process of the loop or of an [--arm] run,
+    or the run's own process where it runs its tests itself. Until a worker
+    evaluates the armed site, it computes the unmutated program, so a test that
+    fails there fails for another reason, and a test that passes there tested
+    nothing. Shi, Bell and Marinov, "Mitigating the Effects of Flaky Tests on
+    Mutation Testing" (ISSTA 2019, §3.2), make the same rule with the test as
+    the unit; here the unit is the worker, since a test can fail on what an
+    earlier test of its worker built with the mutant, a fixture or a cached
+    value. *)
 
 type reaching_test = string list
 (** The type for a test that evaluated a mutant, by its path: the names of its
@@ -36,17 +37,17 @@ type reaching_test = string list
     mutant that no test reached is {!Outside_tests} or {!Unreached}. *)
 type verdict =
   | Killed
-      (** A reaching test failed, or a fixture release failed, in a process of
-          the run that armed the mutant, and that process had evaluated the
-          armed site by then, its release included for a release. *)
+      (** A reaching test failed, or a fixture release failed, in a worker that
+          had evaluated the armed site by then, its release included for a
+          release. *)
   | Unknown of string
-      (** No verdict, and the string says why: the run that armed the mutant
-          ended before its tests did, by a crash, an exit or its deadline; its
-          only failures came in processes that had not evaluated the armed site;
+      (** No verdict, and the string says why: a worker ended before its tests
+          did, by a crash, an exit or its deadline, and no failure killed; its
+          only failures came in workers that had not evaluated the armed site;
           its tests passed and never evaluated it, as when the dry run cached
-          the result of the site in a table or a forced lazy value; or the
-          executable could not be mutation-tested, as when its dry run is red,
-          its suite is not deterministic or its selection narrows it. *)
+          the result of the site in a table or a forced lazy value; or the suite
+          could not be mutation-tested, as when its dry run is red, it is not
+          deterministic or its selection narrows it. *)
   | Survived of { first : reaching_test; others : reaching_test list }
       (** Every reaching test passed, and the armed site was evaluated. [first]
           and [others] are the reaching tests, sorted and without duplicates,

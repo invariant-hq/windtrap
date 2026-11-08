@@ -752,9 +752,7 @@ let not_evaluated () =
   equal string
     "mutants: 2 reached by this suite, 1 killed, 1 unknown, 2 never reached"
     (outcome r.out);
-  contains
-    ~sub:"\n    its site ran in the dry run and not in its mutant's child\n"
-    r.out;
+  contains ~sub:"\n    no test evaluated the armed site\n" r.out;
   contains ~sub:(strf "arm: %s --arm %s\n" suite_exe (site 18)) r.out
 
 (* The rows of a loop over [fixture], which exits 0. *)
@@ -764,8 +762,8 @@ let loop_rows fixture =
   rows r
 
 let unprimed_failure =
-  "unknown: unprimed \u{203a} fails unless primed, then widens failed before \
-   its child evaluated the armed site"
+  "unknown: unprimed \u{203a} fails unless primed, then widens failed in a \
+   worker that had not yet evaluated the armed site"
 
 let capped () =
   let r = spawn ~env:[ suite "capped" ] [ mutate ] in
@@ -837,7 +835,7 @@ let verdicts =
           equal string
             "mutants: 1 reached by this suite, 1 killed, 3 never reached"
             (outcome r.out));
-      test "a mutant its child did not evaluate is unknown, no survivor"
+      test "a mutant its worker did not evaluate is unknown, no survivor"
         not_evaluated;
       test "the verdict file records it as unknown, with its reason" (fun () ->
           equal
@@ -845,14 +843,13 @@ let verdicts =
             (Some
                [
                  "subject.ml:15 killed";
-                 "subject.ml:18 unknown: its site ran in the dry run and not \
-                  in its mutant's child";
+                 "subject.ml:18 unknown: no test evaluated the armed site";
                  "subject.ml:21 unreached";
                  "subject.ml:27 unreached";
                ])
             (rows (Lazy.force memo)));
       test
-        "a failure before its child evaluated the armed site kills nothing, \
+        "a failure before its worker evaluated the armed site kills nothing, \
          and the mutant is unknown, naming the test" (fun () ->
           equal
             (option (list string))
@@ -873,7 +870,8 @@ let verdicts =
                [
                  "subject.ml:15 unreached";
                  "subject.ml:18 unknown: retired \u{203a} fails unless primed, \
-                  then widens failed before its child evaluated the armed site";
+                  then widens failed in a worker that had not yet evaluated \
+                  the armed site";
                  "subject.ml:21 unreached";
                  "subject.ml:27 unreached";
                ])
@@ -891,6 +889,17 @@ let verdicts =
                  "subject.ml:27 unreached";
                ])
             (loop_rows "late_release"));
+      test "a kill stands though its worker then dies as it releases" (fun () ->
+          equal
+            (option (list string))
+            (Some
+               [
+                 "subject.ml:15 killed";
+                 "subject.ml:18 unreached";
+                 "subject.ml:21 unreached";
+                 "subject.ml:27 unreached";
+               ])
+            (loop_rows "kill_then_crash"));
       test
         "a release failure in a worker that never evaluated the site kills \
          nothing" (fun () ->
@@ -898,8 +907,8 @@ let verdicts =
             (option (list string))
             (Some
                [
-                 "subject.ml:15 unknown: a fixture release failed before its \
-                  child evaluated the armed site";
+                 "subject.ml:15 unknown: a fixture release failed in a worker \
+                  that had not yet evaluated the armed site";
                  "subject.ml:18 unreached";
                  "subject.ml:21 unreached";
                  "subject.ml:27 unreached";
@@ -1623,7 +1632,8 @@ let before_arming () =
   let r = spawn ~env:[ suite "boundary" ] [ "--arm"; site 21 ] in
   equal string "exited 0" r.status;
   contains ~sub:"armed: a + b \u{2192} a - b" r.out;
-  equal string "mutant unknown: no selected test ran the site." (outcome r.out)
+  equal string "mutant unknown: no test evaluated the armed site."
+    (outcome r.out)
 
 let armed_baseline = lazy (baseline_run [ "--arm"; site 15; "-u" ] ~stale:"6\n")
 
@@ -1716,7 +1726,7 @@ let armed =
             failed.");
       test "an armed run whose selection never ran the site says so"
         (armed_closing [] [ "-f"; "calc" ]
-           "mutant unknown: no selected test ran the site.");
+           "mutant unknown: no test evaluated the armed site.");
       test "a site evaluated only before arming is unknown" before_arming;
       test
         "an armed run whose only failure came before its worker evaluated the \
@@ -1732,6 +1742,37 @@ let armed =
              widens failed in a worker that had not yet evaluated the armed \
              site."
             (outcome r.out));
+      test
+        "an armed run whose test ends its worker is unknown, naming the test, \
+         as the loop's job that ends early is, though the worker had evaluated \
+         the site" (fun () ->
+          let r =
+            spawn ~env:[ suite "crash_late" ] [ "--arm"; site 27; "-j"; "1" ]
+          in
+          equal string "exited 1" r.status;
+          equal string
+            "mutant unknown: crash \u{203a} crasher leaves without a word \
+             ended its worker."
+            (outcome r.out));
+      test "an armed run's kill stands though its worker then dies" (fun () ->
+          let r = spawn ~env:[ suite "kill_then_crash" ] [ "--arm"; site 15 ] in
+          equal string "exited 1" r.status;
+          equal string "mutant killed." (outcome r.out));
+      test
+        "an armed run in process judges a release failure by the release \
+         window, which follows its last test" (fun () ->
+          let armed fixture =
+            outcome
+              (spawn
+                 ~env:[ suite fixture ]
+                 [ "--arm"; site 15; "--in-process"; "-f"; "holds a fixture" ])
+                .out
+          in
+          equal string "mutant killed." (armed "late_release");
+          equal string
+            "mutant unknown: a fixture release failed in a worker that had not \
+             yet evaluated the armed site."
+            (armed "unprimed_release"));
       test "an armed run under -u records no correction" armed_under_update;
       test "an armed run writes its JUnit file" (fun () ->
           equal (list string) [ "junit.xml" ] (Lazy.force armed_baseline).beside);

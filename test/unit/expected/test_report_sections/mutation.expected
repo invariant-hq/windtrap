@@ -178,7 +178,7 @@ mutants: 1 reached, «g|1 killed», «y|124 never reached», 1 suite
 «d|────────────────────── unknown (1) ───────────────────────»
 File "lib/memo.ml", line 4, characters 17-22:
   «b|lib/memo.ml:4:17:sub»  a + b → a - b
-    its site ran in the dry run and not in its mutant's child
+    no test evaluated the armed site
     arm: ./test_memo.exe --arm lib/memo.ml:4:17:sub
 «d|──────────────────────────────────────────────────────────»
 
@@ -216,7 +216,7 @@ mutants: «r|2 survived» of 5 reached by this suite, «g|3 killed», «y|2 neve
 ────────────────────── unknown (1) ───────────────────────
 File "lib/memo.ml", line 4, characters 17-22:
   lib/memo.ml:4:17:sub  a + b → a - b
-    its site ran in the dry run and not in its mutant's child
+    no test evaluated the armed site
     arm: ./test_memo.exe --arm lib/memo.ml:4:17:sub -f 'memoized'
 ──────────────────────────────────────────────────────────
 

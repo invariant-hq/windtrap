@@ -296,36 +296,52 @@ let probe ~dry_run (ran : Supervisor.ran) =
 
 let seconds s = if s < 10. then strf "%.1fs" s else strf "%.0fs" s
 
-(* A worker computes the unmutated program until it evaluates the armed site,
-   so a failure there is not the mutant's, and tests that never evaluated it
-   tested nothing: none of these is a verdict. The unexpected pass of a test
-   marked xfail counts as a failure of the run and kills no mutant. *)
+(* The verdict of a mutant's tests, for the loop and [--arm] alike
+   (Verdicts): a failure kills only in a worker that had evaluated the armed
+   site by then, a worker that ended before its tests did leaves the mutant
+   unknown, and tests that never evaluated the site tested nothing.
+   [failures] are the counted failures that did not end their worker, in
+   order, each named and with whether its worker had evaluated the site;
+   [ended] says how a worker ended early; [tested] is whether a test
+   evaluated the site. *)
+let judge ~ended ~failures ~tested =
+  if List.exists snd failures then `Killed
+  else
+    match (ended, failures) with
+    | Some why, _ -> `Unknown why
+    | None, (what, _) :: _ ->
+        `Unknown
+          (what
+         ^ " failed in a worker that had not yet evaluated the armed site")
+    | None, [] when tested -> `Survived
+    | None, [] -> `Unknown "no test evaluated the armed site"
+
+(* A row's flag holds once a window before its end held the site, and a
+   worker releases after its last row, so a flag is a test's evaluation. The
+   unexpected pass of a test marked xfail counts as a failure of the run and
+   kills no mutant. *)
 let verdict ~deadline paths (ran : Supervisor.ran) =
-  match ran.ended with
-  | Supervisor.Expired ->
-      Verdicts.Unknown ("its run passed its deadline of " ^ seconds deadline)
-  | Lost how -> Verdicts.Unknown ("its run " ^ how)
-  | Ran -> (
-      let failed =
-        List.filter
-          (fun ((r : Run.result), _) ->
-            Option.is_none r.xfail && counted_failure r)
-          ran.results
-      in
-      let unevaluated what =
-        Verdicts.Unknown
-          (what ^ " failed before its child evaluated the armed site")
-      in
-      if List.exists snd failed || List.exists snd ran.release_failures then
-        Verdicts.Killed
-      else
-        match (failed, ran.release_failures) with
-        | (r, _) :: _, _ -> unevaluated (Test_tree.path_to_string r.path)
-        | [], _ :: _ -> unevaluated "a fixture release"
-        | [], [] when List.exists snd ran.results -> Verdicts.survived paths
-        | [], [] ->
-            Verdicts.Unknown
-              "its site ran in the dry run and not in its mutant's child")
+  let ended =
+    match ran.ended with
+    | Supervisor.Ran -> None
+    | Expired -> Some ("its run passed its deadline of " ^ seconds deadline)
+    | Lost how -> Some ("its run " ^ how)
+  in
+  let failures =
+    List.filter_map
+      (fun ((r : Run.result), evaluated) ->
+        if Option.is_none r.xfail && counted_failure r then
+          Some (Test_tree.path_to_string r.path, evaluated)
+        else None)
+      ran.results
+    @ List.map
+        (fun (_, evaluated) -> ("a fixture release", evaluated))
+        ran.release_failures
+  in
+  match judge ~ended ~failures ~tested:(List.exists snd ran.results) with
+  | `Killed -> Verdicts.Killed
+  | `Unknown why -> Verdicts.Unknown why
+  | `Survived -> Verdicts.survived paths
 
 (* Recorded paths are relative to the project root; under [dune runtest] the
    working directory is inside [_build], where they do not open. *)
@@ -668,19 +684,20 @@ let armed renderer ~spec ~suite (config : Run.config) tests =
               | None -> ())
           sites
       in
-      (* As in the loop, a failure kills only in a worker that had evaluated
-         the armed site. *)
-      let killed = ref false and unevaluated = ref None in
-      let on_failure test ~evaluated =
+      (* Judged as the loop judges a job, a test that ends its worker
+         standing for a job that ends early. *)
+      let failures = ref [] and ended = ref None in
+      let on_failure test ~evaluated ~lost =
+        let what =
+          Option.fold ~none:"a fixture release" ~some:Test_tree.path_to_string
+            test
+        in
         match test with
         | Some path when xfail path -> ()
-        | _ when evaluated -> killed := true
-        | _ ->
-            if Option.is_none !unevaluated then
-              unevaluated :=
-                Some
-                  (Option.fold ~none:"a fixture release"
-                     ~some:Test_tree.path_to_string test)
+        | _ when lost ->
+            if Option.is_none !ended then
+              ended := Some (what ^ " ended its worker")
+        | _ -> failures := (what, evaluated) :: !failures
       in
       let result =
         Report.run
@@ -692,21 +709,18 @@ let armed renderer ~spec ~suite (config : Run.config) tests =
           (fun (r : Run.result) -> Option.is_some r.xfail && counted_failure r)
           (Run.results outcome.run)
       in
-      (match (result, !unevaluated) with
-      | Ok _, _ when !killed -> Report.mutation_killed renderer
-      | Ok _, Some what ->
-          Report.mutation_unknown renderer
-            (what
-           ^ " failed in a worker that had not yet evaluated the armed site")
-      | Ok outcome, None when Run.results outcome.run <> [] -> (
-          match (!hits, !xfail_hits) with
-          | 0, 0 ->
-              Report.mutation_unknown renderer "no selected test ran the site"
-          | 0, _ -> Report.mutation_not_reached renderer
-          | _ ->
+      (match result with
+      | Ok outcome when Run.results outcome.run <> [] -> (
+          let failures = List.rev !failures and ended = !ended in
+          match judge ~ended ~failures ~tested:(!hits > 0) with
+          | `Killed -> Report.mutation_killed renderer
+          | `Unknown _ when failures = [] && ended = None && !xfail_hits > 0 ->
+              Report.mutation_not_reached renderer
+          | `Unknown why -> Report.mutation_unknown renderer why
+          | `Survived ->
               Report.mutation_survived renderer ~hits:(!hits + !xfail_hits)
                 ~xfail_failed:(xfail_failed outcome))
-      | Ok _, None | Error _, _ -> ());
+      | Ok _ | Error _ -> ());
       flush_descriptors ();
       result
 

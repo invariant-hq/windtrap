@@ -156,9 +156,12 @@ mutants: 3 survived of 9 reached by this suite, 6 killed, 1 never reached
 
 The `reproduce:` line arms the first survivor. `--arm ID` runs the
 suite once with that mutant active, names it first, records no
-correction, and ends on its verdict: killed, survived, or unknown when
-no selected test ran the site or every failure came before the site
-ran. Under `dune runtest`, the mirror
+correction, and ends on its verdict, judged as a mutation run judges
+one ([What a mutation run runs](#what-a-mutation-run-runs)): killed,
+survived, or unknown, as when no selected test evaluated the site,
+every failure came before the site ran, or a test ended its worker by a
+crash, an `exit` or the kill past its limit. Under `dune runtest`, the
+mirror
 arms it in every suite that holds its file, as in
 `WINDTRAP_MUTATE_ARM=ID dune runtest --force --instrument-with ppx_windtrap.mutate`
 (see [Mutation testing a project](#mutation-testing-a-project) for
@@ -270,9 +273,10 @@ that spawns a domain retires its worker, and the mutant's later tests
 run in a fresh one, which has evaluated nothing: each failure is judged
 by the worker it happened in.
 
-A mutant no run could judge is unknown, and so is no survivor: its run
-ended before its tests did, because the process crashed or exited or
-passed a deadline taken from the dry run; or each of its failures came
+A failure that kills stands, whatever else the mutant's run does. A
+mutant no run could judge is unknown, and so is no survivor: its worker
+ended before its tests did, because it crashed or exited or passed a
+deadline taken from the dry run; or each of its failures came
 before its worker evaluated the site, as when a test fails without an
 earlier test that the mutant's run leaves out; or its tests passed
 without evaluating the site, as when such a test decided whether the

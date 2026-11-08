@@ -24,6 +24,11 @@
   under `--mutate` and `--arm` alike; a failure before the site ran
   makes the mutant unknown, naming the test, unless a later reaching test
   kills it (doc/manual/mutation.md#what-a-mutation-run-runs).
+- (breaking) `--arm` judges its mutant as the loop does: a test that
+  ends its worker, by a crash, an `exit` or the kill past its limit,
+  makes the mutant unknown where it killed it, and under both a failure
+  that kills stands though a worker ends after it
+  (doc/manual/mutation.md#what-a-mutation-run-runs).
 - (breaking) The `not evaluated` verdict is unknown, with its reason, in
   the report, the merge and `--arm`'s closing line;
   `Windtrap_runtime.Verdicts.Not_evaluated` and

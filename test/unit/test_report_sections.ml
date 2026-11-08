@@ -2279,7 +2279,7 @@ let memo_missed =
       mutant
         ~source:(source_of [ (4, "  | None -> let v = a + b in") ])
         "lib/memo.ml:4:17:sub" 4 "a + b" "a - b";
-    reason = "its site ran in the dry run and not in its mutant's child";
+    reason = "no test evaluated the armed site";
     invocation = `Exe "./test_memo.exe";
   }
 

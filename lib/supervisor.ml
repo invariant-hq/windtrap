@@ -675,8 +675,8 @@ let supervise ?(on_event = ignore) ~on_reach ~on_failure (config : Run.config)
   let stopping = ref false and uncorrected = ref false in
   let rev_release_failures = ref [] in
   let interrupted = ref None in
-  let fail_outside w failure =
-    on_failure None ~evaluated:w.evaluated;
+  let fail_outside ~lost w failure =
+    on_failure None ~evaluated:w.evaluated ~lost;
     rev_release_failures := failure :: !rev_release_failures
   in
   let armed = armed_spec config in
@@ -733,7 +733,7 @@ let supervise ?(on_event = ignore) ~on_reach ~on_failure (config : Run.config)
                (strf "the test ended its worker process, which %s"
                   (ended status)))
     | None, Some name, _ when status <> Unix.WEXITED 0 ->
-        fail_outside w
+        fail_outside ~lost:true w
           (Failure.with_phase Failure.Release
              (Failure.message
                 (strf "%s: its worker process %s while releasing it" name
@@ -777,8 +777,8 @@ let supervise ?(on_event = ignore) ~on_reach ~on_failure (config : Run.config)
     | Event event -> observe w event
     | Released failures ->
         w.releasing <- None;
-        List.iter (fail_outside w) failures
-    | Outside failure -> fail_outside w failure
+        List.iter (fail_outside ~lost:false w) failures
+    | Outside failure -> fail_outside ~lost:false w failure
     | Exited -> w.exited <- true
     | Judge _ | Done _ -> ()
   in
@@ -831,15 +831,16 @@ let supervise ?(on_event = ignore) ~on_reach ~on_failure (config : Run.config)
       | None -> Option.iter answer running.(!reached)
       | Some settled ->
           let job = Option.get running.(!reached) in
-          let result, corrected, stopped, evaluated =
+          let result, corrected, stopped, evaluated, lost =
             match settled with
-            | Lost { result; evaluated } -> (result, false, false, evaluated)
+            | Lost { result; evaluated } ->
+                (result, false, false, evaluated, true)
             | Served { served; stopped; evaluated } ->
                 let result, corrected = Run.adjudicate run job.case served in
-                (result, corrected, stopped, evaluated)
+                (result, corrected, stopped, evaluated, false)
           in
           if counted_failure result then
-            on_failure (Some result.path) ~evaluated;
+            on_failure (Some result.path) ~evaluated ~lost;
           if not job.shown then give (Test_started { path = job.case.path });
           List.iter give (List.rev job.rev_events);
           Run.add_result run result;
@@ -1057,11 +1058,14 @@ let supervise ?(on_event = ignore) ~on_reach ~on_failure (config : Run.config)
 
 (* The parent's own evaluations, at module initialization, are outside
    every test. *)
-let execute ?(on_reach = fun _ _ -> ()) ?(on_failure = fun _ ~evaluated:_ -> ())
-    ?(on_event = ignore) (config : Run.config) ~suite tests =
+let execute ?(on_reach = fun _ _ -> ())
+    ?(on_failure = fun _ ~evaluated:_ ~lost:_ -> ()) ?(on_event = ignore)
+    (config : Run.config) ~suite tests =
   let spawning = if Sys.win32 then `None else spawning () in
   if config.in_process || spawning = `None then (
-    (* This process is the run's one worker. *)
+    (* This process is the run's one worker. It releases its fixtures once,
+       after its last test, so the window of the releases is the last, and
+       its failures are judged after it, as a worker's [Released] is. *)
     let armed = armed_spec config
     and evaluated = ref false in
     let on_reach test sites =
@@ -1072,7 +1076,7 @@ let execute ?(on_reach = fun _ _ -> ()) ?(on_failure = fun _ ~evaluated:_ -> ())
       if mutating config then reach_windows ~send:on_reach event;
       (match event with
       | Test_finished result when counted_failure result ->
-          on_failure (Some result.path) ~evaluated:!evaluated
+          on_failure (Some result.path) ~evaluated:!evaluated ~lost:false
       | _ -> ());
       on_event event
     in
@@ -1082,7 +1086,7 @@ let execute ?(on_reach = fun _ _ -> ()) ?(on_failure = fun _ ~evaluated:_ -> ())
     Result.iter
       (fun (outcome : Run.outcome) ->
         List.iter
-          (fun _ -> on_failure None ~evaluated:!evaluated)
+          (fun _ -> on_failure None ~evaluated:!evaluated ~lost:false)
           outcome.release_failures)
       ran;
     ran)

@@ -76,22 +76,22 @@ val execute_and_report :
     ({!Cli.settings}), so a property draws the same cases in the dry run, the
     probe and every job, and on every run of one binary.
 
-    {b Verdicts.} A job's worker computes the unmutated program until it
-    evaluates the armed site, so only a failure after that can be the mutant's.
-    A job runs in one worker until a test retires it, and its later tests then
-    run in a fresh worker, which arms the mutant again and has evaluated
-    nothing: each failure is judged by the worker it happened in, and a release
-    failure by the worker that released, its release included.
+    {b Verdicts.} A failure kills only in a worker that had evaluated the armed
+    site by then ({!Windtrap_runtime.Verdicts.section-verdicts}). A job runs in
+    one worker until a test retires it, and its later tests then run in a fresh
+    worker, which arms the mutant again and has evaluated nothing: each failure
+    is judged by the worker it happened in, and a release failure by the worker
+    that released, its release included.
     - A mutant is {!Windtrap_runtime.Verdicts.Killed} when its job counted a
       failure, that of a fixture release included, in a worker that had
-      evaluated the armed site by then.
-    - It is {!Windtrap_runtime.Verdicts.Unknown} when its job ended before its
-      tests did: its worker was killed by a signal or exited, code under test
-      calling [exit] included, or it passed its deadline.
-    - It is unknown too when its job counted failures and none of them kills,
-      and the reason names the first; and when its tests passed and none
-      evaluated the armed site, as when the dry run reached the site in a test
-      only because of what an earlier test had done.
+      evaluated the armed site by then, whatever else the job did.
+    - Otherwise it is {!Windtrap_runtime.Verdicts.Unknown} when its job ended
+      before its tests did: its worker was killed by a signal or exited, code
+      under test calling [exit] included, or it passed its deadline.
+    - Otherwise it is unknown too when its job counted failures, and the reason
+      names the first; and when its tests passed and none evaluated the armed
+      site, as when the dry run reached the site in a test only because of what
+      an earlier test had done.
     - It survived when its tests passed and one of them evaluated the site.
 
     The report lists an unknown mutant with its reason and the [--arm] command
@@ -174,11 +174,11 @@ val execute_and_report :
       the ordinary run under {!Run.No_mutation}.
     - With the mutant armed, it runs {!Report.run} with [baseline] set to
       {!Baseline.Check}, so it records no correction.
-    - Its verdict is judged as the loop judges a job's: a failure kills only in
-      a worker that had evaluated the armed site by then, a release failure in
-      the worker that released. When failures came and none kills, the mutant is
-      unknown and the first of them is named ({!Report.mutation_unknown}), and
-      so it is when the tests passed and none evaluated the site.
+    - Its verdict is judged by the loop's rules for a job's
+      ({{!section-loop}Verdicts}), a test that ends its worker, which died,
+      called [exit] or was killed past its limit, standing for a job that ended
+      before its tests did: that test kills nothing, and when no failure kills,
+      the mutant is unknown and names it ({!Report.mutation_unknown}).
     - Its verdict leaves out the tests marked xfail, as the loop does. The
       unexpected pass of such a test fails the run and kills no mutant, and a
       site that only such tests evaluated is not reached

@@ -67,28 +67,33 @@
 val execute :
   ?on_reach:
     (string list option -> (Windtrap_runtime.Mutate.id * int) list -> unit) ->
-  ?on_failure:(string list option -> evaluated:bool -> unit) ->
+  ?on_failure:(string list option -> evaluated:bool -> lost:bool -> unit) ->
   ?on_event:(Run.event -> unit) ->
   Run.config ->
   suite:string ->
   Test_tree.t list ->
   (Run.outcome, Run.startup_error) result
 (** [execute config ~suite tests] is [Run.execute config ~suite tests] with the
-    tests run by workers, as above. Under [config.in_process], on Windows, which
-    has no [fork], and in a process that can neither fork nor start the
+    tests run by workers, as above. It is {!Run.execute}, this process running
+    the tests itself, in three cases: under [config.in_process], on Windows,
+    which has no [fork], and in a process that can neither fork nor start the
     executable again to reach the run (it spawned a domain, and is a fork or not
-    inside a [Windtrap.run] call), it is {!Run.execute}.
+    inside a [Windtrap.run] call).
 
     Under mutation, [on_reach test sites] receives the {{!mutants}evaluations}
     of each window that evaluated a mutant: [test] is [Some path] for a test's,
     given before the parent reaches its row, and [None] for those of no test,
     the parent's first. Defaults to ignoring them.
 
-    Under [--arm], [on_failure test ~evaluated] receives each counted failure:
-    [test] is [Some path] for a test's row, given before the row reaches the
-    observer, and [None] for a failure of a fixture release or of no test, as it
-    arrives. [evaluated] is whether the worker it happened in, or this process
-    under [config.in_process], had evaluated the armed site by then. Defaults to
+    Under [--arm], [on_failure test ~evaluated ~lost] receives each counted
+    failure: [test] is [Some path] for a test's row, given before the row
+    reaches the observer, and [None] for a failure of a fixture release or of no
+    test, as it arrives. [evaluated] is whether the worker it happened in had
+    evaluated the armed site by then, a release's failure counting the window of
+    the releases. When this process runs the tests itself, it is that worker,
+    and it releases its fixtures once, after its last test. [lost] is whether
+    the failure is its worker's end: a test's worker died, called [exit] or was
+    killed past its limit, or a worker died while releasing. Defaults to
     ignoring them. *)
 
 (** {1:fresh Fresh workers}

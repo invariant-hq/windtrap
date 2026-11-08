@@ -116,6 +116,13 @@ let crash =
         equal int 2 (Subject.crasher 3 1));
   ]
 
+(* [crash] after a test that evaluates [crasher] and passes, armed or not:
+   the worker that runs both has evaluated the site when the second ends
+   it. *)
+let crash_late =
+  test "crasher is small" (fun () -> is_true (Subject.crasher 3 1 < 100))
+  :: crash
+
 (* Leaves through a FATAL exception, which no failure boundary in the
    runner may swallow ({!Failure.catch} never returns it): armed, it escapes
    [Run.execute] and reaches the mutation child's own wrapper, which is
@@ -502,6 +509,21 @@ let releasing held =
         if !primed then is_true (Subject.sub 10 4 < 100));
   ]
 
+(* [crashing]'s test pins [sub] and holds a fixture whose release leaves
+   through [Unix._exit] when [sub]'s answer changes: armed, the test kills
+   the mutant, and then the worker dies as it releases. *)
+let crashing =
+  fixture
+    ~teardown:(fun () -> if Subject.sub 10 4 <> 6 then Unix._exit 3)
+    Fun.id
+
+let kill_then_crash =
+  [
+    test "pins sub, holding a fixture whose release crashes" (fun () ->
+        crashing ();
+        equal int 6 (Subject.sub 10 4));
+  ]
+
 let retried = ref 0
 let handle = fixture ~teardown:(fun () -> ignore (Subject.crasher 3 1)) Fun.id
 
@@ -552,6 +574,8 @@ let () =
       exit @@ run "calc" [ group "release" (releasing late_released) ]
   | "unprimed_release" ->
       exit @@ run "calc" [ group "release" (releasing unprimed_released) ]
+  | "crash_late" -> exit @@ run "calc" [ group "crash" crash_late ]
+  | "kill_then_crash" -> exit @@ run "calc" [ group "release" kill_then_crash ]
   | "crash" ->
       exit
       @@ run "calc"
