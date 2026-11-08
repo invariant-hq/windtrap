@@ -2300,7 +2300,9 @@ val run : ?argv:string array -> string -> test list -> int
     same signal. A worker that receives one of these signals itself ends the run
     so too. The test's limit holds meanwhile: a worker still running three
     limits after its test started, such as one that a C call holds, is killed
-    with its process group, and the releases have what is left of that time.
+    with its process group, and the releases have what is left of that time. A
+    second signal ends the run at once: every worker is killed with its process
+    group, its fixtures unreleased, and {!run} dies by that signal.
 
     On Windows, and under [--in-process], the tests run in the process that
     called {!run}. There a call to [exit] in code under test is recorded as the

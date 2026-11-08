@@ -645,6 +645,18 @@ let supervise ?(on_event = ignore) ~on_reach ~on_failure (config : Run.config)
   let run = Run.supervising config ~suite in
   Run.in_run run @@ fun () ->
   let workers = ref [] and signal = ref None in
+  (* A second signal ends the run at once: the workers go with their
+     process groups, their fixtures unreleased, and the parent dies by
+     it. *)
+  let at_once s =
+    List.iter
+      (fun w ->
+        kill w;
+        ignore (reap w);
+        bury w)
+      !workers;
+    Os.die_by s
+  in
   (* The signal reaches every worker at once, whatever the parent does. *)
   let forward () =
     match !signal with
@@ -661,7 +673,10 @@ let supervise ?(on_event = ignore) ~on_reach ~on_failure (config : Run.config)
   let interrupt s =
     if Option.is_none !signal then begin
       signal := Some s;
-      forward ()
+      forward ();
+      List.iter
+        (fun s -> Sys.set_signal s (Sys.Signal_handle at_once))
+        interrupting
     end
   in
   Os.with_signals interrupting interrupt @@ fun () ->

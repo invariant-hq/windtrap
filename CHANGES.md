@@ -9,6 +9,8 @@
   limits after it started, as without the signal, and the run then dies
   by the signal, naming that test
   (doc/manual/running-tests.md#bounding-a-test-in-time).
+- A second signal ends the run at once with its workers, each killed
+  with its process group.
 
 ### Coverage
 

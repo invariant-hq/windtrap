@@ -138,6 +138,16 @@ failed to kill it left spinning:
   the C loop was cut short
   its worker is gone
 
+A second signal kills the workers with the run, each with its process
+group:
+
+  $ (ulimit -t 20; run FACADE_FIXTURE=spinning ./send_signal.exe TERM,INT ./suite_main.exe --timeout 60)
+  running after SIGTERM
+  killed by SIGINT
+  $ spun
+  the C loop was cut short
+  its worker is gone
+
 A process a test forks inherits the runner's handlers, and a signal
 still kills it; the run goes on:
 

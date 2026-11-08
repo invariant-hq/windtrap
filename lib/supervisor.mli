@@ -49,7 +49,9 @@
     else the case of a worker it killed, and dies by the signal. The kill of a
     case still comes at its time, the wait for a verdict that no longer comes
     counting toward it, so a worker that a C call holds ends there. A worker
-    that dies of one of these signals after it said so ends the run too.
+    that dies of one of these signals after it said so ends the run too. A
+    second signal kills every worker with its process group, and the parent dies
+    by it at once.
 
     {b Coverage.} A worker hands the parent the coverage it counted as it ends,
     and the parent's dump at exit holds it, so a run leaves one dump. A worker
