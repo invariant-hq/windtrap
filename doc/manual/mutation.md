@@ -325,13 +325,14 @@ with `windtrap mutants`. `WINDTRAP_MUTATE` is the mirror of `--mutate`,
 where `1` is the bare flag, `0` its absence, and a value that spells no
 boolean the prefixes. A suite with no mutant to test, such as a suite
 over another library, runs as usual and says why on standard error. A
-mutant killed by one executable is killed. A mutant that no executable
-killed and one could not judge is unknown, and is no survivor. The
-command exits 1
-when a mutant survived every executable that reached it, listing the
-most reached first, and when an executable could not mutation-test its
-suite: the merge names it under `not mutation-tested`, with the mutants
-its file leaves unknown.
+mutant killed by one suite is killed. A mutant that no suite killed and
+one could not judge is unknown, and is no survivor. The merge names
+each suite by its executable and its name, as `test_calc.exe (calc)`.
+The command exits 1
+when a mutant survived every suite that reached it, listing the
+most reached first, and when a suite could not be mutation-tested: the
+merge names it under `not mutation-tested`, with the mutants its file
+leaves unknown.
 
 Dune does not track `WINDTRAP_MUTATE`. A suite that ran without it
 does not run again when it is set, unless its build changed, and the
@@ -382,23 +383,23 @@ File "calc.ml", line 10, characters 16-21:
       10 │ let sign n = if n > 0 then 1 else if n < 0 then -1 else 0
 
     2 tests ran this line and none failed:
-      test_calc.exe  sign › is -1 for a negative
-      test_calc.exe  sign › is 1 for a positive
+      test_calc.exe (calc)  sign › is -1 for a negative
+      test_calc.exe (calc)  sign › is 1 for a positive
 
 File "calc.ml", line 10, characters 20-21:
   SURVIVED  calc.ml:10:20:int  0 → 1
       10 │ let sign n = if n > 0 then 1 else if n < 0 then -1 else 0
 
     2 tests ran this line and none failed:
-      test_calc.exe  sign › is -1 for a negative
-      test_calc.exe  sign › is 1 for a positive
+      test_calc.exe (calc)  sign › is -1 for a negative
+      test_calc.exe (calc)  sign › is 1 for a positive
 
 File "calc.ml", line 10, characters 37-42:
   SURVIVED  calc.ml:10:37:le  n < 0 → n <= 0
       10 │ let sign n = if n > 0 then 1 else if n < 0 then -1 else 0
 
     1 test ran this line and did not fail:
-      test_calc.exe  sign › is -1 for a negative
+      test_calc.exe (calc)  sign › is -1 for a negative
 ──────────────────────────────────────────────────────────
 
 ─────────────────── never reached (1) ────────────────────
@@ -406,7 +407,7 @@ File "calc.ml", line 10, characters 37-42:
 ──────────────────────────────────────────────────────────
 
 reproduce: dune exec --instrument-with ppx_windtrap.mutate ./test_calc.exe -- --arm calc.ml:10:16:ge
-mutants: 3 survived of 9 reached, 6 killed, 1 never reached, 1 executable
+mutants: 3 survived of 9 reached, 6 killed, 1 never reached, 1 suite
 ```
 
 Only code that a suite's own process runs reaches a mutant. A binary
@@ -449,7 +450,7 @@ $ dune exec --instrument-with ppx_windtrap.mutate ./test_calc.exe -- --mutate
 calc: 12 passed in 2.7ms.
 mutants: 10 reached by this suite, 10 killed
 $ dune exec windtrap -- mutants
-mutants: 10 reached, 10 killed, 1 executable
+mutants: 10 reached, 10 killed, 1 suite
 ```
 
 ## What is mutated
@@ -495,13 +496,18 @@ arithmetic operators, the six comparisons or the two connectives.
 
 ## Where the verdicts are
 
-A suite's `--mutate` run over the whole suite writes one verdict file
-under `_build/_mutants`, and its next such run replaces it. An
-executable outside any build directory writes under `_windtrap/mutants`
-in its working directory. A run under `--mutate=PREFIX` replaces the
-verdicts under its prefixes and keeps the others, when the same build
-wrote the file. A verdict file records its executable and a digest of
-its bytes, and `windtrap mutants` leaves out one whose executable was
+A suite's `--mutate` run over the whole suite writes its verdict file
+under `_build/_mutants`, in a directory of its executable, and its next
+such run replaces it. Each suite of an executable has a file of its
+own: the partitions of an inline-test library, which dune runs at once,
+are a suite each, named after the library and the file. An executable
+outside any build directory writes under `_windtrap/mutants` in its
+working directory. A run under `--mutate=PREFIX` replaces the verdicts
+under its prefixes and keeps the others, when the same build wrote the
+file. Under `--mutate` a second run of one suite name in one process is
+refused, since both would claim one record: give each `Windtrap.run`
+its own name. A verdict file records its suite, its executable and a
+digest of the executable's bytes, and `windtrap mutants` leaves out one whose executable was
 deleted or rebuilt since, with a warning, as
 [`windtrap coverage`](coverage.md#when-a-dump-is-excluded) does a dump.
 
@@ -519,7 +525,7 @@ domain before its run: that process cannot fork, and a new start of the
 program would not reach its run. A test may spawn a domain. A run that
 is refused, or whose selection narrows the suite, still writes its
 verdict file when this build has none, saying why, and the project's
-merge names the executable under `not mutation-tested`. `--mutate` and
+merge names the suite under `not mutation-tested`. `--mutate` and
 `--arm` together are a usage error. An interrupt ends the run: the
 running mutants are killed, the first not yet reported is named on
 standard error, and no verdict file is written.
@@ -536,15 +542,15 @@ windtrap mutants - merge .mutants verdict files and report the survivors
 usage: windtrap mutants [OPTIONS] [PATH...]
 
 Merges the .mutants verdict files written by mutation runs and reports the
-mutants that survived every test executable. Without PATH arguments the files
+mutants that survived every suite. Without PATH arguments the files
 are found under the build directory's _mutants (or _windtrap/mutants in a tree
 built without one), walking up from the current directory to the enclosing
 project root; PATH arguments (.mutants files, or directories searched
 recursively) replace that default.
 
 Runs no tests and drives no build.
-Exits 1 when any mutant survived every executable that reached it, or when an
-executable could not mutation-test its suite.
+Exits 1 when any mutant survived every suite that reached it, or when a suite
+could not be mutation-tested.
 
 OPTIONS:
   --lines=FILE:A-B,...

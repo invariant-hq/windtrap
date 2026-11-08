@@ -12,6 +12,7 @@
 open Windtrap
 module Mutate = Windtrap_runtime.Mutate
 module Verdicts = Windtrap_runtime.Verdicts
+module Instr = Windtrap_runtime.Instr
 module Child = Windtrap_test_support.Child
 
 let strf = Printf.sprintf
@@ -20,6 +21,7 @@ let suite_exe = Filename.concat exe_dir "suite_main.exe"
 let plain_exe = Filename.concat exe_dir "plain_main.exe"
 let runaway_exe = Filename.concat exe_dir "runaway/runaway_main.exe"
 let inline_exe = Filename.concat exe_dir "inline/runner_main.exe"
+let partitions_exe = Filename.concat exe_dir "partitions/runner_main.exe"
 
 (* Under --instrument-with the fixtures link an instrumented core, so every
    loop scenario passes this directory as its scope: the counts below are
@@ -103,6 +105,7 @@ let row (r : Verdicts.record) =
 
 type file = {
   raw : string;
+  suite : string;
   refused : string option;
   rows : string list;
   identity : (string * string) option; (* The writer's path and digest. *)
@@ -115,17 +118,25 @@ let saved path =
   else
     let raw = read path in
     match Verdicts.load path with
-    | Ok { verdicts; identity = writer; refused } ->
+    | Ok { verdicts; identity = writer; suite; refused } ->
         Some
           {
             raw;
+            suite;
             refused;
             rows = List.map row (Verdicts.records verdicts);
             identity = Option.map identity writer;
           }
     | Error e ->
         let reason = Format.asprintf "unreadable: %a" Verdicts.pp_error e in
-        Some { raw; refused = None; rows = [ reason ]; identity = None }
+        Some
+          {
+            raw;
+            suite = "";
+            refused = None;
+            rows = [ reason ];
+            identity = None;
+          }
 
 type ran = {
   status : string;
@@ -136,6 +147,17 @@ type ran = {
 
 let rows r = Option.map (fun (f : file) -> f.rows) r.file
 
+(* A fixture's verdict file is named after the suite it runs. *)
+let file_of exe =
+  let suite =
+    match Filename.basename exe with
+    | "runaway_main.exe" -> "spin"
+    | "plain_main.exe" -> "plain"
+    | "runner_main.exe" -> "inline_armed"
+    | _ -> "calc"
+  in
+  Verdicts.output_file ~exe ~suite
+
 (* No test is ever reported slow, so the dry run's report is the same on
    any machine. *)
 let quiet env = ("WINDTRAP_SLOW_THRESHOLD", "0") :: env
@@ -143,7 +165,7 @@ let quiet env = ("WINDTRAP_SLOW_THRESHOLD", "0") :: env
 (* The executable's verdict file is removed first, so a stale file cannot
    pass a test the loop failed to write. *)
 let spawn ?(exe = suite_exe) ?cwd ?(env = []) args =
-  let path = Verdicts.output_file ~exe in
+  let path = file_of exe in
   remove path;
   let r = Child.run ?cwd ~env:(quiet env) exe args in
   {
@@ -186,7 +208,7 @@ let finish started =
     status = ended status;
     out = read started.out_path;
     err = read started.err_path;
-    file = saved (Verdicts.output_file ~exe:suite_exe);
+    file = saved (file_of suite_exe);
   }
 
 (* A process this suite started must not outlive it: a file that never
@@ -223,7 +245,7 @@ let finish_within ?(seconds = 10.) ~what started =
         status = ended status;
         out = read started.out_path;
         err = read started.err_path;
-        file = saved (Verdicts.output_file ~exe:suite_exe);
+        file = saved (file_of suite_exe);
       }
   | None ->
       (try Unix.kill started.pid Sys.sigterm with Unix.Unix_error _ -> ());
@@ -987,7 +1009,7 @@ type blocked = { run : ran; grandchildren : int list; elapsed : float }
 let blocked =
   lazy
     (let pidfile = Filename.concat (temp_dir ()) "grandchild" in
-     remove (Verdicts.output_file ~exe:suite_exe);
+     remove (file_of suite_exe);
      let began = Unix.gettimeofday () in
      let run =
        finish_within ~what:"the blocked child's deadline"
@@ -1109,7 +1131,7 @@ let written () =
    would call [widen] unreached over the whole run's survivor. *)
 let narrowed () =
   let whole = require_some (Lazy.force green).file in
-  let path = Verdicts.output_file ~exe:suite_exe in
+  let path = file_of suite_exe in
   write path whole.raw;
   let r = Child.run ~env:(quiet []) suite_exe [ mutate; "-f"; "calc" ] in
   equal string "exited 0" (ended r.Child.status);
@@ -1134,8 +1156,8 @@ let elsewhere =
   }
 
 let rerun_over ?identity collection =
-  let path = Verdicts.output_file ~exe:suite_exe in
-  Verdicts.save ?identity path (Verdicts.add collection elsewhere);
+  let path = file_of suite_exe in
+  Verdicts.save ?identity ~suite:"calc" path (Verdicts.add collection elsewhere);
   let r = Child.run ~env:(quiet []) suite_exe [ mutate ] in
   equal string "exited 0" (ended r.Child.status);
   equal text "" r.Child.err;
@@ -1143,7 +1165,7 @@ let rerun_over ?identity collection =
 
 let kept_by_build () =
   let whole = require_some (Lazy.force green).file in
-  let path = Verdicts.output_file ~exe:suite_exe in
+  let path = file_of suite_exe in
   write path whole.raw;
   let { Verdicts.verdicts = collection; identity; _ } =
     require_ok ~pp:Verdicts.pp_error (Verdicts.load path)
@@ -1201,7 +1223,7 @@ let widen_diff =
    +let widen a b = a + b\n"
 
 let line_scoped args =
-  remove (Verdicts.output_file ~exe:suite_exe);
+  remove (file_of suite_exe);
   let r = spawn (mutate :: args) in
   equal string "exited 0" r.status;
   (outcome r.out, rows r)
@@ -1259,9 +1281,101 @@ let no_site_on_lines () =
   equal string "exited 1" typo.status;
   contains ~sub:"leaves no mutant in this executable's catalogue" typo.err
 
+(* Two runs of one process under two names write a file each, and each
+   file says whose it is. *)
+let two_suites () =
+  let r = spawn ~env:[ suite "two_suites" ] [ mutate ] in
+  let widen_path = Verdicts.output_file ~exe:suite_exe ~suite:"widen" in
+  let widen = saved widen_path in
+  remove widen_path;
+  equal string "exited 0" r.status;
+  equal text "" r.err;
+  let calc = require_some r.file and widen = require_some widen in
+  equal (pair string string) ("calc", "widen") (calc.suite, widen.suite);
+  equal (list string)
+    [
+      "subject.ml:15 killed";
+      "subject.ml:18 unreached";
+      "subject.ml:21 unreached";
+      "subject.ml:27 unreached";
+    ]
+    calc.rows;
+  equal (list string)
+    [
+      "subject.ml:15 unreached";
+      "subject.ml:18 survived by widen \u{203a} widen is nonzero, widen \
+       \u{203a} widen is not 99";
+      "subject.ml:21 unreached";
+      "subject.ml:27 unreached";
+    ]
+    widen.rows
+
+let one_name_twice =
+  "this process already ran a suite named \"calc\", and a suite's verdicts are \
+   one record, which this run's would replace: give each run of the executable \
+   a name of its own"
+
+(* The second run's refusal takes the first one's file, so the merge names
+   the suite whatever the first found. *)
+let named_twice () =
+  let r = spawn ~env:[ suite "one_name_twice" ] [ mutate ] in
+  equal string "exited 1" r.status;
+  contains ~sub:one_name_twice r.err;
+  let f = require_some r.file in
+  equal (option string) (Some one_name_twice) f.refused;
+  equal (list string)
+    (List.map
+       (fun line -> strf "subject.ml:%d unknown: %s" line one_name_twice)
+       [ 15; 18; 21; 27 ])
+    f.rows
+
+(* Dune runs the partitions of an inline library as two suites of one
+   runner, and each partition kills the mutant the other only reaches. *)
+let partitions () =
+  let dir = Instr.output_dir Verdicts.format ~exe:partitions_exe in
+  let clear () =
+    if Sys.file_exists dir then
+      List.iter (fun name -> remove (Filename.concat dir name)) (entries dir)
+  in
+  clear ();
+  Fun.protect ~finally:clear @@ fun () ->
+  List.iter
+    (fun partition ->
+      let r =
+        Child.run ~cwd:(temp_dir ()) ~env:(quiet [ mutate_mirror ])
+          partitions_exe
+          [ "inline-test-runner"; "parts"; "-partition"; partition ]
+      in
+      equal string "exited 0" (ended r.Child.status))
+    [ "part_a.ml"; "part_b.ml" ];
+  let files = List.map (Filename.concat dir) (entries dir) in
+  equal int 2 (List.length files);
+  let merged =
+    List.fold_left
+      (fun merged path ->
+        let f = require_ok ~pp:Verdicts.pp_error (Verdicts.load path) in
+        Verdicts.merge merged f.verdicts)
+      Verdicts.empty files
+  in
+  equal (list string)
+    [
+      "subject.ml:15 killed";
+      "subject.ml:18 killed";
+      "subject.ml:21 unreached";
+      "subject.ml:27 unreached";
+    ]
+    (List.map row (Verdicts.records merged))
+
 let verdict_file =
   group "The verdict file"
     [
+      test "each suite of an executable writes a file of its own, named in it"
+        two_suites;
+      test "a second run of one suite name in a process is refused" named_twice;
+      test
+        "the partitions of an inline library keep their verdicts apart, so a \
+         mutant one of them kills is killed in the merge"
+        partitions;
       test
         "a loop that ran whole under a scope writes its file, with its writer"
         written;
@@ -1742,7 +1856,7 @@ let streamed () =
   let dir = temp_dir () in
   let began = Filename.concat dir "began"
   and gate = Filename.concat dir "gate" in
-  remove (Verdicts.output_file ~exe:suite_exe);
+  remove (file_of suite_exe);
   let run =
     start
       ~env:[ suite "held"; ("MUTATE_STARTED", began); ("MUTATE_GATE", gate) ]
@@ -1794,7 +1908,7 @@ let held_at_the_gate ?exe ?(args = [ mutate ]) name =
   let dir = temp_dir () and tmpdir = temp_dir () in
   let began = Filename.concat dir "began"
   and gate = Filename.concat dir "gate" in
-  remove (Verdicts.output_file ~exe:suite_exe);
+  remove (file_of suite_exe);
   let reader, writer = Unix.pipe ~cloexec:true () in
   let run =
     start ?exe ~stdout:writer
@@ -1868,7 +1982,7 @@ let late_interrupt () =
   Unix.clear_nonblock writer;
   Unix.close writer;
   open_gate ();
-  let path = Verdicts.output_file ~exe:suite_exe in
+  let path = file_of suite_exe in
   await ~what:"the verdict file" run path;
   Unix.sleepf 0.2;
   Unix.kill run.pid Sys.sigint;
@@ -1884,7 +1998,7 @@ let late_interrupt () =
 let interrupted_by signal =
   let pidfile = Filename.concat (temp_dir ()) "hanging"
   and tmpdir = temp_dir () in
-  remove (Verdicts.output_file ~exe:suite_exe);
+  remove (file_of suite_exe);
   let run =
     start
       ~env:
@@ -1954,7 +2068,7 @@ let probe_interrupted () =
    the loop in the window between its last child and its handlers'
    restoration (see suite_main.ml). *)
 let after_last_child () =
-  let path = Verdicts.output_file ~exe:suite_exe in
+  let path = file_of suite_exe in
   remove path;
   Unix.mkfifo path 0o600;
   let tmpdir = temp_dir () in
@@ -2055,8 +2169,13 @@ let effects =
 let () =
   at_exit (fun () ->
       List.iter
-        (fun exe -> remove (Verdicts.output_file ~exe))
-        [ suite_exe; inline_exe; runaway_exe; plain_exe ])
+        (fun exe ->
+          let dir = Instr.output_dir Verdicts.format ~exe in
+          if Sys.file_exists dir then
+            List.iter
+              (fun name -> remove (Filename.concat dir name))
+              (entries dir))
+        [ suite_exe; inline_exe; runaway_exe; plain_exe; partitions_exe ])
 
 let () =
   exit

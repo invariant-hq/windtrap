@@ -2224,11 +2224,11 @@ let calc_source =
       (41, "let pred n = n - 1");
     ]
 
-let witness ?exe ?file test line =
+let witness ?suite ?file test line =
   {
     Sections.test;
     loc = Option.map (fun file -> { Loc.file; line; column = 0 }) file;
-    exe;
+    suite;
   }
 
 (* The mutant [id] names, spanning [before] on its line. *)
@@ -2289,13 +2289,13 @@ let hung =
       mutant
         ~source:(source_of [ (9, "  while i < n do incr i done") ])
         "lib/spin.ml:9:8:le" 9 "i < n" "i <= n";
-    reason = "test_spin.exe: its run passed its deadline of 1.5s";
+    reason = "test_spin.exe (spin): its run passed its deadline of 1.5s";
     invocation = `Exe "./test_spin.exe";
   }
 
 let property_refused =
   {
-    Sections.executable = "test_property.exe";
+    Sections.suite = "test_property.exe (property)";
     reason = "the suite is not deterministic: the probe failed 2 tests";
     mutants = 27;
   }
@@ -2322,9 +2322,11 @@ let eq_survivor =
         "lib/eval.ml:60:24:eq" 60 "eval env b = Int 0" "eval env b <> Int 0";
     witnesses =
       [
-        witness ~exe:"test_eval.exe" "division \u{203a} divides" 0;
-        witness ~exe:"test_eval.exe" "division \u{203a} rounds toward zero" 0;
-        witness ~exe:"test_printer.exe" "round trip \u{203a} arithmetic" 0;
+        witness ~suite:"test_eval.exe (eval)" "division \u{203a} divides" 0;
+        witness ~suite:"test_eval.exe (eval)"
+          "division \u{203a} rounds toward zero" 0;
+        witness ~suite:"test_printer.exe (printer)"
+          "round trip \u{203a} arithmetic" 0;
       ];
   }
 
@@ -2338,8 +2340,8 @@ let not_survivor =
         "lib/parser.ml:102:9:not" 102 "at_end p" "not (at_end p)";
     witnesses =
       [
-        witness ~exe:"test_parser.exe" "errors \u{203a} unexpected end of input"
-          0;
+        witness ~suite:"test_parser.exe (parser)"
+          "errors \u{203a} unexpected end of input" 0;
       ];
   }
 
@@ -2354,7 +2356,7 @@ let merge_report =
     outside_tests = [];
     killed = 16;
     not_tested = 0;
-    scope = Sections.Executables 3;
+    scope = Sections.Suites 3;
   }
 
 let merge_invocation =
@@ -2385,46 +2387,46 @@ let mutation_entries () =
           Sections.survivors = [ ge_survivor ];
           unknown = [ hung ];
           refused = [ property_refused ];
-          scope = Sections.Executables 3;
+          scope = Sections.Suites 3;
         } );
     ( "a survivor's block: its rewrite, its source line, the tests that ran it",
-      printed ~ansi:true (Sections.survivor_block ~exe_width:None ge_survivor)
+      printed ~ansi:true (Sections.survivor_block ~suite_width:None ge_survivor)
     );
     ( "a survivor on line 1",
       printed
-        (Sections.survivor_block ~exe_width:None
+        (Sections.survivor_block ~suite_width:None
            {
              Sections.mutant =
                mutant ~source:"let x = 1\n" "a.ml:1:8:add" 1 "1" "2";
              witnesses = [ witness "t" 0 ];
            }) );
-    ( "an executable column at least exe_width wide, empty for a test that \
-       names none",
+    ( "a suite column at least suite_width wide, empty for a test that names \
+       none",
       printed
-        (Sections.survivor_block ~exe_width:(Some 12)
+        (Sections.survivor_block ~suite_width:(Some 12)
            {
              add_survivor with
              Sections.witnesses =
                [
-                 witness ~exe:"a.exe" "with an executable" 0;
+                 witness ~suite:"a.exe (a)" "with a suite" 0;
                  witness "without one" 0;
                ];
            }) );
     ( "a source line's control bytes print as text",
       printed ~ansi:true
-        (Sections.survivor_block ~exe_width:None
+        (Sections.survivor_block ~suite_width:None
            (with_source
               (Some (source_of [ (13, "\t  | Sub -> \027[31ma\r - b") ]))
               add_survivor)) );
     ( "an unreadable source drops the source line and nothing else",
       printed
-        (Sections.survivor_block ~exe_width:None
+        (Sections.survivor_block ~suite_width:None
            (with_source None not_survivor)) );
     ( "a line past the end of the source prints no source line",
       printed
-        (Sections.survivor_block ~exe_width:None
+        (Sections.survivor_block ~suite_width:None
            (with_source (Some "one line\n") not_survivor)) );
-    ( "a merge's report: survivors counted, the executables one column",
+    ( "a merge's report: survivors counted, the suites one column",
       at_rest ~ansi:true ~invocation:merge_invocation merge_report );
     ("and without colour", at_rest ~invocation:merge_invocation merge_report);
     ( "never reached alone: its rule, its rows, the outcome",
@@ -2450,7 +2452,7 @@ let mutation_entries () =
           outside_tests = [];
           killed = 1;
           not_tested = 0;
-          scope = Sections.Executables 1;
+          scope = Sections.Suites 1;
         } );
     ( "a mutant its child did not evaluate is unknown, with its reason and the \
        command that arms it",
@@ -2525,31 +2527,29 @@ let summary_rows =
     ( "one selected test",
       (fun () -> summary ~killed:1 (Sections.Selected 1)),
       "mutants: 1 reached by the 1 selected test, 1 killed" );
-    ( "executables, clean",
-      (fun () -> summary ~killed:14 (Sections.Executables 3)),
-      "mutants: 14 reached, 14 killed, 3 executables" );
-    ( "one executable",
-      (fun () -> summary ~killed:3 (Sections.Executables 1)),
-      "mutants: 3 reached, 3 killed, 1 executable" );
+    ( "suites, clean",
+      (fun () -> summary ~killed:14 (Sections.Suites 3)),
+      "mutants: 14 reached, 14 killed, 3 suites" );
+    ( "one suite",
+      (fun () -> summary ~killed:3 (Sections.Suites 1)),
+      "mutants: 3 reached, 3 killed, 1 suite" );
     ( "nothing reached, nothing killed",
       (fun () -> summary ~killed:0 Sections.Suite),
       "mutants: 0 reached by this suite" );
     ( "nothing reached in a merge is all never reached",
-      (fun () ->
-        summary ~unreached:two_lines ~killed:0 (Sections.Executables 1)),
-      "mutants: 0 reached, 2 never reached, 1 executable" );
+      (fun () -> summary ~unreached:two_lines ~killed:0 (Sections.Suites 1)),
+      "mutants: 0 reached, 2 never reached, 1 suite" );
     ( "a suite with a survivor",
       (fun () -> summary ~survivors:s ~killed:4 Sections.Suite),
       "mutants: 1 survived of 5 reached by this suite, 4 killed" );
     ( "a selection with a survivor",
       (fun () -> summary ~survivors:s ~killed:1 (Sections.Selected 3)),
       "mutants: 1 survived of 2 reached by the 3 selected tests, 1 killed" );
-    ( "executables, survivors and never reached",
+    ( "suites, survivors and never reached",
       (fun () ->
-        summary ~survivors:s ~unreached:two_lines ~killed:11
-          (Sections.Executables 3)),
-      "mutants: 1 survived of 12 reached, 11 killed, 2 never reached, 3 \
-       executables" );
+        summary ~survivors:s ~unreached:two_lines ~killed:11 (Sections.Suites 3)),
+      "mutants: 1 survived of 12 reached, 11 killed, 2 never reached, 3 suites"
+    );
     ( "no killed term when none was killed",
       (fun () -> summary ~survivors:s ~killed:0 Sections.Suite),
       "mutants: 1 survived of 1 reached by this suite" );
@@ -2569,9 +2569,9 @@ let summary_rows =
     ( "an unknown mutant is reached, and so is what a refused suite holds",
       (fun () ->
         summary ~survivors:s ~unknown:[ hung ] ~refused:[ property_refused ]
-          ~killed:2 (Sections.Executables 2)),
-      "mutants: 1 survived of 31 reached, 2 killed, 28 unknown, 2 executables, \
-       1 not mutation-tested" );
+          ~killed:2 (Sections.Suites 2)),
+      "mutants: 1 survived of 31 reached, 2 killed, 28 unknown, 2 suites, 1 \
+       not mutation-tested" );
     ( "a mutant its child did not evaluate is reached, and unknown",
       (fun () ->
         summary ~survivors:s ~unknown:[ memo_missed ] ~killed:2 Sections.Suite),
@@ -2580,24 +2580,24 @@ let summary_rows =
 
 let block witnesses =
   printed
-    (Sections.survivor_block ~exe_width:None
+    (Sections.survivor_block ~suite_width:None
        { add_survivor with Sections.witnesses })
 
 let calc_one = witness ~file:"test/test_calc.ml" "calc \u{203a} sub to zero" 19
 let eval_one = witness ~file:"test/test_eval.ml" "eval \u{203a} Sub node" 31
-let named = { calc_one with Sections.exe = Some "test_calc.exe" }
+let named = { calc_one with Sections.suite = Some "test_calc.exe (calc)" }
 
 let sentence_rows =
   [
     ("one test", ([ calc_one ], "    1 test ran this line and did not fail:"));
     ( "two tests",
       ([ calc_one; eval_one ], "    2 tests ran this line and none failed:") );
-    ( "one executable is tests alone",
-      ( [ named; { eval_one with Sections.exe = Some "test_calc.exe" } ],
+    ( "one suite is tests alone",
+      ( [ named; { eval_one with Sections.suite = Some "test_calc.exe (calc)" } ],
         "    2 tests ran this line and none failed:" ) );
-    ( "several executables are counted",
-      ( [ named; { eval_one with Sections.exe = Some "test_eval.exe" } ],
-        "    2 tests in 2 executables ran this line and none failed:" ) );
+    ( "several suites are counted",
+      ( [ named; { eval_one with Sections.suite = Some "test_eval.exe (eval)" } ],
+        "    2 tests in 2 suites ran this line and none failed:" ) );
   ]
 
 let sentence (_, (witnesses, expected)) =
@@ -2613,7 +2613,7 @@ let padded_names () =
        (fun i _ -> i >= 5 && i < 7)
        (lines (block [ calc_one; eval_one ])))
 
-let exe_column () =
+let suite_column () =
   let at_rest witnesses =
     at_rest
       {
@@ -2625,8 +2625,10 @@ let exe_column () =
   contains
     ~sub:
       "\n\
-      \      test_calc.exe  calc \u{203a} sub to zero  test/test_calc.ml:19\n\
-      \                     eval \u{203a} Sub node     test/test_eval.ml:31\n"
+      \      test_calc.exe (calc)  calc \u{203a} sub to zero  \
+       test/test_calc.ml:19\n\
+      \                            eval \u{203a} Sub node     \
+       test/test_eval.ml:31\n"
     (at_rest [ named; eval_one ])
 
 let reproduce ?invocation ?config m =
@@ -2763,11 +2765,11 @@ let mutation_group =
         ~id:(fun (name, _, _) -> name)
         summary_rows
         (fun (_, summary, expected) -> equal string expected (summary ()));
-      cases "the sentence counts the reaching tests and their executables"
-        ~id:fst sentence_rows sentence;
+      cases "the sentence counts the reaching tests and their suites" ~id:fst
+        sentence_rows sentence;
       test "the reaching tests' names are padded to the widest" padded_names;
-      test "the executable column appears when a reaching test names one"
-        exe_column;
+      test "the suite column appears when a reaching test names one"
+        suite_column;
     ]
 
 let () =

@@ -119,14 +119,14 @@ them. The known-bug suite's one test is under `xfail`, which reaches no
 mutant, so its report lists the lines of `lib/slug.ml` as never reached
 (see [What a mutation run runs](../../doc/manual/mutation.md#what-a-mutation-run-runs)).
 `windtrap mutants` merges the verdicts, and counts a mutant killed when
-any executable killed it:
+any suite killed it:
 
 ```
 $ dune exec windtrap -- mutants
-mutants: 27 reached, 27 killed, 4 executables
+mutants: 27 reached, 27 killed, 4 suites
 ```
 
-It exits 1 when a mutant survived every executable that reached it.
+It exits 1 when a mutant survived every suite that reached it.
 
 ## The known bug
 

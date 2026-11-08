@@ -11,10 +11,11 @@
      line i + 1 of a source of 10-byte lines. FILE is read with OCaml's
      string escapes, so a session can name any byte.
 
-   mkdata mutants OUT [--exe EXE] FILE:LINE:COL:REWRITE:BEFORE:AFTER=VERDICT...
+   mkdata mutants OUT [--exe EXE] [--refused REASON] [--suite SUITE]
+       FILE:LINE:COL:REWRITE:BEFORE:AFTER=VERDICT...
      VERDICT is killed, outside_tests, unreached, unknown:REASON or
      survived:TESTS, where TESTS are ';'-separated paths of '/'-separated
-     names.
+     names. SUITE defaults to the base name of OUT without its extension.
 
    --exe records the identity of the executable at EXE as it is now. *)
 
@@ -99,8 +100,12 @@ let record spec =
       }
   | _ -> die "%S: not FILE:LINE:COL:REWRITE:BEFORE:AFTER" mutant
 
-let mutants ~identity ?refused out specs =
-  Verdicts.save ?identity ?refused out
+let mutants ~identity ?refused ~suite out specs =
+  let suite =
+    Option.value suite
+      ~default:(Filename.remove_extension (Filename.basename out))
+  in
+  Verdicts.save ?identity ?refused ~suite out
     (List.fold_left Verdicts.add Verdicts.empty (List.map record specs))
 
 let () =
@@ -116,11 +121,16 @@ let () =
         | "--refused" :: reason :: args -> (Some reason, args)
         | args -> (None, args)
       in
+      let suite, args =
+        match args with
+        | "--suite" :: suite :: args -> (Some suite, args)
+        | args -> (None, args)
+      in
       match kind with
       | "coverage" -> coverage ~identity out args
-      | "mutants" -> mutants ~identity ?refused out args
+      | "mutants" -> mutants ~identity ?refused ~suite out args
       | kind -> die "%S: not coverage or mutants" kind)
   | _ ->
       die
         "usage: mkdata (coverage | mutants) OUT [--exe EXE] [--refused REASON] \
-         RECORD..."
+         [--suite SUITE] RECORD..."

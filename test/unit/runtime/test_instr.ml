@@ -45,7 +45,7 @@ let identities =
 (* Build paths *)
 
 let in_build ?(build = "/w/p/_build") identity =
-  strf "%s/_samples/windtrap-%s.smp" build (md5 identity)
+  strf "%s/_samples/windtrap-%s" build (md5 identity)
 
 (* The spellings of one executable, and of others, below a build directory. *)
 let below_a_build =
@@ -127,10 +127,10 @@ let unreadable_cwd () =
   needs_cwd (fun () -> Instr.absolute "a.exe");
   needs_cwd (fun () -> Instr.build_dir ~path:"_build/default");
   needs_cwd (fun () -> Instr.exe_identity ~exe:"_build/default/a.exe");
-  needs_cwd (fun () -> Instr.output_file format ~exe:"/opt/t.exe");
+  needs_cwd (fun () -> Instr.output_dir format ~exe:"/opt/t.exe");
   equal string
     (in_build ~build:"/w/_build" "default/a.exe")
-    (Instr.output_file format ~exe:"/w/_build/default/a.exe")
+    (Instr.output_dir format ~exe:"/w/_build/default/a.exe")
 
 let build_paths =
   group "Build paths"
@@ -156,7 +156,7 @@ let build_paths =
           equal string "default/test/a.exe" (Instr.exe_identity ~exe);
           equal string
             (in_build ~build:"/w/_build/p/_build" "default/test/a.exe")
-            (Instr.output_file format ~exe));
+            (Instr.output_dir format ~exe));
       cases "exe_identity is the path below the build directory, normalized"
         ~id:fst normalized (fun (exe, identity) ->
           equal string identity (Instr.exe_identity ~exe));
@@ -178,21 +178,16 @@ let build_paths =
               Instr.standalone_data_dir format ~root:"/w/p";
             ]);
       cases
-        "output_file is windtrap-<md5 of the identity>.<ext> in the data \
-         directory of the build directory"
-        ~id:fst below_a_build (fun (exe, file) ->
-          equal string file (Instr.output_file format ~exe));
+        "output_dir is windtrap-<md5 of the identity> in the data directory of \
+         the build directory"
+        ~id:fst below_a_build (fun (exe, dir) ->
+          equal string dir (Instr.output_dir format ~exe));
       cases
-        "below no build directory, output_file is in the standalone data \
+        "below no build directory, output_dir is in the standalone data \
          directory of the current directory, hashed from the absolute path"
         ~id:Fun.id below_none (fun exe ->
           equal string
-            (strf "%s/windtrap-%s.smp" (standalone ()) (md5 exe))
-            (Instr.output_file format ~exe));
-      cases "output_dir is output_file without its extension" ~id:Fun.id
-        [ "/w/p/_build/default/test/a.exe"; "/opt/t.exe" ] (fun exe ->
-          equal string
-            (Filename.remove_extension (Instr.output_file format ~exe))
+            (strf "%s/windtrap-%s" (standalone ()) (md5 exe))
             (Instr.output_dir format ~exe));
       test "a value that needs an unreadable current directory raises Sys_error"
         unreadable_cwd;

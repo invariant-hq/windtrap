@@ -292,7 +292,7 @@ let signal_the_loop_after_its_last_child () =
               Filename.concat tmp scratch;
               string_of_int loop;
               Windtrap_runtime.Verdicts.output_file
-                ~exe:Windtrap_runtime.Instr.executable;
+                ~exe:Windtrap_runtime.Instr.executable ~suite:"calc";
             |]
       | _ -> ())
   | _ -> failwith "TMPDIR holds one entry, the job's temporary directory"
@@ -572,6 +572,14 @@ let () =
       exit @@ run "calc" [ group "calc" (strong @ red); group "widen" weak ]
   | "flaky" -> exit @@ run "calc" [ group "calc" strong; group "flaky" flaky ]
   | "domain" -> exit @@ run "calc" [ group "domain" domain ]
+  | "two_suites" ->
+      (* Two runs under two names, each with a verdict file of its own. *)
+      ignore (run "calc" [ group "calc" strong ] : int);
+      exit @@ run "widen" [ group "widen" weak ]
+  | "one_name_twice" ->
+      (* Two runs under one name, which would claim one record twice. *)
+      ignore (run "calc" [ group "calc" strong ] : int);
+      exit @@ run "calc" [ group "widen" weak ]
   | "domain_first" ->
       (* Before [run], in the process that runs it. *)
       Domain.join (Domain.spawn ignore);

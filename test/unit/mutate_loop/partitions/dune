@@ -1,0 +1,10 @@
+; One inline-test library's two partitions, as dune runs them: two suites
+; of one runner executable, each killing a mutant that the other only
+; reaches.
+
+(executable
+ (name runner_main)
+ (modules runner_main part_a part_b)
+ (libraries windtrap ppx_windtrap.runtime mutate_loop_subject)
+ (preprocess
+  (pps ppx_windtrap)))

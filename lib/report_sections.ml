@@ -1527,7 +1527,7 @@ let coverage_report ~mode ~min (c : coverage) =
 
 (* Mutation *)
 
-type witness = { test : string; loc : Loc.t option; exe : string option }
+type witness = { test : string; loc : Loc.t option; suite : string option }
 
 type mutant = {
   id : string;
@@ -1551,8 +1551,8 @@ let diagnostic (m : mutant) =
     m.col m.end_col
 
 type unknown = { mutant : mutant; reason : string; invocation : Run.invocation }
-type refused = { executable : string; reason : string; mutants : int }
-type scope = Suite | Selected of int | Executables of int
+type refused = { suite : string; reason : string; mutants : int }
+type scope = Suite | Selected of int | Suites of int
 
 type mutation = {
   survivors : survivor list;
@@ -1573,7 +1573,7 @@ let arm_command ~invocation ~tests id =
 
 (* A survivor is drawn as a failure block is: it is a defect report about the
    tests it names. *)
-let survivor_block ~exe_width (s : survivor) =
+let survivor_block ~suite_width (s : survivor) =
   let m = s.mutant in
   let title =
     Line
@@ -1596,16 +1596,15 @@ let survivor_block ~exe_width (s : survivor) =
     | [] -> []
     | witnesses ->
         let n = List.length witnesses in
-        let executables =
+        let suites =
           List.length
             (List.sort_uniq String.compare
-               (List.filter_map (fun (w : witness) -> w.exe) witnesses))
+               (List.filter_map (fun (w : witness) -> w.suite) witnesses))
         in
         let sentence =
           if n = 1 then "1 test ran this line and did not fail:"
-          else if executables > 1 then
-            strf "%d tests in %d executables ran this line and none failed:" n
-              executables
+          else if suites > 1 then
+            strf "%d tests in %d suites ran this line and none failed:" n suites
           else strf "%d tests ran this line and none failed:" n
         in
         let left gap width = { gap; align = `Left; width } in
@@ -1617,12 +1616,12 @@ let survivor_block ~exe_width (s : survivor) =
           ]
         in
         let columns, cells =
-          match exe_width with
+          match suite_width with
           | None -> ([ left "" None; left "  " None ], test)
           | Some _ ->
-              ( [ left "" exe_width; left "  " None; left "  " None ],
+              ( [ left "" suite_width; left "  " None; left "  " None ],
                 fun (w : witness) ->
-                  plain (Option.value w.exe ~default:"") :: test w )
+                  plain (Option.value w.suite ~default:"") :: test w )
         in
         [
           Line [];
@@ -1648,7 +1647,7 @@ let mutation_summary (m : mutation) =
     | Suite -> strf "%d reached by this suite" n
     | Selected tests ->
         strf "%d reached by the %s" n (counted tests "selected test")
-    | Executables _ -> strf "%d reached" n
+    | Suites _ -> strf "%d reached" n
   in
   let term n make = if n > 0 then [ make n ] else [] in
   let terms =
@@ -1666,8 +1665,8 @@ let mutation_summary (m : mutation) =
     @ term m.not_tested (fun n -> [ plain (strf "%d not tested" n) ])
     @
     match m.scope with
-    | Executables n ->
-        [ plain (counted n "executable") ]
+    | Suites n ->
+        [ plain (counted n "suite") ]
         :: term (List.length m.refused) (fun n ->
             [ styled `Red (strf "%d not mutation-tested" n) ])
     | Suite | Selected _ -> []
@@ -1707,7 +1706,7 @@ let refused_section = function
         Line
           [
             plain "  ";
-            styled `Bold r.executable;
+            styled `Bold r.suite;
             plain
               (strf "  %s unknown: %s" (counted r.mutants "mutant") r.reason);
           ]
@@ -1796,23 +1795,24 @@ let mutation_closing ~(config : Run.config) (m : mutation) =
   | _ :: _ -> Rule None :: Line [] :: rest
 
 let mutation_report ~invocation (m : mutation) =
-  let exes =
+  let suites =
     List.concat_map
       (fun (s : survivor) ->
-        List.filter_map (fun (w : witness) -> w.exe) s.witnesses)
+        List.filter_map (fun (w : witness) -> w.suite) s.witnesses)
       m.survivors
   in
-  let exe_width =
-    match exes with
+  let suite_width =
+    match suites with
     | [] -> None
-    | _ :: _ -> Some (List.fold_left (fun w exe -> max w (cols exe)) 0 exes)
+    | _ :: _ ->
+        Some (List.fold_left (fun w suite -> max w (cols suite)) 0 suites)
   in
   let survivors =
     match m.survivors with
     | [] -> []
     | survivors ->
         Rule (Some (strf "survivors (%d)" (List.length survivors)))
-        :: join (List.map (survivor_block ~exe_width) survivors)
+        :: join (List.map (survivor_block ~suite_width) survivors)
         @ [ Rule None ]
   in
   join

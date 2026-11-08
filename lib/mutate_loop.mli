@@ -114,10 +114,11 @@ val execute_and_report :
 
     {b The verdict file.} The file holds one record per reached mutant, one
     [Outside_tests] record per mutant of the population evaluated outside tests,
-    and one [Unreached] record per unreached one. It is written to
-    {!Windtrap_runtime.Verdicts.output_file} of the executable, by
-    {!Windtrap_runtime.Verdicts.save}. Under a scope, the records of the files
-    outside it stay when the file there was written by this build
+    and one [Unreached] record per unreached one. It is the suite's own, written
+    to {!Windtrap_runtime.Verdicts.output_file} of the executable and the
+    suite's name, by {!Windtrap_runtime.Verdicts.save}, so the other suites of
+    the executable keep theirs. Under a scope, the records of the files outside
+    it stay when the suite's file was written by this build
     ({!Windtrap_runtime.Verdicts.writer_identity}) for a tested suite, and are
     dropped otherwise. A file that cannot be written ([Sys_error]) is one
     sentence on standard error above the outcome line.
@@ -142,6 +143,10 @@ val execute_and_report :
     unknown, or, past a whole green dry run, the reached mutants as unknown and
     the others as that dry run found them. They are tried in this order:
     - The platform is Windows, where windtrap starts no worker process.
+    - This process already ran a suite of the same name, in any mode. A suite's
+      verdicts are one record, and two runs under one name would each claim it,
+      so the refused file takes the place of the earlier run's and the merge
+      names the suite.
     - This process cannot start the jobs' workers ([Supervisor.can_spawn]): it
       spawned a domain, so it cannot fork, and a new start of the executable
       would not reach this run.

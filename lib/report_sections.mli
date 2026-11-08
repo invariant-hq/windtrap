@@ -421,9 +421,10 @@ type witness = {
       (** The path of the test, as {!Test_tree.path_to_string} spells it. *)
   loc : Loc.t option;
       (** Where the test is declared, when the producer knows it. *)
-  exe : string option;
-      (** The executable that ran the test. It is [None] in the report of one
-          executable, which has no such column. *)
+  suite : string option;
+      (** The suite that ran the test, as a merge labels it: its executable,
+          then its name in parentheses. It is [None] in the report of one suite,
+          which has no such column. *)
 }
 (** The type for a reaching test of a survivor: a test that evaluated the
     mutated site and did not fail when it changed. *)
@@ -472,11 +473,11 @@ type unknown = {
 (** The type for a reached mutant that no run judged, which is no survivor. *)
 
 type refused = {
-  executable : string;  (** The executable, as a merge labels it. *)
+  suite : string;  (** The suite, as a merge labels it. *)
   reason : string;  (** Why it could not test its mutants. *)
   mutants : int;  (** The mutants that its file holds as unknown. *)
 }
-(** The type for an executable that could not mutation-test its suite. *)
+(** The type for a suite that could not be mutation-tested. *)
 
 (** The type for what the reached count of a report is relative to. The outcome
     line names it. *)
@@ -485,8 +486,8 @@ type scope =
   | Selected of int
       (** The run of one executable whose selection narrowed the suite to this
           many tests. *)
-  | Executables of int
-      (** A merge over the verdict files of this many executables. *)
+  | Suites of int
+      (** A merge over the verdict files of this many suites, one file each. *)
 
 type mutation = {
   survivors : survivor list;
@@ -495,9 +496,9 @@ type mutation = {
       (** Every reached mutant that no run judged, in the order in which it
           prints. *)
   refused : refused list;
-      (** The executables of a merge that could not mutation-test their suite.
-          It is empty in the report of one executable, whose refusal ends its
-          run on standard error. *)
+      (** The suites of a merge that could not be mutation-tested. It is empty
+          in the report of one suite, whose refusal ends its run on standard
+          error. *)
   unreached : (string * int) list;
       (** The file and the one-based line of each mutant that no test evaluated,
           one pair per mutant, except those of [outside_tests]. *)
@@ -516,17 +517,18 @@ type mutation = {
     [killed + List.length survivors + unknown + not_tested], where [unknown] is
     [List.length unknown] plus the [mutants] of each of [refused]. *)
 
-val survivor_block : exe_width:int option -> survivor -> section list
-(** [survivor_block ~exe_width s] is the block of [s]. It holds, in this order:
+val survivor_block : suite_width:int option -> survivor -> section list
+(** [survivor_block ~suite_width s] is the block of [s]. It holds, in this
+    order:
     - the {!diagnostic} of the mutant, at the start of its line.
     - the title.
     - the mutated source line, as an {!type-entry} holds a source line, when
       [source] is known and holds the line.
-    - the sentence that counts the reaching tests, and their executables when
-      they name several.
+    - the sentence that counts the reaching tests, and their suites when they
+      name several.
     - one row per reaching test: its name, then its location when it has one.
-      Under [exe_width = Some w] the executable comes first, in a column at
-      least [w] wide that is empty for a test that names none. *)
+      Under [suite_width = Some w] the suite comes first, in a column at least
+      [w] wide that is empty for a test that names none. *)
 
 val mutation_closing : config:Run.config -> mutation -> section list
 (** [mutation_closing ~config m] is what ends a report whose survivor blocks are
@@ -555,11 +557,10 @@ val mutation_closing : config:Run.config -> mutation -> section list
 val mutation_report : invocation:Run.invocation -> mutation -> section list
 (** [mutation_report ~invocation m] is [m] as a report at rest. It holds one
     {!survivor_block} per survivor, between an opening rule that carries their
-    number and a closing rule. The executables of all blocks form one column,
-    which is absent when no reaching test names an executable. The unknown
-    section, the not-mutation-tested section, which names each of [m.refused]
-    with its count and reason, the never-reached section, the section of the
-    mutants evaluated outside tests, the [reproduce:] command and the outcome
-    line follow, as {!mutation_closing} builds them for a run that selects every
-    test. The outcome line counts the executables of [m.refused] after the
-    executables. *)
+    number and a closing rule. The suites of all blocks form one column, which
+    is absent when no reaching test names a suite. The unknown section, the
+    not-mutation-tested section, which names each of [m.refused] with its count
+    and reason, the never-reached section, the section of the mutants evaluated
+    outside tests, the [reproduce:] command and the outcome line follow, as
+    {!mutation_closing} builds them for a run that selects every test. The
+    outcome line counts the suites of [m.refused] after the suites. *)

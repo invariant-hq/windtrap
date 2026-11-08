@@ -19,8 +19,8 @@
  (libraries windtrap))
 
 ; The mutation loop forks, and Windows has no fork: the loop refuses there.
-; The scenarios share suite_main.exe's one verdict file, which each removes
-; and reads back, so two at once read each other's: -j 1 outranks a
+; The scenarios share the verdict file of suite_main.exe's suite, which each
+; removes and reads back, so two at once read each other's: -j 1 outranks a
 ; WINDTRAP_JOBS in the environment.
 
 (test
@@ -35,6 +35,7 @@
   plain_main.exe
   inline/runner_main.exe
   inline/inline_armed.ml
+  partitions/runner_main.exe
   runaway/runaway_main.exe
   (glob_files ../../support/preload/*.so))
  (action

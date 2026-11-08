@@ -58,10 +58,10 @@ val file_digest : string -> string option
     platform. On Unix, a path with a backslash in one of its names gets the
     identity and the file name of a path that does not exist.
 
-    The current directory is read when {!output_file} or {!output_dir} is
-    called, not when the process starts. A value below that needs the current
-    directory, for a relative path or for an executable below no build
-    directory, raises [Sys_error] if it cannot be read. *)
+    The current directory is read when {!output_dir} is called, not when the
+    process starts. A value below that needs the current directory, for a
+    relative path or for an executable below no build directory, raises
+    [Sys_error] if it cannot be read. *)
 
 val absolute : string -> string
 (** [absolute path] is [path] when it is absolute, and [path] below the current
@@ -96,17 +96,12 @@ val standalone_data_dir : format -> root:string -> string
 (** [standalone_data_dir f ~root] is [<root>/_windtrap/<f.dir>], where an
     executable below no build directory writes the files of [f]. *)
 
-val output_file : format -> exe:string -> string
-(** [output_file f ~exe] is [<dir>/windtrap-<hash>.<f.ext>]. [<dir>] is the
-    {!data_dir} of the build directory of [exe], or the {!standalone_data_dir}
-    of the current directory when [exe] lies below none. [<hash>] is the
-    hexadecimal MD5 of [exe_identity ~exe]. It is one file for each executable,
-    for a format whose writer replaces its file on every run. *)
-
 val output_dir : format -> exe:string -> string
-(** [output_dir f ~exe] is [output_file f ~exe] without its extension. It is one
-    directory for each executable, for a format whose every run keeps a file of
-    its own (see {!write_new_file}). *)
+(** [output_dir f ~exe] is [<dir>/windtrap-<hash>], the directory of the files
+    of [f] that the executable at [exe] writes. [<dir>] is the {!data_dir} of
+    the build directory of [exe], or the {!standalone_data_dir} of the current
+    directory when [exe] lies below none. [<hash>] is the hexadecimal MD5 of
+    [exe_identity ~exe], so it is one directory for each executable. *)
 
 (** {1:errors Errors and warnings} *)
 

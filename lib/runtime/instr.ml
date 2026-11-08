@@ -113,8 +113,6 @@ let output_dir format ~exe =
   in
   strf "%s/windtrap-%s" dir (Digest.to_hex (Digest.string identity))
 
-let output_file format ~exe = output_dir format ~exe ^ "." ^ format.ext
-
 (* Errors *)
 
 type error =

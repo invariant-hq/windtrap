@@ -1,4 +1,4 @@
-`windtrap mutants` merges the verdict files of a project's executables and
+`windtrap mutants` merges the verdict files of a project's suites and
 reports its survivors. Its discovery and its exclusion of files from other
 builds are data.t's; this session pins the merge and its report. A path
 the command builds is absolute and spelled by the platform, so a verdict
@@ -48,9 +48,8 @@ A, and a crash in B kills it; no test reaches or and and:
   >   "$sub=survived:prop/sub law" "$lt=unreached" "$or=unreached" "$and=unreached"
 
 A mutant killed anywhere is killed. The one survivor is drawn from its
-record, its reaching tests are those of every executable that reached it,
-each named by its file, and the mutants no test reached are counted by
-file:
+record, its reaching tests are those of every suite that reached it, each
+named by its suite, and the mutants no test reached are counted by file:
 
   $ run windtrap mutants
   ───────────────────── survivors (1) ──────────────────────
@@ -58,9 +57,9 @@ file:
     SURVIVED  lib/calc.ml:2:14:sub  a - b → a + b
         2 │ let sub a b = a - b
   
-      2 tests in 2 executables ran this line and none failed:
-        windtrap-b.mutants  cli › subtracts
-        windtrap-c.mutants  prop › sub law
+      2 tests in 2 suites ran this line and none failed:
+        windtrap-b  cli › subtracts
+        windtrap-c  prop › sub law
   ──────────────────────────────────────────────────────────
   
   ─────────────────── never reached (2) ────────────────────
@@ -68,7 +67,7 @@ file:
   ──────────────────────────────────────────────────────────
   
   reproduce: WINDTRAP_MUTATE_ARM=lib/calc.ml:2:14:sub dune runtest --force --instrument-with ppx_windtrap.mutate
-  mutants: 1 survived of 3 reached, 2 killed, 2 never reached, 3 executables
+  mutants: 1 survived of 3 reached, 2 killed, 2 never reached, 3 suites
   [1]
   $ cp "$bin/out" merged
 
@@ -97,9 +96,9 @@ the counts as a suite's summary does; the command to reproduce stays plain:
     \e[31mSURVIVED\e[0m  \e[1mlib/calc.ml:2:14:sub\e[0m  a - b → a + b
         \e[2m2 │\e[0m let sub a b = a - b
   
-      2 tests in 2 executables ran this line and none failed:
-        windtrap-b.mutants  cli › subtracts
-        windtrap-c.mutants  prop › sub law
+      2 tests in 2 suites ran this line and none failed:
+        windtrap-b  cli › subtracts
+        windtrap-c  prop › sub law
   \e[2m──────────────────────────────────────────────────────────\e[0m
   
   \e[2m─────────────────── never reached (2) ────────────────────\e[0m
@@ -107,7 +106,7 @@ the counts as a suite's summary does; the command to reproduce stays plain:
   \e[2m──────────────────────────────────────────────────────────\e[0m
   
   reproduce: WINDTRAP_MUTATE_ARM=lib/calc.ml:2:14:sub dune runtest --force --instrument-with ppx_windtrap.mutate
-  mutants: \e[31m1 survived\e[0m of 3 reached, \e[32m2 killed\e[0m, \e[33m2 never reached\e[0m, 3 executables
+  mutants: \e[31m1 survived\e[0m of 3 reached, \e[32m2 killed\e[0m, \e[33m2 never reached\e[0m, 3 suites
 
 B's file alone reports the survivor A kills. Survivors that as many tests
 reached are in identifier order:
@@ -119,14 +118,14 @@ reached are in identifier order:
         1 │ let add a b = a + b
   
       1 test ran this line and did not fail:
-        windtrap-b.mutants  cli › runs
+        windtrap-b  cli › runs
   
   File "lib/calc.ml", line 2, characters 14-19:
     SURVIVED  lib/calc.ml:2:14:sub  a - b → a + b
         2 │ let sub a b = a - b
   
       1 test ran this line and did not fail:
-        windtrap-b.mutants  cli › subtracts
+        windtrap-b  cli › subtracts
   ──────────────────────────────────────────────────────────
   
   ─────────────────── never reached (2) ────────────────────
@@ -134,7 +133,7 @@ reached are in identifier order:
   ──────────────────────────────────────────────────────────
   
   reproduce: WINDTRAP_MUTATE_ARM=lib/calc.ml:1:14:add dune runtest --force --instrument-with ppx_windtrap.mutate
-  mutants: 2 survived of 3 reached, 1 killed, 2 never reached, 1 executable
+  mutants: 2 survived of 3 reached, 1 killed, 2 never reached, 1 suite
   [1]
 
 A project with nothing to report is one line, and exits 0:
@@ -142,7 +141,7 @@ A project with nothing to report is one line, and exits 0:
   $ plant "$scratch/clean" && cd "$scratch/clean"
   $ mkdata mutants _build/_mutants/all.mutants "$add=killed" "$sub=killed" "$lt=killed"
   $ run windtrap mutants
-  mutants: 3 reached, 3 killed, 1 executable
+  mutants: 3 reached, 3 killed, 1 suite
 
 A mutant that no test reached is listed and not scored, so it leaves the
 exit code 0, and there is no command to reproduce:
@@ -154,7 +153,7 @@ exit code 0, and there is no command to reproduce:
     1  lib/util.ml   line 1
   ──────────────────────────────────────────────────────────
   
-  mutants: 2 reached, 2 killed, 1 never reached, 1 executable
+  mutants: 2 reached, 2 killed, 1 never reached, 1 suite
 
 A site that ran outside every test in one executable is not never reached,
 and a test's verdict in another executable outranks it:
@@ -172,7 +171,7 @@ and a test's verdict in another executable outranks it:
     1  lib/util.ml   line 1
   ──────────────────────────────────────────────────────────
   
-  mutants: 1 reached, 1 killed, 1 never reached, 1 evaluated outside tests, 2 executables
+  mutants: 1 reached, 1 killed, 1 never reached, 1 evaluated outside tests, 2 suites
 
 A mutant whose run one executable could not finish, or that its child
 did not evaluate, is no survivor: it is listed with that executable's
@@ -192,18 +191,18 @@ then exits 1:
         3 │ let cmp a b = a < b
   
       1 test ran this line and did not fail:
-        a.mutants  cli › compares
+        a  cli › compares
   ──────────────────────────────────────────────────────────
   
   ────────────────────── unknown (1) ───────────────────────
   File "lib/calc.ml", line 2, characters 14-19:
     lib/calc.ml:2:14:sub  a - b → a + b
-      b.mutants: its run was killed by SIGSEGV
+      b: its run was killed by SIGSEGV
       arm: WINDTRAP_MUTATE_ARM=lib/calc.ml:2:14:sub dune runtest --force --instrument-with ppx_windtrap.mutate
   ──────────────────────────────────────────────────────────
   
   reproduce: WINDTRAP_MUTATE_ARM=lib/calc.ml:3:14:lt dune runtest --force --instrument-with ppx_windtrap.mutate
-  mutants: 1 survived of 3 reached, 1 killed, 1 unknown, 2 executables
+  mutants: 1 survived of 3 reached, 1 killed, 1 unknown, 2 suites
   [1]
   $ mkdata mutants _build/_mutants/a.mutants "$add=killed" "$sub=survived:cli/runs"
   $ mkdata mutants _build/_mutants/b.mutants "$add=killed" "$sub=unknown:its run was killed by SIGSEGV"
@@ -211,24 +210,24 @@ then exits 1:
   ────────────────────── unknown (1) ───────────────────────
   File "lib/calc.ml", line 2, characters 14-19:
     lib/calc.ml:2:14:sub  a - b → a + b
-      b.mutants: its run was killed by SIGSEGV
+      b: its run was killed by SIGSEGV
       arm: WINDTRAP_MUTATE_ARM=lib/calc.ml:2:14:sub dune runtest --force --instrument-with ppx_windtrap.mutate
   ──────────────────────────────────────────────────────────
   
-  mutants: 2 reached, 1 killed, 1 unknown, 2 executables
+  mutants: 2 reached, 1 killed, 1 unknown, 2 suites
   $ mkdata mutants _build/_mutants/b.mutants --refused "the suite is not deterministic" \
   >   "$add=unknown:the suite is not deterministic" "$sub=unknown:the suite is not deterministic" \
   >   "$lt=unreached"
   $ run windtrap mutants
   ──────────────── not mutation-tested (1) ─────────────────
-    b.mutants  1 mutant unknown: the suite is not deterministic
+    b  1 mutant unknown: the suite is not deterministic
   ──────────────────────────────────────────────────────────
   
   ─────────────────── never reached (1) ────────────────────
     1  lib/calc.ml   line 3
   ──────────────────────────────────────────────────────────
   
-  mutants: 2 reached, 1 killed, 1 unknown, 1 never reached, 2 executables, 1 not mutation-tested
+  mutants: 2 reached, 1 killed, 1 unknown, 1 never reached, 2 suites, 1 not mutation-tested
   [1]
 
 A line scope reports the mutants on its lines alone, from --lines or a
@@ -240,7 +239,7 @@ git diff -U0, and only they can fail the merge:
     2  lib/util.ml   lines 1, 3
   ──────────────────────────────────────────────────────────
   
-  mutants: 1 reached, 1 killed, 2 never reached, 3 executables
+  mutants: 1 reached, 1 killed, 2 never reached, 3 suites
   $ printf -- '--- a/lib/calc.ml\n+++ b/lib/calc.ml\n@@ -2 +2 @@\n-let sub a b = b - a\n+let sub a b = a - b\n' > change.diff
   $ run windtrap mutants --diff change.diff
   ───────────────────── survivors (1) ──────────────────────
@@ -248,13 +247,13 @@ git diff -U0, and only they can fail the merge:
     SURVIVED  lib/calc.ml:2:14:sub  a - b → a + b
         2 │ let sub a b = a - b
   
-      2 tests in 2 executables ran this line and none failed:
-        windtrap-b.mutants  cli › subtracts
-        windtrap-c.mutants  prop › sub law
+      2 tests in 2 suites ran this line and none failed:
+        windtrap-b  cli › subtracts
+        windtrap-c  prop › sub law
   ──────────────────────────────────────────────────────────
   
   reproduce: WINDTRAP_MUTATE_ARM=lib/calc.ml:2:14:sub dune runtest --force --instrument-with ppx_windtrap.mutate
-  mutants: 1 survived of 1 reached, 3 executables
+  mutants: 1 survived of 1 reached, 3 suites
   [1]
   $ run windtrap mutants --lines=lib/calc.ml:0
   --- stderr
@@ -273,21 +272,21 @@ Survivors are ordered by how many tests reached them, then by identifier:
     SURVIVED  lib/calc.ml:2:14:sub  a - b → a + b
         2 │ let sub a b = a - b
   
-      3 tests in 2 executables ran this line and none failed:
-        one.mutants  t › b
-        one.mutants  t › c
-        two.mutants  u › d
+      3 tests in 2 suites ran this line and none failed:
+        one  t › b
+        one  t › c
+        two  u › d
   
   File "lib/calc.ml", line 1, characters 14-19:
     SURVIVED  lib/calc.ml:1:14:add  a + b → a - b
         1 │ let add a b = a + b
   
       1 test ran this line and did not fail:
-        one.mutants  t › a
+        one  t › a
   ──────────────────────────────────────────────────────────
   
   reproduce: WINDTRAP_MUTATE_ARM=lib/calc.ml:2:14:sub dune runtest --force --instrument-with ppx_windtrap.mutate
-  mutants: 2 survived of 2 reached, 2 executables
+  mutants: 2 survived of 2 reached, 2 suites
   [1]
 
 Reaching tests sort by their spelled path, where a space sorts before the
@@ -302,12 +301,12 @@ separator:
         1 │ let add a b = a + b
   
       2 tests ran this line and none failed:
-        s.mutants  a b
-        s.mutants  a › b
+        s  a b
+        s  a › b
   ──────────────────────────────────────────────────────────
   
   reproduce: WINDTRAP_MUTATE_ARM=lib/calc.ml:1:14:add dune runtest --force --instrument-with ppx_windtrap.mutate
-  mutants: 1 survived of 1 reached, 1 executable
+  mutants: 1 survived of 1 reached, 1 suite
   [1]
 
 A survivor whose source is not found keeps its identifier and its
@@ -321,11 +320,11 @@ rewrite, with no source line:
     SURVIVED  lib/calc.ml:2:14:sub  a - b → a + b
   
       1 test ran this line and did not fail:
-        b.mutants  t › b
+        b  t › b
   ──────────────────────────────────────────────────────────
   
   reproduce: WINDTRAP_MUTATE_ARM=lib/calc.ml:2:14:sub dune runtest --force --instrument-with ppx_windtrap.mutate
-  mutants: 1 survived of 1 reached, 1 executable
+  mutants: 1 survived of 1 reached, 1 suite
   [1]
 
 Executables
@@ -345,7 +344,7 @@ executable through dune:
         3 │ let cmp a b = a < b
   
       1 test ran this line and did not fail:
-        a.exe  calc › compares
+        a.exe (a)  calc › compares
   ──────────────────────────────────────────────────────────
   
   ─────────────────── never reached (3) ────────────────────
@@ -354,7 +353,7 @@ executable through dune:
   ──────────────────────────────────────────────────────────
   
   reproduce: dune exec --instrument-with ppx_windtrap.mutate test/a.exe -- --arm lib/calc.ml:3:14:lt
-  mutants: 1 survived of 2 reached, 1 killed, 3 never reached, 1 executable
+  mutants: 1 survived of 2 reached, 1 killed, 3 never reached, 1 suite
   [1]
 
 A file of an executable that no longer exists, or that was rebuilt since,
@@ -374,7 +373,7 @@ once:
         3 │ let cmp a b = a < b
   
       1 test ran this line and did not fail:
-        a.exe  calc › compares
+        a.exe (a)  calc › compares
   ──────────────────────────────────────────────────────────
   
   ─────────────────── never reached (3) ────────────────────
@@ -383,7 +382,7 @@ once:
   ──────────────────────────────────────────────────────────
   
   reproduce: dune exec --instrument-with ppx_windtrap.mutate test/a.exe -- --arm lib/calc.ml:3:14:lt
-  mutants: 1 survived of 2 reached, 1 killed, 3 never reached, 1 executable
+  mutants: 1 survived of 2 reached, 1 killed, 3 never reached, 1 suite
   --- stderr
   windtrap: .../b.mutants: its executable (_build/default/test/b.exe) no longer exists; excluding it
   windtrap: .../c.mutants: not written by the executable now at _build/default/test/c.exe (rebuilt since); excluding it
@@ -423,12 +422,12 @@ the remedy names no command:
     invalidated by any later build of the executable that wrote it.
   windtrap: re-run every suite with its mutants (--mutate, instrumented with ppx_windtrap.mutate, forcing the runs your build tool cached), then merge again; delete the files whose executable no longer exists
 
-The executable column names each file by its executable's basename, an
-inline-test runner by its library, and a file with no identity by its own
-name. Rows sort by executable, then test, in one column as wide as the
-widest name. The survivor is reproduced in the first executable of its
-reaching tests that runs alone, here test_calc.exe, though an inline test
-comes first:
+The suite column names each file by its executable's basename, or an
+inline-test runner's by its library, then by its suite in parentheses,
+and a file with no identity by its suite alone. Rows sort by that name,
+then test, in one column as wide as the widest name. The survivor is
+reproduced in the first executable of its reaching tests that runs
+alone, here test_calc.exe, though an inline test comes first:
 
   $ plant "$scratch/labels" && cd "$scratch/labels"
   $ mkdir -p _build/default/test _build/default/lib/.my_lib_expect.inline-tests
@@ -438,7 +437,7 @@ comes first:
   >   "$add=survived:calc/adds;calc/adds zero"
   $ mkdata mutants _build/_mutants/inline.mutants \
   >   --exe _build/default/lib/.my_lib_expect.inline-tests/inline-test-runner.exe \
-  >   "$add=survived:my_lib_expect/add"
+  >   --suite my_lib_expect/add.ml "$add=survived:my_lib_expect/add"
   $ mkdata mutants _build/_mutants/plain.mutants "$add=survived:hand/written"
   $ run windtrap mutants
   ───────────────────── survivors (1) ──────────────────────
@@ -446,15 +445,15 @@ comes first:
     SURVIVED  lib/calc.ml:1:14:add  a + b → a - b
         1 │ let add a b = a + b
   
-      4 tests in 3 executables ran this line and none failed:
-        my_lib_expect  my_lib_expect › add
-        plain.mutants  hand › written
-        test_calc.exe  calc › adds
-        test_calc.exe  calc › adds zero
+      4 tests in 3 suites ran this line and none failed:
+        my_lib_expect (my_lib_expect/add.ml)  my_lib_expect › add
+        plain                                 hand › written
+        test_calc.exe (unit)                  calc › adds
+        test_calc.exe (unit)                  calc › adds zero
   ──────────────────────────────────────────────────────────
   
   reproduce: dune exec --instrument-with ppx_windtrap.mutate test/test_calc.exe -- --arm lib/calc.ml:1:14:add
-  mutants: 1 survived of 1 reached, 3 executables
+  mutants: 1 survived of 1 reached, 3 suites
   [1]
 
 Without it, the survivor is reproduced through the build, since dune alone
@@ -462,6 +461,22 @@ runs an inline-test runner:
 
   $ run windtrap mutants _build/_mutants/inline.mutants _build/_mutants/plain.mutants | grep reproduce
   reproduce: WINDTRAP_MUTATE_ARM=lib/calc.ml:1:14:add dune runtest --force --instrument-with ppx_windtrap.mutate
+
+The suites of one executable, as the partitions of an inline library
+are, write a file each, and a mutant that one of them kills is killed
+whatever the other found:
+
+  $ plant "$scratch/suites" && cd "$scratch/suites"
+  $ mkdir -p _build/default/lib/.parts.inline-tests
+  $ echo 'the inline runner' > _build/default/lib/.parts.inline-tests/inline-test-runner.exe
+  $ mkdata mutants _build/_mutants/a.mutants \
+  >   --exe _build/default/lib/.parts.inline-tests/inline-test-runner.exe \
+  >   --suite parts/a.ml "$add=killed" "$sub=survived:A/runs sub"
+  $ mkdata mutants _build/_mutants/b.mutants \
+  >   --exe _build/default/lib/.parts.inline-tests/inline-test-runner.exe \
+  >   --suite parts/b.ml "$add=survived:B/runs add" "$sub=killed"
+  $ run windtrap mutants
+  mutants: 2 reached, 2 killed, 2 suites
 
 One column serves every block:
 
@@ -473,8 +488,8 @@ One column serves every block:
   $ mkdata mutants _build/_mutants/long.mutants --exe _build/default/test/a_long_name.exe \
   >   "$sub=survived:calc/subtracts"
   $ run windtrap mutants | grep '›'
-        t.exe            calc › adds
-        a_long_name.exe  calc › subtracts
+        t.exe (short)           calc › adds
+        a_long_name.exe (long)  calc › subtracts
 
 The command runs an executable in which the mutant survived. Two files
 name t.exe here, and the first in path order did not reach the mutant:
@@ -577,15 +592,15 @@ The command line
   usage: windtrap mutants [OPTIONS] [PATH...]
   
   Merges the .mutants verdict files written by mutation runs and reports the
-  mutants that survived every test executable. Without PATH arguments the files
+  mutants that survived every suite. Without PATH arguments the files
   are found under the build directory's _mutants (or _windtrap/mutants in a tree
   built without one), walking up from the current directory to the enclosing
   project root; PATH arguments (.mutants files, or directories searched
   recursively) replace that default.
   
   Runs no tests and drives no build.
-  Exits 1 when any mutant survived every executable that reached it, or when an
-  executable could not mutation-test its suite.
+  Exits 1 when any mutant survived every suite that reached it, or when a suite
+  could not be mutation-tested.
   
   OPTIONS:
     --lines=FILE:A-B,...

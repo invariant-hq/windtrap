@@ -12,12 +12,12 @@ File "lib/calc.ml", line 21, characters 16-21:
 ────────────────────── unknown (1) ───────────────────────
 File "lib/spin.ml", line 9, characters 8-13:
   lib/spin.ml:9:8:le  i < n → i <= n
-    test_spin.exe: its run passed its deadline of 1.5s
+    test_spin.exe (spin): its run passed its deadline of 1.5s
     arm: ./test_spin.exe --arm lib/spin.ml:9:8:le
 ──────────────────────────────────────────────────────────
 
 ──────────────── not mutation-tested (1) ─────────────────
-  test_property.exe  27 mutants unknown: the suite is not deterministic: the probe failed 2 tests
+  test_property.exe (property)  27 mutants unknown: the suite is not deterministic: the probe failed 2 tests
 ──────────────────────────────────────────────────────────
 
 ─────────────────── never reached (2) ────────────────────
@@ -25,7 +25,7 @@ File "lib/spin.ml", line 9, characters 8-13:
 ──────────────────────────────────────────────────────────
 
 reproduce: WINDTRAP_MUTATE_ARM=lib/calc.ml:21:16:ge dune runtest --force --instrument-with ppx_windtrap.mutate
-mutants: 1 survived of 32 reached, 3 killed, 28 unknown, 2 never reached, 3 executables, 1 not mutation-tested
+mutants: 1 survived of 32 reached, 3 killed, 28 unknown, 2 never reached, 3 suites, 1 not mutation-tested
 
 === a survivor's block: its rewrite, its source line, the tests that ran it
 File "lib/calc.ml", line 21, characters 16-21:
@@ -44,13 +44,13 @@ File "a.ml", line 1, characters 8-9:
     1 test ran this line and did not fail:
       t
 
-=== an executable column at least exe_width wide, empty for a test that names none
+=== a suite column at least suite_width wide, empty for a test that names none
 File "lib/calc.ml", line 13, characters 11-16:
   SURVIVED  lib/calc.ml:13:11:add  a - b → a + b
       13 │ | Sub -> a - b
 
     2 tests ran this line and none failed:
-      a.exe         with an executable
+      a.exe (a)     with a suite
                     without one
 
 === a source line's control bytes print as text
@@ -75,23 +75,23 @@ File "lib/parser.ml", line 102, characters 9-17:
     1 test ran this line and did not fail:
       errors › unexpected end of input
 
-=== a merge's report: survivors counted, the executables one column
+=== a merge's report: survivors counted, the suites one column
 «d|───────────────────── survivors (2) ──────────────────────»
 File "lib/eval.ml", line 60, characters 24-42:
   «r|SURVIVED»  «b|lib/eval.ml:60:24:eq»  eval env b = Int 0 → eval env b <> Int 0
       «d|60 │» if eval env b = Int 0 then raise Division_by_zero
 
-    3 tests in 2 executables ran this line and none failed:
-      test_eval.exe     division › divides
-      test_eval.exe     division › rounds toward zero
-      test_printer.exe  round trip › arithmetic
+    3 tests in 2 suites ran this line and none failed:
+      test_eval.exe (eval)        division › divides
+      test_eval.exe (eval)        division › rounds toward zero
+      test_printer.exe (printer)  round trip › arithmetic
 
 File "lib/parser.ml", line 102, characters 9-17:
   «r|SURVIVED»  «b|lib/parser.ml:102:9:not»  at_end p → not (at_end p)
       «d|102 │» if at_end p then Error (Unexpected_eof p.pos)
 
     1 test ran this line and did not fail:
-      test_parser.exe   errors › unexpected end of input
+      test_parser.exe (parser)    errors › unexpected end of input
 «d|──────────────────────────────────────────────────────────»
 
 «d|─────────────────── never reached (7) ────────────────────»
@@ -101,7 +101,7 @@ File "lib/parser.ml", line 102, characters 9-17:
 «d|──────────────────────────────────────────────────────────»
 
 reproduce: dune exec --instrument-with ppx_windtrap.mutate test/test_eval.exe -- --arm lib/eval.ml:60:24:eq
-mutants: «r|2 survived» of 18 reached, «g|16 killed», «y|7 never reached», 3 executables
+mutants: «r|2 survived» of 18 reached, «g|16 killed», «y|7 never reached», 3 suites
 
 === and without colour
 ───────────────────── survivors (2) ──────────────────────
@@ -109,17 +109,17 @@ File "lib/eval.ml", line 60, characters 24-42:
   SURVIVED  lib/eval.ml:60:24:eq  eval env b = Int 0 → eval env b <> Int 0
       60 │ if eval env b = Int 0 then raise Division_by_zero
 
-    3 tests in 2 executables ran this line and none failed:
-      test_eval.exe     division › divides
-      test_eval.exe     division › rounds toward zero
-      test_printer.exe  round trip › arithmetic
+    3 tests in 2 suites ran this line and none failed:
+      test_eval.exe (eval)        division › divides
+      test_eval.exe (eval)        division › rounds toward zero
+      test_printer.exe (printer)  round trip › arithmetic
 
 File "lib/parser.ml", line 102, characters 9-17:
   SURVIVED  lib/parser.ml:102:9:not  at_end p → not (at_end p)
       102 │ if at_end p then Error (Unexpected_eof p.pos)
 
     1 test ran this line and did not fail:
-      test_parser.exe   errors › unexpected end of input
+      test_parser.exe (parser)    errors › unexpected end of input
 ──────────────────────────────────────────────────────────
 
 ─────────────────── never reached (7) ────────────────────
@@ -129,7 +129,7 @@ File "lib/parser.ml", line 102, characters 9-17:
 ──────────────────────────────────────────────────────────
 
 reproduce: dune exec --instrument-with ppx_windtrap.mutate test/test_eval.exe -- --arm lib/eval.ml:60:24:eq
-mutants: 2 survived of 18 reached, 16 killed, 7 never reached, 3 executables
+mutants: 2 survived of 18 reached, 16 killed, 7 never reached, 3 suites
 
 === never reached alone: its rule, its rows, the outcome
 ─────────────────── never reached (7) ────────────────────
@@ -138,7 +138,7 @@ mutants: 2 survived of 18 reached, 16 killed, 7 never reached, 3 executables
   4  lib/text.ml     lines 12-14, 32
 ──────────────────────────────────────────────────────────
 
-mutants: 16 reached, 16 killed, 7 never reached, 3 executables
+mutants: 16 reached, 16 killed, 7 never reached, 3 suites
 
 === survivors alone
 ───────────────────── survivors (2) ──────────────────────
@@ -146,24 +146,24 @@ File "lib/eval.ml", line 60, characters 24-42:
   SURVIVED  lib/eval.ml:60:24:eq  eval env b = Int 0 → eval env b <> Int 0
       60 │ if eval env b = Int 0 then raise Division_by_zero
 
-    3 tests in 2 executables ran this line and none failed:
-      test_eval.exe     division › divides
-      test_eval.exe     division › rounds toward zero
-      test_printer.exe  round trip › arithmetic
+    3 tests in 2 suites ran this line and none failed:
+      test_eval.exe (eval)        division › divides
+      test_eval.exe (eval)        division › rounds toward zero
+      test_printer.exe (printer)  round trip › arithmetic
 
 File "lib/parser.ml", line 102, characters 9-17:
   SURVIVED  lib/parser.ml:102:9:not  at_end p → not (at_end p)
       102 │ if at_end p then Error (Unexpected_eof p.pos)
 
     1 test ran this line and did not fail:
-      test_parser.exe   errors › unexpected end of input
+      test_parser.exe (parser)    errors › unexpected end of input
 ──────────────────────────────────────────────────────────
 
 reproduce: WINDTRAP_MUTATE_ARM=lib/eval.ml:60:24:eq dune runtest --force --instrument-with ppx_windtrap.mutate
-mutants: 2 survived of 18 reached, 16 killed, 3 executables
+mutants: 2 survived of 18 reached, 16 killed, 3 suites
 
 === neither: the outcome alone
-mutants: 16 reached, 16 killed, 3 executables
+mutants: 16 reached, 16 killed, 3 suites
 
 === never reached: one row per file, the count right-aligned
 «d|────────────────── never reached (124) ───────────────────»
@@ -172,7 +172,7 @@ mutants: 16 reached, 16 killed, 3 executables
   «y|120»  lib/report.ml   lines 10, 13, 16, 19, 22, 25, 28, 31 (+52 more)
 «d|──────────────────────────────────────────────────────────»
 
-mutants: 1 reached, «g|1 killed», «y|124 never reached», 1 executable
+mutants: 1 reached, «g|1 killed», «y|124 never reached», 1 suite
 
 === a mutant its child did not evaluate is unknown, with its reason and the command that arms it
 «d|────────────────────── unknown (1) ───────────────────────»

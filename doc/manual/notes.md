@@ -468,6 +468,15 @@ run exits 0 whatever it finds. A run whose selection narrows the suite
 saves no verdict, since its partial answer would stand for the whole
 suite in the merge.
 
+A verdict file is one suite's, not one executable's. An executable can
+run several suites, and dune runs each partition of an inline-test
+library as a suite of one runner, all at once: with one file per
+executable, the suite that wrote last replaced what the others had
+killed, and the merge called those mutants survivors. The last failed
+tests are recorded the same way, per executable and suite. Two runs under one name in
+one process would still claim one record, so a mutation run refuses the
+second.
+
 What no run could judge is unknown, and an unknown mutant is never a
 survivor. A suite that could not be mutation-tested still writes its
 file, which says why and holds its mutants as unknown. Left out of the

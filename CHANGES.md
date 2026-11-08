@@ -27,6 +27,17 @@
   (doc/manual/mutation.md#what-a-mutation-run-runs).
 - Every pass of a mutation run runs in worker processes under
   `--in-process` too, which no longer limits its dry run to one test.
+- Each suite of an executable writes a verdict file of its own, which
+  records its name, so the partitions of an inline-test library no
+  longer replace one another's kills, which the merge then reported as
+  survivors (doc/manual/mutation.md#where-the-verdicts-are).
+- `windtrap mutants` names each suite by its executable and its name, as
+  `test_calc.exe (calc)`, and counts suites where it counted executables.
+- (breaking) Under `--mutate`, a second `Windtrap.run` of one suite name
+  in a process is refused; give each run a name of its own.
+- (breaking) `Windtrap_runtime.Verdicts.output_file` and `Verdicts.save`
+  take `~suite`, `Verdicts.file` holds it, and
+  `Windtrap_runtime.Instr.output_file` is removed.
 
 ## v0.3.1 2026-11-01
 

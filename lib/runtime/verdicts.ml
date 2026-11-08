@@ -125,17 +125,24 @@ let writer_identity ~exe =
     (fun digest -> { exe = Instr.exe_identity ~exe; digest })
     (Instr.file_digest exe)
 
-let output_file ~exe = Instr.output_file format ~exe
+(* A suite's name may hold any byte, its digest none that a path refuses. *)
+let output_file ~exe ~suite =
+  Printf.sprintf "%s/%s.%s"
+    (Instr.output_dir format ~exe)
+    (Digest.to_hex (Digest.string suite))
+    format.ext
 
 type file = {
   verdicts : t;
   identity : identity option;
+  suite : string;
   refused : string option;
 }
 
 (* The records after the header. Every number is in decimal, and a name is
    [<byte length> <bytes>], so it may hold any byte:
 
+     suite <suite>
      tested | refused <reason>
      <record count>
      <file> <line> <col> <end line> <end col> <rewrite> <before> <after> <verdict>
@@ -196,6 +203,11 @@ let load path =
   | Ok c -> (
       try
         let identity = Instr.read_identity c in
+        let suite =
+          match Instr.read_word c "suite" with
+          | "suite" -> Instr.read_name c "suite name"
+          | word -> Instr.parse_fail "expected suite, found %S" word
+        in
         let refused =
           match Instr.read_word c "status" with
           | "tested" -> None
@@ -206,10 +218,10 @@ let load path =
           read_records c empty (Instr.read_count c "record count")
         in
         Instr.finish c;
-        Ok { verdicts; identity; refused }
+        Ok { verdicts; identity; suite; refused }
       with Instr.Parse_error reason -> Error (Corrupt { path; reason }))
 
-let save ?identity ?refused path t =
+let save ?identity ?refused ~suite path t =
   let add_name b s = Printf.bprintf b "%d %s" (String.length s) s in
   let add_test b names =
     Printf.bprintf b "%d" (List.length names);
@@ -227,6 +239,7 @@ let save ?identity ?refused path t =
   in
   let b = Buffer.create 1024 in
   Instr.add_header format b identity;
+  Printf.bprintf b "suite %a\n" add_name suite;
   (match refused with
   | None -> Buffer.add_string b "tested\n"
   | Some reason -> Printf.bprintf b "refused %a\n" add_name reason);

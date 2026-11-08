@@ -1965,7 +1965,7 @@ let survivor id line before after witnesses =
           {
             Sections.test;
             loc = Some { Loc.file = "test/test_calc.ml"; line; column = 0 };
-            exe = None;
+            suite = None;
           })
         witnesses;
   }

@@ -4,12 +4,12 @@
   ---------------------------------------------------------------------------*)
 
 (** Mutation verdicts: what a run made of each mutant, and the [.mutants] file
-    that carries the verdicts of one executable to the merge.
+    that carries the verdicts of one suite to the merge.
 
-    The mutation loop writes one verdict file for each test executable.
-    [windtrap mutants] loads the files of a project and combines them with
-    {!merge}, under which a mutant that is killed anywhere is killed. Nothing
-    here runs when the module loads or when the process exits. *)
+    The mutation loop writes one verdict file for each suite of each test
+    executable. [windtrap mutants] loads the files of a project and combines
+    them with {!merge}, under which a mutant that is killed anywhere is killed.
+    Nothing here runs when the module loads or when the process exits. *)
 
 (** {1:verdicts Verdicts}
 
@@ -117,7 +117,10 @@ val merge : t -> t -> t
 
 (** {1:files Verdict files}
 
-    An executable has one verdict file, at {!output_file}.
+    A suite of an executable has one verdict file, at {!output_file}, which
+    records the suite's name. The suites of one executable, such as the
+    partitions of an inline-test library, have one file each, so the run of one
+    never replaces what another found.
 
     The first line of a file is the magic line [windtrap-mutants-v6], which
     carries the version of the format. A file with another first line is
@@ -148,14 +151,17 @@ val writer_identity : exe:string -> identity option
     [exe], whose [exe] is [Instr.exe_identity ~exe], or [None] when [exe] cannot
     be read. *)
 
-val output_file : exe:string -> string
-(** [output_file ~exe] is [Instr.output_file format ~exe], the one verdict file
-    of the executable at [exe]. An executable that is renamed or moved leaves
-    its previous file behind. *)
+val output_file : exe:string -> suite:string -> string
+(** [output_file ~exe ~suite] is [<dir>/<hash>.mutants], the verdict file of the
+    suite named [suite] of the executable at [exe]. [<dir>] is
+    [Instr.output_dir format ~exe] and [<hash>] the hexadecimal MD5 of [suite].
+    An executable that is renamed or moved, and a suite that is renamed, leave
+    their previous file behind. *)
 
 type file = {
   verdicts : t;  (** The records of the file. *)
   identity : identity option;  (** The recorded writer, if any. *)
+  suite : string;  (** The name of the suite whose verdicts the file holds. *)
   refused : string option;
       (** [Some reason] when the writer could not mutation-test its suite, and
           [reason] says why. Its records then hold what it could not judge as
@@ -172,24 +178,27 @@ val load : string -> (file, error) result
     - an empty file name, a line below [1] or a negative column,
     - a rewrite outside {!Mutate.rewrites}, or an unknown verdict,
     - a survivor with no reaching test, or a second record for one identifier,
-    - a malformed identity line, a status that is neither [tested] nor [refused]
-      with its reason, or bytes after the last record.
+    - a malformed identity line, no suite line, a status that is neither
+      [tested] nor [refused] with its reason, or bytes after the last record.
 
     Nothing is repaired, and a file with one malformed record is not read at
     all. *)
 
-val save : ?identity:identity -> ?refused:string -> string -> t -> unit
-(** [save ?identity ?refused path t] writes [t] to [path] in the format of a
-    verdict file, with {!Instr.write_file}. Records are ordered by
+val save :
+  ?identity:identity -> ?refused:string -> suite:string -> string -> t -> unit
+(** [save ?identity ?refused ~suite path t] writes [t] to [path] in the format
+    of a verdict file, with {!Instr.write_file}. Records are ordered by
     {!Mutate.compare_id} and reaching tests are sorted, so equal collections
     give equal files. [identity] is recorded after the magic line when it is
     given. A merged collection has no single writer and is written without one.
-    The status line follows: [tested], or [refused] and [refused]'s reason.
+    The suite's name follows, then the status line: [tested], or [refused] and
+    [refused]'s reason.
 
-    [load path] is then [Ok { verdicts = t; identity; refused }] for every [t]
-    whose identifiers {!load} accepts, and [Error (Corrupt _)] for any other
-    (see {!add}). A collection built from the mutants of {!Mutate.val-catalogue}
-    round-trips, unless a source file was registered under the name [""].
+    [load path] is then [Ok { verdicts = t; identity; suite; refused }] for
+    every [t] whose identifiers {!load} accepts, and [Error (Corrupt _)] for any
+    other (see {!add}). A collection built from the mutants of
+    {!Mutate.val-catalogue} round-trips, unless a source file was registered
+    under the name [""].
 
     Raises [Invalid_argument] before anything is written if [identity.exe] is
     empty or if [identity.digest] is not 32 lowercase hexadecimal digits, and

@@ -6,10 +6,10 @@
 (** The [windtrap mutants] command.
 
     The command merges the verdict files that [--mutate] runs wrote and reports
-    on a whole project. It reports the mutants that survived every executable
-    that reached them, and the mutants that no executable reached. It only reads
-    files, so it runs no test and drives no build. A build gates on its exit
-    code, since a [--mutate] run exits 0 whatever it finds.
+    on a whole project. It reports the mutants that survived every suite that
+    reached them, and the mutants that no suite reached. It only reads files, so
+    it runs no test and drives no build. A build gates on its exit code, since a
+    [--mutate] run exits 0 whatever it finds.
 
     {!run} is the whole command.
     {!Windtrap.Private.Report_sections.mutation_report} states what the report
@@ -50,12 +50,12 @@
 (** {1:merge The merge}
 
     The verdicts are those of [Windtrap_runtime.Verdicts.merge] over the files
-    that are kept, in which a kill by one executable wins. A mutant that some
-    file reached survives the merge iff it survived in each of those files, and
-    a mutant that no file reached is unreached. The counts of the report are
-    read off the merged verdicts, and its scope is
-    {!Windtrap.Private.Report_sections.scope.Executables} with the number of
-    files kept.
+    that are kept, one per suite, in which a kill by one suite wins. A mutant
+    that some file reached survives the merge iff it survived in each of those
+    files, and a mutant that no file reached is unreached. The counts of the
+    report are read off the merged verdicts, and its scope is
+    {!Windtrap.Private.Report_sections.scope.Suites} with the number of files
+    kept.
 
     {b Unknown.} A mutant that no file killed and one holds as
     [Windtrap_runtime.Verdicts.Unknown] is unknown. The first file kept, in path
@@ -68,11 +68,12 @@
     {b Reaching tests.} The reaching tests of a survivor are the union of those
     of every file in which the mutant survived. Each is paired with the label of
     its file, and the pairs are sorted by label and then by test, without
-    duplicates. The label is the base name of the executable that the file
-    records. For the inline-test runner of dune, whose base name is the same in
-    every library, it is the name of the library, [<lib>] in
+    duplicates. The label is [<exe> (<suite>)]: the base name of the executable
+    that the file records, then the suite that it records. For the inline-test
+    runner of dune, whose base name is the same in every library, [<exe>] is the
+    name of the library, [<lib>] in
     [.<lib>.inline-tests/inline-test-runner.exe]. For a file that records no
-    identity it is the base name of the file. No reaching test has a location,
+    identity the label is the suite alone. No reaching test has a location,
     because the command links no test tree.
 
     {b Order.} The survivors are sorted by their number of reaching tests, the
@@ -127,9 +128,9 @@ val run : string list -> int
       tested. Unreached and unknown mutants are listed and do not fail the
       command. It is also [0] for the help page.
     - [1] when the report was printed and at least one mutant survived every
-      executable that reached it, or a file is refused: a merge without that
-      suite's verdicts is not the project's. The command has no threshold, so
-      one survivor fails it, and a mutant that is equivalent to the original is
+      suite that reached it, or a file is refused: a merge without that suite's
+      verdicts is not the project's. The command has no threshold, so one
+      survivor fails it, and a mutant that is equivalent to the original is
       dismissed at its site with [[@mutate off]]. It is also [1], with no
       report, when a [PATH] cannot be used, when no verdict file is found, when
       a file that is not excluded cannot be read, is corrupt or has another

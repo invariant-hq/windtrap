@@ -43,9 +43,9 @@ neither reached:
     SURVIVED  test/cram/bin/calc.ml:14:17:sub  a + b → a - b
         14 │ let shared a b = a + b
   
-      2 tests in 2 executables ran this line and none failed:
-        pins_add.exe  shared › shared is nonzero
-        pins_sub.exe  shared › shared is not 99
+      2 tests in 2 suites ran this line and none failed:
+        pins_add.exe (pins_add)  shared › shared is nonzero
+        pins_sub.exe (pins_sub)  shared › shared is not 99
   ──────────────────────────────────────────────────────────
   
   ─────────────────── never reached (1) ────────────────────
@@ -53,7 +53,7 @@ neither reached:
   ──────────────────────────────────────────────────────────
   
   reproduce: dune exec --instrument-with ppx_windtrap.mutate test/pins_add.exe -- --arm test/cram/bin/calc.ml:14:17:sub
-  mutants: 1 survived of 3 reached, 2 killed, 1 never reached, 2 executables
+  mutants: 1 survived of 3 reached, 2 killed, 1 never reached, 2 suites
   [1]
 
 The command's identifier, pasted into that executable, arms the survivor:

@@ -26,7 +26,7 @@ let fail ~code message =
 (* Files *)
 
 type file = {
-  label : string; (* the executable, as the witness column names it *)
+  label : string; (* the suite, as the witness column names it *)
   invocation : Run.invocation; (* how that executable is run again *)
   verdicts : Verdicts.t;
   refused : string option; (* why it could not test its mutants *)
@@ -46,10 +46,14 @@ let inline_library exe =
   then Some (String.sub dir 1 (String.length dir - 1 - String.length suffix))
   else None
 
-let label ~path = function
-  | None -> Filename.basename path
+(* A file is one suite's, and its label names the executable too, since two
+   executables may run suites of one name. *)
+let label ~suite = function
+  | None -> suite
   | Some ({ exe; _ } : Verdicts.identity) ->
-      Option.value (inline_library exe) ~default:(Filename.basename exe)
+      strf "%s (%s)"
+        (Option.value (inline_library exe) ~default:(Filename.basename exe))
+        suite
 
 (* [dune exec] takes a target below the build context, which is the first
    component of a relative identity. *)
@@ -97,10 +101,10 @@ let remedy excluded =
 let fresh files =
   let load path =
     match Verdicts.load path with
-    | Ok { Verdicts.verdicts; identity; refused } ->
+    | Ok { Verdicts.verdicts; identity; suite; refused } ->
         Ok
           {
-            label = label ~path identity;
+            label = label ~suite identity;
             invocation = invocation identity;
             verdicts;
             refused;
@@ -158,7 +162,7 @@ let verdicts_by_id f =
     Ids.empty
     (Verdicts.records f.verdicts)
 
-(* [Verdicts.merge] folds away which executable ran a reaching test, so a
+(* [Verdicts.merge] folds away which suite ran a reaching test, so a
    survivor's reaching tests are read from the files in which it survived. *)
 let merge ~source files =
   let merged =
@@ -199,11 +203,12 @@ let merge ~source files =
       mutant = mutant r;
       witnesses =
         List.map
-          (fun (exe, test) -> { Sections.test; loc = None; exe = Some exe })
+          (fun (suite, test) ->
+            { Sections.test; loc = None; suite = Some suite })
           (List.sort_uniq compare witnesses);
     }
   in
-  (* A merge is [Unknown] only when a file is. The first executable that ran
+  (* A merge is [Unknown] only when a file is. The first suite that ran
      the mutant and could not judge it names it, with its reason; a mutant
      that only refused suites hold counts under the first of them. *)
   let unknown (r : Verdicts.record) =
@@ -258,7 +263,7 @@ let merge ~source files =
         Option.map
           (fun reason ->
             {
-              Sections.executable = f.label;
+              Sections.suite = f.label;
               reason;
               mutants = List.length (List.filter (( == ) f) untested);
             })
@@ -282,7 +287,7 @@ let merge ~source files =
           List.find_map
             (fun (f, survived) ->
               if
-                Option.equal String.equal w.exe (Some f.label)
+                Option.equal String.equal w.suite (Some f.label)
                 && Ids.mem mutant.id survived
               then Some f.invocation
               else None)
@@ -303,7 +308,7 @@ let merge ~source files =
       outside_tests;
       killed;
       not_tested = 0;
-      scope = Executables (List.length files);
+      scope = Suites (List.length files);
     },
     invocation )
 
@@ -333,15 +338,15 @@ let help =
   ^ {|
 
 Merges the .mutants verdict files written by mutation runs and reports the
-mutants that survived every test executable. Without PATH arguments the files
+mutants that survived every suite. Without PATH arguments the files
 are found under the build directory's _mutants (or _windtrap/mutants in a tree
 built without one), walking up from the current directory to the enclosing
 project root; PATH arguments (.mutants files, or directories searched
 recursively) replace that default.
 
 Runs no tests and drives no build.
-Exits 1 when any mutant survived every executable that reached it, or when an
-executable could not mutation-test its suite.
+Exits 1 when any mutant survived every suite that reached it, or when a suite
+could not be mutation-tested.
 
 OPTIONS:
   --lines=FILE:A-B,...

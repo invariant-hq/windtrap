@@ -159,12 +159,12 @@ first survivor in an otherwise ordinary run:
   calc: 4 passed in TIME.
   mutant survived: the armed site was evaluated 2 times and no test failed.
 
-The verdict file is the run's, beside the coverage dumps, and the
+The verdict file is the suite's, beside the coverage dumps, and the
 installed binary merges it, exiting 1, because a survivor of every
 suite that reached it is the one mutation exit code a build gates on:
 
-  $ find _windtrap/mutants -type f | sed -E 's|windtrap-[0-9a-f]+|windtrap-HASH|'
-  _windtrap/mutants/windtrap-HASH.mutants
+  $ find _windtrap/mutants -type f | sed -E 's|windtrap-[0-9a-f]+|windtrap-HASH|; s|/[0-9a-f]+\.mutants|/SUITE.mutants|'
+  _windtrap/mutants/windtrap-HASH/SUITE.mutants
   $ run windtrap mutants
   ───────────────────── survivors (4) ──────────────────────
   File "calc.ml", line 2, characters 16-21:
@@ -172,34 +172,34 @@ suite that reached it is the one mutation exit code a build gates on:
         2 │ let sign n = if n > 0 then 1 else 0
   
       2 tests ran this line and none failed:
-        test_calc.exe  sign of a negative
-        test_calc.exe  sign of a positive
+        test_calc.exe (calc)  sign of a negative
+        test_calc.exe (calc)  sign of a positive
   
   File "calc.ml", line 2, characters 20-21:
     SURVIVED  calc.ml:2:20:int  0 → 1
         2 │ let sign n = if n > 0 then 1 else 0
   
       2 tests ran this line and none failed:
-        test_calc.exe  sign of a negative
-        test_calc.exe  sign of a positive
+        test_calc.exe (calc)  sign of a negative
+        test_calc.exe (calc)  sign of a positive
   
   File "calc.ml", line 3, characters 20-25:
     SURVIVED  calc.ml:3:20:ge  n > 0 → n >= 0
         3 │ let describe n = if n > 0 then "positive" else "non-positive"
   
       1 test ran this line and did not fail:
-        test_calc.exe  describe
+        test_calc.exe (calc)  describe
   
   File "calc.ml", line 3, characters 24-25:
     SURVIVED  calc.ml:3:24:int  0 → 1
         3 │ let describe n = if n > 0 then "positive" else "non-positive"
   
       1 test ran this line and did not fail:
-        test_calc.exe  describe
+        test_calc.exe (calc)  describe
   ──────────────────────────────────────────────────────────
   
   reproduce: PROJ/test_calc.exe --arm calc.ml:2:16:ge
-  mutants: 4 survived of 7 reached, 3 killed, 1 executable
+  mutants: 4 survived of 7 reached, 3 killed, 1 suite
   [1]
 
 The scratch project is the session's own and leaves with it:

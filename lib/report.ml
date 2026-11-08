@@ -1084,7 +1084,7 @@ let mutation_survivor t survivor =
   print t
     (Sections.Line []
      :: (if t.survivors = 0 then [ Sections.Rule (Some "survivors") ] else [])
-    @ Sections.survivor_block ~exe_width:None survivor);
+    @ Sections.survivor_block ~suite_width:None survivor);
   t.survivors <- t.survivors + 1
 
 let mutation_finish ?note t m =
