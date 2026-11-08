@@ -7,9 +7,7 @@
    that depend on the domain a call runs on, never on a race, so every
    verdict here is deterministic.
 
-   Under mutation testing a stateful test on several domains spawns
-   nothing, and every test here that spawns a pool skips. The scenarios that
-   leave a domain running forever or spawn every domain the runtime has run
+   The scenarios that leave a domain running forever or spawn every domain the runtime has run
    in a fresh process of this executable, which the test that reads them
    starts: each worker starts the executable again, so work done as the
    module initialises is paid once per worker. *)
@@ -156,14 +154,7 @@ let body tree =
 
 (* Workers *)
 
-let mutating () =
-  match (Run.config (Run.current ())).mutation with
-  | Run.No_mutation -> false
-  | Run.Loop _ | Run.Armed _ -> true
-
 let with_pool n fn =
-  if mutating () then
-    skip ~reason:"under mutation testing no test spawns a domain" ();
   let pool = Workers.spawn n in
   Fun.protect ~finally:(fun () -> Workers.join pool) (fun () -> fn pool)
 
@@ -1761,8 +1752,6 @@ let failing_run_output () =
 (* On the workers a counterexample does not run again, though [check]
    fails in every run. *)
 let not_run_again () =
-  if mutating () then
-    skip ~reason:"under mutation testing no test spawns a domain" ();
   let r = abstract "r" in
   let t =
     Stateful.stateful ~steps:1 ~domains:2 "t"
@@ -1836,16 +1825,6 @@ let executor =
           equal string expected (met ~cover_when ()));
     ]
 
-(* Under mutation testing, recorded as the module initialises: a program
-   runs once on the test's domain and nothing spawns. *)
-let under_mutation, seen_under_mutation =
-  let r =
-    Recorded.execute
-      ~config:(fun c -> { c with mutation = Run.Loop Run.every_mutant })
-      [ Stateful.stateful ~count:5 ~domains:2 "sequential" [ where () ] ]
-  in
-  (r, List.sort_uniq Int.compare (Log.take ()))
-
 (* One after the other, a control from branch 1 ends the run before any
    later call runs. *)
 let stops_at_a_control () =
@@ -1872,13 +1851,9 @@ let stops_at_a_control () =
   equal string "raised windtrap skip: why" (armed_run (value tree));
   equal int 0 !ticked
 
-let mutation =
-  group "Under mutation testing"
+let calling_domain =
+  group "On the calling domain"
     [
-      test "each program runs on the test's domain, and nothing spawns"
-        (fun () ->
-          equal string "pass" (Recorded.row under_mutation [ "sequential" ]);
-          equal (list int) [ self () ] seen_under_mutation);
       test "a control from a branch ends the run before the next branch"
         stops_at_a_control;
     ]
@@ -2031,6 +2006,6 @@ let () =
          judging_calls;
          report;
          executor;
-         mutation;
+         calling_domain;
          stopping;
        ])

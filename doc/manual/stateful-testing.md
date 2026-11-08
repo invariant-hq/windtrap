@@ -847,16 +847,14 @@ replay: dune exec examples/04-stateful-testing/planted/mpmc/test_mpmc.exe -- --s
 The invariant of an abstract type runs after the prefix's calls only:
 after the branches, several orders may explain what the system did.
 
-The contract differs from one domain's in five ways, all stated under
+The contract differs from one domain's in four ways, all stated under
 `Windtrap.stateful`: a replay draws the same programs but not the same
 schedules, so it may pass: it runs its program 50 times, as the search
 runs each, stops at the first run that fails, and when none does says
 `its schedule is not replayed: the case passed 50 times`; a counterexample does not run once more
-after the search, except under `--mutate` and `--arm`; the test takes
-no retries and ignores a group's; under `--mutate` and `--arm` each
-program runs once on the test's domain, so a kill does not depend on a
-schedule; and a call still running one limit after the test's limit
-expired fails the test as timed out and stops the run after it.
+after the search; the test takes no retries and ignores a group's; and
+a call still running one limit after the test's limit expired fails the
+test as timed out and stops the run after it.
 Under `--in-process`, which gives a test no default limit, a deadlock
 without a `~timeout` hangs until interrupted, and Ctrl-C works on it.
 

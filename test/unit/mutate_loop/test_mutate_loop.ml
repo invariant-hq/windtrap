@@ -551,6 +551,12 @@ let dry_run =
             ]
             (witnesses r.out));
       test "a tag selection is the children's selection too" tagged;
+      test "under --in-process the dry run still runs in workers" (fun () ->
+          let r = spawn [ mutate; "--in-process" ] in
+          equal string "exited 0" r.status;
+          equal string "calc: 6 passed in <time>." (summary r.out);
+          equal string green_outcome (outcome r.out);
+          equal (option (list string)) (Some green_rows) (rows r));
     ]
 
 (* The determinism probe *)

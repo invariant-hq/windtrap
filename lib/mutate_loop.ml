@@ -532,7 +532,10 @@ let report ~narrowed ~dry_run ~reached ~unreached ~outside found :
        else Report_sections.Suite);
   }
 
+(* Every test of the loop runs in a worker, so a test that spawns a domain
+   leaves this process able to fork the next one. *)
 let loop renderer ~scope ~suite (config : Run.config) tests =
+  let config = { config with in_process = false } in
   let population = population ~scope in
   let all = Result.value population ~default:[] in
   let reach = { sites = Hashtbl.create 256; outside = Hashtbl.create 16 } in

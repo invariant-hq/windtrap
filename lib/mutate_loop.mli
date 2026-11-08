@@ -50,11 +50,12 @@ val execute_and_report :
       and when it lies on those lines, if any. A mutant out of scope is neither
       tested nor recorded.
     + It runs the dry run, which is {!Report.run} with [Supervisor.execute] over
-      [config] with [junit] cleared, its workers telling it which tests evaluate
-      each mutant. Every other field is that of [config], [baseline] included,
-      so the dry run of a [--mutate -u] run accepts what a [-u] run accepts. A
-      site that no test reached and that was evaluated outside every test, at
-      module initialization or in a fixture release, is evaluated outside tests
+      [config] with [junit] cleared and [in_process] unset, its workers telling
+      it which tests evaluate each mutant. Every other field is that of
+      [config], [baseline] included, so the dry run of a [--mutate -u] run
+      accepts what a [-u] run accepts. A site that no test reached and that was
+      evaluated outside every test, at module initialization or in a fixture
+      release, is evaluated outside tests
       ({!Windtrap_runtime.Verdicts.Outside_tests}). A site that only tests
       marked xfail evaluated is unreached.
     + It runs the jobs ([Supervisor.fresh]), each in a worker of its own, which

@@ -21,6 +21,12 @@
   `Windtrap_runtime.Verdicts.Not_evaluated` and
   `Windtrap_runtime.Mutate.armed_hits` are removed, and the verdict file
   is `windtrap-mutants-v6`, an earlier one being refused.
+- `stateful ~domains` spawns its domains under `--mutate` and `--arm`,
+  as in any run, so the code only they run is reached and judged, and a
+  kill there depends on the schedules the test samples
+  (doc/manual/mutation.md#what-a-mutation-run-runs).
+- Every pass of a mutation run runs in worker processes under
+  `--in-process` too, which no longer limits its dry run to one test.
 
 ## v0.3.1 2026-11-01
 

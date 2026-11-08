@@ -378,9 +378,7 @@ val stateful :
     them however it ends. A spawn that fails is a [Failure.Check_failure] at the
     declaration site, with no counterexample. Each case runs [50] times
     ({!Property.run}'s [runs]) and fails at the first run that fails, so it
-    costs [50] of the shrink budget. The test takes [~retries:0]. Under
-    [--mutate] or [--arm] ([config.mutation] is not {!Run.No_mutation}) the body
-    spawns nothing.
+    costs [50] of the shrink budget. The test takes [~retries:0].
 
     {b A broken reference} is a {!Property.Oracle_failure}, which
     {!Property.run} shrinks and rejects as the facade says.

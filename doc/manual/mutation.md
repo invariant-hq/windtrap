@@ -251,8 +251,8 @@ the withheld-correction warning:
   times, `hits` being the dry run's count, fails its test, and the
   mutant is killed.
 
-Every pass runs in worker processes, and the probe and each mutant in a
-worker of its own, started as a run's workers are (see [Running
+Every pass runs in worker processes, under `--in-process` too, and the
+probe and each mutant in a worker of its own, started as a run's workers are (see [Running
 tests](running-tests.md#running-tests-in-worker-processes)): none starts
 from what the dry run or another mutant left, a table filled or a lazy
 value forced, so a cache cannot hide a mutant. The mutant is armed once
@@ -285,6 +285,12 @@ evaluates belongs to the test once the test joins it, or waits for the
 pool it handed the work to, and a domain still running when its test
 ends counts toward a later one, or none. Every evaluation counts, on
 any number of domains.
+
+A mutation run runs the suite as written. A stateful test on several
+domains spawns them and samples schedules as in any run, so a mutant
+that only some schedule exposes is killed when the test's runs meet
+one, and otherwise survives, as the bug it stands for would pass the
+test. How many cases sample them is the test's `~count`.
 
 A site that no test runs, and that module initialization or a
 fixture release runs, is evaluated outside tests. No run tests its

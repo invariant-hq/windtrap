@@ -412,6 +412,15 @@ only if it executed the mutant. Windtrap's unit is the worker rather
 than the test, because a test can fail on what an earlier test of its
 worker built with the mutant, a fixture or a cached value.
 
+A mutation run runs the tests as they were written. Run one call after
+the other on the test's domain, a stateful test on several domains
+would give kills that no schedule decides, but the code that only its
+domains run would read as never reached, and a mutant that the one
+order hides would read as a survivor: verdicts about a program nobody
+wrote. On its domains a case samples schedules as it does in any run,
+and a mutant that no sampled schedule exposes survives, as the bug
+would.
+
 The cases of a property derive from the root seed and the test's path,
 and a mutation run fixes the root, so the same mutant meets the same
 cases on every run of one binary. With a random root, a mutant that only
