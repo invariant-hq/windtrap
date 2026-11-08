@@ -58,12 +58,17 @@
     what [Windtrap_runtime.Mutate.drain] gives when the test ends, its window
     opening when the test starts. What it evaluates outside every test, in a
     fixture release, and what the parent evaluated as its modules initialised,
-    belong to no test. An [--arm] worker arms its mutant as it starts, and its
-    evaluations count from there. *)
+    belong to no test. A worker that arms a mutant arms it as it starts, and its
+    evaluations count from there. It also tells its parent, once, that it has
+    evaluated the armed site, after the window that did and before any later
+    report: so the parent knows, of each failure a worker reports, whether that
+    worker had evaluated the site by then, a release's own evaluations included.
+    Until then a worker computes the unmutated program. *)
 
 val execute :
   ?on_reach:
     (string list option -> (Windtrap_runtime.Mutate.id * int) list -> unit) ->
+  ?on_failure:(string list option -> evaluated:bool -> unit) ->
   ?on_event:(Run.event -> unit) ->
   Run.config ->
   suite:string ->
@@ -78,7 +83,14 @@ val execute :
     Under mutation, [on_reach test sites] receives the {{!mutants}evaluations}
     of each window that evaluated a mutant: [test] is [Some path] for a test's,
     given before the parent reaches its row, and [None] for those of no test,
-    the parent's first. Defaults to ignoring them. *)
+    the parent's first. Defaults to ignoring them.
+
+    Under [--arm], [on_failure test ~evaluated] receives each counted failure:
+    [test] is [Some path] for a test's row, given before the row reaches the
+    observer, and [None] for a failure of a fixture release or of no test, as it
+    arrives. [evaluated] is whether the worker it happened in, or this process
+    under [config.in_process], had evaluated the armed site by then. Defaults to
+    ignoring them. *)
 
 (** {1:fresh Fresh workers}
 
@@ -92,7 +104,9 @@ type job = {
   deadline : float;
       (** The seconds the job may take from its first worker's start, after
           which its process group is killed. *)
-  bail : bool;  (** Whether the job stops at its first counted failure. *)
+  bail : bool;
+      (** Whether the job stops at its first counted failure in a worker that
+          had evaluated the armed site by then. *)
   armed : (Windtrap_runtime.Mutate.id * int) option;
       (** The mutant that each of its workers arms before its first case, with
           its budget ([Windtrap_runtime.Mutate.arm]). *)
@@ -109,15 +123,18 @@ type ended =
   | Expired  (** It passed its deadline. *)
 
 type ran = {
-  results : Run.result list;  (** The rows of the cases that ended, in order. *)
-  release_failures : Failure.t list;
-      (** The failures of its releases, and those of no case. *)
-  armed_hits : int;
-      (** The evaluations of the armed site that its workers counted
-          ([Windtrap_runtime.Mutate.armed_hits]), [0] when none is armed. *)
+  results : (Run.result * bool) list;
+      (** The rows of the cases that ended, in order, each with whether its
+          worker had evaluated the armed site when the case ended. *)
+  release_failures : (Failure.t * bool) list;
+      (** The failures of its releases, and those of no case, each with whether
+          its worker had evaluated the armed site when it sent the failure, its
+          release included. *)
   ended : ended;  (** How it ended. *)
 }
-(** The type for what a job did. *)
+(** The type for what a job did. A job's workers run its cases one after the
+    other, a fresh one taking over when a case retires the last, and each
+    evaluates its armed site afresh. *)
 
 val can_spawn : unit -> bool
 (** [can_spawn ()] is [true] iff this process can start a worker for the run

@@ -349,8 +349,9 @@ val mutation_armed : t -> id:string -> before:string -> after:string -> unit
 *)
 
 val mutation_killed : t -> unit
-(** [mutation_killed t] prints the verdict of an armed run in which the mutant
-    made a test fail, tests marked xfail aside. *)
+(** [mutation_killed t] prints the verdict of an armed run in which a test
+    failed, tests marked xfail aside, or a fixture release failed, in a worker
+    that had evaluated the armed site by then. *)
 
 val mutation_survived : t -> hits:int -> xfail_failed:bool -> unit
 (** [mutation_survived t ~hits ~xfail_failed] prints the verdict of an armed run
@@ -359,9 +360,10 @@ val mutation_survived : t -> hits:int -> xfail_failed:bool -> unit
     [xfail_failed] is [true], a test marked xfail passed, which fails it, and
     the line says that only such tests failed. *)
 
-val mutation_not_evaluated : t -> unit
-(** [mutation_not_evaluated t] prints the verdict of an armed run in which no
-    selected test evaluated the armed site. *)
+val mutation_unknown : t -> string -> unit
+(** [mutation_unknown t reason] prints the verdict of an armed run that judged
+    nothing, and [reason] says why: its tests passed and none evaluated the
+    armed site, or every failure came in a worker that had not evaluated it. *)
 
 val mutation_not_reached : t -> unit
 (** [mutation_not_reached t] prints the verdict of an armed run in which only

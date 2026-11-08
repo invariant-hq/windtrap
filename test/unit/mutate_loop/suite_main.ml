@@ -455,6 +455,53 @@ let priming =
         if !primed then is_true (Subject.widen 3 4 <> 0));
   ]
 
+(* [unprimed]'s second test fails unless the first, which reaches no
+   mutant, primed it: the job of [widen]'s mutant runs it alone, and it fails
+   there before it evaluates the site. *)
+let fails_unless_primed () =
+  if not !primed then fail "not primed";
+  is_true (Subject.widen 3 4 <> 0)
+
+let unprimed =
+  [
+    test "primes" (fun () -> primed := true);
+    test "fails unless primed, then widens" fails_unless_primed;
+  ]
+
+(* [retired]'s first test evaluates [widen] on a domain, which retires its
+   worker, and primes the next worker's tests in the dry run: the job of
+   [widen]'s mutant runs the third test in a second worker, unprimed, where
+   it fails before that worker evaluates the site. *)
+let retired =
+  [
+    test "widens on a domain of its own" (fun () ->
+        is_true (Domain.join (Domain.spawn (fun () -> Subject.widen 3 4)) <> 0));
+    test "primes" (fun () -> primed := true);
+    test "fails unless primed, then widens" fails_unless_primed;
+  ]
+
+(* The second test of each evaluates [sub] once primed, and its job runs it
+   alone, unprimed. [late]'s release evaluates [sub] and fails on the
+   mutant's answer; [unprimed]'s fails unless primed, evaluating nothing. *)
+let late_released =
+  fixture
+    ~teardown:(fun () ->
+      if Subject.sub 10 4 <> 6 then failwith "the release saw sub change")
+    Fun.id
+
+let unprimed_released =
+  fixture
+    ~teardown:(fun () -> if not !primed then failwith "released unprimed")
+    Fun.id
+
+let releasing held =
+  [
+    test "primes" (fun () -> primed := true);
+    test "holds a fixture, and runs sub once primed" (fun () ->
+        held ();
+        if !primed then is_true (Subject.sub 10 4 < 100));
+  ]
+
 let retried = ref 0
 let handle = fixture ~teardown:(fun () -> ignore (Subject.crasher 3 1)) Fun.id
 
@@ -499,6 +546,12 @@ let () =
   | "seeded" -> exit @@ run "calc" [ group "seeded" seeded ]
   | "primed" ->
       exit @@ run "calc" [ group "calc" strong; group "primed" priming ]
+  | "unprimed" -> exit @@ run "calc" [ group "unprimed" unprimed ]
+  | "retired" -> exit @@ run "calc" [ group "retired" retired ]
+  | "late_release" ->
+      exit @@ run "calc" [ group "release" (releasing late_released) ]
+  | "unprimed_release" ->
+      exit @@ run "calc" [ group "release" (releasing unprimed_released) ]
   | "crash" ->
       exit
       @@ run "calc"

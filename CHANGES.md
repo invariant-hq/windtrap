@@ -11,6 +11,16 @@
   no longer allocates.
 - (breaking) `Windtrap_runtime.Mutate.next_epoch` is removed; a drain
   reports every site whose count moved since the previous one.
+- A failure kills a mutant only in a worker that had evaluated its site
+  by then, and a fixture release's only in the worker that released,
+  under `--mutate` and `--arm` alike; a failure before the site ran
+  makes the mutant unknown, naming the test, unless a later reaching test
+  kills it (doc/manual/mutation.md#what-a-mutation-run-runs).
+- (breaking) The `not evaluated` verdict is unknown, with its reason, in
+  the report, the merge and `--arm`'s closing line;
+  `Windtrap_runtime.Verdicts.Not_evaluated` and
+  `Windtrap_runtime.Mutate.armed_hits` are removed, and the verdict file
+  is `windtrap-mutants-v6`, an earlier one being refused.
 
 ## v0.3.1 2026-11-01
 

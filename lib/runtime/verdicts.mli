@@ -13,9 +13,19 @@
 
 (** {1:verdicts Verdicts}
 
-    A verdict is one of six cases, and never a boolean or an exit code. What a
+    A verdict is one of five cases, and never a boolean or an exit code. What a
     run could not decide is {!Unknown}, which outranks a survivor, so a mutant
-    that no run judged never reads as survived. *)
+    that no run judged never reads as survived.
+
+    A run judges a mutant only where it evaluated it. Until the armed site is
+    evaluated, a process computes the unmutated program, so a test that fails
+    there fails for another reason, and a test that passes there tested nothing.
+    A kill therefore needs a failure in a process that had evaluated the armed
+    site by then, and a survivor needs the site evaluated. Shi, Bell and
+    Marinov, "Mitigating the Effects of Flaky Tests on Mutation Testing" (ISSTA
+    2019, §3.2), make the same rule with the test as the unit; here the unit is
+    the process, since a test can fail on what an earlier test of its process
+    built with the mutant, a fixture or a cached value. *)
 
 type reaching_test = string list
 (** The type for a test that evaluated a mutant, by its path: the names of its
@@ -26,21 +36,21 @@ type reaching_test = string list
     mutant that no test reached is {!Outside_tests} or {!Unreached}. *)
 type verdict =
   | Killed
-      (** A reaching test failed, or a fixture release failed, in the run that
-          armed the mutant. *)
+      (** A reaching test failed, or a fixture release failed, in a process of
+          the run that armed the mutant, and that process had evaluated the
+          armed site by then, its release included for a release. *)
   | Unknown of string
       (** No verdict, and the string says why: the run that armed the mutant
-          ended before its tests did, by a crash, an exit or its deadline, or
-          the executable could not be mutation-tested, as when its dry run is
-          red, its suite is not deterministic or its selection narrows it. *)
+          ended before its tests did, by a crash, an exit or its deadline; its
+          only failures came in processes that had not evaluated the armed site;
+          its tests passed and never evaluated it, as when the dry run cached
+          the result of the site in a table or a forced lazy value; or the
+          executable could not be mutation-tested, as when its dry run is red,
+          its suite is not deterministic or its selection narrows it. *)
   | Survived of { first : reaching_test; others : reaching_test list }
       (** Every reaching test passed, and the armed site was evaluated. [first]
           and [others] are the reaching tests, sorted and without duplicates,
           and [first] is the first. *)
-  | Not_evaluated
-      (** Every reaching test passed, and the armed site was not evaluated. The
-          dry run evaluated the site and the child did not, as when the dry run
-          cached the result of the site in a table or a forced lazy value. *)
   | Outside_tests
       (** No test reached the site, and the dry run evaluated it outside every
           test, at module initialization or in a fixture release. The loop
@@ -87,9 +97,8 @@ val add : t -> record -> t
     two verdicts combine into the verdict of a mutant that one executable saw
     one way and another the other way. It is {!Killed} if either is. Otherwise
     it is {!Unknown} if either is, with the smaller reason in [String.compare]
-    order when both are, then {!Not_evaluated} if either is, then {!Survived}
-    with the reaching tests of both if either is, then {!Outside_tests} if
-    either is, and {!Unreached} if both are.
+    order when both are, then {!Survived} with the reaching tests of both if
+    either is, then {!Outside_tests} if either is, and {!Unreached} if both are.
 
     [add] checks nothing of [r.id] or of the end. It accepts an empty [file], a
     [line] below [1], a negative [col], an end before the start and a [rewrite]
@@ -110,7 +119,7 @@ val merge : t -> t -> t
 
     An executable has one verdict file, at {!output_file}.
 
-    The first line of a file is the magic line [windtrap-mutants-v5], which
+    The first line of a file is the magic line [windtrap-mutants-v6], which
     carries the version of the format. A file with another first line is
     refused, never converted, and nothing is promised from one version to the
     next. *)

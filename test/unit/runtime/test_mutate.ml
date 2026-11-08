@@ -485,21 +485,22 @@ let per_registration () =
   ignore (arm_ok ~budget:2 (id "t/per_copy.ml" 1 0 "le"));
   Mutate.reset_reach ();
   let answers = evaluations g1 2 @ evaluations g2 2 in
-  let hits = Mutate.armed_hits () in
   equal (list string)
-    [ "true"; "true"; "true"; "true"; "4"; "runaway t/per_copy.ml:1:0:le 3/2" ]
-    (answers @ [ string_of_int hits ] @ evaluations g1 1)
+    [ "true"; "true"; "true"; "true"; "runaway t/per_copy.ml:1:0:le 3/2" ]
+    (answers @ evaluations g1 1)
 
 let counted_since_reset () =
   let g = Mutate.register ~file:"t/kept.ml" ~sites:[| site 1 0 "ge" |] in
   let the_id = id "t/kept.ml" 1 0 "ge" in
-  ignore (arm_ok the_id);
+  ignore (arm_ok ~budget:2 the_id);
   Mutate.reset_reach ();
   ignore (evaluations g 2);
-  ignore (arm_ok the_id);
-  let after_arm = Mutate.armed_hits () in
+  ignore (arm_ok ~budget:2 the_id);
+  let after_arm = evaluations g 1 in
   Mutate.reset_reach ();
-  equal (list int) [ 2; 0 ] [ after_arm; Mutate.armed_hits () ]
+  equal (list string)
+    [ "runaway t/kept.ml:1:0:ge 3/2"; "true" ]
+    (after_arm @ evaluations g 1)
 
 let refused_budget budget =
   let g = Mutate.register ~file:"t/kept_armed.ml" ~sites:[| site 1 0 "sub" |] in
@@ -613,13 +614,10 @@ let arming =
         (disarming runaway);
       test "reset_reach gives an armed site its whole budget again"
         (disarming headroom);
-      test "the budget bounds each registration, and armed_hits adds them up"
+      test "the budget bounds each registration on its own"
         (disarming per_registration);
-      test "armed_hits counts since reset_reach, not since arm"
+      test "the budget counts since reset_reach, not since arm"
         (disarming counted_since_reset);
-      test "armed_hits is 0 when nothing is armed" (fun () ->
-          disarm ();
-          equal int 0 (Mutate.armed_hits ()));
       cases "a budget below 1 raises Invalid_argument and disarms nothing"
         ~id:(Testable.to_string Testable.int) [ 0; -1; min_int ] (fun budget ->
           disarming (fun () -> refused_budget budget) ());

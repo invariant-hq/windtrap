@@ -2279,6 +2279,7 @@ let memo_missed =
       mutant
         ~source:(source_of [ (4, "  | None -> let v = a + b in") ])
         "lib/memo.ml:4:17:sub" 4 "a + b" "a - b";
+    reason = "its site ran in the dry run and not in its mutant's child";
     invocation = `Exe "./test_memo.exe";
   }
 
@@ -2302,7 +2303,6 @@ let property_refused =
 let loop_report =
   {
     Sections.survivors = [ add_survivor; ge_survivor ];
-    not_evaluated = [];
     unknown = [];
     refused = [];
     unreached = [ ("lib/calc.ml", 40); ("lib/calc.ml", 41) ];
@@ -2346,7 +2346,6 @@ let not_survivor =
 let merge_report =
   {
     Sections.survivors = [ eq_survivor; not_survivor ];
-    not_evaluated = [];
     unknown = [];
     refused = [];
     unreached =
@@ -2375,7 +2374,7 @@ let with_source source (s : Sections.survivor) =
   { s with Sections.mutant = { m with source } }
 
 let reached_report =
-  { loop_report with Sections.survivors = []; not_evaluated = [ memo_missed ] }
+  { loop_report with Sections.survivors = []; unknown = [ memo_missed ] }
 
 let mutation_entries () =
   [
@@ -2437,7 +2436,6 @@ let mutation_entries () =
       at_rest ~ansi:true
         {
           Sections.survivors = [];
-          not_evaluated = [];
           unknown = [];
           refused = [];
           unreached =
@@ -2454,7 +2452,8 @@ let mutation_entries () =
           not_tested = 0;
           scope = Sections.Executables 1;
         } );
-    ( "not evaluated: each mutant with the command that arms it",
+    ( "a mutant its child did not evaluate is unknown, with its reason and the \
+       command that arms it",
       at_rest ~ansi:true reached_report );
     ( "evaluated outside tests follows never reached",
       at_rest
@@ -2471,7 +2470,7 @@ let mutation_entries () =
              "dune exec --instrument-with ppx_windtrap.mutate \
               test/test_calc.exe --")
         loop_report );
-    ( "a loop's not-evaluated section keeps the run's selection",
+    ( "a loop's unknown section keeps the run's selection",
       closing
         ~config:(fun c -> { c with Run.filter = [ "memoized" ] })
         reached_report );
@@ -2497,14 +2496,12 @@ let mutation_entries () =
         } );
   ]
 
-let summary ?(survivors = []) ?(not_evaluated = []) ?(unknown = [])
-    ?(refused = []) ?(unreached = []) ?(outside_tests = []) ?(not_tested = 0)
-    ~killed scope =
+let summary ?(survivors = []) ?(unknown = []) ?(refused = []) ?(unreached = [])
+    ?(outside_tests = []) ?(not_tested = 0) ~killed scope =
   last_line
     (at_rest
        {
          Sections.survivors;
-         not_evaluated;
          unknown;
          refused;
          unreached;
@@ -2575,12 +2572,10 @@ let summary_rows =
           ~killed:2 (Sections.Executables 2)),
       "mutants: 1 survived of 31 reached, 2 killed, 28 unknown, 2 executables, \
        1 not mutation-tested" );
-    ( "a mutant its child did not evaluate is reached",
+    ( "a mutant its child did not evaluate is reached, and unknown",
       (fun () ->
-        summary ~survivors:s ~not_evaluated:[ memo_missed ] ~killed:2
-          Sections.Suite),
-      "mutants: 1 survived of 4 reached by this suite, 2 killed, 1 not \
-       evaluated" );
+        summary ~survivors:s ~unknown:[ memo_missed ] ~killed:2 Sections.Suite),
+      "mutants: 1 survived of 4 reached by this suite, 2 killed, 1 unknown" );
   ]
 
 let block witnesses =
@@ -2724,7 +2719,7 @@ let reproduce_rows =
         ] ) );
     ( "no survivor, nothing to arm",
       (exe, Fun.id, { loop_report with Sections.survivors = [] }, []) );
-    ("no survivor among not evaluated ones", (exe, Fun.id, reached_report, []));
+    ("no survivor among unknown ones", (exe, Fun.id, reached_report, []));
   ]
 
 let reproduce_row (_, (invocation, config, m, expected)) =
@@ -2742,7 +2737,7 @@ let arm_mirror () =
           (at_rest
              {
                reached_report with
-               Sections.not_evaluated =
+               Sections.unknown =
                  [ { memo_missed with Sections.invocation = `Mirrors } ];
              })))
 

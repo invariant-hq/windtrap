@@ -1550,14 +1550,12 @@ let diagnostic (m : mutant) =
      else strf "lines %d-%d" m.line m.end_line)
     m.col m.end_col
 
-type not_evaluated = { mutant : mutant; invocation : Run.invocation }
 type unknown = { mutant : mutant; reason : string; invocation : Run.invocation }
 type refused = { executable : string; reason : string; mutants : int }
 type scope = Suite | Selected of int | Executables of int
 
 type mutation = {
   survivors : survivor list;
-  not_evaluated : not_evaluated list;
   unknown : unknown list;
   refused : refused list;
   unreached : (string * int) list;
@@ -1645,9 +1643,7 @@ let mutation_summary (m : mutation) =
       (List.length m.unknown) m.refused
   in
   let reached =
-    let n =
-      m.killed + survived + List.length m.not_evaluated + unknown + m.not_tested
-    in
+    let n = m.killed + survived + unknown + m.not_tested in
     match m.scope with
     | Suite -> strf "%d reached by this suite" n
     | Selected tests ->
@@ -1662,8 +1658,6 @@ let mutation_summary (m : mutation) =
        ]
      else [ [ plain reached ] ])
     @ term m.killed (fun n -> [ styled `Green (strf "%d killed" n) ])
-    @ term (List.length m.not_evaluated) (fun n ->
-        [ styled `Yellow (strf "%d not evaluated" n) ])
     @ term unknown (fun n -> [ styled `Yellow (strf "%d unknown" n) ])
     @ term (List.length m.unreached) (fun n ->
         [ styled `Yellow (strf "%d never reached" n) ])
@@ -1679,33 +1673,6 @@ let mutation_summary (m : mutation) =
     | Suite | Selected _ -> []
   in
   plain "mutants: " :: separated (plain ", ") terms
-
-(* Each mutant with the command that tests it in a new process, which starts
-   from no state that a dry run left. *)
-let not_evaluated_section ~tests = function
-  | [] -> []
-  | not_evaluated ->
-      let mutant (n : not_evaluated) =
-        [
-          Line
-            [
-              plain "  ";
-              styled `Bold n.mutant.id;
-              plain (strf "  %s \u{2192} %s" n.mutant.before n.mutant.after);
-            ];
-          Hint
-            ("    arm: "
-            ^ arm_command ~invocation:n.invocation ~tests n.mutant.id);
-        ]
-      in
-      Rule (Some (strf "not evaluated (%d)" (List.length not_evaluated)))
-      :: Line
-           [
-             plain
-               "  Each site ran in the dry run and not in its mutant's child.";
-           ]
-      :: List.concat_map mutant not_evaluated
-      @ [ Rule None ]
 
 (* Each mutant with why no run judged it, and the command that runs it
    again. *)
@@ -1816,7 +1783,6 @@ let mutation_closing ~(config : Run.config) (m : mutation) =
   let invocation = config.invocation and tests = `Run config in
   let sections =
     [
-      not_evaluated_section ~tests m.not_evaluated;
       unknown_section ~tests m.unknown;
       unreached_section m.unreached;
       outside_tests_section m.outside_tests;
@@ -1852,7 +1818,6 @@ let mutation_report ~invocation (m : mutation) =
   join
     [
       survivors;
-      not_evaluated_section ~tests:(`Filter None) m.not_evaluated;
       unknown_section ~tests:(`Filter None) m.unknown;
       refused_section m.refused;
       unreached_section m.unreached;

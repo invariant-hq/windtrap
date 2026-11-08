@@ -15,15 +15,15 @@ let ( let* ) = Result.bind
 (* Frames *)
 
 (* What a worker sends: that a new start of the executable reached its run
-   and serves, a report of [Run.serve], the mutants each test evaluated, and
-   as it ends the coverage counts it hands over and the evaluations of its
-   armed site. *)
+   and serves, a report of [Run.serve], the mutants each window evaluated,
+   that it has evaluated its armed site, once, after the window that did, and
+   as it ends the coverage counts it hands over. *)
 type to_parent =
   | Serving
   | Report of Run.report
   | Reached of { test : string list option; sites : (Mutate.id * int) list }
+  | Evaluated
   | Counts of Coverage.t
-  | Hits of int
 
 (* A frame is a 4-byte length and a [Marshal]led value. Nothing that crosses
    holds a closure, which [Marshal] would refuse at once. *)
@@ -89,22 +89,34 @@ let reach_windows ~send (event : Run.event) =
     ->
       ()
 
+(* The armed mutant of an [--arm] run, which the parent validated. *)
+let armed_spec (config : Run.config) =
+  match config.mutation with
+  | Run.Armed spec -> Result.to_option (Mutate.id_of_string spec)
+  | Run.No_mutation | Run.Loop _ -> None
+
+let evaluates id sites =
+  List.exists (fun (site, _) -> Mutate.compare_id site id = 0) sites
+
 (* The worker is a session of its own, so a terminal's signal reaches the
    parent alone, which forwards it, and the parent kills the group. *)
-let serve (config : Run.config) ~suite tests ~temp_dir ~own_exits ~input ~output
-    =
+let serve (config : Run.config) ~armed ~suite tests ~temp_dir ~own_exits ~input
+    ~output =
   ignore (Unix.setsid ());
   (* What the parent counted before the fork is the parent's to dump, and so
      is what the worker counts, which [last] hands over. *)
   ignore (Coverage.take ());
   (let pid = Unix.getpid () in
    Coverage.hand_over ~self:(fun () -> Unix.getpid () = pid));
-  (* The parent validated an [--arm] identifier, which a re-executed worker
-     arms anew. Evaluations count from here. *)
-  (match config.mutation with
-  | Run.Armed spec ->
-      ignore (Result.bind (Mutate.id_of_string spec) (fun id -> Mutate.arm id))
-  | Run.No_mutation | Run.Loop _ -> ());
+  (* A job's mutant, or an [--arm] run's, which a re-executed worker arms
+     anew; a mutant of the catalogue always arms. Evaluations count from
+     here. *)
+  let armed =
+    match (armed, armed_spec config) with
+    | Some (id, budget), _ -> Result.to_option (Mutate.arm ~budget id)
+    | None, Some id -> Result.to_option (Mutate.arm id)
+    | None, None -> None
+  in
   if mutating config then Mutate.reset_reach ();
   (* A domain the test left running can call exit while the test's domain
      sends, and two frames must not interleave. *)
@@ -113,19 +125,34 @@ let serve (config : Run.config) ~suite tests ~temp_dir ~own_exits ~input ~output
     let frame = frame value in
     Mutex.protect lock (fun () -> write_all output frame 0 (Bytes.length frame))
   in
-  let reached test sites = send (Reached { test; sites }) in
+  (* The parent judges each failure by whether its worker had evaluated the
+     armed site when it sent it, so the window of a test is drained before
+     its [Done], as its [Test_finished] does unless the test ended the case
+     with [Out_of_memory] or [Sys.Break], and that of a release or an exit
+     before its failure. *)
+  let evaluated = ref false in
+  let reached test sites =
+    send (Reached { test; sites });
+    match armed with
+    | Some (m : Mutate.mutant) when (not !evaluated) && evaluates m.id sites ->
+        evaluated := true;
+        send Evaluated
+    | Some _ | None -> ()
+  in
   let last () =
-    (if mutating config then
-       try
-         window ~send:reached None;
-         send (Hits (Mutate.armed_hits ()))
-       with _ -> ());
+    (if mutating config then try window ~send:reached None with _ -> ());
     let counts = Coverage.take () in
     if Coverage.files counts <> [] then try send (Counts counts) with _ -> ()
   in
   let report = function
     | Run.Event event as report ->
         if mutating config then reach_windows ~send:reached event;
+        send (Report report)
+    | Run.Done { served; _ } as report ->
+        if mutating config then window ~send:reached (Some served.result.path);
+        send (Report report)
+    | (Released _ | Outside _) as report ->
+        if mutating config then window ~send:reached None;
         send (Report report)
     | report -> send (Report report)
   in
@@ -152,6 +179,7 @@ type worker = {
   mutable job : case_job option;
   mutable releasing : string option; (* the fixture it announced last *)
   mutable exited : bool; (* it said that code under test called exit *)
+  mutable evaluated : bool; (* it said that it evaluated its armed site *)
   mutable signalled : bool; (* the parent sent it the run's signal *)
   mutable hung_up : bool; (* [requests] is closed *)
   mutable status : Unix.process_status option; (* once it is reaped *)
@@ -204,6 +232,7 @@ let worker ?start_log pid ~temp_dir (requests, reports) =
     job = None;
     releasing = None;
     exited = false;
+    evaluated = false;
     signalled = false;
     hung_up = false;
     status = None;
@@ -221,16 +250,6 @@ let quiet_config ~temp_dir (config : Run.config) =
   }
 
 let null () = Unix.openfile "/dev/null" [ Unix.O_WRONLY ] 0
-
-(* A mutant is armed as its worker starts, after module initialisation, and
-   its evaluations count from there. A mutant of the catalogue always arms,
-   and one that did not would count no hit. *)
-let arm = function
-  | None -> ()
-  | Some (id, budget) -> (
-      match Mutate.arm ~budget id with
-      | Ok _ -> Mutate.reset_reach ()
-      | Error _ -> ())
 
 (* A fork of the parent before it ran any test, so the worker starts from
    what module initialisation built and nothing a test left. The buffers are
@@ -256,8 +275,8 @@ let fork ~quiet ~armed config ~suite tests =
           end
           else config
         in
-        arm armed;
-        serve config ~suite tests ~temp_dir ~own_exits:false ~input ~output
+        serve config ~armed ~suite tests ~temp_dir ~own_exits:false ~input
+          ~output
       with _ -> Unix._exit 2)
   | pid ->
       Unix.close input;
@@ -479,9 +498,8 @@ let work w ~suite tests =
          with Sys_error _ -> ());
         let serving = frame Serving in
         write_all w.output serving 0 (Bytes.length serving);
-        arm armed;
-        serve config ~suite tests ~temp_dir:w.dir ~own_exits:true ~input:w.input
-          ~output:w.output
+        serve config ~armed ~suite tests ~temp_dir:w.dir ~own_exits:true
+          ~input:w.input ~output:w.output
       with _ -> Unix._exit 2)
 
 (* A worker started again skips the calls before its own, which its parent
@@ -618,12 +636,17 @@ let before_tests status text =
 let deadline (case : Test_tree.case) limit =
   Option.map (fun l -> float_of_int (case.retries + 1) *. 3. *. l) limit
 
+(* A row, with whether its worker had evaluated the armed site by then. *)
 type settled =
-  | Served of { served : Run.served; stopped : bool }
-  | Lost of Run.result
+  | Served of { served : Run.served; stopped : bool; evaluated : bool }
+  | Lost of { result : Run.result; evaluated : bool }
 
-let supervise ?(on_event = ignore) ~on_reach (config : Run.config) ~suite tests
-    ~spawn =
+let counted_failure (r : Run.result) =
+  r.counted
+  && match r.outcome with Failure.Fail _ -> true | Pass | Skip _ -> false
+
+let supervise ?(on_event = ignore) ~on_reach ~on_failure (config : Run.config)
+    ~suite tests ~spawn =
   let started = Os.counter () in
   let* selection = Run.select config ~suite tests in
   let run = Run.supervising config ~suite in
@@ -659,7 +682,8 @@ let supervise ?(on_event = ignore) ~on_reach (config : Run.config) ~suite tests
   let stopping = ref false and uncorrected = ref false in
   let rev_release_failures = ref [] in
   let interrupted = ref None in
-  let fail_outside failure =
+  let fail_outside w failure =
+    on_failure None ~evaluated:w.evaluated;
     rev_release_failures := failure :: !rev_release_failures
   in
   let give event =
@@ -667,10 +691,11 @@ let supervise ?(on_event = ignore) ~on_reach (config : Run.config) ~suite tests
     Capture.drain ()
   in
   let drop w = workers := List.filter (fun x -> x != w) !workers in
-  let lose (job : case_job) failure =
-    settled.(job.index) <-
-      Some
-        (Lost (Run.lost run job.case failure ~duration:(Os.count_s job.started)))
+  let lose w (job : case_job) failure =
+    let result =
+      Run.lost run job.case failure ~duration:(Os.count_s job.started)
+    in
+    settled.(job.index) <- Some (Lost { result; evaluated = w.evaluated })
   in
   (* A worker that ended on its own: its test fails saying how, and what it
      was releasing fails the run. A worker that a signal interrupted ends the
@@ -694,14 +719,14 @@ let supervise ?(on_event = ignore) ~on_reach (config : Run.config) ~suite tests
                 before it began to run tests"
                (ended status))
         in
-        lose job
+        lose w job
           (match Option.get start with
           | "" -> failure
           | text -> Failure.with_output_tail (Failure.tail text) failure)
     | Some job, _, _ ->
         w.job <- None;
         let loc = job.case.loc in
-        lose job
+        lose w job
           (if w.exited then
              Failure.message ?loc
                ("the test called exit, which ended its worker; " ^ Run.exit_text)
@@ -710,7 +735,7 @@ let supervise ?(on_event = ignore) ~on_reach (config : Run.config) ~suite tests
                (strf "the test ended its worker process, which %s"
                   (ended status)))
     | None, Some name, _ when status <> Unix.WEXITED 0 ->
-        fail_outside
+        fail_outside w
           (Failure.with_phase Failure.Release
              (Failure.message
                 (strf "%s: its worker process %s while releasing it" name
@@ -723,7 +748,7 @@ let supervise ?(on_event = ignore) ~on_reach (config : Run.config) ~suite tests
     ignore (reap w);
     bury w;
     w.job <- None;
-    lose job (Failure.timeout ?loc:job.case.loc limit)
+    lose w job (Failure.timeout ?loc:job.case.loc limit)
   in
   (* An event of the case that the observer is at is given at once, and one
      of a later case when that case is reached. The parent gives each row's
@@ -754,8 +779,8 @@ let supervise ?(on_event = ignore) ~on_reach (config : Run.config) ~suite tests
     | Event event -> observe w event
     | Released failures ->
         w.releasing <- None;
-        rev_release_failures := List.rev_append failures !rev_release_failures
-    | Outside failure -> fail_outside failure
+        List.iter (fail_outside w) failures
+    | Outside failure -> fail_outside w failure
     | Exited -> w.exited <- true
     | Judge _ | Done _ -> ()
   in
@@ -775,7 +800,10 @@ let supervise ?(on_event = ignore) ~on_reach (config : Run.config) ~suite tests
     | Reached { test; sites } ->
         on_reach test sites;
         drain w
-    | Hits _ | Serving -> drain w
+    | Evaluated ->
+        w.evaluated <- true;
+        drain w
+    | Serving -> drain w
     | exception Closed -> ()
   in
   let finish w =
@@ -808,13 +836,15 @@ let supervise ?(on_event = ignore) ~on_reach (config : Run.config) ~suite tests
       | None -> Option.iter answer running.(!reached)
       | Some settled ->
           let job = Option.get running.(!reached) in
-          let result, corrected, stopped =
+          let result, corrected, stopped, evaluated =
             match settled with
-            | Lost result -> (result, false, false)
-            | Served { served; stopped } ->
+            | Lost { result; evaluated } -> (result, false, false, evaluated)
+            | Served { served; stopped; evaluated } ->
                 let result, corrected = Run.adjudicate run job.case served in
-                (result, corrected, stopped)
+                (result, corrected, stopped, evaluated)
           in
+          if counted_failure result then
+            on_failure (Some result.path) ~evaluated;
           if not job.shown then give (Test_started { path = job.case.path });
           List.iter give (List.rev job.rev_events);
           Run.add_result run result;
@@ -877,12 +907,13 @@ let supervise ?(on_event = ignore) ~on_reach (config : Run.config) ~suite tests
           job
     | Counts counts, _ -> Coverage.absorb counts
     | Reached { test; sites }, _ -> on_reach test sites
-    | Hits _, _ -> ()
+    | Evaluated, _ -> w.evaluated <- true
     | Report (Judge attempt), Some job ->
         job.asked <- Some (attempt, Os.counter ())
     | Report (Done { served; stopped; retire }), Some job ->
         w.job <- None;
-        settled.(job.index) <- Some (Served { served; stopped });
+        settled.(job.index) <-
+          Some (Served { served; stopped; evaluated = w.evaluated });
         (* A domain the test spawned may still run, and would run into the
            next test. *)
         if retire then finish w
@@ -1032,17 +1063,36 @@ let supervise ?(on_event = ignore) ~on_reach (config : Run.config) ~suite tests
 
 (* The parent's own evaluations, at module initialization, are outside
    every test. *)
-let execute ?(on_reach = fun _ _ -> ()) ?(on_event = ignore)
-    (config : Run.config) ~suite tests =
-  if mutating config then window ~send:on_reach None;
+let execute ?(on_reach = fun _ _ -> ()) ?(on_failure = fun _ ~evaluated:_ -> ())
+    ?(on_event = ignore) (config : Run.config) ~suite tests =
   let spawning = if Sys.win32 then `None else spawning () in
   if config.in_process || spawning = `None then (
-    let on_event event =
+    (* This process is the run's one worker. *)
+    let armed = armed_spec config
+    and evaluated = ref false in
+    let on_reach test sites =
+      (match armed with
+      | Some id when evaluates id sites -> evaluated := true
+      | Some _ | None -> ());
+      on_reach test sites
+    in
+    let on_event (event : Run.event) =
       if mutating config then reach_windows ~send:on_reach event;
+      (match event with
+      | Test_finished result when counted_failure result ->
+          on_failure (Some result.path) ~evaluated:!evaluated
+      | _ -> ());
       on_event event
     in
+    if mutating config then window ~send:on_reach None;
     let ran = Run.execute ~on_event config ~suite tests in
     if mutating config then window ~send:on_reach None;
+    Result.iter
+      (fun (outcome : Run.outcome) ->
+        List.iter
+          (fun _ -> on_failure None ~evaluated:!evaluated)
+          outcome.release_failures)
+      ran;
     ran)
   else
     let spawn () =
@@ -1050,7 +1100,8 @@ let execute ?(on_reach = fun _ _ -> ()) ?(on_event = ignore)
       | `Exec -> exec ~quiet:false ~armed:None config ~suite tests
       | `Fork | `None -> fork ~quiet:false ~armed:None config ~suite tests
     in
-    supervise ~on_event ~on_reach config ~suite tests ~spawn
+    if mutating config then window ~send:on_reach None;
+    supervise ~on_event ~on_reach ~on_failure config ~suite tests ~spawn
 
 (* Fresh workers *)
 
@@ -1066,15 +1117,10 @@ type job = {
 type ended = Ran | Lost of string | Expired
 
 type ran = {
-  results : Run.result list;
-  release_failures : Failure.t list;
-  armed_hits : int;
+  results : (Run.result * bool) list;
+  release_failures : (Failure.t * bool) list;
   ended : ended;
 }
-
-let counted_failure (r : Run.result) =
-  r.counted
-  && match r.outcome with Failure.Fail _ -> true | Pass | Skip _ -> false
 
 (* A job's state while its workers run it. A worker that retires leaves the
    rest of the job's cases to a fresh one. *)
@@ -1085,9 +1131,8 @@ type state = {
   mutable w : worker;
   mutable pending : string list; (* not yet sent *)
   mutable finishing : bool; (* Finish was sent *)
-  mutable rev_results : Run.result list;
-  mutable rev_failures : Failure.t list;
-  mutable hits : int;
+  mutable rev_results : (Run.result * bool) list;
+  mutable rev_failures : (Failure.t * bool) list;
 }
 
 let fresh (config : Run.config) ~suite tests jobs ~on_ran ~on_signal =
@@ -1119,7 +1164,6 @@ let fresh (config : Run.config) ~suite tests jobs ~on_ran ~on_signal =
         {
           results = List.rev st.rev_results;
           release_failures = List.rev st.rev_failures;
-          armed_hits = st.hits;
           ended;
         }
   in
@@ -1138,7 +1182,6 @@ let fresh (config : Run.config) ~suite tests jobs ~on_ran ~on_signal =
           finishing = false;
           rev_results = [];
           rev_failures = [];
-          hits = 0;
         }
       in
       incr next;
@@ -1172,20 +1215,26 @@ let fresh (config : Run.config) ~suite tests jobs ~on_ran ~on_signal =
     match receive st.w.reports with
     | exception (Closed | Failure _ | End_of_file) -> closed st
     | Report (Done { served; retire; _ }) ->
-        st.rev_results <- served.result :: st.rev_results;
-        if st.job.bail && counted_failure served.result then st.pending <- [];
+        st.rev_results <- (served.result, st.w.evaluated) :: st.rev_results;
+        (* A failure before the armed site was evaluated is not the
+           mutant's, and the next reaching test may still kill it. *)
+        if st.job.bail && st.w.evaluated && counted_failure served.result then
+          st.pending <- [];
         if retire then begin
           st.finishing <- true;
           request st.w Finish
         end
         else send_next st
     | Report (Released failures) ->
-        st.rev_failures <- List.rev_append failures st.rev_failures
-    | Report (Outside failure) -> st.rev_failures <- failure :: st.rev_failures
+        List.iter
+          (fun f -> st.rev_failures <- (f, st.w.evaluated) :: st.rev_failures)
+          failures
+    | Report (Outside failure) ->
+        st.rev_failures <- (failure, st.w.evaluated) :: st.rev_failures
     | Report Exited -> st.w.exited <- true
     | Serving -> st.w.serving <- true
+    | Evaluated -> st.w.evaluated <- true
     | Report (Event _ | Judge _) | Reached _ | Counts _ -> ()
-    | Hits hits -> st.hits <- st.hits + hits
   in
   let expired st =
     kill st.w;

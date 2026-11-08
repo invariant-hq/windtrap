@@ -287,12 +287,6 @@ let arm ?(budget = max_int) (id : id) =
           let candidates = List.map (site_mutant first) indices in
           Error (Ambiguous { id; candidates }))
 
-(* Each registration of the armed file counts its own evaluations. *)
-let armed_hits () =
-  List.fold_left
-    (fun acc entry -> acc + Atomic.get entry.reach.(entry.armed_index))
-    0 state.armed
-
 (* The reach map *)
 
 type reached = { mutant : mutant; hits : int }

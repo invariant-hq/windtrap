@@ -1907,9 +1907,9 @@ let verdict_rows =
       ( (fun r -> Report.mutation_survived r ~hits:2 ~xfail_failed:true),
         "mutant survived: the site was evaluated 2 times and only xfail tests \
          failed.\n" ) );
-    ( "not evaluated",
-      ( (fun r -> Report.mutation_not_evaluated r),
-        "mutant not evaluated: no selected test ran the site.\n" ) );
+    ( "unknown, with its reason",
+      ( (fun r -> Report.mutation_unknown r "no selected test ran the site"),
+        "mutant unknown: no selected test ran the site.\n" ) );
     ( "not reached, only xfail tests ran the site",
       ( (fun r -> Report.mutation_not_reached r),
         "mutant not reached: only xfail tests ran the site.\n" ) );
@@ -1981,7 +1981,6 @@ let ge_survivor =
 let loop_report =
   {
     Sections.survivors = [ add_survivor; ge_survivor ];
-    not_evaluated = [];
     unknown = [];
     refused = [];
     unreached = [ ("lib/calc.ml", 40); ("lib/calc.ml", 41) ];

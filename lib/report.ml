@@ -1067,10 +1067,9 @@ let mutation_survived t ~hits ~xfail_failed =
   in
   put t [ styled `Red line ]
 
-let mutation_not_evaluated t =
+let mutation_unknown t reason =
   clear_live t;
-  put t
-    [ styled `Yellow "mutant not evaluated: no selected test ran the site." ]
+  put t [ styled `Yellow (strf "mutant unknown: %s." reason) ]
 
 let mutation_not_reached t =
   clear_live t;

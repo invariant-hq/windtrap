@@ -147,7 +147,7 @@ let survived_in verdicts =
       match r.verdict with
       | Survived { first; others } ->
           Ids.add (Mutate.id_to_string r.id) (first :: others) acc
-      | Killed | Unknown _ | Not_evaluated | Outside_tests | Unreached -> acc)
+      | Killed | Unknown _ | Outside_tests | Unreached -> acc)
     Ids.empty
     (Verdicts.records verdicts)
 
@@ -203,19 +203,6 @@ let merge ~source files =
           (List.sort_uniq compare witnesses);
     }
   in
-  (* The first executable, in the order of [files], that did not evaluate
-     the mutant is the one its command runs. A merge is [Not_evaluated] only
-     when a file is. *)
-  let not_evaluated (r : Verdicts.record) : Sections.not_evaluated =
-    let id = Mutate.id_to_string r.id in
-    let missed f = verdict_in f id = Some Verdicts.Not_evaluated in
-    let invocation =
-      match List.find_opt missed files with
-      | Some f -> f.invocation
-      | None -> assert false
-    in
-    { mutant = mutant r; invocation }
-  in
   (* A merge is [Unknown] only when a file is. The first executable that ran
      the mutant and could not judge it names it, with its reason; a mutant
      that only refused suites hold counts under the first of them. *)
@@ -248,12 +235,6 @@ let merge ~source files =
   let survivors =
     pick (fun r ->
         match r.verdict with Survived _ -> Some (survivor r) | _ -> None)
-  in
-  let not_evaluated =
-    pick (fun r ->
-        match r.verdict with
-        | Not_evaluated -> Some (not_evaluated r)
-        | _ -> None)
   in
   let unknown, untested =
     List.partition_map Fun.id
@@ -316,7 +297,6 @@ let merge ~source files =
   in
   ( {
       Sections.survivors;
-      not_evaluated;
       unknown;
       refused;
       unreached;

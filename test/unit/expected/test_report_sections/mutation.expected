@@ -174,10 +174,11 @@ mutants: 16 reached, 16 killed, 3 executables
 
 mutants: 1 reached, «g|1 killed», «y|124 never reached», 1 executable
 
-=== not evaluated: each mutant with the command that arms it
-«d|─────────────────── not evaluated (1) ────────────────────»
-  Each site ran in the dry run and not in its mutant's child.
+=== a mutant its child did not evaluate is unknown, with its reason and the command that arms it
+«d|────────────────────── unknown (1) ───────────────────────»
+File "lib/memo.ml", line 4, characters 17-22:
   «b|lib/memo.ml:4:17:sub»  a + b → a - b
+    its site ran in the dry run and not in its mutant's child
     arm: ./test_memo.exe --arm lib/memo.ml:4:17:sub
 «d|──────────────────────────────────────────────────────────»
 
@@ -185,7 +186,7 @@ mutants: 1 reached, «g|1 killed», «y|124 never reached», 1 executable
   «y|2»  lib/calc.ml   lines 40-41
 «d|──────────────────────────────────────────────────────────»
 
-mutants: 4 reached by this suite, «g|3 killed», «y|1 not evaluated», «y|2 never reached»
+mutants: 4 reached by this suite, «g|3 killed», «y|1 unknown», «y|2 never reached»
 
 === evaluated outside tests follows never reached
 ─────────────────── never reached (2) ────────────────────
@@ -210,11 +211,12 @@ mutants: 3 reached by this suite, 3 killed, 2 never reached, 3 evaluated outside
 reproduce: dune exec --instrument-with ppx_windtrap.mutate test/test_calc.exe -- --arm lib/calc.ml:13:11:add
 mutants: «r|2 survived» of 5 reached by this suite, «g|3 killed», «y|2 never reached»
 
-=== a loop's not-evaluated section keeps the run's selection
+=== a loop's unknown section keeps the run's selection
 
-─────────────────── not evaluated (1) ────────────────────
-  Each site ran in the dry run and not in its mutant's child.
+────────────────────── unknown (1) ───────────────────────
+File "lib/memo.ml", line 4, characters 17-22:
   lib/memo.ml:4:17:sub  a + b → a - b
+    its site ran in the dry run and not in its mutant's child
     arm: ./test_memo.exe --arm lib/memo.ml:4:17:sub -f 'memoized'
 ──────────────────────────────────────────────────────────
 
@@ -222,7 +224,7 @@ mutants: «r|2 survived» of 5 reached by this suite, «g|3 killed», «y|2 neve
   2  lib/calc.ml   lines 40-41
 ──────────────────────────────────────────────────────────
 
-mutants: 4 reached by this suite, 3 killed, 1 not evaluated, 2 never reached
+mutants: 4 reached by this suite, 3 killed, 1 unknown, 2 never reached
 
 === outside tests alone, in a loop: a blank line opens it
 

@@ -11,7 +11,6 @@ type verdict =
   | Killed
   | Unknown of string
   | Survived of { first : reaching_test; others : reaching_test list }
-  | Not_evaluated
   | Outside_tests
   | Unreached
 
@@ -26,9 +25,8 @@ let survived ts =
 
 (* The order in which verdicts outrank one another in a merge. *)
 let rank = function
-  | Killed -> 5
-  | Unknown _ -> 4
-  | Not_evaluated -> 3
+  | Killed -> 4
+  | Unknown _ -> 3
   | Survived _ -> 2
   | Outside_tests -> 1
   | Unreached -> 0
@@ -40,10 +38,8 @@ let merge_verdict a b =
   | Survived x, Survived y ->
       survived (x.first :: y.first :: (x.others @ y.others))
   | Unknown x, Unknown y -> Unknown (if String.compare x y <= 0 then x else y)
-  | ( ( Killed | Unknown _ | Not_evaluated | Survived _ | Outside_tests
-      | Unreached ),
-      ( Killed | Unknown _ | Not_evaluated | Survived _ | Outside_tests
-      | Unreached ) ) ->
+  | ( (Killed | Unknown _ | Survived _ | Outside_tests | Unreached),
+      (Killed | Unknown _ | Survived _ | Outside_tests | Unreached) ) ->
       if rank a >= rank b then a else b
 
 (* Collections *)
@@ -91,7 +87,7 @@ let add t r =
   let r =
     match r.verdict with
     | Survived s -> { r with verdict = survived (s.first :: s.others) }
-    | Killed | Unknown _ | Not_evaluated | Outside_tests | Unreached -> r
+    | Killed | Unknown _ | Outside_tests | Unreached -> r
   in
   Id_map.update r.id
     (function None -> Some r | Some prior -> Some (combine prior r))
@@ -104,7 +100,7 @@ let merge a b = Id_map.union (fun _ a b -> Some (combine a b)) a b
 
 let format =
   {
-    Instr.magic = "windtrap-mutants-v5";
+    Instr.magic = "windtrap-mutants-v6";
     kind = "verdict";
     dir = "mutants";
     ext = "mutants";
@@ -145,7 +141,7 @@ type file = {
      <file> <line> <col> <end line> <end col> <rewrite> <before> <after> <verdict>
 
    with one such line for each record, in [Mutate.compare_id] order.
-   [<verdict>] is [unreached], [outside_tests], [killed], [not_evaluated],
+   [<verdict>] is [unreached], [outside_tests], [killed],
    [unknown <reason>], or [survived <n>] and then [n] reaching tests, each
    [<k>] and then its [k] names. [load] reads this grammar and nothing else, and refuses a rewrite
    outside [Mutate.rewrites], which no report could render. *)
@@ -158,7 +154,6 @@ let load path =
     match Instr.read_word c "verdict" with
     | "unreached" -> Unreached
     | "killed" -> Killed
-    | "not_evaluated" -> Not_evaluated
     | "outside_tests" -> Outside_tests
     | "unknown" -> Unknown (Instr.read_name c "reason")
     | "survived" ->
@@ -223,7 +218,6 @@ let save ?identity ?refused path t =
   let add_verdict b = function
     | Unreached -> Buffer.add_string b "unreached"
     | Killed -> Buffer.add_string b "killed"
-    | Not_evaluated -> Buffer.add_string b "not_evaluated"
     | Outside_tests -> Buffer.add_string b "outside_tests"
     | Unknown reason -> Printf.bprintf b "unknown %a" add_name reason
     | Survived s ->

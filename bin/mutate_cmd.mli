@@ -124,8 +124,8 @@ val run : string list -> int
 
     The result is:
     - [0] when the report was printed, no mutant survived and every file was
-      tested. Unreached, unknown and not-evaluated mutants are listed and do not
-      fail the command. It is also [0] for the help page.
+      tested. Unreached and unknown mutants are listed and do not fail the
+      command. It is also [0] for the help page.
     - [1] when the report was printed and at least one mutant survived every
       executable that reached it, or a file is refused: a merge without that
       suite's verdicts is not the project's. The command has no threshold, so

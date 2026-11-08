@@ -394,16 +394,23 @@ evaluate each mutant and the report name them in a survivor's block,
 which turns a score into a list of tests to strengthen. Each reached
 mutant runs in a worker of its own, started as a run's workers are, and
 the worker runs only the tests that reach its mutant, up to the first
-failure. A tool outside the suite would rebuild the suite for each
+failure that kills it. A tool outside the suite would rebuild the suite for each
 mutant, and could not name the tests.
 
 A worker that ran another mutant, or the dry run, keeps what they
 cached: measured on windtrap's suites, reusing workers changed a
 verdict. A fresh one starts from module initialization, so a memoised
-site is judged on what its tests do. Its run still counts the
-evaluations of its armed site, and a mutant whose site it never
-evaluated is not evaluated. Called a survivor, it would send a reader
-to strengthen tests that were never given the mutant.
+site is judged on what its tests do. Until a worker evaluates the
+armed site it computes the original program, so a test that passes
+there tested nothing and one that fails there failed for another
+reason: a mutant that its run never evaluated, or whose only failures
+came before the site ran, is unknown. Called a survivor, it would send
+a reader to strengthen tests that were never given the mutant; called
+killed, it would hide a survivor. Shi, Bell and Marinov's study of
+flaky tests under mutation (ISSTA 2019) counts a test toward a mutant
+only if it executed the mutant. Windtrap's unit is the worker rather
+than the test, because a test can fail on what an earlier test of its
+worker built with the mutant, a fixture or a cached value.
 
 The cases of a property derive from the root seed and the test's path,
 and a mutation run fixes the root, so the same mutant meets the same

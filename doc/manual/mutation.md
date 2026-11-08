@@ -156,8 +156,9 @@ mutants: 3 survived of 9 reached by this suite, 6 killed, 1 never reached
 
 The `reproduce:` line arms the first survivor. `--arm ID` runs the
 suite once with that mutant active, names it first, records no
-correction, and ends on its verdict: killed, survived, or not evaluated
-when no selected test ran the site. Under `dune runtest`, the mirror
+correction, and ends on its verdict: killed, survived, or unknown when
+no selected test ran the site or every failure came before the site
+ran. Under `dune runtest`, the mirror
 arms it in every suite that holds its file, as in
 `WINDTRAP_MUTATE_ARM=ID dune runtest --force --instrument-with ppx_windtrap.mutate`
 (see [Mutation testing a project](#mutation-testing-a-project) for
@@ -246,7 +247,7 @@ the withheld-correction warning:
 - The determinism probe runs the suite again and checks that it passes
   again.
 - Each reached mutant runs with its reaching tests, up to the first
-  failure. One that evaluates its site more than `hits * 8 + 1000`
+  failure that kills it. One that evaluates its site more than `hits * 8 + 1000`
   times, `hits` being the dry run's count, fails its test, and the
   mutant is killed.
 
@@ -261,14 +262,23 @@ given, a mutation run draws its property cases from one fixed seed,
 `s1:6d7574616e747321`, so a verdict is the same on every run of one
 binary.
 
-A mutant whose run ends before its tests do, because the process
-crashed or exited or passed a deadline taken from the dry run, is
-unknown, and so is no survivor. The report lists it under `unknown`
-with the reason and an `arm:` command, which runs the suite with it
-armed and shows what happens. A mutant whose tests pass without
-evaluating its site, as when an earlier test that its run leaves out
-decided whether the site runs, is not evaluated and is no survivor
-either, listed under `not evaluated` with its `arm:` command.
+A mutant's worker computes the original program until it evaluates the
+mutant's site, so a failure kills the mutant only in a worker that had
+evaluated the site by then, a fixture release's failure only in the
+worker that released, the release's own evaluations included. A test
+that spawns a domain retires its worker, and the mutant's later tests
+run in a fresh one, which has evaluated nothing: each failure is judged
+by the worker it happened in.
+
+A mutant no run could judge is unknown, and so is no survivor: its run
+ended before its tests did, because the process crashed or exited or
+passed a deadline taken from the dry run; or each of its failures came
+before its worker evaluated the site, as when a test fails without an
+earlier test that the mutant's run leaves out; or its tests passed
+without evaluating the site, as when such a test decided whether the
+site runs. The report lists it under `unknown` with the reason and an
+`arm:` command, which runs the suite with it armed and shows what
+happens.
 
 A test's domains count as the test: what a domain it spawned
 evaluates belongs to the test once the test joins it, or waits for the
@@ -310,8 +320,8 @@ where `1` is the bare flag, `0` its absence, and a value that spells no
 boolean the prefixes. A suite with no mutant to test, such as a suite
 over another library, runs as usual and says why on standard error. A
 mutant killed by one executable is killed. A mutant that no executable
-killed and one could not judge is unknown, and one that another did not
-evaluate is not evaluated; neither is a survivor. The command exits 1
+killed and one could not judge is unknown, and is no survivor. The
+command exits 1
 when a mutant survived every executable that reached it, listing the
 most reached first, and when an executable could not mutation-test its
 suite: the merge names it under `not mutation-tested`, with the mutants

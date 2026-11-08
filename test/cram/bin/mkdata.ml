@@ -12,7 +12,7 @@
      string escapes, so a session can name any byte.
 
    mkdata mutants OUT [--exe EXE] FILE:LINE:COL:REWRITE:BEFORE:AFTER=VERDICT...
-     VERDICT is killed, not_evaluated, outside_tests, unreached or
+     VERDICT is killed, outside_tests, unreached, unknown:REASON or
      survived:TESTS, where TESTS are ';'-separated paths of '/'-separated
      names.
 
@@ -64,7 +64,6 @@ let coverage ~identity out records =
 
 let verdict = function
   | "killed" -> Verdicts.Killed
-  | "not_evaluated" -> Verdicts.Not_evaluated
   | "outside_tests" -> Verdicts.Outside_tests
   | "unreached" -> Verdicts.Unreached
   | v when String.starts_with ~prefix:"unknown:" v ->

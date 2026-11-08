@@ -160,18 +160,13 @@ val arm : ?budget:int -> id -> (mutant, arm_error) result
 
     [budget] bounds the evaluations of the armed site. With a budget of [n],
     evaluation [n + 1] raises {!Runaway}. There is no bound by default. The
-    bound is compared with the count of each registration on its own, where
-    {!armed_hits} adds them up. The count is the one since the last
-    {!reset_reach}, and not since this call, so a caller that inherited counts,
-    as a forked child does, must call {!reset_reach} after [arm].
+    bound is compared with the count of each registration on its own. The count
+    is the one since the last {!reset_reach}, and not since this call, so a
+    caller that inherited counts, as a forked child does, must call
+    {!reset_reach} after [arm].
 
     Raises [Invalid_argument] if [budget] is not positive, and nothing is
     disarmed then. *)
-
-val armed_hits : unit -> int
-(** [armed_hits ()] is the number of evaluations of the armed site since the
-    last {!reset_reach}, added over every module that registered its file. It is
-    [0] when nothing is armed. *)
 
 exception Runaway of { id : id; hits : int; budget : int }
 (** Raised by the guard of the armed site [id] when [hits], its count of

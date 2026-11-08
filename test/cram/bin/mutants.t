@@ -174,26 +174,12 @@ and a test's verdict in another executable outranks it:
   
   mutants: 1 reached, 1 killed, 1 never reached, 1 evaluated outside tests, 2 executables
 
-A mutant whose site one executable's child did not evaluate is no
-survivor: it is listed with the command that arms it, and exits 0:
-
-  $ plant "$scratch/not-evaluated" && cd "$scratch/not-evaluated"
-  $ mkdata mutants _build/_mutants/a.mutants "$add=killed" "$sub=survived:cli/runs"
-  $ mkdata mutants _build/_mutants/b.mutants "$add=killed" "$sub=not_evaluated"
-  $ run windtrap mutants
-  ─────────────────── not evaluated (1) ────────────────────
-    Each site ran in the dry run and not in its mutant's child.
-    lib/calc.ml:2:14:sub  a - b → a + b
-      arm: WINDTRAP_MUTATE_ARM=lib/calc.ml:2:14:sub dune runtest --force --instrument-with ppx_windtrap.mutate
-  ──────────────────────────────────────────────────────────
-  
-  mutants: 2 reached, 1 killed, 1 not evaluated, 2 executables
-
-A mutant whose run one executable could not finish is no survivor
-either: it is listed with that executable's reason and the command that
-arms it, and exits 0. An executable that could not mutation-test its
-suite is named, with the mutants it leaves unknown, so its mutants never
-read as the others' survivors; the merge then exits 1:
+A mutant whose run one executable could not finish, or that its child
+did not evaluate, is no survivor: it is listed with that executable's
+reason and the command that arms it, and exits 0. An executable that
+could not mutation-test its suite is named, with the mutants it leaves
+unknown, so its mutants never read as the others' survivors; the merge
+then exits 1:
 
   $ plant "$scratch/unknown" && cd "$scratch/unknown"
   $ mkdata mutants _build/_mutants/a.mutants "$add=killed" "$sub=survived:cli/runs" \
@@ -561,13 +547,13 @@ is to delete it, which a coverage dump in the directory shares:
   $ printf 'windtrap-mutants-v0\n1\nsome older payload\n' > _build/_mutants/old.mutants
   $ run windtrap mutants
   --- stderr
-  windtrap: .../old.mutants: not a windtrap verdict file (expected header "windtrap-mutants-v5", found "windtrap-mutants-v0"); files written by other windtrap versions are not readable - delete the stale verdict files, then re-run the mutation tests
+  windtrap: .../old.mutants: not a windtrap verdict file (expected header "windtrap-mutants-v6", found "windtrap-mutants-v0"); files written by other windtrap versions are not readable - delete the stale verdict files, then re-run the mutation tests
   [1]
   $ rm _build/_mutants/old.mutants
   $ printf 'windtrap-coverage-v3\n0\n' > _build/_mutants/cov.mutants
   $ run windtrap mutants
   --- stderr
-  windtrap: .../cov.mutants: not a windtrap verdict file (expected header "windtrap-mutants-v5", found "windtrap-coverage-v3"); files written by other windtrap versions are not readable - delete the stale verdict files, then re-run the mutation tests
+  windtrap: .../cov.mutants: not a windtrap verdict file (expected header "windtrap-mutants-v6", found "windtrap-coverage-v3"); files written by other windtrap versions are not readable - delete the stale verdict files, then re-run the mutation tests
   [1]
 
 A PATH that cannot be used fails the command, and the files named beside

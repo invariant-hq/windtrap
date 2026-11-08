@@ -121,7 +121,7 @@ let unmutated ~scope reason =
 
 type site = {
   mutable tests : string list list; (* the reaching tests, newest first *)
-  mutable hits : int; (* the evaluations, saturating at [max_int] *)
+  mutable hits : int; (* the evaluations *)
 }
 
 type reach = {
@@ -137,8 +137,6 @@ let xfail_paths tests =
     (Test_tree.flatten tests);
   Hashtbl.mem paths
 
-let saturating_add a b = if a > max_int - b then max_int else a + b
-
 (* What the workers of the dry run report. A test marked xfail reaches no
    mutant, so what it evaluated is dropped. *)
 let observe reach ~xfail test sites =
@@ -152,7 +150,7 @@ let observe reach ~xfail test sites =
           | None -> Hashtbl.add reach.sites id { tests = [ path ]; hits }
           | Some site ->
               site.tests <- path :: site.tests;
-              site.hits <- saturating_add site.hits hits)
+              site.hits <- site.hits + hits)
         sites
 
 (* The verdict file *)
@@ -266,8 +264,9 @@ let not_a_number =
 let probe ~dry_run (ran : Supervisor.ran) =
   let executed = List.length dry_run in
   let skipped = List.length (List.filter is_skip dry_run) in
-  let failed = List.filter counted_failure ran.results in
-  let ran_skipped = List.length (List.filter is_skip ran.results) in
+  let results = List.map fst ran.results in
+  let failed = List.filter counted_failure results in
+  let ran_skipped = List.length (List.filter is_skip results) in
   match ran.ended with
   | Supervisor.Expired ->
       Error
@@ -278,8 +277,8 @@ let probe ~dry_run (ran : Supervisor.ran) =
         (strf "the determinism probe's run %s, where the dry run's did not. %s"
            how not_a_number)
   | Ran
-    when List.length ran.results = executed
-         && ran_skipped = skipped && failed = [] ->
+    when List.length results = executed && ran_skipped = skipped && failed = []
+    ->
       Ok ()
   | Ran ->
       Error
@@ -289,7 +288,7 @@ let probe ~dry_run (ran : Supervisor.ran) =
             and failing %d%s. %s"
            executed
            (if executed = 1 then "" else "s")
-           skipped (List.length ran.results) ran_skipped (List.length failed)
+           skipped (List.length results) ran_skipped (List.length failed)
            (match failed with
            | [] -> ""
            | failed ->
@@ -301,27 +300,38 @@ let probe ~dry_run (ran : Supervisor.ran) =
                ^ ")")
            not_a_number)
 
-(* The unexpected pass of a test marked xfail counts as a failure of the run
-   and kills no mutant. *)
-let killed_by (ran : Supervisor.ran) =
-  ran.release_failures <> []
-  || List.exists
-       (fun (r : Run.result) -> Option.is_none r.xfail && counted_failure r)
-       ran.results
-
 let seconds s = if s < 10. then strf "%.1fs" s else strf "%.0fs" s
 
-(* A run that ended before its tests did judged nothing, and tests that did
-   not evaluate the armed site tested nothing: neither is a survivor. *)
+(* A worker computes the unmutated program until it evaluates the armed site,
+   so a failure there is not the mutant's, and tests that never evaluated it
+   tested nothing: none of these is a verdict. The unexpected pass of a test
+   marked xfail counts as a failure of the run and kills no mutant. *)
 let verdict ~deadline paths (ran : Supervisor.ran) =
   match ran.ended with
   | Supervisor.Expired ->
       Verdicts.Unknown ("its run passed its deadline of " ^ seconds deadline)
   | Lost how -> Verdicts.Unknown ("its run " ^ how)
-  | Ran ->
-      if killed_by ran then Verdicts.Killed
-      else if ran.armed_hits = 0 then Verdicts.Not_evaluated
-      else Verdicts.survived paths
+  | Ran -> (
+      let failed =
+        List.filter
+          (fun ((r : Run.result), _) ->
+            Option.is_none r.xfail && counted_failure r)
+          ran.results
+      in
+      let unevaluated what =
+        Verdicts.Unknown
+          (what ^ " failed before its child evaluated the armed site")
+      in
+      if List.exists snd failed || List.exists snd ran.release_failures then
+        Verdicts.Killed
+      else
+        match (failed, ran.release_failures) with
+        | (r, _) :: _, _ -> unevaluated (Test_tree.path_to_string r.path)
+        | [], _ :: _ -> unevaluated "a fixture release"
+        | [], [] when List.exists snd ran.results -> Verdicts.survived paths
+        | [], [] ->
+            Verdicts.Unknown
+              "its site ran in the dry run and not in its mutant's child")
 
 (* Recorded paths are relative to the project root; under [dune runtest] the
    working directory is inside [_build], where they do not open. *)
@@ -365,7 +375,6 @@ let shown (mutant : Mutate.mutant) : Report_sections.mutant =
 type found = {
   mutable records : Verdicts.record list;
   mutable survivors : Report_sections.survivor list;
-  mutable not_evaluated : Report_sections.not_evaluated list;
   mutable unknown : Report_sections.unknown list;
 }
 
@@ -391,10 +400,6 @@ let found_verdict renderer (config : Run.config) ~locations found mutant verdict
       in
       Report.mutation_survivor renderer survivor;
       found.survivors <- survivor :: found.survivors
-  | Not_evaluated ->
-      found.not_evaluated <-
-        { mutant = shown mutant; invocation = config.invocation }
-        :: found.not_evaluated
   | Unknown reason ->
       found.unknown <-
         { mutant = shown mutant; reason; invocation = config.invocation }
@@ -466,9 +471,7 @@ let test_mutants renderer ~suite (config : Run.config) tests ~dry_run ~wall
     (fun (case : Test_tree.case) ->
       Hashtbl.replace locations (Test_tree.path_to_string case.path) case.loc)
     (Test_tree.flatten tests);
-  let found =
-    { records = []; survivors = []; not_evaluated = []; unknown = [] }
-  in
+  let found = { records = []; survivors = []; unknown = [] } in
   let mutants = Array.of_list reached in
   let total = Array.length mutants in
   let given = ref 0 in
@@ -514,7 +517,6 @@ let report ~narrowed ~dry_run ~reached ~unreached ~outside found :
   let lines = List.map (fun (m : Mutate.mutant) -> (m.id.file, m.id.line)) in
   {
     survivors = List.rev found.survivors;
-    not_evaluated = List.rev found.not_evaluated;
     unknown = List.rev found.unknown;
     refused = [];
     unreached = lines unreached;
@@ -547,7 +549,8 @@ let loop renderer ~scope ~suite (config : Run.config) tests =
     let on_reach = observe reach ~xfail:(xfail_paths tests) in
     match
       Report.run
-        ~execute:(Supervisor.execute ~on_reach)
+        ~execute:(fun ?on_event config ->
+          Supervisor.execute ~on_reach ?on_event config)
         ~suite
         { config with junit = None }
         tests
@@ -646,7 +649,7 @@ let armed renderer ~spec ~suite (config : Run.config) tests =
       (* What module initialization evaluated ran before the mutant was. *)
       Mutate.reset_reach ();
       (* The evaluations of the armed site inside tests marked xfail, which
-         reach no mutant, and elsewhere. *)
+         reach no mutant, and inside the others. *)
       let xfail = xfail_paths tests in
       let hits = ref 0 and xfail_hits = ref 0 in
       let on_reach test sites =
@@ -654,37 +657,50 @@ let armed renderer ~spec ~suite (config : Run.config) tests =
           (fun (site, n) ->
             if Mutate.compare_id site mutant.id = 0 then
               match test with
-              | Some path when xfail path ->
-                  xfail_hits := saturating_add !xfail_hits n
-              | Some _ | None -> hits := saturating_add !hits n)
+              | Some path when xfail path -> xfail_hits := !xfail_hits + n
+              | Some _ -> hits := !hits + n
+              | None -> ())
           sites
       in
+      (* As in the loop, a failure kills only in a worker that had evaluated
+         the armed site. *)
+      let killed = ref false and unevaluated = ref None in
+      let on_failure test ~evaluated =
+        match test with
+        | Some path when xfail path -> ()
+        | _ when evaluated -> killed := true
+        | _ ->
+            if Option.is_none !unevaluated then
+              unevaluated :=
+                Some
+                  (Option.fold ~none:"a fixture release"
+                     ~some:Test_tree.path_to_string test)
+      in
       let result =
-        Report.run ~execute:(Supervisor.execute ~on_reach) ~suite config tests
+        Report.run
+          ~execute:(Supervisor.execute ~on_reach ~on_failure)
+          ~suite config tests
       in
       let xfail_failed (outcome : Run.outcome) =
         List.exists
           (fun (r : Run.result) -> Option.is_some r.xfail && counted_failure r)
           (Run.results outcome.run)
       in
-      let killed (outcome : Run.outcome) =
-        outcome.release_failures <> []
-        || List.exists
-             (fun (r : Run.result) ->
-               Option.is_none r.xfail && counted_failure r)
-             (Run.results outcome.run)
-      in
-      (match result with
-      | Ok outcome when killed outcome -> Report.mutation_killed renderer
-      | Ok outcome when Run.results outcome.run <> [] -> (
+      (match (result, !unevaluated) with
+      | Ok _, _ when !killed -> Report.mutation_killed renderer
+      | Ok _, Some what ->
+          Report.mutation_unknown renderer
+            (what
+           ^ " failed in a worker that had not yet evaluated the armed site")
+      | Ok outcome, None when Run.results outcome.run <> [] -> (
           match (!hits, !xfail_hits) with
-          | 0, 0 -> Report.mutation_not_evaluated renderer
+          | 0, 0 ->
+              Report.mutation_unknown renderer "no selected test ran the site"
           | 0, _ -> Report.mutation_not_reached renderer
           | _ ->
-              Report.mutation_survived renderer
-                ~hits:(saturating_add !hits !xfail_hits)
+              Report.mutation_survived renderer ~hits:(!hits + !xfail_hits)
                 ~xfail_failed:(xfail_failed outcome))
-      | Ok _ | Error _ -> ());
+      | Ok _, None | Error _, _ -> ());
       flush_descriptors ();
       result
 
