@@ -108,53 +108,46 @@ let operators =
     ("||", (Con, "and", "&&"));
   ]
 
-(* A family keeps its sites only where its operators are Stdlib's: [ari]
-   names its replacement, [con] turns [&&] into an [if], and [cmp] swaps
-   operands of one type. A binding that this pass sees loses the family of
-   its name; what an [open] brings in is not seen. *)
-let kept_families structure =
-  let lose name lost =
+(* A rewrite relies on a name being Stdlib's: [ari] names its replacement,
+   [con] turns [&&] into an [if], [cmp] swaps operands of one type, and
+   [none] types [Some e] beside [Stdlib.Option.None]. A file that
+   redeclares such a name where this scan sees it loses the rewrite: a
+   binding of an operator loses its family, and a constructor named [Some]
+   or [None], in a variant, an extension or an exception, loses [none].
+   What an [open] brings in is not seen. *)
+type lost = { families : family list; none : bool }
+
+let lost structure =
+  let rebinds name lost =
     match List.assoc_opt name operators with
-    | Some (family, _, _) -> family :: lost
+    | Some (family, _, _) -> { lost with families = family :: lost.families }
     | None -> lost
+  and declares name lost =
+    { lost with none = lost.none || name = "Some" || name = "None" }
   in
   let scan =
     object
-      inherit [family list] Ast_traverse.fold as super
+      inherit [lost] Ast_traverse.fold as super
 
       method! pattern p lost =
         let lost =
           match p.ppat_desc with
-          | Ppat_var { txt; _ } -> lose txt lost
+          | Ppat_var { txt; _ } -> rebinds txt lost
           | _ -> lost
         in
         super#pattern p lost
 
       method! value_description vd lost =
-        super#value_description vd (lose vd.pval_name.txt lost)
+        super#value_description vd (rebinds vd.pval_name.txt lost)
+
+      method! constructor_declaration cd lost =
+        super#constructor_declaration cd (declares cd.pcd_name.txt lost)
+
+      method! extension_constructor ec lost =
+        super#extension_constructor ec (declares ec.pext_name.txt lost)
     end
   in
-  let lost = scan#structure structure [] in
-  fun family -> not (List.mem family lost)
-
-(* [none] keeps its sites only where [Some] and [None] are Stdlib's, since
-   its guard types [Some e] beside [Stdlib.Option.None]: a file that declares
-   a constructor of either name, in a variant, an extension or an exception,
-   loses it. As for an operator, what an [open] brings in is not seen. *)
-let keeps_none structure =
-  let declares name declared = declared || name = "Some" || name = "None" in
-  let scan =
-    object
-      inherit [bool] Ast_traverse.fold as super
-
-      method! constructor_declaration cd declared =
-        super#constructor_declaration cd (declares cd.pcd_name.txt declared)
-
-      method! extension_constructor ec declared =
-        super#extension_constructor ec (declares ec.pext_name.txt declared)
-    end
-  in
-  not (scan#structure structure false)
+  scan#structure structure { families = []; none = false }
 
 (* Mutants *)
 
@@ -484,7 +477,8 @@ type site = {
   after : string;
 }
 
-class instrumenter ~keeps ~keeps_none ~module_name =
+class instrumenter ~lost ~module_name =
+  let keeps family = not (List.mem family lost.families) in
   object (self)
     inherit Ast_traverse.map as super
 
@@ -616,7 +610,7 @@ class instrumenter ~keeps ~keeps_none ~module_name =
                 after = flipped;
               }
       | Pexp_construct ({ txt = Lident "Some"; _ }, Some _)
-        when keeps_none && not (at_load || recursive) ->
+        when not (lost.none || at_load || recursive) ->
           let none = [%expr Stdlib.Option.None] in
           Some { guard = Constant none; rewrite = "none"; after = "None" }
       | _ -> None
@@ -955,10 +949,7 @@ let transform_impl_file ctxt ast =
   then ast
   else
     let module_name = generated_module_name file in
-    let instrumenter =
-      new instrumenter
-        ~keeps:(kept_families ast) ~keeps_none:(keeps_none ast) ~module_name
-    in
+    let instrumenter = new instrumenter ~lost:(lost ast) ~module_name in
     let instrumented = instrumenter#structure ast in
     match instrumenter#sites with
     | [] -> ast

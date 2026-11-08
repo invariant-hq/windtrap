@@ -16,11 +16,11 @@
 
     Every mutant of a project is compiled into one binary, in which the runtime
     arms at most one. A mutant changes meaning only in the process that armed
-    it. That process is a forked child of the [--mutate] loop, or the run itself
-    under [--arm]. This rewriter's part is that a program with no mutant armed
-    computes what the uninstrumented one does. A guard evaluates each operand
-    once and in the order of the original application, a tail call stays a tail
-    call, and a [lazy] is compiled as it was. *)
+    it, a worker of the [--mutate] loop or of an [--arm] run. This rewriter's
+    part is that a program with no mutant armed computes what the uninstrumented
+    one does. A guard evaluates each operand once and in the order of the
+    original application, a tail call stays a tail call, and a [lazy] is
+    compiled as it was. *)
 
 (** {1:law The emission law}
 
@@ -33,26 +33,25 @@
     The arms of [int] are constants, and [del]'s armed arm is [()]. [bool] names
     the other of [true] and [false], which resolves as the original does unless
     a type in scope redeclares one of the two constructors without the other.
+    [neg] names [Stdlib.not] alone.
 
-    [ari] is the one exception, because [a + b] cannot become [a - b] without
-    naming [-]. A file that rebinds an operator where the rewriter can see it
-    thus loses the whole family of that operator: [ari] for [+], [-], [+.] and
-    [-.], [cmp] for the six comparisons, and [con] for [&&] and [||]. [neg]
-    names [Stdlib.not] alone and is never lost. A rebinding is seen when a
-    variable pattern anywhere in the file, or a value description such as an
-    [external], bears the name of the operator. What an [open] brings into scope
-    is not seen. When such an operator does not fit an arm, the file fails to
-    compile under instrumentation, with the error at the expression in the
-    source, and [[@@@mutate exclude_file]] is the way out.
+    Some rewrites rely on a name being Stdlib's, and are lost where the file
+    redeclares it. [ari] names the operator it puts in, as [-] for [a + b],
+    [cmp] swaps its operator's operands and [con] turns its operator into an
+    [if], so a file that rebinds an operator loses its family: [ari] for [+],
+    [-], [+.] and [-.], [cmp] for the six comparisons, and [con] for [&&] and
+    [||]. A rebinding is seen when a variable pattern anywhere in the file, or a
+    value description such as an [external], bears the operator's name. [none]'s
+    two arms share a type only when the original [Some] is Stdlib's, beside
+    [Stdlib.Option.None], so a file that declares a constructor named [Some] or
+    [None], in a variant, an extension or an exception, loses [none].
 
-    [none]'s armed arm is [Stdlib.Option.None] and its disarmed arm the original
-    [Some e], which must then be Stdlib's [Some] for the two arms to share a
-    type. A file that declares a constructor named [Some] or [None], in a
-    variant, an extension or an exception, thus has no [none] site. A [Some]
-    that an [open] brings into scope is not seen: the guard types the expression
-    as Stdlib's option, so the file fails to compile under instrumentation
-    wherever the context expects the opened type, and [[@mutate off]] on the
-    expression or [[@@@mutate exclude_file]] is the way out. *)
+    What an [open] brings into scope is not seen, and neither is a [Some] that
+    the expected type brings in from another module, as in
+    [let f () : M.t = Some 3]. When such a name does not fit an arm, the file
+    fails to compile under instrumentation, with the error at the expression in
+    the source, and [[@mutate off]] on the expression or
+    [[@@@mutate exclude_file]] is the way out. *)
 
 (** {1:sites Sites}
 
@@ -94,9 +93,7 @@
     two arms are constants, which the type-checker counts as a syntactic value,
     so a binding that generalizes still does. The guard of [none] is
     [if armed then Stdlib.Option.None else Some e], whose [e] is rewritten in
-    its turn, and which is a syntactic value when [e] is one. The context types
-    its [None] first, and [Some e] then gets the type that the context expects,
-    as the original did.
+    its turn, and which is a syntactic value when [e] is one.
 
     A boolean context is the condition of an [if] or of a [while], the guard of
     an arm, or a direct operand of [&&] or [||] in a file that keeps the [con]

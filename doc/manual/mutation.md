@@ -498,7 +498,8 @@ carry no mutant, and the rest of their file is mutated. A file that
 rebinds an operator loses the rewrites of its family: the four
 arithmetic operators, the six comparisons or the two connectives; one
 that declares a constructor named `Some` or `None` loses `none`. A
-`Some` that an `open` brings in is not seen and can fail the
+`Some` that an `open` or the expected type brings in from another
+module, as in `let f () : M.t = Some 3`, is not seen and can fail the
 instrumented build, which `[@mutate off]` on the expression fixes.
 
 ## Where the verdicts are
