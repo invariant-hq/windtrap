@@ -357,8 +357,8 @@ clock, plus ten times the measured timings of the tests that child runs,
 floored at one second) and under the runtime's per-site hit-count
 budget. A child that passes its deadline is killed with its process
 group and its mutant is unknown, since a run that could not finish
-decided nothing; a child whose armed site passes the budget fails its
-test, and its mutant is killed. Neither bounds a child's memory: a
+decided nothing; a child whose armed site passes the budget kills its
+mutant, whatever its test makes of the exception. Neither bounds a child's memory: a
 mutant that keeps what each iteration of an endless loop allocates can
 grow by gigabytes before its deadline. Seven mutants of `lib/gen.ml`,
 `lib/choice.ml` and `lib/stateful.ml` do, so the whole tree fits under

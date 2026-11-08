@@ -37,6 +37,7 @@
   inline/inline_armed.ml
   partitions/runner_main.exe
   runaway/runaway_main.exe
+  runaway/swallow_main.exe
   (glob_files ../../support/preload/*.so))
  (action
   (run %{test} -j 1)))

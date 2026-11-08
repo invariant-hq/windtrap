@@ -15,12 +15,17 @@ let ( let* ) = Result.bind
 (* Frames *)
 
 (* What a worker sends: that a new start of the executable reached its run
-   and serves, a report of [Run.serve], the mutants each window evaluated,
-   and as it ends the coverage counts it hands over. *)
+   and serves, a report of [Run.serve], the mutants each window evaluated
+   and whether its armed site ran away there, and as it ends the coverage
+   counts it hands over. *)
 type to_parent =
   | Serving
   | Report of Run.report
-  | Reached of { test : string list option; sites : (Mutate.id * int) list }
+  | Reached of {
+      test : string list option;
+      sites : (Mutate.id * int) list;
+      runaway : bool;
+    }
   | Counts of Coverage.t
 
 (* A frame is a 4-byte length and a [Marshal]led value. Nothing that crosses
@@ -78,6 +83,7 @@ let window ~send test =
   | reached ->
       send test
         (List.map (fun (r : Mutate.reached) -> (r.mutant.id, r.hits)) reached)
+        ~runaway:(List.exists (fun (r : Mutate.reached) -> r.runaway) reached)
 
 let reach_windows ~send (event : Run.event) =
   match event with
@@ -131,7 +137,7 @@ let serve (config : Run.config) ~armed ~suite tests ~temp_dir ~own_exits ~input
      [Done], as its [Test_finished] does unless the test ended the case with
      [Out_of_memory] or [Sys.Break], and that of a release or an exit before
      its failure. *)
-  let reached test sites = send (Reached { test; sites }) in
+  let reached test sites ~runaway = send (Reached { test; sites; runaway }) in
   let last () =
     (if mutating config then try window ~send:reached None with _ -> ());
     let counts = Coverage.take () in
@@ -813,7 +819,7 @@ let supervise ?(on_event = ignore) ~on_reach ~on_failure (config : Run.config)
   let take w = function
     | Report report -> common w report
     | Counts counts -> Coverage.absorb counts
-    | Reached { test; sites } -> windowed w test sites
+    | Reached { test; sites; _ } -> windowed w test sites
     | Serving -> serves w
   in
   (* A worker releases its fixtures, runs what its tests registered with
@@ -925,7 +931,7 @@ let supervise ?(on_event = ignore) ~on_reach ~on_failure (config : Run.config)
         match reap w with Some status -> died w status | None -> ())
     | Serving, _ -> serves w
     | Counts counts, _ -> Coverage.absorb counts
-    | Reached { test; sites }, _ -> windowed w test sites
+    | Reached { test; sites; _ }, _ -> windowed w test sites
     | Report (Judge attempt), Some job ->
         job.asked <- Some (attempt, Os.counter ())
     | Report (Done { served; stopped; retire }), Some job ->
@@ -1154,7 +1160,8 @@ let execute ?(on_reach = fun _ _ -> ())
        its failures are judged after it, as a worker's [Released] is. *)
     let armed = armed_spec config
     and evaluated = ref false in
-    let on_reach test sites =
+    (* An [--arm] run arms no budget, so no window runs away. *)
+    let on_reach test sites ~runaway:_ =
       if evaluates armed sites then evaluated := true;
       on_reach test sites
     in
@@ -1182,7 +1189,8 @@ let execute ?(on_reach = fun _ _ -> ())
       | `Exec -> exec ~quiet:false ~armed:None config ~suite tests
       | `Fork | `None -> fork ~quiet:false ~armed:None config ~suite tests
     in
-    if mutating config then window ~send:on_reach None;
+    if mutating config then
+      window ~send:(fun test sites ~runaway:_ -> on_reach test sites) None;
     supervise ~on_event ~on_reach ~on_failure config ~suite tests ~spawn
 
 (* Fresh workers *)
@@ -1201,6 +1209,7 @@ type ended = Ran | Lost of string | Expired
 type ran = {
   results : (Run.result * bool) list;
   release_failures : (Failure.t * bool) list;
+  runaway : bool;
   ended : ended;
 }
 
@@ -1215,6 +1224,7 @@ type state = {
   mutable finishing : bool; (* Finish was sent *)
   mutable rev_results : (Run.result * bool) list;
   mutable rev_failures : (Failure.t * bool) list;
+  mutable runaway : bool; (* a window held the armed site's runaway *)
 }
 
 let fresh (config : Run.config) ~suite tests jobs ~on_ran ~on_signal =
@@ -1246,6 +1256,7 @@ let fresh (config : Run.config) ~suite tests jobs ~on_ran ~on_signal =
         {
           results = List.rev st.rev_results;
           release_failures = List.rev st.rev_failures;
+          runaway = st.runaway;
           ended;
         }
   in
@@ -1264,6 +1275,7 @@ let fresh (config : Run.config) ~suite tests jobs ~on_ran ~on_signal =
           finishing = false;
           rev_results = [];
           rev_failures = [];
+          runaway = false;
         }
       in
       incr next;
@@ -1299,9 +1311,12 @@ let fresh (config : Run.config) ~suite tests jobs ~on_ran ~on_signal =
     | Report (Done { served; retire; _ }) ->
         st.rev_results <- (served.result, st.w.evaluated) :: st.rev_results;
         (* A failure before the armed site was evaluated is not the
-           mutant's, and the next reaching test may still kill it. *)
-        if st.job.bail && st.w.evaluated && counted_failure served.result then
-          st.pending <- [];
+           mutant's, and the next reaching test may still kill it. A runaway
+           kills, whatever the test made of it. *)
+        if
+          st.job.bail
+          && (st.runaway || (st.w.evaluated && counted_failure served.result))
+        then st.pending <- [];
         if retire then begin
           st.finishing <- true;
           request st.w Finish
@@ -1315,9 +1330,10 @@ let fresh (config : Run.config) ~suite tests jobs ~on_ran ~on_signal =
         st.rev_failures <- (failure, st.w.evaluated) :: st.rev_failures
     | Report Exited -> st.w.exited <- true
     | Serving -> st.w.serving <- true
-    | Reached { sites; _ } ->
+    | Reached { sites; runaway; _ } ->
         if evaluates (Option.map fst st.job.armed) sites then
-          st.w.evaluated <- true
+          st.w.evaluated <- true;
+        if runaway then st.runaway <- true
     | Report (Event _ | Judge _) | Counts _ -> ()
   in
   let expired st =

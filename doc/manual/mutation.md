@@ -250,9 +250,10 @@ the withheld-correction warning:
 - The determinism probe runs the suite again and checks that it passes
   again.
 - Each reached mutant runs with its reaching tests, up to the first
-  failure that kills it. One that evaluates its site more than `hits * 8 + 1000`
-  times, `hits` being the dry run's count, fails its test, and the
-  mutant is killed.
+  failure that kills it. One that evaluates its site more than
+  `hits * 8 + 1000` times in a worker, `hits` being its tests' count in
+  the dry run, is killed, whatever the code under test makes of the
+  exception that the site then raises.
 
 Every pass runs in worker processes, under `--in-process` too, and the
 probe and each mutant in a worker of its own, started as a run's workers are (see [Running

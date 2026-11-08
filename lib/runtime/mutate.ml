@@ -289,11 +289,13 @@ let arm ?(budget = max_int) (id : id) =
 
 (* The reach map *)
 
-type reached = { mutant : mutant; hits : int }
+type reached = { mutant : mutant; hits : int; runaway : bool }
 
 (* A site is reported when its count moved since the previous drain, so
    nothing marks a site and nothing is lost when domains evaluate at once:
-   every increment lands in exactly one drain. *)
+   every increment lands in exactly one drain. The guard raises at every
+   evaluation whose count is above the budget, so it raised in the window
+   iff the armed site's count moved there and is now above it. *)
 let drain () =
   let moved acc entry =
     let acc = ref acc in
@@ -303,7 +305,8 @@ let drain () =
         let hits = now - entry.last.(i) in
         if hits <> 0 then begin
           entry.last.(i) <- now;
-          acc := { mutant = site_mutant entry i; hits } :: !acc
+          let runaway = i = entry.armed_index && now > state.budget in
+          acc := { mutant = site_mutant entry i; hits; runaway } :: !acc
         end)
       entry.reach;
     !acc
@@ -312,7 +315,12 @@ let drain () =
   let merge acc r =
     match acc with
     | prev :: acc when compare_mutant prev.mutant r.mutant = 0 ->
-        { prev with hits = prev.hits + r.hits } :: acc
+        {
+          prev with
+          hits = prev.hits + r.hits;
+          runaway = prev.runaway || r.runaway;
+        }
+        :: acc
     | acc -> r :: acc
   in
   let by_mutant a b = compare_mutant a.mutant b.mutant in

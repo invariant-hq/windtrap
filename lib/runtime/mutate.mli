@@ -171,10 +171,12 @@ val arm : ?budget:int -> id -> (mutant, arm_error) result
 exception Runaway of { id : id; hits : int; budget : int }
 (** Raised by the guard of the armed site [id] when [hits], its count of
     evaluations since the last {!reset_reach}, is above [budget]. It escapes
-    into the mutated program, and a caller that judges the mutant must count
-    that as a kill, by the budget and not by the clock. The count keeps rising,
-    so a program that catches the exception and evaluates the site again gets it
-    again. *)
+    into the mutated program, which may catch it, as code that catches every
+    exception does. The count keeps rising, so a program that catches the
+    exception and evaluates the site again gets it again. The window in which it
+    was raised says so, whatever the program did with it ({!reached}), and a
+    caller that judges the mutant must count that window as a kill, by the
+    budget and not by the clock. *)
 
 (** {1:reach The reach map}
 
@@ -203,6 +205,10 @@ exception Runaway of { id : id; hits : int; budget : int }
 type reached = {
   mutant : mutant;  (** The mutant that was evaluated. *)
   hits : int;  (** The number of evaluations of its guard in the window. *)
+  runaway : bool;
+      (** Whether its guard raised {!Runaway} in the window: [mutant] is the
+          armed one, and its count, compared as {!arm} says, was above the
+          budget at an evaluation of the window. *)
 }
 (** The type for one entry of a drained window. *)
 

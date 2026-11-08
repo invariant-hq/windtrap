@@ -84,7 +84,9 @@ val execute_and_report :
     that released, its release included.
     - A mutant is {!Windtrap_runtime.Verdicts.Killed} when its job counted a
       failure, that of a fixture release included, in a worker that had
-      evaluated the armed site by then, whatever else the job did.
+      evaluated the armed site by then, or when its armed site passed its
+      runaway budget (below), whatever the code under test did with
+      {!Windtrap_runtime.Mutate.Runaway} and whatever else the job did.
     - Otherwise it is {!Windtrap_runtime.Verdicts.Unknown} when its job ended
       before its tests did: its worker was killed by a signal or exited, code
       under test calling [exit] included, or it passed its deadline.
@@ -109,8 +111,13 @@ val execute_and_report :
     least one second. The probe's tests are every executed test.
 
     The runaway budget of a job ({!Windtrap_runtime.Mutate.arm}) is
-    [(hits * 8) + 1000] ([budget_of]) for a site that the dry run evaluated
-    [hits] times.
+    [(hits * 8) + 1000] ([budget_of]) for a site that the job's tests evaluated
+    [hits] times in all in the dry run. Each worker of the job arms it afresh,
+    with the whole budget and its count from zero, so a job whose test retires
+    its worker may evaluate the site up to the budget in each of its workers.
+    The window in which the site passes its budget kills the mutant, a window
+    being a test's or a release's ({!Windtrap_runtime.Mutate.reached}), and the
+    job runs no test after it.
 
     {b The verdict file.} The file holds one record per reached mutant, one
     [Outside_tests] record per mutant of the population evaluated outside tests,

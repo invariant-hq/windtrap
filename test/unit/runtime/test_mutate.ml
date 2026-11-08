@@ -780,6 +780,49 @@ let budget_across_domains () =
       done);
   equal int 1000 (Atomic.get runaways)
 
+(* Each window of the armed site after the budget says that its guard
+   raised there, though the caller caught the exception; a window that did
+   not evaluate it, or evaluated another site, does not. Two registrations
+   are bounded each on its own, and their drained mutant ran away if either
+   did. *)
+let runaway_windows () =
+  let file = "t/windows.ml" in
+  let sites = [| site 1 0 "gt"; site 2 0 "lt" |] in
+  let g1 = Mutate.register ~file ~sites in
+  let g2 = Mutate.register ~file ~sites:(Array.copy sites) in
+  ignore (arm_ok ~budget:2 (id file 1 0 "gt"));
+  Mutate.reset_reach ();
+  let window () =
+    let row (r : Mutate.reached) =
+      if String.equal r.mutant.id.file file then
+        Some
+          (strf "%d:%s x%d%s" r.mutant.id.line r.mutant.id.rewrite r.hits
+             (if r.runaway then " runaway" else ""))
+      else None
+    in
+    String.concat ", " (List.filter_map row (Mutate.drain ()))
+  in
+  ignore (evaluations g1 2);
+  let within = window () in
+  ignore (evaluations g1 1);
+  ignore (g1 1 : bool);
+  let past = window () in
+  ignore (g1 1 : bool);
+  let other = window () in
+  ignore (evaluations g2 1);
+  let second = window () in
+  ignore (evaluations g2 2);
+  let both = window () in
+  equal (list string)
+    [
+      "1:gt x2";
+      "1:gt x1 runaway, 2:lt x1";
+      "2:lt x1";
+      "1:gt x1";
+      "1:gt x2 runaway";
+    ]
+    [ within; past; other; second; both ]
+
 let child_exe =
   Filename.concat
     (Filename.dirname Windtrap_runtime.Instr.executable)
@@ -816,6 +859,10 @@ let reach_map =
         "domains that evaluate the armed site at once raise Runaway at every \
          evaluation past the budget, and only there"
         (disarming budget_across_domains);
+      test
+        "a drain says whether the armed site's guard raised Runaway in its \
+         window, though the caller caught it"
+        (disarming runaway_windows);
       test
         "in a fresh process, the first drain is module initialization's, and \
          the first window counts its own evaluations" (fun () ->

@@ -66,7 +66,9 @@
     evaluations count from there. It sends each window before any later report,
     a release's before the release's failures, so the parent reads from a
     worker's windows whether it had evaluated the armed site when it reports a
-    failure. *)
+    failure. A window also says whether the armed site ran away in it
+    ([Windtrap_runtime.Mutate.reached]), whatever the code under test did with
+    the exception. *)
 
 val execute :
   ?on_reach:
@@ -114,10 +116,14 @@ type job = {
           which its process group is killed. *)
   bail : bool;
       (** Whether the job stops at its first counted failure in a worker that
-          had evaluated the armed site by then. *)
+          had evaluated the armed site by then, and after the first case that
+          ends once a window held the armed site's runaway. *)
   armed : (Windtrap_runtime.Mutate.id * int) option;
       (** The mutant that each of its workers arms before its first case, with
-          its budget ([Windtrap_runtime.Mutate.arm]). *)
+          its budget ([Windtrap_runtime.Mutate.arm]). Each worker arms it
+          afresh, with the whole budget and its count from zero, so a job whose
+          case retires a worker may evaluate the site up to the budget in each
+          of its workers. *)
 }
 (** The type for a job: some cases of the suite, run in one fresh worker. *)
 
@@ -138,6 +144,9 @@ type ran = {
       (** The failures of its releases, and those of no case, each with whether
           its worker had evaluated the armed site when it sent the failure, its
           release included. *)
+  runaway : bool;
+      (** Whether a window of one of its workers held the armed site's runaway,
+          whether or not a case failed of it. *)
   ended : ended;  (** How it ended. *)
 }
 (** The type for what a job did. A job's workers run its cases one after the

@@ -20,6 +20,7 @@ let exe_dir = Filename.dirname Windtrap_runtime.Instr.executable
 let suite_exe = Filename.concat exe_dir "suite_main.exe"
 let plain_exe = Filename.concat exe_dir "plain_main.exe"
 let runaway_exe = Filename.concat exe_dir "runaway/runaway_main.exe"
+let swallow_exe = Filename.concat exe_dir "runaway/swallow_main.exe"
 let inline_exe = Filename.concat exe_dir "inline/runner_main.exe"
 let partitions_exe = Filename.concat exe_dir "partitions/runner_main.exe"
 
@@ -152,6 +153,7 @@ let file_of exe =
   let suite =
     match Filename.basename exe with
     | "runaway_main.exe" -> "spin"
+    | "swallow_main.exe" -> "swallow"
     | "plain_main.exe" -> "plain"
     | "runner_main.exe" -> "inline_armed"
     | _ -> "calc"
@@ -1011,6 +1013,16 @@ let runaway () =
     (Some [ "runaway/spinner.ml:15 killed" ]) (rows r);
   less float_exact ~than:1.0 elapsed
 
+(* The code under test catches the guard's exception and its test passes;
+   the window in which the site ran away kills. *)
+let swallowed () =
+  let r = spawn ~exe:swallow_exe [ mutate ] in
+  equal string "exited 0" r.status;
+  equal text "" r.err;
+  equal
+    (option (list string))
+    (Some [ "runaway/spinner.ml:15 killed" ]) (rows r)
+
 (* [block]'s child blocks on a pipe read until its deadline, after starting
    a grandchild that ignores SIGTERM. *)
 type blocked = { run : ran; grandchildren : int list; elapsed : float }
@@ -1107,6 +1119,7 @@ let limits =
         [ (5, 0); (5, 1); (50, 0); (50, 1) ]
         budget;
       test "a mutant that never terminates is killed by its hit budget" runaway;
+      test "a runaway that the code under test catches still kills" swallowed;
       test "a mutant whose run hangs is unknown at its job's deadline"
         deadline_kill;
       test "a child's deadline is at least one second" (fun () ->
@@ -2242,7 +2255,14 @@ let () =
             List.iter
               (fun name -> remove (Filename.concat dir name))
               (entries dir))
-        [ suite_exe; inline_exe; runaway_exe; plain_exe; partitions_exe ])
+        [
+          suite_exe;
+          inline_exe;
+          runaway_exe;
+          swallow_exe;
+          plain_exe;
+          partitions_exe;
+        ])
 
 let () =
   exit

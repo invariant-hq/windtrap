@@ -39,7 +39,8 @@ type verdict =
   | Killed
       (** A reaching test failed, or a fixture release failed, in a worker that
           had evaluated the armed site by then, its release included for a
-          release. *)
+          release; or the armed site passed its runaway budget
+          ({!Mutate.Runaway}), whatever the code under test made of it. *)
   | Unknown of string
       (** No verdict, and the string says why: a worker ended before its tests
           did, by a crash, an exit or its deadline, and no failure killed; its

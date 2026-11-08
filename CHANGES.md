@@ -25,6 +25,11 @@
 
 ### Mutation testing
 
+- A mutant whose site passes its runaway budget is killed though the
+  code under test catches the exception, as a property's parse that
+  reads it as a rejected input does, where it read as a survivor;
+  `Windtrap_runtime.Mutate.reached` has `runaway`, which says so of a
+  window (doc/manual/mutation.md#what-a-mutation-run-runs).
 - A mutation build counts every evaluation of a site on any number of
   domains, and its guard allocates nothing: a test that spawns domains
   no longer leaves reached mutants never reached, the runaway budget

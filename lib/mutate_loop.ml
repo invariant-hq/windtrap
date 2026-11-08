@@ -297,15 +297,17 @@ let probe ~dry_run (ran : Supervisor.ran) =
 let seconds s = if s < 10. then strf "%.1fs" s else strf "%.0fs" s
 
 (* The verdict of a mutant's tests, for the loop and [--arm] alike
-   (Verdicts): a failure kills only in a worker that had evaluated the armed
-   site by then, a worker that ended before its tests did leaves the mutant
-   unknown, and tests that never evaluated the site tested nothing.
+   (Verdicts): a window in which the armed site ran away kills, whatever the
+   code under test made of the exception, a failure kills only in a worker
+   that had evaluated the armed site by then, a worker that ended before its
+   tests did leaves the mutant unknown, and tests that never evaluated the
+   site tested nothing. [runaway] is whether a window held the runaway;
    [failures] are the counted failures that did not end their worker, in
    order, each named and with whether its worker had evaluated the site;
    [ended] says how a worker ended early; [tested] is whether a test
    evaluated the site. *)
-let judge ~ended ~failures ~tested =
-  if List.exists snd failures then `Killed
+let judge ~runaway ~ended ~failures ~tested =
+  if runaway || List.exists snd failures then `Killed
   else
     match (ended, failures) with
     | Some why, _ -> `Unknown why
@@ -338,7 +340,10 @@ let verdict ~deadline paths (ran : Supervisor.ran) =
         (fun (_, evaluated) -> ("a fixture release", evaluated))
         ran.release_failures
   in
-  match judge ~ended ~failures ~tested:(List.exists snd ran.results) with
+  match
+    judge ~runaway:ran.runaway ~ended ~failures
+      ~tested:(List.exists snd ran.results)
+  with
   | `Killed -> Verdicts.Killed
   | `Unknown why -> Verdicts.Unknown why
   | `Survived -> Verdicts.survived paths
@@ -712,7 +717,8 @@ let armed renderer ~spec ~suite (config : Run.config) tests =
       (match result with
       | Ok outcome when Run.results outcome.run <> [] -> (
           let failures = List.rev !failures and ended = !ended in
-          match judge ~ended ~failures ~tested:(!hits > 0) with
+          (* It arms no budget, so no window runs away. *)
+          match judge ~runaway:false ~ended ~failures ~tested:(!hits > 0) with
           | `Killed -> Report.mutation_killed renderer
           | `Unknown _ when failures = [] && ended = None && !xfail_hits > 0 ->
               Report.mutation_not_reached renderer

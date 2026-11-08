@@ -4,7 +4,7 @@
  (preprocess
   (pps ppx_windtrap.mutate)))
 
-(executable
- (name runaway_main)
- (modules runaway_main)
+(executables
+ (names runaway_main swallow_main)
+ (modules runaway_main swallow_main)
  (libraries windtrap mutate_loop_spinner))
