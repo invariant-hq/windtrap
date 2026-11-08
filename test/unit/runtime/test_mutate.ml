@@ -73,9 +73,7 @@ let drained file =
   in
   String.concat ", " (List.filter_map row (Mutate.drain ()))
 
-let fresh () =
-  ignore (Mutate.drain ());
-  Mutate.next_epoch ()
+let fresh () = ignore (Mutate.drain ())
 
 (* [arm] disarms before it resolves, so an identifier of no catalogued file
    leaves nothing armed. *)
@@ -635,59 +633,37 @@ let arming =
 
 (* The reach map *)
 
-type step = Eval of int | Drain | Next_epoch | Reset
+type step = Eval of int | Drain | Reset
 
 let reach_sites = [| site 1 0 "lt"; site 2 0 "add" |]
 
 let reach_rows =
   [
-    ( "a drain is each site evaluated since the window opened, with its count",
+    ( "a drain is each site evaluated since the previous one, with its count",
       reach_sites,
       [ Eval 0; Eval 0; Eval 1; Drain ],
       [ "1:0:lt x2, 2:0:add x1" ] );
-    ( "a drain empties the marks",
+    ( "a drain reports no site that its window did not evaluate",
       reach_sites,
       [ Eval 0; Drain; Drain ],
       [ "1:0:lt x1"; "" ] );
-    ( "a new epoch marks again the sites it evaluates, and only those",
+    ( "each window reports the sites it evaluates, and only those",
       reach_sites,
-      [
-        Eval 0;
-        Eval 1;
-        Drain;
-        Next_epoch;
-        Eval 1;
-        Drain;
-        Next_epoch;
-        Eval 0;
-        Drain;
-      ],
+      [ Eval 0; Eval 1; Drain; Eval 1; Drain; Eval 0; Drain ],
       [ "1:0:lt x1, 2:0:add x1"; "2:0:add x1"; "1:0:lt x1" ] );
     ( "a drain counts the evaluations of its window, not the earlier ones",
       reach_sites,
-      [ Eval 0; Eval 0; Eval 0; Drain; Next_epoch; Eval 0; Drain ],
-      [ "1:0:lt x3"; "1:0:lt x1" ] );
+      [ Eval 0; Eval 0; Eval 0; Drain; Eval 0; Eval 0; Drain ],
+      [ "1:0:lt x3"; "1:0:lt x2" ] );
     ( "an evaluation between two windows goes to the next drain",
       reach_sites,
       [ Drain; Eval 0; Drain ],
       [ ""; "1:0:lt x1" ] );
-    ( "the marks of an undrained epoch stay for the next drain",
-      reach_sites,
-      [ Eval 0; Next_epoch; Eval 1; Drain ],
-      [ "1:0:lt x1, 2:0:add x1" ] );
-    ( "an undrained mark counts every evaluation across epochs",
-      reach_sites,
-      [ Eval 0; Eval 0; Eval 0; Next_epoch; Eval 0; Drain ],
-      [ "1:0:lt x4" ] );
-    ( "an evaluation after a drain in the same epoch is never drained",
-      reach_sites,
-      [ Eval 0; Drain; Eval 0; Eval 0; Drain; Next_epoch; Eval 0; Drain ],
-      [ "1:0:lt x1"; ""; "1:0:lt x1" ] );
-    ( "reset_reach empties the marks and counts from zero",
+    ( "reset_reach drops the evaluations before it, and counts from zero",
       reach_sites,
       [ Eval 0; Eval 0; Eval 0; Reset; Drain; Eval 0; Drain ],
       [ ""; "1:0:lt x1" ] );
-    ( "reset_reach opens a new epoch",
+    ( "after reset_reach a site that an earlier drain reported reports again",
       reach_sites,
       [ Eval 0; Drain; Eval 0; Reset; Eval 0; Drain ],
       [ "1:0:lt x1"; "1:0:lt x1" ] );
@@ -706,9 +682,6 @@ let drains (claim, sites, steps, expected) =
         ignore (guard i : bool);
         None
     | Drain -> Some (drained file)
-    | Next_epoch ->
-        Mutate.next_epoch ();
-        None
     | Reset ->
         Mutate.reset_reach ();
         None
@@ -720,6 +693,106 @@ let reset_keeps_armed () =
   ignore (arm_ok (id "t/reset_armed.ml" 1 0 "ge"));
   Mutate.reset_reach ();
   equal (list string) [ "true" ] (evaluations g 1)
+
+(* The words that [n] calls of [f] allocate, less what reading the counter
+   does. *)
+let allocated n f =
+  let words n =
+    let before = Gc.minor_words () in
+    for i = 1 to n do
+      f i
+    done;
+    Gc.minor_words () -. before
+  in
+  Float.to_int (words n -. words 0)
+
+let allocates_nothing () =
+  let g =
+    Mutate.register ~file:"t/alloc.ml"
+      ~sites:(Array.init 4 (fun i -> site (i + 1) 0 "not"))
+  in
+  let evaluate i = ignore (Sys.opaque_identity (g (i land 3)) : bool) in
+  let unarmed = allocated 10_000 evaluate in
+  ignore (arm_ok (id "t/alloc.ml" 2 0 "not"));
+  equal (pair int int) (0, 0) (unarmed, allocated 10_000 evaluate)
+
+(* [together n body] runs [body d] on [n] new domains, [d] from [0], which
+   all start once the last has, and joins them. *)
+let together n body =
+  let arrived = Atomic.make 0 in
+  let start d () =
+    Atomic.incr arrived;
+    while Atomic.get arrived < n do
+      Domain.cpu_relax ()
+    done;
+    body d
+  in
+  List.iter Domain.join (List.init n (fun d -> Domain.spawn (start d)))
+
+(* Each domain starts at a site of its own, so their first evaluations of
+   different sites coincide, which is where marking a site once per window
+   lost it. *)
+let domains_lose_nothing () =
+  let domains = 4 and sites = 64 and rounds = 20 in
+  let g =
+    Mutate.register ~file:"t/stress.ml"
+      ~sites:(Array.init sites (fun i -> site (i + 1) 0 "not"))
+  in
+  fresh ();
+  let window () =
+    together domains (fun d ->
+        for k = 0 to (rounds * sites) - 1 do
+          ignore
+            (Sys.opaque_identity (g (((d * sites / domains) + k) mod sites)))
+        done);
+    drained "t/stress.ml"
+  in
+  let every_site =
+    String.concat ", "
+      (List.init sites (fun i -> strf "%d:0:not x%d" (i + 1) (domains * rounds)))
+  in
+  equal (list string)
+    (List.init 20 (fun _ -> every_site))
+    (List.init 20 (fun _ -> window ()))
+
+(* The domain evaluates once before the drain and twice after it, each
+   ordered by an atomic. *)
+let after_the_drain () =
+  let g = Mutate.register ~file:"t/late.ml" ~sites:[| site 1 0 "or" |] in
+  fresh ();
+  let evaluated = Atomic.make false and drained_once = Atomic.make false in
+  let late =
+    Domain.spawn (fun () ->
+        ignore (g 0 : bool);
+        Atomic.set evaluated true;
+        while not (Atomic.get drained_once) do
+          Domain.cpu_relax ()
+        done;
+        ignore (g 0 : bool);
+        ignore (g 0 : bool))
+  in
+  while not (Atomic.get evaluated) do
+    Domain.cpu_relax ()
+  done;
+  let window = drained "t/late.ml" in
+  Atomic.set drained_once true;
+  Domain.join late;
+  equal (list string)
+    [ "1:0:or x1"; "1:0:or x2" ]
+    [ window; drained "t/late.ml" ]
+
+let budget_across_domains () =
+  let g = Mutate.register ~file:"t/budget.ml" ~sites:[| site 1 0 "le" |] in
+  ignore (arm_ok ~budget:3000 (id "t/budget.ml" 1 0 "le"));
+  Mutate.reset_reach ();
+  let runaways = Atomic.make 0 in
+  together 4 (fun _ ->
+      for _ = 1 to 1000 do
+        match g 0 with
+        | (_ : bool) -> ()
+        | exception Mutate.Runaway _ -> Atomic.incr runaways
+      done);
+  equal int 1000 (Atomic.get runaways)
 
 let child_exe =
   Filename.concat
@@ -743,6 +816,20 @@ let reach_map =
     [
       cases "drains" ~id:(fun (claim, _, _, _) -> claim) reach_rows drains;
       test "reset_reach does not disarm" (disarming reset_keeps_armed);
+      test "the guard allocates nothing, armed or not"
+        (disarming allocates_nothing);
+      test
+        "domains that evaluate many sites at once lose no site and no \
+         evaluation of their window"
+        domains_lose_nothing;
+      test
+        "what a domain evaluates after a drain, as a domain left running past \
+         its test does, is counted by the next drain"
+        after_the_drain;
+      test
+        "domains that evaluate the armed site at once raise Runaway at every \
+         evaluation past the budget, and only there"
+        (disarming budget_across_domains);
       test
         "in a fresh process, the first drain is module initialization's, and \
          the first window counts its own evaluations" (fun () ->

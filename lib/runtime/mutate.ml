@@ -4,7 +4,6 @@
   ---------------------------------------------------------------------------*)
 
 let strf = Printf.sprintf
-let saturating_add x y = if x > max_int - y then max_int else x + y
 
 (* Identifiers *)
 
@@ -70,32 +69,27 @@ type mutant = {
 
 let compare_mutant a b = compare_id a.id b.id
 
-(* One registration of a file's table. Each evaluation of site [i] counts in
-   [reach.(i)]; the first one in an epoch marks the site unless it is marked
-   already, and [base.(i)] holds the count before it until [drain] takes the
-   mark. *)
+(* One registration of a file's table. [reach.(i)] counts the evaluations of
+   site [i] since the last [reset_reach]: an atomic increment, so domains that
+   evaluate at once lose none. [last.(i)] is that count at the previous
+   [drain], and only the draining domain touches it. *)
 type entry = {
   file : string;
   sites : site array;
-  reach : int array;
-  seen : int array; (* the epoch of each site's last evaluation *)
-  base : int array; (* [-1] while the site is unmarked *)
+  reach : int Atomic.t array;
+  last : int array;
   mutable armed_index : int; (* [-1] when no site of the table is armed *)
 }
 
 (* The registrations of one file carry equal tables, which is what lets [arm]
-   set them all at one index. Epochs start at 1 and only increase, so the
-   zeroes of a fresh [seen] array mark no site as seen. *)
+   set them all at one index. *)
 type state = {
   mutable registry : entry list; (* newest first *)
-  mutable epoch : int;
-  mutable marked : (entry * int) list; (* newest first *)
   mutable armed : entry list; (* the registrations of the armed file *)
   mutable budget : int;
 }
 
-let state =
-  { registry = []; epoch = 1; marked = []; armed = []; budget = max_int }
+let state = { registry = []; armed = []; budget = max_int }
 
 exception Runaway of { id : id; hits : int; budget : int }
 
@@ -159,23 +153,14 @@ let register ~file ~sites =
         {
           file;
           sites;
-          reach = Array.make n 0;
-          seen = Array.make n 0;
-          base = Array.make n (-1);
+          reach = Array.init n (fun _ -> Atomic.make 0);
+          last = Array.make n 0;
           armed_index = -1;
         }
       in
       state.registry <- entry :: state.registry;
       fun i ->
-        let hits = saturating_add entry.reach.(i) 1 in
-        entry.reach.(i) <- hits;
-        if entry.seen.(i) <> state.epoch then begin
-          entry.seen.(i) <- state.epoch;
-          if entry.base.(i) < 0 then begin
-            entry.base.(i) <- hits - 1;
-            state.marked <- (entry, i) :: state.marked
-          end
-        end;
+        let hits = Atomic.fetch_and_add entry.reach.(i) 1 + 1 in
         if i <> entry.armed_index then false
         else if hits <= state.budget then true
         else
@@ -305,43 +290,48 @@ let arm ?(budget = max_int) (id : id) =
 (* Each registration of the armed file counts its own evaluations. *)
 let armed_hits () =
   List.fold_left
-    (fun acc entry -> saturating_add acc entry.reach.(entry.armed_index))
+    (fun acc entry -> acc + Atomic.get entry.reach.(entry.armed_index))
     0 state.armed
 
 (* The reach map *)
 
 type reached = { mutant : mutant; hits : int }
 
-let next_epoch () = state.epoch <- state.epoch + 1
-
+(* A site is reported when its count moved since the previous drain, so
+   nothing marks a site and nothing is lost when domains evaluate at once:
+   every increment lands in exactly one drain. *)
 let drain () =
-  let marked = state.marked in
-  state.marked <- [];
-  let reached (entry, i) =
-    let hits = entry.reach.(i) - entry.base.(i) in
-    entry.base.(i) <- -1;
-    { mutant = site_mutant entry i; hits }
+  let moved acc entry =
+    let acc = ref acc in
+    Array.iteri
+      (fun i count ->
+        let now = Atomic.get count in
+        let hits = now - entry.last.(i) in
+        if hits <> 0 then begin
+          entry.last.(i) <- now;
+          acc := { mutant = site_mutant entry i; hits } :: !acc
+        end)
+      entry.reach;
+    !acc
   in
-  (* Each registration of a file marks its own copy of a mutant. *)
+  (* Each registration of a file counts its own copy of a mutant. *)
   let merge acc r =
     match acc with
     | prev :: acc when compare_mutant prev.mutant r.mutant = 0 ->
-        { prev with hits = saturating_add prev.hits r.hits } :: acc
+        { prev with hits = prev.hits + r.hits } :: acc
     | acc -> r :: acc
   in
   let by_mutant a b = compare_mutant a.mutant b.mutant in
   List.rev
     (List.fold_left merge []
-       (List.sort by_mutant (List.rev_map reached marked)))
+       (List.sort by_mutant (List.fold_left moved [] state.registry)))
 
 let reset_reach () =
   List.iter
     (fun entry ->
-      Array.fill entry.reach 0 (Array.length entry.reach) 0;
-      Array.fill entry.base 0 (Array.length entry.base) (-1))
-    state.registry;
-  state.marked <- [];
-  next_epoch ()
+      Array.iter (fun count -> Atomic.set count 0) entry.reach;
+      Array.fill entry.last 0 (Array.length entry.last) 0)
+    state.registry
 
 let () =
   Printexc.register_printer (function

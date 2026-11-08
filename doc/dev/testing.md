@@ -48,8 +48,10 @@ what is non-obvious.
   `runtime/` holds the suites over the runtime's modules:
   `test_coverage` and `test_mutate`, each with a child executable (for
   the at_exit dump and for a registration that runs before any window
-  opens); `test_instr`, what the two file formats share (the header, the
-  build paths, the atomic write); and `test_verdicts`, the verdict
+  opens), `test_mutate` also running domains that evaluate one table at
+  once, which a guard that loses an evaluation fails; `test_instr`, what
+  the two file formats share (the header, the build paths, the atomic
+  write); and `test_verdicts`, the verdict
   lattice and the verdict file. `mutate_loop/` drives the mutant loop
   through a real spawned process (a loop that starts a worker per mutant
   cannot be observed from inside its own image), with `plain_main.exe` as the zero-mutant

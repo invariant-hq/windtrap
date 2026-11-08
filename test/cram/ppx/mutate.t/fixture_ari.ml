@@ -8,7 +8,7 @@ let fsum a b = a +. b
 let fdiff a b = a -. b
 
 (* Module initialization is NOT excluded here: the runtime classifies a
-   site from the reach epoch at run time, and the instrumenter must not
+   site from the reach map at run time, and the instrumenter must not
    try to guess. *)
 let origin = 1 + 2
 

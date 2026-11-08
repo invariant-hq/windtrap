@@ -270,6 +270,12 @@ evaluating its site, as when an earlier test that its run leaves out
 decided whether the site runs, is not evaluated and is no survivor
 either, listed under `not evaluated` with its `arm:` command.
 
+A test's domains count as the test: what a domain it spawned
+evaluates belongs to the test once the test joins it, or waits for the
+pool it handed the work to, and a domain still running when its test
+ends counts toward a later one, or none. Every evaluation counts, on
+any number of domains.
+
 A site that no test runs, and that module initialization or a
 fixture release runs, is evaluated outside tests. No run tests its
 mutant, and the report lists its line under `evaluated outside tests`,

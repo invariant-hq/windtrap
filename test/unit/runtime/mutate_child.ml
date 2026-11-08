@@ -3,10 +3,10 @@
    SPDX-License-Identifier: ISC
   ---------------------------------------------------------------------------*)
 
-(* A fresh process is the only one whose epoch counter no test has moved, so
-   only here does module initialization run before any window opens. The
-   binding is the one ppx_windtrap.mutate generates: one [register] per file,
-   whose result is the file's guard. *)
+(* A fresh process is the only one in which nothing has drained, so only
+   here does module initialization run before any window opens. The binding
+   is the one ppx_windtrap.mutate generates: one [register] per file, whose
+   result is the file's guard. *)
 
 module Mutate = Windtrap_runtime.Mutate
 
@@ -46,7 +46,6 @@ let () =
     print_endline (label ^ String.concat "" (List.map row (Mutate.drain ())))
   in
   drained "initialization:";
-  Mutate.next_epoch ();
   ignore (guard 0 : bool);
   drained "window:";
   Printf.printf "guards: %b %b\n" (guard 0) (guard 1)

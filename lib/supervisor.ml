@@ -75,12 +75,11 @@ let mutating (config : Run.config) =
    so what module initialization and a fixture release evaluate falls in a
    window of no test. *)
 let window ~send test =
-  (match Mutate.drain () with
+  match Mutate.drain () with
   | [] -> ()
   | reached ->
       send test
-        (List.map (fun (r : Mutate.reached) -> (r.mutant.id, r.hits)) reached));
-  Mutate.next_epoch ()
+        (List.map (fun (r : Mutate.reached) -> (r.mutant.id, r.hits)) reached)
 
 let reach_windows ~send (event : Run.event) =
   match event with

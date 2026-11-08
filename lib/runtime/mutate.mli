@@ -10,9 +10,9 @@
     source file, when the module of the file loads, and binds the guard that it
     returns.
 
-    A caller reads the {!val-catalogue} and builds the reach map with
-    {!next_epoch} and {!drain} during a dry run. A process that tests a mutant
-    then calls {!arm} and runs the tests that reached it.
+    A caller reads the {!val-catalogue} and builds the reach map with {!drain}
+    during a dry run. A process that tests a mutant then calls {!arm} and runs
+    the tests that reached it.
 
     With no mutant armed, the guard answers [false] at every site.
 
@@ -76,19 +76,15 @@ val register : file:string -> sites:site array -> int -> bool
     executable catalogues the instrumented modules that it links, so a module of
     a library that the executable never references has no mutant there.
 
-    Applied to the index [i] of a site, the guard does three things in order.
-    + It adds one to the count of evaluations of site [i], which saturates at
-      [max_int].
-    + If site [i] was not yet evaluated in the current epoch, it marks the site
-      for the next {!drain}.
+    Applied to the index [i] of a site, the guard does two things in order.
+    + It adds one to the count of evaluations of site [i].
     + It is [true] iff site [i] is the armed one. It raises {!Runaway} instead
       if the count of the armed site is above the budget given to {!arm}.
 
-    The guard is not synchronized. A site that several domains evaluate at once
-    can lose evaluations and, when an epoch starts, its mark. The reach map is
-    then a lower bound, which can miss a mutant and never invents one. The guard
-    raises [Invalid_argument] if [i] is outside [sites], which only a broken
-    instrumenter causes.
+    The count is incremented atomically, so domains that evaluate sites at once
+    lose no evaluation, and until it raises the guard allocates nothing. The
+    guard raises [Invalid_argument] if [i] is outside [sites], which only a
+    broken instrumenter causes.
 
     When [file] is registered again with an equal table, as when one source is
     compiled into two modules, the two registrations arm together, and
@@ -174,8 +170,8 @@ val arm : ?budget:int -> id -> (mutant, arm_error) result
 
 val armed_hits : unit -> int
 (** [armed_hits ()] is the number of evaluations of the armed site since the
-    last {!reset_reach}, added over every module that registered its file. It
-    saturates at [max_int], and it is [0] when nothing is armed. *)
+    last {!reset_reach}, added over every module that registered its file. It is
+    [0] when nothing is armed. *)
 
 exception Runaway of { id : id; hits : int; budget : int }
 (** Raised by the guard of the armed site [id] when [hits], its count of
@@ -187,41 +183,40 @@ exception Runaway of { id : id; hits : int; budget : int }
 
 (** {1:reach The reach map}
 
-    The runtime keeps an epoch counter and the list of the sites marked in the
-    current epoch, and takes no position on what an epoch means.
+    Every site counts its evaluations, and a {!drain} reports the sites whose
+    count moved since the previous one. The span between two drains is a window.
+    To learn which mutants one test evaluates, a caller drains when the test
+    starts and when it finishes: the second drain is the test's window. The
+    first drain of a process reports what was evaluated before it, as module
+    initialization is, and a drain between two tests what no test evaluated, as
+    the release of a fixture.
 
-    To learn which mutants one test evaluates, a caller must call {!drain} and
-    then {!next_epoch} when the test starts, and {!drain} when it finishes. The
-    first [drain] returns what was evaluated outside any test, as module
-    initialization and the release of a fixture are. *)
+    {b Domains.} Each evaluation is counted by exactly one drain, and the OCaml
+    memory model (the OCaml manual, "Memory model: the hard bits") says which:
+    an evaluation that happens before a drain is counted by it or by an earlier
+    one, and one that a drain happens before is counted by a later one. The
+    order is that of the domain that drains, and the one that [Domain.spawn] and
+    [Domain.join], an atomic, a mutex or a condition create between domains. So
+    the window of a test that joins the domains it spawns, or waits for the pool
+    it hands work to, counts every evaluation that test made and no other
+    test's. A domain still running when the test's window closes has what it
+    evaluates afterwards counted in a later window, or lost with its process if
+    that ends first. *)
 
 type reached = {
   mutant : mutant;  (** The mutant that was evaluated. *)
-  hits : int;
-      (** The number of evaluations of its guard in the drained window, which
-          saturates at [max_int]. *)
+  hits : int;  (** The number of evaluations of its guard in the window. *)
 }
 (** The type for one entry of a drained window. *)
 
-val next_epoch : unit -> unit
-(** [next_epoch ()] opens a new epoch. A site that is evaluated afterwards marks
-    itself for the next {!drain}, whether or not it was evaluated before. The
-    marks of the previous epoch that were not drained stay for the next
-    {!drain}, and their evaluations go on counting. *)
-
 val drain : unit -> reached list
-(** [drain ()] is the mutants marked since the previous [drain], ordered by
-    {!compare_id} on [id] and without duplicates. Each comes with its
-    evaluations, counted from the one that marked it up to this call. [drain]
-    then empties the list of marks. A mutant that two modules registered for one
-    file appears once, with its evaluations added up.
-
-    A site marks itself at its first evaluation in an epoch, and only then. When
-    it is evaluated again in that epoch after a [drain], no later [drain]
-    reports those evaluations. A drained count is a lower bound of what an armed
-    run of the same tests evaluates, so a budget that is derived from one needs
-    headroom. *)
+(** [drain ()] is the mutants evaluated since the previous [drain], or since
+    {!reset_reach} if that came later, ordered by {!compare_id} on [id] and
+    without duplicates, each with its evaluations in that window. A mutant that
+    two modules registered for one file appears once, with their evaluations
+    added up. [drain] reads the count of every registered site, whether or not
+    it was evaluated. *)
 
 val reset_reach : unit -> unit
-(** [reset_reach ()] sets every count of evaluations to zero, empties the list
-    of marks and opens a new epoch. It does not disarm. *)
+(** [reset_reach ()] sets every count of evaluations to zero, so the next
+    {!drain} reports what is evaluated after it. It does not disarm. *)

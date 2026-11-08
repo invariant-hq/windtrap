@@ -1,5 +1,17 @@
 # Changelog
 
+## Unreleased
+
+### Mutation testing
+
+- A mutation build counts every evaluation of a site on any number of
+  domains, and its guard allocates nothing: a test that spawns domains
+  no longer leaves reached mutants never reached, the runaway budget
+  counts what the domains did, and a site's first evaluation in a test
+  no longer allocates.
+- (breaking) `Windtrap_runtime.Mutate.next_epoch` is removed; a drain
+  reports every site whose count moved since the previous one.
+
 ## v0.3.1 2026-11-01
 
 Windtrap 0.3.1 fixes two bugs that failed tests that were not at fault:

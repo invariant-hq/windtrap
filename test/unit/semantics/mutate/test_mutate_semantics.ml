@@ -78,7 +78,6 @@ let drain_fixtures () =
    [(rewrite, evaluations)] in catalogue order. *)
 let reached f =
   ignore (Mutate.drain () : Mutate.reached list);
-  Mutate.next_epoch ();
   let value = f () in
   (value, drain_fixtures ())
 
