@@ -271,20 +271,19 @@ let rec wait_until ~started ~grace done_ =
   | () -> ()
   | exception _ -> wait_until ~started ~grace done_
 
-(* Nothing between the publication and the wait can take a signal but the
-   lock, which leaves nothing published when it raises. *)
+(* The lock is the one point before the wait that can take a signal, and
+   what a handler raises there leaves nothing published: a raise from
+   inside the match comes from the wait, after the publication. *)
 let run t ~grace jobs =
   if Array.length jobs <> size t then
     invalid_arg "Workers.run: one job per worker";
   if t.stuck then invalid_arg "Workers.run: a worker is stuck";
   let generation = t.generation + 1 in
   let done_ () = all_marked t.ended generation in
-  let published = ref false in
+  Mutex.lock t.mutex;
   match
-    Mutex.lock t.mutex;
     t.jobs <- jobs;
     t.generation <- generation;
-    published := true;
     Condition.broadcast t.wake;
     Mutex.unlock t.mutex;
     wait done_
@@ -297,10 +296,8 @@ let run t ~grace jobs =
       Array.iter raised t.endings
   | exception exn ->
       let backtrace = Printexc.get_raw_backtrace () in
-      if !published then
-        wait_until ~started:(Os.counter ()) ~grace:(grace exn) done_;
-      if (not !published) || done_ () then
-        Printexc.raise_with_backtrace exn backtrace
+      wait_until ~started:(Os.counter ()) ~grace:(grace exn) done_;
+      if done_ () then Printexc.raise_with_backtrace exn backtrace
       else begin
         t.stuck <- true;
         raise (Stuck (exn, backtrace))
