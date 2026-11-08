@@ -346,15 +346,28 @@ dune exec --instrument-with ppx_windtrap.mutate test/unit/test_diff.exe -- --mut
 ```
 
 A per-executable run exits 0 whatever it found, and a narrowed run
-(`-f`, tags, `--shard`, `--failed`, a focus) writes no verdict file, so
-the aggregate never merges a partial answer; a survivor is confirmed by
+(`-f`, tags, `--shard`, `--failed`, a focus) records no verdict: it
+keeps the file this build wrote, or writes one that marks the suite
+refused, so the aggregate never merges a partial answer; a survivor is confirmed by
 arming it against the whole suite, with `--arm <id>` from the footer or
 `WINDTRAP_MUTATE_ARM=<id>` in front of the tree-wide command. Every
 mutant's worker runs under a deadline derived from the dry run (its wall
 clock, plus ten times the measured timings of the tests that child runs,
 floored at one second) and under the runtime's per-site hit-count
-budget; a child that overruns or spins is killed with its process group
-and scored killed, because a suite that hangs has noticed the change.
+budget. A child that passes its deadline is killed with its process
+group and its mutant is unknown, since a run that could not finish
+decided nothing; a child whose armed site passes the budget fails its
+test, and its mutant is killed. Neither bounds a child's memory: a
+mutant that keeps what each iteration of an endless loop allocates can
+grow by gigabytes before its deadline. Seven mutants of `lib/gen.ml`,
+`lib/choice.ml` and `lib/stateful.ml` do, so the whole tree fits under
+a 12G cap only with each process's data bounded:
+
+```
+(ulimit -d 2500000; WINDTRAP_MUTATE=1 dune runtest --force --instrument-with ppx_windtrap.mutate)
+```
+
+`ulimit -v` bounds the address space instead and fails a domain test.
 Mutation needs worker processes and declines by name on Windows.
 
 ## The conformance corpus
