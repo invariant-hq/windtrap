@@ -45,9 +45,11 @@
 
     {b Signals.} The parent sends the first of the signals that the facade names
     to every worker, each of which ends as {!Run.execute} does on it, then gives
-    {!Run.Interrupted}, with the test or the release that a worker named, and
-    dies by the signal. A worker that dies of one after it said so ends the run
-    too.
+    {!Run.Interrupted}, with the test or the release that a worker named, or
+    else the case of a worker it killed, and dies by the signal. The kill of a
+    case still comes at its time, the wait for a verdict that no longer comes
+    counting toward it, so a worker that a C call holds ends there. A worker
+    that dies of one of these signals after it said so ends the run too.
 
     {b Coverage.} A worker hands the parent the coverage it counted as it ends,
     and the parent's dump at exit holds it, so a run leaves one dump. A worker

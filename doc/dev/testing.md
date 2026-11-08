@@ -118,8 +118,9 @@ what is non-obvious.
   counts the tests not run, the process dies by the signal, and no JUnit
   file is written. It holds the rest of the facade's signal contract
   too: a signal ignored at start, a signal between two tests or during a
-  release, a second signal, a forked child, and the handlers a run puts
-  back.
+  release, a release that takes a while after it, a test that a C call
+  holds past it (`suite_stubs.c`), a second signal, a forked child, and
+  the handlers a run puts back.
   `inline.t` holds the inline runner's protocol: `inline/runner.exe` is
   the main the `inline_tests` backend generates, over fixtures that
   belong to no library, and the session runs it with dune's protocol

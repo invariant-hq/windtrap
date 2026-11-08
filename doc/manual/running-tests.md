@@ -274,7 +274,10 @@ and a test's own `~timeout`, or its group's, wins over both (see
 [Resources and structure](resources-and-structure.md)). The limit is an
 alarm, so a teardown still runs after a body that timed out; a test
 still running three limits after it started, in C code the alarm cannot
-reach, is killed with its worker and times out too.
+reach, is killed with its worker and times out too. An interrupt does not
+lift that kill: after Ctrl-C, or the SIGTERM of a `timeout` around the
+run, a test held in C is killed at the same time, and the run then dies
+by the signal.
 
 `--in-process` has no default limit, since a debugger may hold a test as
 long as it likes; a limit that `~timeout` or `--timeout` gives still

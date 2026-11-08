@@ -1,6 +1,9 @@
 (executable
  (name suite_main)
  (modules suite_main)
+ (foreign_stubs
+  (language c)
+  (names suite_stubs))
  (libraries windtrap unix))
 
 (cram

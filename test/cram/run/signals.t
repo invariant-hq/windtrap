@@ -108,6 +108,36 @@ A second signal, while the first one's releases run, kills at once:
   running after SIGTERM
   killed by SIGINT
 
+A test that polls ends on the signal, and the releases of its fixtures
+run to their end, here half a second, in what is left of its limits:
+
+  $ run FACADE_FIXTURE=lasting ./send_signal.exe TERM ./suite_main.exe --timeout 2
+  killed by SIGTERM
+  $ ls released
+  released
+
+A signal does not suspend a test's limit. A worker in a C call cannot act
+on the signal, so one still running three limits after its test started
+is killed with its process group, as without the signal, and the run
+then dies by the signal, naming the test. The fixture spins ten seconds
+in C, which the kill cuts short, and the CPU cap ends anything a run that
+failed to kill it left spinning:
+
+  $ spun() {
+  >   if test -e spun; then echo 'the C loop ran to its end'; else echo 'the C loop was cut short'; fi
+  >   if kill -0 "$(cat worker)" 2> /dev/null; then echo 'its worker still runs'; else echo 'its worker is gone'; fi
+  >   rm -f spun worker
+  > }
+  $ (ulimit -t 20; run FACADE_FIXTURE=spinning ./send_signal.exe TERM ./suite_main.exe --timeout 0.2)
+  killed by SIGTERM
+  $ tail -1 out | scrub
+  fixture: 1 not run in DURATION.
+  $ cat err
+  windtrap: interrupted in spins
+  $ spun
+  the C loop was cut short
+  its worker is gone
+
 A process a test forks inherits the runner's handlers, and a signal
 still kills it; the run goes on:
 

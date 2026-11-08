@@ -785,20 +785,31 @@ let supervise ?(on_event = ignore) ~on_reach ~on_failure (config : Run.config)
   let receive_from w : to_parent =
     try receive w.reports with Failure _ | End_of_file -> raise Closed
   in
+  (* The kill of its first case counts from here: module initialisation is
+     no part of the test. *)
+  let serves w =
+    w.serving <- true;
+    Option.iter
+      (fun (job : case_job) ->
+        job.deadline <-
+          Option.map (fun d -> d +. Os.count_s job.started) job.deadline)
+      w.job
+  in
+  (* What a worker sends whatever its case, once the parent stopped running
+     cases. *)
+  let take w = function
+    | Report report -> common w report
+    | Counts counts -> Coverage.absorb counts
+    | Reached { test; sites } -> windowed w test sites
+    | Serving -> serves w
+  in
   (* A worker releases its fixtures, runs what its tests registered with
      [at_exit], and goes. *)
   let rec drain w =
     match receive_from w with
-    | Report report ->
-        common w report;
+    | frame ->
+        take w frame;
         drain w
-    | Counts counts ->
-        Coverage.absorb counts;
-        drain w
-    | Reached { test; sites } ->
-        windowed w test sites;
-        drain w
-    | Serving -> drain w
     | exception Closed -> ()
   in
   let finish w =
@@ -809,13 +820,20 @@ let supervise ?(on_event = ignore) ~on_reach ~on_failure (config : Run.config)
     | Some status when Option.is_none !interrupted -> died w status
     | Some _ | None -> bury w
   in
-  let answer (job : case_job) =
-    match job.asked with
-    | None -> ()
-    | Some (attempt, since) -> (
+  (* The wait for a verdict is the parent's, and does not count toward the
+     kill. *)
+  let resume (job : case_job) =
+    Option.map
+      (fun (attempt, since) ->
         job.asked <- None;
-        (* The wait is the parent's, and does not count toward the kill. *)
         job.deadline <- Option.map (fun d -> d +. Os.count_s since) job.deadline;
+        attempt)
+      job.asked
+  in
+  let answer (job : case_job) =
+    match resume job with
+    | None -> ()
+    | Some attempt -> (
         let verdict = Run.verdict run job.case attempt in
         let holds w = match w.job with Some j -> j == job | None -> false in
         match List.find_opt holds !workers with
@@ -892,15 +910,7 @@ let supervise ?(on_event = ignore) ~on_reach ~on_failure (config : Run.config)
     match (receive_from w, w.job) with
     | exception Closed -> (
         match reap w with Some status -> died w status | None -> ())
-    | Serving, job ->
-        (* The kill of its first case counts from here: module
-           initialisation is no part of the test. *)
-        w.serving <- true;
-        Option.iter
-          (fun (job : case_job) ->
-            job.deadline <-
-              Option.map (fun d -> d +. Os.count_s job.started) job.deadline)
-          job
+    | Serving, _ -> serves w
     | Counts counts, _ -> Coverage.absorb counts
     | Reached { test; sites }, _ -> windowed w test sites
     | Report (Judge attempt), Some job ->
@@ -1001,9 +1011,73 @@ let supervise ?(on_event = ignore) ~on_reach ~on_failure (config : Run.config)
     (try Capture.drain () with _ -> ());
     Os.die_by s
   in
+  let gone w =
+    drop w;
+    bury w
+  in
+  (* What a worker reports as it ends by the signal, and how it ends. One
+     that a C call holds cannot act on it, and the signal does not suspend
+     its case's limit: past its deadline it is killed with its process
+     group, as it would have been without the signal. *)
+  let rec outlast () =
+    match !workers with
+    | [] -> ()
+    | live ->
+        let wait =
+          List.fold_left
+            (fun acc w ->
+              match Option.bind w.job (remaining w) with
+              | Some r -> Float.min acc (Float.max 0. r)
+              | None -> acc)
+            1. live
+        in
+        let ready =
+          match Unix.select (List.map (fun w -> w.reports) live) [] [] wait with
+          | ready, _, _ -> ready
+          | exception Unix.Unix_error (Unix.EINTR, _, _) -> []
+        in
+        List.iter
+          (fun w ->
+            if List.mem w.reports ready then (
+              match receive_from w with
+              | frame -> take w frame
+              | exception Closed ->
+                  ignore (reap w);
+                  gone w)
+            else
+              match (w.job, Option.bind w.job (remaining w)) with
+              | Some job, Some r when r <= 0. ->
+                  (* It could not say what the signal stopped: its case. *)
+                  if Option.is_none !interrupted then
+                    interrupted := Some (Some job.case.path, None);
+                  kill w;
+                  ignore (reap w);
+                  gone w
+              | _ when ready = [] -> (
+                  match reap ~flags:[ Unix.WNOHANG ] w with
+                  | Some _ ->
+                      drain_ready w;
+                      gone w
+                  | None -> ())
+              | _ -> ())
+          live;
+        outlast ()
+  (* A worker found dead may have left reports in its pipe. *)
+  and drain_ready w =
+    match Unix.select [ w.reports ] [] [] 0. with
+    | _ :: _, _, _ -> (
+        match receive_from w with
+        | frame ->
+            take w frame;
+            drain_ready w
+        | exception Closed -> ())
+    | [], _, _ -> ()
+    | exception Unix.Unix_error (Unix.EINTR, _, _) -> drain_ready w
+  in
   (* Once a signal came, the workers end by it, and the parent then does. A
      worker that handled it just before a read waits there for a request,
-     so the parent hangs up first. *)
+     so the parent hangs up first, and a worker that waited for a verdict
+     waits for none. *)
   let end_by_signal () =
     match !signal with
     | None -> ()
@@ -1024,10 +1098,9 @@ let supervise ?(on_event = ignore) ~on_reach ~on_failure (config : Run.config)
         List.iter
           (fun w ->
             hang_up w;
-            drain w;
-            ignore (reap w);
-            bury w)
+            Option.iter (fun job -> ignore (resume job)) w.job)
           !workers;
+        outlast ();
         die_by ?starting s
   in
   match

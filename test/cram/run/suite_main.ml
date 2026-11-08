@@ -253,6 +253,36 @@ let lingering =
         waits ());
   ]
 
+(* A release that takes a while after the signal, well inside its test's
+   limits. *)
+let lasting =
+  let lasts =
+    fixture
+      ~teardown:(fun () ->
+        Unix.sleepf 0.5;
+        touch "released")
+      ignore
+  in
+  [
+    test "holds and waits" (fun () ->
+        lasts ();
+        waits ());
+  ]
+
+(* Code under test that never returns to OCaml while the signal comes:
+   the C function creates [ready] itself, so the signal always finds the
+   worker in C, spins ten seconds there and creates [spun]. The worker
+   writes its pid to [worker] first. *)
+external spin : int -> unit = "suite_spin"
+
+let spinning =
+  [
+    test "spins" (fun () ->
+        Out_channel.with_open_bin "worker" (fun oc ->
+            output_string oc (string_of_int (Unix.getpid ())));
+        spin 10);
+  ]
+
 (* A process the test forks inherits the runner's handlers, and a signal
    must kill it rather than run the parent's report in the child. *)
 let forking =
@@ -355,6 +385,8 @@ let declared = function
   | Some "releasing" -> releasing
   | Some "leaving" -> leaving
   | Some "lingering" -> lingering
+  | Some "lasting" -> lasting
+  | Some "spinning" -> spinning
   | Some "forking" -> forking
   | Some "cased" -> cased
   | Some ("" | "default") | None -> default

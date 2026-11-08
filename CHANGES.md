@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+### Running tests
+
+- A signal leaves a test's limit in force: a test that a C call holds
+  past `SIGINT`, `SIGTERM` or `SIGHUP` is killed with its worker three
+  limits after it started, as without the signal, and the run then dies
+  by the signal, naming that test
+  (doc/manual/running-tests.md#bounding-a-test-in-time).
+
 ### Coverage
 
 - `windtrap coverage --json` writes each byte sequence of a recorded name

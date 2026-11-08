@@ -132,9 +132,14 @@ type 'a testable = 'a Testable.t
 
     The alarm cannot interrupt a C call that does not return to OCaml: a test
     still running three limits after it started, for each of its attempts, is
-    killed with its worker process (see {!run}), and times out. On Windows,
-    where the tests run in the calling process and no alarm exists, no limit has
-    an effect, the default included: a test that hangs there hangs the run.
+    killed with its worker process (see {!run}), and times out. A signal that
+    stops the run does not lift this kill: such a call also keeps the worker
+    from acting on the signal, so the worker is killed at the same time, and the
+    run then dies by the signal, naming the test. Under [--in-process] there is
+    no worker to kill, and a C call holds the run, its signals included, until
+    it returns. On Windows, where the tests run in the calling process and no
+    alarm exists, no limit has an effect, the default included: a test that
+    hangs there hangs the run.
 
     {b Retries.} Each attempt is a fresh setup, body, teardown and capture. A
     skip is never retried. An {!xfail} test is retried on an unexpected pass,
@@ -2293,7 +2298,9 @@ val run : ?argv:string array -> string -> test list -> int
     temporary files and releases the fixtures still held, without the teardown
     of the interrupted test; then {!run} writes no correction and dies by the
     same signal. A worker that receives one of these signals itself ends the run
-    so too.
+    so too. The test's limit holds meanwhile: a worker still running three
+    limits after its test started, such as one that a C call holds, is killed
+    with its process group, and the releases have what is left of that time.
 
     On Windows, and under [--in-process], the tests run in the process that
     called {!run}. There a call to [exit] in code under test is recorded as the
