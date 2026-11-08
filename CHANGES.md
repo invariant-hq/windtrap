@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+### Coverage
+
+- `windtrap coverage --json` writes each byte sequence of a recorded name
+  that is not UTF-8 as U+FFFD, so the document is always valid JSON.
+- (breaking) `windtrap coverage --json` writes each percentage unrounded,
+  the number `--min` compares, as the shortest decimal that reads back
+  (`66.66666666666667`, `100`), and each file on a line of its own.
+
 ### Mutation testing
 
 - A mutation build counts every evaluation of a site on any number of
@@ -19,8 +27,10 @@
 - (breaking) The `not evaluated` verdict is unknown, with its reason, in
   the report, the merge and `--arm`'s closing line;
   `Windtrap_runtime.Verdicts.Not_evaluated` and
-  `Windtrap_runtime.Mutate.armed_hits` are removed, and the verdict file
-  is `windtrap-mutants-v6`, an earlier one being refused.
+  `Windtrap_runtime.Mutate.armed_hits` are removed.
+- (breaking) The verdict file is `windtrap-mutants-v6`, and no run
+  replaces a file of an earlier version, which `windtrap mutants` then
+  refuses by name; delete `_build/_mutants` once, as `dune clean` does.
 - `stateful ~domains` spawns its domains under `--mutate` and `--arm`,
   as in any run, so the code only they run is reached and judged, and a
   kill there depends on the schedules the test samples
@@ -33,9 +43,6 @@
   survivors (doc/manual/mutation.md#where-the-verdicts-are).
 - `windtrap mutants` names each suite by its executable and its name, as
   `test_calc.exe (calc)`, and counts suites where it counted executables.
-- A verdict file of an earlier version is no run's to replace any more,
-  so the merge refuses it, naming it, until it is deleted; delete
-  `_build/_mutants` once, as `dune clean` does.
 - (breaking) Under `--mutate`, a second `Windtrap.run` of one suite name
   in a process is refused; give each run a name of its own.
 - (breaking) `Windtrap_runtime.Verdicts.output_file` and `Verdicts.save`
@@ -46,19 +53,12 @@
   mutant that never ran, and a scope whose every mutant is dismissed
   reads as one with no mutant; `Windtrap_runtime.Mutate.site.dismissed`
   and `Mutate.mutant.dismissed` are removed.
-
-### Coverage
-
-- `windtrap coverage --json` writes each byte sequence of a recorded name
-  that is not UTF-8 as U+FFFD, so the document is always valid JSON.
-- (breaking) `windtrap coverage --json` writes each percentage unrounded,
-  the number `--min` compares, as the shortest decimal that reads back
-  (`66.66666666666667`, `100`), and each file on a line of its own.
-
-### Mutation testing
-
-- `none` is a new rewrite: `Some e` becomes `None`, which asks whether a
-  test reads the optional result (doc/manual/mutation.md#what-is-mutated).
+- (breaking) `none` is a new rewrite, `Some e` becomes `None`, which asks
+  whether a test reads the optional result, and a file whose `Some` an
+  `open` or the expected type brings in from another module can then
+  fail to build under `ppx_windtrap.mutate`; dismiss the expression with
+  `[@mutate off]` or the file with `[@@@mutate exclude_file]`
+  (doc/manual/mutation.md#what-is-mutated).
 
 ## v0.3.1 2026-11-01
 
