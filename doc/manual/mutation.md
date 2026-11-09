@@ -260,11 +260,11 @@ run. One is a deadline: the dry run's wall clock, plus ten times what
 its tests took, and at least a second more. The other is a memory
 ceiling: eight times the largest resident size that a worker of the dry
 run reached, its own. windtrap reads a worker's resident size ten times
-a second. The processes that its tests start count neither in the dry
+a second, on Linux and macOS; elsewhere it cannot, and there is no
+ceiling. The processes that its tests start count neither in the dry
 run's size nor against the ceiling: only the deadline bounds them. A
-worker past a
-limit is killed with its process group: its mutant is unknown, and a
-probe past one refuses the run.
+worker past a limit is killed with its process group: its mutant is
+unknown, and a probe past one refuses the run.
 
 Every pass runs in worker processes, under `--in-process` too, and the
 probe and each mutant in a worker of its own, started as a run's workers are (see [Running

@@ -34,8 +34,8 @@
   dry run's largest worker is killed with its process group and is
   unknown, `passed its memory ceiling of N MB`, and a probe past it
   refuses the run, so a mutant that allocates without end no longer
-  exhausts the machine before its deadline
-  (doc/manual/mutation.md#what-a-mutation-run-runs).
+  exhausts the machine before its deadline. Linux and macOS only; elsewhere
+  there is no ceiling (doc/manual/mutation.md#what-a-mutation-run-runs).
 - A probe past its deadline is refused as `the determinism probe's run
   passed its deadline of 2.1s, where the dry run's did not`, naming the
   deadline.

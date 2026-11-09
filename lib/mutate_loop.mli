@@ -123,7 +123,9 @@ val execute_and_report :
     is killed. Both sizes are the worker's own: the processes that its tests
     start count neither in the dry run's peak nor against the ceiling, and only
     the deadline bounds them. Each suite's loop measures its own dry run, so the
-    suites of one executable do not share a ceiling.
+    suites of one executable do not share a ceiling. Only Linux and macOS give a
+    resident size; elsewhere {!Os.resident} reads 0 and no worker passes the
+    ceiling.
 
     The runaway budget of a job ({!Windtrap_runtime.Mutate.arm}) is
     [(hits * 8) + 1000] ([budget_of]) for a site that the job's tests evaluated
